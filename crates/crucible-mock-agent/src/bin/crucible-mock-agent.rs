@@ -14,7 +14,7 @@
 //!   --chunk-delay <ms>     Delay between streaming chunks in ms
 //!   --help                 Show this help message
 
-use crucible_mock_agent::{MockAgent, MockAgentConfig, AgentBehavior};
+use crucible_mock_agent::{AgentBehavior, MockAgent, MockAgentConfig};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

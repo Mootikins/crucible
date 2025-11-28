@@ -4,10 +4,10 @@
 //! NotePipeline by wiring together all necessary dependencies. This is
 //! the composition root for the pipeline orchestration layer.
 
-use std::sync::Arc;
+use crate::config::CliConfig;
 use anyhow::Result;
 use crucible_pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
-use crate::config::CliConfig;
+use std::sync::Arc;
 
 /// Create NotePipeline with all dependencies wired together
 ///
@@ -55,9 +55,8 @@ pub async fn create_pipeline(
     force: bool,
 ) -> Result<NotePipeline> {
     // 1. Change detection (SurrealDB-backed for persistence)
-    let change_detector = crucible_surrealdb::adapters::create_change_detection_store(
-        storage_client.clone()
-    );
+    let change_detector =
+        crucible_surrealdb::adapters::create_change_detection_store(storage_client.clone());
 
     // 2. Merkle store (SurrealDB-backed)
     let merkle_store = super::create_surrealdb_merkle_store(storage_client.clone());

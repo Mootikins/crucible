@@ -7,9 +7,9 @@
 use crate::utils::sanitize_record_id;
 use crate::{SurrealClient, SurrealDbConfig};
 use async_trait::async_trait;
+use crucible_core::parser::{ASTBlock, ASTBlockMetadata, ASTBlockType};
 use crucible_core::storage::traits::{BlockOperations, StorageStats, TreeOperations};
 use crucible_core::storage::{ContentAddressedStorage, MerkleTree, StorageError, StorageResult};
-use crucible_core::parser::{ASTBlock, ASTBlockMetadata, ASTBlockType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -540,7 +540,10 @@ impl crucible_core::storage::traits::BlockOperations for ContentAddressedStorage
 
         let safe_hash = sanitize_record_id(hash)
             .map_err(|e| StorageError::InvalidHash(format!("Invalid hash: {}", e)))?;
-        let query = format!("SELECT count() FROM content_blocks WHERE hash = '{}'", safe_hash);
+        let query = format!(
+            "SELECT count() FROM content_blocks WHERE hash = '{}'",
+            safe_hash
+        );
         let result = self.client.query(&query, &[]).await.map_err(|e| {
             StorageError::backend(format!("Failed to check block existence: {}", e))
         })?;
@@ -718,11 +721,7 @@ impl crucible_core::storage::traits::StorageManagement for ContentAddressedStora
 
         // Get section count for additional stats
         let section_count_query = "SELECT * FROM section";
-        let section_result = self
-            .client
-            .query(section_count_query, &[])
-            .await
-            .ok();
+        let section_result = self.client.query(section_count_query, &[]).await.ok();
 
         let section_count = section_result.map(|r| r.records.len() as u64).unwrap_or(0);
 

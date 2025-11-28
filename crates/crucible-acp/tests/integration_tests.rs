@@ -2,13 +2,11 @@
 //!
 //! These tests verify that components work together correctly.
 
-use crucible_acp::{
-    ChatSession, ChatConfig,
-    HistoryConfig, ContextConfig, StreamConfig,
-    CrucibleAcpClient,
-};
 use crucible_acp::client::ClientConfig;
 use crucible_acp::session::{AcpSession, SessionConfig};
+use crucible_acp::{
+    ChatConfig, ChatSession, ContextConfig, CrucibleAcpClient, HistoryConfig, StreamConfig,
+};
 
 /// Integration test: Full chat pipeline with all components
 #[tokio::test]
@@ -55,13 +53,26 @@ async fn test_full_chat_pipeline() {
 
     // Verify state tracking
     assert_eq!(session.state().turn_count, 3, "Should have 3 turns");
-    assert_eq!(session.history().message_count(), 6, "Should have 6 messages (3 user + 3 agent)");
-    assert!(session.state().total_tokens_used > 0, "Should have tracked tokens");
-    assert!(session.state().last_message_at.is_some(), "Should have last message timestamp");
+    assert_eq!(
+        session.history().message_count(),
+        6,
+        "Should have 6 messages (3 user + 3 agent)"
+    );
+    assert!(
+        session.state().total_tokens_used > 0,
+        "Should have tracked tokens"
+    );
+    assert!(
+        session.state().last_message_at.is_some(),
+        "Should have last message timestamp"
+    );
 
     // Verify session metadata was updated
     let metadata = session.metadata();
-    assert!(metadata.updated_at >= metadata.created_at, "Metadata should be updated");
+    assert!(
+        metadata.updated_at >= metadata.created_at,
+        "Metadata should be updated"
+    );
 }
 
 /// Integration test: Context enrichment with caching
@@ -81,12 +92,18 @@ async fn test_context_enrichment_caching() {
     let mut session = ChatSession::new(config);
 
     // Send the same query twice
-    let response1 = session.send_message("What is a knowledge graph?").await.unwrap();
-    let response2 = session.send_message("What is a knowledge graph?").await.unwrap();
+    let response1 = session
+        .send_message("What is a knowledge graph?")
+        .await
+        .unwrap();
+    let response2 = session
+        .send_message("What is a knowledge graph?")
+        .await
+        .unwrap();
 
     // Both should succeed (cache should work transparently)
-    assert!(!response1.is_empty());
-    assert!(!response2.is_empty());
+    assert!(!response1.0.is_empty());
+    assert!(!response2.0.is_empty());
 
     // Should have 2 turns recorded
     assert_eq!(session.state().turn_count, 2);
@@ -126,7 +143,11 @@ async fn test_history_auto_pruning_integration() {
     );
 
     // Turn count should still be accurate
-    assert_eq!(session.state().turn_count, 5, "Turn count should still be 5");
+    assert_eq!(
+        session.state().turn_count,
+        5,
+        "Turn count should still be 5"
+    );
 }
 
 /// Integration test: Error handling doesn't corrupt state
@@ -181,7 +202,10 @@ async fn test_multi_turn_with_metadata() {
     // Have a multi-turn conversation
     session.send_message("Hello").await.unwrap();
     session.send_message("How are you?").await.unwrap();
-    session.send_message("What can you help me with?").await.unwrap();
+    session
+        .send_message("What can you help me with?")
+        .await
+        .unwrap();
 
     // Verify conversation state
     assert_eq!(session.state().turn_count, 3);
@@ -194,7 +218,10 @@ async fn test_multi_turn_with_metadata() {
     );
 
     // Verify metadata content is preserved
-    assert_eq!(session.metadata().title, Some("Integration Test Session".to_string()));
+    assert_eq!(
+        session.metadata().title,
+        Some("Integration Test Session".to_string())
+    );
     assert!(session.metadata().tags.contains(&"integration".to_string()));
     assert!(session.metadata().tags.contains(&"testing".to_string()));
 }
@@ -292,7 +319,10 @@ async fn test_token_counting_consistency() {
     session.send_message("Short").await.unwrap();
     let tokens_after_1 = session.state().total_tokens_used;
 
-    session.send_message("This is a much longer message with many more words").await.unwrap();
+    session
+        .send_message("This is a much longer message with many more words")
+        .await
+        .unwrap();
     let tokens_after_2 = session.state().total_tokens_used;
 
     // Second message should add more tokens
@@ -334,8 +364,10 @@ async fn test_session_isolation() {
 #[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_mock_agent_protocol_handshake() {
+    use agent_client_protocol::{
+        ClientCapabilities, ClientRequest, InitializeRequest, NewSessionRequest, ProtocolVersion,
+    };
     use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
-    use agent_client_protocol::{ClientRequest, InitializeRequest, NewSessionRequest, ProtocolVersion, ClientCapabilities};
     use std::path::PathBuf;
 
     // Create a mock agent
@@ -350,7 +382,10 @@ async fn test_mock_agent_protocol_handshake() {
     });
 
     let init_result = agent.handle_request(init_request).await;
-    assert!(init_result.is_ok(), "MockAgent should handle InitializeRequest");
+    assert!(
+        init_result.is_ok(),
+        "MockAgent should handle InitializeRequest"
+    );
 
     // Send new session request
     let session_request = ClientRequest::NewSessionRequest(NewSessionRequest {
@@ -360,7 +395,10 @@ async fn test_mock_agent_protocol_handshake() {
     });
 
     let session_result = agent.handle_request(session_request).await;
-    assert!(session_result.is_ok(), "MockAgent should handle NewSessionRequest");
+    assert!(
+        session_result.is_ok(),
+        "MockAgent should handle NewSessionRequest"
+    );
 
     // Verify request counter
     assert_eq!(agent.request_count(), 2, "Should have processed 2 requests");
@@ -395,8 +433,10 @@ async fn test_client_full_handshake_workflow() {
 #[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_mock_agent_custom_responses() {
+    use agent_client_protocol::{
+        ClientCapabilities, ClientRequest, InitializeRequest, ProtocolVersion,
+    };
     use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
-    use agent_client_protocol::{ClientRequest, InitializeRequest, ProtocolVersion, ClientCapabilities};
     use std::collections::HashMap;
 
     // Create mock agent with custom responses
@@ -409,7 +449,7 @@ async fn test_mock_agent_custom_responses() {
                 "name": "test-agent",
                 "version": "1.0.0"
             }
-        })
+        }),
     );
 
     let config = MockAgentConfig {
@@ -437,8 +477,10 @@ async fn test_mock_agent_custom_responses() {
 #[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_mock_agent_error_simulation() {
+    use agent_client_protocol::{
+        ClientCapabilities, ClientRequest, InitializeRequest, ProtocolVersion,
+    };
     use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
-    use agent_client_protocol::{ClientRequest, InitializeRequest, ProtocolVersion, ClientCapabilities};
 
     // Create mock agent that simulates errors
     let mut config = MockAgentConfig::default();
@@ -455,7 +497,10 @@ async fn test_mock_agent_error_simulation() {
     });
 
     let result = agent.handle_request(request).await;
-    assert!(result.is_err(), "Should return error when error simulation enabled");
+    assert!(
+        result.is_err(),
+        "Should return error when error simulation enabled"
+    );
 }
 
 /// Integration test: Agent lifecycle with proper cleanup
@@ -486,15 +531,15 @@ async fn test_agent_lifecycle_cleanup() {
     assert!(client.is_connected());
 
     // Create session
-    let session = AcpSession::new(
-        SessionConfig::default(),
-        "test-session".to_string()
-    );
+    let session = AcpSession::new(SessionConfig::default(), "test-session".to_string());
 
     // Disconnect
     let disconnect_result = client.disconnect(&session).await;
     assert!(disconnect_result.is_ok(), "Should disconnect cleanly");
-    assert!(!client.is_connected(), "Should not be connected after disconnect");
+    assert!(
+        !client.is_connected(),
+        "Should not be connected after disconnect"
+    );
 }
 
 // Baseline Tests - Request/Response Handling
@@ -502,8 +547,8 @@ async fn test_agent_lifecycle_cleanup() {
 /// Baseline test: Protocol message serialization
 #[tokio::test]
 async fn baseline_protocol_message_serialization() {
+    use agent_client_protocol::{ClientCapabilities, ProtocolVersion};
     use agent_client_protocol::{ClientRequest, InitializeRequest, NewSessionRequest};
-    use agent_client_protocol::{ProtocolVersion, ClientCapabilities};
     use std::path::PathBuf;
 
     // Test InitializeRequest serialization
@@ -628,7 +673,10 @@ async fn baseline_error_type_conversions() {
     assert_eq!(session_error.to_string(), "Session error: test error");
 
     let connection_error = AcpError::Connection("connection failed".to_string());
-    assert_eq!(connection_error.to_string(), "Connection error: connection failed");
+    assert_eq!(
+        connection_error.to_string(),
+        "Connection error: connection failed"
+    );
 }
 
 /// Baseline test: Session state consistency
@@ -776,11 +824,10 @@ async fn baseline_conversation_history_operations() {
 #[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn e2e_complete_protocol_flow() {
-    use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
     use agent_client_protocol::{
-        ClientRequest, InitializeRequest, NewSessionRequest,
-        ProtocolVersion, ClientCapabilities
+        ClientCapabilities, ClientRequest, InitializeRequest, NewSessionRequest, ProtocolVersion,
     };
+    use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
     use std::path::PathBuf;
 
     // Create mock agent
@@ -815,11 +862,10 @@ async fn e2e_complete_protocol_flow() {
 #[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn e2e_multiple_session_creation() {
-    use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
     use agent_client_protocol::{
-        ClientRequest, InitializeRequest, NewSessionRequest,
-        ProtocolVersion, ClientCapabilities
+        ClientCapabilities, ClientRequest, InitializeRequest, NewSessionRequest, ProtocolVersion,
     };
+    use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
     use std::path::PathBuf;
 
     let agent = MockAgent::new(MockAgentConfig::default());
@@ -853,8 +899,10 @@ async fn e2e_multiple_session_creation() {
 #[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn e2e_protocol_error_handling() {
+    use agent_client_protocol::{
+        ClientCapabilities, ClientRequest, InitializeRequest, ProtocolVersion,
+    };
     use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
-    use agent_client_protocol::{ClientRequest, InitializeRequest, ProtocolVersion, ClientCapabilities};
 
     // Create agent with error simulation
     let mut config = MockAgentConfig::default();
@@ -870,15 +918,20 @@ async fn e2e_protocol_error_handling() {
     });
 
     let result = agent.handle_request(init_request).await;
-    assert!(result.is_err(), "Should return error when error simulation enabled");
+    assert!(
+        result.is_err(),
+        "Should return error when error simulation enabled"
+    );
 }
 
 /// End-to-end test: Delay simulation
 #[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn e2e_delay_simulation() {
+    use agent_client_protocol::{
+        ClientCapabilities, ClientRequest, InitializeRequest, ProtocolVersion,
+    };
     use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
-    use agent_client_protocol::{ClientRequest, InitializeRequest, ProtocolVersion, ClientCapabilities};
     use std::time::Instant;
 
     // Create agent with delay simulation
@@ -903,18 +956,20 @@ async fn e2e_delay_simulation() {
     let elapsed = start.elapsed();
 
     assert!(result.is_ok(), "Request should succeed");
-    assert!(elapsed.as_millis() >= 100, "Should have delayed at least 100ms");
+    assert!(
+        elapsed.as_millis() >= 100,
+        "Should have delayed at least 100ms"
+    );
 }
 
 /// End-to-end test: Session state across requests
 #[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn e2e_session_state_persistence() {
-    use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
     use agent_client_protocol::{
-        ClientRequest, InitializeRequest, NewSessionRequest,
-        ProtocolVersion, ClientCapabilities
+        ClientCapabilities, ClientRequest, InitializeRequest, NewSessionRequest, ProtocolVersion,
     };
+    use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
     use std::path::PathBuf;
 
     let agent = MockAgent::new(MockAgentConfig::default());
@@ -948,8 +1003,10 @@ async fn e2e_session_state_persistence() {
 #[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn e2e_custom_response_handling() {
+    use agent_client_protocol::{
+        ClientCapabilities, ClientRequest, InitializeRequest, ProtocolVersion,
+    };
     use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
-    use agent_client_protocol::{ClientRequest, InitializeRequest, ProtocolVersion, ClientCapabilities};
     use std::collections::HashMap;
 
     // Configure custom responses
@@ -965,7 +1022,7 @@ async fn e2e_custom_response_handling() {
                 "streaming": true,
                 "tools": true
             }
-        })
+        }),
     );
 
     let config = MockAgentConfig {
@@ -993,11 +1050,10 @@ async fn e2e_custom_response_handling() {
 #[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn e2e_concurrent_request_handling() {
-    use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
     use agent_client_protocol::{
-        ClientRequest, InitializeRequest, NewSessionRequest,
-        ProtocolVersion, ClientCapabilities
+        ClientCapabilities, ClientRequest, InitializeRequest, NewSessionRequest, ProtocolVersion,
     };
+    use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -1042,16 +1098,13 @@ async fn e2e_concurrent_request_handling() {
 /// Integration test: FileSystemHandler path validation
 #[tokio::test]
 async fn integration_filesystem_path_validation() {
-    use crucible_acp::FileSystemHandler;
     use crucible_acp::filesystem::FileSystemConfig;
+    use crucible_acp::FileSystemHandler;
     use std::path::PathBuf;
 
     // Create handler with allowed roots
     let config = FileSystemConfig {
-        allowed_roots: vec![
-            PathBuf::from("/tmp"),
-            PathBuf::from("/var/data"),
-        ],
+        allowed_roots: vec![PathBuf::from("/tmp"), PathBuf::from("/var/data")],
         allow_write: false,
         allow_create_dirs: false,
         max_read_size: 1024 * 1024,
@@ -1073,8 +1126,8 @@ async fn integration_filesystem_path_validation() {
 /// Integration test: FileSystemHandler configuration variants
 #[tokio::test]
 async fn integration_filesystem_configuration() {
-    use crucible_acp::FileSystemHandler;
     use crucible_acp::filesystem::FileSystemConfig;
+    use crucible_acp::FileSystemHandler;
     use std::path::PathBuf;
 
     // Test default (no access) configuration
@@ -1105,7 +1158,7 @@ async fn integration_filesystem_configuration() {
 /// Integration test: StreamHandler message formatting
 #[tokio::test]
 async fn integration_stream_message_formatting() {
-    use crucible_acp::{StreamHandler, StreamConfig};
+    use crucible_acp::{StreamConfig, StreamHandler};
 
     let config = StreamConfig {
         show_thoughts: true,
@@ -1140,7 +1193,7 @@ async fn integration_stream_message_formatting() {
 /// Integration test: StreamHandler configuration effects
 #[tokio::test]
 async fn integration_stream_configuration_effects() {
-    use crucible_acp::{StreamHandler, StreamConfig};
+    use crucible_acp::{StreamConfig, StreamHandler};
 
     // Config with thoughts and tool calls disabled
     let config_minimal = StreamConfig {
@@ -1183,7 +1236,7 @@ async fn integration_stream_configuration_effects() {
 /// Integration test: PromptEnricher basic enrichment
 #[tokio::test]
 async fn integration_context_enrichment() {
-    use crucible_acp::{PromptEnricher, ContextConfig};
+    use crucible_acp::{ContextConfig, PromptEnricher};
 
     let config = ContextConfig {
         enabled: true,
@@ -1209,7 +1262,7 @@ async fn integration_context_enrichment() {
 /// Integration test: PromptEnricher with caching
 #[tokio::test]
 async fn integration_context_enrichment_with_cache() {
-    use crucible_acp::{PromptEnricher, ContextConfig};
+    use crucible_acp::{ContextConfig, PromptEnricher};
 
     let config = ContextConfig {
         enabled: true,
@@ -1239,7 +1292,7 @@ async fn integration_context_enrichment_with_cache() {
 /// Integration test: PromptEnricher disabled
 #[tokio::test]
 async fn integration_context_enrichment_disabled() {
-    use crucible_acp::{PromptEnricher, ContextConfig};
+    use crucible_acp::{ContextConfig, PromptEnricher};
 
     let config = ContextConfig {
         enabled: false,
@@ -1262,7 +1315,7 @@ async fn integration_context_enrichment_disabled() {
 /// Integration test: Component interaction - Stream + Context
 #[tokio::test]
 async fn integration_stream_with_enrichment() {
-    use crucible_acp::{StreamHandler, PromptEnricher, StreamConfig, ContextConfig};
+    use crucible_acp::{ContextConfig, PromptEnricher, StreamConfig, StreamHandler};
 
     // Set up streaming
     let stream_config = StreamConfig {
@@ -1300,8 +1353,8 @@ async fn integration_stream_with_enrichment() {
 #[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn integration_chat_with_agent_config() {
-    use crucible_acp::{ChatSession, ChatConfig, CrucibleAcpClient};
     use crucible_acp::client::ClientConfig;
+    use crucible_acp::{ChatConfig, ChatSession, CrucibleAcpClient};
     use std::path::PathBuf;
 
     let client_config = ClientConfig {
@@ -1330,8 +1383,8 @@ async fn integration_chat_with_agent_config() {
 #[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn integration_chat_agent_lifecycle() {
-    use crucible_acp::{ChatSession, ChatConfig, CrucibleAcpClient};
     use crucible_acp::client::ClientConfig;
+    use crucible_acp::{ChatConfig, ChatSession, CrucibleAcpClient};
     use std::path::PathBuf;
 
     let client_config = ClientConfig {
@@ -1364,7 +1417,7 @@ async fn integration_chat_agent_lifecycle() {
 #[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn integration_chat_multi_turn_with_agent() {
-    use crucible_acp::{ChatSession, ChatConfig};
+    use crucible_acp::{ChatConfig, ChatSession};
 
     // Create a chat session without agent (mock mode)
     let mut chat_session = ChatSession::new(ChatConfig::default());
@@ -1395,15 +1448,15 @@ async fn integration_chat_multi_turn_with_agent() {
 #[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn integration_chat_agent_config_variants() {
-    use crucible_acp::{ChatSession, ChatConfig, CrucibleAcpClient};
     use crucible_acp::client::ClientConfig;
+    use crucible_acp::{ChatConfig, ChatSession, CrucibleAcpClient};
     use std::path::PathBuf;
 
     // Test various client configurations
     let configs = vec![
         ClientConfig {
             agent_path: PathBuf::from("echo"),
-        agent_args: None,
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(1000),
@@ -1411,7 +1464,7 @@ async fn integration_chat_agent_config_variants() {
         },
         ClientConfig {
             agent_path: PathBuf::from("cat"),
-        agent_args: None,
+            agent_args: None,
             working_dir: Some(PathBuf::from("/tmp")),
             env_vars: None,
             timeout_ms: Some(5000),

@@ -2,7 +2,7 @@
 //!
 //! This module provides kiln-specific tools like roots and statistics.
 
-use rmcp::{tool, tool_router, model::CallToolResult};
+use rmcp::{model::CallToolResult, tool, tool_router};
 
 #[derive(Clone)]
 pub struct KilnTools {
@@ -18,9 +18,7 @@ impl KilnTools {
 #[tool_router]
 impl KilnTools {
     #[tool(description = "Get comprehensive kiln information including root path and statistics")]
-    pub async fn get_kiln_info(
-        &self,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
+    pub async fn get_kiln_info(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         // Get canonical path for URI
         let canonical_path = std::path::Path::new(&self.kiln_path)
             .canonicalize()
@@ -48,8 +46,8 @@ impl KilnTools {
             }
         }
 
-        Ok(CallToolResult::success(vec![
-            rmcp::model::Content::json(serde_json::json!({
+        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
+            serde_json::json!({
                 "root": {
                     "uri": uri,
                     "name": "Kiln Root",
@@ -60,30 +58,26 @@ impl KilnTools {
                     "markdown_files": md_files,
                     "total_size_bytes": total_size
                 }
-            }))?
-        ]))
+            }),
+        )?]))
     }
 
     #[tool(description = "Get kiln roots information")]
-    pub async fn get_kiln_roots(
-        &self,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
+    pub async fn get_kiln_roots(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let roots = vec![serde_json::json!({
             "uri": format!("file://{}", std::path::Path::new(&self.kiln_path).canonicalize().unwrap_or_else(|_| std::path::PathBuf::from(&self.kiln_path)).display()),
             "name": "Kiln Root"
         })];
 
-        Ok(CallToolResult::success(vec![
-            rmcp::model::Content::json(serde_json::json!({
+        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
+            serde_json::json!({
                 "roots": roots
-            }))?
-        ]))
+            }),
+        )?]))
     }
 
     #[tool(description = "Get kiln statistics")]
-    pub async fn get_kiln_stats(
-        &self,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
+    pub async fn get_kiln_stats(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         let mut total_files = 0;
         let mut total_size = 0;
         let mut md_files = 0;
@@ -103,14 +97,14 @@ impl KilnTools {
             }
         }
 
-        Ok(CallToolResult::success(vec![
-            rmcp::model::Content::json(serde_json::json!({
+        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
+            serde_json::json!({
                 "total_files": total_files,
                 "markdown_files": md_files,
                 "total_size_bytes": total_size,
                 "kiln_path": self.kiln_path
-            }))?
-        ]))
+            }),
+        )?]))
     }
 }
 
@@ -218,7 +212,10 @@ mod tests {
             let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
 
             // Check root information
-            assert!(parsed["root"]["uri"].as_str().unwrap().starts_with("file://"));
+            assert!(parsed["root"]["uri"]
+                .as_str()
+                .unwrap()
+                .starts_with("file://"));
             assert_eq!(parsed["root"]["name"], "Kiln Root");
             assert_eq!(parsed["root"]["path"], kiln_path);
 
@@ -238,7 +235,11 @@ mod tests {
 
         // Create some test files
         std::fs::write(temp_dir.path().join("test1.md"), "# Test Note 1").unwrap();
-        std::fs::write(temp_dir.path().join("test2.md"), "# Test Note 2\nWith more content.").unwrap();
+        std::fs::write(
+            temp_dir.path().join("test2.md"),
+            "# Test Note 2\nWith more content.",
+        )
+        .unwrap();
         std::fs::write(temp_dir.path().join("ignore.txt"), "Ignore me").unwrap();
 
         let result = kiln_tools.get_kiln_info().await;
@@ -250,7 +251,10 @@ mod tests {
             let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
 
             // Check root information
-            assert!(parsed["root"]["uri"].as_str().unwrap().starts_with("file://"));
+            assert!(parsed["root"]["uri"]
+                .as_str()
+                .unwrap()
+                .starts_with("file://"));
             assert_eq!(parsed["root"]["name"], "Kiln Root");
             assert_eq!(parsed["root"]["path"], kiln_path);
 

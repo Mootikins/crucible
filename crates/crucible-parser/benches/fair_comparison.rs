@@ -1,23 +1,29 @@
 //! Fair comparison: Full parsing + tree building for both approaches
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use crucible_parser::{MarkdownParser, CrucibleParser};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use crucible_parser::{CrucibleParser, MarkdownParser};
 use std::path::PathBuf;
 
 #[cfg(feature = "markdown-it-parser")]
 use crucible_parser::MarkdownItParser;
 
 const TEST_DOCS: &[(&str, &str)] = &[
-    ("small", r#"# Simple Note
-Just a basic paragraph with one [[link]]."#),
-
-    ("medium", r#"# Medium Document
+    (
+        "small",
+        r#"# Simple Note
+Just a basic paragraph with one [[link]]."#,
+    ),
+    (
+        "medium",
+        r#"# Medium Document
 ## Section 1
 This has [[Link One]] and [[Link Two|Alias]].
 ## Section 2
-More [[links]] with [[references]] and #tags everywhere."#),
-
-    ("large", r#"# Large Document
+More [[links]] with [[references]] and #tags everywhere."#,
+    ),
+    (
+        "large",
+        r#"# Large Document
 ## Introduction
 Lorem ipsum with [[First Link]] and #tag1 in the text.
 
@@ -37,11 +43,14 @@ Paragraph with [[multiple]] [[wikilinks]] and [[more|aliases]] #project/ai.
 Even [[more]] [[links]] to [[test]] the [[parser]] with #tags.
 
 ## Conclusion
-Final [[links]] and [[references]] here #conclusion."#),
-
-    ("wikilink_heavy", r#"[[Link1]] [[Link2]] [[Link3|Alias]] #tag1 [[Link4]] [[Link5|Display]]
+Final [[links]] and [[references]] here #conclusion."#,
+    ),
+    (
+        "wikilink_heavy",
+        r#"[[Link1]] [[Link2]] [[Link3|Alias]] #tag1 [[Link4]] [[Link5|Display]]
 [[Link6]] [[Link7#Section]] #tag2 [[Link8#^block]] ![[Embed1]] [[Link9]] #nested/tag
-[[Link10]] [[Link11|A]] #tag3 [[Link12]] [[Link13]] [[Link14|B]] #another/nested/tag"#),
+[[Link10]] [[Link11|A]] #tag3 [[Link12]] [[Link13]] [[Link14|B]] #another/nested/tag"#,
+    ),
 ];
 
 fn benchmark_pulldown_full_parse(c: &mut Criterion) {
@@ -50,18 +59,12 @@ fn benchmark_pulldown_full_parse(c: &mut Criterion) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
 
     for (name, content) in TEST_DOCS {
-        group.bench_with_input(
-            BenchmarkId::new("parse", name),
-            content,
-            |b, content| {
-                let parser = CrucibleParser::new();
-                b.iter(|| {
-                    runtime.block_on(async {
-                        parser.parse_content(black_box(content), &path).await
-                    })
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("parse", name), content, |b, content| {
+            let parser = CrucibleParser::new();
+            b.iter(|| {
+                runtime.block_on(async { parser.parse_content(black_box(content), &path).await })
+            });
+        });
     }
 
     group.finish();
@@ -74,18 +77,12 @@ fn benchmark_markdown_it_full_parse(c: &mut Criterion) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
 
     for (name, content) in TEST_DOCS {
-        group.bench_with_input(
-            BenchmarkId::new("parse", name),
-            content,
-            |b, content| {
-                let parser = MarkdownItParser::new();
-                b.iter(|| {
-                    runtime.block_on(async {
-                        parser.parse_content(black_box(content), &path).await
-                    })
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("parse", name), content, |b, content| {
+            let parser = MarkdownItParser::new();
+            b.iter(|| {
+                runtime.block_on(async { parser.parse_content(black_box(content), &path).await })
+            });
+        });
     }
 
     group.finish();

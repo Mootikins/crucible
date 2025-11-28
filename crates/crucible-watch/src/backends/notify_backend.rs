@@ -63,10 +63,7 @@ impl NotifyWatcher {
                                 // Apply filter if configured
                                 if let Some(f) = filter_ref {
                                     if !f.matches(&file_event) {
-                                        trace!(
-                                            "Event filtered out: {}",
-                                            file_event.path.display()
-                                        );
+                                        trace!("Event filtered out: {}", file_event.path.display());
                                         continue;
                                     }
                                 }

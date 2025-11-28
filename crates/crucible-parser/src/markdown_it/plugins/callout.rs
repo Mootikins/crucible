@@ -30,10 +30,7 @@ impl NodeValue for CalloutNode {
             "div",
             &[
                 ("class", format!("callout callout-{}", self.callout_type)),
-                (
-                    "data-callout",
-                    self.callout_type.clone(),
-                ),
+                ("data-callout", self.callout_type.clone()),
             ],
         );
 

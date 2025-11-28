@@ -16,8 +16,7 @@ pub async fn execute(cmd: ConfigCommands) -> Result<()> {
 
 /// Initialize a new config file
 async fn init(path: Option<PathBuf>, force: bool) -> Result<()> {
-    let config_path = path
-        .unwrap_or_else(|| CliConfig::default_config_path());
+    let config_path = path.unwrap_or_else(|| CliConfig::default_config_path());
 
     // Check if file already exists
     if config_path.exists() && !force {

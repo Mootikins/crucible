@@ -31,7 +31,11 @@ impl EAVGraphStore {
     /// * `params` - Parameters including `table`, `id`, and `content`
     /// * `return_after` - Whether to return the record after creation
     async fn upsert_with_content(&self, params: &Value, return_after: bool) -> Result<QueryResult> {
-        let return_clause = if return_after { "RETURN AFTER" } else { "RETURN NONE" };
+        let return_clause = if return_after {
+            "RETURN AFTER"
+        } else {
+            "RETURN NONE"
+        };
 
         let update_query = format!(
             r#"
@@ -80,7 +84,11 @@ impl EAVGraphStore {
         return_after: bool,
         ignore_already_exists: bool,
     ) -> Result<QueryResult> {
-        let return_clause = if return_after { "RETURN AFTER" } else { "RETURN NONE" };
+        let return_clause = if return_after {
+            "RETURN AFTER"
+        } else {
+            "RETURN NONE"
+        };
 
         let update_query = format!(
             r#"
@@ -187,7 +195,8 @@ impl EAVGraphStore {
             "search_text": entity.search_text,
         });
 
-        self.upsert_with_set(set_clause, &params, true, false).await?;
+        self.upsert_with_set(set_clause, &params, true, false)
+            .await?;
 
         Ok(id.clone())
     }

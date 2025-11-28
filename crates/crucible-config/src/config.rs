@@ -1,7 +1,7 @@
 //! Core configuration types and structures.
 
+use crate::components::{AcpConfig, ChatConfig, CliConfig, EmbeddingConfig};
 use crate::{EnrichmentConfig, ProfileConfig};
-use crate::components::{CliConfig, EmbeddingConfig, AcpConfig, ChatConfig};
 
 #[cfg(feature = "toml")]
 extern crate toml;
@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
 
-use tracing::{info, warn, debug, error};
+use tracing::{debug, error, info, warn};
 
 /// Errors that can occur during configuration validation.
 #[derive(Error, Debug, Clone, PartialEq)]
@@ -379,12 +379,10 @@ impl CliAppConfig {
         // Determine config file path
         let config_path = config_file.unwrap_or_else(Self::default_config_path);
 
-        
         debug!("Attempting to load config from: {}", config_path.display());
 
         // Try to load config file
         if config_path.exists() {
-            
             info!("Found config file at: {}", config_path.display());
 
             let contents = std::fs::read_to_string(&config_path)
@@ -396,25 +394,36 @@ impl CliAppConfig {
                     Ok(config) => {
                         // Apply CLI overrides
                         // Note: embedding_url and embedding_model overrides could be applied here if needed
-                        
+
                         info!("Successfully loaded config file: {}", config_path.display());
                         return Ok(config);
                     }
                     Err(e) => {
-                        
-                        error!("Failed to parse config file {}: {}", config_path.display(), e);
-                        return Err(anyhow::anyhow!("Failed to parse config file {}: {}", config_path.display(), e));
+                        error!(
+                            "Failed to parse config file {}: {}",
+                            config_path.display(),
+                            e
+                        );
+                        return Err(anyhow::anyhow!(
+                            "Failed to parse config file {}: {}",
+                            config_path.display(),
+                            e
+                        ));
                     }
                 }
             }
 
             #[cfg(not(feature = "toml"))]
             {
-                return Err(anyhow::anyhow!("Failed to parse config file: TOML feature not enabled"));
+                return Err(anyhow::anyhow!(
+                    "Failed to parse config file: TOML feature not enabled"
+                ));
             }
         } else {
-            
-            debug!("No config file found at {}, using defaults", config_path.display());
+            debug!(
+                "No config file found at {}, using defaults",
+                config_path.display()
+            );
         }
 
         // Return default config
@@ -430,16 +439,23 @@ impl CliAppConfig {
         info!("  embedding.batch_size: {}", self.embedding.batch_size);
         info!("  acp.default_agent: {:?}", self.acp.default_agent);
         info!("  acp.enable_discovery: {}", self.acp.enable_discovery);
-        info!("  acp.session_timeout_minutes: {}", self.acp.session_timeout_minutes);
+        info!(
+            "  acp.session_timeout_minutes: {}",
+            self.acp.session_timeout_minutes
+        );
         info!("  cli.show_progress: {}", self.cli.show_progress);
-        info!("  cli.confirm_destructive: {}", self.cli.confirm_destructive);
+        info!(
+            "  cli.confirm_destructive: {}",
+            self.cli.confirm_destructive
+        );
         info!("  cli.verbose: {}", self.cli.verbose);
     }
 
     /// Convert from general Config to CliAppConfig
     fn from_general_config(general: Config) -> Self {
         Self {
-            kiln_path: general.kiln_path_opt()
+            kiln_path: general
+                .kiln_path_opt()
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(default_kiln_path),
             embedding: general.embedding_config().unwrap_or_default(),
@@ -447,7 +463,7 @@ impl CliAppConfig {
             chat: general.chat_config().unwrap_or_default(),
             cli: general.cli_config().unwrap_or_default(),
             logging: general.logging,
-            processing: ProcessingConfig::default(),  // General Config doesn't have processing
+            processing: ProcessingConfig::default(), // General Config doesn't have processing
         }
     }
 

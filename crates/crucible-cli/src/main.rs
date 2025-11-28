@@ -3,14 +3,14 @@ use clap::Parser;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::filter::LevelFilter;
-use tracing_subscriber::prelude::*;  // For SubscriberExt trait
+use tracing_subscriber::prelude::*; // For SubscriberExt trait
 
 use crucible_cli::{
     cli::{Cli, Commands, LogLevel},
     commands, config,
 };
-use crucible_core::{types::hashing::HashAlgorithm, CrucibleCore};
 use crucible_core::traits::KnowledgeRepository;
+use crucible_core::{types::hashing::HashAlgorithm, CrucibleCore};
 use crucible_llm::embeddings::{create_provider, EmbeddingConfig, EmbeddingProvider};
 use crucible_surrealdb::{adapters, SurrealDbConfig};
 
@@ -42,7 +42,11 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Load configuration first (before logging) to get config file log level
-    let config = config::CliConfig::load(cli.config.clone(), cli.embedding_url.clone(), cli.embedding_model.clone())?;
+    let config = config::CliConfig::load(
+        cli.config.clone(),
+        cli.embedding_url.clone(),
+        cli.embedding_model.clone(),
+    )?;
 
     // Determine log level from CLI flags, config file, or default to OFF
     // Priority: --log-level flag > --verbose flag > config file > OFF
@@ -75,11 +79,13 @@ async fn main() -> Result<()> {
                 _ => "crucible.log",
             };
 
-            let log_file_path = std::env::var("CRUCIBLE_LOG_FILE")
-                .unwrap_or_else(|_| {
-                    let home = dirs::home_dir().expect("Failed to get home directory");
-                    home.join(".crucible").join(log_file_name).to_string_lossy().to_string()
-                });
+            let log_file_path = std::env::var("CRUCIBLE_LOG_FILE").unwrap_or_else(|_| {
+                let home = dirs::home_dir().expect("Failed to get home directory");
+                home.join(".crucible")
+                    .join(log_file_name)
+                    .to_string_lossy()
+                    .to_string()
+            });
 
             // Create parent directory if it doesn't exist
             if let Some(parent) = std::path::Path::new(&log_file_path).parent() {
@@ -93,7 +99,7 @@ async fn main() -> Result<()> {
 
             let file_layer = tracing_subscriber::fmt::layer()
                 .with_writer(std::sync::Arc::new(log_file))
-                .with_ansi(false)  // No ANSI codes in log files
+                .with_ansi(false) // No ANSI codes in log files
                 .with_target(true)
                 .with_thread_ids(true);
 
@@ -192,28 +198,31 @@ async fn main() -> Result<()> {
                 config,
                 agent,
                 query,
-                !act,  // read_only = !act (plan mode is default)
+                !act, // read_only = !act (plan mode is default)
                 no_context,
-                cli.no_process,  // Pass the global --no-process flag
+                cli.no_process, // Pass the global --no-process flag
                 Some(context_size),
             )
             .await?
         }
 
-        Some(Commands::Mcp) => {
-            commands::mcp::execute(config).await?
-        }
+        Some(Commands::Mcp) => commands::mcp::execute(config).await?,
 
-        Some(Commands::Process { path, force, watch, dry_run, parallel }) => {
-            commands::process::execute(config, path, force, watch, cli.verbose, dry_run, parallel).await?
+        Some(Commands::Process {
+            path,
+            force,
+            watch,
+            dry_run,
+            parallel,
+        }) => {
+            commands::process::execute(config, path, force, watch, cli.verbose, dry_run, parallel)
+                .await?
         }
 
         Some(Commands::Stats) => commands::stats::execute(config).await?,
 
-  
         Some(Commands::Config(cmd)) => commands::config::execute(cmd).await?,
 
-  
         Some(Commands::Status {
             path,
             format,
@@ -247,13 +256,14 @@ async fn main() -> Result<()> {
             // Default to chat when no command is provided
             commands::chat::execute(
                 config,
-                None,   // No agent specified - use default
-                None,   // No query provided - start interactive mode
-                true,   // read_only = true (plan mode is default)
-                false,  // no_context = false
-                cli.no_process,  // Pass the global --no-process flag
-                Some(5), // default context_size = 5
-            ).await?
+                None,           // No agent specified - use default
+                None,           // No query provided - start interactive mode
+                true,           // read_only = true (plan mode is default)
+                false,          // no_context = false
+                cli.no_process, // Pass the global --no-process flag
+                Some(5),        // default context_size = 5
+            )
+            .await?
         }
     }
 

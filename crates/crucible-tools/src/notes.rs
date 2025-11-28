@@ -2,15 +2,25 @@
 //!
 //! This module provides simple filesystem-based note CRUD tools.
 
-use rmcp::{tool, tool_router, model::CallToolResult};
 use rmcp::handler::server::wrapper::Parameters;
-use serde::Deserialize;
+use rmcp::{model::CallToolResult, tool, tool_router};
 use schemars::JsonSchema;
+use serde::Deserialize;
+use std::path::Path;
 use walkdir::WalkDir;
 
 #[derive(Clone)]
 pub struct NoteTools {
     kiln_path: String,
+}
+
+fn ensure_md_suffix(path: String) -> String {
+    let pb = Path::new(&path);
+    if pb.extension().is_some() {
+        path
+    } else {
+        format!("{}.md", path)
+    }
 }
 
 /// Parameters for creating a note
@@ -83,7 +93,7 @@ impl NoteTools {
         params: Parameters<CreateNoteParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let path = params.path;
+        let path = ensure_md_suffix(params.path);
         let content = params.content;
         let frontmatter = params.frontmatter;
 
@@ -98,18 +108,19 @@ impl NoteTools {
             content
         };
 
-        std::fs::write(&full_path, &final_content)
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Failed to write file: {e}"), None))?;
+        std::fs::write(&full_path, &final_content).map_err(|e| {
+            rmcp::ErrorData::internal_error(format!("Failed to write file: {e}"), None)
+        })?;
 
         // TODO: Notify parser for reprocessing
 
-        Ok(CallToolResult::success(vec![
-            rmcp::model::Content::json(serde_json::json!({
+        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
+            serde_json::json!({
                 "path": path,
                 "full_path": full_path.to_string_lossy(),
                 "status": "created"
-            }))?
-        ]))
+            }),
+        )?]))
     }
 
     #[tool(description = "Read note content with optional line range")]
@@ -118,15 +129,19 @@ impl NoteTools {
         params: Parameters<ReadNoteParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let path = params.path;
+        let path = ensure_md_suffix(params.path);
         let full_path = std::path::Path::new(&self.kiln_path).join(&path);
 
         if !full_path.exists() {
-            return Err(rmcp::ErrorData::invalid_params(format!("File not found: {}", path), None));
+            return Err(rmcp::ErrorData::invalid_params(
+                format!("File not found: {}", path),
+                None,
+            ));
         }
 
-        let content = std::fs::read_to_string(&full_path)
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Failed to read file: {e}"), None))?;
+        let content = std::fs::read_to_string(&full_path).map_err(|e| {
+            rmcp::ErrorData::internal_error(format!("Failed to read file: {e}"), None)
+        })?;
 
         let lines: Vec<&str> = content.lines().collect();
         let total_lines = lines.len();
@@ -149,19 +164,17 @@ impl NoteTools {
                 let slice = lines[start_idx..].join("\n");
                 (slice, total_lines - start_idx)
             }
-            (None, None) => {
-                (content, total_lines)
-            }
+            (None, None) => (content, total_lines),
         };
 
-        Ok(CallToolResult::success(vec![
-            rmcp::model::Content::json(serde_json::json!({
+        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
+            serde_json::json!({
                 "path": path,
                 "content": content_slice,
                 "total_lines": total_lines,
                 "lines_returned": lines_returned
-            }))?
-        ]))
+            }),
+        )?]))
     }
 
     #[tool(description = "Read note metadata without loading full content")]
@@ -170,15 +183,19 @@ impl NoteTools {
         params: Parameters<ReadMetadataParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let path = params.path;
+        let path = ensure_md_suffix(params.path);
         let full_path = std::path::Path::new(&self.kiln_path).join(&path);
 
         if !full_path.exists() {
-            return Err(rmcp::ErrorData::invalid_params(format!("File not found: {}", path), None));
+            return Err(rmcp::ErrorData::invalid_params(
+                format!("File not found: {}", path),
+                None,
+            ));
         }
 
-        let content = std::fs::read_to_string(&full_path)
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Failed to read file: {e}"), None))?;
+        let content = std::fs::read_to_string(&full_path).map_err(|e| {
+            rmcp::ErrorData::internal_error(format!("Failed to read file: {e}"), None)
+        })?;
 
         // Parse frontmatter
         let frontmatter = parse_yaml_frontmatter(&content).unwrap_or_else(|| serde_json::json!({}));
@@ -189,17 +206,21 @@ impl NoteTools {
         let line_count = content.lines().count();
 
         // Count headings (lines starting with #)
-        let heading_count = content.lines().filter(|line| line.trim_start().starts_with('#')).count();
+        let heading_count = content
+            .lines()
+            .filter(|line| line.trim_start().starts_with('#'))
+            .count();
 
         // Get file metadata
         let metadata = std::fs::metadata(&full_path).ok();
-        let modified = metadata.as_ref()
+        let modified = metadata
+            .as_ref()
             .and_then(|m| m.modified().ok())
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_secs());
 
-        Ok(CallToolResult::success(vec![
-            rmcp::model::Content::json(serde_json::json!({
+        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
+            serde_json::json!({
                 "path": path,
                 "frontmatter": frontmatter,
                 "stats": {
@@ -209,8 +230,8 @@ impl NoteTools {
                     "heading_count": heading_count,
                 },
                 "modified": modified
-            }))?
-        ]))
+            }),
+        )?]))
     }
 
     #[tool(description = "Update an existing note")]
@@ -219,18 +240,22 @@ impl NoteTools {
         params: Parameters<UpdateNoteParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let path = params.path;
+        let path = ensure_md_suffix(params.path);
         let new_content = params.content;
         let new_frontmatter = params.frontmatter;
         let full_path = std::path::Path::new(&self.kiln_path).join(&path);
 
         if !full_path.exists() {
-            return Err(rmcp::ErrorData::invalid_params(format!("File not found: {}", path), None));
+            return Err(rmcp::ErrorData::invalid_params(
+                format!("File not found: {}", path),
+                None,
+            ));
         }
 
         // Read existing file
-        let existing_content = std::fs::read_to_string(&full_path)
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Failed to read file: {e}"), None))?;
+        let existing_content = std::fs::read_to_string(&full_path).map_err(|e| {
+            rmcp::ErrorData::internal_error(format!("Failed to read file: {e}"), None)
+        })?;
 
         // Track what fields are being updated
         let mut updated_fields = Vec::new();
@@ -259,7 +284,7 @@ impl NoteTools {
                 // Nothing to update
                 return Err(rmcp::ErrorData::invalid_params(
                     "Must provide either content or frontmatter to update".to_string(),
-                    None
+                    None,
                 ));
             }
         };
@@ -273,19 +298,20 @@ impl NoteTools {
             final_content
         };
 
-        std::fs::write(&full_path, &final_file_content)
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Failed to update file: {e}"), None))?;
+        std::fs::write(&full_path, &final_file_content).map_err(|e| {
+            rmcp::ErrorData::internal_error(format!("Failed to update file: {e}"), None)
+        })?;
 
         // TODO: Notify parser for reprocessing
 
-        Ok(CallToolResult::success(vec![
-            rmcp::model::Content::json(serde_json::json!({
+        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
+            serde_json::json!({
                 "path": path,
                 "full_path": full_path.to_string_lossy(),
                 "status": "updated",
                 "updated_fields": updated_fields
-            }))?
-        ]))
+            }),
+        )?]))
     }
 
     #[tool(description = "Delete a note from the kiln")]
@@ -294,25 +320,29 @@ impl NoteTools {
         params: Parameters<DeleteNoteParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let path = params.path;
+        let path = ensure_md_suffix(params.path);
         let full_path = std::path::Path::new(&self.kiln_path).join(&path);
 
         if !full_path.exists() {
-            return Err(rmcp::ErrorData::invalid_params(format!("File not found: {}", path), None));
+            return Err(rmcp::ErrorData::invalid_params(
+                format!("File not found: {}", path),
+                None,
+            ));
         }
 
-        std::fs::remove_file(&full_path)
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Failed to delete file: {e}"), None))?;
+        std::fs::remove_file(&full_path).map_err(|e| {
+            rmcp::ErrorData::internal_error(format!("Failed to delete file: {e}"), None)
+        })?;
 
         // TODO: Notify parser for reprocessing
 
-        Ok(CallToolResult::success(vec![
-            rmcp::model::Content::json(serde_json::json!({
+        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
+            serde_json::json!({
                 "path": path,
                 "full_path": full_path.to_string_lossy(),
                 "status": "deleted"
-            }))?
-        ]))
+            }),
+        )?]))
     }
 
     #[tool(description = "List notes in a directory")]
@@ -334,7 +364,7 @@ impl NoteTools {
         if !search_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
                 format!("Folder not found: {}", search_path.display()),
-                None
+                None,
             ));
         }
 
@@ -352,7 +382,8 @@ impl NoteTools {
                 let path = entry.path();
                 if let Ok(relative_path) = path.strip_prefix(&self.kiln_path) {
                     let metadata = entry.metadata().ok();
-                    let modified = metadata.as_ref()
+                    let modified = metadata
+                        .as_ref()
                         .and_then(|m| m.modified().ok())
                         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                         .map(|d| d.as_secs());
@@ -365,9 +396,11 @@ impl NoteTools {
 
                     if include_frontmatter {
                         if let Ok(content) = std::fs::read_to_string(path) {
-                            let frontmatter = parse_yaml_frontmatter(&content).unwrap_or_else(|| serde_json::json!({}));
+                            let frontmatter = parse_yaml_frontmatter(&content)
+                                .unwrap_or_else(|| serde_json::json!({}));
                             note_json["frontmatter"] = frontmatter;
-                            note_json["word_count"] = serde_json::json!(content.split_whitespace().count());
+                            note_json["word_count"] =
+                                serde_json::json!(content.split_whitespace().count());
                         }
                     }
 
@@ -376,16 +409,19 @@ impl NoteTools {
             }
         } else {
             // Non-recursive: just immediate children
-            for entry in std::fs::read_dir(&search_path)
-                .map_err(|e| rmcp::ErrorData::internal_error(format!("Failed to read directory: {e}"), None))?
-            {
-                let entry = entry.map_err(|e| rmcp::ErrorData::internal_error(format!("Failed to read entry: {e}"), None))?;
+            for entry in std::fs::read_dir(&search_path).map_err(|e| {
+                rmcp::ErrorData::internal_error(format!("Failed to read directory: {e}"), None)
+            })? {
+                let entry = entry.map_err(|e| {
+                    rmcp::ErrorData::internal_error(format!("Failed to read entry: {e}"), None)
+                })?;
                 let path = entry.path();
 
                 if path.is_file() && path.extension().map_or(false, |ext| ext == "md") {
                     if let Ok(relative_path) = path.strip_prefix(&self.kiln_path) {
                         let metadata = entry.metadata().ok();
-                        let modified = metadata.as_ref()
+                        let modified = metadata
+                            .as_ref()
                             .and_then(|m| m.modified().ok())
                             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                             .map(|d| d.as_secs());
@@ -398,9 +434,11 @@ impl NoteTools {
 
                         if include_frontmatter {
                             if let Ok(content) = std::fs::read_to_string(&path) {
-                                let frontmatter = parse_yaml_frontmatter(&content).unwrap_or_else(|| serde_json::json!({}));
+                                let frontmatter = parse_yaml_frontmatter(&content)
+                                    .unwrap_or_else(|| serde_json::json!({}));
                                 note_json["frontmatter"] = frontmatter;
-                                note_json["word_count"] = serde_json::json!(content.split_whitespace().count());
+                                note_json["word_count"] =
+                                    serde_json::json!(content.split_whitespace().count());
                             }
                         }
 
@@ -410,14 +448,14 @@ impl NoteTools {
             }
         }
 
-        Ok(CallToolResult::success(vec![
-            rmcp::model::Content::json(serde_json::json!({
+        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
+            serde_json::json!({
                 "notes": notes,
                 "folder": folder,
                 "count": notes.len(),
                 "recursive": recursive
-            }))?
-        ]))
+            }),
+        )?]))
     }
 }
 
@@ -496,13 +534,13 @@ mod tests {
 
         let note_tools = NoteTools::new(kiln_path);
 
-        let result = note_tools.create_note(
-            Parameters(CreateNoteParams {
+        let result = note_tools
+            .create_note(Parameters(CreateNoteParams {
                 path: "test.md".to_string(),
                 content: "# Test Note\n\nThis is a test note.".to_string(),
                 frontmatter: None,
-            })
-        ).await;
+            }))
+            .await;
 
         assert!(result.is_ok());
 
@@ -529,21 +567,23 @@ mod tests {
         let content = "# Test Note\n\nThis is a test note.";
 
         // Create note
-        let create_result = note_tools.create_note(
-            Parameters(CreateNoteParams {
+        let create_result = note_tools
+            .create_note(Parameters(CreateNoteParams {
                 path: "test.md".to_string(),
                 content: content.to_string(),
                 frontmatter: None,
-            })
-        ).await;
+            }))
+            .await;
         assert!(create_result.is_ok());
 
         // Read note
-        let read_result = note_tools.read_note(Parameters(ReadNoteParams {
-            path: "test.md".to_string(),
-            start_line: None,
-            end_line: None,
-        })).await;
+        let read_result = note_tools
+            .read_note(Parameters(ReadNoteParams {
+                path: "test.md".to_string(),
+                start_line: None,
+                end_line: None,
+            }))
+            .await;
         assert!(read_result.is_ok());
 
         let call_result = read_result.unwrap();
@@ -566,12 +606,70 @@ mod tests {
 
         let note_tools = NoteTools::new(kiln_path);
 
-        let result = note_tools.read_note(Parameters(ReadNoteParams {
-            path: "nonexistent.md".to_string(),
-            start_line: None,
-            end_line: None,
-        })).await;
+        let result = note_tools
+            .read_note(Parameters(ReadNoteParams {
+                path: "nonexistent.md".to_string(),
+                start_line: None,
+                end_line: None,
+            }))
+            .await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_create_note_without_md_suffix() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+
+        let note_tools = NoteTools::new(kiln_path.clone());
+
+        let result = note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "wikilink".to_string(),
+                content: "# Wiki\n".to_string(),
+                frontmatter: None,
+            }))
+            .await;
+        assert!(result.is_ok());
+
+        let call_result = result.unwrap();
+        if let Some(content) = call_result.content.first() {
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value =
+                    serde_json::from_str(&raw_text.text).expect("Valid JSON response");
+                assert_eq!(parsed["path"], "wikilink.md");
+            }
+        }
+        assert!(temp_dir.path().join("wikilink.md").exists());
+    }
+
+    #[tokio::test]
+    async fn test_read_note_without_md_suffix() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+
+        let note_tools = NoteTools::new(kiln_path.clone());
+        let note_path = temp_dir.path().join("wikilink.md");
+        std::fs::write(&note_path, "content").unwrap();
+
+        let result = note_tools
+            .read_note(Parameters(ReadNoteParams {
+                path: "wikilink".to_string(),
+                start_line: None,
+                end_line: None,
+            }))
+            .await;
+        assert!(result.is_ok());
+
+        let call_result = result.unwrap();
+        if let Some(content) = call_result.content.first() {
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value =
+                    serde_json::from_str(&raw_text.text).expect("Valid JSON response");
+                assert_eq!(parsed["path"], "wikilink.md");
+                assert_eq!(parsed["content"], "content");
+            }
+        }
     }
 
     #[tokio::test]
@@ -584,18 +682,23 @@ mod tests {
         let updated_content = "# Updated Content\n\nWith more text.";
 
         // Create note first
-        note_tools.create_note(Parameters(CreateNoteParams {
-            path: "update.md".to_string(),
-            content: initial_content.to_string(),
-            frontmatter: None,
-        })).await.unwrap();
+        note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "update.md".to_string(),
+                content: initial_content.to_string(),
+                frontmatter: None,
+            }))
+            .await
+            .unwrap();
 
         // Update note
-        let result = note_tools.update_note(Parameters(UpdateNoteParams {
-            path: "update.md".to_string(),
-            content: Some(updated_content.to_string()),
-            frontmatter: None,
-        })).await;
+        let result = note_tools
+            .update_note(Parameters(UpdateNoteParams {
+                path: "update.md".to_string(),
+                content: Some(updated_content.to_string()),
+                frontmatter: None,
+            }))
+            .await;
         assert!(result.is_ok());
 
         // Verify update response structure
@@ -608,11 +711,14 @@ mod tests {
         }
 
         // Verify file content
-        let read_result = note_tools.read_note(Parameters(ReadNoteParams {
-            path: "update.md".to_string(),
-            start_line: None,
-            end_line: None,
-        })).await.unwrap();
+        let read_result = note_tools
+            .read_note(Parameters(ReadNoteParams {
+                path: "update.md".to_string(),
+                start_line: None,
+                end_line: None,
+            }))
+            .await
+            .unwrap();
         if let Some(content) = read_result.content.first() {
             if let Some(raw_text) = content.as_text() {
                 let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
@@ -628,11 +734,13 @@ mod tests {
 
         let note_tools = NoteTools::new(kiln_path);
 
-        let result = note_tools.update_note(Parameters(UpdateNoteParams {
-            path: "nonexistent.md".to_string(),
-            content: Some("content".to_string()),
-            frontmatter: None,
-        })).await;
+        let result = note_tools
+            .update_note(Parameters(UpdateNoteParams {
+                path: "nonexistent.md".to_string(),
+                content: Some("content".to_string()),
+                frontmatter: None,
+            }))
+            .await;
         assert!(result.is_err());
     }
 
@@ -644,16 +752,21 @@ mod tests {
         let note_tools = NoteTools::new(kiln_path);
 
         // Create note first
-        note_tools.create_note(Parameters(CreateNoteParams {
-            path: "delete.md".to_string(),
-            content: "content".to_string(),
-            frontmatter: None,
-        })).await.unwrap();
+        note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "delete.md".to_string(),
+                content: "content".to_string(),
+                frontmatter: None,
+            }))
+            .await
+            .unwrap();
 
         // Delete note
-        let result = note_tools.delete_note(Parameters(DeleteNoteParams {
-            path: "delete.md".to_string(),
-        })).await;
+        let result = note_tools
+            .delete_note(Parameters(DeleteNoteParams {
+                path: "delete.md".to_string(),
+            }))
+            .await;
         assert!(result.is_ok());
 
         // Verify delete response structure
@@ -666,11 +779,13 @@ mod tests {
         }
 
         // Verify deletion
-        let read_result = note_tools.read_note(Parameters(ReadNoteParams {
-            path: "delete.md".to_string(),
-            start_line: None,
-            end_line: None,
-        })).await;
+        let read_result = note_tools
+            .read_note(Parameters(ReadNoteParams {
+                path: "delete.md".to_string(),
+                start_line: None,
+                end_line: None,
+            }))
+            .await;
         assert!(read_result.is_err());
     }
 
@@ -681,11 +796,13 @@ mod tests {
 
         let note_tools = NoteTools::new(kiln_path.clone());
 
-        let result = note_tools.list_notes(Parameters(ListNotesParams {
-            folder: None,
-            include_frontmatter: false,
-            recursive: true,
-        })).await;
+        let result = note_tools
+            .list_notes(Parameters(ListNotesParams {
+                folder: None,
+                include_frontmatter: false,
+                recursive: true,
+            }))
+            .await;
         assert!(result.is_ok());
 
         let call_result = result.unwrap();
@@ -706,25 +823,33 @@ mod tests {
         let note_tools = NoteTools::new(kiln_path);
 
         // Create some test files
-        note_tools.create_note(Parameters(CreateNoteParams {
-            path: "test1.md".to_string(),
-            content: "content1".to_string(),
-            frontmatter: None,
-        })).await.unwrap();
-        note_tools.create_note(Parameters(CreateNoteParams {
-            path: "test2.md".to_string(),
-            content: "content2".to_string(),
-            frontmatter: None,
-        })).await.unwrap();
+        note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "test1.md".to_string(),
+                content: "content1".to_string(),
+                frontmatter: None,
+            }))
+            .await
+            .unwrap();
+        note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "test2.md".to_string(),
+                content: "content2".to_string(),
+                frontmatter: None,
+            }))
+            .await
+            .unwrap();
 
         // Create a non-md file (should be ignored)
         std::fs::write(temp_dir.path().join("ignore.txt"), "ignore").unwrap();
 
-        let result = note_tools.list_notes(Parameters(ListNotesParams {
-            folder: None,
-            include_frontmatter: false,
-            recursive: true,
-        })).await;
+        let result = note_tools
+            .list_notes(Parameters(ListNotesParams {
+                folder: None,
+                include_frontmatter: false,
+                recursive: true,
+            }))
+            .await;
         assert!(result.is_ok());
 
         let call_result = result.unwrap();
@@ -754,16 +879,21 @@ mod tests {
 
         // Create note with frontmatter
         let content = "---\ntitle: Test Note\ntags: [test, important]\nstatus: draft\n---\n\n# Test Note\n\nSome content here.";
-        note_tools.create_note(Parameters(CreateNoteParams {
-            path: "test.md".to_string(),
-            content: content.to_string(),
-            frontmatter: None,
-        })).await.unwrap();
+        note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "test.md".to_string(),
+                content: content.to_string(),
+                frontmatter: None,
+            }))
+            .await
+            .unwrap();
 
         // Read metadata
-        let result = note_tools.read_metadata(Parameters(ReadMetadataParams {
-            path: "test.md".to_string(),
-        })).await;
+        let result = note_tools
+            .read_metadata(Parameters(ReadMetadataParams {
+                path: "test.md".to_string(),
+            }))
+            .await;
         assert!(result.is_ok());
 
         let call_result = result.unwrap();
@@ -792,16 +922,21 @@ mod tests {
 
         // Create note without frontmatter
         let content = "# Test Note\n\nJust content, no frontmatter.";
-        note_tools.create_note(Parameters(CreateNoteParams {
-            path: "test.md".to_string(),
-            content: content.to_string(),
-            frontmatter: None,
-        })).await.unwrap();
+        note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "test.md".to_string(),
+                content: content.to_string(),
+                frontmatter: None,
+            }))
+            .await
+            .unwrap();
 
         // Read metadata
-        let result = note_tools.read_metadata(Parameters(ReadMetadataParams {
-            path: "test.md".to_string(),
-        })).await;
+        let result = note_tools
+            .read_metadata(Parameters(ReadMetadataParams {
+                path: "test.md".to_string(),
+            }))
+            .await;
         assert!(result.is_ok());
 
         let call_result = result.unwrap();
@@ -825,18 +960,24 @@ mod tests {
         let note_tools = NoteTools::new(kiln_path);
 
         let content = "line 1\nline 2\nline 3\nline 4\nline 5";
-        note_tools.create_note(Parameters(CreateNoteParams {
-            path: "test.md".to_string(),
-            content: content.to_string(),
-            frontmatter: None,
-        })).await.unwrap();
+        note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "test.md".to_string(),
+                content: content.to_string(),
+                frontmatter: None,
+            }))
+            .await
+            .unwrap();
 
         // Read full file (no line range)
-        let result = note_tools.read_note(Parameters(ReadNoteParams {
-            path: "test.md".to_string(),
-            start_line: None,
-            end_line: None,
-        })).await.unwrap();
+        let result = note_tools
+            .read_note(Parameters(ReadNoteParams {
+                path: "test.md".to_string(),
+                start_line: None,
+                end_line: None,
+            }))
+            .await
+            .unwrap();
 
         if let Some(response_content) = result.content.first() {
             if let Some(raw_text) = response_content.as_text() {
@@ -855,18 +996,24 @@ mod tests {
         let note_tools = NoteTools::new(kiln_path);
 
         let content = "line 1\nline 2\nline 3\nline 4\nline 5";
-        note_tools.create_note(Parameters(CreateNoteParams {
-            path: "test.md".to_string(),
-            content: content.to_string(),
-            frontmatter: None,
-        })).await.unwrap();
+        note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "test.md".to_string(),
+                content: content.to_string(),
+                frontmatter: None,
+            }))
+            .await
+            .unwrap();
 
         // Read first 3 lines
-        let result = note_tools.read_note(Parameters(ReadNoteParams {
-            path: "test.md".to_string(),
-            start_line: None,
-            end_line: Some(3),
-        })).await.unwrap();
+        let result = note_tools
+            .read_note(Parameters(ReadNoteParams {
+                path: "test.md".to_string(),
+                start_line: None,
+                end_line: Some(3),
+            }))
+            .await
+            .unwrap();
 
         if let Some(response_content) = result.content.first() {
             if let Some(raw_text) = response_content.as_text() {
@@ -885,18 +1032,24 @@ mod tests {
         let note_tools = NoteTools::new(kiln_path);
 
         let content = "line 1\nline 2\nline 3\nline 4\nline 5";
-        note_tools.create_note(Parameters(CreateNoteParams {
-            path: "test.md".to_string(),
-            content: content.to_string(),
-            frontmatter: None,
-        })).await.unwrap();
+        note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "test.md".to_string(),
+                content: content.to_string(),
+                frontmatter: None,
+            }))
+            .await
+            .unwrap();
 
         // Read lines 2-4 (1-indexed)
-        let result = note_tools.read_note(Parameters(ReadNoteParams {
-            path: "test.md".to_string(),
-            start_line: Some(2),
-            end_line: Some(4),
-        })).await.unwrap();
+        let result = note_tools
+            .read_note(Parameters(ReadNoteParams {
+                path: "test.md".to_string(),
+                start_line: Some(2),
+                end_line: Some(4),
+            }))
+            .await
+            .unwrap();
 
         if let Some(response_content) = result.content.first() {
             if let Some(raw_text) = response_content.as_text() {
@@ -915,18 +1068,24 @@ mod tests {
         let note_tools = NoteTools::new(kiln_path);
 
         let content = "line 1\nline 2\nline 3\nline 4\nline 5";
-        note_tools.create_note(Parameters(CreateNoteParams {
-            path: "test.md".to_string(),
-            content: content.to_string(),
-            frontmatter: None,
-        })).await.unwrap();
+        note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "test.md".to_string(),
+                content: content.to_string(),
+                frontmatter: None,
+            }))
+            .await
+            .unwrap();
 
         // Read from line 3 to end
-        let result = note_tools.read_note(Parameters(ReadNoteParams {
-            path: "test.md".to_string(),
-            start_line: Some(3),
-            end_line: None,
-        })).await.unwrap();
+        let result = note_tools
+            .read_note(Parameters(ReadNoteParams {
+                path: "test.md".to_string(),
+                start_line: Some(3),
+                end_line: None,
+            }))
+            .await
+            .unwrap();
 
         if let Some(response_content) = result.content.first() {
             if let Some(raw_text) = response_content.as_text() {
@@ -945,24 +1104,33 @@ mod tests {
         let note_tools = NoteTools::new(kiln_path);
 
         // Create notes with frontmatter
-        note_tools.create_note(Parameters(CreateNoteParams {
-            path: "note1.md".to_string(),
-            content: "---\ntitle: Note 1\nstatus: draft\n---\n\nContent".to_string(),
-            frontmatter: None,
-        })).await.unwrap();
+        note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "note1.md".to_string(),
+                content: "---\ntitle: Note 1\nstatus: draft\n---\n\nContent".to_string(),
+                frontmatter: None,
+            }))
+            .await
+            .unwrap();
 
-        note_tools.create_note(Parameters(CreateNoteParams {
-            path: "note2.md".to_string(),
-            content: "---\ntitle: Note 2\nstatus: published\n---\n\nContent".to_string(),
-            frontmatter: None,
-        })).await.unwrap();
+        note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "note2.md".to_string(),
+                content: "---\ntitle: Note 2\nstatus: published\n---\n\nContent".to_string(),
+                frontmatter: None,
+            }))
+            .await
+            .unwrap();
 
         // List with frontmatter
-        let result = note_tools.list_notes(Parameters(ListNotesParams {
-            folder: None,
-            include_frontmatter: true,
-            recursive: true,
-        })).await.unwrap();
+        let result = note_tools
+            .list_notes(Parameters(ListNotesParams {
+                folder: None,
+                include_frontmatter: true,
+                recursive: true,
+            }))
+            .await
+            .unwrap();
 
         if let Some(response_content) = result.content.first() {
             if let Some(raw_text) = response_content.as_text() {
@@ -987,26 +1155,35 @@ mod tests {
         let note_tools = NoteTools::new(kiln_path);
 
         // Create root note
-        note_tools.create_note(Parameters(CreateNoteParams {
-            path: "root.md".to_string(),
-            content: "Root note".to_string(),
-            frontmatter: None,
-        })).await.unwrap();
+        note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "root.md".to_string(),
+                content: "Root note".to_string(),
+                frontmatter: None,
+            }))
+            .await
+            .unwrap();
 
         // Create subfolder with note
         std::fs::create_dir(temp_dir.path().join("subfolder")).unwrap();
-        note_tools.create_note(Parameters(CreateNoteParams {
-            path: "subfolder/nested.md".to_string(),
-            content: "Nested note".to_string(),
-            frontmatter: None,
-        })).await.unwrap();
+        note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "subfolder/nested.md".to_string(),
+                content: "Nested note".to_string(),
+                frontmatter: None,
+            }))
+            .await
+            .unwrap();
 
         // List non-recursively (should only find root.md)
-        let result = note_tools.list_notes(Parameters(ListNotesParams {
-            folder: None,
-            include_frontmatter: false,
-            recursive: false,
-        })).await.unwrap();
+        let result = note_tools
+            .list_notes(Parameters(ListNotesParams {
+                folder: None,
+                include_frontmatter: false,
+                recursive: false,
+            }))
+            .await
+            .unwrap();
 
         if let Some(response_content) = result.content.first() {
             if let Some(raw_text) = response_content.as_text() {
@@ -1029,11 +1206,14 @@ mod tests {
             "status": "draft"
         });
 
-        let result = note_tools.create_note(Parameters(CreateNoteParams {
-            path: "test_frontmatter.md".to_string(),
-            content: "This is the content".to_string(),
-            frontmatter: Some(frontmatter.clone()),
-        })).await.unwrap();
+        let result = note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "test_frontmatter.md".to_string(),
+                content: "This is the content".to_string(),
+                frontmatter: Some(frontmatter.clone()),
+            }))
+            .await
+            .unwrap();
 
         if let Some(response_content) = result.content.first() {
             if let Some(raw_text) = response_content.as_text() {
@@ -1061,11 +1241,14 @@ mod tests {
         let kiln_path = temp_dir.path().to_string_lossy().to_string();
         let note_tools = NoteTools::new(kiln_path.clone());
 
-        let result = note_tools.create_note(Parameters(CreateNoteParams {
-            path: "test_no_frontmatter.md".to_string(),
-            content: "Just content".to_string(),
-            frontmatter: None,
-        })).await.unwrap();
+        let result = note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "test_no_frontmatter.md".to_string(),
+                content: "Just content".to_string(),
+                frontmatter: None,
+            }))
+            .await
+            .unwrap();
 
         if let Some(response_content) = result.content.first() {
             if let Some(raw_text) = response_content.as_text() {
@@ -1093,18 +1276,24 @@ mod tests {
             "tags": ["original"]
         });
 
-        note_tools.create_note(Parameters(CreateNoteParams {
-            path: "update_test.md".to_string(),
-            content: "Original content".to_string(),
-            frontmatter: Some(initial_frontmatter),
-        })).await.unwrap();
+        note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "update_test.md".to_string(),
+                content: "Original content".to_string(),
+                frontmatter: Some(initial_frontmatter),
+            }))
+            .await
+            .unwrap();
 
         // Update content only (frontmatter should remain)
-        let result = note_tools.update_note(Parameters(UpdateNoteParams {
-            path: "update_test.md".to_string(),
-            content: Some("New content".to_string()),
-            frontmatter: None,
-        })).await.unwrap();
+        let result = note_tools
+            .update_note(Parameters(UpdateNoteParams {
+                path: "update_test.md".to_string(),
+                content: Some("New content".to_string()),
+                frontmatter: None,
+            }))
+            .await
+            .unwrap();
 
         if let Some(response_content) = result.content.first() {
             if let Some(raw_text) = response_content.as_text() {
@@ -1130,11 +1319,14 @@ mod tests {
         let note_tools = NoteTools::new(kiln_path.clone());
 
         // Create initial note
-        note_tools.create_note(Parameters(CreateNoteParams {
-            path: "update_fm_test.md".to_string(),
-            content: "Original content".to_string(),
-            frontmatter: Some(serde_json::json!({"title": "Original"})),
-        })).await.unwrap();
+        note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "update_fm_test.md".to_string(),
+                content: "Original content".to_string(),
+                frontmatter: Some(serde_json::json!({"title": "Original"})),
+            }))
+            .await
+            .unwrap();
 
         // Update frontmatter only (content should remain)
         let new_frontmatter = serde_json::json!({
@@ -1142,11 +1334,14 @@ mod tests {
             "tags": ["new"]
         });
 
-        let result = note_tools.update_note(Parameters(UpdateNoteParams {
-            path: "update_fm_test.md".to_string(),
-            content: None,
-            frontmatter: Some(new_frontmatter),
-        })).await.unwrap();
+        let result = note_tools
+            .update_note(Parameters(UpdateNoteParams {
+                path: "update_fm_test.md".to_string(),
+                content: None,
+                frontmatter: Some(new_frontmatter),
+            }))
+            .await
+            .unwrap();
 
         if let Some(response_content) = result.content.first() {
             if let Some(raw_text) = response_content.as_text() {
@@ -1172,18 +1367,24 @@ mod tests {
         let note_tools = NoteTools::new(kiln_path.clone());
 
         // Create initial note
-        note_tools.create_note(Parameters(CreateNoteParams {
-            path: "update_both_test.md".to_string(),
-            content: "Original content".to_string(),
-            frontmatter: Some(serde_json::json!({"title": "Original"})),
-        })).await.unwrap();
+        note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "update_both_test.md".to_string(),
+                content: "Original content".to_string(),
+                frontmatter: Some(serde_json::json!({"title": "Original"})),
+            }))
+            .await
+            .unwrap();
 
         // Update both
-        let result = note_tools.update_note(Parameters(UpdateNoteParams {
-            path: "update_both_test.md".to_string(),
-            content: Some("New content".to_string()),
-            frontmatter: Some(serde_json::json!({"title": "New", "status": "published"})),
-        })).await.unwrap();
+        let result = note_tools
+            .update_note(Parameters(UpdateNoteParams {
+                path: "update_both_test.md".to_string(),
+                content: Some("New content".to_string()),
+                frontmatter: Some(serde_json::json!({"title": "New", "status": "published"})),
+            }))
+            .await
+            .unwrap();
 
         if let Some(response_content) = result.content.first() {
             if let Some(raw_text) = response_content.as_text() {
@@ -1212,18 +1413,24 @@ mod tests {
         let note_tools = NoteTools::new(kiln_path.clone());
 
         // Create note with frontmatter
-        note_tools.create_note(Parameters(CreateNoteParams {
-            path: "remove_fm_test.md".to_string(),
-            content: "Content".to_string(),
-            frontmatter: Some(serde_json::json!({"title": "Test"})),
-        })).await.unwrap();
+        note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "remove_fm_test.md".to_string(),
+                content: "Content".to_string(),
+                frontmatter: Some(serde_json::json!({"title": "Test"})),
+            }))
+            .await
+            .unwrap();
 
         // Update with content only and empty frontmatter to remove it
-        let result = note_tools.update_note(Parameters(UpdateNoteParams {
-            path: "remove_fm_test.md".to_string(),
-            content: Some("Just content".to_string()),
-            frontmatter: Some(serde_json::json!({})),
-        })).await.unwrap();
+        let result = note_tools
+            .update_note(Parameters(UpdateNoteParams {
+                path: "remove_fm_test.md".to_string(),
+                content: Some("Just content".to_string()),
+                frontmatter: Some(serde_json::json!({})),
+            }))
+            .await
+            .unwrap();
 
         if let Some(response_content) = result.content.first() {
             if let Some(raw_text) = response_content.as_text() {

@@ -24,6 +24,7 @@
 use crate::hashing::blake3::Blake3Hasher;
 use crate::parser::error::ParserResult;
 use crate::parser::traits::{MarkdownParser, ParserCapabilities};
+use crate::parser::types::ParsedNote;
 use crate::storage::builder::ContentAddressedStorageBuilder;
 use crate::storage::diff::EnhancedChangeDetector;
 use crate::storage::{
@@ -32,7 +33,6 @@ use crate::storage::{
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use crate::parser::types::ParsedNote;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
@@ -347,10 +347,7 @@ impl StorageAwareParser {
         }
 
         MerkleTree::from_blocks(blocks, &*self.hasher).map_err(|e| {
-            crate::parser::ParserError::ParseFailed(format!(
-                "Failed to create Merkle tree: {}",
-                e
-            ))
+            crate::parser::ParserError::ParseFailed(format!("Failed to create Merkle tree: {}", e))
         })
     }
 
@@ -694,7 +691,10 @@ impl StorageAwareMarkdownParser for StorageAwareParser {
         let start_time = SystemTime::now();
 
         // Parse the new content
-        let note = self.base_parser.parse_content(new_content, source_path).await?;
+        let note = self
+            .base_parser
+            .parse_content(new_content, source_path)
+            .await?;
 
         // Create hashed blocks
         let blocks = if self.config.enable_storage || self.config.enable_merkle_trees {
@@ -843,7 +843,11 @@ mod tests {
             self.parse_content(&content, path).await
         }
 
-        async fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedNote> {
+        async fn parse_content(
+            &self,
+            content: &str,
+            source_path: &Path,
+        ) -> ParserResult<ParsedNote> {
             let word_count = content.split_whitespace().count();
             let char_count = content.chars().filter(|c| !c.is_whitespace()).count();
 

@@ -6,9 +6,9 @@
 //! 3. Agent sends final PromptResponse with stopReason
 //! 4. Client accumulates chunks and returns complete response
 
-use std::path::PathBuf;
 use crucible_acp::client::ClientConfig;
 use crucible_acp::CrucibleAcpClient;
+use std::path::PathBuf;
 
 /// Test that ChatSession properly handles streaming responses from agent
 ///
@@ -42,14 +42,21 @@ async fn test_streaming_chat_with_mock_agent() {
 
     // Connect and perform handshake
     let result = client.connect_with_handshake().await;
-    assert!(result.is_ok(), "Should complete handshake: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Should complete handshake: {:?}",
+        result.err()
+    );
 
     let session = result.unwrap();
     println!("Session ID: {}", session.id());
 
     // Verify handshake completed successfully
     assert!(!session.id().is_empty(), "Should have valid session ID");
-    assert!(client.is_connected(), "Client should be connected after handshake");
+    assert!(
+        client.is_connected(),
+        "Client should be connected after handshake"
+    );
 }
 
 /// Test the actual streaming response accumulation
@@ -87,11 +94,13 @@ async fn test_prompt_with_streaming_response() {
     let mut client = CrucibleAcpClient::new(client_config);
 
     // Connect and get session
-    let session = client.connect_with_handshake().await
+    let session = client
+        .connect_with_handshake()
+        .await
         .expect("Should complete handshake");
 
     // Create a PromptRequest
-    use agent_client_protocol::{PromptRequest, ContentBlock, SessionId};
+    use agent_client_protocol::{ContentBlock, PromptRequest, SessionId};
     let prompt_request = PromptRequest {
         session_id: SessionId::from(session.id().to_string()),
         prompt: vec![ContentBlock::from("What is 2+2?".to_string())],
@@ -101,7 +110,11 @@ async fn test_prompt_with_streaming_response() {
     // Send prompt with streaming
     let result = client.send_prompt_with_streaming(prompt_request, 1).await;
 
-    assert!(result.is_ok(), "Should successfully receive streaming response: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Should successfully receive streaming response: {:?}",
+        result.err()
+    );
 
     let (content, _tool_calls, stop_reason) = result.unwrap();
 
@@ -114,5 +127,8 @@ async fn test_prompt_with_streaming_response() {
 
     // Expected content based on mock agent behavior
     // The mock should send multiple chunks that concat to "The answer is 4"
-    assert!(content.contains("answer"), "Response should contain 'answer'");
+    assert!(
+        content.contains("answer"),
+        "Response should contain 'answer'"
+    );
 }

@@ -137,7 +137,9 @@ impl IndexingHandler {
         let parser = crucible_parser::CrucibleParser::new();
 
         // Return error for now as watch mode parser is not yet implemented
-        Err(Error::Parser("Watch mode parser not yet implemented".to_string()))
+        Err(Error::Parser(
+            "Watch mode parser not yet implemented".to_string(),
+        ))
     }
 
     async fn remove_file_index(&self, path: &PathBuf) -> Result<()> {

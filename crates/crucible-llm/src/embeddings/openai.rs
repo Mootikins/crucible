@@ -439,5 +439,4 @@ mod tests {
         assert_eq!(response.error.error_type, "invalid_request_error");
         assert_eq!(response.error.code, Some("invalid_api_key".to_string()));
     }
-
 }

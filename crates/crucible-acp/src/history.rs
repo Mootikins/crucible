@@ -204,9 +204,15 @@ mod tests {
     fn test_multiple_messages() {
         let mut history = ConversationHistory::new(HistoryConfig::default());
 
-        history.add_message(HistoryMessage::user("Hello".to_string())).unwrap();
-        history.add_message(HistoryMessage::agent("Hi there!".to_string())).unwrap();
-        history.add_message(HistoryMessage::user("How can you help?".to_string())).unwrap();
+        history
+            .add_message(HistoryMessage::user("Hello".to_string()))
+            .unwrap();
+        history
+            .add_message(HistoryMessage::agent("Hi there!".to_string()))
+            .unwrap();
+        history
+            .add_message(HistoryMessage::user("How can you help?".to_string()))
+            .unwrap();
 
         assert_eq!(history.message_count(), 3);
         assert_eq!(history.messages()[0].role, MessageRole::User);
@@ -225,7 +231,10 @@ mod tests {
         history.add_message(msg2).unwrap();
 
         assert!(history.total_tokens() > 0, "Should count tokens");
-        assert!(history.total_tokens() < 20, "Token estimate should be reasonable");
+        assert!(
+            history.total_tokens() < 20,
+            "Token estimate should be reasonable"
+        );
     }
 
     #[test]
@@ -240,7 +249,9 @@ mod tests {
 
         // Add 5 messages
         for i in 0..5 {
-            history.add_message(HistoryMessage::user(format!("Message {}", i))).unwrap();
+            history
+                .add_message(HistoryMessage::user(format!("Message {}", i)))
+                .unwrap();
         }
 
         assert_eq!(history.message_count(), 5);
@@ -268,9 +279,22 @@ mod tests {
         // Add messages that will exceed token limit (50 tokens)
         // With ~4 chars per token, we need about 200+ characters total
         history.add_message(HistoryMessage::user("This is the first message with quite a bit of content to ensure we exceed the token limit".to_string())).unwrap();
-        history.add_message(HistoryMessage::user("This is the second message also with significant content to make sure we go over".to_string())).unwrap();
-        history.add_message(HistoryMessage::user("Third message here with even more text for good measure".to_string())).unwrap();
-        history.add_message(HistoryMessage::user("Final message to push us way over the limit".to_string())).unwrap();
+        history
+            .add_message(HistoryMessage::user(
+                "This is the second message also with significant content to make sure we go over"
+                    .to_string(),
+            ))
+            .unwrap();
+        history
+            .add_message(HistoryMessage::user(
+                "Third message here with even more text for good measure".to_string(),
+            ))
+            .unwrap();
+        history
+            .add_message(HistoryMessage::user(
+                "Final message to push us way over the limit".to_string(),
+            ))
+            .unwrap();
 
         let total_before = history.total_tokens();
         assert!(total_before > 50, "Should exceed token limit");
@@ -278,15 +302,22 @@ mod tests {
         // Prune should remove messages until under limit
         let pruned = history.prune().unwrap();
         assert!(pruned > 0, "Should prune at least one message");
-        assert!(history.total_tokens() <= 50, "Should be under token limit after pruning");
+        assert!(
+            history.total_tokens() <= 50,
+            "Should be under token limit after pruning"
+        );
     }
 
     #[test]
     fn test_clear_history() {
         let mut history = ConversationHistory::new(HistoryConfig::default());
 
-        history.add_message(HistoryMessage::user("Test".to_string())).unwrap();
-        history.add_message(HistoryMessage::agent("Response".to_string())).unwrap();
+        history
+            .add_message(HistoryMessage::user("Test".to_string()))
+            .unwrap();
+        history
+            .add_message(HistoryMessage::agent("Response".to_string()))
+            .unwrap();
 
         assert_eq!(history.message_count(), 2);
 

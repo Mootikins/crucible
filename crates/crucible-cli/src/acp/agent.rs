@@ -47,7 +47,10 @@ pub async fn discover_agent(preferred: Option<&str>) -> Result<AgentInfo> {
                 });
             }
         }
-        warn!("Preferred agent '{}' not found, trying fallbacks", agent_name);
+        warn!(
+            "Preferred agent '{}' not found, trying fallbacks",
+            agent_name
+        );
     }
 
     // Fallback: try all known agents
@@ -75,9 +78,7 @@ pub async fn discover_agent(preferred: Option<&str>) -> Result<AgentInfo> {
 /// Check if an agent command is available
 pub async fn is_agent_available(command: &str) -> Result<bool> {
     // Try to run the command with --version to check if it exists
-    let result = Command::new(command)
-        .arg("--version")
-        .output();
+    let result = Command::new(command).arg("--version").output();
 
     match result {
         Ok(output) => {

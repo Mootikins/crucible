@@ -33,17 +33,17 @@
 #![warn(clippy::all)]
 #![deny(clippy::pedantic)]
 
-pub mod notes;
-pub mod search;
 pub mod kiln;
 pub mod mcp_server;
+pub mod notes;
+pub mod search;
 
 // ===== PUBLIC API EXPORTS =====
 
-pub use notes::NoteTools;
-pub use search::SearchTools;
 pub use kiln::KilnTools;
 pub use mcp_server::CrucibleMcpServer;
+pub use notes::NoteTools;
+pub use search::SearchTools;
 
 /// Crate version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -98,4 +98,3 @@ pub struct LibraryInfo {
     /// Available features
     pub features: Vec<String>,
 }
-

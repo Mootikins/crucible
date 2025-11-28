@@ -3,8 +3,8 @@
 //! This module tests that the BlockExtractor correctly assigns parent_block_id
 //! and depth to blocks based on heading hierarchy.
 
-use crucible_parser::{BlockExtractor, MarkdownParser};
 use crucible_parser::types::ParsedNote;
+use crucible_parser::{BlockExtractor, MarkdownParser};
 use std::path::{Path, PathBuf};
 
 #[tokio::test]
@@ -17,7 +17,10 @@ This is another paragraph under the same heading.
 "#;
 
     let parser = crucible_parser::CrucibleParser::with_block_processing();
-    let parsed = parser.parse_content(content, Path::new("test.md")).await.unwrap();
+    let parsed = parser
+        .parse_content(content, Path::new("test.md"))
+        .await
+        .unwrap();
 
     let extractor = BlockExtractor::new();
     let blocks = extractor.extract_blocks(&parsed).unwrap();
@@ -35,8 +38,15 @@ This is another paragraph under the same heading.
 
     // All paragraphs should have the heading as parent
     for para in paragraphs {
-        assert!(para.parent_block_id.is_some(), "Paragraph should have parent");
-        assert_eq!(para.depth, Some(1), "Paragraph under H1 should have depth 1");
+        assert!(
+            para.parent_block_id.is_some(),
+            "Paragraph should have parent"
+        );
+        assert_eq!(
+            para.depth,
+            Some(1),
+            "Paragraph under H1 should have depth 1"
+        );
     }
 }
 
@@ -52,7 +62,10 @@ Paragraph under H2.
 "#;
 
     let parser = crucible_parser::CrucibleParser::with_block_processing();
-    let parsed = parser.parse_content(content, Path::new("test.md")).await.unwrap();
+    let parsed = parser
+        .parse_content(content, Path::new("test.md"))
+        .await
+        .unwrap();
 
     let extractor = BlockExtractor::new();
     let blocks = extractor.extract_blocks(&parsed).unwrap();
@@ -61,8 +74,14 @@ Paragraph under H2.
     let headings: Vec<_> = blocks.iter().filter(|b| b.is_heading()).collect();
     assert_eq!(headings.len(), 2, "Expected H1 and H2");
 
-    let h1 = headings.iter().find(|h| h.heading_level() == Some(1)).unwrap();
-    let h2 = headings.iter().find(|h| h.heading_level() == Some(2)).unwrap();
+    let h1 = headings
+        .iter()
+        .find(|h| h.heading_level() == Some(1))
+        .unwrap();
+    let h2 = headings
+        .iter()
+        .find(|h| h.heading_level() == Some(2))
+        .unwrap();
 
     // H1 should be top-level
     assert_eq!(h1.depth, Some(0));
@@ -85,7 +104,10 @@ Content under H3.
 "#;
 
     let parser = crucible_parser::CrucibleParser::with_block_processing();
-    let parsed = parser.parse_content(content, Path::new("test.md")).await.unwrap();
+    let parsed = parser
+        .parse_content(content, Path::new("test.md"))
+        .await
+        .unwrap();
 
     let extractor = BlockExtractor::new();
     let blocks = extractor.extract_blocks(&parsed).unwrap();
@@ -94,9 +116,18 @@ Content under H3.
     let headings: Vec<_> = blocks.iter().filter(|b| b.is_heading()).collect();
     assert_eq!(headings.len(), 3, "Expected H1, H2, and H3");
 
-    let h1 = headings.iter().find(|h| h.heading_level() == Some(1)).unwrap();
-    let h2 = headings.iter().find(|h| h.heading_level() == Some(2)).unwrap();
-    let h3 = headings.iter().find(|h| h.heading_level() == Some(3)).unwrap();
+    let h1 = headings
+        .iter()
+        .find(|h| h.heading_level() == Some(1))
+        .unwrap();
+    let h2 = headings
+        .iter()
+        .find(|h| h.heading_level() == Some(2))
+        .unwrap();
+    let h3 = headings
+        .iter()
+        .find(|h| h.heading_level() == Some(3))
+        .unwrap();
 
     // H1 should be top-level
     assert_eq!(h1.depth, Some(0));
@@ -122,7 +153,10 @@ Content under H3.
 "#;
 
     let parser = crucible_parser::CrucibleParser::with_block_processing();
-    let parsed = parser.parse_content(content, Path::new("test.md")).await.unwrap();
+    let parsed = parser
+        .parse_content(content, Path::new("test.md"))
+        .await
+        .unwrap();
 
     let extractor = BlockExtractor::new();
     let blocks = extractor.extract_blocks(&parsed).unwrap();
@@ -130,8 +164,14 @@ Content under H3.
     let headings: Vec<_> = blocks.iter().filter(|b| b.is_heading()).collect();
     assert_eq!(headings.len(), 2, "Expected H1 and H3");
 
-    let h1 = headings.iter().find(|h| h.heading_level() == Some(1)).unwrap();
-    let h3 = headings.iter().find(|h| h.heading_level() == Some(3)).unwrap();
+    let h1 = headings
+        .iter()
+        .find(|h| h.heading_level() == Some(1))
+        .unwrap();
+    let h3 = headings
+        .iter()
+        .find(|h| h.heading_level() == Some(3))
+        .unwrap();
 
     // H1 should be top-level
     assert_eq!(h1.depth, Some(0));
@@ -154,7 +194,10 @@ Content in section 2.
 "#;
 
     let parser = crucible_parser::CrucibleParser::with_block_processing();
-    let parsed = parser.parse_content(content, Path::new("test.md")).await.unwrap();
+    let parsed = parser
+        .parse_content(content, Path::new("test.md"))
+        .await
+        .unwrap();
 
     let extractor = BlockExtractor::new();
     let blocks = extractor.extract_blocks(&parsed).unwrap();
@@ -183,7 +226,10 @@ Now we have a heading.
 "#;
 
     let parser = crucible_parser::CrucibleParser::with_block_processing();
-    let parsed = parser.parse_content(content, Path::new("test.md")).await.unwrap();
+    let parsed = parser
+        .parse_content(content, Path::new("test.md"))
+        .await
+        .unwrap();
 
     let extractor = BlockExtractor::new();
     let blocks = extractor.extract_blocks(&parsed).unwrap();
@@ -194,7 +240,10 @@ Now we have a heading.
 
     // Preamble blocks should have no parent and depth 0
     for block in preamble_blocks {
-        assert_eq!(block.parent_block_id, None, "Preamble should have no parent");
+        assert_eq!(
+            block.parent_block_id, None,
+            "Preamble should have no parent"
+        );
         assert_eq!(block.depth, Some(0), "Preamble should have depth 0");
     }
 }

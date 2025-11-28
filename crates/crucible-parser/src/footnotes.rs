@@ -10,7 +10,7 @@
 
 use super::error::{ParseError, ParseErrorType};
 use super::extensions::SyntaxExtension;
-use super::types::{NoteContent, FootnoteDefinition, FootnoteReference};
+use super::types::{FootnoteDefinition, FootnoteReference, NoteContent};
 use async_trait::async_trait;
 
 use regex::Regex;

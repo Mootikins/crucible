@@ -298,11 +298,9 @@ async fn contract_builder_works_in_async_context() {
     let note = ParsedNoteBuilder::new(PathBuf::from("async.md")).build();
 
     // Builder can be used in async functions
-    let _tree = tokio::spawn(async move {
-        builder.from_document(&note)
-    })
-    .await
-    .unwrap();
+    let _tree = tokio::spawn(async move { builder.from_document(&note) })
+        .await
+        .unwrap();
 }
 
 /// Contract: Multiple builders can coexist in the same scope

@@ -428,7 +428,6 @@ mod tests {
         assert_eq!(response.embedding[2], 0.3);
     }
 
-
     #[tokio::test]
     async fn test_list_models_response_deserialization() {
         use crate::embeddings::provider::{ModelFamily, ModelInfo, ParameterSize};
@@ -501,7 +500,6 @@ mod tests {
         assert_eq!(model_info.parameter_size.unwrap().to_string(), "137M");
         assert_eq!(model_info.quantization, Some("Q4_0".to_string()));
     }
-
 
     #[test]
     fn test_parameter_size_parsing() {

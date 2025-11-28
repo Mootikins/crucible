@@ -272,10 +272,7 @@ impl ChangeDetectionStore for InMemoryChangeDetectionStore {
     }
 
     async fn store_file_state(&self, path: &Path, state: FileState) -> ChangeDetectionResult<()> {
-        self.states
-            .write()
-            .await
-            .insert(path.to_path_buf(), state);
+        self.states.write().await.insert(path.to_path_buf(), state);
         Ok(())
     }
 

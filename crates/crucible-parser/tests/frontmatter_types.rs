@@ -69,7 +69,10 @@ author:
 
     // Test object (Phase 1.1.1 - this will fail until we implement get_object)
     let author = fm.get_object("author").expect("author should exist");
-    assert_eq!(author.get("name").and_then(|v| v.as_str()), Some("John Doe"));
+    assert_eq!(
+        author.get("name").and_then(|v| v.as_str()),
+        Some("John Doe")
+    );
     assert_eq!(
         author.get("email").and_then(|v| v.as_str()),
         Some("john@example.com")
@@ -121,7 +124,10 @@ email = "jane@example.com"
 
     // Test nested table
     let author = fm.get_object("author").expect("author should exist");
-    assert_eq!(author.get("name").and_then(|v| v.as_str()), Some("Jane Doe"));
+    assert_eq!(
+        author.get("name").and_then(|v| v.as_str()),
+        Some("Jane Doe")
+    );
     assert_eq!(
         author.get("email").and_then(|v| v.as_str()),
         Some("jane@example.com")
@@ -203,21 +209,12 @@ tags: ["日本語", "中文", "🎯"]
     let fm = Frontmatter::new(yaml.to_string(), FrontmatterFormat::Yaml);
 
     // Test Unicode string values
-    assert_eq!(
-        fm.get_string("title"),
-        Some("日本語のタイトル".to_string())
-    );
-    assert_eq!(
-        fm.get_string("author"),
-        Some("François Müller".to_string())
-    );
+    assert_eq!(fm.get_string("title"), Some("日本語のタイトル".to_string()));
+    assert_eq!(fm.get_string("author"), Some("François Müller".to_string()));
     assert_eq!(fm.get_string("emoji"), Some("🦀 Rust 🔥".to_string()));
     assert_eq!(fm.get_string("chinese"), Some("中文测试".to_string()));
     assert_eq!(fm.get_string("arabic"), Some("مرحبا".to_string()));
-    assert_eq!(
-        fm.get_string("mixed"),
-        Some("Hello 世界 🌍".to_string())
-    );
+    assert_eq!(fm.get_string("mixed"), Some("Hello 世界 🌍".to_string()));
 
     // Test Unicode in arrays
     assert_eq!(
@@ -240,14 +237,8 @@ tags = ["日本語", "Rust 🦀"]
 
     let fm = Frontmatter::new(toml.to_string(), FrontmatterFormat::Toml);
 
-    assert_eq!(
-        fm.get_string("title"),
-        Some("日本語のタイトル".to_string())
-    );
-    assert_eq!(
-        fm.get_string("author"),
-        Some("François Müller".to_string())
-    );
+    assert_eq!(fm.get_string("title"), Some("日本語のタイトル".to_string()));
+    assert_eq!(fm.get_string("author"), Some("François Müller".to_string()));
     assert_eq!(
         fm.get_array("tags"),
         Some(vec!["日本語".to_string(), "Rust 🦀".to_string()])

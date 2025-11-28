@@ -5,8 +5,10 @@
 
 use anyhow::Result;
 use crucible_cli::commands::chat;
-use crucible_cli::config::{CliConfig, CliAppConfig};
-use crucible_config::{EmbeddingConfig, AcpConfig, ChatConfig, EmbeddingProviderType, ProcessingConfig};
+use crucible_cli::config::{CliAppConfig, CliConfig};
+use crucible_config::{
+    AcpConfig, ChatConfig, EmbeddingConfig, EmbeddingProviderType, ProcessingConfig,
+};
 use tempfile::TempDir;
 
 #[tokio::test]
@@ -40,13 +42,14 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
     // Currently FAILS with database lock error
     let result = chat::execute(
         config,
-        Some("opencode".to_string()),  // agent_name
-        Some("What is 2+2?".to_string()),  // query
-        true,  // read_only (plan mode)
-        true,  // no_context (skip semantic search)
-        true,  // no_process (skip pipeline - this is key!)
-        Some(3),  // context_size
-    ).await;
+        Some("opencode".to_string()),     // agent_name
+        Some("What is 2+2?".to_string()), // query
+        true,                             // read_only (plan mode)
+        true,                             // no_context (skip semantic search)
+        true,                             // no_process (skip pipeline - this is key!)
+        Some(3),                          // context_size
+    )
+    .await;
 
     // The bug manifests as a database connection error
     match result {
@@ -60,7 +63,8 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
 
             // Check if this is the specific double-database-open bug
             if err_msg.contains("lock hold by current process")
-                || err_chain.contains("lock hold by current process") {
+                || err_chain.contains("lock hold by current process")
+            {
                 panic!(
                     "REPRODUCED BUG: Double database open detected!\n\
                      Error: {}\n\
@@ -76,7 +80,10 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
                 );
             } else {
                 // Other errors are acceptable (agent not found, network issues, etc.)
-                println!("TEST PASSED: Got expected error (not a database lock issue): {}", err_msg);
+                println!(
+                    "TEST PASSED: Got expected error (not a database lock issue): {}",
+                    err_msg
+                );
                 Ok(())
             }
         }
@@ -111,13 +118,14 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
     // not at database opening
     let result = chat::execute(
         config,
-        None,  // No agent name - will try to discover
+        None, // No agent name - will try to discover
         Some("test query".to_string()),
-        true,  // read_only
-        true,  // no_context
-        true,  // no_process
-        None,  // context_size
-    ).await;
+        true, // read_only
+        true, // no_context
+        true, // no_process
+        None, // context_size
+    )
+    .await;
 
     match result {
         Ok(_) => {
@@ -129,7 +137,8 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
 
             // Database lock errors are BUG manifestations
             if err_msg.contains("lock hold by current process")
-                || (err_msg.contains("IO error:") && err_msg.contains("LOCK")) {
+                || (err_msg.contains("IO error:") && err_msg.contains("LOCK"))
+            {
                 panic!(
                     "REPRODUCED BUG: Database lock error in minimal config!\n\
                      Error: {}\n\

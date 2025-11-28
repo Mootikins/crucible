@@ -5,13 +5,13 @@
 //! note management capabilities through the standard MCP protocol.
 
 use anyhow::Result;
-use crucible_tools::CrucibleMcpServer;
-use crucible_core::traits::KnowledgeRepository;
 use crucible_core::enrichment::EmbeddingProvider;
+use crucible_core::traits::KnowledgeRepository;
 use crucible_llm::embeddings::CoreProviderAdapter;
+use crucible_tools::CrucibleMcpServer;
 use rmcp::ServiceExt;
 use std::sync::Arc;
-use tracing::{info, debug};
+use tracing::{debug, info};
 
 use crate::config::CliConfig;
 use crate::core_facade::CrucibleCoreFacade;
@@ -38,7 +38,8 @@ pub async fn execute(config: CliConfig) -> Result<()> {
     let llm_provider = crucible_llm::embeddings::create_provider(embedding_config).await?;
 
     // Wrap in adapter to implement core EmbeddingProvider trait
-    let embedding_provider = Arc::new(CoreProviderAdapter::new(llm_provider)) as Arc<dyn EmbeddingProvider>;
+    let embedding_provider =
+        Arc::new(CoreProviderAdapter::new(llm_provider)) as Arc<dyn EmbeddingProvider>;
 
     // Create knowledge repository from storage
     let knowledge_repo = core.storage().as_knowledge_repository();
@@ -55,7 +56,9 @@ pub async fn execute(config: CliConfig) -> Result<()> {
 
     // Serve via stdio (blocks until shutdown)
     // Keep the service alive - it needs to stay in scope to handle requests
-    let service = server.serve((tokio::io::stdin(), tokio::io::stdout())).await?;
+    let service = server
+        .serve((tokio::io::stdin(), tokio::io::stdout()))
+        .await?;
 
     // Wait forever - the service will handle requests until EOF or error
     std::future::pending::<()>().await;

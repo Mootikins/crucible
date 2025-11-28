@@ -968,7 +968,6 @@ pub fn new_sha256_block_hasher() -> Sha256BlockHasher {
     BlockHasher::new(crate::hashing::algorithm::Sha256Algorithm)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

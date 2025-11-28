@@ -2,20 +2,17 @@
 //!
 //! This module provides semantic, text, and property search tools.
 
-use crucible_core::{
-    traits::KnowledgeRepository,
-    enrichment::EmbeddingProvider,
-};
-use rmcp::{tool, tool_router, model::CallToolResult};
-use rmcp::handler::server::wrapper::Parameters;
-use serde::Deserialize;
-use schemars::JsonSchema;
-use std::sync::Arc;
-use std::path::{Path, PathBuf};
-use walkdir::WalkDir;
+use crucible_core::{enrichment::EmbeddingProvider, traits::KnowledgeRepository};
 use grep::regex::RegexMatcher;
-use grep::searcher::{Searcher, Sink, sinks::UTF8};
+use grep::searcher::{sinks::UTF8, Searcher, Sink};
 use ignore::WalkBuilder;
+use rmcp::handler::server::wrapper::Parameters;
+use rmcp::{model::CallToolResult, tool, tool_router};
+use schemars::JsonSchema;
+use serde::Deserialize;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use walkdir::WalkDir;
 
 /// Default value for limit parameter
 fn default_limit() -> usize {
@@ -89,12 +86,12 @@ impl SearchTools {
         let query = params.query;
         let limit = params.limit;
 
-        let embedding = self.embedding_provider
-            .embed(&query)
-            .await
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Failed to generate embedding: {e}"), None))?;
+        let embedding = self.embedding_provider.embed(&query).await.map_err(|e| {
+            rmcp::ErrorData::internal_error(format!("Failed to generate embedding: {e}"), None)
+        })?;
 
-        let search_results = self.knowledge_repo
+        let search_results = self
+            .knowledge_repo
             .search_vectors(embedding)
             .await
             .map_err(|e| rmcp::ErrorData::internal_error(format!("Search failed: {e}"), None))?;
@@ -102,21 +99,23 @@ impl SearchTools {
         let results_json: Vec<serde_json::Value> = search_results
             .into_iter()
             .take(limit)
-            .map(|r| serde_json::json!({
-                "id": r.document_id,
-                "score": r.score,
-                "snippet": r.snippet,
-                "highlights": r.highlights
-            }))
+            .map(|r| {
+                serde_json::json!({
+                    "id": r.document_id,
+                    "score": r.score,
+                    "snippet": r.snippet,
+                    "highlights": r.highlights
+                })
+            })
             .collect();
 
-        Ok(CallToolResult::success(vec![
-            rmcp::model::Content::json(serde_json::json!({
+        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
+            serde_json::json!({
                 "results": results_json,
                 "query": query,
                 "limit": limit
-            }))?
-        ]))
+            }),
+        )?]))
     }
 
     #[tool(description = "Fast full-text search across notes")]
@@ -140,7 +139,7 @@ impl SearchTools {
         if !search_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
                 format!("Search path does not exist: {}", search_path.display()),
-                None
+                None,
             ));
         }
 
@@ -149,7 +148,10 @@ impl SearchTools {
             RegexMatcher::new_line_matcher(&format!("(?i){}", regex::escape(&query)))
         } else {
             RegexMatcher::new_line_matcher(&regex::escape(&query))
-        }.map_err(|e| rmcp::ErrorData::internal_error(format!("Failed to create matcher: {e}"), None))?;
+        }
+        .map_err(|e| {
+            rmcp::ErrorData::internal_error(format!("Failed to create matcher: {e}"), None)
+        })?;
 
         let mut matches = Vec::new();
         let mut searcher = Searcher::new();
@@ -171,7 +173,8 @@ impl SearchTools {
             }
 
             // Search this file
-            let relative_path = path.strip_prefix(&self.kiln_path)
+            let relative_path = path
+                .strip_prefix(&self.kiln_path)
                 .unwrap_or(path)
                 .to_string_lossy()
                 .to_string();
@@ -179,21 +182,25 @@ impl SearchTools {
             let mut file_matches = Vec::new();
             let mut line_num = 0u64;
 
-            let result = searcher.search_path(&matcher, path, UTF8(|lnum, line| {
-                line_num = lnum;
-                file_matches.push(serde_json::json!({
-                    "path": relative_path.clone(),
-                    "line_number": lnum,
-                    "line_content": line.trim_end(),
-                }));
+            let result = searcher.search_path(
+                &matcher,
+                path,
+                UTF8(|lnum, line| {
+                    line_num = lnum;
+                    file_matches.push(serde_json::json!({
+                        "path": relative_path.clone(),
+                        "line_number": lnum,
+                        "line_content": line.trim_end(),
+                    }));
 
-                // Stop if we've hit the limit
-                if matches.len() + file_matches.len() >= limit {
-                    Ok(false)
-                } else {
-                    Ok(true)
-                }
-            }));
+                    // Stop if we've hit the limit
+                    if matches.len() + file_matches.len() >= limit {
+                        Ok(false)
+                    } else {
+                        Ok(true)
+                    }
+                }),
+            );
 
             if result.is_ok() {
                 matches.extend(file_matches);
@@ -207,14 +214,14 @@ impl SearchTools {
         let count = matches.len();
         matches.truncate(limit);
 
-        Ok(CallToolResult::success(vec![
-            rmcp::model::Content::json(serde_json::json!({
+        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
+            serde_json::json!({
                 "query": query,
                 "matches": matches,
                 "count": count,
                 "truncated": stopped_early
-            }))?
-        ]))
+            }),
+        )?]))
     }
 
     #[tool(description = "Search notes by frontmatter properties (includes tags)")]
@@ -223,7 +230,9 @@ impl SearchTools {
         params: Parameters<PropertySearchParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let search_props = params.properties.as_object()
+        let search_props = params
+            .properties
+            .as_object()
             .ok_or_else(|| rmcp::ErrorData::invalid_params("properties must be an object", None))?;
         let limit = params.limit;
 
@@ -269,7 +278,8 @@ impl SearchTools {
             });
 
             if matches_all {
-                let relative_path = entry.path()
+                let relative_path = entry
+                    .path()
                     .strip_prefix(&self.kiln_path)
                     .unwrap_or(entry.path())
                     .to_string_lossy()
@@ -292,13 +302,13 @@ impl SearchTools {
 
         let count = matches.len();
 
-        Ok(CallToolResult::success(vec![
-            rmcp::model::Content::json(serde_json::json!({
+        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
+            serde_json::json!({
                 "properties": params.properties,
                 "matches": matches,
                 "count": count,
-            }))?
-        ]))
+            }),
+        )?]))
     }
 }
 
@@ -322,8 +332,8 @@ fn parse_yaml_frontmatter(content: &str) -> Option<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     // Mock implementations for testing
     struct MockKnowledgeRepository;
@@ -331,15 +341,24 @@ mod tests {
 
     #[async_trait::async_trait]
     impl crucible_core::traits::KnowledgeRepository for MockKnowledgeRepository {
-        async fn get_note_by_name(&self, _name: &str) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
+        async fn get_note_by_name(
+            &self,
+            _name: &str,
+        ) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
             Ok(None)
         }
 
-        async fn list_notes(&self, _path: Option<&str>) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteMetadata>> {
+        async fn list_notes(
+            &self,
+            _path: Option<&str>,
+        ) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteMetadata>> {
             Ok(vec![])
         }
 
-        async fn search_vectors(&self, _vector: Vec<f32>) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
+        async fn search_vectors(
+            &self,
+            _vector: Vec<f32>,
+        ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
             Ok(vec![])
         }
     }
@@ -379,8 +398,9 @@ mod tests {
         // Create test file
         fs::write(
             temp_dir.path().join("test.md"),
-            "# Test Note\n\nThis contains TODO items.\n\nAnother line."
-        ).unwrap();
+            "# Test Note\n\nThis contains TODO items.\n\nAnother line.",
+        )
+        .unwrap();
 
         let search_tools = create_search_tools(kiln_path);
 
@@ -403,7 +423,10 @@ mod tests {
 
                 let matches = parsed["matches"].as_array().unwrap();
                 assert_eq!(matches.len(), 1);
-                assert!(matches[0]["line_content"].as_str().unwrap().contains("TODO"));
+                assert!(matches[0]["line_content"]
+                    .as_str()
+                    .unwrap()
+                    .contains("TODO"));
             }
         }
     }
@@ -415,8 +438,9 @@ mod tests {
 
         fs::write(
             temp_dir.path().join("test.md"),
-            "TODO in uppercase\ntodo in lowercase"
-        ).unwrap();
+            "TODO in uppercase\ntodo in lowercase",
+        )
+        .unwrap();
 
         let search_tools = create_search_tools(kiln_path);
 
@@ -462,13 +486,11 @@ mod tests {
         fs::create_dir(temp_dir.path().join("subfolder")).unwrap();
         fs::write(
             temp_dir.path().join("subfolder/test.md"),
-            "Match in subfolder"
-        ).unwrap();
+            "Match in subfolder",
+        )
+        .unwrap();
 
-        fs::write(
-            temp_dir.path().join("root.md"),
-            "Match in root"
-        ).unwrap();
+        fs::write(temp_dir.path().join("root.md"), "Match in root").unwrap();
 
         let search_tools = create_search_tools(kiln_path);
 
@@ -499,8 +521,9 @@ mod tests {
         // Create file with multiple matches
         fs::write(
             temp_dir.path().join("test.md"),
-            "match\nmatch\nmatch\nmatch\nmatch"
-        ).unwrap();
+            "match\nmatch\nmatch\nmatch\nmatch",
+        )
+        .unwrap();
 
         let search_tools = create_search_tools(kiln_path);
 
@@ -532,13 +555,15 @@ mod tests {
         // Create note with frontmatter
         fs::write(
             temp_dir.path().join("draft.md"),
-            "---\nstatus: draft\n---\n\nContent"
-        ).unwrap();
+            "---\nstatus: draft\n---\n\nContent",
+        )
+        .unwrap();
 
         fs::write(
             temp_dir.path().join("published.md"),
-            "---\nstatus: published\n---\n\nContent"
-        ).unwrap();
+            "---\nstatus: published\n---\n\nContent",
+        )
+        .unwrap();
 
         let search_tools = create_search_tools(kiln_path);
 
@@ -565,13 +590,15 @@ mod tests {
 
         fs::write(
             temp_dir.path().join("match.md"),
-            "---\nstatus: draft\npriority: high\n---\n\nContent"
-        ).unwrap();
+            "---\nstatus: draft\npriority: high\n---\n\nContent",
+        )
+        .unwrap();
 
         fs::write(
             temp_dir.path().join("nomatch.md"),
-            "---\nstatus: draft\npriority: low\n---\n\nContent"
-        ).unwrap();
+            "---\nstatus: draft\npriority: low\n---\n\nContent",
+        )
+        .unwrap();
 
         let search_tools = create_search_tools(kiln_path);
 
@@ -596,13 +623,15 @@ mod tests {
 
         fs::write(
             temp_dir.path().join("urgent.md"),
-            "---\ntags: [urgent, work]\n---\n\nContent"
-        ).unwrap();
+            "---\ntags: [urgent, work]\n---\n\nContent",
+        )
+        .unwrap();
 
         fs::write(
             temp_dir.path().join("important.md"),
-            "---\ntags: [important, personal]\n---\n\nContent"
-        ).unwrap();
+            "---\ntags: [important, personal]\n---\n\nContent",
+        )
+        .unwrap();
 
         let search_tools = create_search_tools(kiln_path);
 
@@ -628,8 +657,9 @@ mod tests {
 
         fs::write(
             temp_dir.path().join("no-fm.md"),
-            "Just content, no frontmatter"
-        ).unwrap();
+            "Just content, no frontmatter",
+        )
+        .unwrap();
 
         let search_tools = create_search_tools(kiln_path);
 

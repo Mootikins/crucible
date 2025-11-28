@@ -219,7 +219,10 @@ Inline math: $x^2 + y^2 = z^2$
     let (_temp_dir, file_path) = create_test_file(content).unwrap();
     let result = pipeline.process(&file_path).await;
 
-    assert!(result.is_ok(), "Pulldown parser should process successfully");
+    assert!(
+        result.is_ok(),
+        "Pulldown parser should process successfully"
+    );
 
     let notes = storage.get_stored_notes();
     assert_eq!(notes.len(), 1, "Should have stored one note");
@@ -286,8 +289,7 @@ Heading ref: [[Note#Heading]].
     #[cfg(feature = "markdown-it-parser")]
     {
         // Test with Markdown-it parser
-        let (pipeline_mdit, storage_mdit) =
-            create_pipeline_with_parser(ParserBackend::MarkdownIt);
+        let (pipeline_mdit, storage_mdit) = create_pipeline_with_parser(ParserBackend::MarkdownIt);
         let (_temp2, path2) = create_test_file(test_content).unwrap();
         pipeline_mdit.process(&path2).await.unwrap();
         let notes_mdit = storage_mdit.get_stored_notes();
@@ -311,11 +313,7 @@ Heading ref: [[Note#Heading]].
                 "Wikilink {} target mismatch",
                 i
             );
-            assert_eq!(
-                pulldown.alias, mdit.alias,
-                "Wikilink {} alias mismatch",
-                i
-            );
+            assert_eq!(pulldown.alias, mdit.alias, "Wikilink {} alias mismatch", i);
             assert_eq!(
                 pulldown.is_embed, mdit.is_embed,
                 "Wikilink {} embed flag mismatch",
@@ -353,8 +351,7 @@ Nested tag: #work/review/urgent
     #[cfg(feature = "markdown-it-parser")]
     {
         // Test with Markdown-it parser
-        let (pipeline_mdit, storage_mdit) =
-            create_pipeline_with_parser(ParserBackend::MarkdownIt);
+        let (pipeline_mdit, storage_mdit) = create_pipeline_with_parser(ParserBackend::MarkdownIt);
         let (_temp2, path2) = create_test_file(test_content).unwrap();
         pipeline_mdit.process(&path2).await.unwrap();
         let notes_mdit = storage_mdit.get_stored_notes();
@@ -416,8 +413,7 @@ Another text section.
     #[cfg(feature = "markdown-it-parser")]
     {
         // Test with Markdown-it parser
-        let (pipeline_mdit, storage_mdit) =
-            create_pipeline_with_parser(ParserBackend::MarkdownIt);
+        let (pipeline_mdit, storage_mdit) = create_pipeline_with_parser(ParserBackend::MarkdownIt);
         let (_temp2, path2) = create_test_file(test_content).unwrap();
         pipeline_mdit.process(&path2).await.unwrap();
         let notes_mdit = storage_mdit.get_stored_notes();
@@ -441,11 +437,7 @@ Another text section.
                 "Callout {} type mismatch",
                 i
             );
-            assert_eq!(
-                pulldown.title, mdit.title,
-                "Callout {} title mismatch",
-                i
-            );
+            assert_eq!(pulldown.title, mdit.title, "Callout {} title mismatch", i);
         }
     }
 }
@@ -476,8 +468,10 @@ More inline: $\alpha + \beta = \gamma$
     // Debug output
     eprintln!("=== EXTRACTED LATEX EXPRESSIONS ===");
     for (i, expr) in latex_pulldown.iter().enumerate() {
-        eprintln!("[{}] is_block={}, offset={}, length={}, content={:?}",
-                  i, expr.is_block, expr.offset, expr.length, expr.expression);
+        eprintln!(
+            "[{}] is_block={}, offset={}, length={}, content={:?}",
+            i, expr.is_block, expr.offset, expr.length, expr.expression
+        );
     }
     eprintln!("===================================");
 
@@ -494,8 +488,7 @@ More inline: $\alpha + \beta = \gamma$
     #[cfg(feature = "markdown-it-parser")]
     {
         // Test with Markdown-it parser
-        let (pipeline_mdit, storage_mdit) =
-            create_pipeline_with_parser(ParserBackend::MarkdownIt);
+        let (pipeline_mdit, storage_mdit) = create_pipeline_with_parser(ParserBackend::MarkdownIt);
         let (_temp2, path2) = create_test_file(test_content).unwrap();
         pipeline_mdit.process(&path2).await.unwrap();
         let notes_mdit = storage_mdit.get_stored_notes();
@@ -581,7 +574,10 @@ Regular text with [[actual link]] and #actual-tag.
     let content_pulldown = &notes_pulldown[0].parsed.content;
 
     // Verify all syntax types extracted
-    assert!(content_pulldown.wikilinks.len() >= 3, "Should extract wikilinks");
+    assert!(
+        content_pulldown.wikilinks.len() >= 3,
+        "Should extract wikilinks"
+    );
     assert!(content_pulldown.tags.len() >= 4, "Should extract tags");
     assert!(
         content_pulldown.callouts.len() >= 2,
@@ -595,8 +591,7 @@ Regular text with [[actual link]] and #actual-tag.
     #[cfg(feature = "markdown-it-parser")]
     {
         // Test with Markdown-it parser
-        let (pipeline_mdit, storage_mdit) =
-            create_pipeline_with_parser(ParserBackend::MarkdownIt);
+        let (pipeline_mdit, storage_mdit) = create_pipeline_with_parser(ParserBackend::MarkdownIt);
         let (_temp2, path2) = create_test_file(test_content).unwrap();
         pipeline_mdit.process(&path2).await.unwrap();
         let notes_mdit = storage_mdit.get_stored_notes();
@@ -690,8 +685,7 @@ Malformed math: $incomplete
 
     #[cfg(feature = "markdown-it-parser")]
     {
-        let (pipeline_mdit, _storage_mdit) =
-            create_pipeline_with_parser(ParserBackend::MarkdownIt);
+        let (pipeline_mdit, _storage_mdit) = create_pipeline_with_parser(ParserBackend::MarkdownIt);
         let (_temp2, path2) = create_test_file(test_content).unwrap();
         let result_mdit = pipeline_mdit.process(&path2).await;
 

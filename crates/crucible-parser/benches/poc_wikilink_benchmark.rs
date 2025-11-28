@@ -4,19 +4,25 @@
 //! 1. Pulldown-cmark + regex (current approach)
 //! 2. markdown-it with custom plugin (new approach)
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 const TEST_DOCS: &[(&str, &str)] = &[
-    ("small", r#"# Simple Note
-Just a basic paragraph with one [[link]]."#),
-
-    ("medium", r#"# Medium Document
+    (
+        "small",
+        r#"# Simple Note
+Just a basic paragraph with one [[link]]."#,
+    ),
+    (
+        "medium",
+        r#"# Medium Document
 ## Section 1
 This has [[Link One]] and [[Link Two|Alias]].
 ## Section 2
-More [[links]] with [[references]] everywhere."#),
-
-    ("large", r#"# Large Document
+More [[links]] with [[references]] everywhere."#,
+    ),
+    (
+        "large",
+        r#"# Large Document
 ## Introduction
 Lorem ipsum with [[First Link]] in the text.
 
@@ -30,11 +36,14 @@ Paragraph with [[multiple]] [[wikilinks]] and [[more|aliases]].
 Even [[more]] [[links]] to [[test]] the [[parser]].
 
 ## Conclusion
-Final [[links]] and [[references]] here."#),
-
-    ("wikilink_heavy", r#"[[Link1]] [[Link2]] [[Link3|Alias]] [[Link4]] [[Link5|Display]]
+Final [[links]] and [[references]] here."#,
+    ),
+    (
+        "wikilink_heavy",
+        r#"[[Link1]] [[Link2]] [[Link3|Alias]] [[Link4]] [[Link5|Display]]
 [[Link6]] [[Link7#Section]] [[Link8#^block]] ![[Embed1]] [[Link9]]
-[[Link10]] [[Link11|A]] [[Link12]] [[Link13]] [[Link14|B]]"#),
+[[Link10]] [[Link11|A]] [[Link12]] [[Link13]] [[Link14|B]]"#,
+    ),
 ];
 
 // Pulldown-cmark + regex approach (current)
@@ -92,7 +101,10 @@ fn benchmark_markdown_it(c: &mut Criterion) {
     fn count_wikilinks(node: &Node) -> usize {
         let mut count = 0;
 
-        if node.cast::<crucible_parser::markdown_it::plugins::wikilink::WikilinkNode>().is_some() {
+        if node
+            .cast::<crucible_parser::markdown_it::plugins::wikilink::WikilinkNode>()
+            .is_some()
+        {
             count += 1;
         }
 
@@ -124,11 +136,7 @@ fn benchmark_markdown_it(c: &mut Criterion) {
 }
 
 #[cfg(feature = "markdown-it-parser")]
-criterion_group!(
-    benches,
-    benchmark_pulldown_regex,
-    benchmark_markdown_it
-);
+criterion_group!(benches, benchmark_pulldown_regex, benchmark_markdown_it);
 
 #[cfg(not(feature = "markdown-it-parser"))]
 criterion_group!(benches, benchmark_pulldown_regex);

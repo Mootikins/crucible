@@ -1,7 +1,7 @@
 //! Benchmark comparing pulldown-cmark vs markdown-it-rust parsers
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use crucible_parser::{MarkdownParser, CrucibleParser};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use crucible_parser::{CrucibleParser, MarkdownParser};
 use std::path::PathBuf;
 
 #[cfg(feature = "markdown-it-parser")]
@@ -92,9 +92,8 @@ fn benchmark_pulldown_parser(c: &mut Criterion) {
         SMALL_DOC,
         |b, content| {
             let parser = CrucibleParser::new();
-            b.to_async(tokio::runtime::Runtime::new().unwrap()).iter(|| async {
-                parser.parse_content(black_box(content), &path).await
-            });
+            b.to_async(tokio::runtime::Runtime::new().unwrap())
+                .iter(|| async { parser.parse_content(black_box(content), &path).await });
         },
     );
 
@@ -103,9 +102,8 @@ fn benchmark_pulldown_parser(c: &mut Criterion) {
         MEDIUM_DOC,
         |b, content| {
             let parser = CrucibleParser::new();
-            b.to_async(tokio::runtime::Runtime::new().unwrap()).iter(|| async {
-                parser.parse_content(black_box(content), &path).await
-            });
+            b.to_async(tokio::runtime::Runtime::new().unwrap())
+                .iter(|| async { parser.parse_content(black_box(content), &path).await });
         },
     );
 
@@ -114,9 +112,8 @@ fn benchmark_pulldown_parser(c: &mut Criterion) {
         LARGE_DOC,
         |b, content| {
             let parser = CrucibleParser::new();
-            b.to_async(tokio::runtime::Runtime::new().unwrap()).iter(|| async {
-                parser.parse_content(black_box(content), &path).await
-            });
+            b.to_async(tokio::runtime::Runtime::new().unwrap())
+                .iter(|| async { parser.parse_content(black_box(content), &path).await });
         },
     );
 
@@ -125,9 +122,8 @@ fn benchmark_pulldown_parser(c: &mut Criterion) {
         WIKILINK_HEAVY,
         |b, content| {
             let parser = CrucibleParser::new();
-            b.to_async(tokio::runtime::Runtime::new().unwrap()).iter(|| async {
-                parser.parse_content(black_box(content), &path).await
-            });
+            b.to_async(tokio::runtime::Runtime::new().unwrap())
+                .iter(|| async { parser.parse_content(black_box(content), &path).await });
         },
     );
 
@@ -144,9 +140,8 @@ fn benchmark_markdown_it_parser(c: &mut Criterion) {
         SMALL_DOC,
         |b, content| {
             let parser = MarkdownItParser::new();
-            b.to_async(tokio::runtime::Runtime::new().unwrap()).iter(|| async {
-                parser.parse_content(black_box(content), &path).await
-            });
+            b.to_async(tokio::runtime::Runtime::new().unwrap())
+                .iter(|| async { parser.parse_content(black_box(content), &path).await });
         },
     );
 
@@ -155,9 +150,8 @@ fn benchmark_markdown_it_parser(c: &mut Criterion) {
         MEDIUM_DOC,
         |b, content| {
             let parser = MarkdownItParser::new();
-            b.to_async(tokio::runtime::Runtime::new().unwrap()).iter(|| async {
-                parser.parse_content(black_box(content), &path).await
-            });
+            b.to_async(tokio::runtime::Runtime::new().unwrap())
+                .iter(|| async { parser.parse_content(black_box(content), &path).await });
         },
     );
 
@@ -166,9 +160,8 @@ fn benchmark_markdown_it_parser(c: &mut Criterion) {
         LARGE_DOC,
         |b, content| {
             let parser = MarkdownItParser::new();
-            b.to_async(tokio::runtime::Runtime::new().unwrap()).iter(|| async {
-                parser.parse_content(black_box(content), &path).await
-            });
+            b.to_async(tokio::runtime::Runtime::new().unwrap())
+                .iter(|| async { parser.parse_content(black_box(content), &path).await });
         },
     );
 
@@ -177,9 +170,8 @@ fn benchmark_markdown_it_parser(c: &mut Criterion) {
         WIKILINK_HEAVY,
         |b, content| {
             let parser = MarkdownItParser::new();
-            b.to_async(tokio::runtime::Runtime::new().unwrap()).iter(|| async {
-                parser.parse_content(black_box(content), &path).await
-            });
+            b.to_async(tokio::runtime::Runtime::new().unwrap())
+                .iter(|| async { parser.parse_content(black_box(content), &path).await });
         },
     );
 

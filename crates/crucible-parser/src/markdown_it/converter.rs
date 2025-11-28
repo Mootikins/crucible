@@ -81,7 +81,9 @@ impl AstConverter {
             let text = Self::extract_text(node);
             if !text.is_empty() {
                 let offset = node.srcmap.map(|s| s.get_byte_offsets().0).unwrap_or(0);
-                content.headings.push(Heading::new(heading.level, text, offset));
+                content
+                    .headings
+                    .push(Heading::new(heading.level, text, offset));
             }
         }
 
@@ -112,11 +114,9 @@ impl AstConverter {
                 .next()
                 .filter(|s| !s.is_empty())
                 .map(|s| s.to_string());
-            content.code_blocks.push(CodeBlock::new(
-                language,
-                fence.content.clone(),
-                offset,
-            ));
+            content
+                .code_blocks
+                .push(CodeBlock::new(language, fence.content.clone(), offset));
         }
 
         // 8. Ordered lists
@@ -159,13 +159,9 @@ impl AstConverter {
             // Build raw content by extracting text from all cells
             let raw_content = Self::extract_text(node);
 
-            content.tables.push(Table::new(
-                raw_content,
-                headers,
-                columns,
-                rows,
-                offset,
-            ));
+            content
+                .tables
+                .push(Table::new(raw_content, headers, columns, rows, offset));
         }
 
         // Extract text for paragraphs (very simplified) - skip headings

@@ -105,7 +105,12 @@ async fn test_batch_embedding_preserves_order() {
     let config = EmbeddingConfig::mock(None);
     let provider = create_provider(config).await.unwrap();
 
-    let texts = vec!["first".to_string(), "second".to_string(), "third".to_string(), "fourth".to_string()];
+    let texts = vec![
+        "first".to_string(),
+        "second".to_string(),
+        "third".to_string(),
+        "fourth".to_string(),
+    ];
 
     let result = provider.embed_batch(texts).await;
     assert!(result.is_ok());
@@ -127,10 +132,10 @@ async fn test_batch_with_mixed_content() {
 
     let texts = vec![
         "normal text".to_string(),
-        String::new(),          // empty
-        "日本語".to_string(),   // unicode
-        "@#$%".to_string(),     // special chars
-        "x".repeat(1000),       // long text
+        String::new(),        // empty
+        "日本語".to_string(), // unicode
+        "@#$%".to_string(),   // special chars
+        "x".repeat(1000),     // long text
     ];
 
     let expected_len = texts.len();

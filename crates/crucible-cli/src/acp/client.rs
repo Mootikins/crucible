@@ -8,13 +8,12 @@ use std::sync::Arc;
 use tracing::{debug, info};
 
 use crucible_acp::{
-    ChatSession, ChatConfig, CrucibleAcpClient as AcpClient,
-    HistoryConfig, ContextConfig, StreamConfig,
-    InProcessMcpHost,
+    ChatConfig, ChatSession, ContextConfig, CrucibleAcpClient as AcpClient, HistoryConfig,
+    InProcessMcpHost, StreamConfig,
 };
 use crucible_config::AcpConfig;
-use crucible_core::traits::KnowledgeRepository;
 use crucible_core::enrichment::EmbeddingProvider;
+use crucible_core::traits::KnowledgeRepository;
 
 use crate::acp::agent::AgentInfo;
 
@@ -131,7 +130,10 @@ impl CrucibleAcpClient {
     /// starts an in-process SSE MCP server for tool execution. Otherwise, falls back
     /// to stdio-based MCP.
     pub async fn spawn(&mut self) -> Result<()> {
-        info!("Spawning agent: {} ({})", self.agent.name, self.agent.command);
+        info!(
+            "Spawning agent: {} ({})",
+            self.agent.name, self.agent.command
+        );
 
         // Create the ACP client with the agent command path and args
         let agent_path = PathBuf::from(&self.agent.command);
@@ -145,8 +147,10 @@ impl CrucibleAcpClient {
         // The lower-level client multiplies timeout_ms by 10 for overall streaming timeout
         // So we divide by 10 here: minutes * 60 * 1000 / 10 = minutes * 6000
         let timeout_ms = self.acp_config.streaming_timeout_minutes * 6000;
-        info!("Streaming timeout configured: {} minutes ({} ms base)",
-            self.acp_config.streaming_timeout_minutes, timeout_ms);
+        info!(
+            "Streaming timeout configured: {} minutes ({} ms base)",
+            self.acp_config.streaming_timeout_minutes, timeout_ms
+        );
 
         let client_config = crucible_acp::client::ClientConfig {
             agent_path,
@@ -164,7 +168,8 @@ impl CrucibleAcpClient {
         // Initialize tools if kiln path is available
         if let Some(kiln_path) = &self.kiln_path {
             info!("Initializing tools for kiln: {}", kiln_path.display());
-            session.initialize_tools(kiln_path.clone())
+            session
+                .initialize_tools(kiln_path.clone())
                 .map_err(|e| anyhow!("Failed to initialize tools: {}", e))?;
             info!("Tools initialized successfully");
         } else {
@@ -172,23 +177,28 @@ impl CrucibleAcpClient {
         }
 
         // Connect to the agent - use in-process SSE if dependencies are available
-        if let (Some(kiln_path), Some(knowledge_repo), Some(embedding_provider)) =
-            (&self.kiln_path, &self.knowledge_repo, &self.embedding_provider)
-        {
+        if let (Some(kiln_path), Some(knowledge_repo), Some(embedding_provider)) = (
+            &self.kiln_path,
+            &self.knowledge_repo,
+            &self.embedding_provider,
+        ) {
             // Start in-process MCP server
             info!("Starting in-process MCP server...");
             let mcp_host = InProcessMcpHost::start(
                 kiln_path.clone(),
                 knowledge_repo.clone(),
                 embedding_provider.clone(),
-            ).await
-                .map_err(|e| anyhow!("Failed to start in-process MCP server: {}", e))?;
+            )
+            .await
+            .map_err(|e| anyhow!("Failed to start in-process MCP server: {}", e))?;
 
             let sse_url = mcp_host.sse_url();
             info!("In-process MCP server running at {}", sse_url);
 
             // Connect with SSE MCP
-            session.connect_with_sse_mcp(&sse_url).await
+            session
+                .connect_with_sse_mcp(&sse_url)
+                .await
                 .map_err(|e| anyhow!("Failed to connect to agent: {}", e))?;
 
             // Keep the MCP host alive
@@ -196,7 +206,9 @@ impl CrucibleAcpClient {
         } else {
             // Fall back to stdio MCP (subprocess)
             info!("Using stdio MCP server (no in-process dependencies configured)");
-            session.connect().await
+            session
+                .connect()
+                .await
                 .map_err(|e| anyhow!("Failed to connect to agent: {}", e))?;
         }
 
@@ -215,10 +227,15 @@ impl CrucibleAcpClient {
     ///
     /// # Returns
     /// Tuple of (response, tool_calls)
-    pub async fn send_message(&mut self, message: &str) -> Result<(String, Vec<crucible_acp::ToolCallInfo>)> {
+    pub async fn send_message(
+        &mut self,
+        message: &str,
+    ) -> Result<(String, Vec<crucible_acp::ToolCallInfo>)> {
         if let Some(session) = &mut self.session {
             debug!("Sending message to agent: {}", message);
-            session.send_message(message).await
+            session
+                .send_message(message)
+                .await
                 .map_err(|e| anyhow!("Failed to send message: {}", e))
         } else {
             Err(anyhow!("Agent not running. Call spawn() first."))
@@ -231,7 +248,14 @@ impl CrucibleAcpClient {
     /// * `enriched_prompt` - The initial prompt (potentially enriched with context)
     pub async fn start_chat(&mut self, enriched_prompt: &str) -> Result<()> {
         info!("Starting chat session");
-        info!("Mode: {}", if self.read_only { "Read-only (plan)" } else { "Write-enabled (act)" });
+        info!(
+            "Mode: {}",
+            if self.read_only {
+                "Read-only (plan)"
+            } else {
+                "Write-enabled (act)"
+            }
+        );
 
         // Send the initial prompt
         let (response, _tool_calls) = self.send_message(enriched_prompt).await?;
@@ -274,14 +298,19 @@ impl CrucibleAcpClient {
         if let Some(session) = &mut self.session {
             session.set_enrichment_enabled(enabled);
         }
-        info!("Context enrichment {}", if enabled { "enabled" } else { "disabled" });
+        info!(
+            "Context enrichment {}",
+            if enabled { "enabled" } else { "disabled" }
+        );
     }
 
     /// Shutdown the agent process
     pub async fn shutdown(&mut self) -> Result<()> {
         if let Some(mut session) = self.session.take() {
             info!("Shutting down agent");
-            session.disconnect().await
+            session
+                .disconnect()
+                .await
                 .map_err(|e| anyhow!("Failed to disconnect: {}", e))?;
             info!("Agent shut down successfully");
         }

@@ -4,7 +4,10 @@
 //! Usage: cargo run --example test_mcp_server
 
 use anyhow::Result;
-use rmcp::{service::ServiceExt, transport::{TokioChildProcess, ConfigureCommandExt}};
+use rmcp::{
+    service::ServiceExt,
+    transport::{ConfigureCommandExt, TokioChildProcess},
+};
 use tokio::process::Command;
 
 #[tokio::main]
@@ -15,16 +18,21 @@ async fn main() -> Result<()> {
     eprintln!("📝 Spawning server and connecting...");
 
     // Use the cru binary from PATH or current target
-    let cru_path = std::env::var("CRUCIBLE_BIN")
-        .unwrap_or_else(|_| "./target/release/cru".to_string());
+    let cru_path =
+        std::env::var("CRUCIBLE_BIN").unwrap_or_else(|_| "./target/release/cru".to_string());
 
     eprintln!("    Using binary: {}", cru_path);
 
-    let service = match ().serve(TokioChildProcess::new(Command::new(&cru_path).configure(|cmd| {
-        cmd.arg("mcp");
-        // Server will use default config at ~/.config/crucible/config.toml
-        // Note: stderr is piped by TokioChildProcess, don't override
-    }))?).await {
+    let service = match ()
+        .serve(TokioChildProcess::new(Command::new(&cru_path).configure(
+            |cmd| {
+                cmd.arg("mcp");
+                // Server will use default config at ~/.config/crucible/config.toml
+                // Note: stderr is piped by TokioChildProcess, don't override
+            },
+        ))?)
+        .await
+    {
         Ok(svc) => {
             eprintln!("    Service connected successfully");
             svc
@@ -61,7 +69,10 @@ async fn main() -> Result<()> {
         eprintln!("\n✅ SUCCESS: All 12 tools discovered!");
         std::process::exit(0);
     } else {
-        eprintln!("\n❌ FAILURE: Expected 12 tools, found {}", tools_response.tools.len());
+        eprintln!(
+            "\n❌ FAILURE: Expected 12 tools, found {}",
+            tools_response.tools.len()
+        );
         std::process::exit(1);
     }
 }

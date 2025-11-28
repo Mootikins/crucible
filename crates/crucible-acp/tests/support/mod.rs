@@ -4,4 +4,4 @@
 
 pub mod mock_stdio_agent;
 
-pub use mock_stdio_agent::{MockStdioAgent, MockStdioAgentConfig, AgentBehavior};
+pub use mock_stdio_agent::{AgentBehavior, MockStdioAgent, MockStdioAgentConfig};

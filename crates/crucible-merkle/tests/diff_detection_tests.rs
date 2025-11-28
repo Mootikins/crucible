@@ -2,9 +2,9 @@
 //!
 //! Tests for granular change detection, diff algorithms, and incremental updates.
 
+use crucible_core::ParsedNote;
 use crucible_merkle::HybridMerkleTree;
 use crucible_parser::{CrucibleParser, MarkdownParser};
-use crucible_core::ParsedNote;
 use std::path::Path;
 
 async fn parse_note(content: &str, path: &str) -> Result<ParsedNote, Box<dyn std::error::Error>> {
@@ -62,7 +62,7 @@ async fn test_no_change_same_hash() {
 #[tokio::test]
 async fn test_whitespace_only_change() {
     let original = "# Section 1\n\nContent";
-    let modified = "# Section 1\n\n\nContent";  // Extra newline
+    let modified = "# Section 1\n\n\nContent"; // Extra newline
 
     let parsed1 = parse_note(original, "test.md").await.unwrap();
     let parsed2 = parse_note(modified, "test.md").await.unwrap();

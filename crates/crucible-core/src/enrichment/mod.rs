@@ -26,14 +26,12 @@ pub use service::EnrichmentService;
 pub use storage::EnrichedNoteStore;
 
 // Re-export domain types
-pub use types::{
-    BlockEmbedding, EnrichedNote, InferredRelation, NoteMetadata, RelationType,
-};
+pub use types::{BlockEmbedding, EnrichedNote, InferredRelation, NoteMetadata, RelationType};
 
 // Re-export configuration types from crucible-config to maintain backward compatibility
 // Configuration lives in crucible-config to simplify dependency graph
 pub use crucible_config::{
-    CohereConfig, CustomConfig, EmbeddingProviderConfig, embedding::EmbeddingProviderType,
+    embedding::EmbeddingProviderType, CohereConfig, CustomConfig, EmbeddingProviderConfig,
     EnrichmentConfig, FastEmbedConfig, MockConfig, OllamaConfig, OpenAIConfig, PipelineConfig,
     VertexAIConfig,
 };

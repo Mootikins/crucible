@@ -3,7 +3,7 @@
 //! These tests verify that our mock agents behave correctly and can simulate
 //! various agent behaviors for testing purposes.
 
-use crate::support::{MockStdioAgent, MockStdioAgentConfig, AgentBehavior};
+use crate::support::{AgentBehavior, MockStdioAgent, MockStdioAgentConfig};
 use serde_json::json;
 
 #[test]
@@ -22,7 +22,9 @@ fn test_opencode_mock_config() {
     assert!(!config.requires_auth);
     assert!(config.capabilities.contains(&"terminal".to_string()));
     assert!(config.capabilities.contains(&"fs.readTextFile".to_string()));
-    assert!(config.capabilities.contains(&"fs.writeTextFile".to_string()));
+    assert!(config
+        .capabilities
+        .contains(&"fs.writeTextFile".to_string()));
 }
 
 #[test]
@@ -72,14 +74,26 @@ fn test_mock_agent_handles_initialize() {
     // Verify JSON-RPC structure
     assert_eq!(response["jsonrpc"], "2.0");
     assert_eq!(response["id"], 1);
-    assert!(response.get("result").is_some(), "Response should have result");
-    assert!(response.get("error").is_none(), "Response should not have error");
+    assert!(
+        response.get("result").is_some(),
+        "Response should have result"
+    );
+    assert!(
+        response.get("error").is_none(),
+        "Response should not have error"
+    );
 
     // Verify response structure
     let result = &response["result"];
-    assert!(result.get("protocolVersion").is_some(), "Should have protocol version");
+    assert!(
+        result.get("protocolVersion").is_some(),
+        "Should have protocol version"
+    );
     assert!(result.get("agentInfo").is_some(), "Should have agent info");
-    assert!(result.get("agentCapabilities").is_some(), "Should have agent capabilities");
+    assert!(
+        result.get("agentCapabilities").is_some(),
+        "Should have agent capabilities"
+    );
 
     // Verify agent info
     let agent_info = &result["agentInfo"];
@@ -88,8 +102,14 @@ fn test_mock_agent_handles_initialize() {
 
     // Verify MCP capabilities
     let mcp_capabilities = &result["agentCapabilities"]["mcpCapabilities"];
-    assert!(mcp_capabilities.get("terminal").is_some(), "Should have terminal capability");
-    assert!(mcp_capabilities.get("fs.readTextFile").is_some(), "Should have fs.readTextFile capability");
+    assert!(
+        mcp_capabilities.get("terminal").is_some(),
+        "Should have terminal capability"
+    );
+    assert!(
+        mcp_capabilities.get("fs.readTextFile").is_some(),
+        "Should have fs.readTextFile capability"
+    );
 }
 
 #[test]
@@ -113,14 +133,23 @@ fn test_mock_agent_handles_new_session() {
     // Verify JSON-RPC structure
     assert_eq!(response["jsonrpc"], "2.0");
     assert_eq!(response["id"], 2);
-    assert!(response.get("result").is_some(), "Response should have result");
-    assert!(response.get("error").is_none(), "Response should not have error");
+    assert!(
+        response.get("result").is_some(),
+        "Response should have result"
+    );
+    assert!(
+        response.get("error").is_none(),
+        "Response should not have error"
+    );
 
     // Verify session ID was generated
     let result = &response["result"];
     assert!(result.get("sessionId").is_some(), "Should have session ID");
     let session_id = result["sessionId"].as_str().unwrap();
-    assert!(session_id.starts_with("mock-session-"), "Session ID should have expected prefix");
+    assert!(
+        session_id.starts_with("mock-session-"),
+        "Session ID should have expected prefix"
+    );
 
     // Verify agent stored the session ID
     assert!(agent.session_id.is_some(), "Agent should store session ID");
@@ -144,8 +173,14 @@ fn test_mock_agent_error_injection() {
     // Verify error response
     assert_eq!(response["jsonrpc"], "2.0");
     assert_eq!(response["id"], 1);
-    assert!(response.get("error").is_some(), "Response should have error");
-    assert!(response.get("result").is_none(), "Response should not have result");
+    assert!(
+        response.get("error").is_some(),
+        "Response should have error"
+    );
+    assert!(
+        response.get("result").is_none(),
+        "Response should not have result"
+    );
 
     // Verify error structure
     let error = &response["error"];
@@ -170,11 +205,17 @@ fn test_mock_agent_unknown_method() {
     // Verify error response
     assert_eq!(response["jsonrpc"], "2.0");
     assert_eq!(response["id"], 1);
-    assert!(response.get("error").is_some(), "Response should have error");
+    assert!(
+        response.get("error").is_some(),
+        "Response should have error"
+    );
 
     // Verify error code for "Method not found"
     let error = &response["error"];
-    assert_eq!(error["code"], -32601, "Should return 'Method not found' error code");
+    assert_eq!(
+        error["code"], -32601,
+        "Should return 'Method not found' error code"
+    );
 }
 
 #[test]
@@ -196,8 +237,14 @@ fn test_mock_agent_complete_handshake_sequence() {
     });
 
     let init_response = agent.handle_request(&init_request);
-    assert!(init_response.get("result").is_some(), "Initialize should succeed");
-    assert_eq!(init_response["result"]["protocolVersion"], 1, "Should return protocol version 1");
+    assert!(
+        init_response.get("result").is_some(),
+        "Initialize should succeed"
+    );
+    assert_eq!(
+        init_response["result"]["protocolVersion"], 1,
+        "Should return protocol version 1"
+    );
 
     // Step 2: New Session
     let session_request = json!({
@@ -212,8 +259,14 @@ fn test_mock_agent_complete_handshake_sequence() {
     });
 
     let session_response = agent.handle_request(&session_request);
-    assert!(session_response.get("result").is_some(), "Session creation should succeed");
-    assert!(session_response["result"].get("sessionId").is_some(), "Should return session ID");
+    assert!(
+        session_response.get("result").is_some(),
+        "Session creation should succeed"
+    );
+    assert!(
+        session_response["result"].get("sessionId").is_some(),
+        "Should return session ID"
+    );
 
     // Step 3: Send a prompt (chat message)
     let prompt_request = json!({
@@ -226,7 +279,10 @@ fn test_mock_agent_complete_handshake_sequence() {
     });
 
     let prompt_response = agent.handle_request(&prompt_request);
-    assert!(prompt_response.get("result").is_some(), "Prompt should succeed");
+    assert!(
+        prompt_response.get("result").is_some(),
+        "Prompt should succeed"
+    );
 }
 
 #[test]

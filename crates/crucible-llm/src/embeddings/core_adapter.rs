@@ -51,7 +51,10 @@ impl CoreProviderAdapter {
 impl CoreEmbeddingProvider for CoreProviderAdapter {
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
         // Call the crucible-llm provider and extract the embedding vector
-        let response = self.inner.embed(text).await
+        let response = self
+            .inner
+            .embed(text)
+            .await
             .map_err(|e| anyhow::anyhow!("Embedding failed: {}", e))?;
 
         Ok(response.embedding)
@@ -62,13 +65,14 @@ impl CoreEmbeddingProvider for CoreProviderAdapter {
         let texts_owned: Vec<String> = texts.iter().map(|s| s.to_string()).collect();
 
         // Call the crucible-llm provider
-        let responses = self.inner.embed_batch(texts_owned).await
+        let responses = self
+            .inner
+            .embed_batch(texts_owned)
+            .await
             .map_err(|e| anyhow::anyhow!("Batch embedding failed: {}", e))?;
 
         // Extract just the embedding vectors
-        let embeddings = responses.into_iter()
-            .map(|r| r.embedding)
-            .collect();
+        let embeddings = responses.into_iter().map(|r| r.embedding).collect();
 
         Ok(embeddings)
     }
@@ -112,11 +116,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_adapter_batch_embedding() {
-        let config = EmbeddingConfig::fastembed(
-            None,
-            Some("/tmp/fastembed_cache".to_string()),
-            None,
-        );
+        let config =
+            EmbeddingConfig::fastembed(None, Some("/tmp/fastembed_cache".to_string()), None);
         let llm_provider = create_provider(config).await.unwrap();
         let adapter = CoreProviderAdapter::new(llm_provider);
 

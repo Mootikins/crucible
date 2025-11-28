@@ -16,7 +16,11 @@ mod tests {
             // (input, expected_type, expected_title)
             ("> [!note]", "note", None),
             ("> [!note] Title here", "note", Some("Title here")),
-            ("> [!warning] Important Warning", "warning", Some("Important Warning")),
+            (
+                "> [!warning] Important Warning",
+                "warning",
+                Some("Important Warning"),
+            ),
             ("> [!my-custom-type]", "my-custom-type", None),
             ("> [!tip] Tip with title", "tip", Some("Tip with title")),
         ];
@@ -24,9 +28,16 @@ mod tests {
         for (input, expected_type, expected_title) in test_cases {
             if let Some(cap) = re.captures(input) {
                 let callout_type = cap.get(1).unwrap().as_str();
-                let title = cap.get(2).map(|m| m.as_str().trim()).filter(|s| !s.is_empty());
+                let title = cap
+                    .get(2)
+                    .map(|m| m.as_str().trim())
+                    .filter(|s| !s.is_empty());
 
-                assert_eq!(callout_type, expected_type, "Type mismatch for input: {}", input);
+                assert_eq!(
+                    callout_type, expected_type,
+                    "Type mismatch for input: {}",
+                    input
+                );
                 assert_eq!(title, expected_title, "Title mismatch for input: {}", input);
             } else {
                 panic!("Regex failed to match: {}", input);
@@ -71,7 +82,8 @@ Regular text here
 > More warning"#;
 
         // First, extract callout headers
-        let header_re = Regex::new(r"(?m)^>\s*\[!([a-zA-Z][a-zA-Z0-9-]*)\](?:\s+([^\n]*))?\s*$").unwrap();
+        let header_re =
+            Regex::new(r"(?m)^>\s*\[!([a-zA-Z][a-zA-Z0-9-]*)\](?:\s+([^\n]*))?\s*$").unwrap();
         let lines: Vec<&str> = content.lines().collect();
 
         let mut callouts = Vec::new();
@@ -80,7 +92,10 @@ Regular text here
         while i < lines.len() {
             if let Some(cap) = header_re.captures(lines[i]) {
                 let callout_type = cap.get(1).unwrap().as_str();
-                let title = cap.get(2).map(|m| m.as_str().trim()).filter(|s| !s.is_empty());
+                let title = cap
+                    .get(2)
+                    .map(|m| m.as_str().trim())
+                    .filter(|s| !s.is_empty());
 
                 // Extract content lines
                 let mut content_lines = Vec::new();
@@ -103,7 +118,10 @@ Regular text here
 
         println!("Extracted {} callouts:", callouts.len());
         for (i, (ctype, title, content)) in callouts.iter().enumerate() {
-            println!("  [{}] type='{}', title={:?}, content='{}'", i, ctype, title, content);
+            println!(
+                "  [{}] type='{}', title={:?}, content='{}'",
+                i, ctype, title, content
+            );
         }
 
         assert_eq!(callouts.len(), 2);
@@ -133,7 +151,8 @@ Another text section.
 > [!tip]
 > Tip without title"#;
 
-        let header_re = Regex::new(r"(?m)^>\s*\[!([a-zA-Z][a-zA-Z0-9-]*)\](?:\s+([^\n]*))?\s*$").unwrap();
+        let header_re =
+            Regex::new(r"(?m)^>\s*\[!([a-zA-Z][a-zA-Z0-9-]*)\](?:\s+([^\n]*))?\s*$").unwrap();
         let lines: Vec<&str> = content.lines().collect();
 
         let mut callouts = Vec::new();
@@ -142,7 +161,10 @@ Another text section.
         while i < lines.len() {
             if let Some(cap) = header_re.captures(lines[i]) {
                 let callout_type = cap.get(1).unwrap().as_str();
-                let title = cap.get(2).map(|m| m.as_str().trim()).filter(|s| !s.is_empty());
+                let title = cap
+                    .get(2)
+                    .map(|m| m.as_str().trim())
+                    .filter(|s| !s.is_empty());
 
                 // Extract content lines
                 let mut content_lines = Vec::new();
@@ -166,7 +188,13 @@ Another text section.
         println!("=== Failing test case analysis ===");
         println!("Extracted {} callouts:", callouts.len());
         for (i, (ctype, title, content)) in callouts.iter().enumerate() {
-            println!("  [{}] type='{}', title={:?}, content_length={}", i, ctype, title, content.len());
+            println!(
+                "  [{}] type='{}', title={:?}, content_length={}",
+                i,
+                ctype,
+                title,
+                content.len()
+            );
         }
 
         // This should succeed with our logic
@@ -179,18 +207,24 @@ Another text section.
     /// Test edge cases
     #[test]
     fn test_edge_cases() {
-        let header_re = Regex::new(r"(?m)^>\s*\[!([a-zA-Z][a-zA-Z0-9-]*)\](?:\s+([^\n]*))?\s*$").unwrap();
+        let header_re =
+            Regex::new(r"(?m)^>\s*\[!([a-zA-Z][a-zA-Z0-9-]*)\](?:\s+([^\n]*))?\s*$").unwrap();
 
         let edge_cases = vec![
             // Special characters in title
-            ("> [!note] Title with émojis 🎉 and spëcial chars!", "note", Some("Title with émojis 🎉 and spëcial chars!")),
-
+            (
+                "> [!note] Title with émojis 🎉 and spëcial chars!",
+                "note",
+                Some("Title with émojis 🎉 and spëcial chars!"),
+            ),
             // Unicode content
             ("> [!tip] 中文标题", "tip", Some("中文标题")),
-
             // Hyphens in type - content after ] is treated as title by regex
-            ("> [!my-custom-type] Custom content", "my-custom-type", Some("Custom content")),
-
+            (
+                "> [!my-custom-type] Custom content",
+                "my-custom-type",
+                Some("Custom content"),
+            ),
             // Empty content callout
             ("> [!note] Empty callout", "note", Some("Empty callout")),
         ];
@@ -198,7 +232,10 @@ Another text section.
         for (input, expected_type, expected_title) in edge_cases {
             if let Some(cap) = header_re.captures(input) {
                 let callout_type = cap.get(1).unwrap().as_str();
-                let title = cap.get(2).map(|m| m.as_str().trim()).filter(|s| !s.is_empty());
+                let title = cap
+                    .get(2)
+                    .map(|m| m.as_str().trim())
+                    .filter(|s| !s.is_empty());
 
                 assert_eq!(callout_type, expected_type, "Type mismatch for: {}", input);
                 assert_eq!(title, expected_title, "Title mismatch for: {}", input);
@@ -213,13 +250,17 @@ Another text section.
     fn test_performance_many_callouts() {
         let mut content = String::new();
         for i in 0..100 {
-            content.push_str(&format!(r#"> [!note] Callout {}
+            content.push_str(&format!(
+                r#"> [!note] Callout {}
 > This is callout number {} with some content
 
-"#, i, i));
+"#,
+                i, i
+            ));
         }
 
-        let header_re = Regex::new(r"(?m)^>\s*\[!([a-zA-Z][a-zA-Z0-9-]*)\](?:\s+([^\n]*))?\s*$").unwrap();
+        let header_re =
+            Regex::new(r"(?m)^>\s*\[!([a-zA-Z][a-zA-Z0-9-]*)\](?:\s+([^\n]*))?\s*$").unwrap();
         let start = std::time::Instant::now();
 
         let matches: Vec<_> = header_re.captures_iter(&content).collect();

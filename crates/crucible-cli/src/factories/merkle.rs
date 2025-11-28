@@ -1,9 +1,9 @@
 //! Merkle store factory - creates SurrealDB-backed merkle persistence
 //! Phase 5: Uses public adapters API instead of importing concrete types.
 
-use std::sync::Arc;
 use crucible_merkle::MerkleStore;
 use crucible_surrealdb::adapters;
+use std::sync::Arc;
 
 /// Create SurrealDB-backed merkle store
 ///

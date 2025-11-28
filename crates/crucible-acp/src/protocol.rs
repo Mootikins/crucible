@@ -15,10 +15,8 @@
 //! - **Single Responsibility**: Focused on protocol-level operations
 //! - **Open/Closed**: Extensible for new message types
 
+use agent_client_protocol::{AgentSide, ClientSide, IncomingMessage, OutgoingMessage};
 use serde::{Deserialize, Serialize};
-use agent_client_protocol::{
-    IncomingMessage, OutgoingMessage, ClientSide, AgentSide,
-};
 
 use crate::{AcpError, Result};
 
@@ -135,7 +133,10 @@ impl MessageHandler {
     /// # Errors
     ///
     /// Returns an error if serialization fails
-    pub fn serialize_message(&self, _message: &OutgoingMessage<ClientSide, AgentSide>) -> Result<Vec<u8>> {
+    pub fn serialize_message(
+        &self,
+        _message: &OutgoingMessage<ClientSide, AgentSide>,
+    ) -> Result<Vec<u8>> {
         // TODO: Implement message serialization using agent-client-protocol's serialization utilities
         // This is a stub - will be implemented in TDD cycles
         Err(AcpError::Session("Not yet implemented".to_string()))

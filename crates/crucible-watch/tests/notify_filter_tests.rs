@@ -3,8 +3,8 @@
 //! These tests verify that EventFilter is properly applied by NotifyWatcher.
 
 use crucible_watch::{
-    EventFilter, FileEvent, FileWatcher, NotifyWatcher,
     traits::{DebounceConfig, HandlerConfig, WatchConfig, WatchMode},
+    EventFilter, FileEvent, FileWatcher, NotifyWatcher,
 };
 use std::fs;
 use std::path::PathBuf;

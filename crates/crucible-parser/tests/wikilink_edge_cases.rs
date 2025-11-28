@@ -101,7 +101,9 @@ async fn test_wikilink_with_special_characters() {
 
     assert_eq!(wikilinks.len(), 4);
     assert!(wikilinks.iter().any(|w| w.target == "note-with-dashes"));
-    assert!(wikilinks.iter().any(|w| w.target == "note_with_underscores"));
+    assert!(wikilinks
+        .iter()
+        .any(|w| w.target == "note_with_underscores"));
     assert!(wikilinks.iter().any(|w| w.target == "note with spaces"));
     assert!(wikilinks.iter().any(|w| w.target == "note.with.dots"));
 }

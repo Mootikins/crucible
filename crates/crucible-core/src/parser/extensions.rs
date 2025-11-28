@@ -4,8 +4,8 @@
 //! modular addition of new syntax features to the markdown parser.
 
 use super::error::ParseError;
-use async_trait::async_trait;
 use crate::parser::types::NoteContent;
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;

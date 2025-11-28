@@ -29,30 +29,24 @@
 //! - Terminal operations: create_terminal, terminal_output, etc.
 //! - Extensions: ext_method, ext_notification
 
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::process::Stdio;
-use tokio::process::{Command, Child};
-use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use async_trait::async_trait;
+use std::path::PathBuf;
+use std::process::Stdio;
+use std::sync::{Arc, Mutex};
+use tokio::process::{Child, Command};
+use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use agent_client_protocol::{
-    Client, ClientSideConnection,
-    RequestPermissionRequest, RequestPermissionResponse, RequestPermissionOutcome,
+    Client, ClientSideConnection, CreateTerminalRequest, CreateTerminalResponse, Error as AcpError,
+    ExtNotification, ExtRequest, ExtResponse, KillTerminalCommandRequest,
+    KillTerminalCommandResponse, ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest,
+    ReleaseTerminalResponse, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, Result as AcpResult, SessionNotification, TerminalOutputRequest,
+    TerminalOutputResponse, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
     WriteTextFileRequest, WriteTextFileResponse,
-    ReadTextFileRequest, ReadTextFileResponse,
-    SessionNotification,
-    CreateTerminalRequest, CreateTerminalResponse,
-    TerminalOutputRequest, TerminalOutputResponse,
-    KillTerminalCommandRequest, KillTerminalCommandResponse,
-    ReleaseTerminalRequest, ReleaseTerminalResponse,
-    WaitForTerminalExitRequest, WaitForTerminalExitResponse,
-    ExtRequest, ExtResponse, ExtNotification,
-    Error as AcpError,
-    Result as AcpResult,
 };
 
-use crate::{Result, AcpError as CrucibleAcpError};
+use crate::{AcpError as CrucibleAcpError, Result};
 
 /// Crucible's implementation of the ACP Client trait
 ///
@@ -114,8 +108,10 @@ impl Client for CrucibleClient {
         &self,
         args: RequestPermissionRequest,
     ) -> AcpResult<RequestPermissionResponse> {
-        tracing::info!("Agent requesting permission for tool call ID: {}",
-            args.tool_call.id);
+        tracing::info!(
+            "Agent requesting permission for tool call ID: {}",
+            args.tool_call.id
+        );
         tracing::debug!("Tool call details: {:?}", args.tool_call);
         tracing::debug!("Permission options: {:?}", args.options);
 
@@ -157,7 +153,10 @@ impl Client for CrucibleClient {
         args: WriteTextFileRequest,
     ) -> AcpResult<WriteTextFileResponse> {
         if self.read_only {
-            tracing::error!("Write attempt blocked (read-only mode): {}", args.path.display());
+            tracing::error!(
+                "Write attempt blocked (read-only mode): {}",
+                args.path.display()
+            );
             return Err(AcpError::invalid_params());
         }
 
@@ -182,9 +181,7 @@ impl Client for CrucibleClient {
 
         tracing::info!("File written successfully: {}", args.path.display());
 
-        Ok(WriteTextFileResponse {
-            meta: None,
-        })
+        Ok(WriteTextFileResponse { meta: None })
     }
 
     /// Read content from a file
@@ -193,10 +190,7 @@ impl Client for CrucibleClient {
     /// for any file in the current working directory.
     ///
     /// For kiln-specific operations, the agent should use Crucible MCP tools.
-    async fn read_text_file(
-        &self,
-        args: ReadTextFileRequest,
-    ) -> AcpResult<ReadTextFileResponse> {
+    async fn read_text_file(&self, args: ReadTextFileRequest) -> AcpResult<ReadTextFileResponse> {
         tracing::info!("Reading file: {}", args.path.display());
 
         // Work relative to current directory (not kiln)
@@ -211,7 +205,11 @@ impl Client for CrucibleClient {
             }
         };
 
-        tracing::info!("File read successfully: {} ({} bytes)", args.path.display(), content.len());
+        tracing::info!(
+            "File read successfully: {} ({} bytes)",
+            args.path.display(),
+            content.len()
+        );
 
         Ok(ReadTextFileResponse {
             content,
@@ -320,14 +318,19 @@ pub async fn spawn_agent(
     command.stdout(Stdio::piped());
     command.stderr(Stdio::inherit()); // Let agent errors show in our stderr
 
-    let mut child = command.spawn()
+    let mut child = command
+        .spawn()
         .map_err(|e| CrucibleAcpError::Connection(format!("Failed to spawn agent: {}", e)))?;
 
     // Get stdin/stdout handles and wrap with compat for futures::io traits
-    let stdin = child.stdin.take()
+    let stdin = child
+        .stdin
+        .take()
         .ok_or_else(|| CrucibleAcpError::Connection("Failed to capture agent stdin".to_string()))?
         .compat_write();
-    let stdout = child.stdout.take()
+    let stdout = child
+        .stdout
+        .take()
         .ok_or_else(|| CrucibleAcpError::Connection("Failed to capture agent stdout".to_string()))?
         .compat();
 
@@ -335,15 +338,10 @@ pub async fn spawn_agent(
 
     // Create the ClientSideConnection
     // The spawner function receives futures but doesn't spawn them - we return the io_task instead
-    let (connection, io_task) = ClientSideConnection::new(
-        client,
-        stdin,
-        stdout,
-        |_fut| {
-            // Futures are passed here but we don't spawn them
-            // The main io_task is returned to the caller
-        },
-    );
+    let (connection, io_task) = ClientSideConnection::new(client, stdin, stdout, |_fut| {
+        // Futures are passed here but we don't spawn them
+        // The main io_task is returned to the caller
+    });
 
     tracing::info!("ClientSideConnection created successfully");
 
@@ -381,13 +379,15 @@ mod tests {
         tokio::fs::write(&test_file, "test content").await.unwrap();
 
         let client = CrucibleClient::new(temp.path().to_path_buf(), false);
-        let result = client.read_text_file(ReadTextFileRequest {
-            session_id: "test".into(),
-            path: test_file,  // Use absolute path
-            line: None,
-            limit: None,
-            meta: None,
-        }).await;
+        let result = client
+            .read_text_file(ReadTextFileRequest {
+                session_id: "test".into(),
+                path: test_file, // Use absolute path
+                line: None,
+                limit: None,
+                meta: None,
+            })
+            .await;
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap().content, "test content");
@@ -399,12 +399,14 @@ mod tests {
         let client = CrucibleClient::new(temp.path().to_path_buf(), false);
         let new_file = temp.path().join("new.txt");
 
-        let result = client.write_text_file(WriteTextFileRequest {
-            session_id: "test".into(),
-            path: new_file.clone(),  // Use absolute path
-            content: "new content".to_string(),
-            meta: None,
-        }).await;
+        let result = client
+            .write_text_file(WriteTextFileRequest {
+                session_id: "test".into(),
+                path: new_file.clone(), // Use absolute path
+                content: "new content".to_string(),
+                meta: None,
+            })
+            .await;
 
         assert!(result.is_ok());
 
@@ -417,38 +419,45 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let client = CrucibleClient::new(temp.path().to_path_buf(), true);
 
-        let result = client.write_text_file(WriteTextFileRequest {
-            session_id: "test".into(),
-            path: PathBuf::from("blocked.txt"),
-            content: "should fail".to_string(),
-            meta: None,
-        }).await;
+        let result = client
+            .write_text_file(WriteTextFileRequest {
+                session_id: "test".into(),
+                path: PathBuf::from("blocked.txt"),
+                content: "should fail".to_string(),
+                meta: None,
+            })
+            .await;
 
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_permission_request() {
-        use agent_client_protocol::{PermissionOption, PermissionOptionId, ToolCallUpdate, ToolCallUpdateFields, PermissionOptionKind};
+        use agent_client_protocol::{
+            PermissionOption, PermissionOptionId, PermissionOptionKind, ToolCallUpdate,
+            ToolCallUpdateFields,
+        };
 
         let temp = TempDir::new().unwrap();
         let client = CrucibleClient::new(temp.path().to_path_buf(), false);
 
-        let result = client.request_permission(RequestPermissionRequest {
-            session_id: "test".into(),
-            tool_call: ToolCallUpdate {
-                id: "1".into(),
-                fields: ToolCallUpdateFields::default(),
+        let result = client
+            .request_permission(RequestPermissionRequest {
+                session_id: "test".into(),
+                tool_call: ToolCallUpdate {
+                    id: "1".into(),
+                    fields: ToolCallUpdateFields::default(),
+                    meta: None,
+                },
+                options: vec![PermissionOption {
+                    id: PermissionOptionId("allow".into()),
+                    name: "Allow".into(),
+                    kind: PermissionOptionKind::AllowOnce,
+                    meta: None,
+                }],
                 meta: None,
-            },
-            options: vec![PermissionOption {
-                id: PermissionOptionId("allow".into()),
-                name: "Allow".into(),
-                kind: PermissionOptionKind::AllowOnce,
-                meta: None,
-            }],
-            meta: None,
-        }).await;
+            })
+            .await;
 
         assert!(result.is_ok());
         let outcome = result.unwrap().outcome;

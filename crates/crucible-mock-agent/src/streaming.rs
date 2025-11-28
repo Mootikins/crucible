@@ -114,7 +114,10 @@ mod tests {
         // Verify structure
         assert_eq!(notification["jsonrpc"], "2.0");
         assert_eq!(notification["method"], "session/update");
-        assert!(notification.get("id").is_none(), "Notifications should not have id");
+        assert!(
+            notification.get("id").is_none(),
+            "Notifications should not have id"
+        );
 
         // Verify params structure
         let params = &notification["params"];

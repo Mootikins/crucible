@@ -22,10 +22,18 @@ pub struct AcpConfig {
     pub streaming_timeout_minutes: u64,
 }
 
-fn default_true() -> bool { true }
-fn default_session_timeout() -> u64 { 30 }
-fn default_max_message_size() -> usize { 25 }
-fn default_streaming_timeout() -> u64 { 15 }
+fn default_true() -> bool {
+    true
+}
+fn default_session_timeout() -> u64 {
+    30
+}
+fn default_max_message_size() -> usize {
+    25
+}
+fn default_streaming_timeout() -> u64 {
+    15
+}
 
 impl Default for AcpConfig {
     fn default() -> Self {
