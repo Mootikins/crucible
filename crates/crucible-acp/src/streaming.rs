@@ -18,6 +18,19 @@ pub struct ToolCallInfo {
     pub title: String,
     /// The tool parameters/arguments as JSON
     pub arguments: Option<serde_json::Value>,
+    /// Optional identifier for deduplication/updates
+    pub id: Option<String>,
+}
+
+/// Convert a tool title into a human-readable name by removing MCP schema prefixes.
+pub fn humanize_tool_title(title: &str) -> String {
+    if let Some(stripped) = title.strip_prefix("mcp__crucible__") {
+        stripped.to_string()
+    } else if let Some(stripped) = title.strip_prefix("mcp__") {
+        stripped.to_string()
+    } else {
+        title.to_string()
+    }
 }
 
 /// Configuration for response streaming
@@ -102,7 +115,11 @@ impl StreamHandler {
     /// # Returns
     ///
     /// Formatted string, or None if tool calls are disabled
-    pub fn format_tool_call(&self, tool_name: &str, params: &serde_json::Value) -> Result<Option<String>> {
+    pub fn format_tool_call(
+        &self,
+        tool_name: &str,
+        params: &serde_json::Value,
+    ) -> Result<Option<String>> {
         if !self.config.show_tool_calls {
             return Ok(None);
         }
@@ -182,7 +199,10 @@ mod tests {
         assert!(result.is_ok(), "Should format message chunks");
 
         let formatted = result.unwrap();
-        assert!(formatted.contains(chunk), "Should contain the chunk content");
+        assert!(
+            formatted.contains(chunk),
+            "Should contain the chunk content"
+        );
     }
 
     #[test]
@@ -213,7 +233,10 @@ mod tests {
 
         assert!(result.is_ok());
         let formatted = result.unwrap();
-        assert!(formatted.is_none(), "Should return None when thoughts disabled");
+        assert!(
+            formatted.is_none(),
+            "Should return None when thoughts disabled"
+        );
     }
 
     #[test]
@@ -250,7 +273,10 @@ mod tests {
         assert!(result.is_ok());
 
         let formatted = result.unwrap();
-        assert!(formatted.is_none(), "Should return None when tool calls disabled");
+        assert!(
+            formatted.is_none(),
+            "Should return None when tool calls disabled"
+        );
     }
 
     #[test]

@@ -16,17 +16,21 @@
 //! - **Dependency Inversion**: Uses traits from crucible-core for extensibility
 //! - **Open/Closed**: New agent types can be added without modifying this code
 
-use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 use async_trait::async_trait;
-use tokio::process::{Command, Child, ChildStdin, ChildStdout};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::process::Stdio;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
-use crate::{AcpError, Result};
 use crate::session::AcpSession;
-use crate::streaming::ToolCallInfo;
-use crucible_core::traits::acp::{SessionManager, AcpResult};
+use crate::streaming::{humanize_tool_title, ToolCallInfo};
+use crate::{AcpError, Result};
+use agent_client_protocol::{
+    ContentBlock, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    SessionNotification, SessionUpdate,
+};
+use crucible_core::traits::acp::{AcpResult, SessionManager};
 use crucible_core::types::acp::{SessionConfig, SessionId};
 
 /// Configuration for the ACP client
@@ -71,6 +75,75 @@ impl AgentProcess {
         // For now, we assume the process is running if we have a handle to it
         // In a full implementation, we would check the process status
         true
+    }
+}
+
+enum ResponseSegment {
+    Text(String),
+    Tool { label: String, indent: bool },
+}
+
+#[derive(Default)]
+struct StreamingState {
+    segments: Vec<ResponseSegment>,
+    tool_calls: Vec<ToolCallInfo>,
+    notification_count: usize,
+    tool_segment_index: std::collections::HashMap<String, usize>,
+    tool_block_active: bool,
+}
+
+impl StreamingState {
+    fn append_text(&mut self, text: &str) {
+        if text.trim().is_empty() {
+            return;
+        }
+        let chunk = text.to_string();
+        if let Some(ResponseSegment::Text(last)) = self.segments.last_mut() {
+            last.push_str(&chunk);
+        } else {
+            self.segments.push(ResponseSegment::Text(chunk));
+        }
+        self.tool_block_active = false;
+    }
+
+    fn formatted_output(&self) -> String {
+        let mut output = String::new();
+        let mut prev_was_tool = false;
+        for seg in &self.segments {
+            match seg {
+                ResponseSegment::Text(text) => {
+                    if prev_was_tool {
+                        output.push('\n');
+                    }
+                    output.push_str(text);
+                    prev_was_tool = false;
+                }
+                ResponseSegment::Tool { label, indent } => {
+                    if !output.ends_with('\n') && !output.is_empty() {
+                        output.push('\n');
+                    }
+                    if *indent {
+                        output.push(' ');
+                        output.push(' ');
+                    }
+                    output.push_str(label);
+                    output.push('\n');
+                    prev_was_tool = true;
+                }
+            }
+        }
+        output
+    }
+
+    fn formatted_length(&self) -> usize {
+        self.formatted_output().len()
+    }
+
+    fn title_for_tool(&self, id: &str) -> Option<String> {
+        self.tool_calls
+            .iter()
+            .find(|tool| tool.id.as_deref() == Some(id))
+            .map(|tool| tool.title.clone())
     }
 }
 
@@ -156,10 +229,13 @@ impl CrucibleAcpClient {
 
         // Create and return a session
         use crate::session::SessionConfig;
-        let session_id = format!("session-{}", std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis());
+        let session_id = format!(
+            "session-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
 
         Ok(AcpSession::new(SessionConfig::default(), session_id))
     }
@@ -173,7 +249,6 @@ impl CrucibleAcpClient {
     pub fn active_session(&self) -> Option<&SessionId> {
         self.active_session.as_ref()
     }
-
 
     /// Spawn the agent process
     ///
@@ -216,13 +291,18 @@ impl CrucibleAcpClient {
             .stderr(Stdio::piped());
 
         // Spawn the process
-        let mut child = cmd.spawn()
+        let mut child = cmd
+            .spawn()
             .map_err(|e| AcpError::Connection(format!("Failed to spawn agent: {}", e)))?;
 
         // Capture stdin and stdout for communication
-        let stdin = child.stdin.take()
+        let stdin = child
+            .stdin
+            .take()
             .ok_or_else(|| AcpError::Connection("Failed to capture agent stdin".to_string()))?;
-        let stdout = child.stdout.take()
+        let stdout = child
+            .stdout
+            .take()
             .ok_or_else(|| AcpError::Connection("Failed to capture agent stdout".to_string()))?;
 
         // Store stdio handles and process in the client
@@ -309,18 +389,25 @@ impl CrucibleAcpClient {
     /// # Errors
     ///
     /// Returns an error if initialization fails
-    pub async fn initialize(&mut self, request: agent_client_protocol::InitializeRequest) -> Result<agent_client_protocol::InitializeResponse> {
+    pub async fn initialize(
+        &mut self,
+        request: agent_client_protocol::InitializeRequest,
+    ) -> Result<agent_client_protocol::InitializeResponse> {
         use agent_client_protocol::ClientRequest;
 
         // Send the initialize request
-        let response = self.send_request(ClientRequest::InitializeRequest(request)).await?;
+        let response = self
+            .send_request(ClientRequest::InitializeRequest(request))
+            .await?;
 
         // Extract the result field from JSON-RPC response
-        let result = response.get("result")
-            .ok_or_else(|| AcpError::Session("Missing result field in initialize response".to_string()))?;
+        let result = response.get("result").ok_or_else(|| {
+            AcpError::Session("Missing result field in initialize response".to_string())
+        })?;
 
         // Parse the result as InitializeResponse
-        let init_response: agent_client_protocol::InitializeResponse = serde_json::from_value(result.clone())?;
+        let init_response: agent_client_protocol::InitializeResponse =
+            serde_json::from_value(result.clone())?;
 
         Ok(init_response)
     }
@@ -340,18 +427,25 @@ impl CrucibleAcpClient {
     /// # Errors
     ///
     /// Returns an error if session creation fails
-    pub async fn create_new_session(&mut self, request: agent_client_protocol::NewSessionRequest) -> Result<agent_client_protocol::NewSessionResponse> {
+    pub async fn create_new_session(
+        &mut self,
+        request: agent_client_protocol::NewSessionRequest,
+    ) -> Result<agent_client_protocol::NewSessionResponse> {
         use agent_client_protocol::ClientRequest;
 
         // Send the new session request
-        let response = self.send_request(ClientRequest::NewSessionRequest(request)).await?;
+        let response = self
+            .send_request(ClientRequest::NewSessionRequest(request))
+            .await?;
 
         // Extract the result field from JSON-RPC response
-        let result = response.get("result")
-            .ok_or_else(|| AcpError::Session("Missing result field in new session response".to_string()))?;
+        let result = response.get("result").ok_or_else(|| {
+            AcpError::Session("Missing result field in new session response".to_string())
+        })?;
 
         // Parse the result as NewSessionResponse
-        let session_response: agent_client_protocol::NewSessionResponse = serde_json::from_value(result.clone())?;
+        let session_response: agent_client_protocol::NewSessionResponse =
+            serde_json::from_value(result.clone())?;
 
         Ok(session_response)
     }
@@ -372,7 +466,9 @@ impl CrucibleAcpClient {
     ///
     /// Returns an error if any step of the handshake fails
     pub async fn connect_with_handshake(&mut self) -> Result<AcpSession> {
-        use agent_client_protocol::{InitializeRequest, NewSessionRequest, ProtocolVersion, ClientCapabilities};
+        use agent_client_protocol::{
+            ClientCapabilities, InitializeRequest, NewSessionRequest, ProtocolVersion,
+        };
 
         // 1. Spawn agent process
         let _process = self.spawn_agent().await?;
@@ -390,7 +486,7 @@ impl CrucibleAcpClient {
         let _init_response = self.initialize(init_request).await?;
 
         // 3. Send NewSessionRequest with MCP server configuration
-        use agent_client_protocol::{McpServer, EnvVariable};
+        use agent_client_protocol::{EnvVariable, McpServer};
 
         // Configure Crucible MCP server via stdio transport
         // The agent will spawn `cru mcp` which starts the MCP server
@@ -406,7 +502,11 @@ impl CrucibleAcpClient {
         };
 
         let session_request = NewSessionRequest {
-            cwd: self.config.working_dir.clone().unwrap_or_else(|| PathBuf::from("/")),
+            cwd: self
+                .config
+                .working_dir
+                .clone()
+                .unwrap_or_else(|| PathBuf::from("/")),
             mcp_servers: vec![crucible_mcp_server],
             meta: None,
         };
@@ -417,7 +517,10 @@ impl CrucibleAcpClient {
         self.mark_connected();
 
         use crate::session::SessionConfig;
-        Ok(AcpSession::new(SessionConfig::default(), session_response.session_id.to_string()))
+        Ok(AcpSession::new(
+            SessionConfig::default(),
+            session_response.session_id.to_string(),
+        ))
     }
 
     /// Connect to agent with full ACP protocol handshake using SSE MCP server
@@ -440,7 +543,9 @@ impl CrucibleAcpClient {
     ///
     /// Returns an error if any step of the handshake fails
     pub async fn connect_with_sse_mcp(&mut self, sse_url: &str) -> Result<AcpSession> {
-        use agent_client_protocol::{InitializeRequest, NewSessionRequest, ProtocolVersion, ClientCapabilities, McpServer};
+        use agent_client_protocol::{
+            ClientCapabilities, InitializeRequest, McpServer, NewSessionRequest, ProtocolVersion,
+        };
 
         tracing::info!("Connecting to agent with SSE MCP server at {}", sse_url);
 
@@ -467,7 +572,11 @@ impl CrucibleAcpClient {
         tracing::debug!("Configuring MCP server: {:?}", crucible_mcp_server);
 
         let session_request = NewSessionRequest {
-            cwd: self.config.working_dir.clone().unwrap_or_else(|| PathBuf::from("/")),
+            cwd: self
+                .config
+                .working_dir
+                .clone()
+                .unwrap_or_else(|| PathBuf::from("/")),
             mcp_servers: vec![crucible_mcp_server],
             meta: None,
         };
@@ -477,12 +586,17 @@ impl CrucibleAcpClient {
         // 4. Mark as connected and create session
         self.mark_connected();
 
-        tracing::info!("Agent connected with session: {}", session_response.session_id);
+        tracing::info!(
+            "Agent connected with session: {}",
+            session_response.session_id
+        );
 
         use crate::session::SessionConfig;
-        Ok(AcpSession::new(SessionConfig::default(), session_response.session_id.to_string()))
+        Ok(AcpSession::new(
+            SessionConfig::default(),
+            session_response.session_id.to_string(),
+        ))
     }
-
 
     /// Write a JSON request to the agent's stdin
     ///
@@ -494,7 +608,9 @@ impl CrucibleAcpClient {
     ///
     /// Returns an error if writing fails or stdin is not available
     pub async fn write_request(&mut self, request: &serde_json::Value) -> Result<()> {
-        let stdin = self.agent_stdin.as_mut()
+        let stdin = self
+            .agent_stdin
+            .as_mut()
             .ok_or_else(|| AcpError::Connection("Agent stdin not available".to_string()))?;
 
         // Serialize to JSON and add newline
@@ -503,11 +619,15 @@ impl CrucibleAcpClient {
         let line = format!("{}\n", json_str);
 
         // Write to stdin
-        stdin.write_all(line.as_bytes()).await
+        stdin
+            .write_all(line.as_bytes())
+            .await
             .map_err(|e| AcpError::Connection(format!("Failed to write to agent stdin: {}", e)))?;
 
         // Flush to ensure it's sent
-        stdin.flush().await
+        stdin
+            .flush()
+            .await
             .map_err(|e| AcpError::Connection(format!("Failed to flush agent stdin: {}", e)))?;
 
         Ok(())
@@ -523,7 +643,9 @@ impl CrucibleAcpClient {
     ///
     /// Returns an error if reading fails, stdout is not available, or timeout occurs
     pub async fn read_response_line(&mut self) -> Result<String> {
-        let stdout = self.agent_stdout.as_mut()
+        let stdout = self
+            .agent_stdout
+            .as_mut()
             .ok_or_else(|| AcpError::Connection("Agent stdout not available".to_string()))?;
 
         let mut line = String::new();
@@ -532,7 +654,9 @@ impl CrucibleAcpClient {
         // Agents may pause for extended periods during tool execution or deep reasoning.
         // Use 5 minutes per-read minimum, or match the overall streaming timeout if configured.
         // The overall streaming timeout (in send_prompt_with_streaming) provides the actual limit.
-        let per_read_timeout_ms = self.config.timeout_ms
+        let per_read_timeout_ms = self
+            .config
+            .timeout_ms
             .map(|ms| ms.max(300_000)) // At least 5 minutes per read
             .unwrap_or(300_000); // Default 5 minutes
         let duration = tokio::time::Duration::from_millis(per_read_timeout_ms);
@@ -546,7 +670,10 @@ impl CrucibleAcpClient {
         match read_result {
             Ok(0) => Err(AcpError::Connection("Agent closed stdout".to_string())),
             Ok(_) => Ok(line.trim_end().to_string()),
-            Err(e) => Err(AcpError::Connection(format!("Failed to read from agent stdout: {}", e))),
+            Err(e) => Err(AcpError::Connection(format!(
+                "Failed to read from agent stdout: {}",
+                e
+            ))),
         }
     }
 
@@ -563,32 +690,35 @@ impl CrucibleAcpClient {
     /// # Errors
     ///
     /// Returns an error if communication fails
-    pub async fn send_request(&mut self, request: agent_client_protocol::ClientRequest) -> Result<serde_json::Value> {
+    pub async fn send_request(
+        &mut self,
+        request: agent_client_protocol::ClientRequest,
+    ) -> Result<serde_json::Value> {
         use serde_json::json;
 
         // Determine method name and params from ClientRequest
         let (method, params) = match &request {
             agent_client_protocol::ClientRequest::InitializeRequest(req) => {
                 ("initialize", serde_json::to_value(req)?)
-            },
+            }
             agent_client_protocol::ClientRequest::AuthenticateRequest(req) => {
                 ("authenticate", serde_json::to_value(req)?)
-            },
+            }
             agent_client_protocol::ClientRequest::NewSessionRequest(req) => {
                 ("session/new", serde_json::to_value(req)?)
-            },
+            }
             agent_client_protocol::ClientRequest::LoadSessionRequest(req) => {
                 ("session/load", serde_json::to_value(req)?)
-            },
+            }
             agent_client_protocol::ClientRequest::SetSessionModeRequest(req) => {
                 ("session/set_mode", serde_json::to_value(req)?)
-            },
+            }
             agent_client_protocol::ClientRequest::PromptRequest(req) => {
                 ("session/prompt", serde_json::to_value(req)?)
-            },
+            }
             agent_client_protocol::ClientRequest::ExtMethodRequest(req) => {
                 ("ext", serde_json::to_value(req)?)
-            },
+            }
         };
 
         // Generate a unique request ID
@@ -628,7 +758,7 @@ impl CrucibleAcpClient {
     ///
     /// # Returns
     ///
-    /// Tuple of (accumulated_content, tool_calls, PromptResponse)
+    /// Tuple of (formatted_content, tool_calls, PromptResponse)
     ///
     /// # Errors
     ///
@@ -637,8 +767,11 @@ impl CrucibleAcpClient {
         &mut self,
         request: agent_client_protocol::PromptRequest,
         request_id: u64,
-    ) -> Result<(String, Vec<ToolCallInfo>, agent_client_protocol::PromptResponse)> {
-        use agent_client_protocol::{SessionNotification, SessionUpdate, ContentBlock};
+    ) -> Result<(
+        String,
+        Vec<ToolCallInfo>,
+        agent_client_protocol::PromptResponse,
+    )> {
         use serde_json::json;
 
         tracing::info!("Starting streaming request with ID {}", request_id);
@@ -654,148 +787,316 @@ impl CrucibleAcpClient {
         // Write to agent stdin
         self.write_request(&json_request).await?;
 
-        // Accumulate agent message content from streaming notifications
-        let mut accumulated_content = String::new();
-        let mut tool_calls: Vec<ToolCallInfo> = Vec::new();
-        let mut final_response: Option<agent_client_protocol::PromptResponse> = None;
-        let mut notification_count = 0;
-
         // Create overall timeout (10x per-read timeout or 30s default)
-        let overall_timeout = self.config.timeout_ms
+        let overall_timeout = self
+            .config
+            .timeout_ms
             .map(|ms| tokio::time::Duration::from_millis(ms * 10))
             .unwrap_or(tokio::time::Duration::from_secs(30));
 
         // Wrap the streaming loop in a timeout
         let streaming_future = async {
+            let mut state = StreamingState::default();
+
             // Read lines until we get the final response (with matching id)
             loop {
                 let response_line = self.read_response_line().await?;
                 let response: serde_json::Value = serde_json::from_str(&response_line)?;
 
                 tracing::trace!("Received line: {}", response_line);
-                tracing::debug!("Received from agent: {}", serde_json::to_string_pretty(&response).unwrap_or_default());
+                tracing::debug!(
+                    "Received from agent: {}",
+                    serde_json::to_string_pretty(&response).unwrap_or_default()
+                );
 
                 // Check for error responses
                 if let Some(error) = response.get("error") {
-                    let error_msg = error.get("message")
+                    let error_msg = error
+                        .get("message")
                         .and_then(|m| m.as_str())
                         .unwrap_or("Unknown error");
-                    let error_code = error.get("code")
-                        .and_then(|c| c.as_i64())
-                        .unwrap_or(-1);
+                    let error_code = error.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
 
                     tracing::error!("Agent returned error: {} (code: {})", error_msg, error_code);
                     return Err(AcpError::Session(format!(
                         "Agent error during streaming: {} (code: {}, accumulated {} chars)",
-                        error_msg, error_code, accumulated_content.len()
+                        error_msg,
+                        error_code,
+                        state.formatted_length()
                     )));
                 }
 
-                // Check if this is a notification (no id field) or a response (has id)
-                if let Some(id) = response.get("id") {
-                    // This is a JSON-RPC response - check if it matches our request
-                    // Support both numeric and string IDs
-                    let id_matches = match id {
-                        serde_json::Value::Number(n) => n.as_u64() == Some(request_id),
-                        serde_json::Value::String(s) => s.parse::<u64>().ok() == Some(request_id),
-                        _ => false,
-                    };
+                if let Some(prompt_response) = self
+                    .process_streaming_message(&response, request_id, &mut state)
+                    .await?
+                {
+                    tracing::info!(
+                        "Final response received (ID: {:?}) after {} notifications, {} chars",
+                        request_id,
+                        state.notification_count,
+                        state.formatted_length()
+                    );
 
-                    if id_matches {
-                        tracing::info!(
-                            "Final response received (ID: {:?}) after {} notifications, {} chars",
-                            id, notification_count, accumulated_content.len()
-                        );
-
-                        let result = response.get("result")
-                            .ok_or_else(|| AcpError::Session("Missing result in prompt response".to_string()))?;
-
-                        final_response = Some(serde_json::from_value(result.clone())?);
-                        break;
-                    } else {
-                        tracing::warn!("Received response with non-matching ID: {:?} (expected: {})", id, request_id);
-                    }
-                } else if let Some(method) = response.get("method") {
-                    // This is a notification
-                    notification_count += 1;
-                    tracing::debug!("Notification #{}: {}", notification_count, method);
-
-                    if method == "session/update" {
-                        // Extract the params field which contains SessionNotification
-                        if let Some(params) = response.get("params") {
-                            // CORRECT: Parse as SessionNotification first
-                            match serde_json::from_value::<SessionNotification>(params.clone()) {
-                                Ok(notification) => {
-                                    // Extract the update from SessionNotification
-                                    match notification.update {
-                                        SessionUpdate::AgentMessageChunk(chunk) => {
-                                            // Extract text from ContentBlock
-                                            match chunk.content {
-                                                ContentBlock::Text(text_block) => {
-                                                    accumulated_content.push_str(&text_block.text);
-                                                    tracing::trace!("Accumulated chunk: '{}' (total: {} chars)",
-                                                        text_block.text, accumulated_content.len());
-                                                },
-                                                _ => {
-                                                    tracing::debug!("Ignoring non-text content block: {:?}", chunk.content);
-                                                }
-                                            }
-                                        },
-                                        SessionUpdate::ToolCall(tool_call) => {
-                                            tracing::info!("Tool call: {}", tool_call.title);
-                                            tool_calls.push(ToolCallInfo {
-                                                title: tool_call.title.clone(),
-                                                arguments: tool_call.raw_input.clone(),
-                                            });
-                                        },
-                                        SessionUpdate::ToolCallUpdate(update) => {
-                                            tracing::debug!("Tool call update: {:?}", update.id);
-                                            // Updates can contain new info - check if we need to add/update
-                                            if let Some(title) = update.fields.title {
-                                                // Check if we already have this tool call
-                                                let existing = tool_calls.iter_mut()
-                                                    .find(|t| t.title == title);
-                                                if existing.is_none() {
-                                                    tool_calls.push(ToolCallInfo {
-                                                        title,
-                                                        arguments: update.fields.raw_input,
-                                                    });
-                                                }
-                                            }
-                                        },
-                                        other => {
-                                            tracing::debug!("Ignoring update type: {:?}", other);
-                                        }
-                                    }
-                                },
-                                Err(e) => {
-                                    tracing::warn!("Failed to parse SessionNotification: {}", e);
-                                    tracing::debug!("Raw params: {}", params);
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    tracing::error!("Received response with no id or method: {:?}", response);
+                    return Ok((state, prompt_response));
                 }
             }
-
-            Ok::<_, AcpError>((accumulated_content, tool_calls, final_response))
         };
 
         // Apply overall timeout
         match tokio::time::timeout(overall_timeout, streaming_future).await {
-            Ok(Ok((content, tools, Some(response)))) => Ok((content, tools, response)),
-            Ok(Ok((content, _tools, None))) => Err(AcpError::Session(format!(
-                "Never received final prompt response (accumulated {} chars)",
-                content.len()
-            ))),
+            Ok(Ok((state, response))) => Ok((state.formatted_output(), state.tool_calls, response)),
             Ok(Err(e)) => Err(e),
             Err(_) => Err(AcpError::Timeout(format!(
                 "Streaming operation timed out after {}s",
                 overall_timeout.as_secs()
             ))),
         }
+    }
+
+    async fn process_streaming_message(
+        &mut self,
+        response: &serde_json::Value,
+        request_id: u64,
+        state: &mut StreamingState,
+    ) -> Result<Option<agent_client_protocol::PromptResponse>> {
+        if let Some(method_value) = response.get("method") {
+            state.notification_count += 1;
+            let method_name = method_value.as_str().unwrap_or_default();
+            tracing::debug!(
+                "Notification #{}: {}",
+                state.notification_count,
+                method_name
+            );
+
+            if method_name == "session/update" {
+                if let Some(params) = response.get("params") {
+                    match serde_json::from_value::<SessionNotification>(params.clone()) {
+                        Ok(notification) => self.apply_session_update(notification, state),
+                        Err(e) => {
+                            tracing::warn!("Failed to parse SessionNotification: {}", e);
+                            tracing::debug!("Raw params: {}", params);
+                        }
+                    }
+                } else {
+                    tracing::warn!("session/update notification missing params");
+                }
+            } else if method_name == "session/request_permission" {
+                if let Some(params) = response.get("params") {
+                    match serde_json::from_value::<RequestPermissionRequest>(params.clone()) {
+                        Ok(request) => {
+                            if let Some(id_value) = response.get("id") {
+                                if let Some(permission_id) = self.parse_request_id(id_value) {
+                                    self.respond_to_permission_request(permission_id, request)
+                                        .await?;
+                                } else {
+                                    tracing::warn!(
+                                        "Permission request missing valid ID: {:?}",
+                                        id_value
+                                    );
+                                }
+                            } else {
+                                tracing::warn!("Permission request missing ID field");
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to parse RequestPermissionRequest: {}", e);
+                            tracing::debug!("Raw params: {}", params);
+                        }
+                    }
+                } else {
+                    tracing::warn!("session/request_permission missing params");
+                }
+            } else {
+                tracing::debug!("Ignoring RPC method: {}", method_name);
+            }
+
+            return Ok(None);
+        }
+
+        if let Some(id_value) = response.get("id") {
+            let id_matches = match id_value {
+                serde_json::Value::Number(n) => n.as_u64() == Some(request_id),
+                serde_json::Value::String(s) => s.parse::<u64>().ok() == Some(request_id),
+                _ => false,
+            };
+
+            if id_matches {
+                let result = response.get("result").ok_or_else(|| {
+                    AcpError::Session("Missing result in prompt response".to_string())
+                })?;
+                let prompt_response = serde_json::from_value(result.clone())?;
+                return Ok(Some(prompt_response));
+            } else {
+                tracing::warn!(
+                    "Received response with non-matching ID: {:?} (expected: {})",
+                    id_value,
+                    request_id
+                );
+            }
+
+            return Ok(None);
+        }
+
+        Err(AcpError::Session(
+            "Received message without id or method".to_string(),
+        ))
+    }
+
+    fn apply_session_update(&self, notification: SessionNotification, state: &mut StreamingState) {
+        match notification.update {
+            SessionUpdate::AgentMessageChunk(chunk) => match chunk.content {
+                ContentBlock::Text(text_block) => {
+                    state.append_text(&text_block.text);
+                    tracing::trace!(
+                        "Accumulated chunk: '{}' (total: {} chars)",
+                        text_block.text,
+                        state.formatted_length()
+                    );
+                }
+                other => {
+                    tracing::debug!("Ignoring non-text content block: {:?}", other);
+                }
+            },
+            SessionUpdate::ToolCall(tool_call) => {
+                tracing::info!("Tool call: {}", tool_call.title);
+                self.record_tool_call(
+                    ToolCallInfo {
+                        id: Some(tool_call.id.to_string()),
+                        title: tool_call.title.clone(),
+                        arguments: tool_call.raw_input.clone(),
+                    },
+                    state,
+                );
+            }
+            SessionUpdate::ToolCallUpdate(update) => {
+                tracing::debug!("Tool call update: {:?}", update.id);
+                if update.fields.title.is_some() || update.fields.raw_input.is_some() {
+                    let id = update.id.to_string();
+                    let title = update
+                        .fields
+                        .title
+                        .clone()
+                        .or_else(|| state.title_for_tool(&id))
+                        .unwrap_or_else(|| "Unnamed tool".to_string());
+                    self.record_tool_call(
+                        ToolCallInfo {
+                            id: Some(id.clone()),
+                            title,
+                            arguments: update.fields.raw_input.clone(),
+                        },
+                        state,
+                    );
+                }
+            }
+            other => {
+                tracing::debug!("Ignoring update type: {:?}", other);
+            }
+        }
+    }
+
+    async fn respond_to_permission_request(
+        &mut self,
+        request_id: u64,
+        request: RequestPermissionRequest,
+    ) -> Result<()> {
+        let outcome = if let Some(first_option) = request.options.first() {
+            RequestPermissionOutcome::Selected {
+                option_id: first_option.id.clone(),
+            }
+        } else {
+            RequestPermissionOutcome::Cancelled
+        };
+
+        let response = RequestPermissionResponse {
+            outcome,
+            meta: None,
+        };
+
+        let result_value = serde_json::to_value(response)?;
+        let json_response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": result_value
+        });
+
+        self.write_permission_response(json_response).await
+    }
+
+    async fn write_permission_response(&mut self, payload: serde_json::Value) -> Result<()> {
+        if self.agent_stdin.is_none() {
+            tracing::warn!("Agent stdin unavailable; cannot send permission response");
+            return Ok(());
+        }
+        self.write_request(&payload).await
+    }
+
+    fn parse_request_id(&self, value: &serde_json::Value) -> Option<u64> {
+        match value {
+            serde_json::Value::Number(n) => n.as_u64(),
+            serde_json::Value::String(s) => s.parse::<u64>().ok(),
+            _ => None,
+        }
+    }
+
+    fn record_tool_call(&self, tool_call: ToolCallInfo, state: &mut StreamingState) {
+        let args_str = tool_call
+            .arguments
+            .as_ref()
+            .map(|args| serde_json::to_string(args).unwrap_or_else(|_| "<invalid>".to_string()))
+            .unwrap_or_else(|| "".to_string());
+
+        let formatted_args = if args_str.is_empty() {
+            "()".to_string()
+        } else {
+            format!("({})", args_str)
+        };
+
+        let display_title = humanize_tool_title(&tool_call.title);
+        let label = format!("▷ {}{}", display_title, formatted_args);
+        let id = tool_call
+            .id
+            .clone()
+            .unwrap_or_else(|| format!("{}::{}", tool_call.title, args_str));
+
+        let has_prior_text = matches!(
+            state.segments.last(),
+            Some(ResponseSegment::Text(last)) if !last.trim().is_empty()
+        );
+        let indent = has_prior_text || state.tool_block_active;
+
+        if let Some(&idx) = state.tool_segment_index.get(&id) {
+            if let Some(ResponseSegment::Tool {
+                label: existing, ..
+            }) = state.segments.get_mut(idx)
+            {
+                *existing = label.clone();
+            }
+        } else {
+            state
+                .tool_segment_index
+                .insert(id.clone(), state.segments.len());
+            state.segments.push(ResponseSegment::Tool {
+                label: label.clone(),
+                indent,
+            });
+        }
+
+        self.upsert_tool_info(tool_call, state);
+        state.tool_block_active = true;
+    }
+
+    fn upsert_tool_info(&self, tool_call: ToolCallInfo, state: &mut StreamingState) {
+        if let Some(id) = &tool_call.id {
+            if let Some(existing) = state
+                .tool_calls
+                .iter_mut()
+                .find(|t| t.id.as_deref() == Some(id.as_str()))
+            {
+                *existing = tool_call;
+                return;
+            }
+        }
+        state.tool_calls.push(tool_call);
     }
 
     /// Mark the client as connected
@@ -831,11 +1132,11 @@ impl SessionManager for CrucibleAcpClient {
         let mut metadata = config.metadata.clone();
         metadata.insert(
             "cwd".to_string(),
-            serde_json::json!(config.cwd.to_string_lossy())
+            serde_json::json!(config.cwd.to_string_lossy()),
         );
         metadata.insert(
             "mode".to_string(),
-            serde_json::json!(format!("{:?}", config.mode))
+            serde_json::json!(format!("{:?}", config.mode)),
         );
 
         // Track as active session
@@ -861,8 +1162,10 @@ impl SessionManager for CrucibleAcpClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use agent_client_protocol::StopReason;
     use crucible_core::traits::acp::SessionManager;
     use crucible_core::types::acp::{SessionConfig, SessionId};
+    use serde_json::json;
 
     #[test]
     fn test_client_creation() {
@@ -876,6 +1179,46 @@ mod tests {
         };
         let client = CrucibleAcpClient::new(config);
         assert_eq!(client.config().agent_path, PathBuf::from("/test/agent"));
+    }
+
+    #[test]
+    fn streaming_state_merges_chunks_without_newlines() {
+        let mut state = StreamingState::default();
+        state.append_text("I'll rea");
+        state.append_text("d a few notes from the kiln.");
+
+        assert_eq!(
+            state.formatted_output(),
+            "I'll read a few notes from the kiln."
+        );
+    }
+
+    #[test]
+    fn streaming_state_adds_padding_after_tools() {
+        let config = ClientConfig {
+            agent_path: PathBuf::from("/tmp/agent"),
+            agent_args: None,
+            working_dir: None,
+            env_vars: None,
+            timeout_ms: Some(1000),
+            max_retries: Some(1),
+        };
+        let client = CrucibleAcpClient::new(config);
+        let mut state = StreamingState::default();
+        state.append_text("First chunk");
+
+        let tool_call = ToolCallInfo {
+            title: "test_tool".to_string(),
+            arguments: None,
+            id: None,
+        };
+        client.record_tool_call(tool_call, &mut state);
+        state.append_text("Response after the tool call.");
+
+        assert_eq!(
+            state.formatted_output(),
+            "First chunk\n  ▷ test_tool()\n\nResponse after the tool call."
+        );
     }
 
     #[tokio::test]
@@ -951,6 +1294,130 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn process_streaming_message_prioritizes_methods() {
+        let config = ClientConfig {
+            agent_path: PathBuf::from("/tmp/test-agent"),
+            agent_args: None,
+            working_dir: None,
+            env_vars: None,
+            timeout_ms: Some(1000),
+            max_retries: Some(1),
+        };
+        let mut client = CrucibleAcpClient::new(config);
+        let mut state = StreamingState::default();
+
+        let request_payload = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 0,
+            "method": "session/request_permission",
+            "params": {}
+        });
+
+        let result = client
+            .process_streaming_message(&request_payload, 1, &mut state)
+            .await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+        assert_eq!(state.notification_count, 1);
+    }
+
+    #[tokio::test]
+    async fn process_streaming_message_returns_prompt_response() {
+        let config = ClientConfig {
+            agent_path: PathBuf::from("/tmp/test-agent"),
+            agent_args: None,
+            working_dir: None,
+            env_vars: None,
+            timeout_ms: Some(1000),
+            max_retries: Some(1),
+        };
+        let mut client = CrucibleAcpClient::new(config);
+        let mut state = StreamingState::default();
+
+        let response_payload = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 5,
+            "result": {
+                "stopReason": "end_turn"
+            }
+        });
+
+        let result = client
+            .process_streaming_message(&response_payload, 5, &mut state)
+            .await
+            .expect("Should parse prompt response");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().stop_reason, StopReason::EndTurn);
+    }
+
+    #[test]
+    fn tool_call_indents_after_text() {
+        let config = ClientConfig {
+            agent_path: PathBuf::from("/tmp/test-agent"),
+            agent_args: None,
+            working_dir: None,
+            env_vars: None,
+            timeout_ms: Some(1000),
+            max_retries: Some(1),
+        };
+        let client = CrucibleAcpClient::new(config);
+        let mut state = StreamingState::default();
+
+        state.append_text("Hello");
+
+        client.record_tool_call(
+            ToolCallInfo {
+                id: Some("tool-1".into()),
+                title: "mcp__crucible__read_note".to_string(),
+                arguments: Some(json!({"path": "PRIME"})),
+            },
+            &mut state,
+        );
+
+        state.append_text("World");
+
+        let output = state.formatted_output();
+        assert!(output.contains("Hello\n  ▷ read_note"));
+        assert!(output.contains("\n\nWorld"));
+    }
+
+    #[test]
+    fn tool_call_updates_existing_entry() {
+        let config = ClientConfig {
+            agent_path: PathBuf::from("/tmp/test-agent"),
+            agent_args: None,
+            working_dir: None,
+            env_vars: None,
+            timeout_ms: Some(1000),
+            max_retries: Some(1),
+        };
+        let client = CrucibleAcpClient::new(config);
+        let mut state = StreamingState::default();
+
+        client.record_tool_call(
+            ToolCallInfo {
+                id: Some("tool-42".into()),
+                title: "mcp__crucible__read_note".to_string(),
+                arguments: Some(json!({"path": "PRIME"})),
+            },
+            &mut state,
+        );
+
+        client.record_tool_call(
+            ToolCallInfo {
+                id: Some("tool-42".into()),
+                title: "mcp__crucible__read_note".to_string(),
+                arguments: Some(json!({"path": "PRIME.md"})),
+            },
+            &mut state,
+        );
+
+        let output = state.formatted_output();
+        assert_eq!(output.matches("▷ read_note").count(), 1);
+        assert!(output.contains("PRIME.md"));
+    }
+
+    #[tokio::test]
     async fn test_session_creation_with_mock_agent() {
         use crate::mock_agent::{MockAgent, MockAgentConfig};
         use std::collections::HashMap;
@@ -965,13 +1432,13 @@ mod tests {
                     "name": "mock-agent",
                     "version": "0.1.0"
                 }
-            })
+            }),
         );
         responses.insert(
             "new_session".to_string(),
             serde_json::json!({
                 "session_id": "test-session-123"
-            })
+            }),
         );
 
         let mock_config = MockAgentConfig {
@@ -1090,7 +1557,10 @@ mod tests {
             assert!(result.is_ok(), "Should disconnect cleanly");
 
             // Connection should be closed
-            assert!(!client.is_connected(), "Should not be connected after disconnect");
+            assert!(
+                !client.is_connected(),
+                "Should not be connected after disconnect"
+            );
         }
     }
 
@@ -1113,7 +1583,7 @@ mod tests {
 
         let err = result.unwrap_err();
         match err {
-            AcpError::Connection(_) => {}, // Expected
+            AcpError::Connection(_) => {} // Expected
             _ => panic!("Should be Connection error"),
         }
     }
@@ -1137,15 +1607,17 @@ mod tests {
 
         let err = result.unwrap_err();
         match err {
-            AcpError::Timeout(_) => {}, // Expected
-            AcpError::Connection(_) => {}, // Also acceptable
+            AcpError::Timeout(_) => {}    // Expected
+            AcpError::Connection(_) => {} // Also acceptable
             _ => panic!("Should be Timeout or Connection error"),
         }
     }
 
     #[tokio::test]
     async fn test_stdio_message_exchange() {
-        use agent_client_protocol::{ClientRequest, InitializeRequest, ProtocolVersion, ClientCapabilities};
+        use agent_client_protocol::{
+            ClientCapabilities, ClientRequest, InitializeRequest, ProtocolVersion,
+        };
 
         // Use 'cat' as a simple echo agent for testing
         let config = ClientConfig {
@@ -1279,12 +1751,17 @@ mod tests {
 
         // After disconnect, should not be connected
         client.mark_disconnected();
-        assert!(!client.is_connected(), "Should not be connected after disconnect");
+        assert!(
+            !client.is_connected(),
+            "Should not be connected after disconnect"
+        );
     }
 
     #[tokio::test]
     async fn test_full_request_response_cycle() {
-        use agent_client_protocol::{ClientRequest, InitializeRequest, ProtocolVersion, ClientCapabilities};
+        use agent_client_protocol::{
+            ClientCapabilities, ClientRequest, InitializeRequest, ProtocolVersion,
+        };
 
         let config = ClientConfig {
             agent_path: PathBuf::from("cat"),
@@ -1393,17 +1870,17 @@ mod tests {
 
         // Create a session for testing
         use crate::session::SessionConfig;
-        let session = AcpSession::new(
-            SessionConfig::default(),
-            "test-session-123".to_string()
-        );
+        let session = AcpSession::new(SessionConfig::default(), "test-session-123".to_string());
 
         // Disconnect should clean up
         let result = client.disconnect(&session).await;
 
         // Should succeed
         assert!(result.is_ok(), "Should disconnect successfully");
-        assert!(!client.is_connected(), "Should not be connected after disconnect");
+        assert!(
+            !client.is_connected(),
+            "Should not be connected after disconnect"
+        );
     }
 
     // RED: Test expects full lifecycle: connect -> message -> disconnect
@@ -1433,7 +1910,10 @@ mod tests {
             let disconnect_result = client.disconnect(&session).await;
 
             if disconnect_result.is_ok() {
-                assert!(!client.is_connected(), "Should not be connected after disconnect");
+                assert!(
+                    !client.is_connected(),
+                    "Should not be connected after disconnect"
+                );
             }
         }
     }
@@ -1441,7 +1921,7 @@ mod tests {
     // Test that initialize() method exists and sends messages
     #[tokio::test]
     async fn test_protocol_initialize_handshake() {
-        use agent_client_protocol::{InitializeRequest, ProtocolVersion, ClientCapabilities};
+        use agent_client_protocol::{ClientCapabilities, InitializeRequest, ProtocolVersion};
 
         let config = ClientConfig {
             agent_path: PathBuf::from("cat"),
