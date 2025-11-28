@@ -1,7 +1,9 @@
 //! Configuration and error handling integration tests
 
 use crucible_cli::config::CliConfig;
-use crucible_config::{EmbeddingConfig, AcpConfig, ChatConfig, CliConfig as NewCliConfig, EmbeddingProviderType};
+use crucible_config::{
+    AcpConfig, ChatConfig, CliConfig as NewCliConfig, EmbeddingConfig, EmbeddingProviderType,
+};
 use serial_test::serial;
 use std::fs;
 use tempfile::TempDir;
@@ -66,7 +68,10 @@ verbose = false
     assert_eq!(config.kiln_path.to_str().unwrap(), "/tmp/test-kiln");
     assert_eq!(config.embedding.provider, EmbeddingProviderType::OpenAI);
     assert_eq!(config.embedding.model, Some("test-model".to_string()));
-    assert_eq!(config.embedding.api_url, Some("https://example.com".to_string()));
+    assert_eq!(
+        config.embedding.api_url,
+        Some("https://example.com".to_string())
+    );
 }
 
 #[test]
@@ -243,12 +248,19 @@ model = "text-embedding-3-small"
 api_url = "https://api.openai.com/v1"
 batch_size = 32
 "#,
-    ).unwrap();
+    )
+    .unwrap();
 
     let config = CliConfig::load(Some(config_path), None, None).unwrap();
     assert_eq!(config.embedding.provider, EmbeddingProviderType::OpenAI);
-    assert_eq!(config.embedding.model, Some("text-embedding-3-small".to_string()));
-    assert_eq!(config.embedding.api_url, Some("https://api.openai.com/v1".to_string()));
+    assert_eq!(
+        config.embedding.model,
+        Some("text-embedding-3-small".to_string())
+    );
+    assert_eq!(
+        config.embedding.api_url,
+        Some("https://api.openai.com/v1".to_string())
+    );
     assert_eq!(config.embedding.batch_size, 32);
 }
 

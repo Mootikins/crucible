@@ -15,9 +15,9 @@
 //! - **Dependency Inversion**: Uses traits for extensibility
 //! - **Open/Closed**: New tool types can be added without modification
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 
 use crate::{AcpError, Result};
 
@@ -147,7 +147,8 @@ Kiln: get_kiln_info
 
 When referencing notes, use simple names (\"My Note\") or wikilinks (\"[[My Note]]\"). \
 The system finds notes anywhere in the kiln. Full paths (\"folder/note.md\") also work. \
-Notes support YAML frontmatter for metadata.".to_string()
+Notes support YAML frontmatter for metadata."
+        .to_string()
 }
 
 /// Discover and register all Crucible tools
@@ -180,7 +181,10 @@ pub fn discover_crucible_tools(registry: &mut ToolRegistry, _kiln_path: &str) ->
 
     // Register NoteTools (6 tools)
     let note_tools = vec![
-        create_tool("create_note", "Create a new note in the kiln", "notes",
+        create_tool(
+            "create_note",
+            "Create a new note in the kiln",
+            "notes",
             serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -189,8 +193,12 @@ pub fn discover_crucible_tools(registry: &mut ToolRegistry, _kiln_path: &str) ->
                     "frontmatter": {"type": "object", "description": "Optional YAML frontmatter metadata"}
                 },
                 "required": ["path", "content"]
-            })),
-        create_tool("read_note", "Read the contents of a note", "notes",
+            }),
+        ),
+        create_tool(
+            "read_note",
+            "Read the contents of a note",
+            "notes",
             serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -199,16 +207,24 @@ pub fn discover_crucible_tools(registry: &mut ToolRegistry, _kiln_path: &str) ->
                     "end_line": {"type": "integer", "description": "Optional ending line number"}
                 },
                 "required": ["path"]
-            })),
-        create_tool("read_metadata", "Read only the frontmatter metadata of a note", "notes",
+            }),
+        ),
+        create_tool(
+            "read_metadata",
+            "Read only the frontmatter metadata of a note",
+            "notes",
             serde_json::json!({
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "Path to the note file"}
                 },
                 "required": ["path"]
-            })),
-        create_tool("update_note", "Update an existing note's content or metadata", "notes",
+            }),
+        ),
+        create_tool(
+            "update_note",
+            "Update an existing note's content or metadata",
+            "notes",
             serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -217,16 +233,24 @@ pub fn discover_crucible_tools(registry: &mut ToolRegistry, _kiln_path: &str) ->
                     "frontmatter": {"type": "object", "description": "Updated frontmatter metadata"}
                 },
                 "required": ["path"]
-            })),
-        create_tool("delete_note", "Delete a note from the kiln", "notes",
+            }),
+        ),
+        create_tool(
+            "delete_note",
+            "Delete a note from the kiln",
+            "notes",
             serde_json::json!({
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "Path to the note file to delete"}
                 },
                 "required": ["path"]
-            })),
-        create_tool("list_notes", "List all notes in the kiln or a specific folder", "notes",
+            }),
+        ),
+        create_tool(
+            "list_notes",
+            "List all notes in the kiln or a specific folder",
+            "notes",
             serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -234,7 +258,8 @@ pub fn discover_crucible_tools(registry: &mut ToolRegistry, _kiln_path: &str) ->
                     "include_frontmatter": {"type": "boolean", "description": "Whether to include frontmatter in results"},
                     "recursive": {"type": "boolean", "description": "Whether to recursively list notes in subfolders"}
                 }
-            })),
+            }),
+        ),
     ];
 
     for tool in note_tools {
@@ -244,7 +269,10 @@ pub fn discover_crucible_tools(registry: &mut ToolRegistry, _kiln_path: &str) ->
 
     // Register SearchTools (3 tools)
     let search_tools = vec![
-        create_tool("text_search", "Search for notes by text content", "search",
+        create_tool(
+            "text_search",
+            "Search for notes by text content",
+            "search",
             serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -252,8 +280,12 @@ pub fn discover_crucible_tools(registry: &mut ToolRegistry, _kiln_path: &str) ->
                     "limit": {"type": "integer", "description": "Maximum number of results to return"}
                 },
                 "required": ["query"]
-            })),
-        create_tool("property_search", "Search for notes by frontmatter properties", "search",
+            }),
+        ),
+        create_tool(
+            "property_search",
+            "Search for notes by frontmatter properties",
+            "search",
             serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -261,8 +293,12 @@ pub fn discover_crucible_tools(registry: &mut ToolRegistry, _kiln_path: &str) ->
                     "value": {"type": "string", "description": "Value to match"}
                 },
                 "required": ["property", "value"]
-            })),
-        create_tool("semantic_search", "Search for notes by semantic similarity using embeddings", "search",
+            }),
+        ),
+        create_tool(
+            "semantic_search",
+            "Search for notes by semantic similarity using embeddings",
+            "search",
             serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -270,7 +306,8 @@ pub fn discover_crucible_tools(registry: &mut ToolRegistry, _kiln_path: &str) ->
                     "limit": {"type": "integer", "description": "Maximum number of results to return"}
                 },
                 "required": ["query"]
-            })),
+            }),
+        ),
     ];
 
     for tool in search_tools {
@@ -283,7 +320,7 @@ pub fn discover_crucible_tools(registry: &mut ToolRegistry, _kiln_path: &str) ->
         "get_kiln_info",
         "Get metadata and information about the kiln",
         "kiln",
-        serde_json::json!({"type": "object", "properties": {}})
+        serde_json::json!({"type": "object", "properties": {}}),
     ))?;
     count += 1;
 
@@ -320,7 +357,11 @@ impl ToolExecutor {
     /// # Errors
     ///
     /// Returns an error if the tool doesn't exist or execution fails
-    pub async fn execute(&self, tool_name: &str, params: serde_json::Value) -> Result<serde_json::Value> {
+    pub async fn execute(
+        &self,
+        tool_name: &str,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value> {
         //
         // Route tool calls to the appropriate tool implementation based on category
         match tool_name {
@@ -347,7 +388,8 @@ impl ToolExecutor {
 
     /// Helper to extract a required string parameter
     fn get_required_param(params: &serde_json::Value, name: &str) -> Result<String> {
-        params.get(name)
+        params
+            .get(name)
             .and_then(|v| v.as_str())
             .map(String::from)
             .ok_or_else(|| AcpError::InvalidConfig(format!("Missing required parameter: {}", name)))
@@ -365,7 +407,7 @@ impl ToolExecutor {
 
         // Strip wikilink brackets if present
         let cleaned = if name_or_path.starts_with("[[") && name_or_path.ends_with("]]") {
-            &name_or_path[2..name_or_path.len()-2]
+            &name_or_path[2..name_or_path.len() - 2]
         } else {
             name_or_path
         };
@@ -376,7 +418,10 @@ impl ToolExecutor {
             if full_path.exists() {
                 return Ok(full_path);
             }
-            return Err(AcpError::NotFound(format!("Note not found at path: {}", cleaned)));
+            return Err(AcpError::NotFound(format!(
+                "Note not found at path: {}",
+                cleaned
+            )));
         }
 
         // Otherwise, search for the note by name
@@ -404,12 +449,15 @@ impl ToolExecutor {
         let mut stack = vec![self.kiln_path.clone()];
 
         while let Some(dir) = stack.pop() {
-            let mut entries = fs::read_dir(&dir).await
+            let mut entries = fs::read_dir(&dir)
+                .await
                 .map_err(|e| AcpError::FileSystem(format!("Failed to read directory: {}", e)))?;
 
-            while let Some(entry) = entries.next_entry().await
-                .map_err(|e| AcpError::FileSystem(format!("Failed to read entry: {}", e)))? {
-
+            while let Some(entry) = entries
+                .next_entry()
+                .await
+                .map_err(|e| AcpError::FileSystem(format!("Failed to read entry: {}", e)))?
+            {
                 let path = entry.path();
 
                 if path.is_dir() {
@@ -427,7 +475,11 @@ impl ToolExecutor {
     }
 
     /// Execute a note tool
-    async fn execute_note_tool(&self, tool_name: &str, params: serde_json::Value) -> Result<serde_json::Value> {
+    async fn execute_note_tool(
+        &self,
+        tool_name: &str,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value> {
         match tool_name {
             "create_note" => {
                 // Extract parameters
@@ -449,7 +501,8 @@ impl ToolExecutor {
                 };
 
                 // Execute the tool by directly writing the file
-                tokio::fs::write(&full_path, &content).await
+                tokio::fs::write(&full_path, &content)
+                    .await
                     .map_err(|e| AcpError::FileSystem(format!("Failed to create note: {}", e)))?;
 
                 Ok(serde_json::json!({
@@ -457,7 +510,7 @@ impl ToolExecutor {
                     "full_path": full_path.to_string_lossy(),
                     "status": "created"
                 }))
-            },
+            }
             "read_note" => {
                 // Extract parameters
                 let path = Self::get_required_param(&params, "path")?;
@@ -465,7 +518,8 @@ impl ToolExecutor {
                 // Resolve note name to path
                 let full_path = self.resolve_note_path(&path).await?;
 
-                let content = tokio::fs::read_to_string(&full_path).await
+                let content = tokio::fs::read_to_string(&full_path)
+                    .await
                     .map_err(|e| AcpError::FileSystem(format!("Failed to read note: {}", e)))?;
 
                 Ok(serde_json::json!({
@@ -474,13 +528,20 @@ impl ToolExecutor {
                     "content": content,
                     "lines": content.lines().count()
                 }))
-            },
-            _ => Err(AcpError::NotFound(format!("Note tool not implemented: {}", tool_name))),
+            }
+            _ => Err(AcpError::NotFound(format!(
+                "Note tool not implemented: {}",
+                tool_name
+            ))),
         }
     }
 
     /// Execute a search tool
-    async fn execute_search_tool(&self, tool_name: &str, _params: serde_json::Value) -> Result<serde_json::Value> {
+    async fn execute_search_tool(
+        &self,
+        tool_name: &str,
+        _params: serde_json::Value,
+    ) -> Result<serde_json::Value> {
         // For now, return a placeholder for search tools
         // Full implementation would integrate with crucible-tools search
         Ok(serde_json::json!({
@@ -491,7 +552,11 @@ impl ToolExecutor {
     }
 
     /// Execute a kiln tool
-    async fn execute_kiln_tool(&self, _tool_name: &str, _params: serde_json::Value) -> Result<serde_json::Value> {
+    async fn execute_kiln_tool(
+        &self,
+        _tool_name: &str,
+        _params: serde_json::Value,
+    ) -> Result<serde_json::Value> {
         // Return basic kiln information
         Ok(serde_json::json!({
             "kiln_path": self.kiln_path.to_string_lossy(),

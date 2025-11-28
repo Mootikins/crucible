@@ -16,7 +16,10 @@ Section 3
 "#;
 
     let parser = CrucibleParser::with_default_extensions();
-    let result = parser.parse_content(content, Path::new("test.md")).await.unwrap();
+    let result = parser
+        .parse_content(content, Path::new("test.md"))
+        .await
+        .unwrap();
 
     assert_eq!(
         result.content.horizontal_rules.len(),
@@ -45,7 +48,10 @@ Content
 "#;
 
     let parser = CrucibleParser::with_default_extensions();
-    let result = parser.parse_content(content, Path::new("test.md")).await.unwrap();
+    let result = parser
+        .parse_content(content, Path::new("test.md"))
+        .await
+        .unwrap();
 
     assert_eq!(
         result.content.horizontal_rules.len(),
@@ -95,7 +101,10 @@ Final content.
 "#;
 
     let parser = CrucibleParser::with_default_extensions();
-    let result = parser.parse_content(content, Path::new("test.md")).await.unwrap();
+    let result = parser
+        .parse_content(content, Path::new("test.md"))
+        .await
+        .unwrap();
 
     assert_eq!(
         result.content.horizontal_rules.len(),

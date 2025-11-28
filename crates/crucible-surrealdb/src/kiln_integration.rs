@@ -17,10 +17,10 @@ use crate::SurrealClient;
 use anyhow::{anyhow, Result};
 use crucible_core::parser::Wikilink;
 use crucible_core::types::{FrontmatterFormat, ParsedNote, Tag};
+use crucible_core::{CrucibleError, Result as CoreResult};
 use serde_json::json;
 use std::path::{Component, Path, PathBuf};
 use tracing::{debug, error, info, warn};
-use crucible_core::{CrucibleError, Result as CoreResult};
 
 /// Initialize the kiln schema in the database
 pub async fn initialize_kiln_schema(client: &SurrealClient) -> Result<()> {
@@ -2600,9 +2600,7 @@ async fn ensure_tag_exists(client: &SurrealClient, tag_name: &str) -> Result<()>
 
     // Use UPDATE with RETURN NONE to create-or-update the tag without failing on duplicates
     // This is idempotent and won't error if the tag already exists
-    let upsert_sql = format!(
-        "UPDATE type::thing('tags', $tag_id) SET name = $name RETURN NONE"
-    );
+    let upsert_sql = format!("UPDATE type::thing('tags', $tag_id) SET name = $name RETURN NONE");
 
     client
         .query(
@@ -2629,11 +2627,14 @@ fn normalize_tag_name(tag: &str) -> String {
 // KNOWLEDGE REPOSITORY IMPLEMENTATION
 // ==============================================================================
 
+use async_trait::async_trait;
 use crucible_core::traits::{KnowledgeRepository, NoteMetadata};
 use crucible_core::types::SearchResult;
-use async_trait::async_trait;
 
-async fn get_note_by_name_internal(client: &SurrealClient, name: &str) -> Result<Option<ParsedNote>> {
+async fn get_note_by_name_internal(
+    client: &SurrealClient,
+    name: &str,
+) -> Result<Option<ParsedNote>> {
     // Try to find by exact ID first
     if let Ok(doc) = retrieve_parsed_document(client, name).await {
         return Ok(Some(doc));
@@ -2641,11 +2642,11 @@ async fn get_note_by_name_internal(client: &SurrealClient, name: &str) -> Result
 
     // Try to find by title
     if let Some(entity_id) = find_entity_id_by_title(client, name).await? {
-            // Reconstruct the ID string from the entity ID
-            let id_str = format!("{}:{}", entity_id.table, entity_id.id);
-            if let Ok(doc) = retrieve_parsed_document(client, &id_str).await {
-                return Ok(Some(doc));
-            }
+        // Reconstruct the ID string from the entity ID
+        let id_str = format!("{}:{}", entity_id.table, entity_id.id);
+        if let Ok(doc) = retrieve_parsed_document(client, &id_str).await {
+            return Ok(Some(doc));
+        }
     }
 
     // Try to find by filename (path)
@@ -2658,13 +2659,16 @@ async fn get_note_by_name_internal(client: &SurrealClient, name: &str) -> Result
     "#;
     let result = client.query(sql, &[json!({ "name": name })]).await?;
     if let Some(record) = result.records.first() {
-            return Ok(Some(convert_record_to_parsed_document(record).await?));
+        return Ok(Some(convert_record_to_parsed_document(record).await?));
     }
 
     Ok(None)
 }
 
-async fn list_notes_internal(client: &SurrealClient, path_filter: Option<&str>) -> Result<Vec<NoteMetadata>> {
+async fn list_notes_internal(
+    client: &SurrealClient,
+    path_filter: Option<&str>,
+) -> Result<Vec<NoteMetadata>> {
     let sql = if let Some(path) = path_filter {
         r#"
             SELECT * FROM entities
@@ -2679,9 +2683,9 @@ async fn list_notes_internal(client: &SurrealClient, path_filter: Option<&str>) 
     };
 
     let params = if let Some(path) = path_filter {
-            vec![json!({ "path": path })]
+        vec![json!({ "path": path })]
     } else {
-            vec![]
+        vec![]
     };
 
     let result = client.query(sql, &params).await?;
@@ -2690,7 +2694,12 @@ async fn list_notes_internal(client: &SurrealClient, path_filter: Option<&str>) 
     for record in result.records {
         let doc = convert_record_to_parsed_document(&record).await?;
         notes.push(NoteMetadata {
-            name: doc.path.file_name().unwrap_or_default().to_string_lossy().to_string(),
+            name: doc
+                .path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
             path: doc.path.to_string_lossy().to_string(),
             title: Some(doc.title()),
             tags: doc.tags.iter().map(|t| t.name.clone()).collect(),
@@ -2702,7 +2711,10 @@ async fn list_notes_internal(client: &SurrealClient, path_filter: Option<&str>) 
     Ok(notes)
 }
 
-async fn search_vectors_internal(client: &SurrealClient, vector: Vec<f32>) -> Result<Vec<SearchResult>> {
+async fn search_vectors_internal(
+    client: &SurrealClient,
+    vector: Vec<f32>,
+) -> Result<Vec<SearchResult>> {
     // 1. Search embeddings table for similar vectors
     // We use vector::similarity::cosine which returns a score between -1 and 1
     // We want the highest scores.
@@ -2719,30 +2731,40 @@ async fn search_vectors_internal(client: &SurrealClient, vector: Vec<f32>) -> Re
     let mut search_results = Vec::new();
 
     for record in result.records {
-            let score = record.data.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            // Filter out low relevance results
-            if score < 0.5 {
+        let score = record
+            .data
+            .get("score")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        // Filter out low relevance results
+        if score < 0.5 {
+            continue;
+        }
+
+        if let Some(entity_id_val) = record.data.get("entity_id") {
+            let entity_id_str = record_ref_to_string(entity_id_val).unwrap_or_default();
+            if entity_id_str.is_empty() {
                 continue;
             }
 
-            if let Some(entity_id_val) = record.data.get("entity_id") {
-                let entity_id_str = record_ref_to_string(entity_id_val).unwrap_or_default();
-                if entity_id_str.is_empty() { continue; }
+            // Fetch the actual document to get snippet/content
+            // For now, we just return the ID and score.
+            // In a real implementation, we might want to fetch the chunk content if available,
+            // or the document content.
+            // The embeddings table has `content_used` which is the chunk text!
+            let snippet = record
+                .data
+                .get("content_used")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
-                // Fetch the actual document to get snippet/content
-                // For now, we just return the ID and score.
-                // In a real implementation, we might want to fetch the chunk content if available,
-                // or the document content.
-                // The embeddings table has `content_used` which is the chunk text!
-                let snippet = record.data.get("content_used").and_then(|v| v.as_str()).map(|s| s.to_string());
-
-                search_results.push(SearchResult {
-                    document_id: crucible_core::database::DocumentId(entity_id_str),
-                    score,
-                    highlights: None,
-                    snippet,
-                });
-            }
+            search_results.push(SearchResult {
+                document_id: crucible_core::database::DocumentId(entity_id_str),
+                score,
+                highlights: None,
+                snippet,
+            });
+        }
     }
 
     Ok(search_results)
@@ -2751,17 +2773,20 @@ async fn search_vectors_internal(client: &SurrealClient, vector: Vec<f32>) -> Re
 #[async_trait]
 impl KnowledgeRepository for SurrealClient {
     async fn get_note_by_name(&self, name: &str) -> CoreResult<Option<ParsedNote>> {
-        get_note_by_name_internal(self, name).await
+        get_note_by_name_internal(self, name)
+            .await
             .map_err(|e| CrucibleError::DatabaseError(e.to_string()))
     }
 
     async fn list_notes(&self, path_filter: Option<&str>) -> CoreResult<Vec<NoteMetadata>> {
-        list_notes_internal(self, path_filter).await
+        list_notes_internal(self, path_filter)
+            .await
             .map_err(|e| CrucibleError::DatabaseError(e.to_string()))
     }
 
     async fn search_vectors(&self, vector: Vec<f32>) -> CoreResult<Vec<SearchResult>> {
-        search_vectors_internal(self, vector).await
+        search_vectors_internal(self, vector)
+            .await
             .map_err(|e| CrucibleError::DatabaseError(e.to_string()))
     }
 }

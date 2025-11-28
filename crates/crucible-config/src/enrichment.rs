@@ -17,7 +17,6 @@ use std::time::Duration;
 // Re-export the EmbeddingProviderType from components module to avoid duplication
 pub use super::components::EmbeddingProviderType;
 
-
 /// Main enrichment configuration
 ///
 /// This configuration encompasses all settings related to document enrichment,
@@ -757,7 +756,7 @@ impl EmbeddingProviderConfig {
             Self::OpenAI(c) => Some(c.dimensions),
             Self::Ollama(c) => Some(c.dimensions),
             Self::FastEmbed(c) => Some(c.dimensions),
-            Self::Cohere(_) => None, // Cohere dimensions vary by model
+            Self::Cohere(_) => None,   // Cohere dimensions vary by model
             Self::VertexAI(_) => None, // VertexAI dimensions vary by model
             Self::Custom(c) => Some(c.dimensions),
             Self::Mock(c) => Some(c.dimensions),
@@ -927,7 +926,10 @@ mod tests {
     #[test]
     fn test_default_enrichment_config() {
         let config = EnrichmentConfig::default();
-        assert!(matches!(config.provider, EmbeddingProviderConfig::FastEmbed(_)));
+        assert!(matches!(
+            config.provider,
+            EmbeddingProviderConfig::FastEmbed(_)
+        ));
         assert_eq!(config.pipeline.batch_size, 16);
     }
 

@@ -285,10 +285,7 @@ impl EmbeddingFixtures {
 
         // Generate embeddings for large batch processing test
         for i in 0..50 {
-            embeddings.insert(
-                format!("Test note {}", i),
-                vec![0.1 + i as f32 * 0.01; 768],
-            );
+            embeddings.insert(format!("Test note {}", i), vec![0.1 + i as f32 * 0.01; 768]);
         }
 
         // Batch embedding fixtures

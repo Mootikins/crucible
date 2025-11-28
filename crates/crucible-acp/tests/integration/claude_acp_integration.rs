@@ -4,9 +4,9 @@
 //! the full handshake with a Claude-ACP-compatible mock agent, including
 //! authentication flows.
 
-use std::path::PathBuf;
-use crucible_acp::CrucibleAcpClient;
 use crucible_acp::client::ClientConfig;
+use crucible_acp::CrucibleAcpClient;
+use std::path::PathBuf;
 
 /// Test that the client can complete handshake with Claude-ACP agent
 ///
@@ -32,9 +32,10 @@ async fn test_claude_acp_complete_handshake_with_auth() {
         agent_args: Some(vec!["--behavior".to_string(), "claude-acp".to_string()]),
         working_dir: None,
         // Claude-ACP requires API key authentication
-        env_vars: Some(vec![
-            ("ANTHROPIC_API_KEY".to_string(), "test-api-key-12345".to_string()),
-        ]),
+        env_vars: Some(vec![(
+            "ANTHROPIC_API_KEY".to_string(),
+            "test-api-key-12345".to_string(),
+        )]),
         timeout_ms: Some(5000),
         max_retries: Some(1),
     };
@@ -56,7 +57,10 @@ async fn test_claude_acp_complete_handshake_with_auth() {
 
     let session = result.unwrap();
     assert!(!session.id().is_empty(), "Should have valid session ID");
-    assert!(client.is_connected(), "Client should be connected after handshake");
+    assert!(
+        client.is_connected(),
+        "Client should be connected after handshake"
+    );
 }
 
 /// Test that initialization response correctly identifies auth requirements
@@ -77,9 +81,10 @@ async fn test_claude_acp_initialization_auth_detection() {
         agent_path: mock_agent_path,
         agent_args: None,
         working_dir: None,
-        env_vars: Some(vec![
-            ("ANTHROPIC_API_KEY".to_string(), "test-api-key-12345".to_string()),
-        ]),
+        env_vars: Some(vec![(
+            "ANTHROPIC_API_KEY".to_string(),
+            "test-api-key-12345".to_string(),
+        )]),
         timeout_ms: Some(5000),
         max_retries: Some(1),
     };
@@ -133,9 +138,10 @@ async fn test_claude_acp_authentication_failure() {
         agent_args: None,
         working_dir: None,
         // Intentionally invalid API key
-        env_vars: Some(vec![
-            ("ANTHROPIC_API_KEY".to_string(), "invalid-key".to_string()),
-        ]),
+        env_vars: Some(vec![(
+            "ANTHROPIC_API_KEY".to_string(),
+            "invalid-key".to_string(),
+        )]),
         timeout_ms: Some(5000),
         max_retries: Some(1),
     };
@@ -170,9 +176,10 @@ async fn test_claude_acp_capabilities() {
         agent_path: mock_agent_path,
         agent_args: None,
         working_dir: None,
-        env_vars: Some(vec![
-            ("ANTHROPIC_API_KEY".to_string(), "test-api-key-12345".to_string()),
-        ]),
+        env_vars: Some(vec![(
+            "ANTHROPIC_API_KEY".to_string(),
+            "test-api-key-12345".to_string(),
+        )]),
         timeout_ms: Some(5000),
         max_retries: Some(1),
     };
@@ -207,9 +214,10 @@ async fn test_claude_acp_session_after_auth() {
         agent_path: mock_agent_path,
         agent_args: None,
         working_dir: None,
-        env_vars: Some(vec![
-            ("ANTHROPIC_API_KEY".to_string(), "test-api-key-12345".to_string()),
-        ]),
+        env_vars: Some(vec![(
+            "ANTHROPIC_API_KEY".to_string(),
+            "test-api-key-12345".to_string(),
+        )]),
         timeout_ms: Some(5000),
         max_retries: Some(1),
     };
@@ -220,8 +228,14 @@ async fn test_claude_acp_session_after_auth() {
     let result = client.connect_with_handshake().await;
 
     if let Ok(session) = result {
-        assert!(!session.id().is_empty(), "Should have valid session ID after auth");
-        assert!(session.id().starts_with("mock-session-"), "Should be mock session");
+        assert!(
+            !session.id().is_empty(),
+            "Should have valid session ID after auth"
+        );
+        assert!(
+            session.id().starts_with("mock-session-"),
+            "Should be mock session"
+        );
     } else {
         // Will fail until auth is implemented
         panic!("Should successfully create session after authentication");

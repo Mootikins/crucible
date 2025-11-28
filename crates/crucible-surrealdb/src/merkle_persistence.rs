@@ -12,8 +12,8 @@
 //! - **Incremental Updates**: Support for partial tree updates
 
 use crate::{DbError, DbResult, RecordId, SurrealClient};
-use crucible_merkle::{HybridMerkleTree, NodeHash, SectionNode, VirtualSection};
 use crucible_core::parser::ParsedNote;
+use crucible_merkle::{HybridMerkleTree, NodeHash, SectionNode, VirtualSection};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -196,7 +196,10 @@ impl MerklePersistence {
         );
 
         if let Some(virtual_section_count) = tree_record.virtual_section_count {
-            content_fields.push_str(&format!(",\n            virtual_section_count: {}", virtual_section_count));
+            content_fields.push_str(&format!(
+                ",\n            virtual_section_count: {}",
+                virtual_section_count
+            ));
         }
 
         if let Some(metadata) = &tree_record.metadata {
@@ -215,8 +218,7 @@ impl MerklePersistence {
             "UPSERT hybrid_tree:`{}` CONTENT {{
                 {}
             }}",
-            record_id,
-            content_fields
+            record_id, content_fields
         );
 
         self.client
@@ -317,10 +319,7 @@ impl MerklePersistence {
         let record_id = urlencoding::encode(tree_id).to_string();
         let query_result = self
             .client
-            .query(
-                &format!("SELECT * FROM hybrid_tree:`{}`", record_id),
-                &[],
-            )
+            .query(&format!("SELECT * FROM hybrid_tree:`{}`", record_id), &[])
             .await
             .map_err(|e| DbError::Query(format!("Failed to retrieve tree metadata: {}", e)))?;
 
@@ -594,10 +593,7 @@ impl MerklePersistence {
         let record_id = urlencoding::encode(tree_id).to_string();
         let query_result = self
             .client
-            .query(
-                &format!("SELECT * FROM hybrid_tree:`{}`", record_id),
-                &[],
-            )
+            .query(&format!("SELECT * FROM hybrid_tree:`{}`", record_id), &[])
             .await
             .map_err(|e| DbError::Query(format!("Failed to retrieve tree metadata: {}", e)))?;
 
@@ -742,11 +738,7 @@ fn sanitize_id(id: &str) -> String {
 // Implement the MerkleStore trait for SurrealDB backend
 #[async_trait::async_trait]
 impl crucible_merkle::MerkleStore for MerklePersistence {
-    async fn store(
-        &self,
-        id: &str,
-        tree: &HybridMerkleTree,
-    ) -> crucible_merkle::StorageResult<()> {
+    async fn store(&self, id: &str, tree: &HybridMerkleTree) -> crucible_merkle::StorageResult<()> {
         self.store_tree(id, tree)
             .await
             .map_err(|e| crucible_merkle::StorageError::Storage(e.to_string()))
@@ -799,9 +791,7 @@ impl crucible_merkle::MerkleStore for MerklePersistence {
                 DbError::InvalidOperation(_) => {
                     crucible_merkle::StorageError::InvalidOperation(e.to_string())
                 }
-                DbError::NotFound(_) => {
-                    crucible_merkle::StorageError::NotFound(id.to_string())
-                }
+                DbError::NotFound(_) => crucible_merkle::StorageError::NotFound(id.to_string()),
                 _ => crucible_merkle::StorageError::Storage(e.to_string()),
             })
     }
@@ -1115,7 +1105,8 @@ mod tests {
         persistence.store_tree(tree_id, &tree_v1).await.unwrap();
 
         // When: We update with new content
-        let doc_v2 = create_test_note("# Meeting\n\nInitial notes.\n\n## Action Items\n\nNew section.");
+        let doc_v2 =
+            create_test_note("# Meeting\n\nInitial notes.\n\n## Action Items\n\nNew section.");
         let tree_v2 = HybridMerkleTree::from_document(&doc_v2);
         let result = persistence
             .update_tree_incremental(tree_id, &tree_v2, &[0])
@@ -1166,10 +1157,7 @@ mod tests {
 
         // And: Tree should no longer exist
         let retrieved = persistence.retrieve_tree(tree_id).await;
-        assert!(
-            retrieved.is_err(),
-            "Tree should not exist after deletion"
-        );
+        assert!(retrieved.is_err(), "Tree should not exist after deletion");
     }
 
     #[tokio::test]
@@ -1207,14 +1195,23 @@ mod tests {
         let tree2 = HybridMerkleTree::from_document(&doc2);
 
         // Store first file
-        persistence.store_tree(path_with_spaces, &tree1).await.unwrap();
+        persistence
+            .store_tree(path_with_spaces, &tree1)
+            .await
+            .unwrap();
 
         // Store second file - this will OVERWRITE the first due to ID collision
-        persistence.store_tree(path_with_underscores, &tree2).await.unwrap();
+        persistence
+            .store_tree(path_with_underscores, &tree2)
+            .await
+            .unwrap();
 
         // Try to retrieve both
         let retrieved1 = persistence.retrieve_tree(path_with_spaces).await.unwrap();
-        let retrieved2 = persistence.retrieve_tree(path_with_underscores).await.unwrap();
+        let retrieved2 = persistence
+            .retrieve_tree(path_with_underscores)
+            .await
+            .unwrap();
 
         // BUG: Both retrievals return the SAME tree (tree2)!
         // This assertion SHOULD FAIL but currently PASSES due to the bug

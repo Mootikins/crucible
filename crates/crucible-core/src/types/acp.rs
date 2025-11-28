@@ -719,8 +719,8 @@ mod tests {
 
     #[test]
     fn test_tool_output() {
-        let output = ToolOutput::success(serde_json::json!({"result": "data"}))
-            .with_execution_time(100);
+        let output =
+            ToolOutput::success(serde_json::json!({"result": "data"})).with_execution_time(100);
 
         assert!(output.success);
         assert_eq!(output.execution_time_ms, Some(100));
@@ -732,8 +732,8 @@ mod tests {
 
     #[test]
     fn test_stream_chunk() {
-        let chunk = StreamChunk::text("Hello, world!")
-            .with_metadata("timestamp", serde_json::json!(12345));
+        let chunk =
+            StreamChunk::text("Hello, world!").with_metadata("timestamp", serde_json::json!(12345));
 
         assert_eq!(chunk.chunk_type, ChunkType::Text);
         assert_eq!(chunk.content, "Hello, world!");

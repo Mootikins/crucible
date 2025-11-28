@@ -151,10 +151,10 @@ impl CrucibleCoreFacade {
         let results = crucible_surrealdb::kiln_integration::semantic_search_with_reranking(
             self.storage.inner(),
             query,
-            rerank_limit,   // initial_limit (candidates to retrieve)
-            None,           // reranker (None for now, TODO: add reranker support)
-            limit,          // final_limit (results to return)
-            provider,       // embedding_provider
+            rerank_limit, // initial_limit (candidates to retrieve)
+            None,         // reranker (None for now, TODO: add reranker support)
+            limit,        // final_limit (results to return)
+            provider,     // embedding_provider
         )
         .await?;
 

@@ -19,11 +19,7 @@ pub trait MarkdownParser: Send + Sync {
     async fn parse_file(&self, path: &Path) -> ParserResult<ParsedNote>;
 
     /// Parse markdown content from a string
-    async fn parse_content(
-        &self,
-        content: &str,
-        source_path: &Path,
-    ) -> ParserResult<ParsedNote>;
+    async fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedNote>;
 
     /// Get parser capabilities
     fn capabilities(&self) -> ParserCapabilities;

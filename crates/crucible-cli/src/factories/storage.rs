@@ -3,19 +3,17 @@
 //! This is part of the composition root where concrete types are wired together.
 //! Phase 5: Uses public adapters API instead of importing concrete types.
 
-use std::sync::Arc;
+use crate::config::CliConfig;
 use anyhow::Result;
 use crucible_core::enrichment::EnrichedNoteStore;
 use crucible_surrealdb::{adapters, SurrealDbConfig};
-use crate::config::CliConfig;
+use std::sync::Arc;
 
 /// Create SurrealDB storage from CLI configuration
 ///
 /// Returns an opaque handle that can be passed to other factory functions.
 /// Phase 5: Now returns SurrealClientHandle instead of concrete SurrealClient.
-pub async fn create_surrealdb_storage(
-    config: &CliConfig,
-) -> Result<adapters::SurrealClientHandle> {
+pub async fn create_surrealdb_storage(config: &CliConfig) -> Result<adapters::SurrealClientHandle> {
     let db_config = SurrealDbConfig {
         path: config.database_path_str()?,
         namespace: "crucible".to_string(),
@@ -24,7 +22,8 @@ pub async fn create_surrealdb_storage(
         timeout_seconds: Some(30),
     };
 
-    adapters::create_surreal_client(db_config).await
+    adapters::create_surreal_client(db_config)
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to create SurrealDB storage: {}", e))
 }
 
@@ -32,9 +31,7 @@ pub async fn create_surrealdb_storage(
 ///
 /// This requires access to the internal client, so we expose it via
 /// a special function in the adapters module.
-pub async fn initialize_surrealdb_schema(
-    client: &adapters::SurrealClientHandle,
-) -> Result<()> {
+pub async fn initialize_surrealdb_schema(client: &adapters::SurrealClientHandle) -> Result<()> {
     // Call kiln_integration via the handle
     // This is a temporary measure - ideally schema initialization should be part of factory
     crucible_surrealdb::kiln_integration::initialize_kiln_schema(client.inner()).await

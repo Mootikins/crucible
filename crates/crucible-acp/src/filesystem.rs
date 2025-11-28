@@ -15,8 +15,8 @@
 //! - **Security**: All paths are validated against allowed directories
 //! - **Dependency Inversion**: Implements traits from crucible-core
 
-use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 use crate::{AcpError, Result};
 
@@ -76,66 +76,67 @@ impl FileSystemHandler {
     ///
     /// `true` if the path is within an allowed root, `false` otherwise
     pub fn is_path_allowed(&self, path: &Path) -> bool {
-
         // If no allowed roots configured, deny all access
         if self.config.allowed_roots.is_empty() {
             return false;
         }
 
         // Try to canonicalize the path to resolve any symlinks or .. components
-        let canonical_path = match path.canonicalize() {
-            Ok(p) => p,
-            Err(_) => {
-                // If we can't canonicalize (file doesn't exist), we need to resolve
-                // .. components manually to prevent traversal attacks
-                let abs_path = if path.is_absolute() {
-                    path.to_path_buf()
-                } else {
-                    match std::env::current_dir() {
-                        Ok(cwd) => cwd.join(path),
-                        Err(_) => return false,
-                    }
-                };
+        let canonical_path =
+            match path.canonicalize() {
+                Ok(p) => p,
+                Err(_) => {
+                    // If we can't canonicalize (file doesn't exist), we need to resolve
+                    // .. components manually to prevent traversal attacks
+                    let abs_path = if path.is_absolute() {
+                        path.to_path_buf()
+                    } else {
+                        match std::env::current_dir() {
+                            Ok(cwd) => cwd.join(path),
+                            Err(_) => return false,
+                        }
+                    };
 
-                // Manually resolve path components to handle .. correctly
-                let mut resolved = PathBuf::new();
-                for component in abs_path.components() {
-                    match component {
-                        std::path::Component::ParentDir => {
-                            resolved.pop();
-                        }
-                        std::path::Component::Normal(part) => {
-                            resolved.push(part);
-                        }
-                        std::path::Component::RootDir => {
-                            resolved.push(component);
-                        }
-                        std::path::Component::CurDir => {
-                            // Skip current directory components
-                        }
-                        std::path::Component::Prefix(_) => {
-                            resolved.push(component);
+                    // Manually resolve path components to handle .. correctly
+                    let mut resolved = PathBuf::new();
+                    for component in abs_path.components() {
+                        match component {
+                            std::path::Component::ParentDir => {
+                                resolved.pop();
+                            }
+                            std::path::Component::Normal(part) => {
+                                resolved.push(part);
+                            }
+                            std::path::Component::RootDir => {
+                                resolved.push(component);
+                            }
+                            std::path::Component::CurDir => {
+                                // Skip current directory components
+                            }
+                            std::path::Component::Prefix(_) => {
+                                resolved.push(component);
+                            }
                         }
                     }
+
+                    // Check if this resolved path would be under any allowed root
+                    return self.config.allowed_roots.iter().any(|root| {
+                        match root.canonicalize() {
+                            Ok(canonical_root) => resolved.starts_with(&canonical_root),
+                            Err(_) => resolved.starts_with(root),
+                        }
+                    });
                 }
-
-                // Check if this resolved path would be under any allowed root
-                return self.config.allowed_roots.iter().any(|root| {
-                    match root.canonicalize() {
-                        Ok(canonical_root) => resolved.starts_with(&canonical_root),
-                        Err(_) => resolved.starts_with(root),
-                    }
-                });
-            }
-        };
+            };
 
         // Check if the canonical path is under any of the allowed roots
-        self.config.allowed_roots.iter().any(|root| {
-            match root.canonicalize() {
+        self.config
+            .allowed_roots
+            .iter()
+            .any(|root| match root.canonicalize() {
                 Ok(canonical_root) => canonical_path.starts_with(&canonical_root),
                 Err(_) => false,
-            }
-        })
+            })
     }
 
     /// Read a file's contents
@@ -156,7 +157,6 @@ impl FileSystemHandler {
     /// - The file is too large
     /// - IO errors occur
     pub async fn read_file(&self, path: &Path) -> Result<String> {
-
         // Check if path is allowed
         if !self.is_path_allowed(path) {
             return Err(AcpError::PermissionDenied(format!(
@@ -211,11 +211,10 @@ impl FileSystemHandler {
     /// - Write operations are disabled
     /// - IO errors occur
     pub async fn write_file(&self, path: &Path, content: &str) -> Result<()> {
-
         // Check if write operations are enabled
         if !self.config.allow_write {
             return Err(AcpError::PermissionDenied(
-                "Write operations are disabled".to_string()
+                "Write operations are disabled".to_string(),
             ));
         }
 
@@ -362,7 +361,7 @@ mod tests {
         assert!(result.is_err());
 
         match result {
-            Err(AcpError::PermissionDenied(_)) => {},
+            Err(AcpError::PermissionDenied(_)) => {}
             _ => panic!("Expected PermissionDenied error"),
         }
     }
@@ -409,7 +408,7 @@ mod tests {
         assert!(result.is_err());
 
         match result {
-            Err(AcpError::NotFound(_)) => {},
+            Err(AcpError::NotFound(_)) => {}
             _ => panic!("Expected NotFound error"),
         }
     }
@@ -457,7 +456,7 @@ mod tests {
         assert!(result.is_err());
 
         match result {
-            Err(AcpError::PermissionDenied(_)) => {},
+            Err(AcpError::PermissionDenied(_)) => {}
             _ => panic!("Expected PermissionDenied error"),
         }
     }
@@ -481,7 +480,7 @@ mod tests {
         assert!(result.is_err());
 
         match result {
-            Err(AcpError::PermissionDenied(_)) => {},
+            Err(AcpError::PermissionDenied(_)) => {}
             _ => panic!("Expected PermissionDenied error"),
         }
     }

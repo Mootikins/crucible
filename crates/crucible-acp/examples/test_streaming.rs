@@ -8,8 +8,10 @@ async fn main() {
 
     // Get workspace root
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent().unwrap()
-        .parent().unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
         .to_path_buf();
 
     let mock_agent_path = workspace_root.join("target/debug/crucible-mock-agent");
@@ -30,14 +32,16 @@ async fn main() {
 
     // Connect and handshake
     println!("\n=== Connecting and performing handshake ===");
-    let session = client.connect_with_handshake().await
+    let session = client
+        .connect_with_handshake()
+        .await
         .expect("Handshake failed");
 
     println!("✅ Handshake successful! Session ID: {}", session.id());
 
     // Send a prompt with streaming
     println!("\n=== Sending prompt with streaming ===");
-    use agent_client_protocol::{PromptRequest, ContentBlock, SessionId};
+    use agent_client_protocol::{ContentBlock, PromptRequest, SessionId};
 
     let prompt_request = PromptRequest {
         session_id: SessionId::from(session.id().to_string()),

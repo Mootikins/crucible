@@ -4,6 +4,6 @@
 //! Keeping it here maintains consistency with the traits module structure.
 
 pub use crate::parser::error::{ParserError, ParserResult};
+pub use crate::parser::traits::ParserRequirements;
 pub use crate::parser::traits::{MarkdownParser, ParserCapabilities};
 pub use crate::parser::types::ParsedNote;
-pub use crate::parser::traits::ParserRequirements;

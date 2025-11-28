@@ -87,9 +87,7 @@ fn test_global_embedding_url_flag() {
 #[test]
 fn test_global_embedding_model_flag() {
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("--embedding-model")
-        .arg("test-model")
-        .arg("--help");
+    cmd.arg("--embedding-model").arg("test-model").arg("--help");
 
     cmd.assert().success();
 }
@@ -97,9 +95,7 @@ fn test_global_embedding_model_flag() {
 #[test]
 fn test_global_db_path_flag() {
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("--db-path")
-        .arg("/tmp/test.db")
-        .arg("--help");
+    cmd.arg("--db-path").arg("/tmp/test.db").arg("--help");
 
     cmd.assert().success();
 }
@@ -159,7 +155,10 @@ fn test_chat_help() {
 #[test]
 fn test_chat_with_agent_flag() {
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("chat").arg("--agent").arg("claude-code").arg("--help");
+    cmd.arg("chat")
+        .arg("--agent")
+        .arg("claude-code")
+        .arg("--help");
 
     cmd.assert().success();
 }
@@ -175,7 +174,10 @@ fn test_chat_with_no_context_flag() {
 #[test]
 fn test_chat_with_context_size_flag() {
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("chat").arg("--context-size").arg("10").arg("--help");
+    cmd.arg("chat")
+        .arg("--context-size")
+        .arg("10")
+        .arg("--help");
 
     cmd.assert().success();
 }
@@ -214,7 +216,9 @@ fn test_process_help() {
 
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("Process files through the pipeline"))
+        .stdout(predicate::str::contains(
+            "Process files through the pipeline",
+        ))
         .stdout(predicate::str::contains("--force"))
         .stdout(predicate::str::contains("--watch"));
 }
@@ -286,9 +290,9 @@ fn test_config_show_help() {
     let mut cmd = Command::cargo_bin("cru").unwrap();
     cmd.arg("config").arg("show").arg("--help");
 
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Show the current effective configuration"));
+    cmd.assert().success().stdout(predicate::str::contains(
+        "Show the current effective configuration",
+    ));
 }
 
 #[test]
@@ -444,7 +448,9 @@ fn test_invalid_global_flag() {
 #[test]
 fn test_invalid_process_timeout_value() {
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("--process-timeout").arg("not-a-number").arg("--help");
+    cmd.arg("--process-timeout")
+        .arg("not-a-number")
+        .arg("--help");
 
     cmd.assert()
         .failure()

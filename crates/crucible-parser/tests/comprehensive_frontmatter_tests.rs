@@ -12,11 +12,17 @@ async fn test_mixed_line_ending_comprehensive() {
         // Unix line endings
         ("---\ntitle: Test\n---\n# Content", LineEndingStyle::Unix),
         // Windows line endings
-        ("---\r\ntitle: Test\r\n---\r\n# Content", LineEndingStyle::Windows),
+        (
+            "---\r\ntitle: Test\r\n---\r\n# Content",
+            LineEndingStyle::Windows,
+        ),
         // Old Mac line endings
         ("---\rtitle: Test\r---\r# Content", LineEndingStyle::OldMac),
         // Mixed line endings (converted to Unix)
-        ("---\n\rtitle: Test\r\n---\n# Content", LineEndingStyle::Mixed),
+        (
+            "---\n\rtitle: Test\r\n---\n# Content",
+            LineEndingStyle::Mixed,
+        ),
     ];
 
     for (content, expected_style) in test_cases {
@@ -60,16 +66,29 @@ authors = ["Charlie"]
     let frontmatter = result.frontmatter.unwrap();
 
     // Test various TOML features
-    assert_eq!(frontmatter.get_string("title"), Some("Advanced TOML Test".to_string()));
+    assert_eq!(
+        frontmatter.get_string("title"),
+        Some("Advanced TOML Test".to_string())
+    );
     assert_eq!(
         frontmatter.get_array("tags"),
-        Some(vec!["rust".to_string(), "toml".to_string(), "frontmatter".to_string()])
+        Some(vec![
+            "rust".to_string(),
+            "toml".to_string(),
+            "frontmatter".to_string()
+        ])
     );
 
     // Test nested object
     let author = frontmatter.get_object("author").unwrap();
-    assert_eq!(author.get("name").and_then(|v| v.as_str()), Some("John Doe"));
-    assert_eq!(author.get("email").and_then(|v| v.as_str()), Some("john@example.com"));
+    assert_eq!(
+        author.get("name").and_then(|v| v.as_str()),
+        Some("John Doe")
+    );
+    assert_eq!(
+        author.get("email").and_then(|v| v.as_str()),
+        Some("john@example.com")
+    );
 
     // Test array of objects
     let references = frontmatter.properties().get("references");
@@ -93,35 +112,65 @@ authors = ["Charlie"]
     assert_eq!(ref2_authors[0].as_str(), Some("Charlie"));
 }
 
-
-
 #[tokio::test]
 async fn test_edge_case_delimiters() {
     let test_cases = vec![
         // Valid YAML
-        ("---\ntitle: test\n---\n# Content", true, FrontmatterFormat::Yaml),
+        (
+            "---\ntitle: test\n---\n# Content",
+            true,
+            FrontmatterFormat::Yaml,
+        ),
         // Valid TOML
-        ("+++\ntitle = \"test\"\n+++\n# Content", true, FrontmatterFormat::Toml),
+        (
+            "+++\ntitle = \"test\"\n+++\n# Content",
+            true,
+            FrontmatterFormat::Toml,
+        ),
         // Extra dashes (invalid)
-        ("----\ntitle: test\n----\n# Content", false, FrontmatterFormat::None),
+        (
+            "----\ntitle: test\n----\n# Content",
+            false,
+            FrontmatterFormat::None,
+        ),
         // Extra pluses (invalid)
-        ("++++\ntitle = \"test\"\n++++\n# Content", false, FrontmatterFormat::None),
+        (
+            "++++\ntitle = \"test\"\n++++\n# Content",
+            false,
+            FrontmatterFormat::None,
+        ),
         // Whitespace around delimiters (invalid)
-        ("--- \ntitle: test\n--- \n# Content", false, FrontmatterFormat::None),
+        (
+            "--- \ntitle: test\n--- \n# Content",
+            false,
+            FrontmatterFormat::None,
+        ),
         // No content after opening delimiter
         ("---\n# Content", false, FrontmatterFormat::None),
         // No closing delimiter
-        ("---\ntitle: test\n# content", false, FrontmatterFormat::None),
+        (
+            "---\ntitle: test\n# content",
+            false,
+            FrontmatterFormat::None,
+        ),
     ];
 
     for (content, should_parse, expected_format) in test_cases {
         let result = extract_frontmatter(content).unwrap();
 
         if should_parse {
-            assert!(result.frontmatter.is_some(), "Should parse frontmatter: {}", content);
+            assert!(
+                result.frontmatter.is_some(),
+                "Should parse frontmatter: {}",
+                content
+            );
             assert_eq!(result.format, expected_format);
         } else {
-            assert!(result.frontmatter.is_none(), "Should NOT parse frontmatter: {}", content);
+            assert!(
+                result.frontmatter.is_none(),
+                "Should NOT parse frontmatter: {}",
+                content
+            );
             assert_eq!(result.format, FrontmatterFormat::None);
         }
     }
@@ -149,11 +198,23 @@ async fn test_performance_characteristics() {
         let duration = start.elapsed();
 
         // Should complete quickly even for large content
-        assert!(duration.as_millis() < 100, "Case {} should complete quickly: {:?}", case_name, duration);
+        assert!(
+            duration.as_millis() < 100,
+            "Case {} should complete quickly: {:?}",
+            case_name,
+            duration
+        );
 
         // Stats should be reasonable
-        assert!(result.stats.extraction_time_us > 0, "Should measure extraction time for {}", case_name);
-        assert_eq!(result.stats.body_size, content.len() - result.stats.frontmatter_size);
+        assert!(
+            result.stats.extraction_time_us > 0,
+            "Should measure extraction time for {}",
+            case_name
+        );
+        assert_eq!(
+            result.stats.body_size,
+            content.len() - result.stats.frontmatter_size
+        );
     }
 }
 
@@ -163,9 +224,15 @@ async fn test_error_recovery_and_warnings() {
         // Empty frontmatter
         ("---\n\n---", "Empty frontmatter should warn"),
         // Malformed YAML but recoverable
-        ("---\ntitle: \"unclosed string\ntags: [valid, items]\n---", "Should warn about quotes but still parse"),
+        (
+            "---\ntitle: \"unclosed string\ntags: [valid, items]\n---",
+            "Should warn about quotes but still parse",
+        ),
         // Mixed valid and invalid content
-        ("---\nvalid: true\n  invalid_indent: value\nalso_valid: true\n---", "Should warn about indentation but parse valid parts"),
+        (
+            "---\nvalid: true\n  invalid_indent: value\nalso_valid: true\n---",
+            "Should warn about indentation but parse valid parts",
+        ),
     ];
 
     for (content, description) in test_cases {
@@ -173,15 +240,22 @@ async fn test_error_recovery_and_warnings() {
 
         match description {
             desc if desc.contains("warn") => {
-                assert!(!result.warnings.is_empty(), "Should generate warnings: {}", description);
+                assert!(
+                    !result.warnings.is_empty(),
+                    "Should generate warnings: {}",
+                    description
+                );
             }
             _ => {}
         }
 
         // Should still be able to create frontmatter object
         if content.starts_with("---") {
-            assert!(result.frontmatter.is_some() || !result.warnings.is_empty(),
-                   "Should either parse successfully or provide warnings: {}", description);
+            assert!(
+                result.frontmatter.is_some() || !result.warnings.is_empty(),
+                "Should either parse successfully or provide warnings: {}",
+                description
+            );
         }
     }
 }
@@ -227,7 +301,10 @@ metadata:
         Some("123 Main St")
     );
 
-    let coordinates = address.get("coordinates").and_then(|v| v.as_object()).unwrap();
+    let coordinates = address
+        .get("coordinates")
+        .and_then(|v| v.as_object())
+        .unwrap();
     assert_eq!(
         coordinates.get("lat").and_then(|v| v.as_f64()),
         Some(40.7128)
@@ -240,14 +317,21 @@ metadata:
     assert_eq!(tags[0].as_str(), Some("personal"));
 
     let config = metadata.get("config").and_then(|v| v.as_object()).unwrap();
-    let experimental = config.get("experimental").and_then(|v| v.as_object()).unwrap();
-    assert_eq!(experimental.get("feature_a").and_then(|v| v.as_bool()), Some(true));
+    let experimental = config
+        .get("experimental")
+        .and_then(|v| v.as_object())
+        .unwrap();
+    assert_eq!(
+        experimental.get("feature_a").and_then(|v| v.as_bool()),
+        Some(true)
+    );
 }
 
 #[tokio::test]
 async fn test_compatibility_with_existing_types() {
     // Test that our new extractor produces results compatible with existing Frontmatter type
-    let yaml_content = "---\ntitle: Test\ntags: [rust, testing]\ncreated: 2024-11-20\n---\n# Content";
+    let yaml_content =
+        "---\ntitle: Test\ntags: [rust, testing]\ncreated: 2024-11-20\n---\n# Content";
     let result = extract_frontmatter(yaml_content).unwrap();
 
     assert!(result.frontmatter.is_some());
@@ -255,7 +339,10 @@ async fn test_compatibility_with_existing_types() {
 
     // Test all the existing getter methods work
     assert_eq!(frontmatter.get_string("title"), Some("Test".to_string()));
-    assert_eq!(frontmatter.get_array("tags"), Some(vec!["rust".to_string(), "testing".to_string()]));
+    assert_eq!(
+        frontmatter.get_array("tags"),
+        Some(vec!["rust".to_string(), "testing".to_string()])
+    );
     assert_eq!(
         frontmatter.get_date("created"),
         Some(chrono::NaiveDate::from_ymd_opt(2024, 11, 20).unwrap())
@@ -270,14 +357,19 @@ async fn test_compatibility_with_existing_types() {
 #[test]
 fn test_early_exit_optimization() {
     // Test that content without frontmatter delimiters is quickly rejected
-    let content_no_frontmatter = "# Just a regular markdown file\n\nNo frontmatter here.\n\nJust content.";
+    let content_no_frontmatter =
+        "# Just a regular markdown file\n\nNo frontmatter here.\n\nJust content.";
 
     let start = std::time::Instant::now();
     let result = extract_frontmatter(content_no_frontmatter).unwrap();
     let duration = start.elapsed();
 
     // Should be very fast (< 1ms) since it does early exit
-    assert!(duration.as_millis() < 1, "Early exit should be very fast: {:?}", duration);
+    assert!(
+        duration.as_millis() < 1,
+        "Early exit should be very fast: {:?}",
+        duration
+    );
     assert!(result.frontmatter.is_none());
     assert_eq!(result.format, FrontmatterFormat::None);
     assert!(result.warnings.is_empty());

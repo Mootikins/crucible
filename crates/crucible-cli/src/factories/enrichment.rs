@@ -1,10 +1,10 @@
 //! Enrichment service factory - creates DefaultEnrichmentService
 //! Phase 5: Uses public factory function instead of importing concrete service.
 
-use std::sync::Arc;
+use crate::config::CliConfig;
 use anyhow::Result;
 use crucible_core::enrichment::EnrichmentService;
-use crate::config::CliConfig;
+use std::sync::Arc;
 
 /// Create DefaultEnrichmentService with embedding provider
 ///

@@ -8,11 +8,13 @@
 // - CliAppConfig is the top-level composite config (kiln_path, embedding, acp, chat, cli, etc.)
 // - crucible_config::CliConfig is the small CLI-specific settings (show_progress, verbose, etc.)
 pub use crucible_config::{
-    CliAppConfig as CliConfig,      // Top-level config type for CLI
-    CliConfig as CliAppConfig,      // Small CLI settings (renamed for clarity)
-    EmbeddingConfig, AcpConfig, ChatConfig,
-    EmbeddingProviderConfig as EmbeddingProviderConfig,
-    EmbeddingProviderType as ProviderType
+    AcpConfig,
+    ChatConfig,
+    CliAppConfig as CliConfig, // Top-level config type for CLI
+    CliConfig as CliAppConfig, // Small CLI settings (renamed for clarity)
+    EmbeddingConfig,
+    EmbeddingProviderConfig,
+    EmbeddingProviderType as ProviderType,
 };
 
 // Legacy type aliases for backward compatibility
@@ -27,9 +29,7 @@ pub struct CliConfigBuilder {
 impl CliConfigBuilder {
     /// Create a new builder with defaults
     pub fn new() -> Self {
-        Self {
-            kiln_path: None,
-        }
+        Self { kiln_path: None }
     }
 
     /// Set kiln path
@@ -117,9 +117,15 @@ verbose = false
 
         let config = CliConfig::load(Some(config_path), None, None).unwrap();
         assert_eq!(config.kiln_path.to_str().unwrap(), "/tmp/test-kiln");
-        assert_eq!(config.embedding.provider, crucible_config::EmbeddingProviderType::OpenAI);
+        assert_eq!(
+            config.embedding.provider,
+            crucible_config::EmbeddingProviderType::OpenAI
+        );
         assert_eq!(config.embedding.model, Some("test-model".to_string()));
-        assert_eq!(config.embedding.api_url, Some("https://example.com".to_string()));
+        assert_eq!(
+            config.embedding.api_url,
+            Some("https://example.com".to_string())
+        );
     }
 
     #[test]
@@ -163,7 +169,10 @@ verbose = false
     fn test_embedding_config_defaults() {
         let config = CliConfig::default();
 
-        assert_eq!(config.embedding.provider, crucible_config::EmbeddingProviderType::FastEmbed);
+        assert_eq!(
+            config.embedding.provider,
+            crucible_config::EmbeddingProviderType::FastEmbed
+        );
         assert_eq!(config.embedding.batch_size, 16);
     }
 
@@ -177,7 +186,10 @@ verbose = false
         assert!(config.streaming());
 
         // New embedding defaults
-        assert_eq!(config.embedding.provider, crucible_config::EmbeddingProviderType::FastEmbed);
+        assert_eq!(
+            config.embedding.provider,
+            crucible_config::EmbeddingProviderType::FastEmbed
+        );
         assert_eq!(config.embedding.batch_size, 16);
 
         // ACP defaults

@@ -36,10 +36,9 @@ pub use merkle::MerkleTreeBuilder;
 // Re-export processing handoff types, change detection, and pipeline trait
 pub use processing::{
     ChangeDetectionError, ChangeDetectionResult, ChangeDetectionStore, FileState,
-    InMemoryChangeDetectionStore, JobConfiguration, JobStats, NoteProcessingJob,
-    NoteProcessingResult, NotePipelineOrchestrator, PipelineMetrics, ProcessedNote,
-    ProcessingContext, ProcessingMetadata, ProcessingPriority, ProcessingResult,
-    ProcessingSource,
+    InMemoryChangeDetectionStore, JobConfiguration, JobStats, NotePipelineOrchestrator,
+    NoteProcessingJob, NoteProcessingResult, PipelineMetrics, ProcessedNote, ProcessingContext,
+    ProcessingMetadata, ProcessingPriority, ProcessingResult, ProcessingSource,
 };
 
 // Re-export core traits (abstractions for Dependency Inversion)
@@ -50,32 +49,32 @@ pub use traits::{
 
 // Re-export key types used across module boundaries
 pub use types::{
-    // ACP types
-    ChatMode,
-    ChunkType,
-    FileMetadata,
-    SessionConfig,
-    SessionId,
-    StreamChunk,
-    StreamMetadata,
-    ToolDescriptor,
-    ToolInvocation,
-    ToolOutput,
     // Hashing types
     BlockHash,
     BlockHashInfo,
     // Change detection types
     ChangeSet,
     ChangeSummary,
+    // ACP types
+    ChatMode,
+    ChunkType,
     // Storage trait types (from traits/storage.rs)
     // Note: Parser types (ParsedNote, Wikilink, Tag, etc.) are exported from parser:: module below
     ExecutionContext,
     FileHash,
     FileHashInfo,
+    FileMetadata,
     HashAlgorithm,
     HashError,
+    SessionConfig,
+    SessionId,
+    StreamChunk,
+    StreamMetadata,
     ToolDefinition,
+    ToolDescriptor,
     ToolExample,
+    ToolInvocation,
+    ToolOutput,
 };
 
 pub use database::{
@@ -162,9 +161,9 @@ pub use parser::{
     // Parser traits and capabilities
     ParserCapabilities,
     ParserCapabilitiesExt,
-    ParserRequirements,
     // Error types (canonical definitions in crucible-core::parser::error)
     ParserError,
+    ParserRequirements,
     ParserResult,
     Tag,
     Wikilink,

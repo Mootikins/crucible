@@ -1,10 +1,11 @@
 //! Test utilities for configuration testing.
 
 use crate::{
-    Config, ConfigLoader, DatabaseConfig, Environment, LoggingConfig,
-    ProfileConfig, ServerConfig,
+    Config, ConfigLoader, DatabaseConfig, Environment, LoggingConfig, ProfileConfig, ServerConfig,
 };
-use crate::{EnrichmentConfig, EmbeddingProviderConfig, OpenAIConfig, OllamaConfig, PipelineConfig};
+use crate::{
+    EmbeddingProviderConfig, EnrichmentConfig, OllamaConfig, OpenAIConfig, PipelineConfig,
+};
 use std::collections::HashMap;
 use std::io::Write;
 use tempfile::{NamedTempFile, TempDir};

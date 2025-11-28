@@ -59,9 +59,9 @@ pub use service::{DEFAULT_MAX_BATCH_SIZE, DEFAULT_MIN_WORDS_FOR_EMBEDDING};
 pub(crate) mod service;
 
 // Factory function - public API for creating the service
-use std::sync::Arc;
 use crucible_core::enrichment::{EmbeddingProvider, EnrichmentService};
 use crucible_merkle::HybridMerkleTreeBuilder;
+use std::sync::Arc;
 
 /// Create a DefaultEnrichmentService with optional embedding provider.
 ///

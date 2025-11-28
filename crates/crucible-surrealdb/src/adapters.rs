@@ -37,12 +37,12 @@
 //! }
 //! ```
 
-use std::sync::Arc;
+use crate::{EAVGraphStore, MerklePersistence, NoteIngestor, SurrealClient, SurrealDbConfig};
 use anyhow::Result;
 use async_trait::async_trait;
 use crucible_core::enrichment::{EnrichedNote, EnrichedNoteStore};
 use crucible_merkle::MerkleStore;
-use crate::{SurrealClient, EAVGraphStore, NoteIngestor, MerklePersistence, SurrealDbConfig};
+use std::sync::Arc;
 
 // ============================================================================
 // Opaque Handle for SurrealDB Client
@@ -116,9 +116,7 @@ pub async fn create_surreal_client(config: SurrealDbConfig) -> Result<SurrealCli
 /// # Returns
 ///
 /// A trait object implementing `EnrichedNoteStore`
-pub fn create_enriched_note_store(
-    client: SurrealClientHandle,
-) -> Arc<dyn EnrichedNoteStore> {
+pub fn create_enriched_note_store(client: SurrealClientHandle) -> Arc<dyn EnrichedNoteStore> {
     Arc::new(EnrichedNoteStoreAdapter::new(client.inner_arc()))
 }
 
@@ -131,9 +129,7 @@ pub fn create_enriched_note_store(
 /// # Returns
 ///
 /// A trait object implementing `MerkleStore`
-pub fn create_merkle_store(
-    client: SurrealClientHandle,
-) -> Arc<dyn MerkleStore> {
+pub fn create_merkle_store(client: SurrealClientHandle) -> Arc<dyn MerkleStore> {
     Arc::new(MerklePersistence::new((*client.inner()).clone()))
 }
 
@@ -152,9 +148,9 @@ pub fn create_merkle_store(
 pub fn create_change_detection_store(
     client: SurrealClientHandle,
 ) -> Arc<dyn crucible_core::processing::ChangeDetectionStore> {
-    Arc::new(crate::change_detection_store::SurrealChangeDetectionStore::new(
-        (*client.inner()).clone()
-    ))
+    Arc::new(
+        crate::change_detection_store::SurrealChangeDetectionStore::new((*client.inner()).clone()),
+    )
 }
 
 // ============================================================================
@@ -192,11 +188,7 @@ impl EnrichedNoteStoreAdapter {
 
 #[async_trait]
 impl EnrichedNoteStore for EnrichedNoteStoreAdapter {
-    async fn store_enriched(
-        &self,
-        enriched: &EnrichedNote,
-        relative_path: &str,
-    ) -> Result<()> {
+    async fn store_enriched(&self, enriched: &EnrichedNote, relative_path: &str) -> Result<()> {
         // Create NoteIngestor on-demand (borrows from self.store)
         let ingestor = NoteIngestor::new(&self.store);
         ingestor.store_enriched(enriched, relative_path).await

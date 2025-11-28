@@ -94,12 +94,10 @@ impl From<crucible_config::ConfigValidationError> for EmbeddingError {
             ConfigValidationError::InvalidValue { field, reason } => {
                 EmbeddingError::ConfigError(format!("Invalid {}: {}", field, reason))
             }
-            ConfigValidationError::Multiple { errors } => {
-                EmbeddingError::ConfigError(format!(
-                    "Multiple validation errors: {}",
-                    errors.join(", ")
-                ))
-            }
+            ConfigValidationError::Multiple { errors } => EmbeddingError::ConfigError(format!(
+                "Multiple validation errors: {}",
+                errors.join(", ")
+            )),
         }
     }
 }

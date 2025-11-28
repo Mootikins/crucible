@@ -69,7 +69,10 @@ mod agent_tests {
             Ok(agent) => {
                 // Fallback succeeded - should be one of the known agents
                 assert!(
-                    agent.name == "opencode" || agent.name == "claude-acp" || agent.name == "gemini" || agent.name == "codex",
+                    agent.name == "opencode"
+                        || agent.name == "claude-acp"
+                        || agent.name == "gemini"
+                        || agent.name == "codex",
                     "Should fall back to a known agent, got: {}",
                     agent.name
                 );
@@ -145,7 +148,7 @@ mod context_tests {
 #[cfg(test)]
 mod client_tests {
     use super::super::*;
-    use crucible_acp::{ChatConfig, HistoryConfig, ContextConfig, StreamConfig};
+    use crucible_acp::{ChatConfig, ContextConfig, HistoryConfig, StreamConfig};
 
     #[test]
     fn test_client_creation() {
@@ -157,7 +160,10 @@ mod client_tests {
 
         let client = CrucibleAcpClient::new(agent, true);
         assert!(!client.is_connected(), "New client should not be connected");
-        assert!(client.session_id().is_none(), "New client should have no session ID");
+        assert!(
+            client.session_id().is_none(),
+            "New client should have no session ID"
+        );
     }
 
     #[test]
@@ -225,7 +231,10 @@ mod client_tests {
 
         let client = CrucibleAcpClient::new(agent, false);
         assert!(!client.is_connected());
-        assert!(client.get_stats().is_none(), "Unconnected client should have no stats");
+        assert!(
+            client.get_stats().is_none(),
+            "Unconnected client should have no stats"
+        );
     }
 
     #[test]
@@ -250,7 +259,10 @@ mod client_tests {
         };
 
         let client = CrucibleAcpClient::new(agent, false);
-        assert!(client.session_id().is_none(), "Should have no session ID before connection");
+        assert!(
+            client.session_id().is_none(),
+            "Should have no session ID before connection"
+        );
     }
 
     #[test]
@@ -292,9 +304,14 @@ mod client_tests {
         let mut client = CrucibleAcpClient::new(agent, false);
         let result = client.send_message("test").await;
 
-        assert!(result.is_err(), "Should error when sending message before connection");
-        assert!(result.unwrap_err().to_string().contains("not running"),
-            "Error should indicate agent is not running");
+        assert!(
+            result.is_err(),
+            "Should error when sending message before connection"
+        );
+        assert!(
+            result.unwrap_err().to_string().contains("not running"),
+            "Error should indicate agent is not running"
+        );
     }
 
     #[tokio::test]
@@ -309,7 +326,10 @@ mod client_tests {
         let result = client.shutdown().await;
 
         // Should succeed (no-op) when shutting down unconnected client
-        assert!(result.is_ok(), "Should not error when shutting down unconnected client");
+        assert!(
+            result.is_ok(),
+            "Should not error when shutting down unconnected client"
+        );
     }
 
     // Note: Testing spawn() requires an actual agent binary (claude-code, etc.)

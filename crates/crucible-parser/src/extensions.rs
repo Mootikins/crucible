@@ -320,11 +320,7 @@ mod tests {
             content.contains("test")
         }
 
-        async fn parse(
-            &self,
-            content: &str,
-            _doc_content: &mut NoteContent,
-        ) -> Vec<ParseError> {
+        async fn parse(&self, content: &str, _doc_content: &mut NoteContent) -> Vec<ParseError> {
             if content.contains("error") {
                 vec![ParseError::error(
                     "Test error".to_string(),

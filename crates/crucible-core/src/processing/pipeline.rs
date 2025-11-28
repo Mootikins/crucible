@@ -63,7 +63,10 @@ impl ProcessingResult {
     /// Check if embeddings were generated
     pub fn embeddings_generated(&self) -> bool {
         match self {
-            ProcessingResult::Success { embeddings_generated, .. } => *embeddings_generated,
+            ProcessingResult::Success {
+                embeddings_generated,
+                ..
+            } => *embeddings_generated,
             _ => false,
         }
     }
@@ -160,7 +163,10 @@ pub trait NotePipelineOrchestrator: Send + Sync {
     /// # Returns
     ///
     /// A tuple of (ProcessingResult, PipelineMetrics)
-    async fn process_with_metrics(&self, path: &Path) -> Result<(ProcessingResult, PipelineMetrics)> {
+    async fn process_with_metrics(
+        &self,
+        path: &Path,
+    ) -> Result<(ProcessingResult, PipelineMetrics)> {
         // Default implementation just calls process and returns empty metrics
         let result = self.process(path).await?;
         Ok((result, PipelineMetrics::default()))

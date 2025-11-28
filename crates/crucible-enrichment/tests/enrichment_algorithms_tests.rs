@@ -7,15 +7,14 @@
 //! Use the factory function `create_default_enrichment_service` for the public API.
 //! These tests exercise the public API only.
 
-use crucible_enrichment::create_default_enrichment_service;
 use crucible_core::enrichment::EnrichmentService;
 use crucible_core::parser::{ParsedNote, ParsedNoteBuilder};
+use crucible_enrichment::create_default_enrichment_service;
 use std::path::PathBuf;
 
 // Create a minimal test note without needing parser implementation
 fn create_test_note(_content: &str, path: &str) -> ParsedNote {
-    ParsedNoteBuilder::new(PathBuf::from(path))
-        .build()
+    ParsedNoteBuilder::new(PathBuf::from(path)).build()
 }
 
 #[tokio::test]

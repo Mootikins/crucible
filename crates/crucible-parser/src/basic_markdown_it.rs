@@ -95,7 +95,9 @@ impl SyntaxExtension for BasicMarkdownItExtension {
                 // Merge extracted content from the AST conversion
                 doc_content.headings.extend(converted.headings);
                 doc_content.paragraphs.extend(converted.paragraphs);
-                doc_content.horizontal_rules.extend(converted.horizontal_rules);
+                doc_content
+                    .horizontal_rules
+                    .extend(converted.horizontal_rules);
                 doc_content.code_blocks.extend(converted.code_blocks);
                 doc_content.lists.extend(converted.lists);
                 doc_content.tables.extend(converted.tables);
@@ -124,7 +126,12 @@ mod tests {
         let ext = BasicMarkdownItExtension::new();
         let mut content = NoteContent::default();
 
-        let errors = ext.parse("# Heading 1\n\n## Heading 2\n\nParagraph text.", &mut content).await;
+        let errors = ext
+            .parse(
+                "# Heading 1\n\n## Heading 2\n\nParagraph text.",
+                &mut content,
+            )
+            .await;
 
         assert!(errors.is_empty());
         assert_eq!(content.headings.len(), 2);
@@ -139,7 +146,12 @@ mod tests {
         let ext = BasicMarkdownItExtension::new();
         let mut content = NoteContent::default();
 
-        let errors = ext.parse("This is a paragraph.\n\nThis is another paragraph.", &mut content).await;
+        let errors = ext
+            .parse(
+                "This is a paragraph.\n\nThis is another paragraph.",
+                &mut content,
+            )
+            .await;
 
         assert!(errors.is_empty());
         assert!(content.paragraphs.len() >= 2);

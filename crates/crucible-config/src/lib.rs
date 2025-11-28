@@ -27,8 +27,8 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
-mod config;
 mod components;
+mod config;
 mod enrichment;
 mod loader;
 mod profile;
@@ -37,8 +37,11 @@ mod profile;
 #[cfg(feature = "test-utils")]
 mod test_utils;
 
-pub use config::{Config, DatabaseConfig, ServerConfig, LoggingConfig, CacheConfig, DatabaseType, CacheType, ConfigError, ConfigValidationError, CliAppConfig, ProcessingConfig};
 pub use components::*;
+pub use config::{
+    CacheConfig, CacheType, CliAppConfig, Config, ConfigError, ConfigValidationError,
+    DatabaseConfig, DatabaseType, LoggingConfig, ProcessingConfig, ServerConfig,
+};
 pub use enrichment::*;
 pub use loader::*;
 pub use profile::*;

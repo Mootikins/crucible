@@ -49,17 +49,6 @@ pub mod pulldown;
 
 // Re-export core parser types and traits (canonical definitions in crucible-core)
 pub use crucible_core::parser::{
-    // Error types
-    ErrorSeverity,
-    ParseError,
-    ParseErrorType,
-    ParserError,
-    ParserResult,
-    // Trait definitions
-    MarkdownParser,
-    ParserCapabilities,
-    ParserCapabilitiesExt,
-    ParserRequirements,
     // Core types
     ASTBlock,
     ASTBlockMetadata,
@@ -68,6 +57,8 @@ pub use crucible_core::parser::{
     Blockquote,
     Callout,
     CodeBlock,
+    // Error types
+    ErrorSeverity,
     FootnoteDefinition,
     FootnoteMap,
     FootnoteReference,
@@ -81,11 +72,20 @@ pub use crucible_core::parser::{
     ListItem,
     ListMarkerStyle,
     ListType,
+    // Trait definitions
+    MarkdownParser,
     NoteContent,
     Paragraph,
+    ParseError,
+    ParseErrorType,
     ParsedNote,
     ParsedNoteBuilder,
     ParsedNoteMetadata,
+    ParserCapabilities,
+    ParserCapabilitiesExt,
+    ParserError,
+    ParserRequirements,
+    ParserResult,
     Table,
     Tag,
     TaskStatus,

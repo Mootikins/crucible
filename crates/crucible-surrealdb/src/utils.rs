@@ -2,7 +2,6 @@
 ///
 /// This module provides common utilities for safe database operations,
 /// particularly focused on preventing SQL injection and ensuring data integrity.
-
 use std::path::Path;
 
 /// Normalize a path string to a consistent format for database storage.
@@ -181,18 +180,9 @@ mod tests {
 
     #[test]
     fn test_sanitize_record_id_valid() {
-        assert_eq!(
-            sanitize_record_id("abc123").unwrap(),
-            "abc123"
-        );
-        assert_eq!(
-            sanitize_record_id("my-safe-id").unwrap(),
-            "my-safe-id"
-        );
-        assert_eq!(
-            sanitize_record_id("file.txt").unwrap(),
-            "file.txt"
-        );
+        assert_eq!(sanitize_record_id("abc123").unwrap(), "abc123");
+        assert_eq!(sanitize_record_id("my-safe-id").unwrap(), "my-safe-id");
+        assert_eq!(sanitize_record_id("file.txt").unwrap(), "file.txt");
     }
 
     #[test]
@@ -247,14 +237,8 @@ mod tests {
         assert!(sanitize_record_id("test\0null").is_err());
 
         // Other control characters (newlines, tabs, etc.) are sanitized to underscores
-        assert_eq!(
-            sanitize_record_id("test\nnewline").unwrap(),
-            "test_newline"
-        );
-        assert_eq!(
-            sanitize_record_id("test\ttab").unwrap(),
-            "test_tab"
-        );
+        assert_eq!(sanitize_record_id("test\nnewline").unwrap(), "test_newline");
+        assert_eq!(sanitize_record_id("test\ttab").unwrap(), "test_tab");
     }
 
     #[test]

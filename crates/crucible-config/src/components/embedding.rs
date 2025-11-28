@@ -41,7 +41,9 @@ pub struct EmbeddingConfig {
     pub batch_size: usize,
 }
 
-fn default_batch_size() -> usize { 16 }  // Conservative default for CPU-friendly performance
+fn default_batch_size() -> usize {
+    16
+} // Conservative default for CPU-friendly performance
 
 impl Default for EmbeddingConfig {
     fn default() -> Self {
@@ -103,19 +105,37 @@ impl EmbeddingConfig {
     pub fn get_api_url(&self) -> Option<&str> {
         match self.provider {
             EmbeddingProviderType::FastEmbed => None, // Local provider
-            EmbeddingProviderType::OpenAI => self.api_url.as_deref().or(Some("https://api.openai.com/v1")),
-            EmbeddingProviderType::Anthropic => self.api_url.as_deref().or(Some("https://api.anthropic.com")),
-            EmbeddingProviderType::Ollama => self.api_url.as_deref().or(Some("http://localhost:11434")),
-            EmbeddingProviderType::Cohere => self.api_url.as_deref().or(Some("https://api.cohere.ai/v1")),
-            EmbeddingProviderType::VertexAI => self.api_url.as_deref().or(Some("https://aiplatform.googleapis.com")),
+            EmbeddingProviderType::OpenAI => self
+                .api_url
+                .as_deref()
+                .or(Some("https://api.openai.com/v1")),
+            EmbeddingProviderType::Anthropic => self
+                .api_url
+                .as_deref()
+                .or(Some("https://api.anthropic.com")),
+            EmbeddingProviderType::Ollama => {
+                self.api_url.as_deref().or(Some("http://localhost:11434"))
+            }
+            EmbeddingProviderType::Cohere => {
+                self.api_url.as_deref().or(Some("https://api.cohere.ai/v1"))
+            }
+            EmbeddingProviderType::VertexAI => self
+                .api_url
+                .as_deref()
+                .or(Some("https://aiplatform.googleapis.com")),
             EmbeddingProviderType::Custom => self.api_url.as_deref(), // User must specify
-            EmbeddingProviderType::Mock => None, // Mock provider
+            EmbeddingProviderType::Mock => None,                      // Mock provider
         }
     }
 
     /// Check if provider is local (no API calls needed)
     pub fn is_local(&self) -> bool {
-        matches!(self.provider, EmbeddingProviderType::FastEmbed | EmbeddingProviderType::Ollama | EmbeddingProviderType::Mock)
+        matches!(
+            self.provider,
+            EmbeddingProviderType::FastEmbed
+                | EmbeddingProviderType::Ollama
+                | EmbeddingProviderType::Mock
+        )
     }
 
     /// Convert to EmbeddingProviderConfig for use with LLM crate
@@ -124,57 +144,73 @@ impl EmbeddingConfig {
             EmbeddingProviderType::FastEmbed => {
                 crate::enrichment::EmbeddingProviderConfig::FastEmbed(
                     crate::enrichment::FastEmbedConfig {
-                        model: self.model.clone().unwrap_or_else(|| "BAAI/bge-small-en-v1.5".to_string()),
+                        model: self
+                            .model
+                            .clone()
+                            .unwrap_or_else(|| "BAAI/bge-small-en-v1.5".to_string()),
                         cache_dir: Some(default_embedding_model_cache_dir()),
                         batch_size: self.batch_size as u32,
                         num_threads: None,
                         dimensions: 0, // Use 0 to indicate default dimensions
-                    }
+                    },
                 )
             }
             EmbeddingProviderType::OpenAI => {
                 crate::enrichment::EmbeddingProviderConfig::OpenAI(
                     crate::enrichment::OpenAIConfig {
                         api_key: std::env::var("OPENAI_API_KEY").unwrap_or_default(),
-                        model: self.model.clone().unwrap_or_else(|| "text-embedding-3-small".to_string()),
-                        base_url: self.get_api_url().unwrap_or("https://api.openai.com/v1").to_string(),
+                        model: self
+                            .model
+                            .clone()
+                            .unwrap_or_else(|| "text-embedding-3-small".to_string()),
+                        base_url: self
+                            .get_api_url()
+                            .unwrap_or("https://api.openai.com/v1")
+                            .to_string(),
                         timeout_seconds: 30,
                         retry_attempts: 3,
                         dimensions: 0, // Use 0 to indicate default dimensions
                         headers: std::collections::HashMap::new(),
-                    }
+                    },
                 )
             }
             EmbeddingProviderType::Ollama => {
                 crate::enrichment::EmbeddingProviderConfig::Ollama(
                     crate::enrichment::OllamaConfig {
-                        model: self.model.clone().unwrap_or_else(|| "nomic-embed-text".to_string()),
-                        base_url: self.get_api_url().unwrap_or("http://localhost:11434").to_string(),
+                        model: self
+                            .model
+                            .clone()
+                            .unwrap_or_else(|| "nomic-embed-text".to_string()),
+                        base_url: self
+                            .get_api_url()
+                            .unwrap_or("http://localhost:11434")
+                            .to_string(),
                         timeout_seconds: 30,
                         retry_attempts: 3,
                         dimensions: 0, // Use 0 to indicate default dimensions
-                    }
+                    },
                 )
             }
             EmbeddingProviderType::Mock => {
-                crate::enrichment::EmbeddingProviderConfig::Mock(
-                    crate::enrichment::MockConfig {
-                        model: "mock-test-model".to_string(),
-                        dimensions: 768,
-                        simulated_latency_ms: 0,
-                    }
-                )
+                crate::enrichment::EmbeddingProviderConfig::Mock(crate::enrichment::MockConfig {
+                    model: "mock-test-model".to_string(),
+                    dimensions: 768,
+                    simulated_latency_ms: 0,
+                })
             }
             _ => {
                 // For other providers, create a default FastEmbed config as fallback
                 crate::enrichment::EmbeddingProviderConfig::FastEmbed(
                     crate::enrichment::FastEmbedConfig {
-                        model: self.model.clone().unwrap_or_else(|| "BAAI/bge-small-en-v1.5".to_string()),
+                        model: self
+                            .model
+                            .clone()
+                            .unwrap_or_else(|| "BAAI/bge-small-en-v1.5".to_string()),
                         cache_dir: Some(default_embedding_model_cache_dir()),
                         batch_size: self.batch_size as u32,
                         num_threads: None,
                         dimensions: 0, // Use 0 to indicate default dimensions
-                    }
+                    },
                 )
             }
         }
@@ -191,14 +227,20 @@ fn default_embedding_model_cache_dir() -> String {
 
     #[cfg(target_os = "linux")]
     {
-        home.join(".local").join("share").join("crucible").join("embedding-models")
+        home.join(".local")
+            .join("share")
+            .join("crucible")
+            .join("embedding-models")
             .to_string_lossy()
             .to_string()
     }
 
     #[cfg(target_os = "macos")]
     {
-        home.join("Library").join("Application Support").join("crucible").join("embedding-models")
+        home.join("Library")
+            .join("Application Support")
+            .join("crucible")
+            .join("embedding-models")
             .to_string_lossy()
             .to_string()
     }
@@ -212,7 +254,10 @@ fn default_embedding_model_cache_dir() -> String {
                 .to_string_lossy()
                 .to_string()
         } else {
-            home.join("AppData").join("Local").join("crucible").join("embedding-models")
+            home.join("AppData")
+                .join("Local")
+                .join("crucible")
+                .join("embedding-models")
                 .to_string_lossy()
                 .to_string()
         }
@@ -221,7 +266,8 @@ fn default_embedding_model_cache_dir() -> String {
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
         // Fallback for other platforms - use home directory
-        home.join(".crucible").join("embedding-models")
+        home.join(".crucible")
+            .join("embedding-models")
             .to_string_lossy()
             .to_string()
     }

@@ -6,7 +6,7 @@
 
 use super::error::{ParseError, ParseErrorType};
 use super::extensions::SyntaxExtension;
-use super::types::{NoteContent, ListBlock, ListItem, ListType, Tag, TaskStatus};
+use super::types::{ListBlock, ListItem, ListType, NoteContent, Tag, TaskStatus};
 use async_trait::async_trait;
 
 use regex::Regex;
@@ -208,7 +208,11 @@ impl EnhancedTagsExtension {
                 }
 
                 let item = if let Some(status) = task_status {
-                    ListItem::new_task(item_content.to_string(), level, status == TaskStatus::Completed)
+                    ListItem::new_task(
+                        item_content.to_string(),
+                        level,
+                        status == TaskStatus::Completed,
+                    )
                 } else {
                     ListItem::new(item_content.to_string(), level)
                 };
@@ -223,7 +227,8 @@ impl EnhancedTagsExtension {
                             // Close current list and start new one
                             if !items.is_empty() {
                                 let item_count = items.len();
-                                let mut list_block = ListBlock::new(*current_list_type, line_offset - line.len()); // Approximate start offset
+                                let mut list_block =
+                                    ListBlock::new(*current_list_type, line_offset - line.len()); // Approximate start offset
                                 list_block.items = std::mem::take(items);
                                 list_block.item_count = item_count;
                                 doc_content.lists.push(list_block);
@@ -326,7 +331,7 @@ pub fn create_enhanced_tags_extension() -> Arc<dyn SyntaxExtension> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::types::{NoteContent, ListType, TaskStatus};
+    use super::super::types::{ListType, NoteContent, TaskStatus};
     use super::*;
 
     #[test]

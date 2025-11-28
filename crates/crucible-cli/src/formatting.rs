@@ -99,9 +99,7 @@ pub fn format_duration(duration: std::time::Duration) -> String {
 pub fn format_timestamp(timestamp: std::time::SystemTime) -> String {
     use std::time::UNIX_EPOCH;
 
-    let duration_since_epoch = timestamp
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
+    let duration_since_epoch = timestamp.duration_since(UNIX_EPOCH).unwrap_or_default();
 
     // Simple RFC3339-like format
     let secs = duration_since_epoch.as_secs();

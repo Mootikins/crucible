@@ -82,21 +82,20 @@ impl InlineRule for WikilinkScanner {
         };
 
         // Parse: target#heading or target#^block
-        let (target, heading_ref, block_ref) =
-            if let Some(hash_pos) = target_part.find('#') {
-                let target = &target_part[..hash_pos];
-                let ref_part = &target_part[hash_pos + 1..];
+        let (target, heading_ref, block_ref) = if let Some(hash_pos) = target_part.find('#') {
+            let target = &target_part[..hash_pos];
+            let ref_part = &target_part[hash_pos + 1..];
 
-                if ref_part.starts_with('^') {
-                    // Block reference
-                    (target, None, Some(ref_part[1..].to_string()))
-                } else {
-                    // Heading reference
-                    (target, Some(ref_part.to_string()), None)
-                }
+            if ref_part.starts_with('^') {
+                // Block reference
+                (target, None, Some(ref_part[1..].to_string()))
             } else {
-                (target_part, None, None)
-            };
+                // Heading reference
+                (target, Some(ref_part.to_string()), None)
+            }
+        } else {
+            (target_part, None, None)
+        };
 
         // Create custom node
         let wikilink = WikilinkNode {

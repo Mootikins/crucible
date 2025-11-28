@@ -575,9 +575,7 @@ impl FileType {
             | Some("scala") | Some("clj") | Some("hs") | Some("ml") | Some("sh") => FileType::Code,
             Some("yaml") | Some("yml") | Some("json") | Some("toml") | Some("ini")
             | Some("cfg") | Some("conf") | Some("xml") | Some("plist") => FileType::Config,
-            Some("pdf") | Some("doc") | Some("docx") | Some("odt") | Some("rtf") => {
-                FileType::Note
-            }
+            Some("pdf") | Some("doc") | Some("docx") | Some("odt") | Some("rtf") => FileType::Note,
             Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("svg") | Some("bmp")
             | Some("webp") | Some("ico") => FileType::Image,
             Some("mp3") | Some("wav") | Some("ogg") | Some("flac") | Some("aac") => FileType::Audio,

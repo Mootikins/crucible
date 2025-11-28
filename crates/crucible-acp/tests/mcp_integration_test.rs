@@ -2,9 +2,9 @@
 //!
 //! Verifies that the MCP server info is properly populated in NewSessionRequest
 
+use agent_client_protocol::{EnvVariable, McpServer, NewSessionRequest};
+use crucible_acp::client::{ClientConfig, CrucibleAcpClient};
 use std::path::PathBuf;
-use crucible_acp::client::{CrucibleAcpClient, ClientConfig};
-use agent_client_protocol::{NewSessionRequest, McpServer, EnvVariable};
 
 /// Integration test: MCP server configuration is populated in handshake
 #[tokio::test]
@@ -25,38 +25,58 @@ async fn test_mcp_server_configuration_in_handshake() {
     // This verifies the NewSessionRequest structure includes MCP servers
     let session_request = NewSessionRequest {
         cwd: PathBuf::from("/test"),
-        mcp_servers: vec![
-            McpServer::Stdio {
-                name: "crucible".to_string(),
-                command: PathBuf::from("cru"),
-                args: vec!["mcp".to_string()],
-                env: vec![],
-            }
-        ],
+        mcp_servers: vec![McpServer::Stdio {
+            name: "crucible".to_string(),
+            command: PathBuf::from("cru"),
+            args: vec!["mcp".to_string()],
+            env: vec![],
+        }],
         meta: None,
     };
 
     // Verify the structure is correct
-    assert_eq!(session_request.mcp_servers.len(), 1, "Should have one MCP server configured");
+    assert_eq!(
+        session_request.mcp_servers.len(),
+        1,
+        "Should have one MCP server configured"
+    );
 
     match &session_request.mcp_servers[0] {
-        McpServer::Stdio { name, command, args, env } => {
+        McpServer::Stdio {
+            name,
+            command,
+            args,
+            env,
+        } => {
             assert_eq!(name, "crucible", "MCP server name should be 'crucible'");
             assert_eq!(command, &PathBuf::from("cru"), "Command should be 'cru'");
             assert_eq!(args.len(), 1, "Should have one arg");
             assert_eq!(args[0], "mcp", "Arg should be 'mcp'");
-            assert_eq!(env.len(), 0, "Should have no environment variables by default");
+            assert_eq!(
+                env.len(),
+                0,
+                "Should have no environment variables by default"
+            );
         }
         _ => panic!("Expected McpServer::Stdio variant"),
     }
 
     // Verify it serializes correctly
     let serialized = serde_json::to_string(&session_request);
-    assert!(serialized.is_ok(), "NewSessionRequest with MCP servers should serialize");
+    assert!(
+        serialized.is_ok(),
+        "NewSessionRequest with MCP servers should serialize"
+    );
 
     let json = serialized.unwrap();
-    assert!(json.contains("crucible"), "Serialized JSON should contain server name");
-    assert!(json.contains("mcp"), "Serialized JSON should contain 'mcp' arg");
+    assert!(
+        json.contains("crucible"),
+        "Serialized JSON should contain server name"
+    );
+    assert!(
+        json.contains("mcp"),
+        "Serialized JSON should contain 'mcp' arg"
+    );
 }
 
 /// Integration test: Verify connect_with_handshake populates MCP servers
@@ -68,11 +88,17 @@ async fn test_connect_with_handshake_includes_mcp_servers() {
     // The method uses current_exe() to find the cru binary, so we test that path resolution works
 
     let current_exe_result = env::current_exe();
-    assert!(current_exe_result.is_ok(), "Should be able to get current executable path");
+    assert!(
+        current_exe_result.is_ok(),
+        "Should be able to get current executable path"
+    );
 
     let exe_path = current_exe_result.unwrap();
     let parent = exe_path.parent();
-    assert!(parent.is_some(), "Executable should have a parent directory");
+    assert!(
+        parent.is_some(),
+        "Executable should have a parent directory"
+    );
 
     // Verify the command path resolution logic
     let cru_path = parent.unwrap().join("cru");
@@ -122,7 +148,12 @@ async fn test_mcp_server_with_env_variables() {
 
     // Verify environment variables are preserved
     match &mcp_server {
-        McpServer::Stdio { name: _, command: _, args: _, env } => {
+        McpServer::Stdio {
+            name: _,
+            command: _,
+            args: _,
+            env,
+        } => {
             assert_eq!(env.len(), 2);
             assert_eq!(env[0].name, "RUST_LOG");
             assert_eq!(env[0].value, "debug");
@@ -158,7 +189,10 @@ async fn test_multiple_mcp_servers() {
     let another_server = McpServer::Stdio {
         name: "another-tool".to_string(),
         command: PathBuf::from("/usr/bin/other-mcp-server"),
-        args: vec!["--mode", "stdio"].iter().map(|s| s.to_string()).collect(),
+        args: vec!["--mode", "stdio"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
         env: vec![],
     };
 

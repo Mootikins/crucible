@@ -4,11 +4,11 @@ use async_trait::async_trait;
 use markdown_it::MarkdownIt;
 use std::path::Path;
 
-use crate::error::{ParserError, ParserResult};
-use crate::traits::{MarkdownParser, ParserCapabilities};
-use crate::types::{FrontmatterFormat, Frontmatter, ParsedNote};
 use super::converter::AstConverter;
 use super::plugins;
+use crate::error::{ParserError, ParserResult};
+use crate::traits::{MarkdownParser, ParserCapabilities};
+use crate::types::{Frontmatter, FrontmatterFormat, ParsedNote};
 
 /// Parser implementation using markdown-it-rust
 pub struct MarkdownItParser {
@@ -69,10 +69,7 @@ impl MarkdownItParser {
         if let Some(rest) = content.strip_prefix("---\n") {
             if let Some(end_idx) = rest.find("\n---\n") {
                 let yaml = &rest[..end_idx];
-                return Some(Frontmatter::new(
-                    yaml.to_string(),
-                    FrontmatterFormat::Yaml,
-                ));
+                return Some(Frontmatter::new(yaml.to_string(), FrontmatterFormat::Yaml));
             }
         }
         None
@@ -113,11 +110,7 @@ impl MarkdownParser for MarkdownItParser {
         self.parse_content(&content, path).await
     }
 
-    async fn parse_content(
-        &self,
-        content: &str,
-        source_path: &Path,
-    ) -> ParserResult<ParsedNote> {
+    async fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedNote> {
         // Check file size limit
         if let Some(max_size) = self.max_file_size {
             if content.len() > max_size {
