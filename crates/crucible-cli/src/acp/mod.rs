@@ -13,4 +13,4 @@ mod tests;
 
 pub use agent::{discover_agent, is_agent_available, AgentInfo};
 pub use client::CrucibleAcpClient;
-pub use context::ContextEnricher;
+pub use context::{ContextEnricher, EnrichmentResult};
