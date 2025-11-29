@@ -14,6 +14,7 @@ use crate::acp::{discover_agent, ContextEnricher, CrucibleAcpClient};
 use crate::config::CliConfig;
 use crate::core_facade::CrucibleCoreFacade;
 use crate::factories;
+use crate::formatting::render_markdown;
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
 use crucible_pipeline::NotePipeline;
 use crucible_watch::traits::{DebounceConfig, HandlerConfig, WatchConfig};
@@ -316,6 +317,10 @@ async fn run_interactive_session(
     println!("  {} - Switch to act mode (write-enabled)", "/act".green());
     println!("  {} - Switch to auto-approve mode", "/auto".green());
     println!("  {} - Cycle modes (or Shift+Tab)", "/mode".green());
+    println!(
+        "  {} - Search knowledge base",
+        "/search <query>".green()
+    );
     println!();
     println!("{}", "Press Ctrl+C twice to exit".dimmed());
 
@@ -393,6 +398,80 @@ async fn run_interactive_session(
                     );
                     // Note: In full implementation, would update client permissions here
                     continue;
+                } else if input.starts_with("/search ") || input == "/search" {
+                    let query = if input == "/search" {
+                        ""
+                    } else {
+                        input[8..].trim()
+                    };
+
+                    if query.is_empty() {
+                        println!(
+                            "{} Usage: /search <query>",
+                            "!".yellow()
+                        );
+                        continue;
+                    }
+
+                    // Show searching indicator
+                    print!("{} ", "🔍 Searching...".bright_cyan().dimmed());
+                    use std::io::{self, Write};
+                    io::stdout().flush().unwrap();
+
+                    match core.semantic_search(query, 10).await {
+                        Ok(results) => {
+                            // Clear searching indicator
+                            print!("\r{}\r", " ".repeat(20));
+                            io::stdout().flush().unwrap();
+
+                            if results.is_empty() {
+                                println!(
+                                    "{} No results found for: {}",
+                                    "○".dimmed(),
+                                    query.italic()
+                                );
+                            } else {
+                                println!(
+                                    "{} Found {} results:\n",
+                                    "●".bright_blue(),
+                                    results.len()
+                                );
+                                for (i, result) in results.iter().enumerate() {
+                                    println!(
+                                        "  {} {} {}",
+                                        format!("{}.", i + 1).dimmed(),
+                                        result.title.bright_white(),
+                                        format!("({:.0}%)", result.similarity * 100.0).dimmed()
+                                    );
+                                    // Show snippet preview (first non-empty line)
+                                    if !result.snippet.is_empty() {
+                                        let preview = result
+                                            .snippet
+                                            .lines()
+                                            .find(|l| !l.trim().is_empty())
+                                            .unwrap_or("");
+                                        if !preview.is_empty() {
+                                            let truncated = if preview.len() > 80 {
+                                                format!("{}...", &preview[..77])
+                                            } else {
+                                                preview.to_string()
+                                            };
+                                            println!("     {}", truncated.dimmed());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            // Clear searching indicator
+                            print!("\r{}\r", " ".repeat(20));
+                            io::stdout().flush().unwrap();
+
+                            println!("{} Search failed: {}", "✗".red(), e);
+                        }
+                    }
+                    println!();
+                    continue;
                 }
 
                 // Prepare the message (with or without context enrichment)
@@ -436,8 +515,16 @@ async fn run_interactive_session(
                         print!("\r{}\r", " ".repeat(20));
                         io::stdout().flush().unwrap();
 
-                        // Print agent response with simple indicator
-                        println!("{} {}", "●".bright_blue(), response);
+                        // Print agent response with markdown rendering
+                        let rendered = render_markdown(&response);
+                        // Print with indicator on first line, rest indented
+                        let mut lines = rendered.lines();
+                        if let Some(first) = lines.next() {
+                            println!("{} {}", "●".bright_blue(), first);
+                            for line in lines {
+                                println!("  {}", line);
+                            }
+                        }
 
                         // Show tool calls that are missing from the inline stream (fallback)
                         let has_inline_tools = response.contains('▷');

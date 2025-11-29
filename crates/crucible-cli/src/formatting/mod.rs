@@ -8,6 +8,9 @@ use serde::Serialize;
 use serde_json;
 use tabled::{settings::Style, Table, Tabled};
 
+mod markdown_renderer;
+pub use markdown_renderer::render_markdown;
+
 /// Standard output format types supported across all commands
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
