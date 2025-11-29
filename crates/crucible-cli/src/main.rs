@@ -1,18 +1,13 @@
 use anyhow::Result;
 use clap::Parser;
-use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::prelude::*; // For SubscriberExt trait
 
 use crucible_cli::{
-    cli::{Cli, Commands, LogLevel},
+    cli::{Cli, Commands},
     commands, config,
 };
-use crucible_core::traits::KnowledgeRepository;
-use crucible_core::{types::hashing::HashAlgorithm, CrucibleCore};
-use crucible_llm::embeddings::{create_provider, EmbeddingConfig, EmbeddingProvider};
-use crucible_surrealdb::{adapters, SurrealDbConfig};
 
 /// Process files using the integrated ChangeDetectionService
 ///

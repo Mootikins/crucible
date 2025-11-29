@@ -42,7 +42,6 @@
 //! }
 //! ```
 
-use crucible_enrichment;
 
 // ============================================================================
 // SOLID ARCHITECTURE: Phase 5 - Private Infrastructure Types
@@ -117,6 +116,10 @@ pub use transaction_consumer::{
 // Public kiln integration utilities (these are utility functions, not types)
 #[cfg(feature = "embeddings")]
 pub mod kiln_integration;
+
+// New organized kiln module (re-exports kiln_integration functions by category)
+#[cfg(feature = "embeddings")]
+pub mod kiln;
 
 // ============================================================================
 // PRIVATE infrastructure modules - use factory functions instead!

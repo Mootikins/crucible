@@ -14,6 +14,17 @@
 //! - **Caching**: Downloaded models are cached locally
 //! - **Production Ready**: Stable v5.2.0, battle-tested in Qdrant ecosystem
 //!
+//! ## Threading Model
+//!
+//! FastEmbed uses ONNX Runtime which handles parallelism internally:
+//! - **Intra-op parallelism**: ONNX parallelizes operations within each inference call
+//! - **Thread control**: Set `ORT_NUM_THREADS` environment variable to control thread count
+//! - **Default behavior**: Uses all available CPU cores
+//!
+//! Note: This provider uses a mutex for thread-safety, so concurrent `embed_batch()`
+//! calls are serialized. For maximum throughput, batch your texts before calling
+//! `embed_batch()` rather than making many concurrent calls.
+//!
 //! ## Supported Models
 //!
 //! ### Priority Models (Recommended)
