@@ -1817,6 +1817,7 @@ dependencies = [
  "hex",
  "ndarray 0.16.1",
  "num_cpus",
+ "rayon",
  "serde",
  "serde_json",
  "serde_yaml",

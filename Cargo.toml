@@ -88,6 +88,7 @@ config = "0.15"
 dashmap = "6.1"
 parking_lot = "0.12"
 lazy_static = "1.4"
+rayon = "1.10"
 
 # File system watching
 notify = "8.2"
