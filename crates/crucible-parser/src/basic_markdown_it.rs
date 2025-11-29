@@ -7,6 +7,7 @@
 //! It uses markdown-it for robust markdown parsing.
 
 use async_trait::async_trait;
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::Arc;
 
 use crate::error::ParseError;
@@ -84,10 +85,57 @@ impl SyntaxExtension for BasicMarkdownItExtension {
     }
 
     async fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
-        let errors = Vec::new();
+        let mut errors = Vec::new();
 
-        // Parse with markdown-it
-        let ast = self.md.parse(content);
+        // Parse with markdown-it, catching any panics (e.g., upstream bug in emph_pair.rs)
+        // See: https://github.com/rlidwka/markdown-it.rs/issues/48
+        let md = Arc::clone(&self.md);
+        let content_owned = content.to_string();
+        let parse_result = panic::catch_unwind(AssertUnwindSafe(|| md.parse(&content_owned)));
+
+        let ast = match parse_result {
+            Ok(ast) => ast,
+            Err(panic_info) => {
+                // Extract panic message for debugging
+                let panic_msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "unknown panic".to_string()
+                };
+
+                // Find potentially problematic emphasis patterns for diagnostics
+                let problematic_patterns = find_emphasis_patterns(content);
+
+                let error_detail = if problematic_patterns.is_empty() {
+                    format!(
+                        "markdown-it parser panicked: {}. Content length: {} chars",
+                        panic_msg,
+                        content.len()
+                    )
+                } else {
+                    format!(
+                        "markdown-it parser panicked: {}. Likely trigger patterns:\n{}",
+                        panic_msg,
+                        problematic_patterns.join("\n")
+                    )
+                };
+
+                eprintln!("WARNING: {}", error_detail);
+
+                errors.push(ParseError {
+                    message: error_detail,
+                    error_type: crate::error::ParseErrorType::SyntaxError,
+                    line: 0,
+                    column: 0,
+                    offset: 0,
+                    severity: crate::error::ErrorSeverity::Error,
+                });
+
+                return errors;
+            }
+        };
 
         // Convert AST to extract markdown structures
         match AstConverter::convert(&ast) {
@@ -109,6 +157,72 @@ impl SyntaxExtension for BasicMarkdownItExtension {
         }
 
         errors
+    }
+}
+
+/// Find potentially problematic emphasis patterns that may trigger markdown-it bugs.
+/// Returns a list of suspicious patterns with their line numbers.
+fn find_emphasis_patterns(content: &str) -> Vec<String> {
+    let mut patterns = Vec::new();
+
+    for (line_num, line) in content.lines().enumerate() {
+        let line_num = line_num + 1; // 1-indexed
+
+        // Pattern 1: Emphasis marker at start of list item that spans lines
+        // e.g., "- _foo" without closing on same line
+        if (line.trim_start().starts_with("- _")
+            || line.trim_start().starts_with("- *")
+            || line.trim_start().starts_with("* _")
+            || line.trim_start().starts_with("* *"))
+            && !has_balanced_emphasis(line)
+        {
+            patterns.push(format!(
+                "  Line {}: Unbalanced emphasis in list item: {}",
+                line_num,
+                truncate_line(line, 60)
+            ));
+        }
+
+        // Pattern 2: Emphasis spanning indented continuation lines
+        if line.starts_with("  ") && (line.contains("_") || line.contains("*")) {
+            let trimmed = line.trim();
+            if trimmed.ends_with('_') || trimmed.ends_with('*') {
+                patterns.push(format!(
+                    "  Line {}: Emphasis closing in indented block: {}",
+                    line_num,
+                    truncate_line(line, 60)
+                ));
+            }
+        }
+
+        // Pattern 3: Mixed emphasis markers that might confuse the parser
+        if line.contains("_*") || line.contains("*_") {
+            patterns.push(format!(
+                "  Line {}: Mixed emphasis markers: {}",
+                line_num,
+                truncate_line(line, 60)
+            ));
+        }
+    }
+
+    // Limit to first 5 patterns to avoid spam
+    patterns.truncate(5);
+    patterns
+}
+
+/// Check if a line has balanced emphasis markers (rough heuristic)
+fn has_balanced_emphasis(line: &str) -> bool {
+    let underscores = line.chars().filter(|&c| c == '_').count();
+    let asterisks = line.chars().filter(|&c| c == '*').count();
+    underscores % 2 == 0 && asterisks % 2 == 0
+}
+
+/// Truncate a line for display
+fn truncate_line(line: &str, max_len: usize) -> String {
+    if line.len() <= max_len {
+        line.to_string()
+    } else {
+        format!("{}...", &line[..max_len])
     }
 }
 
