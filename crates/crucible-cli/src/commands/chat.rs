@@ -283,21 +283,27 @@ async fn run_interactive_session(
 ) -> Result<()> {
     use colored::Colorize;
     use reedline::{
-        default_emacs_keybindings, DefaultPrompt, Emacs, KeyCode, KeyModifiers, Reedline,
-        ReedlineEvent, Signal,
+        default_emacs_keybindings, DefaultPrompt, EditCommand, Emacs, KeyCode, KeyModifiers,
+        Reedline, ReedlineEvent, Signal,
     };
     use std::time::Instant;
 
     let mut current_mode = initial_mode;
     let mut last_ctrl_c: Option<Instant> = None;
 
-    // Configure keybindings with Shift+Tab -> silent mode cycle
-    // Using a special prefix so we can handle it without visual feedback
+    // Configure keybindings:
+    // - Shift+Tab: silent mode cycle
+    // - Ctrl+J: insert newline (multiline input)
     let mut keybindings = default_emacs_keybindings();
     keybindings.add_binding(
         KeyModifiers::SHIFT,
         KeyCode::BackTab,
         ReedlineEvent::ExecuteHostCommand("\x00mode".to_string()),
+    );
+    keybindings.add_binding(
+        KeyModifiers::CONTROL,
+        KeyCode::Char('j'),
+        ReedlineEvent::Edit(vec![EditCommand::InsertNewline]),
     );
     let edit_mode = Box::new(Emacs::new(keybindings));
     let mut line_editor = Reedline::create().with_edit_mode(edit_mode);
@@ -322,7 +328,11 @@ async fn run_interactive_session(
         "/search <query>".green()
     );
     println!();
-    println!("{}", "Press Ctrl+C twice to exit".dimmed());
+    println!(
+        "{} | {}",
+        "Ctrl+J for newline".dimmed(),
+        "Ctrl+C twice to exit".dimmed()
+    );
 
     loop {
         // Create simple prompt based on current mode
