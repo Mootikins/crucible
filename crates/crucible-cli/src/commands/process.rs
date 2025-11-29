@@ -79,15 +79,23 @@ pub async fn execute(
             .progress_chars("#>-"),
     );
 
-    // Determine number of parallel workers
-    // Priority: CLI flag > config file > default (num_cpus / 2)
-    let default_workers = num_cpus::get() / 2;
+    // Determine number of parallel workers for embedding generation
+    // Priority: CLI flag > config file > embedding provider default
+    //
+    // Provider-specific defaults prevent rate limiting:
+    // - Ollama: 1 (single GPU, sequential to avoid OOM)
+    // - FastEmbed: num_cpus/2 (CPU-bound, parallel OK)
+    // - Remote APIs: 8 (rate-limited, moderate concurrency)
+    let embedding_max_concurrent = config.embedding.get_max_concurrent();
     let workers = parallel
         .or(config.parallel_workers())
-        .unwrap_or(default_workers)
+        .unwrap_or(embedding_max_concurrent)
         .max(1); // At least 1 worker
 
-    info!("Using {} parallel workers", workers);
+    info!(
+        "Using {} parallel workers (embedding provider default: {})",
+        workers, embedding_max_concurrent
+    );
 
     // Process files through pipeline
     if dry_run {
