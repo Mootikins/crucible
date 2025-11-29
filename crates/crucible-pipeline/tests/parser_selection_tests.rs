@@ -2,7 +2,7 @@
 //!
 //! This test suite verifies:
 //! 1. Parser backend selection via configuration
-//! 2. Feature parity between pulldown-cmark and markdown-it parsers
+//! 2. Feature parity between CrucibleParser (default) and MarkdownItParser
 //! 3. Edge cases and error handling for both parsers
 
 use anyhow::Result;
@@ -193,18 +193,18 @@ fn create_pipeline_with_parser(
 // ============================================================================
 
 #[tokio::test]
-async fn test_default_parser_is_pulldown() {
+async fn test_default_parser_is_default() {
     let config = NotePipelineConfig::default();
     assert_eq!(
         config.parser,
-        ParserBackend::Pulldown,
-        "Default parser should be Pulldown"
+        ParserBackend::Default,
+        "Default parser should be Default (CrucibleParser)"
     );
 }
 
 #[tokio::test]
-async fn test_pulldown_parser_processes_successfully() {
-    let (pipeline, storage) = create_pipeline_with_parser(ParserBackend::Pulldown);
+async fn test_default_parser_processes_successfully() {
+    let (pipeline, storage) = create_pipeline_with_parser(ParserBackend::Default);
 
     let content = r#"# Test Note
 
@@ -221,7 +221,7 @@ Inline math: $x^2 + y^2 = z^2$
 
     assert!(
         result.is_ok(),
-        "Pulldown parser should process successfully"
+        "Default parser should process successfully"
     );
 
     let notes = storage.get_stored_notes();
@@ -269,17 +269,17 @@ Block ref: [[Note#^block]].
 Heading ref: [[Note#Heading]].
 "#;
 
-    // Test with Pulldown parser
+    // Test with Default parser
     let (pipeline_pulldown, storage_pulldown) =
-        create_pipeline_with_parser(ParserBackend::Pulldown);
+        create_pipeline_with_parser(ParserBackend::Default);
     let (_temp1, path1) = create_test_file(test_content).unwrap();
     pipeline_pulldown.process(&path1).await.unwrap();
     let notes_pulldown = storage_pulldown.get_stored_notes();
 
-    // Extract wikilinks from Pulldown result
+    // Extract wikilinks from Default parser result
     let wikilinks_pulldown = &notes_pulldown[0].parsed.content.wikilinks;
 
-    // Verify Pulldown extracted wikilinks correctly
+    // Verify Default parser extracted wikilinks correctly
     assert_eq!(wikilinks_pulldown.len(), 5, "Should extract 5 wikilinks");
     assert_eq!(wikilinks_pulldown[0].target, "Page 1");
     assert_eq!(wikilinks_pulldown[1].target, "Page 2");
@@ -332,16 +332,16 @@ Tags: #project #important #status/active
 Nested tag: #work/review/urgent
 "#;
 
-    // Test with Pulldown parser
+    // Test with Default parser
     let (pipeline_pulldown, storage_pulldown) =
-        create_pipeline_with_parser(ParserBackend::Pulldown);
+        create_pipeline_with_parser(ParserBackend::Default);
     let (_temp1, path1) = create_test_file(test_content).unwrap();
     pipeline_pulldown.process(&path1).await.unwrap();
     let notes_pulldown = storage_pulldown.get_stored_notes();
 
     let tags_pulldown = &notes_pulldown[0].parsed.content.tags;
 
-    // Verify Pulldown extracted tags correctly
+    // Verify Default parser extracted tags correctly
     assert_eq!(tags_pulldown.len(), 4, "Should extract 4 tags");
     assert_eq!(tags_pulldown[0].name, "project");
     assert_eq!(tags_pulldown[1].name, "important");
@@ -390,16 +390,16 @@ Another text section.
 > Tip without title
 "#;
 
-    // Test with Pulldown parser
+    // Test with Default parser
     let (pipeline_pulldown, storage_pulldown) =
-        create_pipeline_with_parser(ParserBackend::Pulldown);
+        create_pipeline_with_parser(ParserBackend::Default);
     let (_temp1, path1) = create_test_file(test_content).unwrap();
     pipeline_pulldown.process(&path1).await.unwrap();
     let notes_pulldown = storage_pulldown.get_stored_notes();
 
     let callouts_pulldown = &notes_pulldown[0].parsed.content.callouts;
 
-    // Verify Pulldown extracted callouts correctly
+    // Verify Default parser extracted callouts correctly
     assert_eq!(callouts_pulldown.len(), 3, "Should extract 3 callouts");
     assert_eq!(callouts_pulldown[0].callout_type, "note");
     assert_eq!(callouts_pulldown[0].title, None);
@@ -456,9 +456,9 @@ $$
 More inline: $\alpha + \beta = \gamma$
 "#;
 
-    // Test with Pulldown parser
+    // Test with Default parser
     let (pipeline_pulldown, storage_pulldown) =
-        create_pipeline_with_parser(ParserBackend::Pulldown);
+        create_pipeline_with_parser(ParserBackend::Default);
     let (_temp1, path1) = create_test_file(test_content).unwrap();
     pipeline_pulldown.process(&path1).await.unwrap();
     let notes_pulldown = storage_pulldown.get_stored_notes();
@@ -475,7 +475,7 @@ More inline: $\alpha + \beta = \gamma$
     }
     eprintln!("===================================");
 
-    // Verify Pulldown extracted LaTeX correctly
+    // Verify Default parser extracted LaTeX correctly
     assert_eq!(
         latex_pulldown.len(),
         3,
@@ -564,9 +564,9 @@ fn main() {
 Regular text with [[actual link]] and #actual-tag.
 "#;
 
-    // Test with Pulldown parser
+    // Test with Default parser
     let (pipeline_pulldown, storage_pulldown) =
-        create_pipeline_with_parser(ParserBackend::Pulldown);
+        create_pipeline_with_parser(ParserBackend::Default);
     let (_temp1, path1) = create_test_file(test_content).unwrap();
     pipeline_pulldown.process(&path1).await.unwrap();
     let notes_pulldown = storage_pulldown.get_stored_notes();
@@ -645,7 +645,7 @@ Code block with [[fake link]]
 Another normal [[real link]].
 "#;
 
-    let (pipeline, storage) = create_pipeline_with_parser(ParserBackend::Pulldown);
+    let (pipeline, storage) = create_pipeline_with_parser(ParserBackend::Default);
     let (_temp, path) = create_test_file(test_content).unwrap();
     pipeline.process(&path).await.unwrap();
     let notes = storage.get_stored_notes();
@@ -674,7 +674,7 @@ Malformed math: $incomplete
 "#;
 
     // Both parsers should handle malformed syntax gracefully
-    let (pipeline, storage) = create_pipeline_with_parser(ParserBackend::Pulldown);
+    let (pipeline, storage) = create_pipeline_with_parser(ParserBackend::Default);
     let (_temp, path) = create_test_file(test_content).unwrap();
     let result = pipeline.process(&path).await;
 

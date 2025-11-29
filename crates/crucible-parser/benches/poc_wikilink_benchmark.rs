@@ -1,8 +1,8 @@
 //! Simple PoC benchmark: Wikilink extraction performance comparison
 //!
 //! This benchmark compares wikilink extraction performance between:
-//! 1. Pulldown-cmark + regex (current approach)
-//! 2. markdown-it with custom plugin (new approach)
+//! 1. Pure regex approach
+//! 2. markdown-it with custom plugin
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
@@ -46,13 +46,13 @@ Final [[links]] and [[references]] here."#,
     ),
 ];
 
-// Pulldown-cmark + regex approach (current)
-fn benchmark_pulldown_regex(c: &mut Criterion) {
+// Pure regex approach (baseline)
+fn benchmark_regex_only(c: &mut Criterion) {
     use regex::Regex;
 
     let wikilink_re = Regex::new(r"(!?)\[\[([^\]]+?)\]\]").unwrap();
 
-    let mut group = c.benchmark_group("pulldown_regex");
+    let mut group = c.benchmark_group("regex_only");
 
     for (name, content) in TEST_DOCS {
         group.bench_with_input(
@@ -83,7 +83,7 @@ fn benchmark_pulldown_regex(c: &mut Criterion) {
     group.finish();
 }
 
-// markdown-it approach (new)
+// markdown-it approach
 #[cfg(feature = "markdown-it-parser")]
 fn benchmark_markdown_it(c: &mut Criterion) {
     use markdown_it::MarkdownIt;
@@ -136,9 +136,9 @@ fn benchmark_markdown_it(c: &mut Criterion) {
 }
 
 #[cfg(feature = "markdown-it-parser")]
-criterion_group!(benches, benchmark_pulldown_regex, benchmark_markdown_it);
+criterion_group!(benches, benchmark_regex_only, benchmark_markdown_it);
 
 #[cfg(not(feature = "markdown-it-parser"))]
-criterion_group!(benches, benchmark_pulldown_regex);
+criterion_group!(benches, benchmark_regex_only);
 
 criterion_main!(benches);
