@@ -106,7 +106,7 @@ pub async fn execute(
         ChatMode::Act
     };
 
-    use colored::Colorize;
+    
 
     info!("Starting chat command");
     info!("Initial mode: {}", initial_mode.display_name());

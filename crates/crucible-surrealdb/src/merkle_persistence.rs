@@ -11,11 +11,9 @@
 //! - **Metadata Preservation**: Store all section and node metadata
 //! - **Incremental Updates**: Support for partial tree updates
 
-use crate::{DbError, DbResult, RecordId, SurrealClient};
-use crucible_core::parser::ParsedNote;
+use crate::{DbError, DbResult, SurrealClient};
 use crucible_merkle::{HybridMerkleTree, NodeHash, SectionNode, VirtualSection};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::HashMap;
 
 /// Current serialization format version

@@ -11,9 +11,6 @@ pub mod secure_filesystem;
 pub mod stats;
 pub mod storage;
 
-// Disabled commands
-// pub mod semantic;  // Temporarily disabled - needs refactor to use new architecture
-
 // Tests
 #[cfg(test)]
 mod tests;

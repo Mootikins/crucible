@@ -26,7 +26,6 @@ use super::types::{
     BlockNode, Entity, EntityRecord, EntityTag, EntityTagRecord, EntityType, Property,
     PropertyRecord, PropertyValue, RecordId, TagRecord,
 };
-use crate::merkle_persistence::MerklePersistence;
 
 /// Classify content type for universal link processing
 fn classify_content(target: &str) -> ContentCategory {

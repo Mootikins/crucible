@@ -44,8 +44,6 @@ mod change_detector;
 pub mod config;
 mod embedding_events;
 pub mod error;
-// TODO: event_driven_embedding_processor uses EmbeddingThreadPool which no longer exists
-// mod event_driven_embedding_processor;
 mod events;
 mod file_scanner;
 pub mod handlers;
@@ -68,8 +66,6 @@ pub use config::{
 };
 pub use embedding_events::*;
 pub use error::*;
-// TODO: event_driven_embedding_processor uses EmbeddingThreadPool which no longer exists
-// pub use event_driven_embedding_processor::*;
 pub use events::*;
 pub use file_scanner::{
     FileScanner, NoOpProgressReporter, ScanProgressReporter, ScanStatistics, WatchConfig,
@@ -100,11 +96,6 @@ pub mod prelude {
             generate_document_id, EmbeddingEvent, EmbeddingEventMetadata, EmbeddingEventPriority,
             EmbeddingEventResult, EventDrivenEmbeddingConfig,
         },
-        // Event-driven embedding components
-        // TODO: event_driven_embedding_processor uses EmbeddingThreadPool which no longer exists
-        // event_driven_embedding_processor::{
-        //     EmbeddingEventHandler, EventDrivenEmbeddingProcessor, EventProcessorMetrics,
-        // },
         Error,
         EventHandler,
         FileEvent,
