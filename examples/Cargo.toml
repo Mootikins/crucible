@@ -9,9 +9,14 @@ authors.workspace = true
 name = "custom_merkle_builder"
 path = "custom_merkle_builder.rs"
 
+[[example]]
+name = "find_markdown_panic"
+path = "find_markdown_panic.rs"
+
 [dependencies]
 crucible-core = { path = "../crates/crucible-core" }
 crucible-enrichment = { path = "../crates/crucible-enrichment" }
 md5 = "0.7"
+markdown-it = "0.6.1"
 
 [dev-dependencies]
