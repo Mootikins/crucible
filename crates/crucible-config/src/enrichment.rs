@@ -67,6 +67,9 @@ pub enum EmbeddingProviderConfig {
 
     /// Mock provider for testing
     Mock(MockConfig),
+
+    /// Burn ML framework embedding provider (local, GPU-accelerated)
+    Burn(BurnEmbedConfig),
 }
 
 impl Default for EmbeddingProviderConfig {
@@ -476,6 +479,97 @@ impl Default for MockConfig {
     }
 }
 
+/// Burn ML framework embedding provider configuration
+///
+/// This provider uses the Burn framework for GPU-accelerated inference
+/// with support for Vulkan, ROCm, and CPU backends.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BurnEmbedConfig {
+    /// Model name or path
+    #[serde(default = "BurnEmbedConfig::default_model")]
+    pub model: String,
+
+    /// Backend configuration (auto-detect, vulkan, rocm, or cpu)
+    #[serde(default)]
+    pub backend: BurnBackendConfig,
+
+    /// Additional model search paths
+    #[serde(default)]
+    pub model_search_paths: Vec<String>,
+
+    /// Expected embedding dimensions (0 = auto-detect from model)
+    #[serde(default)]
+    pub dimensions: u32,
+}
+
+impl BurnEmbedConfig {
+    fn default_model() -> String {
+        "nomic-embed-text".to_string()
+    }
+
+    /// Get default model search paths
+    pub fn default_search_paths() -> Vec<String> {
+        let home = dirs::home_dir().unwrap_or_default();
+        vec![
+            home.join("models").to_string_lossy().to_string(),
+            home.join("models/embeddings").to_string_lossy().to_string(),
+            home.join(".cache/huggingface/hub")
+                .to_string_lossy()
+                .to_string(),
+        ]
+    }
+
+    /// Get all search paths (configured + defaults)
+    pub fn all_search_paths(&self) -> Vec<String> {
+        if self.model_search_paths.is_empty() {
+            Self::default_search_paths()
+        } else {
+            self.model_search_paths.clone()
+        }
+    }
+}
+
+impl Default for BurnEmbedConfig {
+    fn default() -> Self {
+        Self {
+            model: Self::default_model(),
+            backend: BurnBackendConfig::default(),
+            model_search_paths: Vec::new(),
+            dimensions: 0, // Auto-detect
+        }
+    }
+}
+
+/// Backend configuration for Burn provider
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum BurnBackendConfig {
+    /// Auto-detect the best available backend
+    #[default]
+    Auto,
+    /// Use Vulkan backend with specified device ID
+    Vulkan {
+        #[serde(default)]
+        device_id: usize,
+    },
+    /// Use ROCm backend with specified device ID
+    Rocm {
+        #[serde(default)]
+        device_id: usize,
+    },
+    /// Use CPU backend with specified thread count
+    Cpu {
+        #[serde(default = "BurnBackendConfig::default_num_threads")]
+        num_threads: usize,
+    },
+}
+
+impl BurnBackendConfig {
+    fn default_num_threads() -> usize {
+        num_cpus::get()
+    }
+}
+
 /// Pipeline configuration for enrichment operations
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PipelineConfig {
@@ -668,6 +762,7 @@ impl EmbeddingProviderConfig {
             Self::VertexAI(c) => c.timeout_seconds,
             Self::Custom(c) => c.timeout_seconds,
             Self::Mock(_) => 1,
+            Self::Burn(_) => 60, // GPU inference may need more time for first load
         };
         Duration::from_secs(seconds)
     }
@@ -682,6 +777,7 @@ impl EmbeddingProviderConfig {
             Self::VertexAI(c) => c.retry_attempts,
             Self::Custom(c) => c.retry_attempts,
             Self::Mock(_) => 0,
+            Self::Burn(_) => 0, // Local GPU processing doesn't need retries
         }
     }
 
@@ -695,6 +791,7 @@ impl EmbeddingProviderConfig {
             Self::VertexAI(c) => &c.model,
             Self::Custom(c) => &c.model,
             Self::Mock(c) => &c.model,
+            Self::Burn(c) => &c.model,
         }
     }
 
@@ -747,6 +844,7 @@ impl EmbeddingProviderConfig {
             Self::VertexAI(c) => c.timeout_seconds,
             Self::Custom(c) => c.timeout_seconds,
             Self::Mock(_) => 1,
+            Self::Burn(_) => 60,
         }
     }
 
@@ -760,6 +858,14 @@ impl EmbeddingProviderConfig {
             Self::VertexAI(_) => None, // VertexAI dimensions vary by model
             Self::Custom(c) => Some(c.dimensions),
             Self::Mock(c) => Some(c.dimensions),
+            Self::Burn(c) => {
+                // 0 means auto-detect, return None
+                if c.dimensions == 0 {
+                    None
+                } else {
+                    Some(c.dimensions)
+                }
+            }
         }
     }
 
@@ -914,8 +1020,35 @@ impl EmbeddingProviderConfig {
             Self::Mock(_) => {
                 // Mock provider has no validation requirements
             }
+            Self::Burn(c) => {
+                if c.model.is_empty() {
+                    return Err(ConfigValidationError::MissingField {
+                        field: "model".to_string(),
+                    });
+                }
+                // Note: model_search_paths and dimensions can be empty/0 (use defaults/auto-detect)
+            }
         }
         Ok(())
+    }
+
+    /// Create a Burn provider configuration with defaults
+    ///
+    /// # Arguments
+    /// * `model` - Optional model name (defaults to "nomic-embed-text")
+    /// * `backend` - Optional backend configuration (defaults to Auto)
+    /// * `search_paths` - Optional model search paths (defaults to ~/models, etc.)
+    pub fn burn(
+        model: Option<String>,
+        backend: Option<BurnBackendConfig>,
+        search_paths: Option<Vec<String>>,
+    ) -> Self {
+        Self::Burn(BurnEmbedConfig {
+            model: model.unwrap_or_else(BurnEmbedConfig::default_model),
+            backend: backend.unwrap_or_default(),
+            model_search_paths: search_paths.unwrap_or_default(),
+            dimensions: 0, // Auto-detect
+        })
     }
 }
 

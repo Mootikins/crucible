@@ -76,6 +76,10 @@ pub enum EmbeddingError {
     #[error("Invalid model metadata: {0}")]
     InvalidModelMetadata(String),
 
+    /// Inference failed
+    #[error("Inference failed: {0}")]
+    InferenceFailed(String),
+
     /// Generic error
     #[error("Embedding error: {0}")]
     Other(String),
@@ -128,6 +132,7 @@ impl EmbeddingError {
             EmbeddingError::ModelDiscoveryNotSupported(_) => false,
             EmbeddingError::ModelNotFound(_) => false,
             EmbeddingError::InvalidModelMetadata(_) => false,
+            EmbeddingError::InferenceFailed(_) => false,
             EmbeddingError::Other(_) => false,
         }
     }
