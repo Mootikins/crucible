@@ -15,6 +15,7 @@ use markdown_it::plugins::cmark::inline::backticks::CodeInline;
 use markdown_it::plugins::cmark::inline::emphasis::{Em, Strong};
 use markdown_it::plugins::cmark::inline::link::Link;
 use markdown_it::plugins::cmark::inline::newline::{Hardbreak, Softbreak};
+use markdown_it::plugins::extra::tables::{Table, TableBody, TableCell, TableHead, TableRow};
 use markdown_it::parser::inline::Text;
 use markdown_it::{MarkdownIt, Node};
 
@@ -35,11 +36,13 @@ pub fn render_markdown(text: &str) -> String {
     render_node(&ast, &RenderContext::default())
 }
 
-/// Create a markdown-it parser with CommonMark plugins
+/// Create a markdown-it parser with CommonMark and GFM table plugins
 fn create_parser() -> MarkdownIt {
     let mut md = MarkdownIt::new();
     markdown_it::plugins::cmark::add(&mut md);
-    // Note: Don't add extra plugins - they include syntect which overrides code blocks
+    // Add GFM table support
+    markdown_it::plugins::extra::tables::add(&mut md);
+    // Note: Don't add syntect plugin - it overrides code blocks
     md
 }
 
@@ -170,6 +173,9 @@ fn render_node(node: &Node, ctx: &RenderContext) -> String {
             "\n{}\n",
             "─".repeat(40).with(Color::DarkGrey)
         ));
+    } else if node.cast::<Table>().is_some() {
+        // GFM Table - render as formatted table
+        output.push_str(&render_table(node));
     } else {
         // Default: render children
         for child in node.children.iter() {
@@ -210,7 +216,7 @@ fn render_inline(node: &Node) -> String {
     if node.cast::<CodeInline>().is_some() {
         // CodeInline content is in child Text nodes
         let inner = collect_text(node);
-        return inner.with(Color::DarkGrey).to_string();
+        return inner.with(Color::Yellow).to_string();
     }
 
     if let Some(link) = node.cast::<Link>() {
@@ -261,6 +267,137 @@ fn collect_text(node: &Node) -> String {
 /// Collect inline text with styling applied
 fn collect_inline_text(node: &Node) -> String {
     render_inline_children(node)
+}
+
+/// Render a GFM table with proper formatting (fully outlined box)
+fn render_table(node: &Node) -> String {
+    let mut header_rows: Vec<Vec<String>> = Vec::new();
+    let mut body_rows: Vec<Vec<String>> = Vec::new();
+
+    // Collect rows from TableHead and TableBody sections
+    for section in node.children.iter() {
+        let is_header = section.cast::<TableHead>().is_some();
+        let is_body = section.cast::<TableBody>().is_some();
+
+        if is_header || is_body {
+            for row_node in section.children.iter() {
+                if row_node.cast::<TableRow>().is_some() {
+                    let mut row_cells: Vec<String> = Vec::new();
+                    for cell_node in row_node.children.iter() {
+                        if cell_node.cast::<TableCell>().is_some() {
+                            let cell_text = collect_inline_text(cell_node);
+                            row_cells.push(cell_text);
+                        }
+                    }
+                    if is_header {
+                        header_rows.push(row_cells);
+                    } else {
+                        body_rows.push(row_cells);
+                    }
+                }
+            }
+        }
+    }
+
+    if header_rows.is_empty() && body_rows.is_empty() {
+        return String::new();
+    }
+
+    // Combine all rows for column width calculation
+    let all_rows: Vec<&Vec<String>> = header_rows.iter().chain(body_rows.iter()).collect();
+
+    // Calculate column widths (max width per column)
+    let num_cols = all_rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    let mut col_widths: Vec<usize> = vec![0; num_cols];
+    for row in &all_rows {
+        for (i, cell) in row.iter().enumerate() {
+            if i < num_cols {
+                col_widths[i] = col_widths[i].max(cell.chars().count());
+            }
+        }
+    }
+
+    // Ensure minimum column width
+    for w in &mut col_widths {
+        *w = (*w).max(3);
+    }
+
+    let mut output = String::new();
+    output.push('\n');
+
+    // Build top border: ┌───┬───┐
+    let top_border = format!(
+        "┌{}┐",
+        col_widths
+            .iter()
+            .map(|w| "─".repeat(*w + 2))
+            .collect::<Vec<_>>()
+            .join("┬")
+    );
+    output.push_str(&format!("{}\n", top_border));
+
+    // Render header rows with bold content
+    for row in &header_rows {
+        let mut cells: Vec<String> = Vec::new();
+        for (i, cell) in row.iter().enumerate() {
+            let width = col_widths.get(i).copied().unwrap_or(3);
+            let padded = format!("{:width$}", cell, width = width);
+            // Bold header cell content
+            cells.push(padded.attribute(Attribute::Bold).to_string());
+        }
+        // Pad missing cells
+        for i in row.len()..num_cols {
+            let width = col_widths.get(i).copied().unwrap_or(3);
+            cells.push(" ".repeat(width));
+        }
+
+        let row_content = cells.join(" │ ");
+        output.push_str(&format!("│ {} │\n", row_content));
+    }
+
+    // Separator line after header: ├───┼───┤
+    if !header_rows.is_empty() && !body_rows.is_empty() {
+        let mid_border = format!(
+            "├{}┤",
+            col_widths
+                .iter()
+                .map(|w| "─".repeat(*w + 2))
+                .collect::<Vec<_>>()
+                .join("┼")
+        );
+        output.push_str(&format!("{}\n", mid_border));
+    }
+
+    // Render body rows
+    for row in &body_rows {
+        let mut cells: Vec<String> = Vec::new();
+        for (i, cell) in row.iter().enumerate() {
+            let width = col_widths.get(i).copied().unwrap_or(3);
+            let padded = format!("{:width$}", cell, width = width);
+            cells.push(padded);
+        }
+        // Pad missing cells
+        for i in row.len()..num_cols {
+            let width = col_widths.get(i).copied().unwrap_or(3);
+            cells.push(" ".repeat(width));
+        }
+
+        let row_content = cells.join(" │ ");
+        output.push_str(&format!("│ {} │\n", row_content));
+    }
+
+    // Build bottom border: └───┴───┘
+    let bottom_border = format!(
+        "└{}┘",
+        col_widths
+            .iter()
+            .map(|w| "─".repeat(*w + 2))
+            .collect::<Vec<_>>()
+            .join("┴")
+    );
+    output.push_str(&format!("{}\n", bottom_border));
+
+    output
 }
 
 #[cfg(test)]
@@ -332,5 +469,36 @@ mod tests {
     fn test_render_horizontal_rule() {
         let result = render_markdown("---");
         assert!(result.contains("─"));
+    }
+
+    #[test]
+    fn test_render_table() {
+        let input = r#"| Name | Age |
+|------|-----|
+| Alice | 30 |
+| Bob | 25 |"#;
+        let result = render_markdown(input);
+        // Table should contain headers and data
+        assert!(result.contains("Name"), "Table should contain 'Name' header");
+        assert!(result.contains("Age"), "Table should contain 'Age' header");
+        assert!(result.contains("Alice"), "Table should contain 'Alice' data");
+        assert!(result.contains("Bob"), "Table should contain 'Bob' data");
+        assert!(result.contains("30"), "Table should contain '30' data");
+        assert!(result.contains("25"), "Table should contain '25' data");
+        // Should have separator line with box-drawing chars
+        assert!(result.contains("─"), "Table should have horizontal separator");
+        assert!(result.contains("│"), "Table should have vertical separator");
+    }
+
+    #[test]
+    fn test_render_table_single_row() {
+        let input = r#"| Header1 | Header2 |
+|---------|---------|
+| Data1   | Data2   |"#;
+        let result = render_markdown(input);
+        assert!(result.contains("Header1"));
+        assert!(result.contains("Header2"));
+        assert!(result.contains("Data1"));
+        assert!(result.contains("Data2"));
     }
 }
