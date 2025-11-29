@@ -50,6 +50,7 @@ fn create_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfig {
             model: Some("nomic-embed-text-v1.5-q8_0".to_string()),
             api_url: Some("https://llama.terminal.krohnos.io".to_string()),
             batch_size: 16,
+            max_concurrent: None,
         },
         acp: AcpConfig {
             default_agent: Some("test-agent".to_string()),
