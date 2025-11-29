@@ -495,14 +495,32 @@ async fn run_interactive_session(
                     );
                     io::stdout().flush().unwrap();
 
-                    let enriched_result = enricher.enrich(input).await;
+                    let enriched_result = enricher.enrich_with_results(input).await;
 
                     // Clear the enrichment indicator
                     print!("\r{}\r", " ".repeat(35));
                     io::stdout().flush().unwrap();
 
                     match enriched_result {
-                        Ok(enriched) => enriched,
+                        Ok(result) => {
+                            // Display the notes found to the user
+                            if !result.notes_found.is_empty() {
+                                println!(
+                                    "{} Found {} relevant notes:",
+                                    "📚".dimmed(),
+                                    result.notes_found.len()
+                                );
+                                for note in &result.notes_found {
+                                    println!(
+                                        "   {} {} {}",
+                                        "•".dimmed(),
+                                        note.title.bright_white(),
+                                        format!("({:.0}%)", note.similarity * 100.0).dimmed()
+                                    );
+                                }
+                            }
+                            result.prompt
+                        }
                         Err(e) => {
                             error!("Context enrichment failed: {}", e);
                             info!("Falling back to original message");
