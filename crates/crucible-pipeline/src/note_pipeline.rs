@@ -33,16 +33,16 @@ use tracing::{debug, info};
 /// Parser backend selection
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParserBackend {
-    /// Use pulldown-cmark based parser (default, stable)
-    Pulldown,
-    /// Use markdown-it-rust based parser (faster, requires feature flag)
+    /// Use CrucibleParser (default, regex-based extraction)
+    Default,
+    /// Use markdown-it-rust based parser (AST-based, requires feature flag)
     #[cfg(feature = "markdown-it-parser")]
     MarkdownIt,
 }
 
 impl Default for ParserBackend {
     fn default() -> Self {
-        Self::Pulldown
+        Self::Default
     }
 }
 
@@ -108,7 +108,7 @@ impl NotePipeline {
     /// Create a parser instance based on the configured backend
     fn create_parser(backend: ParserBackend) -> Arc<dyn MarkdownParser> {
         match backend {
-            ParserBackend::Pulldown => Arc::new(CrucibleParser::new()),
+            ParserBackend::Default => Arc::new(CrucibleParser::new()),
             #[cfg(feature = "markdown-it-parser")]
             ParserBackend::MarkdownIt => {
                 use crucible_parser::MarkdownItParser;

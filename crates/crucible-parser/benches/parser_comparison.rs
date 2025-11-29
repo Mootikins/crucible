@@ -1,4 +1,7 @@
-//! Benchmark comparing pulldown-cmark vs markdown-it-rust parsers
+//! Benchmark comparing CrucibleParser vs MarkdownItParser
+//!
+//! CrucibleParser uses regex-based extraction for custom syntax (wikilinks, tags, etc.)
+//! MarkdownItParser uses markdown-it with custom plugins for AST-based parsing.
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use crucible_parser::{CrucibleParser, MarkdownParser};
@@ -83,8 +86,8 @@ This document has [[many]] [[wikilinks]] including [[ones|with aliases]] and
 [[some#with-headings]] and even ![[embeds]]. More [[links]] and [[more|aliases]]
 throughout. [[Yet]] [[another]] [[link]]."#;
 
-fn benchmark_pulldown_parser(c: &mut Criterion) {
-    let mut group = c.benchmark_group("pulldown_parser");
+fn benchmark_crucible_parser(c: &mut Criterion) {
+    let mut group = c.benchmark_group("crucible_parser");
     let path = PathBuf::from("test.md");
 
     group.bench_with_input(
@@ -181,11 +184,11 @@ fn benchmark_markdown_it_parser(c: &mut Criterion) {
 #[cfg(feature = "markdown-it-parser")]
 criterion_group!(
     benches,
-    benchmark_pulldown_parser,
+    benchmark_crucible_parser,
     benchmark_markdown_it_parser
 );
 
 #[cfg(not(feature = "markdown-it-parser"))]
-criterion_group!(benches, benchmark_pulldown_parser);
+criterion_group!(benches, benchmark_crucible_parser);
 
 criterion_main!(benches);
