@@ -196,12 +196,22 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
         // Build heading hierarchy for breadcrumbs
         let breadcrumbs = build_breadcrumbs(parsed);
 
+        // Check if we should embed all blocks:
+        // 1. Empty changed_blocks means embed everything
+        // 2. Section-style IDs (from pipeline) don't map to block IDs, so embed all
+        let embed_all = changed_blocks.is_empty()
+            || changed_blocks.iter().any(|id| {
+                id.starts_with("modified_section")
+                    || id.starts_with("added_section")
+                    || id.starts_with("removed_section")
+            });
+
         // Extract from headings
         for (idx, heading) in parsed.content.headings.iter().enumerate() {
             let block_id = format!("heading_{}", idx);
 
-            // Check if this block changed (if we have change tracking)
-            if !changed_blocks.is_empty() && !changed_blocks.contains(&block_id) {
+            // Check if this block changed (if we have change tracking and block-level IDs)
+            if !embed_all && !changed_blocks.contains(&block_id) {
                 continue;
             }
 
@@ -226,7 +236,7 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
             let block_id = format!("paragraph_{}", idx);
 
             // Check if this block changed
-            if !changed_blocks.is_empty() && !changed_blocks.contains(&block_id) {
+            if !embed_all && !changed_blocks.contains(&block_id) {
                 continue;
             }
 
@@ -250,7 +260,7 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
             let block_id = format!("code_{}", idx);
 
             // Check if this block changed
-            if !changed_blocks.is_empty() && !changed_blocks.contains(&block_id) {
+            if !embed_all && !changed_blocks.contains(&block_id) {
                 continue;
             }
 
@@ -275,7 +285,7 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
             let block_id = format!("list_{}", idx);
 
             // Check if this block changed
-            if !changed_blocks.is_empty() && !changed_blocks.contains(&block_id) {
+            if !embed_all && !changed_blocks.contains(&block_id) {
                 continue;
             }
 
@@ -305,7 +315,7 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
             let block_id = format!("blockquote_{}", idx);
 
             // Check if this block changed
-            if !changed_blocks.is_empty() && !changed_blocks.contains(&block_id) {
+            if !embed_all && !changed_blocks.contains(&block_id) {
                 continue;
             }
 
@@ -672,5 +682,78 @@ mod tests {
         use crucible_core::parser::ParsedNoteBuilder;
 
         ParsedNoteBuilder::new(PathBuf::from("/test/note.md")).build()
+    }
+
+    /// Helper to create a ParsedNote with content for testing embeddings
+    fn create_test_parsed_note_with_content() -> ParsedNote {
+        use crucible_core::parser::{ParsedNoteBuilder, Paragraph};
+
+        let mut note = ParsedNoteBuilder::new(PathBuf::from("/test/note.md")).build();
+
+        // Add paragraphs with sufficient words (>= 5 to meet embedding threshold)
+        note.content.paragraphs.push(Paragraph::new(
+            "This is the first paragraph with more than five words for embedding.".to_string(),
+            0,
+        ));
+        note.content.paragraphs.push(Paragraph::new(
+            "This is the second paragraph also containing enough words.".to_string(),
+            100,
+        ));
+
+        note
+    }
+
+    /// Test that embeddings are generated when changed_blocks is empty (embed all)
+    #[tokio::test]
+    async fn test_generate_embeddings_with_empty_changed_blocks() {
+        use crucible_merkle::HybridMerkleTreeBuilder;
+
+        let provider = Arc::new(MockEmbeddingProvider::new());
+        let service = DefaultEnrichmentService::new(HybridMerkleTreeBuilder, provider);
+
+        let parsed = create_test_parsed_note_with_content();
+
+        // Empty changed_blocks should embed ALL blocks
+        let embeddings = service
+            .generate_embeddings(&parsed, &[])
+            .await
+            .unwrap();
+
+        // Should have embeddings for both paragraphs
+        assert_eq!(embeddings.len(), 2, "Expected 2 embeddings for 2 paragraphs");
+        assert_eq!(embeddings[0].block_id, "paragraph_0");
+        assert_eq!(embeddings[1].block_id, "paragraph_1");
+    }
+
+    /// Test that section-style changed_blocks (from pipeline) trigger embedding all blocks
+    /// This is the bug reproduction test - with section-style IDs, no blocks should be skipped
+    #[tokio::test]
+    async fn test_generate_embeddings_with_section_style_changed_blocks() {
+        use crucible_merkle::HybridMerkleTreeBuilder;
+
+        let provider = Arc::new(MockEmbeddingProvider::new());
+        let service = DefaultEnrichmentService::new(HybridMerkleTreeBuilder, provider);
+
+        let parsed = create_test_parsed_note_with_content();
+
+        // Section-style IDs from pipeline (modified_section_0, added_section_1, etc.)
+        // These don't match block IDs (paragraph_0, heading_0, etc.)
+        let section_style_ids = vec![
+            "modified_section_0".to_string(),
+            "added_section_1".to_string(),
+        ];
+
+        let embeddings = service
+            .generate_embeddings(&parsed, &section_style_ids)
+            .await
+            .unwrap();
+
+        // BUG: Currently returns 0 because section IDs don't match block IDs
+        // After fix: Should return 2 (all blocks embedded when IDs are section-style)
+        assert_eq!(
+            embeddings.len(),
+            2,
+            "Expected 2 embeddings - section-style IDs should embed all blocks"
+        );
     }
 }
