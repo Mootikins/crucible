@@ -1,6 +1,6 @@
 //! Core configuration types and structures.
 
-use crate::components::{AcpConfig, ChatConfig, CliConfig, EmbeddingConfig};
+use crate::components::{AcpConfig, ChatConfig, CliConfig, EmbeddingConfig, EmbeddingProviderType};
 use crate::{EnrichmentConfig, ProfileConfig};
 
 #[cfg(feature = "toml")]
@@ -370,19 +370,25 @@ impl Default for CliAppConfig {
 }
 
 impl CliAppConfig {
-    /// Load CLI configuration from file with CLI overrides
+    /// Load CLI configuration from file with env var and CLI flag overrides
+    ///
+    /// Priority (highest to lowest):
+    /// 1. CLI flags (--embedding-url, --embedding-model)
+    /// 2. Environment variables (CRUCIBLE_KILN_PATH, CRUCIBLE_EMBEDDING_URL, CRUCIBLE_EMBEDDING_MODEL)
+    /// 3. Config file (~/.config/crucible/config.toml)
+    /// 4. Default values
     pub fn load(
         config_file: Option<std::path::PathBuf>,
-        _embedding_url: Option<String>,
-        _embedding_model: Option<String>,
+        embedding_url: Option<String>,
+        embedding_model: Option<String>,
     ) -> anyhow::Result<Self> {
         // Determine config file path
         let config_path = config_file.unwrap_or_else(Self::default_config_path);
 
         debug!("Attempting to load config from: {}", config_path.display());
 
-        // Try to load config file
-        if config_path.exists() {
+        // Try to load config file or use defaults
+        let mut config = if config_path.exists() {
             info!("Found config file at: {}", config_path.display());
 
             let contents = std::fs::read_to_string(&config_path)
@@ -391,12 +397,9 @@ impl CliAppConfig {
             #[cfg(feature = "toml")]
             {
                 match toml::from_str::<CliAppConfig>(&contents) {
-                    Ok(config) => {
-                        // Apply CLI overrides
-                        // Note: embedding_url and embedding_model overrides could be applied here if needed
-
+                    Ok(cfg) => {
                         info!("Successfully loaded config file: {}", config_path.display());
-                        return Ok(config);
+                        cfg
                     }
                     Err(e) => {
                         error!(
@@ -424,10 +427,80 @@ impl CliAppConfig {
                 "No config file found at {}, using defaults",
                 config_path.display()
             );
+            Self::default()
+        };
+
+        // Apply environment variable overrides (priority 2)
+        Self::apply_env_overrides(&mut config);
+
+        // Apply CLI flag overrides (priority 1 - highest)
+        if let Some(url) = embedding_url {
+            debug!("Overriding embedding.api_url from CLI flag: {}", url);
+            config.embedding.api_url = Some(url);
+        }
+        if let Some(model) = embedding_model {
+            debug!("Overriding embedding.model from CLI flag: {}", model);
+            config.embedding.model = Some(model);
         }
 
-        // Return default config
-        Ok(Self::default())
+        Ok(config)
+    }
+
+    /// Apply environment variable overrides to configuration
+    ///
+    /// Supported env vars:
+    /// - CRUCIBLE_KILN_PATH: Path to the kiln (Obsidian vault)
+    /// - CRUCIBLE_EMBEDDING_URL: Embedding provider API URL
+    /// - CRUCIBLE_EMBEDDING_MODEL: Embedding model name
+    /// - CRUCIBLE_EMBEDDING_PROVIDER: Embedding provider type (fastembed, ollama, openai)
+    fn apply_env_overrides(config: &mut Self) {
+        // Kiln path override
+        if let Ok(kiln_path) = std::env::var("CRUCIBLE_KILN_PATH") {
+            debug!("Overriding kiln_path from env: {}", kiln_path);
+            config.kiln_path = std::path::PathBuf::from(kiln_path);
+        }
+
+        // Embedding API URL override
+        if let Ok(url) = std::env::var("CRUCIBLE_EMBEDDING_URL") {
+            debug!("Overriding embedding.api_url from env: {}", url);
+            config.embedding.api_url = Some(url);
+        }
+
+        // Embedding model override
+        if let Ok(model) = std::env::var("CRUCIBLE_EMBEDDING_MODEL") {
+            debug!("Overriding embedding.model from env: {}", model);
+            config.embedding.model = Some(model);
+        }
+
+        // Embedding provider override
+        if let Ok(provider) = std::env::var("CRUCIBLE_EMBEDDING_PROVIDER") {
+            debug!("Overriding embedding.provider from env: {}", provider);
+            config.embedding.provider = match provider.to_lowercase().as_str() {
+                "fastembed" => EmbeddingProviderType::FastEmbed,
+                "ollama" => EmbeddingProviderType::Ollama,
+                "openai" => EmbeddingProviderType::OpenAI,
+                "anthropic" => EmbeddingProviderType::Anthropic,
+                "cohere" => EmbeddingProviderType::Cohere,
+                "vertexai" => EmbeddingProviderType::VertexAI,
+                "custom" => EmbeddingProviderType::Custom,
+                "mock" => EmbeddingProviderType::Mock,
+                _ => {
+                    warn!(
+                        "Unknown embedding provider '{}', keeping current: {:?}",
+                        provider, config.embedding.provider
+                    );
+                    config.embedding.provider.clone()
+                }
+            };
+        }
+
+        // Max concurrent embedding jobs override
+        if let Ok(max_concurrent) = std::env::var("CRUCIBLE_EMBEDDING_MAX_CONCURRENT") {
+            if let Ok(n) = max_concurrent.parse::<usize>() {
+                debug!("Overriding embedding.max_concurrent from env: {}", n);
+                config.embedding.max_concurrent = Some(n);
+            }
+        }
     }
 
     /// Log the effective configuration for debugging
