@@ -1924,68 +1924,84 @@ pub async fn semantic_search(
         embedding_provider.provider_name()
     );
 
-    // Retrieve all note embeddings from database
-    let stored_embeddings = match get_all_document_embeddings(client).await {
-        Ok(embeddings) => embeddings,
-        Err(e) => {
-            error!("Failed to retrieve note embeddings: {}", e);
-            return Err(anyhow!("Failed to retrieve note embeddings: {}", e));
-        }
-    };
-
-    if stored_embeddings.is_empty() {
-        debug!("No note embeddings found in database");
-        return Ok(Vec::new());
-    }
-
-    debug!(
-        "Retrieved {} note embeddings for similarity calculation",
-        stored_embeddings.len()
+    // Use SurrealDB's native KNN search with MTREE index
+    // The <|N|> operator performs approximate nearest neighbor search using the index
+    // This is MUCH faster than loading all embeddings and computing similarity in Rust
+    let sql = format!(
+        r#"
+        SELECT
+            entity_id,
+            vector::similarity::cosine(embedding, $vector) AS score
+        FROM embeddings
+        WHERE embedding <|{limit}|> $vector
+        ORDER BY score DESC
+        "#,
+        limit = limit
     );
 
-    // Calculate cosine similarity between query and all note embeddings
-    let mut similarity_results = Vec::new();
-    for doc_embedding in stored_embeddings {
-        // Only calculate similarity if dimensions match
-        if doc_embedding.vector.len() == query_embedding.len() {
-            let similarity = calculate_cosine_similarity(&query_embedding, &doc_embedding.vector);
-            similarity_results.push((doc_embedding.document_id.clone(), similarity));
+    let result = client
+        .query(&sql, &[json!({ "vector": query_embedding })])
+        .await
+        .map_err(|e| anyhow!("KNN search query failed: {}", e))?;
+
+    debug!("KNN search returned {} records", result.records.len());
+
+    // Extract results from query response
+    let similarity_threshold = 0.5;
+    let mut filtered_results: Vec<(String, f64)> = Vec::new();
+
+    for record in result.records {
+        let score = record
+            .data
+            .get("score")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+
+        // Extract entity_id (handles both string and object formats)
+        let entity_id = if let Some(id_val) = record.data.get("entity_id") {
+            if let Some(s) = id_val.as_str() {
+                s.to_string()
+            } else if let Some(obj) = id_val.as_object() {
+                // Handle SurrealDB record ID format: {"tb": "entities", "id": {"String": "note:path"}}
+                if let Some(id_inner) = obj.get("id") {
+                    if let Some(s) = id_inner.as_str() {
+                        s.to_string()
+                    } else if let Some(inner_obj) = id_inner.as_object() {
+                        inner_obj
+                            .get("String")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default()
+                    } else {
+                        continue;
+                    }
+                } else {
+                    continue;
+                }
+            } else {
+                continue;
+            }
         } else {
-            debug!(
-                "Skipping note {} due to dimension mismatch (query: {}, doc: {})",
-                doc_embedding.document_id,
-                query_embedding.len(),
-                doc_embedding.vector.len()
-            );
+            continue;
+        };
+
+        if entity_id.is_empty() {
+            continue;
+        }
+
+        // Apply threshold filter, but collect all if we need fallback
+        if score >= similarity_threshold {
+            filtered_results.push((entity_id, score));
+        } else if filtered_results.is_empty() {
+            // Keep low-score results as fallback if nothing meets threshold
+            filtered_results.push((entity_id, score));
         }
     }
 
-    // Sort by similarity score (descending)
-    similarity_results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-    // Apply similarity threshold and limit
-    let similarity_threshold = 0.5; // Configurable threshold
-    let mut filtered_results: Vec<(String, f64)> = similarity_results
-        .iter()
-        .filter(|(_, score)| *score >= similarity_threshold)
-        .take(limit)
-        .map(|(id, score)| (id.clone(), *score))
-        .collect();
-
     debug!(
-        "Returning {} results after filtering and limiting",
+        "Returning {} results after filtering",
         filtered_results.len()
     );
-
-    // If no results meet the threshold, return the top results regardless of threshold
-    if filtered_results.is_empty() {
-        debug!("No results met similarity threshold, returning top results without threshold");
-        filtered_results = similarity_results
-            .iter()
-            .take(limit)
-            .map(|(id, score)| (id.clone(), *score))
-            .collect();
-    }
 
     Ok(filtered_results)
 }
