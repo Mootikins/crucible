@@ -6,7 +6,16 @@ use anyhow::Result;
 use std::sync::Arc;
 use tracing::{debug, info};
 
-use crate::core_facade::CrucibleCoreFacade;
+use crate::core_facade::{CrucibleCoreFacade, SemanticSearchResult};
+
+/// Result of context enrichment containing both the prompt and found notes
+#[derive(Debug)]
+pub struct EnrichmentResult {
+    /// The enriched prompt with context prepended
+    pub prompt: String,
+    /// Notes that were found and used for context
+    pub notes_found: Vec<SemanticSearchResult>,
+}
 
 /// Enriches prompts with knowledge base context
 pub struct ContextEnricher {
@@ -38,6 +47,22 @@ impl ContextEnricher {
     /// # Returns
     /// Enriched prompt with context prepended
     pub async fn enrich(&self, query: &str) -> Result<String> {
+        let result = self.enrich_with_results(query).await?;
+        Ok(result.prompt)
+    }
+
+    /// Enrich a query with context and return both the prompt and notes found
+    ///
+    /// Performs semantic search and formats results as markdown context
+    /// that will be included in the agent prompt. Also returns the notes
+    /// that were found so they can be displayed to the user.
+    ///
+    /// # Arguments
+    /// * `query` - The user's query
+    ///
+    /// # Returns
+    /// EnrichmentResult containing the enriched prompt and found notes
+    pub async fn enrich_with_results(&self, query: &str) -> Result<EnrichmentResult> {
         debug!("Enriching query with {} context results", self.context_size);
 
         // Perform semantic search
@@ -45,7 +70,10 @@ impl ContextEnricher {
 
         if results.is_empty() {
             info!("No context found for query");
-            return Ok(format!("# User Query\n\n{}", query));
+            return Ok(EnrichmentResult {
+                prompt: format!("# User Query\n\n{}", query),
+                notes_found: Vec::new(),
+            });
         }
 
         // Format results as markdown
@@ -67,10 +95,13 @@ impl ContextEnricher {
         info!("Enriched query with {} context results", results.len());
 
         // Combine context with query
-        Ok(format!(
-            "# Context from Knowledge Base\n\n{}\n\n---\n\n# User Query\n\n{}",
-            context, query
-        ))
+        Ok(EnrichmentResult {
+            prompt: format!(
+                "# Context from Knowledge Base\n\n{}\n\n---\n\n# User Query\n\n{}",
+                context, query
+            ),
+            notes_found: results,
+        })
     }
 
     /// Enrich with reranking for better quality results
