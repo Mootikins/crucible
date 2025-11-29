@@ -265,9 +265,9 @@ DEFINE INDEX embedding_unique_idx ON TABLE embeddings
 DEFINE INDEX embedding_content_hash_idx ON TABLE embeddings
     COLUMNS content_used, model, model_version;
 
-DEFINE INDEX embedding_vector_384 ON TABLE embeddings
-    COLUMNS embedding
-    MTREE DIMENSION 384 DISTANCE COSINE;
+-- NOTE: MTREE vector index is created dynamically at runtime
+-- to match the configured embedding model's dimensions.
+-- See kiln_integration::ensure_embedding_index()
 
 -- ============================================================================
 -- TABLE: tags
