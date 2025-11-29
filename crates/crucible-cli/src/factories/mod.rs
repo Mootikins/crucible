@@ -10,7 +10,7 @@ pub mod pipeline;
 pub mod storage;
 pub mod watch;
 
-pub use enrichment::create_default_enrichment_service;
+pub use enrichment::{create_default_enrichment_service, get_or_create_embedding_provider};
 pub use merkle::create_surrealdb_merkle_store;
 pub use pipeline::create_pipeline;
 pub use storage::{
