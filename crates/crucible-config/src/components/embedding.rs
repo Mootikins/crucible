@@ -24,6 +24,8 @@ pub enum EmbeddingProviderType {
     Custom,
     /// Mock provider for testing
     Mock,
+    /// Burn ML framework provider (local, GPU-accelerated)
+    Burn,
 }
 
 /// Embedding configuration - pragmatic settings for performance and cost
@@ -73,6 +75,7 @@ impl EmbeddingProviderType {
             crate::enrichment::EmbeddingProviderConfig::VertexAI(_) => Self::VertexAI,
             crate::enrichment::EmbeddingProviderConfig::Custom(_) => Self::Custom,
             crate::enrichment::EmbeddingProviderConfig::Mock(_) => Self::Mock,
+            crate::enrichment::EmbeddingProviderConfig::Burn(_) => Self::Burn,
             // Note: Anthropic is not in the legacy config, so it's handled separately
         }
     }
@@ -88,6 +91,7 @@ impl EmbeddingProviderType {
             Self::Custom => "custom",
             Self::Mock => "mock",
             Self::Anthropic => "anthropic",
+            Self::Burn => "burn",
         }
     }
 }
@@ -104,6 +108,7 @@ impl EmbeddingConfig {
             EmbeddingProviderType::VertexAI => "textembedding-gecko@003",
             EmbeddingProviderType::Custom => "custom-model",
             EmbeddingProviderType::Mock => "mock-test-model",
+            EmbeddingProviderType::Burn => "nomic-embed-text",
         })
     }
 
@@ -131,6 +136,7 @@ impl EmbeddingConfig {
                 .or(Some("https://aiplatform.googleapis.com")),
             EmbeddingProviderType::Custom => self.api_url.as_deref(), // User must specify
             EmbeddingProviderType::Mock => None,                      // Mock provider
+            EmbeddingProviderType::Burn => None,                      // Local GPU provider
         }
     }
 
@@ -141,6 +147,7 @@ impl EmbeddingConfig {
             EmbeddingProviderType::FastEmbed
                 | EmbeddingProviderType::Ollama
                 | EmbeddingProviderType::Mock
+                | EmbeddingProviderType::Burn
         )
     }
 
@@ -149,6 +156,7 @@ impl EmbeddingConfig {
     /// Returns user-configured value if set, otherwise provider-specific defaults:
     /// - Ollama: 1 (single GPU, sequential processing to avoid OOM/rate limits)
     /// - FastEmbed: num_cpus/2 (CPU-bound, parallel OK but avoid oversubscription)
+    /// - Burn: 1 (GPU-bound, sequential to avoid VRAM exhaustion)
     /// - Remote APIs (OpenAI, Anthropic, Cohere, VertexAI): 8 (rate-limited, moderate concurrency)
     /// - Mock: 16 (testing, high concurrency OK)
     /// - Custom: 4 (conservative default)
@@ -156,6 +164,7 @@ impl EmbeddingConfig {
         self.max_concurrent.unwrap_or_else(|| {
             match self.provider {
                 EmbeddingProviderType::Ollama => 1,
+                EmbeddingProviderType::Burn => 1, // GPU-bound, sequential
                 EmbeddingProviderType::FastEmbed => {
                     // CPU-bound: use half of available cores, minimum 1
                     (num_cpus::get() / 2).max(1)
@@ -228,6 +237,17 @@ impl EmbeddingConfig {
                     model: "mock-test-model".to_string(),
                     dimensions: 768,
                     simulated_latency_ms: 0,
+                })
+            }
+            EmbeddingProviderType::Burn => {
+                crate::enrichment::EmbeddingProviderConfig::Burn(crate::enrichment::BurnEmbedConfig {
+                    model: self
+                        .model
+                        .clone()
+                        .unwrap_or_else(|| "nomic-embed-text".to_string()),
+                    backend: crate::enrichment::BurnBackendConfig::Auto,
+                    model_search_paths: Vec::new(), // Will use defaults
+                    dimensions: 0,                  // Auto-detect
                 })
             }
             _ => {
