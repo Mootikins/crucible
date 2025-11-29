@@ -127,6 +127,16 @@ fn chunk_record_body(chunk_id: &str) -> &str {
     chunk_id.strip_prefix("embeddings:").unwrap_or(chunk_id)
 }
 
+/// Retry configuration for transaction conflicts
+const MAX_RETRIES: u32 = 5;
+const INITIAL_BACKOFF_MS: u64 = 10;
+
+/// Check if an error is a retryable transaction conflict
+fn is_retryable_error(error_msg: &str) -> bool {
+    error_msg.contains("read or write conflict")
+        || error_msg.contains("transaction can be retried")
+}
+
 async fn upsert_embedding_record(
     client: &SurrealClient,
     chunk_id: &str,
@@ -148,9 +158,11 @@ async fn upsert_embedding_record(
         "content_used": content_used,
     });
 
-    let update_sql = format!(
+    // Use UPSERT for atomic create-or-update to avoid transaction conflicts
+    // when multiple concurrent writes target the same embedding record
+    let upsert_sql = format!(
         "
-        UPDATE embeddings:⟨{chunk}⟩
+        UPSERT embeddings:⟨{chunk}⟩
         SET
             entity_id = entities:⟨{entity}⟩,
             embedding = $embedding,
@@ -163,31 +175,35 @@ async fn upsert_embedding_record(
         chunk = escaped_chunk,
         entity = escaped_entity
     );
-    let result = client.query(&update_sql, &[params.clone()]).await?;
 
-    if result.records.is_empty() {
-        let create_sql = format!(
-            "
-            CREATE embeddings:⟨{chunk}⟩
-            SET
-                entity_id = entities:⟨{entity}⟩,
-                embedding = $embedding,
-                dimensions = $dimensions,
-                model = $model,
-                model_version = $model_version,
-                content_used = $content_used
-            RETURN NONE;
-        ",
-            chunk = escaped_chunk,
-            entity = escaped_entity
-        );
-        client
-            .query(&create_sql, &[params])
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to insert embedding: {}", e))?;
+    // Retry with exponential backoff for transaction conflicts
+    let mut last_error = None;
+    for attempt in 0..MAX_RETRIES {
+        match client.query(&upsert_sql, &[params.clone()]).await {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                let error_msg = e.to_string();
+                if is_retryable_error(&error_msg) && attempt < MAX_RETRIES - 1 {
+                    let backoff = INITIAL_BACKOFF_MS * (1 << attempt);
+                    debug!(
+                        "Transaction conflict on embedding upsert (attempt {}), retrying in {}ms",
+                        attempt + 1,
+                        backoff
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_millis(backoff)).await;
+                    last_error = Some(e);
+                } else {
+                    return Err(anyhow::anyhow!("Failed to upsert embedding: {}", e));
+                }
+            }
+        }
     }
 
-    Ok(())
+    Err(anyhow::anyhow!(
+        "Failed to upsert embedding after {} retries: {}",
+        MAX_RETRIES,
+        last_error.map(|e| e.to_string()).unwrap_or_default()
+    ))
 }
 
 async fn relate_embedding_record(
@@ -207,12 +223,34 @@ async fn relate_embedding_record(
         chunk = escaped_chunk
     );
 
-    client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to create graph relation: {}", e))?;
+    // Retry with exponential backoff for transaction conflicts
+    let mut last_error = None;
+    for attempt in 0..MAX_RETRIES {
+        match client.query(&sql, &[]).await {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                let error_msg = e.to_string();
+                if is_retryable_error(&error_msg) && attempt < MAX_RETRIES - 1 {
+                    let backoff = INITIAL_BACKOFF_MS * (1 << attempt);
+                    debug!(
+                        "Transaction conflict on relate (attempt {}), retrying in {}ms",
+                        attempt + 1,
+                        backoff
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_millis(backoff)).await;
+                    last_error = Some(e);
+                } else {
+                    return Err(anyhow::anyhow!("Failed to create graph relation: {}", e));
+                }
+            }
+        }
+    }
 
-    Ok(())
+    Err(anyhow::anyhow!(
+        "Failed to create graph relation after {} retries: {}",
+        MAX_RETRIES,
+        last_error.map(|e| e.to_string()).unwrap_or_default()
+    ))
 }
 
 /// Retrieve a ParsedNote from the database by ID
@@ -1397,6 +1435,116 @@ pub async fn store_embedding_with_chunk_id(
     );
 
     Ok(chunk_id)
+}
+
+/// Embedding data for batch storage
+pub struct EmbeddingData {
+    pub vector: Vec<f32>,
+    pub model: String,
+    pub block_id: String,
+    pub dimensions: usize,
+}
+
+/// Store multiple embeddings for a single note in one batch operation
+///
+/// This reduces transaction conflicts by batching all embeddings for a file
+/// into a single transaction, rather than individual transactions per embedding.
+///
+/// # Arguments
+/// * `client` - SurrealDB client
+/// * `note_id` - Note record ID
+/// * `embeddings` - List of embeddings to store
+///
+/// # Returns
+/// Vector of chunk IDs that were stored
+pub async fn store_embeddings_batch(
+    client: &SurrealClient,
+    note_id: &str,
+    embeddings: &[EmbeddingData],
+) -> Result<Vec<String>> {
+    if embeddings.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let normalized_id = normalize_document_id(note_id);
+    let chunk_scope = chunk_namespace(&normalized_id);
+    let escaped_entity = escape_record_id(record_body(&normalized_id));
+
+    // Build batch UPSERT statements
+    let mut sql_statements = Vec::with_capacity(embeddings.len() * 2);
+    let mut chunk_ids = Vec::with_capacity(embeddings.len());
+
+    for embedding in embeddings {
+        let safe_block_id = embedding
+            .block_id
+            .replace(|c: char| !c.is_alphanumeric() && c != '-', "_");
+        let chunk_id = format!("embeddings:{}_{}", chunk_scope, safe_block_id);
+        let escaped_chunk = escape_record_id(chunk_record_body(&chunk_id));
+        let adjusted_vector = normalize_embedding_vector(embedding.vector.clone());
+        let dims = embedding.dimensions;
+        let stored_model = format!("{}::{}", embedding.model, escaped_chunk);
+
+        // UPSERT for the embedding record
+        let upsert_sql = format!(
+            "UPSERT embeddings:⟨{chunk}⟩ SET entity_id = entities:⟨{entity}⟩, embedding = {vector:?}, dimensions = {dims}, model = '{model}', model_version = '{version}', content_used = '' RETURN NONE;",
+            chunk = escaped_chunk,
+            entity = escaped_entity,
+            vector = adjusted_vector,
+            dims = dims,
+            model = stored_model.replace('\'', "\\'"),
+            version = embedding.model.replace('\'', "\\'"),
+        );
+        sql_statements.push(upsert_sql);
+
+        // RELATE for the graph edge
+        let relate_sql = format!(
+            "RELATE entities:⟨{entity}⟩ -> has_embedding -> embeddings:⟨{chunk}⟩;",
+            entity = escaped_entity,
+            chunk = escaped_chunk
+        );
+        sql_statements.push(relate_sql);
+
+        chunk_ids.push(chunk_id);
+    }
+
+    // Join all statements into a single batch query
+    let batch_sql = sql_statements.join("\n");
+
+    // Execute with retry logic
+    let mut last_error = None;
+    for attempt in 0..MAX_RETRIES {
+        match client.query(&batch_sql, &[]).await {
+            Ok(_) => {
+                debug!(
+                    "Stored {} embeddings for {} in batch",
+                    embeddings.len(),
+                    normalized_id
+                );
+                return Ok(chunk_ids);
+            }
+            Err(e) => {
+                let error_msg = e.to_string();
+                if is_retryable_error(&error_msg) && attempt < MAX_RETRIES - 1 {
+                    let backoff = INITIAL_BACKOFF_MS * (1 << attempt);
+                    debug!(
+                        "Transaction conflict on batch embedding (attempt {}), retrying in {}ms",
+                        attempt + 1,
+                        backoff
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_millis(backoff)).await;
+                    last_error = Some(e);
+                } else {
+                    return Err(anyhow::anyhow!("Failed to store embeddings batch: {}", e));
+                }
+            }
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "Failed to store embeddings batch after {} retries: {}",
+        MAX_RETRIES,
+        last_error.map(|e| e.to_string()).unwrap_or_default()
+    ))
 }
 
 /// Get note embeddings from database

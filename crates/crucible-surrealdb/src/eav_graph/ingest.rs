@@ -339,7 +339,7 @@ impl<'a> NoteIngestor<'a> {
         enriched: &crucible_enrichment::EnrichedNoteWithTree<HybridMerkleTree>,
         relative_path: &str,
     ) -> Result<RecordId<EntityRecord>> {
-        use crate::kiln_integration::store_embedding_with_chunk_id;
+        use crate::kiln_integration::{store_embeddings_batch, EmbeddingData};
 
         // Step 1: Ingest the parsed note using existing logic
         let entity_id = self.ingest(&enriched.core.parsed, relative_path).await?;
@@ -352,22 +352,22 @@ impl<'a> NoteIngestor<'a> {
                 .map_err(|e| anyhow::anyhow!("Failed to store Merkle tree: {}", e))?;
         }
 
-        // Step 3: Store embeddings for each block
+        // Step 3: Store embeddings in batch (reduces transaction conflicts)
         let note_id = &entity_id.id;
         if !enriched.core.embeddings.is_empty() {
-            for embedding in &enriched.core.embeddings {
-                store_embedding_with_chunk_id(
-                    &self.store.client,
-                    note_id,
-                    embedding.vector.clone(),
-                    &embedding.model,
-                    0, // chunk_size (not used in block-based approach)
-                    0, // chunk_position (not used in block-based approach)
-                    Some(&embedding.block_id),
-                    Some(embedding.dimensions),
-                )
-                .await?;
-            }
+            let embedding_data: Vec<EmbeddingData> = enriched
+                .core
+                .embeddings
+                .iter()
+                .map(|e| EmbeddingData {
+                    vector: e.vector.clone(),
+                    model: e.model.clone(),
+                    block_id: e.block_id.clone(),
+                    dimensions: e.dimensions,
+                })
+                .collect();
+
+            store_embeddings_batch(&self.store.client, note_id, &embedding_data).await?;
         }
 
         // Step 4: Store enrichment metadata as properties
