@@ -1,0 +1,99 @@
+[package]
+name = "crucible-burn"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Burn ML framework integration and testing for Crucible"
+
+[[bin]]
+name = "burn-test"
+path = "src/main.rs"
+
+[dependencies]
+# Core workspace dependencies
+crucible-core = { path = "../crucible-core" }
+crucible-config = { path = "../crucible-config" }
+
+# Burn ML framework (temporarily disabled for compatibility)
+burn = { version = "0.20.0-pre.3", features = ["std", "ndarray"] }
+burn-wgpu = { version = "0.20.0-pre.3", optional = true }
+
+# Hardware detection and GPU support (placeholders for now)
+# wgpu = { version = "0.19", optional = true }
+# ash = { version = "0.37", optional = true }  # For Vulkan API detection
+
+# CLI framework (following crucible-cli patterns)
+clap = { workspace = true, features = ["derive", "env", "string"] }
+
+# HTTP server for inference API
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+# Benchmarking
+criterion = { workspace = true, optional = true, features = ["html_reports"] }
+
+# File system and paths
+dirs = { workspace = true }
+walkdir = "2.4"
+
+# Utilities
+uuid = { workspace = true, features = ["v4", "serde"] }
+chrono = { workspace = true, features = ["serde"] }
+
+# Configuration management
+config = { workspace = true }
+
+# CPU core detection
+num_cpus = { workspace = true }
+
+# Performance utilities
+parking_lot = { workspace = true }
+
+# Optional PyTorch dependency for ROCm support (disabled for Burn 0.20 compatibility)
+# tch = { version = "0.15", optional = true }
+
+# WGPU backend dependencies for cross-platform GPU acceleration
+wgpu = { version = "0.19", optional = true }
+pollster = { version = "0.3", optional = true }
+
+# TCH backend for PyTorch compatibility (ROCm support)
+tch = { version = "0.22", optional = true }
+
+[features]
+default = []
+# Burn backend features
+wgpu = ["dep:burn-wgpu", "dep:wgpu", "dep:pollster"]
+vulkan = ["wgpu"]
+tch = ["dep:tch"]
+burn-wgpu = ["wgpu"]  # Alias for compatibility
+
+# Existing features
+server = []
+benchmarks = ["criterion"]
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio-test = { workspace = true }
+mockall = { workspace = true }
+criterion = { workspace = true, features = ["html_reports"] }
+

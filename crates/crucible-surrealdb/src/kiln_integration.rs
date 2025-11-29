@@ -20,7 +20,7 @@ use crucible_core::types::{FrontmatterFormat, ParsedNote, Tag};
 use crucible_core::{CrucibleError, Result as CoreResult};
 use serde_json::json;
 use std::path::{Component, Path, PathBuf};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 /// Initialize the kiln schema in the database
 pub async fn initialize_kiln_schema(client: &SurrealClient) -> Result<()> {
