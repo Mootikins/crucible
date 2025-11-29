@@ -92,7 +92,7 @@ api_url = "https://file-url.com"
     )
     .unwrap();
 
-    // CLI args should override file config (when implemented)
+    // CLI args should override file config
     let config = CliConfig::load(
         Some(config_path),
         Some("https://cli-url.com".to_string()),
@@ -100,10 +100,14 @@ api_url = "https://file-url.com"
     )
     .unwrap();
 
-    // For now, just verify the file config is loaded
+    // Verify CLI overrides take priority over file config
     assert_eq!(config.kiln_path.to_str().unwrap(), "/tmp/test-kiln");
     assert_eq!(config.embedding.provider, EmbeddingProviderType::Ollama);
-    assert_eq!(config.embedding.model, Some("file-model".to_string()));
+    assert_eq!(config.embedding.model, Some("cli-model".to_string()));
+    assert_eq!(
+        config.embedding.api_url,
+        Some("https://cli-url.com".to_string())
+    );
 }
 
 // ============================================================================
