@@ -108,29 +108,36 @@ impl StreamingState {
 
     fn formatted_output(&self) -> String {
         let mut output = String::new();
-        let mut prev_was_tool = false;
+        let mut in_tool_block = false;
         for seg in &self.segments {
             match seg {
                 ResponseSegment::Text(text) => {
-                    if prev_was_tool {
+                    if in_tool_block {
+                        // End tool block with blank line
                         output.push('\n');
+                        in_tool_block = false;
                     }
                     output.push_str(text);
-                    prev_was_tool = false;
                 }
-                ResponseSegment::Tool { label, indent } => {
-                    if !output.ends_with('\n') && !output.is_empty() {
+                ResponseSegment::Tool { label, .. } => {
+                    if !in_tool_block {
+                        // Start tool block with blank line before
+                        if !output.is_empty() && !output.ends_with('\n') {
+                            output.push('\n');
+                        }
                         output.push('\n');
+                        in_tool_block = true;
                     }
-                    if *indent {
-                        output.push(' ');
-                        output.push(' ');
-                    }
+                    // All tool calls indented in the block
+                    output.push_str("  ");
                     output.push_str(label);
                     output.push('\n');
-                    prev_was_tool = true;
                 }
             }
+        }
+        // End tool block if we finished with tools
+        if in_tool_block {
+            output.push('\n');
         }
         output
     }
@@ -1217,7 +1224,7 @@ mod tests {
 
         assert_eq!(
             state.formatted_output(),
-            "First chunk\n  ▷ test_tool()\n\nResponse after the tool call."
+            "First chunk\n\n  ▷ test_tool()\n\nResponse after the tool call."
         );
     }
 
@@ -1377,7 +1384,8 @@ mod tests {
         state.append_text("World");
 
         let output = state.formatted_output();
-        assert!(output.contains("Hello\n  ▷ read_note"));
+        // Tool block has blank line before and after
+        assert!(output.contains("Hello\n\n  ▷ read_note"));
         assert!(output.contains("\n\nWorld"));
     }
 
