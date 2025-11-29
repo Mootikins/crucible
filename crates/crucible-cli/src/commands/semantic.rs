@@ -14,8 +14,8 @@ use crucible_llm::embeddings::create_provider as create_embedding_provider;
 use crucible_surrealdb::{
     embedding_pool::{create_embedding_thread_pool_with_crucible_config, EmbeddingThreadPool},
     kiln_integration::{
-        clear_all_embeddings, get_embedding_index_metadata, retrieve_parsed_document,
-        semantic_search_with_reranking,
+        clear_all_embeddings_and_recreate_index, ensure_embedding_index,
+        get_embedding_index_metadata, retrieve_parsed_document, semantic_search_with_reranking,
     },
     EmbeddingConfig, SurrealClient, SurrealDbConfig,
 };
@@ -135,7 +135,9 @@ impl SemanticSearchService for DefaultSemanticSearchService {
                     .push("    Clearing existing embeddings and rebuilding index...".to_string());
                 info_messages.push(String::new());
 
-                clear_all_embeddings(&client).await?;
+                // Clear embeddings and recreate index with new dimensions
+                let new_dims = expected_dimensions.unwrap_or(768);
+                clear_all_embeddings_and_recreate_index(&client, new_dims as usize).await?;
                 embeddings_exist = false;
             }
         }
@@ -145,6 +147,10 @@ impl SemanticSearchService for DefaultSemanticSearchService {
             info_messages.push("❌ No embeddings found in kiln database".to_string());
             info_messages.push("🚀 Starting kiln processing...".to_string());
             info_messages.push(String::new());
+
+            // Ensure index exists with correct dimensions before processing
+            let dims = expected_dimensions.unwrap_or(768) as usize;
+            ensure_embedding_index(&client, dims).await?;
 
             progress.set_message("Scanning kiln and generating embeddings...");
             let process_result = process_kiln_integrated(

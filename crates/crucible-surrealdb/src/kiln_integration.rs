@@ -100,19 +100,6 @@ fn chunk_namespace(normalized_doc_id: &str) -> String {
         .replace(['\\', '/', ':'], "_")
 }
 
-const EMBEDDING_DIMENSION: usize = 384;
-
-fn normalize_embedding_vector(mut vector: Vec<f32>) -> Vec<f32> {
-    if vector.len() > EMBEDDING_DIMENSION {
-        vector.truncate(EMBEDDING_DIMENSION);
-        vector
-    } else if vector.len() < EMBEDDING_DIMENSION {
-        vector.resize(EMBEDDING_DIMENSION, 0.0);
-        vector
-    } else {
-        vector
-    }
-}
 
 /// Escape a record ID for safe use in SurrealDB queries with angle brackets
 ///
@@ -289,7 +276,8 @@ pub struct EmbeddingIndexMetadata {
 pub async fn get_embedding_index_metadata(
     client: &SurrealClient,
 ) -> Result<Option<EmbeddingIndexMetadata>> {
-    let sql = "SELECT embedding_model, vector_dimensions FROM embeddings LIMIT 1";
+    // Query model_version (the base model name) and dimensions from embeddings table
+    let sql = "SELECT model_version, dimensions FROM embeddings LIMIT 1";
     let result = client
         .query(sql, &[])
         .await
@@ -298,13 +286,13 @@ pub async fn get_embedding_index_metadata(
     if let Some(record) = result.records.first() {
         let model = record
             .data
-            .get("embedding_model")
+            .get("model_version")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
         let dimensions = record
             .data
-            .get("vector_dimensions")
+            .get("dimensions")
             .and_then(|v| v.as_u64())
             .map(|v| v as usize);
 
@@ -312,6 +300,64 @@ pub async fn get_embedding_index_metadata(
     } else {
         Ok(None)
     }
+}
+
+/// Ensure the MTREE vector index exists with the correct dimensions.
+///
+/// This function creates or recreates the index to match the embedding model's dimensions.
+/// SurrealDB MTREE indexes are immutable, so we must drop and recreate on dimension change.
+pub async fn ensure_embedding_index(client: &SurrealClient, dimensions: usize) -> Result<()> {
+    debug!("Ensuring embedding index with {} dimensions", dimensions);
+
+    // Drop existing index (ignore error if doesn't exist)
+    let _ = client
+        .query("REMOVE INDEX embedding_vector_idx ON TABLE embeddings", &[])
+        .await;
+
+    // Create new index with correct dimensions
+    let sql = format!(
+        "DEFINE INDEX embedding_vector_idx ON TABLE embeddings COLUMNS embedding MTREE DIMENSION {} DIST COSINE",
+        dimensions
+    );
+    client
+        .query(&sql, &[])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to create embedding index: {}", e))?;
+
+    info!(
+        "Created embedding vector index with {} dimensions",
+        dimensions
+    );
+    Ok(())
+}
+
+/// Clear all embeddings and recreate the index with new dimensions.
+///
+/// Call this when the embedding model changes and existing embeddings are invalid.
+pub async fn clear_all_embeddings_and_recreate_index(
+    client: &SurrealClient,
+    new_dimensions: usize,
+) -> Result<()> {
+    info!(
+        "Clearing all embeddings and recreating index with {} dimensions",
+        new_dimensions
+    );
+
+    // Clear relations and embeddings
+    client
+        .query("DELETE has_embedding", &[])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to clear embedding relations: {}", e))?;
+
+    client
+        .query("DELETE FROM embeddings", &[])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to clear embeddings table: {}", e))?;
+
+    // Recreate index with new dimensions
+    ensure_embedding_index(client, new_dimensions).await?;
+
+    Ok(())
 }
 
 /// Create wikilink relationships for a note
@@ -1347,8 +1393,7 @@ pub async fn store_embedding(
     let normalized_id = normalize_document_id(note_id);
     let chunk_scope = chunk_namespace(&normalized_id);
     let chunk_id = format!("embeddings:{}_chunk_{}", chunk_scope, chunk_position);
-    let adjusted_vector = normalize_embedding_vector(vector);
-    let dims = dimensions.unwrap_or(adjusted_vector.len());
+    let dims = dimensions.unwrap_or(vector.len());
     let content_used = chunk_content.unwrap_or("");
 
     let chunk_body = chunk_record_body(&chunk_id).to_string();
@@ -1357,7 +1402,7 @@ pub async fn store_embedding(
         client,
         &chunk_id,
         &normalized_id,
-        &adjusted_vector,
+        &vector,
         dims,
         &stored_model,
         embedding_model,
@@ -1410,8 +1455,7 @@ pub async fn store_embedding_with_chunk_id(
     } else {
         format!("embeddings:{}_chunk_{}", chunk_scope, chunk_position)
     };
-    let adjusted_vector = normalize_embedding_vector(vector);
-    let dims = dimensions.unwrap_or(adjusted_vector.len());
+    let dims = dimensions.unwrap_or(vector.len());
 
     let chunk_body = chunk_record_body(&chunk_id).to_string();
     let stored_model = format!("{}::{}", embedding_model, chunk_body);
@@ -1419,7 +1463,7 @@ pub async fn store_embedding_with_chunk_id(
         client,
         &chunk_id,
         &normalized_id,
-        &adjusted_vector,
+        &vector,
         dims,
         &stored_model,
         embedding_model,
@@ -1480,7 +1524,6 @@ pub async fn store_embeddings_batch(
             .replace(|c: char| !c.is_alphanumeric() && c != '-', "_");
         let chunk_id = format!("embeddings:{}_{}", chunk_scope, safe_block_id);
         let escaped_chunk = escape_record_id(chunk_record_body(&chunk_id));
-        let adjusted_vector = normalize_embedding_vector(embedding.vector.clone());
         let dims = embedding.dimensions;
         let stored_model = format!("{}::{}", embedding.model, escaped_chunk);
 
@@ -1489,7 +1532,7 @@ pub async fn store_embeddings_batch(
             "UPSERT embeddings:⟨{chunk}⟩ SET entity_id = entities:⟨{entity}⟩, embedding = {vector:?}, dimensions = {dims}, model = '{model}', model_version = '{version}', content_used = '' RETURN NONE;",
             chunk = escaped_chunk,
             entity = escaped_entity,
-            vector = adjusted_vector,
+            vector = embedding.vector,
             dims = dims,
             model = stored_model.replace('\'', "\\'"),
             version = embedding.model.replace('\'', "\\'"),
@@ -1927,6 +1970,9 @@ pub async fn semantic_search(
     // Use SurrealDB's native KNN search with MTREE index
     // The <|N|> operator performs approximate nearest neighbor search using the index
     // This is MUCH faster than loading all embeddings and computing similarity in Rust
+    //
+    // The MTREE index is created dynamically to match the embedding model's dimensions.
+    // If there's a dimension mismatch, ensure_embedding_index() should be called first.
     let sql = format!(
         r#"
         SELECT
@@ -2743,6 +2789,163 @@ mod tests {
 
         let embedding_docs = get_embedding_documents(&client, "Diagram").await.unwrap();
         assert_eq!(embedding_docs.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_semantic_search_with_knn() {
+        use crate::types::SurrealDbConfig;
+        use std::sync::Arc;
+
+        // Create in-memory client
+        let config = SurrealDbConfig {
+            path: ":memory:".to_string(),
+            ..Default::default()
+        };
+        let client = SurrealClient::new(config).await.unwrap();
+
+        // Initialize schema (index is now created dynamically)
+        initialize_kiln_schema(&client).await.unwrap();
+
+        // Create index with 768 dimensions (matching nomic-embed-text)
+        ensure_embedding_index(&client, 768).await.unwrap();
+
+        // Create a test note
+        let kiln_root = PathBuf::from("/test/kiln");
+        let doc_path = PathBuf::from("/test/kiln/notes/test_note.md");
+        let mut doc = ParsedNote::new(doc_path.clone());
+        doc.content.plain_text = "This is a test note about Rust programming".to_string();
+        doc.content_hash = "semantic_test_hash".to_string();
+
+        let note_id = store_parsed_document(&client, &doc, &kiln_root)
+            .await
+            .unwrap();
+
+        // Store embedding with 768 dimensions (matching nomic-embed-text)
+        let vector_768: Vec<f32> = (0..768).map(|i| (i as f32 / 768.0).sin()).collect();
+        store_embedding(
+            &client,
+            &note_id,
+            vector_768.clone(),
+            "nomic-embed-text",
+            768,
+            0,
+            None,
+            Some("This is a test note about Rust programming"),
+        )
+        .await
+        .unwrap();
+
+        // Create a mock embedding provider with 768 dimensions
+        let mock_provider = Arc::new(crucible_llm::embeddings::mock::MockEmbeddingProvider::with_dimensions(768));
+
+        // Perform semantic search
+        let results = semantic_search(&client, "Rust programming", 5, mock_provider)
+            .await
+            .unwrap();
+
+        // Should find the note
+        assert!(!results.is_empty(), "Should find at least one result");
+
+        // The result should contain our note
+        let found = results.iter().any(|(id, _)| id.contains("test_note.md") || id.contains("note:"));
+        assert!(found, "Should find our test note in results: {:?}", results);
+
+        println!("✓ Semantic search with KNN test passed!");
+    }
+
+    #[tokio::test]
+    async fn test_dynamic_index_recreation() {
+        use crate::types::SurrealDbConfig;
+        use std::sync::Arc;
+
+        // Create in-memory client
+        let config = SurrealDbConfig {
+            path: ":memory:".to_string(),
+            ..Default::default()
+        };
+        let client = SurrealClient::new(config).await.unwrap();
+
+        // Initialize schema (no static MTREE index anymore)
+        initialize_kiln_schema(&client).await.unwrap();
+
+        // First, create index with 384 dimensions
+        ensure_embedding_index(&client, 384).await.unwrap();
+
+        // Create a test note with 384-dimension embedding
+        let kiln_root = PathBuf::from("/test/kiln");
+        let doc_path = PathBuf::from("/test/kiln/notes/test_384.md");
+        let mut doc = ParsedNote::new(doc_path.clone());
+        doc.content.plain_text = "384 dimension note".to_string();
+        doc.content_hash = "hash_384".to_string();
+
+        let note_id = store_parsed_document(&client, &doc, &kiln_root)
+            .await
+            .unwrap();
+
+        // Store embedding with 384 dimensions
+        let vector_384: Vec<f32> = (0..384).map(|i| (i as f32 / 384.0).sin()).collect();
+        store_embedding(
+            &client,
+            &note_id,
+            vector_384.clone(),
+            "test-model-384",
+            384,
+            0,
+            None,
+            Some("384 dimension note"),
+        )
+        .await
+        .unwrap();
+
+        // Search should work with 384-dim provider
+        let mock_provider_384 = Arc::new(crucible_llm::embeddings::mock::MockEmbeddingProvider::with_dimensions(384));
+        let results = semantic_search(&client, "dimension test", 5, mock_provider_384)
+            .await
+            .expect("Should find results with 384-dim index");
+        assert!(!results.is_empty(), "Should find 384-dim note");
+        println!("Search with 384-dim index works");
+
+        // Now simulate model change - clear embeddings and recreate index with 768 dimensions
+        clear_all_embeddings_and_recreate_index(&client, 768).await.unwrap();
+
+        // Create a new note with 768-dimension embedding
+        let doc_path_768 = PathBuf::from("/test/kiln/notes/test_768.md");
+        let mut doc_768 = ParsedNote::new(doc_path_768.clone());
+        doc_768.content.plain_text = "768 dimension note".to_string();
+        doc_768.content_hash = "hash_768".to_string();
+
+        let note_id_768 = store_parsed_document(&client, &doc_768, &kiln_root)
+            .await
+            .unwrap();
+
+        // Store embedding with 768 dimensions
+        let vector_768: Vec<f32> = (0..768).map(|i| (i as f32 / 768.0).sin()).collect();
+        store_embedding(
+            &client,
+            &note_id_768,
+            vector_768.clone(),
+            "test-model-768",
+            768,
+            0,
+            None,
+            Some("768 dimension note"),
+        )
+        .await
+        .unwrap();
+
+        // Search should work with 768-dim provider after index recreation
+        let mock_provider_768 = Arc::new(crucible_llm::embeddings::mock::MockEmbeddingProvider::with_dimensions(768));
+        let results = semantic_search(&client, "dimension test", 5, mock_provider_768)
+            .await
+            .expect("Should find results with 768-dim index");
+
+        assert!(!results.is_empty(), "Should find 768-dim note after index recreation");
+
+        // The result should contain our 768-dim note
+        let found = results.iter().any(|(id, _)| id.contains("test_768.md") || id.contains("note:"));
+        assert!(found, "Should find the 768-dim test note: {:?}", results);
+
+        println!("Dynamic index recreation test passed!");
     }
 }
 
