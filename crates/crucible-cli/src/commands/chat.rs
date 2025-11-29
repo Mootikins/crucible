@@ -14,8 +14,7 @@ use crate::acp::{discover_agent, ContextEnricher, CrucibleAcpClient};
 use crate::config::CliConfig;
 use crate::core_facade::CrucibleCoreFacade;
 use crate::factories;
-use crucible_core::enrichment::EmbeddingProvider;
-use crucible_llm::embeddings::CoreProviderAdapter;
+use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
 use crucible_pipeline::NotePipeline;
 use crucible_watch::traits::{DebounceConfig, HandlerConfig, WatchConfig};
 use crucible_watch::{EventFilter, FileEvent, FileEventKind, WatchMode};
@@ -106,119 +105,118 @@ pub async fn execute(
         ChatMode::Act
     };
 
-    use crate::output;
     use colored::Colorize;
-
-    println!(
-        "{}",
-        "╔═══════════════════════════════════════════╗"
-            .bright_blue()
-            .bold()
-    );
-    println!(
-        "{}",
-        "║       🤖 Initializing Crucible Chat       ║"
-            .bright_blue()
-            .bold()
-    );
-    println!(
-        "{}",
-        "╚═══════════════════════════════════════════╝"
-            .bright_blue()
-            .bold()
-    );
 
     info!("Starting chat command");
     info!("Initial mode: {}", initial_mode.display_name());
 
+    // Single-line status display for clean startup UX
+    let mut status = StatusLine::new();
+
     // Get default agent from config before moving config
-    let default_agent_from_config = config.acp.default_agent.clone(); // TODO: Add default_agent to ACP config
+    let default_agent_from_config = config.acp.default_agent.clone();
 
-    // Initialize storage using factory pattern
-    output::info("Initializing storage...");
-    let storage_client = factories::create_surrealdb_storage(&config).await?;
-    factories::initialize_surrealdb_schema(&storage_client).await?;
-    output::success("Storage initialized");
+    // PARALLEL INITIALIZATION: Run storage init and agent discovery concurrently
+    status.update("Initializing storage and discovering agent...");
 
-    // Auto-process files to generate embeddings (unless --no-process or --no-context)
-    if !no_process && !no_context {
-        use indicatif::{ProgressBar, ProgressStyle};
+    let preferred_agent = agent_name.or(default_agent_from_config);
+    let config_for_storage = config.clone();
 
-        output::info("Running pipeline to ensure embeddings are up-to-date...");
+    let (storage_result, agent_result) = tokio::join!(
+        async {
+            let client = factories::create_surrealdb_storage(&config_for_storage).await?;
+            factories::initialize_surrealdb_schema(&client).await?;
+            Ok::<_, anyhow::Error>(client)
+        },
+        discover_agent(preferred_agent.as_deref())
+    );
 
-        let pipeline = factories::create_pipeline(
-            storage_client.clone(),
-            &config,
-            false, // force=false for incremental processing
-        )
-        .await?;
+    let storage_client = storage_result?;
+    let agent = agent_result?;
 
-        // Discover markdown files in kiln
+    // Quick sync check + background processing (unless --no-process or --no-context)
+    let bg_progress: Option<BackgroundProgress> = if !no_process && !no_context {
+        use crate::sync::quick_sync_check;
+
+        status.update("Checking for file changes...");
+
         let kiln_path = &config.kiln_path;
-        let files = discover_markdown_files(kiln_path)?;
+        let sync_status = quick_sync_check(&storage_client, kiln_path).await?;
 
-        if files.is_empty() {
-            warn!("No markdown files found in kiln at {}", kiln_path.display());
-        } else {
-            let pb = ProgressBar::new(files.len() as u64);
-            pb.set_style(
-                ProgressStyle::default_bar()
-                    .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} files ({eta})")
-                    .unwrap()
-                    .progress_chars("=>-")
-            );
+        if sync_status.needs_processing() {
+            let pending = sync_status.pending_count();
+            status.update(&format!("Starting background indexing ({} files)...", pending));
 
-            output::info(&format!("Processing {} markdown files", files.len()));
+            // Create pipeline for background processing
+            let pipeline = factories::create_pipeline(
+                storage_client.clone(),
+                &config,
+                false,
+            )
+            .await?;
 
-            // Process each file (best effort - don't fail if one file errors)
-            for file in files {
-                pb.inc(1);
-                if let Err(e) = pipeline.process(&file).await {
-                    warn!("Failed to process {}: {}", file.display(), e);
+            let files_to_process = sync_status.files_to_process();
+            let bg_pipeline = Arc::new(pipeline);
+            let progress = BackgroundProgress::new(pending);
+
+            // Spawn background processing with progress tracking
+            let bg_pipeline_clone = bg_pipeline.clone();
+            let progress_clone = progress.clone();
+            tokio::spawn(async move {
+                for file in files_to_process {
+                    match bg_pipeline_clone.process(&file).await {
+                        Ok(_) => progress_clone.inc_completed(),
+                        Err(e) => {
+                            tracing::warn!("Background process failed for {}: {}", file.display(), e);
+                            progress_clone.inc_failed();
+                        }
+                    }
                 }
-            }
+                tracing::debug!("Background file processing completed");
+            });
 
-            pb.finish_with_message("Processing complete");
-            output::success("Pipeline processing complete");
+            // Spawn background watch task
+            let watch_config = config.clone();
+            let watch_pipeline = bg_pipeline;
+            tokio::spawn(async move {
+                if let Err(e) = spawn_background_watch(watch_config, watch_pipeline).await {
+                    tracing::error!("Background watch failed: {}", e);
+                }
+            });
+
+            info!("Background processing spawned for {} files", pending);
+            Some(progress)
+        } else {
+            // All files up to date, still spawn watch
+            let pipeline = factories::create_pipeline(
+                storage_client.clone(),
+                &config,
+                false,
+            )
+            .await?;
+            let watch_config = config.clone();
+            let watch_pipeline = Arc::new(pipeline);
+            tokio::spawn(async move {
+                if let Err(e) = spawn_background_watch(watch_config, watch_pipeline).await {
+                    tracing::error!("Background watch failed: {}", e);
+                }
+            });
+            None
         }
+    } else {
+        None
+    };
 
-        // Spawn background watch task for auto-reindexing during chat
-        // This runs silently in the background, reprocessing changed files
-        let watch_config = config.clone();
-        let watch_pipeline = Arc::new(pipeline);
-
-        tokio::spawn(async move {
-            if let Err(e) = spawn_background_watch(watch_config, watch_pipeline).await {
-                tracing::error!("Background watch failed: {}", e);
-            }
-        });
-
-        info!("Background watch spawned for chat mode");
-    } else if no_process {
-        output::info("File processing skipped due to --no-process flag");
-    }
-
-    // Initialize core facade (still needed for semantic search in ContextEnricher)
-    // Reuse the storage client we created earlier (line 80) instead of creating a new one
-    output::info("Initializing core...");
+    // Initialize core facade
+    status.update("Initializing core...");
     let core = Arc::new(CrucibleCoreFacade::from_storage(
         storage_client.clone(),
         config,
     ));
-    output::success("Core initialized");
 
-    // Discover agent (use --agent flag, or fall back to config default)
-    output::info("Discovering ACP agent...");
-    let preferred_agent = agent_name.or(default_agent_from_config);
-    let agent = discover_agent(preferred_agent.as_deref()).await?;
-    output::success(&format!("Using agent: {} ({})", agent.name, agent.command));
-
-    // Create embedding provider for in-process MCP
-    output::info("Initializing embedding provider...");
-    let embedding_config = core.config().embedding.to_provider_config();
-    let llm_provider = crucible_llm::embeddings::create_provider(embedding_config).await?;
-    let embedding_provider =
-        Arc::new(CoreProviderAdapter::new(llm_provider)) as Arc<dyn EmbeddingProvider>;
+    // Get cached embedding provider
+    status.update("Initializing embedding provider...");
+    let embedding_provider = factories::get_or_create_embedding_provider(core.config()).await?;
 
     // Get knowledge repository from storage
     let knowledge_repo = core.storage().as_knowledge_repository();
@@ -232,9 +230,14 @@ pub async fn execute(
             .with_mcp_dependencies(knowledge_repo, embedding_provider);
 
     // Spawn agent (tools will be initialized via in-process SSE MCP server)
-    output::info("Starting in-process MCP server and connecting to agent...");
+    status.update("Connecting to agent...");
     client.spawn().await?;
-    output::success("Agent connected with in-process MCP tools");
+
+    // Finalize startup status
+    status.success("Ready");
+
+    // Start live progress display if we have background processing
+    let live_progress = bg_progress.map(LiveProgress::start);
 
     // Handle query
     if let Some(query_text) = query {
@@ -259,7 +262,7 @@ pub async fn execute(
     } else {
         // Interactive mode
         info!("Interactive chat mode");
-        run_interactive_session(core, &mut client, initial_mode, no_context, context_size).await?;
+        run_interactive_session(core, &mut client, initial_mode, no_context, context_size, live_progress).await?;
 
         // Cleanup
         client.shutdown().await?;
@@ -275,6 +278,7 @@ async fn run_interactive_session(
     initial_mode: ChatMode,
     no_context: bool,
     context_size: Option<usize>,
+    _live_progress: Option<LiveProgress>,
 ) -> Result<()> {
     use colored::Colorize;
     use reedline::{
@@ -322,6 +326,7 @@ async fn run_interactive_session(
             ChatMode::Act => "✏️",
             ChatMode::AutoApprove => "⚡",
         };
+
         let prompt_indicator = format!("{} {} ", current_mode.display_name(), mode_icon);
         let prompt = DefaultPrompt::new(
             reedline::DefaultPromptSegment::Basic(prompt_indicator),
