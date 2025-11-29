@@ -11,13 +11,12 @@
 //! - **Hash indexing**: Support for hash-based queries
 
 use crate::utils::sanitize_record_id;
-use crate::{DbError, SurrealClient};
+use crate::SurrealClient;
 use async_trait::async_trait;
 use crucible_core::processing::{
     ChangeDetectionError, ChangeDetectionResult, ChangeDetectionStore, FileState,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use tracing::{debug, trace};
@@ -145,7 +144,7 @@ impl ChangeDetectionStore for SurrealChangeDetectionStore {
                 ChangeDetectionError::Serialization("Missing modified_time".to_string())
             })?;
 
-        use chrono::{DateTime, Utc};
+        use chrono::DateTime;
         let dt = DateTime::parse_from_rfc3339(datetime_str)
             .map_err(|e| ChangeDetectionError::Serialization(format!("Invalid datetime: {}", e)))?;
         let modified_time =

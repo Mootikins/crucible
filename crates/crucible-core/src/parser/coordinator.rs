@@ -13,10 +13,9 @@
 //! - **Performance Optimization**: Parallel processing and caching
 //! - **Transaction Support**: Atomic operations across parser and storage
 
-use crate::hashing::blake3::Blake3Hasher;
 use crate::parser::error::ParserResult;
 use crate::parser::storage_bridge::{
-    StorageAwareMarkdownParser, StorageAwareParseResult, StorageAwareParserConfig,
+    StorageAwareMarkdownParser, StorageAwareParseResult,
 };
 use crate::storage::{ContentAddressedStorage, EnhancedTreeChange, MerkleTree, StorageResult};
 use async_trait::async_trait;

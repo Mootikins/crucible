@@ -6,7 +6,6 @@
 
 use anyhow::Result;
 use crucible_core::enrichment::EmbeddingProvider;
-use crucible_core::traits::KnowledgeRepository;
 use crucible_llm::embeddings::CoreProviderAdapter;
 use crucible_tools::CrucibleMcpServer;
 use rmcp::ServiceExt;
