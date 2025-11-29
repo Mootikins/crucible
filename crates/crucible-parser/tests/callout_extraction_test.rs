@@ -6,10 +6,10 @@
 mod tests {
     use regex::Regex;
 
-    /// Test the exact regex pattern used in the pulldown parser
+    /// Test the exact regex pattern used in the callout extension
     #[test]
     fn test_callout_regex_pattern() {
-        // This is the pattern from pulldown.rs line 278
+        // This is the pattern from callouts.rs
         let re = Regex::new(r"(?m)^>\s*\[!([a-zA-Z][a-zA-Z0-9-]*)\](?:\s+([^\n]*))?\s*$").unwrap();
 
         let test_cases = vec![

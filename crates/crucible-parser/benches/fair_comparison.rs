@@ -1,4 +1,4 @@
-//! Fair comparison: Full parsing + tree building for both approaches
+//! Benchmark: Full parsing + tree building
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use crucible_parser::{CrucibleParser, MarkdownParser};
@@ -53,8 +53,8 @@ Final [[links]] and [[references]] here #conclusion."#,
     ),
 ];
 
-fn benchmark_pulldown_full_parse(c: &mut Criterion) {
-    let mut group = c.benchmark_group("pulldown_full");
+fn benchmark_crucible_parser(c: &mut Criterion) {
+    let mut group = c.benchmark_group("crucible_parser");
     let path = PathBuf::from("test.md");
     let runtime = tokio::runtime::Runtime::new().unwrap();
 
@@ -71,8 +71,8 @@ fn benchmark_pulldown_full_parse(c: &mut Criterion) {
 }
 
 #[cfg(feature = "markdown-it-parser")]
-fn benchmark_markdown_it_full_parse(c: &mut Criterion) {
-    let mut group = c.benchmark_group("markdown_it_full");
+fn benchmark_markdown_it_parser(c: &mut Criterion) {
+    let mut group = c.benchmark_group("markdown_it_parser");
     let path = PathBuf::from("test.md");
     let runtime = tokio::runtime::Runtime::new().unwrap();
 
@@ -91,11 +91,11 @@ fn benchmark_markdown_it_full_parse(c: &mut Criterion) {
 #[cfg(feature = "markdown-it-parser")]
 criterion_group!(
     benches,
-    benchmark_pulldown_full_parse,
-    benchmark_markdown_it_full_parse
+    benchmark_crucible_parser,
+    benchmark_markdown_it_parser
 );
 
 #[cfg(not(feature = "markdown-it-parser"))]
-criterion_group!(benches, benchmark_pulldown_full_parse);
+criterion_group!(benches, benchmark_crucible_parser);
 
 criterion_main!(benches);
