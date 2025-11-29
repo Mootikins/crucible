@@ -39,6 +39,11 @@ pub struct EmbeddingConfig {
     /// Batch size for processing (important for performance)
     #[serde(default = "default_batch_size")]
     pub batch_size: usize,
+    /// Maximum concurrent embedding jobs (provider-specific defaults apply if not set)
+    /// - Ollama: 1 (single GPU, sequential processing)
+    /// - FastEmbed: num_cpus/2 (CPU-bound, parallel OK)
+    /// - Remote APIs: 8 (rate-limited, moderate concurrency)
+    pub max_concurrent: Option<usize>,
 }
 
 fn default_batch_size() -> usize {
@@ -52,6 +57,7 @@ impl Default for EmbeddingConfig {
             model: None, // Will use provider default
             api_url: None,
             batch_size: default_batch_size(),
+            max_concurrent: None, // Will use provider-specific default
         }
     }
 }
@@ -136,6 +142,32 @@ impl EmbeddingConfig {
                 | EmbeddingProviderType::Ollama
                 | EmbeddingProviderType::Mock
         )
+    }
+
+    /// Get the effective max concurrent embedding jobs.
+    ///
+    /// Returns user-configured value if set, otherwise provider-specific defaults:
+    /// - Ollama: 1 (single GPU, sequential processing to avoid OOM/rate limits)
+    /// - FastEmbed: num_cpus/2 (CPU-bound, parallel OK but avoid oversubscription)
+    /// - Remote APIs (OpenAI, Anthropic, Cohere, VertexAI): 8 (rate-limited, moderate concurrency)
+    /// - Mock: 16 (testing, high concurrency OK)
+    /// - Custom: 4 (conservative default)
+    pub fn get_max_concurrent(&self) -> usize {
+        self.max_concurrent.unwrap_or_else(|| {
+            match self.provider {
+                EmbeddingProviderType::Ollama => 1,
+                EmbeddingProviderType::FastEmbed => {
+                    // CPU-bound: use half of available cores, minimum 1
+                    (num_cpus::get() / 2).max(1)
+                }
+                EmbeddingProviderType::OpenAI
+                | EmbeddingProviderType::Anthropic
+                | EmbeddingProviderType::Cohere
+                | EmbeddingProviderType::VertexAI => 8,
+                EmbeddingProviderType::Mock => 16,
+                EmbeddingProviderType::Custom => 4,
+            }
+        })
     }
 
     /// Convert to EmbeddingProviderConfig for use with LLM crate
