@@ -7,8 +7,7 @@ mod agent_tests {
     #[tokio::test]
     async fn test_is_agent_available_ls() {
         // ls should be available and supports --version
-        let result = is_agent_available("ls").await;
-        assert!(result.is_ok());
+        let _result = is_agent_available("ls").await;
         // Note: ls may or may not support --version depending on system
         // Just verify the function runs without panic
     }
@@ -16,8 +15,7 @@ mod agent_tests {
     #[tokio::test]
     async fn test_is_agent_available_nonexistent() {
         let result = is_agent_available("definitely-not-a-real-command-xyz123").await;
-        assert!(result.is_ok());
-        assert!(!result.unwrap());
+        assert!(!result);
     }
 
     #[test]
@@ -100,33 +98,28 @@ mod agent_tests {
 
     #[tokio::test]
     async fn test_is_agent_available_with_multiple_calls() {
-        // Test that multiple calls work (caching behavior)
-        let result1 = is_agent_available("ls").await;
-        let result2 = is_agent_available("ls").await;
-
-        assert!(result1.is_ok());
-        assert!(result2.is_ok());
+        // Test that multiple calls work
+        let _result1 = is_agent_available("ls").await;
+        let _result2 = is_agent_available("ls").await;
+        // Just verify it doesn't panic on repeated calls
     }
 
     #[tokio::test]
     async fn test_is_agent_available_empty_string() {
         let result = is_agent_available("").await;
-        assert!(result.is_ok());
-        assert!(!result.unwrap());
+        assert!(!result);
     }
 
     #[tokio::test]
     async fn test_is_agent_available_with_spaces() {
         let result = is_agent_available("command with spaces").await;
-        assert!(result.is_ok());
-        assert!(!result.unwrap());
+        assert!(!result);
     }
 
     #[tokio::test]
     async fn test_is_agent_available_with_path() {
         // Test with absolute path to command
-        let result = is_agent_available("/bin/ls").await;
-        assert!(result.is_ok());
+        let _result = is_agent_available("/bin/ls").await;
         // May or may not be available depending on system
     }
 }
