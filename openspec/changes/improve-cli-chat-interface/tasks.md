@@ -4,9 +4,12 @@
 - [x] 1.3 Implement clean message formatting with minimal separators (using ● indicator)
 - [x] 1.4 Add subtle visual hierarchy with indentation and spacing
 - [ ] 1.5 Update error message display to be less intrusive
-- [ ] 1.6 Replace progress bar with spinner during startup processing
-- [ ] 1.7 Add counting display for changed file detection (Phase 1)
-- [ ] 1.8 Implement fractional progress display for pipeline processing
+- [x] 1.6 Replace progress bar with spinner during startup processing (StatusLine with ⟳/✓)
+- [x] 1.7 Add counting display for changed file detection (quick_sync_check mtime comparison)
+- [x] 1.8 Implement fractional progress display for pipeline processing (LiveProgress with real-time updates)
+- [ ] 1.9 Implement persistent status line below prompt (crossterm + reedline integration)
+- [ ] 1.10 Move chat mode indicator to status line
+- [ ] 1.11 Show background indexing progress in status line (real-time without cursor artifacts)
 
 ## 2. Enhanced Search Capabilities
 - [ ] 2.1 Add `/search` command to chat interface
