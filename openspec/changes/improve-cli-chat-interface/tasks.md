@@ -12,9 +12,9 @@
 - [ ] 1.11 Show background indexing progress in status line (real-time without cursor artifacts)
 
 ## 2. Enhanced Search Capabilities
-- [ ] 2.1 Add `/search` command to chat interface
-- [ ] 2.2 Integrate semantic search backend for `/search` command
-- [ ] 2.3 Format search results for chat display
+- [x] 2.1 Add `/search` command to chat interface
+- [x] 2.2 Integrate semantic search backend for `/search` command
+- [x] 2.3 Format search results for chat display
 - [ ] 2.4 Add search result caching and context integration
 
 ## 3. File Reference System (@-mentions)
@@ -48,7 +48,7 @@
 - [ ] 6.9 Improve error messages with actionable suggestions
 - [ ] 6.10 Add `/undo` command for auto-approve mode
 - [x] 6.11 Implement double Ctrl+C exit (first press shows warning, second within 2s exits)
-- [ ] 6.12 Add markdown terminal rendering with ANSI escape codes
+- [x] 6.12 Add markdown terminal rendering with ANSI escape codes (using markdown-it + crossterm)
 
 ## 7. Integration and Testing
 - [ ] 7.1 Update ACP client integration for new features

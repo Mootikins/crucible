@@ -88,6 +88,9 @@ toml = { workspace = true }
 # Unicode support
 unicode-normalization = "0.1"
 
+# Markdown parsing for terminal rendering
+markdown-it = { workspace = true }
+
 # HTTP client & streaming
 reqwest = { workspace = true, features = ["json", "stream"] }
 futures = { workspace = true }
