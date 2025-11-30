@@ -20,12 +20,24 @@ use crucible_core::types::{FrontmatterFormat, ParsedNote, Tag};
 use crucible_core::{CrucibleError, Result as CoreResult};
 use serde_json::json;
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tracing::{debug, info, warn};
+
+/// Track whether the MTREE index has been ensured in this session
+static MTREE_INDEX_ENSURED: AtomicBool = AtomicBool::new(false);
+/// Track the dimensions used for the current index
+static MTREE_INDEX_DIMENSIONS: AtomicUsize = AtomicUsize::new(0);
 
 /// Initialize the kiln schema in the database
 pub async fn initialize_kiln_schema(client: &SurrealClient) -> Result<()> {
     apply_eav_graph_schema(client).await?;
     info!("Kiln schema initialized using EAV+Graph definitions");
+
+    // Note: MTREE index creation is deferred to first embedding storage or explicit call
+    // to avoid blocking startup on large databases. The index will be created lazily
+    // when store_embeddings_batch is called, or you can call ensure_embedding_index_from_existing()
+    // explicitly if you want to pre-create the index.
+
     Ok(())
 }
 
@@ -324,11 +336,45 @@ pub async fn ensure_embedding_index(client: &SurrealClient, dimensions: usize) -
         .await
         .map_err(|e| anyhow::anyhow!("Failed to create embedding index: {}", e))?;
 
+    // Update static tracking
+    MTREE_INDEX_ENSURED.store(true, Ordering::Relaxed);
+    MTREE_INDEX_DIMENSIONS.store(dimensions, Ordering::Relaxed);
+
     info!(
         "Created embedding vector index with {} dimensions",
         dimensions
     );
     Ok(())
+}
+
+/// Ensure the MTREE index exists based on existing embeddings in the database.
+///
+/// This should be called during initialization to set up the index for databases
+/// that already contain embeddings. It queries for the dimensions of existing
+/// embeddings and creates the index if embeddings exist.
+pub async fn ensure_embedding_index_from_existing(client: &SurrealClient) -> Result<bool> {
+    // Check if we already ensured the index in this session
+    if MTREE_INDEX_ENSURED.load(Ordering::Relaxed) {
+        return Ok(true);
+    }
+
+    // Get metadata about existing embeddings
+    if let Some(metadata) = get_embedding_index_metadata(client).await? {
+        if let Some(dims) = metadata.dimensions {
+            debug!(
+                "Found existing embeddings with {} dimensions, ensuring MTREE index",
+                dims
+            );
+            ensure_embedding_index(client, dims).await?;
+            Ok(true)
+        } else {
+            debug!("Embeddings exist but dimensions unknown, skipping MTREE index");
+            Ok(false)
+        }
+    } else {
+        debug!("No existing embeddings found, MTREE index will be created on first embedding");
+        Ok(false)
+    }
 }
 
 /// Clear all embeddings and recreate the index with new dimensions.
@@ -1563,6 +1609,26 @@ pub async fn store_embeddings_batch(
                     embeddings.len(),
                     normalized_id
                 );
+
+                // Ensure MTREE index exists after first successful embedding storage
+                // This is done lazily to avoid index creation overhead on startup
+                if let Some(first_embedding) = embeddings.first() {
+                    let dims = first_embedding.dimensions;
+                    let current_dims = MTREE_INDEX_DIMENSIONS.load(Ordering::Relaxed);
+
+                    // Create/recreate index if not done yet or dimensions changed
+                    if !MTREE_INDEX_ENSURED.load(Ordering::Relaxed) || current_dims != dims {
+                        if let Err(e) = ensure_embedding_index(client, dims).await {
+                            // Log but don't fail - search will still work via ORDER BY
+                            warn!("Failed to create MTREE index (search will use fallback): {}", e);
+                        } else {
+                            MTREE_INDEX_ENSURED.store(true, Ordering::Relaxed);
+                            MTREE_INDEX_DIMENSIONS.store(dims, Ordering::Relaxed);
+                            info!("Created MTREE vector index with {} dimensions", dims);
+                        }
+                    }
+                }
+
                 return Ok(chunk_ids);
             }
             Err(e) => {
@@ -1967,30 +2033,68 @@ pub async fn semantic_search(
         embedding_provider.provider_name()
     );
 
-    // Use SurrealDB's native KNN search with MTREE index
-    // The <|N|> operator performs approximate nearest neighbor search using the index
-    // This is MUCH faster than loading all embeddings and computing similarity in Rust
-    //
-    // The MTREE index is created dynamically to match the embedding model's dimensions.
-    // If there's a dimension mismatch, ensure_embedding_index() should be called first.
-    let sql = format!(
-        r#"
-        SELECT
-            entity_id,
-            vector::similarity::cosine(embedding, $vector) AS score
-        FROM embeddings
-        WHERE embedding <|{limit}|> $vector
-        ORDER BY score DESC
-        "#,
-        limit = limit
-    );
+    // Use SurrealDB vector similarity search
+    // Try KNN operator first if MTREE index exists (much faster for large datasets)
+    // Fall back to ORDER BY if index doesn't exist or KNN fails
+    let query_dims = query_embedding.len();
+    let index_dims = MTREE_INDEX_DIMENSIONS.load(Ordering::Relaxed);
+    let use_knn = MTREE_INDEX_ENSURED.load(Ordering::Relaxed) && index_dims == query_dims;
 
-    let result = client
-        .query(&sql, &[json!({ "vector": query_embedding })])
-        .await
-        .map_err(|e| anyhow!("KNN search query failed: {}", e))?;
+    let result = if use_knn {
+        // Use KNN operator with MTREE index for fast approximate search
+        let knn_sql = format!(
+            r#"
+            SELECT
+                entity_id,
+                vector::similarity::cosine(embedding, $vector) AS score
+            FROM embeddings
+            WHERE embedding <|{limit}|> $vector
+            ORDER BY score DESC
+            "#,
+            limit = limit
+        );
+        debug!("Executing KNN search with MTREE index");
 
-    debug!("KNN search returned {} records", result.records.len());
+        match client.query(&knn_sql, &[json!({ "vector": query_embedding })]).await {
+            Ok(result) => result,
+            Err(e) => {
+                // KNN failed (index issue?), fall back to ORDER BY
+                warn!("KNN search failed, falling back to ORDER BY: {}", e);
+                let fallback_sql = format!(
+                    r#"
+                    SELECT
+                        entity_id,
+                        vector::similarity::cosine(embedding, $vector) AS score
+                    FROM embeddings
+                    ORDER BY score DESC
+                    LIMIT {limit}
+                    "#,
+                    limit = limit
+                );
+                client.query(&fallback_sql, &[json!({ "vector": query_embedding })]).await
+                    .map_err(|e| anyhow!("Semantic search query failed: {}", e))?
+            }
+        }
+    } else {
+        // No MTREE index - use ORDER BY (works but slower for large datasets)
+        let sql = format!(
+            r#"
+            SELECT
+                entity_id,
+                vector::similarity::cosine(embedding, $vector) AS score
+            FROM embeddings
+            ORDER BY score DESC
+            LIMIT {limit}
+            "#,
+            limit = limit
+        );
+        debug!("Executing semantic search with ORDER BY (no MTREE index)");
+
+        client.query(&sql, &[json!({ "vector": query_embedding })]).await
+            .map_err(|e| anyhow!("Semantic search query failed: {}", e))?
+    };
+
+    debug!("Semantic search returned {} records", result.records.len());
 
     // Extract results from query response
     let similarity_threshold = 0.5;

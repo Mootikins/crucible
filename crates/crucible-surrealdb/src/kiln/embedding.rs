@@ -10,6 +10,7 @@ pub use crate::kiln_integration::{
     clear_document_embeddings,
     delete_document_chunks,
     ensure_embedding_index,
+    ensure_embedding_index_from_existing,
     get_all_document_embeddings,
     get_document_chunk_hashes,
     get_document_embeddings,
