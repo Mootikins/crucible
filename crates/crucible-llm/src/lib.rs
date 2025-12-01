@@ -45,6 +45,7 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
+pub mod chat;
 pub mod embeddings;
 pub mod reranking;
 pub mod text_generation;
@@ -86,6 +87,14 @@ pub use text_generation::{
     TextProviderConfig,
     TokenUsage,
     // REMOVED: OllamaTextProvider, OpenAITextProvider - use create_text_provider() instead
+};
+
+// Re-export chat providers and factory functions
+pub use chat::{
+    create_chat_provider,
+    create_from_app_config,
+    OllamaChatProvider,
+    OpenAIChatProvider,
 };
 
 // Re-export mock implementations for testing
