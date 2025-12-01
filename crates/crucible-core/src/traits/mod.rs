@@ -46,4 +46,4 @@ pub use llm::{
 };
 pub use parser::MarkdownParser;
 pub use storage::Storage;
-pub use tools::ToolExecutor;
+pub use tools::{ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult};
