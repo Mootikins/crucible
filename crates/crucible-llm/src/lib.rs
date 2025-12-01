@@ -45,6 +45,7 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
+pub mod agent_runtime;
 pub mod chat;
 pub mod embeddings;
 pub mod reranking;
@@ -89,13 +90,11 @@ pub use text_generation::{
     // REMOVED: OllamaTextProvider, OpenAITextProvider - use create_text_provider() instead
 };
 
+// Re-export agent runtime
+pub use agent_runtime::AgentRuntime;
+
 // Re-export chat providers and factory functions
-pub use chat::{
-    create_chat_provider,
-    create_from_app_config,
-    OllamaChatProvider,
-    OpenAIChatProvider,
-};
+pub use chat::{create_chat_provider, create_from_app_config, OllamaChatProvider, OpenAIChatProvider};
 
 // Re-export mock implementations for testing
 #[cfg(any(test, feature = "test-utils"))]
