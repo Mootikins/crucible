@@ -22,7 +22,7 @@ burn = ["crucible-burn"]
 crucible-core = { path = "../crucible-core" }
 
 # Config
-crucible-config = { path = "../crucible-config" }
+crucible-config = { path = "../crucible-config", features = ["toml"] }
 
 # Async
 tokio = { workspace = true, features = ["time"] }
@@ -41,6 +41,9 @@ reqwest = { workspace = true }
 
 # Time handling
 chrono = { workspace = true, features = ["serde"] }
+
+# UUID generation
+uuid = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
