@@ -9,8 +9,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
+use uuid::Uuid;
 
-use super::embeddings::error::EmbeddingResult;
+use crate::embeddings::error::EmbeddingResult;
 
 /// Text generation provider trait
 ///
@@ -669,10 +670,107 @@ impl TextGenerationProvider for OpenAITextProvider {
 
     async fn generate_chat_completion(
         &self,
-        _request: ChatCompletionRequest,
+        request: ChatCompletionRequest,
     ) -> EmbeddingResult<ChatCompletionResponse> {
-        // Implementation would go here
-        todo!("OpenAI chat completion implementation")
+        use crate::embeddings::error::EmbeddingError;
+
+        // Build OpenAI API request
+        let mut api_request = serde_json::json!({
+            "model": request.model,
+            "messages": request.messages.iter().map(|m| {
+                let mut msg = serde_json::json!({
+                    "role": match m.role {
+                        MessageRole::System => "system",
+                        MessageRole::User => "user",
+                        MessageRole::Assistant => "assistant",
+                        MessageRole::Function => "function",
+                        MessageRole::Tool => "tool",
+                    },
+                    "content": m.content.clone(),
+                });
+
+                // Add tool_call_id for tool messages
+                if m.role == MessageRole::Tool {
+                    if let Some(tool_call_id) = &m.tool_call_id {
+                        msg["tool_call_id"] = serde_json::json!(tool_call_id);
+                    }
+                }
+
+                // Add name for function messages
+                if m.role == MessageRole::Function {
+                    if let Some(name) = &m.name {
+                        msg["name"] = serde_json::json!(name);
+                    }
+                }
+
+                // Add tool_calls for assistant messages
+                if let Some(tool_calls) = &m.tool_calls {
+                    msg["tool_calls"] = serde_json::json!(tool_calls);
+                }
+
+                msg
+            }).collect::<Vec<_>>(),
+        });
+
+        // Add optional parameters
+        if let Some(temp) = request.temperature {
+            api_request["temperature"] = serde_json::json!(temp);
+        }
+        if let Some(max_tokens) = request.max_tokens {
+            api_request["max_tokens"] = serde_json::json!(max_tokens);
+        }
+        if let Some(top_p) = request.top_p {
+            api_request["top_p"] = serde_json::json!(top_p);
+        }
+        if let Some(stop) = &request.stop {
+            api_request["stop"] = serde_json::json!(stop);
+        }
+        if let Some(frequency_penalty) = request.frequency_penalty {
+            api_request["frequency_penalty"] = serde_json::json!(frequency_penalty);
+        }
+        if let Some(presence_penalty) = request.presence_penalty {
+            api_request["presence_penalty"] = serde_json::json!(presence_penalty);
+        }
+
+        // Add tool definitions if present
+        if let Some(tools) = &request.tools {
+            api_request["tools"] = serde_json::json!(tools);
+        }
+
+        // Add tool_choice if present
+        if let Some(tool_choice) = &request.tool_choice {
+            api_request["tool_choice"] = serde_json::to_value(tool_choice)
+                .unwrap_or(serde_json::json!("auto"));
+        }
+
+        // Make request
+        let url = format!("{}/chat/completions", self.base_url);
+        let response = self
+            .client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&api_request)
+            .timeout(self.timeout)
+            .send()
+            .await
+            .map_err(EmbeddingError::HttpError)?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(EmbeddingError::InvalidResponse(format!(
+                "OpenAI API error ({}): {}",
+                status, error_text
+            )));
+        }
+
+        let api_response: ChatCompletionResponse = response
+            .json()
+            .await
+            .map_err(|e| EmbeddingError::InvalidResponse(format!("Failed to parse JSON response: {}", e)))?;
+
+        Ok(api_response)
     }
 
     async fn generate_chat_completion_stream(
@@ -788,10 +886,146 @@ impl TextGenerationProvider for OllamaTextProvider {
 
     async fn generate_chat_completion(
         &self,
-        _request: ChatCompletionRequest,
+        request: ChatCompletionRequest,
     ) -> EmbeddingResult<ChatCompletionResponse> {
-        // Implementation would go here
-        todo!("Ollama chat completion implementation")
+        use crate::embeddings::error::EmbeddingError;
+
+        // Build Ollama chat request
+        let mut ollama_request = serde_json::json!({
+            "model": request.model,
+            "messages": request.messages.iter().map(|m| {
+                serde_json::json!({
+                    "role": match m.role {
+                        MessageRole::System => "system",
+                        MessageRole::User => "user",
+                        MessageRole::Assistant => "assistant",
+                        MessageRole::Function => "assistant", // Map to assistant
+                        MessageRole::Tool => "assistant", // Map to assistant
+                    },
+                    "content": m.content.clone(),
+                })
+            }).collect::<Vec<_>>(),
+            "stream": false,
+        });
+
+        // Add optional parameters
+        if let Some(temp) = request.temperature {
+            ollama_request["options"] = serde_json::json!({
+                "temperature": temp,
+            });
+        }
+        if let Some(max_tokens) = request.max_tokens {
+            if let Some(options) = ollama_request.get_mut("options") {
+                options["num_predict"] = serde_json::json!(max_tokens);
+            } else {
+                ollama_request["options"] = serde_json::json!({
+                    "num_predict": max_tokens,
+                });
+            }
+        }
+
+        // Add tool definitions if present
+        if let Some(tools) = &request.tools {
+            let ollama_tools: Vec<serde_json::Value> = tools.iter().map(|tool| {
+                serde_json::json!({
+                    "type": "function",
+                    "function": {
+                        "name": tool.function.name,
+                        "description": tool.function.description,
+                        "parameters": tool.function.parameters.clone().unwrap_or(serde_json::json!({})),
+                    }
+                })
+            }).collect();
+            ollama_request["tools"] = serde_json::json!(ollama_tools);
+        }
+
+        // Make request
+        let url = format!("{}/api/chat", self.base_url);
+        let response = self
+            .client
+            .post(&url)
+            .json(&ollama_request)
+            .timeout(self.timeout)
+            .send()
+            .await
+            .map_err(EmbeddingError::HttpError)?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(EmbeddingError::InvalidResponse(format!(
+                "Ollama API error ({}): {}",
+                status, error_text
+            )));
+        }
+
+        let ollama_response: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| EmbeddingError::InvalidResponse(format!("Failed to parse JSON response: {}", e)))?;
+
+        // Parse response
+        let message_content = ollama_response["message"]["content"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+
+        // Check for tool calls in response
+        let mut tool_calls = None;
+        if let Some(tool_call_array) = ollama_response["message"]["tool_calls"].as_array() {
+            let parsed_tool_calls: Vec<ToolCall> = tool_call_array
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, tc)| {
+                    let function_name = tc["function"]["name"].as_str()?;
+                    let function_args = tc["function"]["arguments"].clone();
+                    Some(ToolCall {
+                        id: format!("call_{}", idx),
+                        r#type: "function".to_string(),
+                        function: FunctionCall {
+                            name: function_name.to_string(),
+                            arguments: serde_json::to_string(&function_args).unwrap_or_default(),
+                        },
+                    })
+                })
+                .collect();
+
+            if !parsed_tool_calls.is_empty() {
+                tool_calls = Some(parsed_tool_calls);
+            }
+        }
+
+        let message = ChatMessage {
+            role: MessageRole::Assistant,
+            content: message_content,
+            function_call: None,
+            tool_calls,
+            name: None,
+            tool_call_id: None,
+        };
+
+        // Extract token usage (Ollama might not provide this)
+        let prompt_tokens = ollama_response["prompt_eval_count"].as_u64().unwrap_or(0) as u32;
+        let completion_tokens = ollama_response["eval_count"].as_u64().unwrap_or(0) as u32;
+
+        Ok(ChatCompletionResponse {
+            choices: vec![ChatCompletionChoice {
+                index: 0,
+                message,
+                finish_reason: Some(ollama_response["done_reason"].as_str().unwrap_or("stop").to_string()),
+                logprobs: None,
+            }],
+            model: request.model,
+            usage: TokenUsage {
+                prompt_tokens,
+                completion_tokens,
+                total_tokens: prompt_tokens + completion_tokens,
+            },
+            id: format!("chatcmpl-{}", Uuid::new_v4()),
+            object: "chat.completion".to_string(),
+            created: Utc::now(),
+            system_fingerprint: None,
+        })
     }
 
     async fn generate_chat_completion_stream(
