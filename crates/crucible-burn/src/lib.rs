@@ -34,6 +34,6 @@ pub mod server;
 pub mod benchmarks;
 
 // Re-export key types for convenience
-pub use config::BurnConfig;
+pub use config::{BackendConfig, BurnConfig};
 pub use hardware::{BackendType, HardwareInfo};
 pub use providers::BurnEmbeddingProvider;
