@@ -137,9 +137,9 @@ The agent uses configuration from `~/.config/crucible/config.toml`:
 
 ```toml
 [chat]
-provider = "ollama"  # or "openai"
-model = "llama3.2"
-endpoint = "https://llama.terminal.krohnos.io"
+provider = "ollama"  # or "openai", "anthropic"
+model = "llama3.2"   # Optional: override default model
+endpoint = "http://localhost:11434"  # Optional: override default endpoint
 temperature = 0.7
 max_tokens = 2048
 timeout_secs = 120
@@ -147,9 +147,21 @@ timeout_secs = 120
 
 ### Default Configuration
 
-- **Provider**: Ollama
-- **Endpoint**: `https://llama.terminal.krohnos.io`
+Provider-specific defaults (overrideable in config):
+
+**Ollama**:
+- **Endpoint**: `http://localhost:11434`
 - **Model**: `llama3.2`
+
+**OpenAI**:
+- **Endpoint**: `https://api.openai.com/v1`
+- **Model**: `gpt-4`
+
+**Anthropic**:
+- **Endpoint**: `https://api.anthropic.com/v1`
+- **Model**: `claude-3-sonnet`
+
+**Common Defaults**:
 - **Temperature**: 0.7
 - **Max Tokens**: 2048
 - **Timeout**: 120 seconds

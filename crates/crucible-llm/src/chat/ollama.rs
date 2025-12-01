@@ -203,7 +203,7 @@ mod tests {
     #[test]
     fn test_ollama_provider_creation() {
         let provider = OllamaChatProvider::new(
-            "https://llama.terminal.krohnos.io".to_string(),
+            "http://localhost:11434".to_string(),
             "llama3.2".to_string(),
             120,
         );

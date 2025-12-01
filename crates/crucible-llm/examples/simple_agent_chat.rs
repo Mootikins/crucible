@@ -3,10 +3,18 @@
 //! This example demonstrates how to use the AgentRuntime with a ChatProvider
 //! and ToolExecutor to create an interactive agent.
 //!
+//! By default uses Ollama at http://localhost:11434.
+//! Override via config file ~/.config/crucible/config.toml:
+//!
+//! ```toml
+//! [chat]
+//! provider = "ollama"
+//! endpoint = "http://your-custom-endpoint:11434"
+//! model = "llama3.2"
+//! ```
+//!
 //! Usage:
-//!   EMBEDDING_MODEL="nomic-embed-text-v1.5-q8_0" \
-//!   EMBEDDING_ENDPOINT="https://llama.terminal.krohnos.io" \
-//!   cargo run --example simple_agent_chat
+//!   cargo run -p crucible-llm --example simple_agent_chat
 
 use anyhow::Result;
 use async_trait::async_trait;
