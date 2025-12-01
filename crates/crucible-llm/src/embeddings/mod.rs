@@ -116,7 +116,7 @@ mod tests {
     fn test_provider_creation_requires_valid_config() {
         // Test that we can create basic configs using the canonical API
         let config = EmbeddingConfig::ollama(
-            Some("https://llm.example.com".to_string()),
+            Some("http://localhost:11434".to_string()),
             Some("nomic-embed-text".to_string()),
         );
 
