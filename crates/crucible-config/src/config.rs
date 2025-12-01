@@ -671,7 +671,7 @@ verbose = false
     }
 
     pub fn ollama_endpoint(&self) -> String {
-        "https://llm.example.com".to_string()
+        "http://localhost:11434".to_string()
     }
 
     pub fn timeout(&self) -> u64 {
