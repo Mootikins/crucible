@@ -537,7 +537,7 @@ async fn run_interactive_session(
                 use std::io::{self, Write};
                 io::stdout().flush().unwrap();
 
-                match client.send_message(&message).await {
+                match client.send_message_acp(&message).await {
                     Ok((response, tool_calls)) => {
                         // Clear the "thinking" indicator
                         print!("\r{}\r", " ".repeat(20));
