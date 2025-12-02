@@ -90,7 +90,7 @@ impl MockChatProviderWithTools {
 
 #[async_trait]
 impl LlmProvider for MockChatProviderWithTools {
-    async fn chat(&self, request: LlmRequest) -> LlmResult<LlmResponse> {
+    async fn complete(&self, request: LlmRequest) -> LlmResult<LlmResponse> {
         let count = self
             .call_count
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
