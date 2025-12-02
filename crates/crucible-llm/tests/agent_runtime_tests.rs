@@ -1,11 +1,11 @@
 //! Integration tests for Agent Runtime
 //!
-//! The agent runtime coordinates between ChatProvider and ToolExecutor
+//! The agent runtime coordinates between LlmProvider and ToolExecutor
 //! to enable autonomous agent behavior with tool calling.
 
 use async_trait::async_trait;
 use crucible_core::traits::{
-    ChatMessage, ChatProvider, ChatRequest, ChatResponse, ExecutionContext, LlmError, LlmResult,
+    LlmMessage, LlmProvider, LlmRequest, LlmResponse, ExecutionContext, LlmError, LlmResult,
     ToolCall, ToolDefinition, ToolError, ToolExecutor, ToolResult, TokenUsage,
 };
 use serde_json::json;
@@ -89,15 +89,15 @@ impl MockChatProviderWithTools {
 }
 
 #[async_trait]
-impl ChatProvider for MockChatProviderWithTools {
-    async fn chat(&self, request: ChatRequest) -> LlmResult<ChatResponse> {
+impl LlmProvider for MockChatProviderWithTools {
+    async fn chat(&self, request: LlmRequest) -> LlmResult<LlmResponse> {
         let count = self
             .call_count
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // First call: make a tool call
         if count == 0 {
-            let message = ChatMessage::assistant_with_tools(
+            let message = LlmMessage::assistant_with_tools(
                 "I'll search for that information.".to_string(),
                 vec![ToolCall::new(
                     "call_1",
@@ -106,7 +106,7 @@ impl ChatProvider for MockChatProviderWithTools {
                 )],
             );
 
-            return Ok(ChatResponse {
+            return Ok(LlmResponse {
                 message,
                 usage: TokenUsage {
                     prompt_tokens: 10,
@@ -120,11 +120,11 @@ impl ChatProvider for MockChatProviderWithTools {
         // Second call: respond with the tool results
         let last_message = request.messages.last().unwrap();
         if last_message.role == crucible_core::traits::MessageRole::Tool {
-            let message = ChatMessage::assistant(
+            let message = LlmMessage::assistant(
                 "Based on the search results, I found information about Rust programming.".to_string(),
             );
 
-            return Ok(ChatResponse {
+            return Ok(LlmResponse {
                 message,
                 usage: TokenUsage {
                     prompt_tokens: 50,
@@ -136,8 +136,8 @@ impl ChatProvider for MockChatProviderWithTools {
         }
 
         // Default response
-        Ok(ChatResponse {
-            message: ChatMessage::assistant("I don't understand.".to_string()),
+        Ok(LlmResponse {
+            message: LlmMessage::assistant("I don't understand.".to_string()),
             usage: TokenUsage {
                 prompt_tokens: 5,
                 completion_tokens: 5,
@@ -171,7 +171,7 @@ async fn test_agent_runtime_basic_flow() {
     let mut runtime = AgentRuntime::new(provider, executor);
 
     // When: We send a message that triggers tool use
-    let messages = vec![ChatMessage::user("Find information about Rust programming")];
+    let messages = vec![LlmMessage::user("Find information about Rust programming")];
 
     let response = runtime.run_conversation(messages).await.unwrap();
 
@@ -198,7 +198,7 @@ async fn test_agent_runtime_tool_execution() {
     let mut runtime = AgentRuntime::new(provider, executor);
 
     // When: The agent uses a tool
-    let messages = vec![ChatMessage::user("What's the weather?")];
+    let messages = vec![LlmMessage::user("What's the weather?")];
 
     let response = runtime.run_conversation(messages).await.unwrap();
 
@@ -216,7 +216,7 @@ async fn test_agent_runtime_conversation_history() {
     let mut runtime = AgentRuntime::new(provider, executor);
 
     // When: We have a multi-turn conversation
-    let messages = vec![ChatMessage::user("Hello")];
+    let messages = vec![LlmMessage::user("Hello")];
 
     let _response1 = runtime.run_conversation(messages).await.unwrap();
 
@@ -237,7 +237,7 @@ async fn test_agent_runtime_max_iterations() {
     let mut runtime = AgentRuntime::new(provider, executor).with_max_iterations(5);
 
     // When: We run a conversation
-    let messages = vec![ChatMessage::user("Test message")];
+    let messages = vec![LlmMessage::user("Test message")];
 
     let response = runtime.run_conversation(messages).await.unwrap();
 

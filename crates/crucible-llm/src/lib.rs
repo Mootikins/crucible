@@ -78,7 +78,7 @@ pub use text_generation::{
     ChatCompletionChunk,
     ChatCompletionRequest,
     ChatCompletionResponse,
-    ChatMessage,
+    LlmMessage,
     CompletionChunk,
     CompletionRequest,
     CompletionResponse,

@@ -1,10 +1,10 @@
 //! Agent Runtime - Coordinates LLM chat with tool execution
 //!
-//! The AgentRuntime manages the conversation loop between a ChatProvider
+//! The AgentRuntime manages the conversation loop between a LlmProvider
 //! and ToolExecutor, enabling autonomous agent behavior.
 
 use crucible_core::traits::{
-    ChatMessage, ChatProvider, ChatRequest, ChatResponse, ExecutionContext, LlmError, LlmResult,
+    LlmMessage, LlmProvider, LlmRequest, LlmResponse, ExecutionContext, LlmError, LlmResult,
     LlmToolDefinition, MessageRole, ToolCall, ToolExecutor,
 };
 use tracing::{debug, info, warn};
@@ -12,11 +12,11 @@ use tracing::{debug, info, warn};
 /// Agent runtime that coordinates chat and tool execution
 pub struct AgentRuntime {
     /// Chat provider for LLM interactions
-    provider: Box<dyn ChatProvider>,
+    provider: Box<dyn LlmProvider>,
     /// Tool executor for running tools
     executor: Box<dyn ToolExecutor>,
     /// Conversation history
-    conversation: Vec<ChatMessage>,
+    conversation: Vec<LlmMessage>,
     /// Maximum iterations to prevent infinite loops
     max_iterations: usize,
     /// Execution context for tools
@@ -25,7 +25,7 @@ pub struct AgentRuntime {
 
 impl AgentRuntime {
     /// Create a new agent runtime
-    pub fn new(provider: Box<dyn ChatProvider>, executor: Box<dyn ToolExecutor>) -> Self {
+    pub fn new(provider: Box<dyn LlmProvider>, executor: Box<dyn ToolExecutor>) -> Self {
         Self {
             provider,
             executor,
@@ -48,7 +48,7 @@ impl AgentRuntime {
     }
 
     /// Get conversation history
-    pub fn get_conversation_history(&self) -> &[ChatMessage] {
+    pub fn get_conversation_history(&self) -> &[LlmMessage] {
         &self.conversation
     }
 
@@ -66,8 +66,8 @@ impl AgentRuntime {
     /// 4. Repeat until LLM responds without tool calls or max iterations reached
     pub async fn run_conversation(
         &mut self,
-        initial_messages: Vec<ChatMessage>,
-    ) -> LlmResult<ChatResponse> {
+        initial_messages: Vec<LlmMessage>,
+    ) -> LlmResult<LlmResponse> {
         // Add initial messages to conversation
         self.conversation.extend(initial_messages);
 
@@ -103,10 +103,10 @@ impl AgentRuntime {
             debug!("Agent iteration {}/{}", iteration, self.max_iterations);
 
             // Build request with conversation history and tools
-            let request = ChatRequest::new(self.conversation.clone()).with_tools(llm_tools.clone());
+            let request = LlmRequest::new(self.conversation.clone()).with_tools(llm_tools.clone());
 
             // Get response from LLM
-            let response = self.provider.chat(request).await?;
+            let response = self.provider.complete(request).await?;
 
             // Add assistant message to conversation
             self.conversation.push(response.message.clone());
@@ -128,13 +128,13 @@ impl AgentRuntime {
                             info!("Tool {} executed successfully", tool_call.name);
                             // Add tool result to conversation
                             let tool_message =
-                                ChatMessage::tool(tool_call.id.clone(), result.to_string());
+                                LlmMessage::tool(tool_call.id.clone(), result.to_string());
                             self.conversation.push(tool_message);
                         }
                         Err(e) => {
                             warn!("Tool {} failed: {}", tool_call.name, e);
                             // Add error as tool result
-                            let error_message = ChatMessage::tool(
+                            let error_message = LlmMessage::tool(
                                 tool_call.id.clone(),
                                 format!("Error: {}", e),
                             );
@@ -164,8 +164,8 @@ impl AgentRuntime {
     }
 
     /// Send a single message and get a response (convenience method)
-    pub async fn send_message(&mut self, message: String) -> LlmResult<ChatResponse> {
-        self.run_conversation(vec![ChatMessage::user(message)])
+    pub async fn send_message(&mut self, message: String) -> LlmResult<LlmResponse> {
+        self.run_conversation(vec![LlmMessage::user(message)])
             .await
     }
 
@@ -175,9 +175,9 @@ impl AgentRuntime {
         if !self.conversation.is_empty()
             && self.conversation[0].role == MessageRole::System
         {
-            self.conversation[0] = ChatMessage::system(prompt);
+            self.conversation[0] = LlmMessage::system(prompt);
         } else {
-            self.conversation.insert(0, ChatMessage::system(prompt));
+            self.conversation.insert(0, LlmMessage::system(prompt));
         }
     }
 }
@@ -191,10 +191,10 @@ mod tests {
     struct MockProvider;
 
     #[async_trait]
-    impl ChatProvider for MockProvider {
-        async fn chat(&self, _request: ChatRequest) -> LlmResult<ChatResponse> {
-            Ok(ChatResponse {
-                message: ChatMessage::assistant("Test response"),
+    impl LlmProvider for MockProvider {
+        async fn complete(&self, _request: LlmRequest) -> LlmResult<LlmResponse> {
+            Ok(LlmResponse {
+                message: LlmMessage::assistant("Test response"),
                 usage: TokenUsage {
                     prompt_tokens: 10,
                     completion_tokens: 20,

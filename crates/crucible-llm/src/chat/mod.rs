@@ -8,15 +8,15 @@ pub use ollama::OllamaChatProvider;
 pub use openai::OpenAIChatProvider;
 
 // Factory function to create providers from config
-use crucible_config::{ChatConfig, LlmProvider};
-use crucible_core::traits::{ChatProvider, LlmError, LlmResult};
+use crucible_config::{ChatConfig, LlmProvider as ConfigLlmProvider};
+use crucible_core::traits::{LlmProvider, LlmError, LlmResult};
 
 /// Create a chat provider from configuration
 pub async fn create_chat_provider(
     config: &ChatConfig,
-) -> LlmResult<Box<dyn ChatProvider>> {
+) -> LlmResult<Box<dyn LlmProvider>> {
     match config.provider {
-        LlmProvider::Ollama => {
+        ConfigLlmProvider::Ollama => {
             let provider = OllamaChatProvider::new(
                 config.llm_endpoint(),
                 config.chat_model(),
@@ -24,7 +24,7 @@ pub async fn create_chat_provider(
             );
             Ok(Box::new(provider))
         }
-        LlmProvider::OpenAI => {
+        ConfigLlmProvider::OpenAI => {
             let api_key = std::env::var("OPENAI_API_KEY")
                 .map_err(|_| LlmError::ConfigError("OPENAI_API_KEY not set".to_string()))?;
 
@@ -36,7 +36,7 @@ pub async fn create_chat_provider(
             );
             Ok(Box::new(provider))
         }
-        LlmProvider::Anthropic => Err(LlmError::ConfigError(
+        ConfigLlmProvider::Anthropic => Err(LlmError::ConfigError(
             "Anthropic provider not yet implemented".to_string(),
         )),
     }
@@ -45,7 +45,7 @@ pub async fn create_chat_provider(
 /// Create a chat provider from app config
 pub async fn create_from_app_config(
     config: &crucible_config::Config,
-) -> LlmResult<Box<dyn ChatProvider>> {
+) -> LlmResult<Box<dyn LlmProvider>> {
     let default_chat = ChatConfig::default();
     let chat_config = config.chat.as_ref().unwrap_or(&default_chat);
     create_chat_provider(chat_config).await

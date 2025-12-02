@@ -4,6 +4,7 @@
 //! exposing modules for configuration, interactive components, and output formatting.
 
 pub mod acp;
+pub mod chat;
 pub mod cli;
 pub mod commands;
 pub mod common;
