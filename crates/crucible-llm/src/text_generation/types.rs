@@ -180,7 +180,7 @@ pub struct ChatCompletionRequest {
     /// Model to use
     pub model: String,
     /// Conversation messages
-    pub messages: Vec<ChatMessage>,
+    pub messages: Vec<LlmMessage>,
     /// Maximum tokens to generate
     pub max_tokens: Option<u32>,
     /// Temperature for generation
@@ -215,7 +215,7 @@ pub struct ChatCompletionRequest {
 
 impl ChatCompletionRequest {
     /// Create a new chat completion request
-    pub fn new(model: String, messages: Vec<ChatMessage>) -> Self {
+    pub fn new(model: String, messages: Vec<LlmMessage>) -> Self {
         Self {
             model,
             messages,
@@ -258,7 +258,7 @@ impl ChatCompletionRequest {
 
 /// Chat message
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatMessage {
+pub struct LlmMessage {
     /// Message role
     pub role: MessageRole,
     /// Message content
@@ -273,7 +273,7 @@ pub struct ChatMessage {
     pub tool_call_id: Option<String>,
 }
 
-impl ChatMessage {
+impl LlmMessage {
     /// Create a user message
     pub fn user(content: String) -> Self {
         Self {
@@ -375,7 +375,7 @@ pub struct ChatCompletionChoice {
     /// Message index
     pub index: u32,
     /// Chat message
-    pub message: ChatMessage,
+    pub message: LlmMessage,
     /// Finish reason
     pub finish_reason: Option<String>,
     /// Log probabilities
@@ -995,7 +995,7 @@ impl TextGenerationProvider for OllamaTextProvider {
             }
         }
 
-        let message = ChatMessage {
+        let message = LlmMessage {
             role: MessageRole::Assistant,
             content: message_content,
             function_call: None,

@@ -1,10 +1,10 @@
-//! Integration tests for ChatProvider implementations
+//! Integration tests for LlmProvider implementations
 //!
-//! These tests define the contract that all ChatProvider implementations must satisfy.
+//! These tests define the contract that all LlmProvider implementations must satisfy.
 //! Following TDD: Write tests first, then implement to make them pass.
 
 use crucible_core::traits::{
-    ChatMessage, ChatProvider, ChatRequest, ChatResponse, LlmToolDefinition, MessageRole,
+    LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmToolDefinition, MessageRole,
     ToolCall,
 };
 use serde_json::json;
@@ -23,10 +23,10 @@ mod test_helpers {
     }
 
     #[async_trait]
-    impl ChatProvider for MockChatProvider {
-        async fn chat(&self, request: ChatRequest) -> LlmResult<ChatResponse> {
+    impl LlmProvider for MockChatProvider {
+        async fn chat(&self, request: LlmRequest) -> LlmResult<LlmResponse> {
             let message = if self.should_call_tool {
-                ChatMessage::assistant_with_tools(
+                LlmMessage::assistant_with_tools(
                     self.response_content.clone(),
                     vec![ToolCall::new(
                         "call_1",
@@ -35,10 +35,10 @@ mod test_helpers {
                     )],
                 )
             } else {
-                ChatMessage::assistant(self.response_content.clone())
+                LlmMessage::assistant(self.response_content.clone())
             };
 
-            Ok(ChatResponse {
+            Ok(LlmResponse {
                 message,
                 usage: crucible_core::traits::TokenUsage {
                     prompt_tokens: 10,
@@ -73,7 +73,7 @@ async fn test_simple_chat_completion() {
         should_call_tool: false,
     };
 
-    let request = ChatRequest::new(vec![ChatMessage::user("Hello")]);
+    let request = LlmRequest::new(vec![LlmMessage::user("Hello")]);
 
     // When: We request a chat completion
     let response = provider.chat(request).await.unwrap();
@@ -104,7 +104,7 @@ async fn test_chat_with_tool_calling() {
         }),
     )];
 
-    let request = ChatRequest::new(vec![ChatMessage::user("Find notes about Rust")])
+    let request = LlmRequest::new(vec![LlmMessage::user("Find notes about Rust")])
         .with_tools(tools);
 
     // When: We request a chat completion
@@ -129,12 +129,12 @@ async fn test_multi_turn_conversation() {
     };
 
     let messages = vec![
-        ChatMessage::user("What is Rust?"),
-        ChatMessage::assistant("Rust is a systems programming language."),
-        ChatMessage::user("Tell me more about its safety features."),
+        LlmMessage::user("What is Rust?"),
+        LlmMessage::assistant("Rust is a systems programming language."),
+        LlmMessage::user("Tell me more about its safety features."),
     ];
 
-    let request = ChatRequest::new(messages);
+    let request = LlmRequest::new(messages);
 
     // When: We continue the conversation
     let response = provider.chat(request).await.unwrap();
@@ -187,7 +187,7 @@ async fn test_token_usage_tracking() {
         should_call_tool: false,
     };
 
-    let request = ChatRequest::new(vec![ChatMessage::user("Hello")]);
+    let request = LlmRequest::new(vec![LlmMessage::user("Hello")]);
 
     // When: We get a response
     let response = provider.chat(request).await.unwrap();
@@ -204,7 +204,7 @@ async fn test_token_usage_tracking() {
 #[tokio::test]
 async fn test_request_builder() {
     // Given: A chat request builder
-    let request = ChatRequest::new(vec![ChatMessage::user("Hello")])
+    let request = LlmRequest::new(vec![LlmMessage::user("Hello")])
         .with_max_tokens(100)
         .with_temperature(0.7);
 
@@ -217,7 +217,7 @@ async fn test_request_builder() {
 #[tokio::test]
 async fn test_tool_result_message() {
     // Given: A tool result message
-    let tool_result = ChatMessage::tool("call_123", json!({"results": ["note1", "note2"]}).to_string());
+    let tool_result = LlmMessage::tool("call_123", json!({"results": ["note1", "note2"]}).to_string());
 
     // Then: It has the correct structure
     assert_eq!(tool_result.role, MessageRole::Tool);
