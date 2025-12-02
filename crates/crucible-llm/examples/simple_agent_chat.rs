@@ -1,6 +1,6 @@
 //! Simple agent chat example with tool calling
 //!
-//! This example demonstrates how to use the AgentRuntime with a ChatProvider
+//! This example demonstrates how to use the AgentRuntime with a LlmProvider
 //! and ToolExecutor to create an interactive agent.
 //!
 //! By default uses Ollama at http://localhost:11434.
@@ -19,7 +19,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use crucible_core::traits::{
-    ChatMessage, ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult,
+    LlmMessage, ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult,
 };
 use crucible_llm::{create_chat_provider, AgentRuntime};
 use std::io::{self, Write};

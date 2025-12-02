@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use crucible_core::traits::{
-    ChatMessage, ChatProvider, ChatRequest, ChatResponse, LlmError, LlmResult, LlmToolDefinition,
+    LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmError, LlmResult, LlmToolDefinition,
     MessageRole, ToolCall, TokenUsage,
 };
 use serde::{Deserialize, Serialize};
@@ -30,8 +30,8 @@ impl OllamaChatProvider {
 }
 
 #[async_trait]
-impl ChatProvider for OllamaChatProvider {
-    async fn chat(&self, request: ChatRequest) -> LlmResult<ChatResponse> {
+impl LlmProvider for OllamaChatProvider {
+    async fn complete(&self, request: LlmRequest) -> LlmResult<LlmResponse> {
         // Build Ollama API request
         let mut api_request = serde_json::json!({
             "model": self.default_model,
@@ -112,7 +112,7 @@ impl ChatProvider for OllamaChatProvider {
             .await
             .map_err(|e| LlmError::InvalidResponse(format!("Failed to parse response: {}", e)))?;
 
-        // Parse response into our ChatResponse
+        // Parse response into our LlmResponse
         let message_content = ollama_response.message.content;
 
         // Check for tool calls
@@ -130,16 +130,16 @@ impl ChatProvider for OllamaChatProvider {
         });
 
         let message = if let Some(calls) = tool_calls {
-            ChatMessage::assistant_with_tools(message_content, calls)
+            LlmMessage::assistant_with_tools(message_content, calls)
         } else {
-            ChatMessage::assistant(message_content)
+            LlmMessage::assistant(message_content)
         };
 
         // Extract token usage (Ollama provides these)
         let prompt_tokens = ollama_response.prompt_eval_count.unwrap_or(0);
         let completion_tokens = ollama_response.eval_count.unwrap_or(0);
 
-        Ok(ChatResponse {
+        Ok(LlmResponse {
             message,
             usage: TokenUsage {
                 prompt_tokens,
