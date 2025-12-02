@@ -24,7 +24,7 @@ mod test_helpers {
 
     #[async_trait]
     impl LlmProvider for MockChatProvider {
-        async fn chat(&self, request: LlmRequest) -> LlmResult<LlmResponse> {
+        async fn complete(&self, request: LlmRequest) -> LlmResult<LlmResponse> {
             let message = if self.should_call_tool {
                 LlmMessage::assistant_with_tools(
                     self.response_content.clone(),
@@ -76,7 +76,7 @@ async fn test_simple_chat_completion() {
     let request = LlmRequest::new(vec![LlmMessage::user("Hello")]);
 
     // When: We request a chat completion
-    let response = provider.chat(request).await.unwrap();
+    let response = provider.complete(request).await.unwrap();
 
     // Then: We get a valid assistant response
     assert_eq!(response.message.role, MessageRole::Assistant);
@@ -108,7 +108,7 @@ async fn test_chat_with_tool_calling() {
         .with_tools(tools);
 
     // When: We request a chat completion
-    let response = provider.chat(request).await.unwrap();
+    let response = provider.complete(request).await.unwrap();
 
     // Then: The assistant makes a tool call
     assert_eq!(response.message.role, MessageRole::Assistant);
@@ -137,7 +137,7 @@ async fn test_multi_turn_conversation() {
     let request = LlmRequest::new(messages);
 
     // When: We continue the conversation
-    let response = provider.chat(request).await.unwrap();
+    let response = provider.complete(request).await.unwrap();
 
     // Then: We get a contextual response
     assert_eq!(response.message.role, MessageRole::Assistant);
@@ -190,7 +190,7 @@ async fn test_token_usage_tracking() {
     let request = LlmRequest::new(vec![LlmMessage::user("Hello")]);
 
     // When: We get a response
-    let response = provider.chat(request).await.unwrap();
+    let response = provider.complete(request).await.unwrap();
 
     // Then: Token usage is tracked
     assert!(response.usage.prompt_tokens > 0);
