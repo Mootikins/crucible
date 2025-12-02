@@ -17,6 +17,7 @@
 //! - `session`: Interactive session orchestrator
 
 pub mod commands;
+pub mod display;
 pub mod mode_ext;
 pub mod registry;
 
