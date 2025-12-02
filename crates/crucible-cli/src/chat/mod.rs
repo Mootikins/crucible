@@ -16,6 +16,7 @@
 //! - `display`: Terminal UI formatting
 //! - `session`: Interactive session orchestrator
 
+pub mod commands;
 pub mod mode_ext;
 pub mod registry;
 
