@@ -1,88 +1,75 @@
-# In-Project Agent System
+# Agent Cards and Workflow Definitions
 
 ## Why
 
-The ACP integration enables external agents to interact with Crucible's knowledge base. However, complex tasks often require task decomposition, specialized expertise, and multi-step workflows. An in-project agent system allows:
+Users need a way to define reusable agent workflows and task patterns in their knowledge base. Agent cards provide:
 
-1. **Task Decomposition**: Break large tasks into focused subtasks handled by specialized subagents
-2. **Specialized Expertise**: Define agents optimized for specific roles (code review, testing, documentation)
-3. **Multi-Step Workflows**: Chain agents together (research → plan → implement → review)
-4. **Foundation for A2A**: Build toward Agent-to-Agent (A2A) communication with parallel execution and inter-agent channels
+1. **Reusable Workflows**: Define common task patterns once, reuse across projects
+2. **Agent Metadata**: Describe what agents do, what they're good at, when to use them
+3. **Task Routing**: Match user queries to appropriate agent definitions
+4. **Extensibility**: Foundation for future agent orchestration and delegation
 
-This system learns from successful patterns in Claude Code, Gemini Code Assist, and similar tools, while maintaining Crucible's plaintext-first, kiln-centric philosophy.
+This system enables users to build a library of specialized agents tailored to their domain, similar to Claude Code's slash commands but stored as markdown in the kiln.
 
 ## What Changes
 
-**New Capabilities:**
-- Agent definition via markdown files with frontmatter (`.crucible/agents/*.md`)
-- Agent registry for discovering and validating agent definitions
-- Agent spawning tool for primary agents to create subagents
-- Session management with markdown storage and wikilink-based parent/child tracking
-- Permission inheritance system (subagents cannot exceed parent permissions)
-- Execution queue for sequential agent processing (designed for future concurrency)
-- Progress observability showing subagent actions to users
-- **Reflection system** for self-improvement (optional, Reflexion pattern)
-- **Human approval gates** for sensitive operations (HITL pattern)
-- **Distributed tracing** with trace IDs and parent chain tracking
+**New Agent Card Format:**
+- Agent definitions as markdown files with YAML frontmatter
+- Stored in `.crucible/agents/` (project-specific) or `~/.config/crucible/agents/` (system-wide)
+- Frontmatter includes: name, description, keywords, model preference, optional ACP delegation
+- Markdown body contains agent instructions and context
 
-**Architecture:**
-- Maximum agent depth: 2 levels (User → Primary Agent → Subagents)
-- Execution model: Separate LLM calls per agent (stateless subagents)
-- Context isolation: Subagents receive only task description + kiln read access
-- Result format: Markdown files stored in session folders
-- Queue-based execution: Sequential for MVP, provider-specific limits for future
+**Agent Registry:**
+- Automatic discovery of agent cards on CLI startup
+- Project agents override system agents (by name)
+- Validation of agent card structure and required fields
+- Listing and inspection via `cru agents list` and `cru agents show`
 
-**Storage Pattern:**
-- Session folders: `.crucible/sessions/YYYY-MM-DD-description/`
-- Parent-child relationships via wikilinks in session markdown
-- Similar to Gemini's session storage approach
-- Enables session replay, debugging, and learning
+**Agent Matching:**
+- Keyword-based matching of queries to agent cards
+- Ranked results with similarity scores
+- Enables routing queries to appropriate specialized agents
+
+**Optional ACP Delegation:**
+- Agent cards can specify `acp_server` field to delegate execution
+- Example: `acp_server: claude-code` routes execution to external ACP agent
+- Enables hybrid approach: agent cards define *what*, ACP defines *how*
 
 ## Impact
 
 ### Affected Specs
-- **agent-system** (new capability) - Define agent orchestration, spawning, permissions
-- **tool-system** (reference) - Agents will use existing MCP tools (eventually per-MCP-server agents)
-- **acp-integration** (reference) - ACP tests context injection, agent system is next evolution
-- **session-management** (new sub-capability) - Session storage, wikilink relationships
+- **agent-system** (new) - Define agent card format, registry, and matching
+- **acp-integration** (reference) - Agent cards can delegate to ACP servers
+- **cli** (reference) - CLI commands for managing agent cards
 
 ### Affected Code
+**Current Implementation:**
+- `crates/crucible-core/src/agent/` - Already exists, needs specification
+  - `types.rs` - `AgentDefinition` struct
+  - `loader.rs` - `AgentLoader` for parsing markdown
+  - `matcher.rs` - `CapabilityMatcher` for query matching
+  - `mod.rs` - `AgentRegistry` for management
+
 **New Components:**
-- `crates/crucible-agents/` - NEW crate for agent system
-  - `src/registry.rs` - Agent discovery and validation
-  - `src/definition.rs` - Agent definition parsing (frontmatter + markdown)
-  - `src/spawner.rs` - Subagent spawning logic
-  - `src/session.rs` - Session folder management, wikilink tracking
-  - `src/queue.rs` - Execution queue (sequential for now)
-  - `src/permissions.rs` - Permission inheritance and validation
-  - `src/observer.rs` - Progress reporting to users
-  - `src/reflection.rs` - Self-evaluation and retry logic (NEW)
-  - `src/approval.rs` - Human-in-the-loop approval gates (NEW)
-  - `src/tracing.rs` - Trace ID and parent chain tracking (NEW)
+- `crates/crucible-core/src/agent/delegation.rs` - NEW - Optional ACP delegation logic
+- Agent card examples in `.crucible/agents/examples/`
 
-**Integration Points:**
-- `crates/crucible-cli/src/commands/chat.rs` - Primary agent can spawn subagents
-- `crates/crucible-tools/` - Agents use existing kiln tools (read_note, semantic_search, etc.)
-- `.crucible/agents/` - User-defined agents in project kiln
-- `~/.config/crucible/agents/` - System-wide agent templates
+**CLI Integration:**
+- `cru agents list` - Show all registered agent cards
+- `cru agents show <name>` - Display specific agent card details
+- `cru agents validate` - Validate all agent card definitions
 
-**Dependencies Added:**
-- Reuse existing dependencies (serde, tokio, anyhow)
-- Consider `async-channel` for future queue enhancements
+**Dependencies:**
+- No new dependencies (uses existing serde, frontmatter parsing)
 
 ### User-Facing Impact
-- **Agent Discovery**: Users can list available agents via `cru agents list`
-- **Custom Agents**: Users define project-specific agents in `.crucible/agents/`
-- **Session History**: Sessions saved to `.crucible/sessions/` for review and learning
-- **Progress Visibility**: Users see abbreviated subagent actions during execution
-- **Debugging**: Wikilink-based session structure enables easy navigation and debugging
-- **Quality Improvement**: Optional reflection enables agents to self-critique and improve outputs
-- **Safety Controls**: Approval gates prevent destructive actions without user permission
-- **Trace Visibility**: `cru sessions trace` command visualizes execution flow for debugging
+- **Customizable Agents**: Users define project-specific agent workflows
+- **Reusable Patterns**: Common tasks codified as agent cards
+- **Discovery**: Easy to find and understand available agents
+- **Clear Documentation**: Agent cards self-document their purpose and usage
+- **Foundation for Future**: Enables agent orchestration, spawning, sessions (future work)
 
 ### Timeline
-- **Week 1**: Agent definition format, registry, basic spawning, permissions
-- **Week 2**: Session management, queue, reflection system, tracing
-- **Week 3**: Approval gates, CLI integration, observability
-- **Week 4**: Testing, documentation, default system agents
-- **Estimated effort**: 3-4 weeks for working MVP with advanced features
+- **Week 1**: Specify agent card format, update registry implementation
+- **Week 2**: Add delegation logic, CLI commands, examples
+- **Estimated effort**: 1-2 weeks to formalize existing code
