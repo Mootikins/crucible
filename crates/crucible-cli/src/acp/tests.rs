@@ -295,7 +295,7 @@ mod client_tests {
         };
 
         let mut client = CrucibleAcpClient::new(agent, false);
-        let result = client.send_message("test").await;
+        let result = client.send_message_acp("test").await;
 
         assert!(
             result.is_err(),
@@ -328,4 +328,102 @@ mod client_tests {
     // Note: Testing spawn() requires an actual agent binary (claude-code, etc.)
     // These would be integration tests run only when the agent is available.
     // For unit tests, we test the wrapper logic without actually spawning.
+
+    #[test]
+    fn test_client_mode_tracking() {
+        use crate::chat::ChatMode;
+
+        let agent = AgentInfo {
+            name: "test".to_string(),
+            command: "test-cmd".to_string(),
+            args: vec![],
+        };
+
+        let client = CrucibleAcpClient::new(agent, true);
+        // Should track current mode (starts in Plan for read_only=true)
+        assert_eq!(client.mode(), ChatMode::Plan);
+
+        let client2 = CrucibleAcpClient::new(
+            AgentInfo {
+                name: "test".to_string(),
+                command: "test-cmd".to_string(),
+                args: vec![],
+            },
+            false,
+        );
+        // Write-enabled should start in Act mode
+        assert_eq!(client2.mode(), ChatMode::Act);
+    }
+
+    #[tokio::test]
+    async fn test_client_set_mode() {
+        use crate::chat::ChatMode;
+
+        let agent = AgentInfo {
+            name: "test".to_string(),
+            command: "test-cmd".to_string(),
+            args: vec![],
+        };
+
+        let mut client = CrucibleAcpClient::new(agent, false);
+        assert_eq!(client.mode(), ChatMode::Act);
+
+        // Should be able to change mode
+        client.set_mode(ChatMode::Plan).await.unwrap();
+        assert_eq!(client.mode(), ChatMode::Plan);
+
+        client.set_mode(ChatMode::AutoApprove).await.unwrap();
+        assert_eq!(client.mode(), ChatMode::AutoApprove);
+
+        client.set_mode(ChatMode::Act).await.unwrap();
+        assert_eq!(client.mode(), ChatMode::Act);
+    }
+
+    #[tokio::test]
+    async fn test_client_set_mode_idempotent() {
+        use crate::chat::ChatMode;
+
+        let agent = AgentInfo {
+            name: "test".to_string(),
+            command: "test-cmd".to_string(),
+            args: vec![],
+        };
+
+        let mut client = CrucibleAcpClient::new(agent, false);
+
+        // Setting same mode multiple times should be fine
+        client.set_mode(ChatMode::Plan).await.unwrap();
+        assert_eq!(client.mode(), ChatMode::Plan);
+
+        client.set_mode(ChatMode::Plan).await.unwrap();
+        assert_eq!(client.mode(), ChatMode::Plan);
+    }
+
+    #[tokio::test]
+    async fn test_chat_agent_trait_impl() {
+        use crate::chat::{ChatAgent, ChatMode};
+
+        let agent = AgentInfo {
+            name: "test".to_string(),
+            command: "test-cmd".to_string(),
+            args: vec![],
+        };
+
+        let mut client = CrucibleAcpClient::new(agent, false);
+
+        // Test ChatAgent trait methods
+        assert!(!client.is_connected());
+
+        // Mode should work through trait
+        assert_eq!(client.mode(), ChatMode::Act);
+
+        // Should be able to call set_mode through trait
+        use crate::chat::ChatAgent as _;
+        client.set_mode(ChatMode::Plan).await.unwrap();
+        assert_eq!(client.mode(), ChatMode::Plan);
+
+        // send_message should fail (not connected) but be callable through trait
+        let result = ChatAgent::send_message(&mut client, "test").await;
+        assert!(result.is_err());
+    }
 }
