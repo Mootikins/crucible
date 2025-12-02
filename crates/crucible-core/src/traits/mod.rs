@@ -29,6 +29,7 @@
 pub mod acp;
 pub mod agent;
 pub mod change_detection;
+pub mod chat;
 pub mod knowledge;
 pub mod llm;
 pub mod parser;
@@ -39,9 +40,13 @@ pub mod tools;
 pub use acp::{FilesystemHandler, SessionManager, StreamHandler, ToolBridge};
 pub use agent::AgentProvider;
 pub use change_detection::{ChangeDetector, ContentHasher, HashLookupStorage};
+pub use chat::{
+    ChatAgent, ChatContext, ChatError, ChatMode, ChatResponse, ChatResult, CommandDescriptor,
+    CommandHandler, CommandRegistry, SearchResult, ToolCall as ChatToolCall,
+};
 pub use knowledge::{KnowledgeRepository, NoteMetadata};
 pub use llm::{
-    ChatMessage, ChatProvider, ChatRequest, ChatResponse, LlmError, LlmResult,
+    ChatMessage, ChatProvider, ChatRequest, ChatResponse as LlmChatResponse, LlmError, LlmResult,
     LlmToolDefinition, MessageRole, ToolCall, TokenUsage,
 };
 pub use parser::MarkdownParser;
