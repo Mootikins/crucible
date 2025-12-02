@@ -16,6 +16,7 @@ use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
 
 use crate::acp::agent::AgentInfo;
+use crate::chat::{ChatAgent, ChatError, ChatMode, ChatResponse, ChatResult};
 
 /// ACP Client wrapper for CLI
 ///
@@ -23,7 +24,7 @@ use crate::acp::agent::AgentInfo;
 pub struct CrucibleAcpClient {
     session: Option<ChatSession>,
     agent: AgentInfo,
-    read_only: bool,
+    mode: ChatMode,
     config: ChatConfig,
     acp_config: AcpConfig,
     kiln_path: Option<PathBuf>,
@@ -67,10 +68,16 @@ impl CrucibleAcpClient {
             enrich_prompts: true, // Enable context enrichment by default
         };
 
+        let mode = if read_only {
+            ChatMode::Plan
+        } else {
+            ChatMode::Act
+        };
+
         Self {
             session: None,
             agent,
-            read_only,
+            mode,
             config,
             acp_config,
             kiln_path: None,
@@ -111,10 +118,16 @@ impl CrucibleAcpClient {
     /// * `read_only` - If true, deny all write operations
     /// * `config` - Custom chat configuration
     pub fn with_config(agent: AgentInfo, read_only: bool, config: ChatConfig) -> Self {
+        let mode = if read_only {
+            ChatMode::Plan
+        } else {
+            ChatMode::Act
+        };
+
         Self {
             session: None,
             agent,
-            read_only,
+            mode,
             config,
             acp_config: AcpConfig::default(),
             kiln_path: None,
@@ -220,14 +233,14 @@ impl CrucibleAcpClient {
         Ok(())
     }
 
-    /// Send a message to the agent
+    /// Send a message to the agent (ACP-specific, returns raw tool calls)
     ///
     /// # Arguments
     /// * `message` - The user message to send
     ///
     /// # Returns
     /// Tuple of (response, tool_calls)
-    pub async fn send_message(
+    pub async fn send_message_acp(
         &mut self,
         message: &str,
     ) -> Result<(String, Vec<crucible_acp::ToolCallInfo>)> {
@@ -248,17 +261,10 @@ impl CrucibleAcpClient {
     /// * `enriched_prompt` - The initial prompt (potentially enriched with context)
     pub async fn start_chat(&mut self, enriched_prompt: &str) -> Result<()> {
         info!("Starting chat session");
-        info!(
-            "Mode: {}",
-            if self.read_only {
-                "Read-only (plan)"
-            } else {
-                "Write-enabled (act)"
-            }
-        );
+        info!("Mode: {:?}", self.mode);
 
         // Send the initial prompt
-        let (response, _tool_calls) = self.send_message(enriched_prompt).await?;
+        let (response, _tool_calls) = self.send_message_acp(enriched_prompt).await?;
 
         // Print the response
         println!("\n{}", response);
@@ -304,6 +310,28 @@ impl CrucibleAcpClient {
         );
     }
 
+    /// Get the current chat mode
+    pub fn mode(&self) -> ChatMode {
+        self.mode
+    }
+
+    /// Set the chat mode
+    ///
+    /// Changes the agent's permission level (Plan/Act/AutoApprove).
+    ///
+    /// # Arguments
+    /// * `mode` - The new mode to set
+    ///
+    /// # Note
+    /// Currently updates local state only. Future versions may propagate
+    /// to the ACP protocol when runtime mode changes are supported.
+    pub async fn set_mode(&mut self, mode: ChatMode) -> Result<()> {
+        info!("Changing mode from {:?} to {:?}", self.mode, mode);
+        self.mode = mode;
+        // TODO: Propagate to ACP protocol when supported
+        Ok(())
+    }
+
     /// Shutdown the agent process
     pub async fn shutdown(&mut self) -> Result<()> {
         if let Some(mut session) = self.session.take() {
@@ -325,6 +353,43 @@ impl Drop for CrucibleAcpClient {
         if self.session.is_some() {
             debug!("CrucibleAcpClient dropped with active session");
         }
+    }
+}
+
+// Implement ChatAgent trait for backend-agnostic chat interface
+#[async_trait::async_trait]
+impl ChatAgent for CrucibleAcpClient {
+    async fn send_message(&mut self, message: &str) -> ChatResult<ChatResponse> {
+        // Call the ACP-specific send_message method
+        let (content, acp_tool_calls) = self
+            .send_message_acp(message)
+            .await
+            .map_err(|e| ChatError::Communication(e.to_string()))?;
+
+        // Convert ACP ToolCallInfo to generic ToolCall
+        let tool_calls = acp_tool_calls
+            .into_iter()
+            .map(|t| crate::chat::ChatToolCall {
+                name: t.title,
+                arguments: t.arguments, // Already Option<serde_json::Value>
+                id: t.id,                // Already Option<String>
+            })
+            .collect();
+
+        Ok(ChatResponse {
+            content,
+            tool_calls,
+        })
+    }
+
+    async fn set_mode(&mut self, mode: ChatMode) -> ChatResult<()> {
+        self.set_mode(mode)
+            .await
+            .map_err(|e| ChatError::ModeChange(e.to_string()))
+    }
+
+    fn is_connected(&self) -> bool {
+        self.is_connected()
     }
 }
 
