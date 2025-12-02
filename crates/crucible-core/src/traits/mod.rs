@@ -41,13 +41,13 @@ pub use acp::{FilesystemHandler, SessionManager, StreamHandler, ToolBridge};
 pub use agent::AgentProvider;
 pub use change_detection::{ChangeDetector, ContentHasher, HashLookupStorage};
 pub use chat::{
-    ChatAgent, ChatContext, ChatError, ChatMode, ChatResponse, ChatResult, CommandDescriptor,
-    CommandHandler, CommandRegistry, SearchResult, ToolCall as ChatToolCall,
+    ChatAgent, ChatContext, ChatError, ChatMode, ChatResponse, ChatResult,
+    CommandDescriptor, CommandHandler, CommandRegistry, SearchResult, ToolCall as ChatToolCall,
 };
 pub use knowledge::{KnowledgeRepository, NoteMetadata};
 pub use llm::{
-    ChatMessage, ChatProvider, ChatRequest, ChatResponse as LlmChatResponse, LlmError, LlmResult,
-    LlmToolDefinition, MessageRole, ToolCall, TokenUsage,
+    LlmError, LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmResult, LlmToolDefinition,
+    MessageRole, ToolCall, TokenUsage,
 };
 pub use parser::MarkdownParser;
 pub use storage::Storage;

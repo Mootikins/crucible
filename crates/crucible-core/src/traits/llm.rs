@@ -76,9 +76,9 @@ pub enum MessageRole {
     Tool,
 }
 
-/// Chat message in a conversation
+/// LLM message in a conversation
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatMessage {
+pub struct LlmMessage {
     /// Message role
     pub role: MessageRole,
     /// Message content
@@ -89,7 +89,7 @@ pub struct ChatMessage {
     pub tool_call_id: Option<String>,
 }
 
-impl ChatMessage {
+impl LlmMessage {
     /// Create a user message
     pub fn user(content: impl Into<String>) -> Self {
         Self {
@@ -193,11 +193,11 @@ impl LlmToolDefinition {
     }
 }
 
-/// Chat completion request
+/// LLM completion request
 #[derive(Debug, Clone)]
-pub struct ChatRequest {
+pub struct LlmRequest {
     /// Conversation messages
-    pub messages: Vec<ChatMessage>,
+    pub messages: Vec<LlmMessage>,
     /// Available tools (optional)
     pub tools: Option<Vec<LlmToolDefinition>>,
     /// Maximum tokens to generate
@@ -206,9 +206,9 @@ pub struct ChatRequest {
     pub temperature: Option<f32>,
 }
 
-impl ChatRequest {
-    /// Create a new chat request
-    pub fn new(messages: Vec<ChatMessage>) -> Self {
+impl LlmRequest {
+    /// Create a new request
+    pub fn new(messages: Vec<LlmMessage>) -> Self {
         Self {
             messages,
             tools: None,
@@ -236,11 +236,11 @@ impl ChatRequest {
     }
 }
 
-/// Chat completion response
+/// LLM completion response
 #[derive(Debug, Clone)]
-pub struct ChatResponse {
+pub struct LlmResponse {
     /// Assistant's message
-    pub message: ChatMessage,
+    pub message: LlmMessage,
     /// Token usage information
     pub usage: TokenUsage,
     /// Model used
@@ -258,14 +258,14 @@ pub struct TokenUsage {
     pub total_tokens: u32,
 }
 
-/// Chat completion provider abstraction
+/// LLM provider abstraction
 ///
-/// This trait defines the interface for chat completion with tool calling support.
+/// This trait defines the interface for LLM completion with tool calling support.
 /// Implementations (Ollama, OpenAI, Anthropic) provide the concrete logic.
 ///
 /// ## Design Rationale
 ///
-/// - **Minimal interface**: Only chat completion, not streaming (separate trait)
+/// - **Minimal interface**: Only completion, not streaming (separate trait)
 /// - **Tool calling**: Built-in support for function calling
 /// - **Async**: All operations are async for I/O efficiency
 ///
@@ -273,16 +273,16 @@ pub struct TokenUsage {
 ///
 /// Implementations must be Send + Sync to enable concurrent usage.
 #[async_trait]
-pub trait ChatProvider: Send + Sync {
-    /// Generate a chat completion
+pub trait LlmProvider: Send + Sync {
+    /// Generate a completion
     ///
     /// # Arguments
     ///
-    /// * `request` - The chat request with messages and optional tools
+    /// * `request` - The request with messages and optional tools
     ///
     /// # Returns
     ///
-    /// Returns the chat response with the assistant's message and tool calls.
+    /// Returns the response with the assistant's message and tool calls.
     ///
     /// # Errors
     ///
@@ -290,7 +290,7 @@ pub trait ChatProvider: Send + Sync {
     /// - `LlmError::InvalidResponse` - Invalid response from provider
     /// - `LlmError::RateLimitExceeded` - Rate limit hit
     /// - `LlmError::Timeout` - Request timed out
-    async fn chat(&self, request: ChatRequest) -> LlmResult<ChatResponse>;
+    async fn complete(&self, request: LlmRequest) -> LlmResult<LlmResponse>;
 
     /// Get the provider name
     fn provider_name(&self) -> &str;
@@ -307,18 +307,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_chat_message_builders() {
-        let user_msg = ChatMessage::user("Hello");
+    fn test_llm_message_builders() {
+        let user_msg = LlmMessage::user("Hello");
         assert_eq!(user_msg.role, MessageRole::User);
         assert_eq!(user_msg.content, "Hello");
 
-        let assistant_msg = ChatMessage::assistant("Hi there");
+        let assistant_msg = LlmMessage::assistant("Hi there");
         assert_eq!(assistant_msg.role, MessageRole::Assistant);
 
-        let system_msg = ChatMessage::system("You are helpful");
+        let system_msg = LlmMessage::system("You are helpful");
         assert_eq!(system_msg.role, MessageRole::System);
 
-        let tool_msg = ChatMessage::tool("call_123", "result");
+        let tool_msg = LlmMessage::tool("call_123", "result");
         assert_eq!(tool_msg.role, MessageRole::Tool);
         assert_eq!(tool_msg.tool_call_id, Some("call_123".to_string()));
     }
@@ -331,8 +331,8 @@ mod tests {
     }
 
     #[test]
-    fn test_chat_request_builder() {
-        let request = ChatRequest::new(vec![ChatMessage::user("Hello")])
+    fn test_llm_request_builder() {
+        let request = LlmRequest::new(vec![LlmMessage::user("Hello")])
             .with_max_tokens(100)
             .with_temperature(0.7);
 

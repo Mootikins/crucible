@@ -140,7 +140,7 @@ impl MockTextProvider {
     }
 
     /// Get response for a chat completion (uses last user message as key)
-    fn get_chat_response(&self, messages: &[ChatMessage]) -> String {
+    fn get_chat_response(&self, messages: &[LlmMessage]) -> String {
         // Find the last user message
         let last_user_message = messages
             .iter()
@@ -268,7 +268,7 @@ impl TextGenerationProvider for MockTextProvider {
         Ok(ChatCompletionResponse {
             choices: vec![ChatCompletionChoice {
                 index: 0,
-                message: ChatMessage {
+                message: LlmMessage {
                     role: MessageRole::Assistant,
                     content: response_text.clone(),
                     function_call: None,
@@ -470,7 +470,7 @@ mod tests {
 
         let request = ChatCompletionRequest::new(
             "mock-model".to_string(),
-            vec![ChatMessage::user("Hello".to_string())],
+            vec![LlmMessage::user("Hello".to_string())],
         );
 
         let response = provider.generate_chat_completion(request).await.unwrap();
@@ -492,7 +492,7 @@ mod tests {
 
         let request2 = ChatCompletionRequest::new(
             "model".to_string(),
-            vec![ChatMessage::user("Second".to_string())],
+            vec![LlmMessage::user("Second".to_string())],
         );
         let _ = provider.generate_chat_completion(request2).await;
 
