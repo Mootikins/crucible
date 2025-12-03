@@ -18,6 +18,15 @@ use crate::acp::ContextEnricher;
 use crate::chat::{ChatAgent, ChatMode, ChatModeDisplay, Command, CommandParser, Display, ToolCallDisplay};
 use crate::core_facade::CrucibleCoreFacade;
 
+/// Default number of context results to include in enriched prompts
+pub const DEFAULT_CONTEXT_SIZE: usize = 5;
+
+/// Maximum allowed context size to prevent excessive memory usage
+pub const MAX_CONTEXT_SIZE: usize = 1000;
+
+/// Default number of search results to display
+pub const DEFAULT_SEARCH_LIMIT: usize = 10;
+
 /// Session configuration
 #[derive(Debug, Clone)]
 pub struct SessionConfig {
@@ -44,7 +53,7 @@ impl SessionConfig {
         Self {
             initial_mode: ChatMode::Plan,
             context_enabled: true,
-            context_size: Some(5),
+            context_size: Some(DEFAULT_CONTEXT_SIZE),
         }
     }
 
@@ -54,8 +63,8 @@ impl SessionConfig {
             if size == 0 {
                 anyhow::bail!("context_size must be greater than 0");
             }
-            if size > 1000 {
-                anyhow::bail!("context_size must be <= 1000 (got {})", size);
+            if size > MAX_CONTEXT_SIZE {
+                anyhow::bail!("context_size must be <= {} (got {})", MAX_CONTEXT_SIZE, size);
             }
         }
         Ok(())
@@ -206,7 +215,7 @@ impl ChatSession {
                 print!("{} ", "🔍 Searching...".bright_cyan().dimmed());
                 flush_stdout();
 
-                match self.core.semantic_search(&query, 10).await {
+                match self.core.semantic_search(&query, DEFAULT_SEARCH_LIMIT).await {
                     Ok(results) => {
                         // Clear searching indicator
                         print!("\r{}\r", " ".repeat(20));
@@ -296,12 +305,13 @@ impl ChatSession {
                 flush_stdout();
 
                 // Convert generic tool calls to display format
+                // Take ownership to avoid clones (response not used after this)
                 let display_tools: Vec<ToolCallDisplay> = response
                     .tool_calls
-                    .iter()
+                    .into_iter()
                     .map(|t| ToolCallDisplay {
-                        title: t.name.clone(),
-                        arguments: t.arguments.clone(),
+                        title: t.name,
+                        arguments: t.arguments,
                     })
                     .collect();
 
