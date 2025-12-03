@@ -5,10 +5,17 @@
 //! reusability and testability.
 
 use anyhow::Result;
+use colored::Colorize;
+use reedline::{
+    default_emacs_keybindings, DefaultPrompt, EditCommand, Emacs, KeyCode, KeyModifiers,
+    Reedline, ReedlineEvent, Signal,
+};
 use std::sync::Arc;
+use std::time::Instant;
+use tracing::{debug, error};
 
 use crate::acp::ContextEnricher;
-use crate::chat::{ChatAgent, ChatMode};
+use crate::chat::{ChatAgent, ChatMode, ChatModeDisplay, Command, CommandParser, Display, ToolCallDisplay};
 use crate::core_facade::CrucibleCoreFacade;
 
 /// Session configuration
@@ -69,9 +76,251 @@ impl ChatSession {
     }
 
     /// Run the interactive session loop
-    pub async fn run<A: ChatAgent>(&self, agent: &mut A) -> Result<()> {
-        // TODO: Implement interactive loop
+    pub async fn run<A: ChatAgent>(&mut self, agent: &mut A) -> Result<()> {
+        let mut current_mode = self.config.initial_mode;
+        let mut last_ctrl_c: Option<Instant> = None;
+
+        // Configure keybindings:
+        // - Shift+Tab: silent mode cycle
+        // - Ctrl+J: insert newline (multiline input)
+        let mut keybindings = default_emacs_keybindings();
+        keybindings.add_binding(
+            KeyModifiers::SHIFT,
+            KeyCode::BackTab,
+            ReedlineEvent::ExecuteHostCommand("\x00mode".to_string()),
+        );
+        keybindings.add_binding(
+            KeyModifiers::CONTROL,
+            KeyCode::Char('j'),
+            ReedlineEvent::Edit(vec![EditCommand::InsertNewline]),
+        );
+        let edit_mode = Box::new(Emacs::new(keybindings));
+        let mut line_editor = Reedline::create().with_edit_mode(edit_mode);
+
+        Display::welcome_banner(current_mode);
+
+        loop {
+            // Create simple prompt based on current mode
+            let mode_icon = current_mode.icon();
+            let prompt_indicator = format!("{} {} ", current_mode.display_name(), mode_icon);
+            let prompt = DefaultPrompt::new(
+                reedline::DefaultPromptSegment::Basic(prompt_indicator),
+                reedline::DefaultPromptSegment::Empty,
+            );
+
+            match line_editor.read_line(&prompt) {
+                Ok(Signal::Success(input)) => {
+                    // Skip empty input
+                    if input.trim().is_empty() {
+                        continue;
+                    }
+
+                    // Parse and handle commands
+                    if let Some(command) = CommandParser::parse(&input) {
+                        if self.handle_command(command, &mut current_mode, agent).await? {
+                            break; // Exit command
+                        }
+                        continue;
+                    }
+
+                    // Handle regular message
+                    self.handle_message(&input, agent).await?;
+                }
+                Ok(Signal::CtrlC) => {
+                    use std::time::Duration;
+                    if let Some(last) = last_ctrl_c {
+                        if last.elapsed() < Duration::from_secs(2) {
+                            println!();
+                            Display::goodbye();
+                            break;
+                        }
+                    }
+                    last_ctrl_c = Some(Instant::now());
+                    println!("\n{}", "Press Ctrl+C again to exit".yellow());
+                    continue;
+                }
+                Ok(Signal::CtrlD) => {
+                    println!();
+                    Display::goodbye();
+                    break;
+                }
+                Err(err) => {
+                    error!("Error reading input: {}", err);
+                    break;
+                }
+            }
+        }
+
         Ok(())
+    }
+
+    /// Handle a parsed command
+    ///
+    /// Returns true if the session should exit.
+    async fn handle_command<A: ChatAgent>(
+        &self,
+        command: Command,
+        current_mode: &mut ChatMode,
+        agent: &mut A,
+    ) -> Result<bool> {
+        use std::io::{self, Write};
+
+        match command {
+            Command::Exit => {
+                Display::goodbye();
+                return Ok(true); // Signal to exit
+            }
+            Command::Plan => {
+                *current_mode = ChatMode::Plan;
+                agent.set_mode(*current_mode).await?;
+                Display::mode_change(*current_mode);
+            }
+            Command::Act => {
+                *current_mode = ChatMode::Act;
+                agent.set_mode(*current_mode).await?;
+                Display::mode_change(*current_mode);
+            }
+            Command::Auto => {
+                *current_mode = ChatMode::AutoApprove;
+                agent.set_mode(*current_mode).await?;
+                Display::mode_change(*current_mode);
+            }
+            Command::Mode => {
+                *current_mode = current_mode.cycle_next();
+                agent.set_mode(*current_mode).await?;
+                Display::mode_change(*current_mode);
+            }
+            Command::SilentMode => {
+                // Cycle mode without visual output - prompt updates on next iteration
+                *current_mode = current_mode.cycle_next();
+                agent.set_mode(*current_mode).await?;
+            }
+            Command::Search(query) => {
+                // Show searching indicator
+                print!("{} ", "🔍 Searching...".bright_cyan().dimmed());
+                flush_stdout();
+
+                match self.core.semantic_search(&query, 10).await {
+                    Ok(results) => {
+                        // Clear searching indicator
+                        print!("\r{}\r", " ".repeat(20));
+                        flush_stdout();
+
+                        if results.is_empty() {
+                            Display::no_results(&query);
+                        } else {
+                            Display::search_results_header(&query, results.len());
+                            for (i, result) in results.iter().enumerate() {
+                                Display::search_result(
+                                    i,
+                                    &result.title,
+                                    result.similarity,
+                                    &result.snippet,
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        // Clear searching indicator
+                        print!("\r{}\r", " ".repeat(20));
+                        flush_stdout();
+
+                        Display::search_error(&e.to_string());
+                    }
+                }
+                println!();
+            }
+        }
+
+        Ok(false) // Continue session
+    }
+
+    /// Handle a regular message (not a command)
+    async fn handle_message<A: ChatAgent>(&self, input: &str, agent: &mut A) -> Result<()> {
+        use std::io::{self, Write};
+
+        // Prepare the message (with or without context enrichment)
+        let message = if !self.config.context_enabled {
+            input.to_string()
+        } else {
+            // Show context enrichment indicator
+            print!(
+                "{} ",
+                "🔍 Finding relevant context...".bright_cyan().dimmed()
+            );
+            flush_stdout();
+
+            let enriched_result = self.enricher.enrich_with_results(input).await;
+
+            // Clear the enrichment indicator
+            print!("\r{}\r", " ".repeat(35));
+            flush_stdout();
+
+            match enriched_result {
+                Ok(result) => {
+                    // Display the notes found to the user
+                    if !result.notes_found.is_empty() {
+                        println!(
+                            "{} Found {} relevant notes:",
+                            "📚".dimmed(),
+                            result.notes_found.len()
+                        );
+                        for note in &result.notes_found {
+                            println!("  {} {}", "→".dimmed(), note.title.bright_white());
+                        }
+                        println!();
+                    }
+
+                    result.prompt
+                }
+                Err(e) => {
+                    debug!("Context enrichment failed: {}", e);
+                    input.to_string()
+                }
+            }
+        };
+
+        // Show thinking indicator
+        print!("{} ", "🤔 Thinking...".bright_blue().dimmed());
+        flush_stdout();
+
+        match agent.send_message(&message).await {
+            Ok(response) => {
+                // Clear the "thinking" indicator
+                print!("\r{}\r", " ".repeat(20));
+                flush_stdout();
+
+                // Convert generic tool calls to display format
+                let display_tools: Vec<ToolCallDisplay> = response
+                    .tool_calls
+                    .iter()
+                    .map(|t| ToolCallDisplay {
+                        title: t.name.clone(),
+                        arguments: t.arguments.clone(),
+                    })
+                    .collect();
+
+                Display::agent_response(&response.content, &display_tools);
+            }
+            Err(e) => {
+                // Clear the "thinking" indicator
+                print!("\r{}\r", " ".repeat(20));
+                flush_stdout();
+
+                error!("Failed to send message: {}", e);
+                Display::error(&e.to_string());
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Helper to flush stdout without panicking
+fn flush_stdout() {
+    use std::io::Write;
+    if let Err(e) = std::io::stdout().flush() {
+        tracing::debug!("Failed to flush stdout: {}", e);
     }
 }
 
