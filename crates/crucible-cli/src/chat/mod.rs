@@ -20,6 +20,7 @@ pub mod commands;
 pub mod display;
 pub mod mode_ext;
 pub mod registry;
+pub mod session;
 
 // Re-export core traits for convenience
 pub use crucible_core::traits::chat::{
@@ -32,3 +33,4 @@ pub use commands::{Command, CommandParser};
 pub use display::{Display, ToolCallDisplay, format_tool_args};
 pub use mode_ext::ChatModeDisplay;
 pub use registry::CliCommandRegistry;
+pub use session::{ChatSession, SessionConfig};
