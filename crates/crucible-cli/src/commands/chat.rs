@@ -4,81 +4,21 @@
 //! Supports toggleable plan (read-only) and act (write-enabled) modes.
 
 use anyhow::Result;
-use crucible_acp::humanize_tool_title;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
 use walkdir::WalkDir;
 
 use crate::acp::{discover_agent, ContextEnricher, CrucibleAcpClient};
+use crate::chat::{ChatMode, ChatModeDisplay, Command, CommandParser, Display, ToolCallDisplay};
 use crate::config::CliConfig;
 use crate::core_facade::CrucibleCoreFacade;
 use crate::factories;
-use crate::formatting::render_markdown;
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
 use crucible_pipeline::NotePipeline;
 use crucible_watch::traits::{DebounceConfig, HandlerConfig, WatchConfig};
 use crucible_watch::{EventFilter, FileEvent, FileEventKind, WatchMode};
 use tokio::sync::mpsc;
-
-/// Chat mode - can be toggled during session
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ChatMode {
-    /// Plan mode - read-only, agent cannot modify files
-    Plan,
-    /// Act mode - write-enabled, agent can modify files (with confirmation)
-    Act,
-    /// Auto-approve mode - write-enabled, agent can modify files without confirmation
-    AutoApprove,
-}
-
-impl ChatMode {
-    /// Get the display name for this mode
-    pub fn display_name(&self) -> &'static str {
-        match self {
-            ChatMode::Plan => "plan",
-            ChatMode::Act => "act",
-            ChatMode::AutoApprove => "auto",
-        }
-    }
-
-    /// Get the mode description for display
-    pub fn description(&self) -> &'static str {
-        match self {
-            ChatMode::Plan => "read-only",
-            ChatMode::Act => "write-enabled",
-            ChatMode::AutoApprove => "auto-approve",
-        }
-    }
-
-    /// Cycle to the next mode (Plan -> Act -> AutoApprove -> Plan)
-    pub fn cycle_next(&self) -> Self {
-        match self {
-            ChatMode::Plan => ChatMode::Act,
-            ChatMode::Act => ChatMode::AutoApprove,
-            ChatMode::AutoApprove => ChatMode::Plan,
-        }
-    }
-
-    /// Toggle to the other mode (legacy, Plan <-> Act only)
-    pub fn toggle(&self) -> Self {
-        match self {
-            ChatMode::Plan => ChatMode::Act,
-            ChatMode::Act => ChatMode::Plan,
-            ChatMode::AutoApprove => ChatMode::Plan,
-        }
-    }
-
-    /// Check if this mode allows writes
-    pub fn is_read_only(&self) -> bool {
-        matches!(self, ChatMode::Plan)
-    }
-
-    /// Check if this mode auto-approves operations
-    pub fn is_auto_approve(&self) -> bool {
-        matches!(self, ChatMode::AutoApprove)
-    }
-}
 
 /// Execute the chat command
 ///
@@ -310,29 +250,7 @@ async fn run_interactive_session(
 
     let enricher = ContextEnricher::new(core.clone(), context_size);
 
-    println!("\n{}", "🤖 Crucible Chat".bright_blue().bold());
-    println!("{}", "=================".bright_blue());
-    println!(
-        "Mode: {} {}",
-        current_mode.display_name().bright_cyan().bold(),
-        format!("({})", current_mode.description()).dimmed()
-    );
-    println!();
-    println!("{}", "Commands:".bold());
-    println!("  {} - Switch to plan mode (read-only)", "/plan".green());
-    println!("  {} - Switch to act mode (write-enabled)", "/act".green());
-    println!("  {} - Switch to auto-approve mode", "/auto".green());
-    println!("  {} - Cycle modes (or Shift+Tab)", "/mode".green());
-    println!(
-        "  {} - Search knowledge base",
-        "/search <query>".green()
-    );
-    println!();
-    println!(
-        "{} | {}",
-        "Ctrl+J for newline".dimmed(),
-        "Ctrl+C twice to exit".dimmed()
-    );
+    Display::welcome_banner(current_mode);
 
     loop {
         // Create simple prompt based on current mode
@@ -360,128 +278,81 @@ async fn run_interactive_session(
                     continue;
                 }
 
-                // Handle silent mode switch (from Shift+Tab keybinding)
-                // This cycles mode without any visual output - prompt updates on next iteration
-                if input == "\x00mode" {
-                    current_mode = current_mode.cycle_next();
-                    continue;
-                }
-
-                // Handle commands
-                if input == "/exit" || input == "/quit" {
-                    println!("{}", "👋 Goodbye!".bright_blue());
-                    break;
-                } else if input == "/plan" {
-                    current_mode = ChatMode::Plan;
-                    println!(
-                        "{} Mode switched to: {} (read-only)",
-                        "→".bright_cyan(),
-                        "plan".bright_cyan().bold()
-                    );
-                    // Note: In full implementation, would update client permissions here
-                    continue;
-                } else if input == "/act" {
-                    current_mode = ChatMode::Act;
-                    println!(
-                        "{} Mode switched to: {} (write-enabled)",
-                        "→".bright_cyan(),
-                        "act".bright_cyan().bold()
-                    );
-                    // Note: In full implementation, would update client permissions here
-                    continue;
-                } else if input == "/auto" {
-                    current_mode = ChatMode::AutoApprove;
-                    println!(
-                        "{} Mode switched to: {} (auto-approve)",
-                        "→".bright_cyan(),
-                        "auto".bright_cyan().bold()
-                    );
-                    // Note: In full implementation, would update client permissions here
-                    continue;
-                } else if input == "/mode" {
-                    current_mode = current_mode.cycle_next();
-                    println!(
-                        "{} Mode: {} ({})",
-                        "→".bright_cyan(),
-                        current_mode.display_name().bright_cyan().bold(),
-                        current_mode.description()
-                    );
-                    // Note: In full implementation, would update client permissions here
-                    continue;
-                } else if input.starts_with("/search ") || input == "/search" {
-                    let query = if input == "/search" {
-                        ""
-                    } else {
-                        input[8..].trim()
-                    };
-
-                    if query.is_empty() {
-                        println!(
-                            "{} Usage: /search <query>",
-                            "!".yellow()
-                        );
-                        continue;
-                    }
-
-                    // Show searching indicator
-                    print!("{} ", "🔍 Searching...".bright_cyan().dimmed());
+                // Parse and handle commands
+                if let Some(command) = CommandParser::parse(&input) {
                     use std::io::{self, Write};
-                    io::stdout().flush().unwrap();
 
-                    match core.semantic_search(query, 10).await {
-                        Ok(results) => {
-                            // Clear searching indicator
-                            print!("\r{}\r", " ".repeat(20));
+                    match command {
+                        Command::Exit => {
+                            Display::goodbye();
+                            break;
+                        }
+                        Command::Plan => {
+                            current_mode = ChatMode::Plan;
+                            Display::mode_change(current_mode);
+                            // Note: In full implementation, would update client permissions here
+                            continue;
+                        }
+                        Command::Act => {
+                            current_mode = ChatMode::Act;
+                            Display::mode_change(current_mode);
+                            // Note: In full implementation, would update client permissions here
+                            continue;
+                        }
+                        Command::Auto => {
+                            current_mode = ChatMode::AutoApprove;
+                            Display::mode_change(current_mode);
+                            // Note: In full implementation, would update client permissions here
+                            continue;
+                        }
+                        Command::Mode => {
+                            current_mode = current_mode.cycle_next();
+                            Display::mode_change(current_mode);
+                            // Note: In full implementation, would update client permissions here
+                            continue;
+                        }
+                        Command::SilentMode => {
+                            // Cycle mode without visual output - prompt updates on next iteration
+                            current_mode = current_mode.cycle_next();
+                            continue;
+                        }
+                        Command::Search(query) => {
+                            // Show searching indicator
+                            print!("{} ", "🔍 Searching...".bright_cyan().dimmed());
                             io::stdout().flush().unwrap();
 
-                            if results.is_empty() {
-                                println!(
-                                    "{} No results found for: {}",
-                                    "○".dimmed(),
-                                    query.italic()
-                                );
-                            } else {
-                                println!(
-                                    "{} Found {} results:\n",
-                                    "●".bright_blue(),
-                                    results.len()
-                                );
-                                for (i, result) in results.iter().enumerate() {
-                                    println!(
-                                        "  {} {} {}",
-                                        format!("{}.", i + 1).dimmed(),
-                                        result.title.bright_white(),
-                                        format!("({:.0}%)", result.similarity * 100.0).dimmed()
-                                    );
-                                    // Show snippet preview (first non-empty line)
-                                    if !result.snippet.is_empty() {
-                                        let preview = result
-                                            .snippet
-                                            .lines()
-                                            .find(|l| !l.trim().is_empty())
-                                            .unwrap_or("");
-                                        if !preview.is_empty() {
-                                            let truncated = if preview.len() > 80 {
-                                                format!("{}...", &preview[..77])
-                                            } else {
-                                                preview.to_string()
-                                            };
-                                            println!("     {}", truncated.dimmed());
+                            match core.semantic_search(&query, 10).await {
+                                Ok(results) => {
+                                    // Clear searching indicator
+                                    print!("\r{}\r", " ".repeat(20));
+                                    io::stdout().flush().unwrap();
+
+                                    if results.is_empty() {
+                                        Display::no_results(&query);
+                                    } else {
+                                        Display::search_results_header(&query, results.len());
+                                        for (i, result) in results.iter().enumerate() {
+                                            Display::search_result(
+                                                i,
+                                                &result.title,
+                                                result.similarity,
+                                                &result.snippet,
+                                            );
                                         }
                                     }
                                 }
-                            }
-                        }
-                        Err(e) => {
-                            // Clear searching indicator
-                            print!("\r{}\r", " ".repeat(20));
-                            io::stdout().flush().unwrap();
+                                Err(e) => {
+                                    // Clear searching indicator
+                                    print!("\r{}\r", " ".repeat(20));
+                                    io::stdout().flush().unwrap();
 
-                            println!("{} Search failed: {}", "✗".red(), e);
+                                    Display::search_error(&e.to_string());
+                                }
+                            }
+                            println!();
+                            continue;
                         }
                     }
-                    println!();
-                    continue;
                 }
 
                 // Prepare the message (with or without context enrichment)
@@ -543,34 +414,16 @@ async fn run_interactive_session(
                         print!("\r{}\r", " ".repeat(20));
                         io::stdout().flush().unwrap();
 
-                        // Print agent response with markdown rendering
-                        let rendered = render_markdown(&response);
-                        // Print with indicator on first line, rest indented
-                        let mut lines = rendered.lines();
-                        if let Some(first) = lines.next() {
-                            println!("{} {}", "●".bright_blue(), first);
-                            for line in lines {
-                                println!("  {}", line);
-                            }
-                        }
+                        // Convert ACP tool calls to display format
+                        let display_tools: Vec<ToolCallDisplay> = tool_calls
+                            .iter()
+                            .map(|t| ToolCallDisplay {
+                                title: t.title.clone(),
+                                arguments: t.arguments.clone(),
+                            })
+                            .collect();
 
-                        // Show tool calls that are missing from the inline stream (fallback)
-                        let has_inline_tools = response.contains('▷');
-                        if !tool_calls.is_empty()
-                            && (response.trim().is_empty() || !has_inline_tools)
-                        {
-                            for tool in &tool_calls {
-                                let args_str = format_tool_args(&tool.arguments);
-                                let display_title = humanize_tool_title(&tool.title);
-                                println!(
-                                    "  {} {}({})",
-                                    "▷".cyan(),
-                                    display_title,
-                                    args_str.dimmed()
-                                );
-                            }
-                        }
-                        println!(); // Blank line after response
+                        Display::agent_response(&response, &display_tools);
                     }
                     Err(e) => {
                         // Clear the "thinking" indicator
@@ -578,7 +431,7 @@ async fn run_interactive_session(
                         io::stdout().flush().unwrap();
 
                         error!("Failed to send message: {}", e);
-                        println!("{} Error: {}", "✗".red(), e);
+                        Display::error(&e.to_string());
                     }
                 }
             }
@@ -586,7 +439,8 @@ async fn run_interactive_session(
                 use std::time::Duration;
                 if let Some(last) = last_ctrl_c {
                     if last.elapsed() < Duration::from_secs(2) {
-                        println!("\n{}", "👋 Goodbye!".bright_blue());
+                        println!();
+                        Display::goodbye();
                         break;
                     }
                 }
@@ -595,7 +449,8 @@ async fn run_interactive_session(
                 continue;
             }
             Ok(Signal::CtrlD) => {
-                println!("\n{}", "👋 Goodbye!".bright_blue());
+                println!();
+                Display::goodbye();
                 break;
             }
             Err(err) => {
@@ -766,39 +621,4 @@ async fn spawn_background_watch(config: CliConfig, pipeline: Arc<NotePipeline>) 
 
     info!("Background watch stopped");
     Ok(())
-}
-
-/// Format tool call arguments for display
-fn format_tool_args(args: &Option<serde_json::Value>) -> String {
-    match args {
-        Some(serde_json::Value::Object(map)) => map
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, format_arg_value(v)))
-            .collect::<Vec<_>>()
-            .join(", "),
-        Some(other) => other.to_string(),
-        None => String::new(),
-    }
-}
-
-/// Format a single argument value, truncating if too long
-fn format_arg_value(v: &serde_json::Value) -> String {
-    match v {
-        serde_json::Value::String(s) => {
-            let truncated = if s.len() > 30 {
-                format!("{}...", &s[..27])
-            } else {
-                s.clone()
-            };
-            format!("\"{}\"", truncated)
-        }
-        other => {
-            let s = other.to_string();
-            if s.len() > 30 {
-                format!("{}...", &s[..27])
-            } else {
-                s
-            }
-        }
-    }
 }
