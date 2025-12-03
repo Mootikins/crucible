@@ -28,5 +28,7 @@ pub use crucible_core::traits::chat::{
 };
 
 // Re-export CLI implementations
+pub use commands::{Command, CommandParser};
+pub use display::{Display, ToolCallDisplay, format_tool_args};
 pub use mode_ext::ChatModeDisplay;
 pub use registry::CliCommandRegistry;
