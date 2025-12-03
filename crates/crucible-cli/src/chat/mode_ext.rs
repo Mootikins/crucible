@@ -35,6 +35,18 @@ pub trait ChatModeDisplay {
     ///
     /// Returns emoji suitable for terminal display.
     fn icon(&self) -> &'static str;
+
+    /// Cycle to the next mode (Plan -> Act -> AutoApprove -> Plan)
+    fn cycle_next(&self) -> Self;
+
+    /// Toggle to the other mode (legacy, Plan <-> Act only)
+    fn toggle(&self) -> Self;
+
+    /// Check if this mode allows writes
+    fn is_read_only(&self) -> bool;
+
+    /// Check if this mode auto-approves operations
+    fn is_auto_approve(&self) -> bool;
 }
 
 impl ChatModeDisplay for ChatMode {
@@ -60,6 +72,30 @@ impl ChatModeDisplay for ChatMode {
             ChatMode::Act => "✏️",
             ChatMode::AutoApprove => "⚡",
         }
+    }
+
+    fn cycle_next(&self) -> Self {
+        match self {
+            ChatMode::Plan => ChatMode::Act,
+            ChatMode::Act => ChatMode::AutoApprove,
+            ChatMode::AutoApprove => ChatMode::Plan,
+        }
+    }
+
+    fn toggle(&self) -> Self {
+        match self {
+            ChatMode::Plan => ChatMode::Act,
+            ChatMode::Act => ChatMode::Plan,
+            ChatMode::AutoApprove => ChatMode::Plan,
+        }
+    }
+
+    fn is_read_only(&self) -> bool {
+        matches!(self, ChatMode::Plan)
+    }
+
+    fn is_auto_approve(&self) -> bool {
+        matches!(self, ChatMode::AutoApprove)
     }
 }
 
