@@ -50,7 +50,14 @@ impl SessionConfig {
 
     /// Validate configuration
     pub fn validate(&self) -> Result<()> {
-        // TODO: Add validation logic
+        if let Some(size) = self.context_size {
+            if size == 0 {
+                anyhow::bail!("context_size must be greater than 0");
+            }
+            if size > 1000 {
+                anyhow::bail!("context_size must be <= 1000 (got {})", size);
+            }
+        }
         Ok(())
     }
 }
@@ -163,7 +170,6 @@ impl ChatSession {
         current_mode: &mut ChatMode,
         agent: &mut A,
     ) -> Result<bool> {
-        use std::io::{self, Write};
 
         match command {
             Command::Exit => {
@@ -237,7 +243,6 @@ impl ChatSession {
 
     /// Handle a regular message (not a command)
     async fn handle_message<A: ChatAgent>(&self, input: &str, agent: &mut A) -> Result<()> {
-        use std::io::{self, Write};
 
         // Prepare the message (with or without context enrichment)
         let message = if !self.config.context_enabled {
@@ -378,6 +383,34 @@ mod tests {
 
         let auto_config = SessionConfig::new(ChatMode::AutoApprove, true, Some(5));
         assert_eq!(auto_config.initial_mode, ChatMode::AutoApprove);
+    }
+
+    #[test]
+    fn test_session_config_validate_zero_context_size() {
+        let config = SessionConfig::new(ChatMode::Plan, true, Some(0));
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must be greater than 0"));
+    }
+
+    #[test]
+    fn test_session_config_validate_too_large_context_size() {
+        let config = SessionConfig::new(ChatMode::Plan, true, Some(1001));
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must be <= 1000"));
+    }
+
+    #[test]
+    fn test_session_config_validate_max_context_size() {
+        let config = SessionConfig::new(ChatMode::Plan, true, Some(1000));
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_session_config_validate_min_context_size() {
+        let config = SessionConfig::new(ChatMode::Plan, true, Some(1));
+        assert!(config.validate().is_ok());
     }
 
     // ChatSession creation tests
