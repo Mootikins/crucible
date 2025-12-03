@@ -4,10 +4,22 @@
 //! Supports toggleable plan (read-only) and act (write-enabled) modes.
 
 use anyhow::Result;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
 use walkdir::WalkDir;
+
+/// Helper to flush stdout without panicking
+///
+/// Terminal output flushing is best-effort. If it fails (broken pipe, redirected output),
+/// the program should continue gracefully rather than panic.
+fn flush_stdout() {
+    use std::io::Write;
+    if let Err(e) = std::io::stdout().flush() {
+        tracing::debug!("Failed to flush stdout: {}", e);
+    }
+}
 
 use crate::acp::{discover_agent, ContextEnricher, CrucibleAcpClient};
 use crate::chat::{ChatMode, ChatModeDisplay, Command, CommandParser, Display, ToolCallDisplay};
@@ -319,13 +331,13 @@ async fn run_interactive_session(
                         Command::Search(query) => {
                             // Show searching indicator
                             print!("{} ", "🔍 Searching...".bright_cyan().dimmed());
-                            io::stdout().flush().unwrap();
+                            flush_stdout();
 
                             match core.semantic_search(&query, 10).await {
                                 Ok(results) => {
                                     // Clear searching indicator
                                     print!("\r{}\r", " ".repeat(20));
-                                    io::stdout().flush().unwrap();
+                                    flush_stdout();
 
                                     if results.is_empty() {
                                         Display::no_results(&query);
@@ -344,7 +356,7 @@ async fn run_interactive_session(
                                 Err(e) => {
                                     // Clear searching indicator
                                     print!("\r{}\r", " ".repeat(20));
-                                    io::stdout().flush().unwrap();
+                                    flush_stdout();
 
                                     Display::search_error(&e.to_string());
                                 }
@@ -364,13 +376,13 @@ async fn run_interactive_session(
                         "{} ",
                         "🔍 Finding relevant context...".bright_cyan().dimmed()
                     );
-                    io::stdout().flush().unwrap();
+                    flush_stdout();
 
                     let enriched_result = enricher.enrich_with_results(input).await;
 
                     // Clear the enrichment indicator
                     print!("\r{}\r", " ".repeat(35));
-                    io::stdout().flush().unwrap();
+                    flush_stdout();
 
                     match enriched_result {
                         Ok(result) => {
@@ -406,13 +418,13 @@ async fn run_interactive_session(
                 // Show "thinking" indicator
                 print!("{} ", "🤔 Thinking...".bright_blue().dimmed());
                 use std::io::{self, Write};
-                io::stdout().flush().unwrap();
+                flush_stdout();
 
                 match client.send_message_acp(&message).await {
                     Ok((response, tool_calls)) => {
                         // Clear the "thinking" indicator
                         print!("\r{}\r", " ".repeat(20));
-                        io::stdout().flush().unwrap();
+                        flush_stdout();
 
                         // Convert ACP tool calls to display format
                         let display_tools: Vec<ToolCallDisplay> = tool_calls
@@ -428,7 +440,7 @@ async fn run_interactive_session(
                     Err(e) => {
                         // Clear the "thinking" indicator
                         print!("\r{}\r", " ".repeat(20));
-                        io::stdout().flush().unwrap();
+                        flush_stdout();
 
                         error!("Failed to send message: {}", e);
                         Display::error(&e.to_string());
