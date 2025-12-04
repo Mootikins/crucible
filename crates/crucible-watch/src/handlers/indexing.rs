@@ -101,7 +101,7 @@ impl IndexingHandler {
     async fn index_file(
         &self,
         path: &PathBuf,
-        event_kind: crate::events::FileEventKind,
+        _event_kind: crate::events::FileEventKind,
     ) -> Result<()> {
         debug!("Indexing file: {}", path.display());
 
@@ -134,7 +134,7 @@ impl IndexingHandler {
         );
 
         // Use CrucibleParser to parse the file
-        let parser = crucible_parser::CrucibleParser::new();
+        let _parser = crucible_parser::CrucibleParser::new();
 
         // Return error for now as watch mode parser is not yet implemented
         Err(Error::Parser(

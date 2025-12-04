@@ -23,7 +23,6 @@
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Result type for LLM operations
 pub type LlmResult<T> = Result<T, LlmError>;

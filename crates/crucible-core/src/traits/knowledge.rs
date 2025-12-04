@@ -28,7 +28,7 @@ pub trait KnowledgeRepository: Send + Sync {
     async fn list_notes(&self, path: Option<&str>) -> Result<Vec<NoteMetadata>>;
 
     /// Search for notes using vector embeddings
-    async fn search_vectors(&self, vector: Vec<f32>) -> Result<Vec<SearchResult>> {
+    async fn search_vectors(&self, _vector: Vec<f32>) -> Result<Vec<SearchResult>> {
         // Default implementation returns empty if not supported
         Ok(Vec::new())
     }
