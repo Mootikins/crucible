@@ -44,7 +44,7 @@ pub use chat::{
     ChatAgent, ChatContext, ChatError, ChatMode, ChatResponse, ChatResult,
     CommandDescriptor, CommandHandler, CommandRegistry, SearchResult, ToolCall as ChatToolCall,
 };
-pub use knowledge::{KnowledgeRepository, NoteInfo, NoteMetadata};
+pub use knowledge::{KnowledgeRepository, NoteInfo};
 pub use llm::{
     LlmError, LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmResult, LlmToolDefinition,
     MessageRole, ToolCall, TokenUsage,

@@ -212,7 +212,7 @@ impl EAVGraphStore {
 
         let entity_id = &property.entity_id;
 
-        // Serialize PropertyValue as JSON object
+        // Serialize AttributeValue as JSON object
         let value_json = serde_json::to_value(&property.value)?;
 
         let params = json!({
@@ -703,11 +703,11 @@ impl CorePropertyStorage for EAVGraphStore {
                     .as_ref()
                     .expect("Property must have ID from conversion");
 
-                // INVARIANT: PropertyValue is a simple enum with #[derive(Serialize)]
+                // INVARIANT: AttributeValue is a simple enum with #[derive(Serialize)]
                 // Serialization can only fail for types with custom serializers, not simple enums
-                // See crucible-core/src/storage/mod.rs:PropertyValue definition
+                // See crucible-core/src/storage/mod.rs:AttributeValue definition
                 let value_json = serde_json::to_value(&prop.value)
-                    .expect("PropertyValue should always serialize");
+                    .expect("AttributeValue should always serialize");
 
                 json!({
                     "prop_table": prop_id.table,
@@ -1794,7 +1794,7 @@ impl CoreTagStorage for EAVGraphStore {
 mod tests {
     use super::*;
     use crate::eav_graph::apply_eav_graph_schema;
-    use crate::eav_graph::types::{EntityType, PropertyValue};
+    use crate::eav_graph::types::{EntityType, AttributeValue};
     use crate::SurrealClient;
 
     fn entity_id() -> RecordId<EntityRecord> {
@@ -1825,7 +1825,7 @@ mod tests {
             entity_id(),
             "core",
             "title",
-            PropertyValue::Text("Sample".to_string()),
+            AttributeValue::Text("Sample".to_string()),
         );
 
         store.upsert_property(&property).await.unwrap();
@@ -1838,10 +1838,10 @@ mod tests {
         assert_eq!(result.records.len(), 1);
         let record = &result.records[0];
 
-        // Verify the value is stored as JSON with the PropertyValue structure (tagged enum)
+        // Verify the value is stored as JSON with the AttributeValue structure (tagged enum)
         let value = record.data.get("value").unwrap();
         assert!(value.is_object());
-        // PropertyValue uses tagged enum serialization: {"type": "text", "value": "Sample"}
+        // AttributeValue uses tagged enum serialization: {"type": "text", "value": "Sample"}
         assert_eq!(value.get("type").unwrap().as_str(), Some("text"));
         assert_eq!(value.get("value").unwrap().as_str(), Some("Sample"));
     }

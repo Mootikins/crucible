@@ -19,9 +19,6 @@ pub struct NoteInfo {
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-/// Type alias for backward compatibility
-#[deprecated(since = "0.2.0", note = "Use NoteInfo instead")]
-pub type NoteMetadata = NoteInfo;
 
 /// Abstract interface for accessing knowledge in the kiln
 ///

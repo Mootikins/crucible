@@ -4,7 +4,7 @@
 //! metadata extraction, and relation inference. Follows clean architecture
 //! principles with dependency injection.
 
-use crate::types::{BlockEmbedding, EnrichedNoteWithTree, InferredRelation, NoteMetadata};
+use crate::types::{BlockEmbedding, EnrichedNoteWithTree, EnrichmentMetadata, InferredRelation};
 use anyhow::Result;
 use async_trait::async_trait;
 use crucible_core::enrichment::EmbeddingProvider;
@@ -350,22 +350,23 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
     }
 
     /// Extract metadata from the parsed note
-    async fn extract_metadata(&self, parsed: &ParsedNote) -> Result<NoteMetadata> {
+    async fn extract_metadata(&self, parsed: &ParsedNote) -> Result<EnrichmentMetadata> {
         debug!(
             "Computing enrichment metadata for {}",
             parsed.path.display()
         );
 
-        let mut metadata = NoteMetadata::new();
+        let mut metadata = EnrichmentMetadata::new();
 
         // Use structural metadata from parser
         let parser_meta = &parsed.metadata;
 
         // Compute reading time from word count (parser provides this)
-        metadata.reading_time_minutes = NoteMetadata::compute_reading_time(parser_meta.word_count);
+        metadata.reading_time_minutes =
+            EnrichmentMetadata::compute_reading_time(parser_meta.word_count);
 
         // Compute complexity score from element counts (parser provides these)
-        metadata.complexity_score = NoteMetadata::compute_complexity(
+        metadata.complexity_score = EnrichmentMetadata::compute_complexity(
             parser_meta.heading_count,
             parser_meta.code_block_count,
             parser_meta.list_count,

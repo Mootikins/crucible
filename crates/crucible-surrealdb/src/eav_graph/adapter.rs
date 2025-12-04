@@ -194,7 +194,7 @@ mod tests {
             entity_id: "note:test".to_string(),
             namespace: core::PropertyNamespace::frontmatter(),
             key: "title".to_string(),
-            value: core::PropertyValue::Text("Test Note".to_string()),
+            value: core::AttributeValue::Text("Test Note".to_string()),
             created_at: now,
             updated_at: now,
         };
@@ -207,7 +207,7 @@ mod tests {
         assert_eq!(surreal_prop.key, "title");
         assert_eq!(
             surreal_prop.value,
-            core::PropertyValue::Text("Test Note".to_string())
+            core::AttributeValue::Text("Test Note".to_string())
         );
     }
 
@@ -219,7 +219,7 @@ mod tests {
             entity_id: RecordId::new("entities", "note:test"),
             namespace: SurrealPropertyNamespace("frontmatter".to_string()),
             key: "author".to_string(),
-            value: core::PropertyValue::Text("John Doe".to_string()),
+            value: core::AttributeValue::Text("John Doe".to_string()),
             source: "parser".to_string(),
             confidence: 1.0,
             created_at: now,
@@ -233,7 +233,7 @@ mod tests {
         assert_eq!(core_prop.key, "author");
         assert_eq!(
             core_prop.value,
-            core::PropertyValue::Text("John Doe".to_string())
+            core::AttributeValue::Text("John Doe".to_string())
         );
     }
 
@@ -244,7 +244,7 @@ mod tests {
             entity_id: "note:test".to_string(),
             namespace: core::PropertyNamespace::frontmatter(),
             key: "count".to_string(),
-            value: core::PropertyValue::Number(42.0),
+            value: core::AttributeValue::Number(42.0),
             created_at: now,
             updated_at: now,
         };
@@ -266,7 +266,7 @@ mod tests {
                 entity_id: "note:test".to_string(),
                 namespace: core::PropertyNamespace::frontmatter(),
                 key: "title".to_string(),
-                value: core::PropertyValue::Text("Test".to_string()),
+                value: core::AttributeValue::Text("Test".to_string()),
                 created_at: now,
                 updated_at: now,
             },
@@ -274,7 +274,7 @@ mod tests {
                 entity_id: "note:test".to_string(),
                 namespace: core::PropertyNamespace::frontmatter(),
                 key: "count".to_string(),
-                value: core::PropertyValue::Number(42.0),
+                value: core::AttributeValue::Number(42.0),
                 created_at: now,
                 updated_at: now,
             },
@@ -290,12 +290,12 @@ mod tests {
         assert_eq!(result_props[0].key, "title");
         assert_eq!(
             result_props[0].value,
-            core::PropertyValue::Text("Test".to_string())
+            core::AttributeValue::Text("Test".to_string())
         );
 
         // Check second property
         assert_eq!(result_props[1].key, "count");
-        assert_eq!(result_props[1].value, core::PropertyValue::Number(42.0));
+        assert_eq!(result_props[1].value, core::AttributeValue::Number(42.0));
     }
 }
 
