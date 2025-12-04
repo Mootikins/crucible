@@ -22,6 +22,9 @@ pub mod basic_markdown_it;
 pub mod block_extractor;
 pub mod block_hasher;
 pub mod blockquotes;
+
+// Test utilities - always available for use in other crates' tests
+pub mod test_utils;
 pub mod callouts;
 pub mod enhanced_tags;
 pub mod error;

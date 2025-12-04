@@ -4,9 +4,13 @@ use crate::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-/// Metadata about a note
+/// File-level information about a note
+///
+/// Contains basic file metadata like name, path, and timestamps.
+/// For computed enrichment metadata (reading time, complexity), see
+/// `crucible_core::enrichment::types::EnrichmentMetadata`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NoteMetadata {
+pub struct NoteInfo {
     pub name: String,
     pub path: String,
     pub title: Option<String>,
@@ -14,6 +18,10 @@ pub struct NoteMetadata {
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
+
+/// Type alias for backward compatibility
+#[deprecated(since = "0.2.0", note = "Use NoteInfo instead")]
+pub type NoteMetadata = NoteInfo;
 
 /// Abstract interface for accessing knowledge in the kiln
 ///
@@ -25,7 +33,7 @@ pub trait KnowledgeRepository: Send + Sync {
     async fn get_note_by_name(&self, name: &str) -> Result<Option<ParsedNote>>;
 
     /// List notes, optionally filtered by a directory path
-    async fn list_notes(&self, path: Option<&str>) -> Result<Vec<NoteMetadata>>;
+    async fn list_notes(&self, path: Option<&str>) -> Result<Vec<NoteInfo>>;
 
     /// Search for notes using vector embeddings
     async fn search_vectors(&self, _vector: Vec<f32>) -> Result<Vec<SearchResult>> {

@@ -78,11 +78,18 @@ impl FromStr for FileHash {
 }
 
 /// Hash algorithms supported by the ContentHasher trait
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+///
+/// BLAKE3 is recommended for production due to its speed and security.
+/// SHA256 is available for compatibility with existing systems.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
 pub enum HashAlgorithm {
     /// BLAKE3 - fast, secure, and designed for modern systems
+    /// Recommended for new projects.
+    #[default]
     Blake3,
     /// SHA256 - widely supported and well-understood
+    /// Use for compatibility with existing systems that expect SHA-256 hashes.
     Sha256,
 }
 

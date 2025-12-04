@@ -3,13 +3,7 @@
 //! Tests for advanced wikilink parsing scenarios including transclusion,
 //! circular references, nested structures, and error recovery.
 
-use crucible_parser::{CrucibleParser, MarkdownParser, ParsedNote};
-use std::path::Path;
-
-async fn parse_note(content: &str, path: &str) -> Result<ParsedNote, Box<dyn std::error::Error>> {
-    let parser = CrucibleParser::with_default_extensions();
-    Ok(parser.parse_content(content, Path::new(path)).await?)
-}
+use crucible_parser::test_utils::parse_note;
 
 #[tokio::test]
 async fn test_transclusion_syntax() {
