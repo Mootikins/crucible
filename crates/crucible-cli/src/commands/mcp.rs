@@ -13,7 +13,7 @@ use std::sync::Arc;
 use tracing::{debug, info};
 
 use crate::config::CliConfig;
-use crate::core_facade::CrucibleCoreFacade;
+use crate::core_facade::KilnContext;
 
 /// Execute the MCP server command
 ///
@@ -30,7 +30,7 @@ pub async fn execute(config: CliConfig) -> Result<()> {
     debug!("Kiln path: {}", config.kiln_path.display());
 
     // Initialize core facade
-    let core = Arc::new(CrucibleCoreFacade::from_config(config).await?);
+    let core = Arc::new(KilnContext::from_config(config).await?);
 
     // Get embedding config and create provider
     let embedding_config = core.config().embedding.to_provider_config();

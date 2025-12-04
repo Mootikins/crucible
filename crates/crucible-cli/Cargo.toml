@@ -85,8 +85,6 @@ dirs = { workspace = true }
 # Configuration
 toml = { workspace = true }
 
-# Unicode support
-unicode-normalization = "0.1"
 
 # Markdown parsing for terminal rendering
 markdown-it = { workspace = true }
@@ -97,8 +95,6 @@ futures = { workspace = true }
 
 # Chat REPL dependencies
 crossterm = { workspace = true }
-# crossterm 0.28.1 for nucleo-picker compatibility (renamed to avoid conflict with workspace 0.29)
-crossterm-028 = { package = "crossterm", version = "0.28.1" }
 reedline = { workspace = true }
 
 # TUI framework
@@ -110,10 +106,6 @@ uuid = { workspace = true, features = ["v4", "serde"] }
 # File watching
 notify = { workspace = true }
 notify-debouncer-mini = "0.7"
-ignore = "0.4"  # For .gitignore parsing
-
-# CPU detection for parallelism
-num_cpus = "1.16"
 
 [dev-dependencies]
 crucible-config = { path = "../crucible-config", features = ["test-utils"] }
