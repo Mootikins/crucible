@@ -60,6 +60,7 @@ impl FileStateRecord {
     }
 
     /// Convert from database record to FileState
+    #[cfg(test)]
     fn to_file_state(&self) -> FileState {
         FileState {
             file_hash: self.file_hash.clone(),

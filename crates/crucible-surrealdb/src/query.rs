@@ -3,6 +3,8 @@
 //! This module provides functionality for executing raw SurrealQL queries
 //! against the SurrealDB backend and formatting results for terminal display.
 
+#![allow(dead_code)] // Query utilities kept for debugging and future use
+
 use anyhow::{Context, Result};
 use comfy_table::{Cell, Table};
 use serde::Deserialize;
@@ -714,7 +716,7 @@ mod tests {
             WHERE out = notes:note2
         "#;
 
-        let results = execute_query(&db, query).await.unwrap();
+        let _results = execute_query(&db, query).await.unwrap();
 
         // Depending on schema constraints, this could be empty (cascading delete)
         // or non-empty (orphaned edge). Either is valid, we're testing detection.
