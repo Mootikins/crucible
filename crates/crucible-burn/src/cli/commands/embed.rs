@@ -34,7 +34,7 @@ async fn test_embedding(
     text: String,
     backend: String,
     config: BurnConfig,
-    hardware_info: HardwareInfo,
+    _hardware_info: HardwareInfo,
 ) -> Result<()> {
     info!("Testing embedding with model: {}, backend: {}", model, backend);
 

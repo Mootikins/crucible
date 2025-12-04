@@ -3,6 +3,8 @@
 //! This module provides utilities to migrate existing databases to newer schema versions.
 //! It handles adding new fields, indexes, and updating data structures.
 
+#![allow(dead_code)] // Migration code kept for future schema updates
+
 use crate::SurrealClient;
 use anyhow::Result;
 use tracing::{debug, info, warn};

@@ -1527,7 +1527,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_storage() {
-        let storage = create_test_storage().await;
+        let _storage = create_test_storage().await;
         assert!(true, "Storage created successfully");
     }
 

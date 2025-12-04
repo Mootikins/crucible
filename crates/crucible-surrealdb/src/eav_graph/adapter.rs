@@ -651,6 +651,7 @@ pub fn core_entity_tag_to_surreal(
 }
 
 /// Convert SurrealDB EntityTag to core EntityTag
+#[cfg(test)]
 pub fn surreal_entity_tag_to_core(surreal: SurrealEntityTag) -> core::EntityTag {
     core::EntityTag {
         entity_id: entity_id_to_string(&surreal.entity_id),

@@ -455,7 +455,7 @@ impl PathValidator {
     }
 
     /// Check if an absolute path is allowed (for testing or safe system directories)
-    fn is_absolute_path_allowed(&self, path: &Path) -> bool {
+    fn is_absolute_path_allowed(&self, _path: &Path) -> bool {
         // In test builds, allow absolute paths in system temp directories
         // This enables integration tests using TempDir without compromising production security
         #[cfg(test)]

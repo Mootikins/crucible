@@ -492,7 +492,7 @@ impl DatabaseTransactionConsumer {
         debug!("Processing transaction: {}", transaction.transaction_id());
 
         let mut retry_count = 0;
-        let mut last_error = None;
+        let mut _last_error = None;
         let result = loop {
             match timeout(
                 self.config.transaction_timeout,
@@ -518,14 +518,14 @@ impl DatabaseTransactionConsumer {
                         retry_count + 1,
                         e
                     );
-                    last_error = Some(e);
+                    _last_error = Some(e);
 
                     retry_count += 1;
                     if retry_count >= self.config.max_retries {
                         // Max retries exceeded - create failure result
                         let failure_result = TransactionResult::Failure {
                             transaction_id: transaction.transaction_id().to_string(),
-                            error: last_error
+                            error: _last_error
                                 .unwrap_or_else(|| anyhow::anyhow!("Unknown error"))
                                 .to_string(),
                             retry_count,
@@ -762,7 +762,7 @@ impl DatabaseTransactionConsumer {
         for batchable_tx in batch {
             let start_time = Instant::now();
             let mut retry_count = 0;
-            let mut last_error = None;
+            let mut _last_error = None;
 
             // Attempt transaction with retry logic
             loop {
@@ -792,7 +792,7 @@ impl DatabaseTransactionConsumer {
                             retry_count + 1,
                             e
                         );
-                        last_error = Some(e);
+                        _last_error = Some(e);
 
                         retry_count += 1;
                         if retry_count >= self.config.max_retries {
@@ -802,7 +802,7 @@ impl DatabaseTransactionConsumer {
                                     .transaction
                                     .transaction_id()
                                     .to_string(),
-                                error: last_error
+                                error: _last_error
                                     .unwrap_or_else(|| anyhow::anyhow!("Unknown error"))
                                     .to_string(),
                                 retry_count,

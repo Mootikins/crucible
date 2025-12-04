@@ -48,7 +48,6 @@ impl Default for SessionConfig {
 /// including sending requests and receiving responses.
 #[derive(Debug)]
 pub struct AcpSession {
-    config: SessionConfig,
     session_id: String,
 }
 
@@ -59,8 +58,8 @@ impl AcpSession {
     ///
     /// * `config` - Session configuration
     /// * `session_id` - Unique identifier for this session
-    pub fn new(config: SessionConfig, session_id: String) -> Self {
-        Self { config, session_id }
+    pub fn new(_config: SessionConfig, session_id: String) -> Self {
+        Self { session_id }
     }
 
     /// Get the session ID

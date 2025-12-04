@@ -332,7 +332,7 @@ async fn execute_restore(
     source: PathBuf,
     merge: bool,
     skip_verify: bool,
-    format: String,
+    _format: String,
 ) -> Result<()> {
     let start_time = Instant::now();
 
@@ -347,7 +347,7 @@ async fn execute_restore(
 
     // Read backup file
     let backup_content = std::fs::read_to_string(&source)?;
-    let backup_data: serde_json::Value =
+    let _backup_data: serde_json::Value =
         serde_json::from_str(&backup_content).context("Invalid backup file format")?;
 
     if !skip_verify {
@@ -356,7 +356,7 @@ async fn execute_restore(
     }
 
     // Create storage backend
-    let storage = create_storage_backend(&config)?;
+    let _storage = create_storage_backend(&config)?;
 
     if !merge {
         output::warning("This will replace all existing storage data");
@@ -394,7 +394,7 @@ fn create_storage_backend(_config: &CliConfig) -> StorageResult<Arc<dyn ContentA
 
 /// Verify a specific path
 async fn verify_path(
-    storage: &Arc<dyn ContentAddressedStorage>,
+    _storage: &Arc<dyn ContentAddressedStorage>,
     path: &Path,
 ) -> Result<VerificationResult> {
     // TODO: Implement path verification
@@ -410,7 +410,7 @@ async fn verify_path(
 
 /// Verify entire storage
 async fn verify_entire_storage(
-    storage: &Arc<dyn ContentAddressedStorage>,
+    _storage: &Arc<dyn ContentAddressedStorage>,
 ) -> Result<Vec<VerificationResult>> {
     // TODO: Implement full storage verification
     Ok(vec![])
@@ -418,7 +418,7 @@ async fn verify_entire_storage(
 
 /// Repair storage issues
 async fn repair_storage_issues(
-    storage: &Arc<dyn ContentAddressedStorage>,
+    _storage: &Arc<dyn ContentAddressedStorage>,
     result: &VerificationResult,
 ) -> Result<()> {
     // TODO: Implement repair logic
@@ -427,7 +427,7 @@ async fn repair_storage_issues(
 }
 
 /// Output stats in table format
-fn output_stats_table(stats: &StorageStats, by_backend: bool, deduplication: bool) -> Result<()> {
+fn output_stats_table(stats: &StorageStats, _by_backend: bool, _deduplication: bool) -> Result<()> {
     let rows = vec![
         StorageStatsRow {
             metric: "Total Blocks".to_string(),

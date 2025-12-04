@@ -126,7 +126,7 @@ mod agent_tests {
 
 #[cfg(test)]
 mod context_tests {
-    use super::super::*;
+    
 
     // Note: Full context enrichment tests would require a test database
     // These are structural tests
