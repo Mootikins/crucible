@@ -95,7 +95,7 @@ pub use crucible_core::database::{
 
 // Re-export common types from crucible-core
 pub use crucible_core::note::NoteNode;
-pub use crucible_core::properties::{PropertyMap, PropertyValue};
+pub use crucible_core::properties::{PropertyMap, AttributeValue};
 
 // ==============================================================================
 // SURREALDB-SPECIFIC CONFIGURATION

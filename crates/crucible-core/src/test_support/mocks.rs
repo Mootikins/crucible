@@ -1590,19 +1590,19 @@ impl MockEnrichmentService {
     fn create_mock_metadata(
         &self,
         parsed: &crate::parser::ParsedNote,
-    ) -> crate::enrichment::NoteMetadata {
-        use crate::enrichment::NoteMetadata;
+    ) -> crate::enrichment::EnrichmentMetadata {
+        use crate::enrichment::EnrichmentMetadata;
 
         let word_count = parsed.metadata.word_count;
-        let reading_time = NoteMetadata::compute_reading_time(word_count);
-        let complexity = NoteMetadata::compute_complexity(
+        let reading_time = EnrichmentMetadata::compute_reading_time(word_count);
+        let complexity = EnrichmentMetadata::compute_complexity(
             parsed.metadata.heading_count,
             parsed.metadata.code_block_count,
             parsed.metadata.list_count,
             parsed.metadata.latex_count,
         );
 
-        crate::enrichment::NoteMetadata {
+        crate::enrichment::EnrichmentMetadata {
             reading_time_minutes: reading_time,
             complexity_score: complexity,
             language: Some("en".to_string()),

@@ -49,7 +49,7 @@ pub mod types;
 
 // Re-export enrichment types (domain types are public)
 pub use types::{
-    BlockEmbedding, EnrichedNoteWithTree, InferredRelation, NoteMetadata, RelationType,
+    BlockEmbedding, EnrichedNoteWithTree, EnrichmentMetadata, InferredRelation, RelationType,
 };
 
 // Re-export constants (configuration values)

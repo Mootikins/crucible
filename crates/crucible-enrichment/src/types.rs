@@ -7,8 +7,8 @@ use crucible_core::parser::ParsedNote;
 
 // Re-export core enrichment types
 pub use crucible_core::enrichment::{
-    BlockEmbedding, EmbeddingProvider, EnrichedNote as CoreEnrichedNote, InferredRelation,
-    NoteMetadata, RelationType,
+    BlockEmbedding, EmbeddingProvider, EnrichedNote as CoreEnrichedNote, EnrichmentMetadata,
+    InferredRelation, RelationType,
 };
 
 /// Infrastructure-layer enriched note with Merkle tree
@@ -35,7 +35,7 @@ impl<T: Clone + Send + Sync> EnrichedNoteWithTree<T> {
         parsed: ParsedNote,
         merkle_tree: T,
         embeddings: Vec<BlockEmbedding>,
-        metadata: NoteMetadata,
+        metadata: EnrichmentMetadata,
         inferred_relations: Vec<InferredRelation>,
     ) -> Self {
         Self {

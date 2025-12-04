@@ -9,7 +9,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use chrono::Utc;
 use crucible_core::enrichment::{
-    BlockEmbedding, EnrichedNote, EnrichmentService, InferredRelation, NoteMetadata,
+    BlockEmbedding, EnrichedNote, EnrichmentService, InferredRelation,
 };
 use crucible_core::processing::{
     ChangeDetectionError, ChangeDetectionResult, ChangeDetectionStore, FileState,

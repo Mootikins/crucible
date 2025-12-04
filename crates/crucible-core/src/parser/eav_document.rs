@@ -388,7 +388,7 @@ impl From<ValidationError> for StorageError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::PropertyValue;
+    use crate::storage::AttributeValue;
 
     #[test]
     fn test_eav_document_builder_basic() {
@@ -437,7 +437,7 @@ mod tests {
                 entity_id: "note:test".to_string(),
                 namespace: PropertyNamespace::frontmatter(),
                 key: "author".to_string(),
-                value: PropertyValue::Text("John Doe".to_string()),
+                value: AttributeValue::Text("John Doe".to_string()),
                 created_at: now,
                 updated_at: now,
             })
@@ -445,7 +445,7 @@ mod tests {
                 entity_id: "note:test".to_string(),
                 namespace: PropertyNamespace::core(),
                 key: "version".to_string(),
-                value: PropertyValue::Number(1.0),
+                value: AttributeValue::Number(1.0),
                 created_at: now,
                 updated_at: now,
             })
@@ -477,7 +477,7 @@ mod tests {
                 entity_id: "note:WRONG".to_string(), // Wrong entity!
                 namespace: PropertyNamespace::frontmatter(),
                 key: "author".to_string(),
-                value: PropertyValue::Text("John Doe".to_string()),
+                value: AttributeValue::Text("John Doe".to_string()),
                 created_at: now,
                 updated_at: now,
             })

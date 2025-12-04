@@ -25,7 +25,7 @@ pub struct EnrichedNote {
     pub embeddings: Vec<BlockEmbedding>,
 
     /// Extracted and computed metadata
-    pub metadata: NoteMetadata,
+    pub metadata: EnrichmentMetadata,
 
     /// Inferred relations (semantic similarity, etc.)
     pub inferred_relations: Vec<InferredRelation>,
@@ -37,7 +37,7 @@ impl EnrichedNote {
         parsed: crate::parser::ParsedNote,
         // merkle_tree: moved to EnrichedNoteWithTree in crucible-enrichment
         embeddings: Vec<BlockEmbedding>,
-        metadata: NoteMetadata,
+        metadata: EnrichmentMetadata,
         inferred_relations: Vec<InferredRelation>,
     ) -> Self {
         Self {
@@ -198,7 +198,7 @@ pub struct EnrichmentMetadata {
 
 /// Type alias for backward compatibility
 #[deprecated(since = "0.2.0", note = "Use EnrichmentMetadata instead")]
-pub type NoteMetadata = EnrichmentMetadata;
+pub type NoteInfo = EnrichmentMetadata;
 
 impl Default for EnrichmentMetadata {
     fn default() -> Self {
@@ -352,8 +352,8 @@ mod tests {
     }
 
     #[test]
-    fn test_note_metadata_default() {
-        let metadata = NoteMetadata::default();
+    fn test_enrichment_metadata_default() {
+        let metadata = EnrichmentMetadata::default();
         assert_eq!(metadata.reading_time_minutes, 0.0);
         assert_eq!(metadata.complexity_score, 0.0);
         assert_eq!(metadata.language, None);

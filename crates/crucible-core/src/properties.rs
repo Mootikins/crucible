@@ -3,18 +3,18 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum PropertyValue {
+pub enum AttributeValue {
     String(String),
     Number(f64),
     Boolean(bool),
-    Array(Vec<PropertyValue>),
-    Object(HashMap<String, PropertyValue>),
+    Array(Vec<AttributeValue>),
+    Object(HashMap<String, AttributeValue>),
     Null,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PropertyMap {
-    inner: HashMap<String, PropertyValue>,
+    inner: HashMap<String, AttributeValue>,
 }
 
 impl PropertyMap {
@@ -24,15 +24,15 @@ impl PropertyMap {
         }
     }
 
-    pub fn get(&self, key: &str) -> Option<&PropertyValue> {
+    pub fn get(&self, key: &str) -> Option<&AttributeValue> {
         self.inner.get(key)
     }
 
-    pub fn set(&mut self, key: String, value: PropertyValue) {
+    pub fn set(&mut self, key: String, value: AttributeValue) {
         self.inner.insert(key, value);
     }
 
-    pub fn remove(&mut self, key: &str) -> Option<PropertyValue> {
+    pub fn remove(&mut self, key: &str) -> Option<AttributeValue> {
         self.inner.remove(key)
     }
 
@@ -71,14 +71,14 @@ mod tests {
         let mut map = PropertyMap::new();
         map.set(
             "name".to_string(),
-            PropertyValue::String("Test".to_string()),
+            AttributeValue::String("Test".to_string()),
         );
 
         assert_eq!(map.len(), 1);
         assert!(!map.is_empty());
 
         match map.get("name") {
-            Some(PropertyValue::String(s)) => assert_eq!(s, "Test"),
+            Some(AttributeValue::String(s)) => assert_eq!(s, "Test"),
             _ => panic!("Expected string value"),
         }
     }
@@ -90,28 +90,28 @@ mod tests {
         // String
         map.set(
             "string".to_string(),
-            PropertyValue::String("value".to_string()),
+            AttributeValue::String("value".to_string()),
         );
 
         // Number
-        map.set("number".to_string(), PropertyValue::Number(42.5));
+        map.set("number".to_string(), AttributeValue::Number(42.5));
 
         // Boolean
-        map.set("boolean".to_string(), PropertyValue::Boolean(true));
+        map.set("boolean".to_string(), AttributeValue::Boolean(true));
 
         // Null
-        map.set("null".to_string(), PropertyValue::Null);
+        map.set("null".to_string(), AttributeValue::Null);
 
         // Array
         map.set(
             "array".to_string(),
-            PropertyValue::Array(vec![PropertyValue::Number(1.0), PropertyValue::Number(2.0)]),
+            AttributeValue::Array(vec![AttributeValue::Number(1.0), AttributeValue::Number(2.0)]),
         );
 
         // Object
         let mut obj = HashMap::new();
-        obj.insert("key".to_string(), PropertyValue::String("val".to_string()));
-        map.set("object".to_string(), PropertyValue::Object(obj));
+        obj.insert("key".to_string(), AttributeValue::String("val".to_string()));
+        map.set("object".to_string(), AttributeValue::Object(obj));
 
         assert_eq!(map.len(), 6);
     }
@@ -121,7 +121,7 @@ mod tests {
         let mut map = PropertyMap::new();
         map.set(
             "key".to_string(),
-            PropertyValue::String("value".to_string()),
+            AttributeValue::String("value".to_string()),
         );
 
         assert_eq!(map.len(), 1);
@@ -138,9 +138,9 @@ mod tests {
     #[test]
     fn test_property_map_keys() {
         let mut map = PropertyMap::new();
-        map.set("key1".to_string(), PropertyValue::Number(1.0));
-        map.set("key2".to_string(), PropertyValue::Number(2.0));
-        map.set("key3".to_string(), PropertyValue::Number(3.0));
+        map.set("key1".to_string(), AttributeValue::Number(1.0));
+        map.set("key2".to_string(), AttributeValue::Number(2.0));
+        map.set("key3".to_string(), AttributeValue::Number(3.0));
 
         let keys: Vec<_> = map.keys().cloned().collect();
         assert_eq!(keys.len(), 3);
@@ -152,12 +152,12 @@ mod tests {
     #[test]
     fn test_property_map_overwrite() {
         let mut map = PropertyMap::new();
-        map.set("key".to_string(), PropertyValue::String("old".to_string()));
-        map.set("key".to_string(), PropertyValue::String("new".to_string()));
+        map.set("key".to_string(), AttributeValue::String("old".to_string()));
+        map.set("key".to_string(), AttributeValue::String("new".to_string()));
 
         assert_eq!(map.len(), 1);
         match map.get("key") {
-            Some(PropertyValue::String(s)) => assert_eq!(s, "new"),
+            Some(AttributeValue::String(s)) => assert_eq!(s, "new"),
             _ => panic!("Expected string value"),
         }
     }
@@ -173,7 +173,7 @@ mod tests {
         let mut map = PropertyMap::new();
         map.set(
             "test".to_string(),
-            PropertyValue::String("value".to_string()),
+            AttributeValue::String("value".to_string()),
         );
 
         // Test that serialization works
@@ -189,14 +189,14 @@ mod tests {
     #[test]
     fn test_nested_property_values() {
         let mut inner_map = HashMap::new();
-        inner_map.insert("nested".to_string(), PropertyValue::Number(123.0));
+        inner_map.insert("nested".to_string(), AttributeValue::Number(123.0));
 
         let mut map = PropertyMap::new();
-        map.set("outer".to_string(), PropertyValue::Object(inner_map));
+        map.set("outer".to_string(), AttributeValue::Object(inner_map));
 
         match map.get("outer") {
-            Some(PropertyValue::Object(obj)) => match obj.get("nested") {
-                Some(PropertyValue::Number(n)) => assert_eq!(*n, 123.0),
+            Some(AttributeValue::Object(obj)) => match obj.get("nested") {
+                Some(AttributeValue::Number(n)) => assert_eq!(*n, 123.0),
                 _ => panic!("Expected nested number"),
             },
             _ => panic!("Expected object"),

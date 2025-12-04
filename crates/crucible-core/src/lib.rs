@@ -27,7 +27,7 @@ pub use crucible_core::CrucibleCore;
 // Re-export enrichment traits and types (implementations in crucible-enrichment crate)
 pub use enrichment::{
     BlockEmbedding, CachedEmbedding, EmbeddingCache, EmbeddingProvider, EnrichedNote,
-    EnrichedNoteStore, EnrichmentService, InferredRelation, NoteMetadata, RelationType,
+    EnrichedNoteStore, EnrichmentMetadata, EnrichmentService, InferredRelation, RelationType,
 };
 
 // Re-export merkle tree abstractions
@@ -169,7 +169,7 @@ pub use parser::{
     Wikilink,
     // Note: MarkdownParser trait is exported from traits:: module above
 };
-pub use properties::{PropertyMap, PropertyValue};
+pub use properties::{PropertyMap, AttributeValue};
 pub use sink::{
     CircuitBreaker, CircuitBreakerConfig, CircuitState, OutputSink, SinkError, SinkHealth,
     SinkResult,

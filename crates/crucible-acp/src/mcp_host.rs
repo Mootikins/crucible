@@ -195,7 +195,7 @@ mod tests {
         async fn list_notes(
             &self,
             _path: Option<&str>,
-        ) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteMetadata>> {
+        ) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteInfo>> {
             Ok(vec![])
         }
 
