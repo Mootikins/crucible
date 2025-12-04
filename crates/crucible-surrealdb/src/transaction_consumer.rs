@@ -141,6 +141,7 @@ pub type ShutdownReceiver = oneshot::Receiver<()>;
 struct BatchableTransaction {
     transaction: DatabaseTransaction,
     result_sender: oneshot::Sender<TransactionResult>,
+    #[allow(dead_code)] // Reserved for future timeout/metrics use
     received_at: Instant,
 }
 

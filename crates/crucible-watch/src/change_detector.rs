@@ -181,6 +181,7 @@ impl ChangeDetector {
     /// # Returns
     ///
     /// FileHashInfo compatible with storage operations
+    #[allow(dead_code)] // Conversion helper for future batch operations
     fn file_info_to_hash_info(&self, file_info: &FileInfo) -> FileHashInfo {
         file_info.to_file_hash_info()
     }
@@ -195,6 +196,7 @@ impl ChangeDetector {
     /// # Returns
     ///
     /// FileInfo for use in change detection results
+    #[allow(dead_code)] // Conversion helper for future batch operations
     fn hash_info_to_file_info(&self, file_hash_info: FileHashInfo, root_path: &Path) -> FileInfo {
         FileInfo::from_file_hash_info(file_hash_info, root_path)
     }

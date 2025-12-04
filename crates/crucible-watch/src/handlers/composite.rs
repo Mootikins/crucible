@@ -58,6 +58,7 @@ impl Clone for CoordinationStrategy {
 #[derive(Debug, Clone)]
 pub struct HandlerState {
     /// Handler name
+    #[allow(dead_code)] // Used for debugging/logging
     name: String,
     /// Number of successful operations
     success_count: u64,

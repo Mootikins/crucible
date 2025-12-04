@@ -62,12 +62,14 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
     }
 
     /// Set the minimum word count for embedding generation (builder pattern)
+    #[allow(dead_code)] // Builder pattern method for future configuration
     pub fn with_min_words(mut self, min_words: usize) -> Self {
         self.min_words_for_embedding = min_words;
         self
     }
 
     /// Set the maximum batch size for embedding generation (builder pattern)
+    #[allow(dead_code)] // Builder pattern method for future configuration
     pub fn with_max_batch_size(mut self, max_batch_size: usize) -> Self {
         self.max_batch_size = max_batch_size;
         self
