@@ -41,7 +41,7 @@
 **Files to Modify:**
 - `crates/crucible-core/src/merkle/types.rs`
 - `crates/crucible-core/src/storage/merkle.rs`
-- `crates/crucible-parser/src/types.rs`
+- `crates/crucible-core/src/parser/types/`
 
 **TDD Steps:**
 1. **RED**: Existing tests should start failing (type mismatches)

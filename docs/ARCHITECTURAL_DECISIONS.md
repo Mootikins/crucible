@@ -103,7 +103,7 @@ Some feature flags are kept for backward compatibility:
 Parser types are canonically defined in `crucible-core` but re-exported by `crucible-parser` for convenience:
 
 ```rust
-// crucible-parser/src/types.rs - Re-exports from core
+// crucible-core/src/parser/types/ - Re-exports from core
 pub use crucible_core::parser::{
     ParsedNote, Wikilink, Tag, BlockHash, // ... etc
 };

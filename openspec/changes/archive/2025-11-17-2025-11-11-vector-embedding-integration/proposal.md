@@ -141,7 +141,7 @@ NotePipeline orchestrates the full flow using dependency-injected traits:
 - `crates/crucible-surrealdb/Cargo.toml` - Added crucible-enrichment dependency
 
 **crucible-parser** (🔄 In Progress):
-- `crates/crucible-parser/src/types.rs` - Add structural metadata to ParsedNote
+- `crates/crucible-core/src/parser/types/` - Add structural metadata to ParsedNote
 
 **Future**:
 - `crucible-surrealdb/src/eav_graph/ingest.rs` - Integrate with DocumentProcessor
