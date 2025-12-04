@@ -2,10 +2,10 @@
 
 use async_trait::async_trait;
 use crucible_core::traits::{
-    LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmError, LlmResult, LlmToolDefinition,
+    LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmError, LlmResult,
     MessageRole, ToolCall, TokenUsage,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::time::Duration;
 
 /// OpenAI chat provider

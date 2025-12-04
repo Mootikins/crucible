@@ -5,7 +5,7 @@
 
 use crucible_core::traits::{
     LlmMessage, LlmProvider, LlmRequest, LlmResponse, ExecutionContext, LlmError, LlmResult,
-    LlmToolDefinition, MessageRole, ToolCall, ToolExecutor,
+    LlmToolDefinition, MessageRole, ToolExecutor,
 };
 use tracing::{debug, info, warn};
 

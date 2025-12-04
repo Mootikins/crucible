@@ -9,7 +9,7 @@
 //! - **Open/Closed**: Extensible for different output formats
 //! - **Dependency Inversion**: Uses ACP types but can adapt to different outputs
 
-use crate::{AcpError, Result};
+use crate::Result;
 
 /// Information about a tool call for display purposes
 #[derive(Debug, Clone)]
