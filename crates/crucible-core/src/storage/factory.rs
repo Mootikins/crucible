@@ -232,27 +232,9 @@ impl Default for BackendConfig {
     }
 }
 
-/// Hashing algorithm configuration
-///
-/// Specifies which hashing algorithm to use for content addressing.
-/// BLAKE3 is recommended for production due to its speed and security.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-#[derive(Default)]
-pub enum HashAlgorithm {
-    /// BLAKE3 hashing (recommended)
-    ///
-    /// Fast, secure, and well-suited for content-addressed storage.
-    /// Provides excellent performance on modern hardware.
-    #[default]
-    Blake3,
-
-    /// SHA-256 hashing (legacy)
-    ///
-    /// Widely supported but slower than BLAKE3. Use for compatibility
-    /// with existing systems that expect SHA-256 hashes.
-    Sha256,
-}
+// Re-export HashAlgorithm from the canonical location in types/hashing.rs
+// This ensures a single definition and avoids type confusion.
+pub use crate::types::hashing::HashAlgorithm;
 
 /// Complete storage configuration
 ///

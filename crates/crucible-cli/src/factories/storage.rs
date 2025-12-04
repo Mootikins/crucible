@@ -1,11 +1,21 @@
-//! Storage factory - creates SurrealDB storage implementation
+//! Storage factory - creates storage implementations
 //!
 //! This is part of the composition root where concrete types are wired together.
 //! Phase 5: Uses public adapters API instead of importing concrete types.
+//!
+//! ## Available Factories
+//!
+//! - `create_surrealdb_storage` - SurrealDB-backed persistent storage
+//! - `create_content_addressed_storage` - In-memory content-addressed storage (for testing/demos)
 
 use crate::config::CliConfig;
 use anyhow::Result;
 use crucible_core::enrichment::EnrichedNoteStore;
+use crucible_core::storage::{
+    BlockSize, ContentAddressedStorage, ContentAddressedStorageBuilder, HasherConfig,
+    StorageBackendType, StorageResult,
+};
+use crucible_core::hashing::Blake3Hasher;
 use crucible_surrealdb::{adapters, SurrealDbConfig};
 use once_cell::sync::Lazy;
 use std::collections::{hash_map::Entry, HashMap};
@@ -88,4 +98,26 @@ pub fn create_surrealdb_enriched_note_store(
     client: adapters::SurrealClientHandle,
 ) -> Arc<dyn EnrichedNoteStore> {
     adapters::create_enriched_note_store(client)
+}
+
+/// Create in-memory content-addressed storage
+///
+/// This creates an in-memory storage backend suitable for testing and demos.
+/// Uses BLAKE3 hashing for optimal performance.
+///
+/// # Arguments
+///
+/// * `_config` - CLI configuration (currently unused, for future customization)
+///
+/// # Returns
+///
+/// A content-addressed storage implementation wrapped in an Arc.
+pub fn create_content_addressed_storage(
+    _config: &CliConfig,
+) -> StorageResult<Arc<dyn ContentAddressedStorage>> {
+    ContentAddressedStorageBuilder::new()
+        .with_backend(StorageBackendType::InMemory)
+        .with_hasher(HasherConfig::Blake3(Blake3Hasher::new()))
+        .with_block_size(BlockSize::Medium)
+        .build()
 }
