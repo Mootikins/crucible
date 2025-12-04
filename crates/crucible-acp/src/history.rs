@@ -9,7 +9,7 @@
 //! - **Open/Closed**: Extensible for different storage strategies
 //! - **Dependency Inversion**: Uses simple types, adaptable to different backends
 
-use crate::{AcpError, Result};
+use crate::Result;
 
 /// Configuration for conversation history
 #[derive(Debug, Clone)]

@@ -4,7 +4,7 @@
 
 use crucible_core::{enrichment::EmbeddingProvider, traits::KnowledgeRepository};
 use grep::regex::RegexMatcher;
-use grep::searcher::{sinks::UTF8, Searcher, Sink};
+use grep::searcher::{sinks::UTF8, Searcher};
 use ignore::WalkBuilder;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{model::CallToolResult, tool, tool_router};
@@ -25,6 +25,7 @@ fn default_true() -> bool {
 }
 
 #[derive(Clone)]
+#[allow(missing_docs)]
 pub struct SearchTools {
     kiln_path: String,
     knowledge_repo: Arc<dyn KnowledgeRepository>,
@@ -35,9 +36,7 @@ pub struct SearchTools {
 #[derive(Deserialize, JsonSchema)]
 pub struct SemanticSearchParams {
     query: String,
-    #[serde(default)]
-    filters: Option<serde_json::Value>,
-    #[serde(default = "default_limit")]
+      #[serde(default = "default_limit")]
     limit: usize,
 }
 
@@ -62,6 +61,7 @@ pub struct PropertySearchParams {
 }
 
 impl SearchTools {
+    #[allow(missing_docs)]
     pub fn new(
         kiln_path: String,
         knowledge_repo: Arc<dyn KnowledgeRepository>,

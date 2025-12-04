@@ -2307,44 +2307,6 @@ pub async fn get_all_document_embeddings(client: &SurrealClient) -> Result<Vec<D
     Ok(embeddings)
 }
 
-/// Calculate cosine similarity between two vectors
-fn calculate_cosine_similarity(vec_a: &[f32], vec_b: &[f32]) -> f64 {
-    if vec_a.len() != vec_b.len() {
-        return 0.0;
-    }
-
-    if vec_a.is_empty() || vec_b.is_empty() {
-        return 0.0;
-    }
-
-    // Calculate dot product
-    let dot_product: f64 = vec_a
-        .iter()
-        .zip(vec_b.iter())
-        .map(|(a, b)| *a as f64 * *b as f64)
-        .sum();
-
-    // Calculate magnitudes
-    let magnitude_a: f64 = vec_a
-        .iter()
-        .map(|x| (*x as f64) * (*x as f64))
-        .sum::<f64>()
-        .sqrt();
-
-    let magnitude_b: f64 = vec_b
-        .iter()
-        .map(|x| (*x as f64) * (*x as f64))
-        .sum::<f64>()
-        .sqrt();
-
-    // Handle zero vectors
-    if magnitude_a == 0.0 || magnitude_b == 0.0 {
-        return 0.0;
-    }
-
-    // Calculate cosine similarity
-    dot_product / (magnitude_a * magnitude_b)
-}
 
 /// Convert database record to DocumentEmbedding (extracts document_id from record ID)
 fn convert_record_to_document_embedding(record: &Record) -> Result<DocumentEmbedding> {
@@ -3066,33 +3028,6 @@ pub fn generate_document_id(
     format!("entities:note:{}", normalized)
 }
 
-async fn ensure_tag_exists(client: &SurrealClient, tag_name: &str) -> Result<()> {
-    let normalized_name = normalize_tag_name(tag_name);
-
-    // Use UPDATE with RETURN NONE to create-or-update the tag without failing on duplicates
-    // This is idempotent and won't error if the tag already exists
-    let upsert_sql = format!("UPDATE type::thing('tags', $tag_id) SET name = $name RETURN NONE");
-
-    client
-        .query(
-            &upsert_sql,
-            &[json!({
-                "tag_id": normalized_name,
-                "name": tag_name
-            })],
-        )
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to ensure tag exists: {}", e))?;
-
-    Ok(())
-}
-
-fn normalize_tag_name(tag: &str) -> String {
-    tag.trim()
-        .trim_start_matches('#')
-        .replace(['/', '\\', ' '], "_")
-        .to_lowercase()
-}
 
 // ==============================================================================
 // KNOWLEDGE REPOSITORY IMPLEMENTATION

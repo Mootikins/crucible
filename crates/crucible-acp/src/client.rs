@@ -474,7 +474,7 @@ impl CrucibleAcpClient {
     /// Returns an error if any step of the handshake fails
     pub async fn connect_with_handshake(&mut self) -> Result<AcpSession> {
         use agent_client_protocol::{
-            ClientCapabilities, InitializeRequest, NewSessionRequest, ProtocolVersion,
+            ClientCapabilities, InitializeRequest, NewSessionRequest,
         };
 
         // 1. Spawn agent process
@@ -493,7 +493,7 @@ impl CrucibleAcpClient {
         let _init_response = self.initialize(init_request).await?;
 
         // 3. Send NewSessionRequest with MCP server configuration
-        use agent_client_protocol::{EnvVariable, McpServer};
+        use agent_client_protocol::McpServer;
 
         // Configure Crucible MCP server via stdio transport
         // The agent will spawn `cru mcp` which starts the MCP server
@@ -551,7 +551,7 @@ impl CrucibleAcpClient {
     /// Returns an error if any step of the handshake fails
     pub async fn connect_with_sse_mcp(&mut self, sse_url: &str) -> Result<AcpSession> {
         use agent_client_protocol::{
-            ClientCapabilities, InitializeRequest, McpServer, NewSessionRequest, ProtocolVersion,
+            ClientCapabilities, InitializeRequest, McpServer, NewSessionRequest,
         };
 
         tracing::info!("Connecting to agent with SSE MCP server at {}", sse_url);

@@ -374,7 +374,7 @@ impl<'a> NoteIngestor<'a> {
         use crucible_core::storage::PropertyValue;
 
         // Metadata namespace for enrichment-computed properties
-        let metadata_namespace = PropertyNamespace("enrichment".to_string());
+        let _metadata_namespace = PropertyNamespace("enrichment".to_string());
 
         // Store reading time (always present)
         self.store

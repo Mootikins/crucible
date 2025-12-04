@@ -9,7 +9,7 @@
 //! - **Dependency Inversion**: Uses traits from crucible-core
 //! - **Open/Closed**: Extensible enrichment strategies
 
-use crate::{AcpError, Result};
+use crate::Result;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
