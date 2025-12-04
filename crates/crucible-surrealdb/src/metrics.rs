@@ -430,18 +430,12 @@ impl SystemMetrics {
     }
 }
 
-/// Global metrics instance (lazy_static would be better, but simple approach for now)
-static mut GLOBAL_METRICS: Option<Arc<SystemMetrics>> = None;
-static GLOBAL_METRICS_INIT: std::sync::Once = std::sync::Once::new();
+/// Global metrics instance using OnceLock for thread-safe lazy initialization
+static GLOBAL_METRICS: std::sync::OnceLock<Arc<SystemMetrics>> = std::sync::OnceLock::new();
 
 /// Get or create global metrics instance
 pub fn get_global_metrics() -> Arc<SystemMetrics> {
-    unsafe {
-        GLOBAL_METRICS_INIT.call_once(|| {
-            GLOBAL_METRICS = Some(SystemMetrics::new());
-        });
-        GLOBAL_METRICS.as_ref().unwrap().clone()
-    }
+    GLOBAL_METRICS.get_or_init(SystemMetrics::new).clone()
 }
 
 /// Convenience functions for global metrics
