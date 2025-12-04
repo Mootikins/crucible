@@ -32,6 +32,7 @@ pub struct IndexingHandler {
     // Database connection will be added in Phase 4
 }
 
+#[allow(dead_code)] // Many methods scaffolded for future Phase 4 implementation
 impl IndexingHandler {
     /// Create a new indexing handler.
     pub fn new() -> Result<Self> {

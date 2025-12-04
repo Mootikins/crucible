@@ -169,6 +169,7 @@ pub fn sanitize_record_id(id: &str) -> Result<String, String> {
 /// let record_ref = format_record_id("users", "john-doe").unwrap();
 /// assert_eq!(record_ref, "users:⟨john-doe⟩");
 /// ```
+#[allow(dead_code)] // Utility function for future use
 pub fn format_record_id(table: &str, id: &str) -> Result<String, String> {
     let sanitized = sanitize_record_id(id)?;
     Ok(format!("{}:⟨{}⟩", table, sanitized))
