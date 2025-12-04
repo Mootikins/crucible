@@ -49,6 +49,7 @@ struct ChannelState {
     batch_deadline: Option<Instant>,
 
     /// Events being processed
+    #[allow(dead_code)] // Reserved for tracking in-flight events
     processing_events: HashMap<uuid::Uuid, Instant>,
 
     /// Recently processed events for deduplication

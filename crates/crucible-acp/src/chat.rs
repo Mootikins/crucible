@@ -12,7 +12,7 @@
 use crate::session::AcpSession;
 use crate::{
     discover_crucible_tools, AcpError, ContextConfig, ConversationHistory, CrucibleAcpClient,
-    HistoryConfig, HistoryMessage, PromptEnricher, Result, StreamConfig, StreamHandler,
+    HistoryConfig, HistoryMessage, PromptEnricher, Result, StreamConfig,
     ToolCallInfo, ToolExecutor, ToolRegistry,
 };
 use std::path::PathBuf;
