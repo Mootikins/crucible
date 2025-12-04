@@ -263,8 +263,8 @@ impl fmt::Display for PropertyNamespace {
     }
 }
 
-// Re-export shared PropertyValue from core
-pub use crucible_core::storage::PropertyValue;
+// Re-export shared AttributeValue from core
+pub use crucible_core::storage::AttributeValue;
 
 /// A single namespace/key/value record.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -274,7 +274,7 @@ pub struct Property {
     pub entity_id: RecordId<EntityRecord>,
     pub namespace: PropertyNamespace,
     pub key: String,
-    pub value: PropertyValue,
+    pub value: AttributeValue,
     #[serde(default = "default_source")]
     pub source: String,
     #[serde(default = "default_confidence")]
@@ -379,7 +379,7 @@ impl Property {
         entity_id: RecordId<EntityRecord>,
         namespace: impl Into<String>,
         key: impl Into<String>,
-        value: PropertyValue,
+        value: AttributeValue,
     ) -> Self {
         Self {
             id: Some(id),
@@ -482,12 +482,12 @@ mod tests {
 
     #[test]
     fn property_value_variants_compile() {
-        // Test that we can use the shared PropertyValue enum
-        let _text = PropertyValue::Text("hello".to_string());
-        let _number = PropertyValue::Number(42.5);
-        let _bool = PropertyValue::Bool(true);
-        let _date = PropertyValue::Date(chrono::NaiveDate::from_ymd_opt(2024, 11, 8).unwrap());
-        let _json = PropertyValue::Json(serde_json::json!({"key": "value"}));
+        // Test that we can use the shared AttributeValue enum
+        let _text = AttributeValue::Text("hello".to_string());
+        let _number = AttributeValue::Number(42.5);
+        let _bool = AttributeValue::Bool(true);
+        let _date = AttributeValue::Date(chrono::NaiveDate::from_ymd_opt(2024, 11, 8).unwrap());
+        let _json = AttributeValue::Json(serde_json::json!({"key": "value"}));
     }
 
     #[test]

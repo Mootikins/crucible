@@ -24,7 +24,7 @@ fn sanitize_content(s: &str) -> String {
 }
 use super::types::{
     BlockNode, Entity, EntityRecord, EntityTag, EntityTagRecord, EntityType, Property,
-    PropertyRecord, PropertyValue, RecordId, TagRecord,
+    PropertyRecord, AttributeValue, RecordId, TagRecord,
 };
 
 /// Classify content type for universal link processing
@@ -372,7 +372,7 @@ impl<'a> NoteIngestor<'a> {
 
         // Step 4: Store enrichment metadata as properties
         use super::types::{Property, PropertyNamespace};
-        use crucible_core::storage::PropertyValue;
+        use crucible_core::storage::AttributeValue;
 
         // Metadata namespace for enrichment-computed properties
         let _metadata_namespace = PropertyNamespace("enrichment".to_string());
@@ -384,7 +384,7 @@ impl<'a> NoteIngestor<'a> {
                 entity_id.clone(),
                 "enrichment",
                 "reading_time",
-                PropertyValue::Number(enriched.core.metadata.reading_time_minutes as f64),
+                AttributeValue::Number(enriched.core.metadata.reading_time_minutes as f64),
             ))
             .await?;
 
@@ -395,7 +395,7 @@ impl<'a> NoteIngestor<'a> {
                 entity_id.clone(),
                 "enrichment",
                 "complexity_score",
-                PropertyValue::Number(enriched.core.metadata.complexity_score as f64),
+                AttributeValue::Number(enriched.core.metadata.complexity_score as f64),
             ))
             .await?;
 
@@ -407,7 +407,7 @@ impl<'a> NoteIngestor<'a> {
                     entity_id.clone(),
                     "enrichment",
                     "language",
-                    PropertyValue::Text(language.clone()),
+                    AttributeValue::Text(language.clone()),
                 ))
                 .await?;
         }
@@ -1153,7 +1153,7 @@ impl<'a> NoteIngestor<'a> {
             entity_id.clone(),
             "section",
             "tree_root_hash",
-            PropertyValue::Text(merkle_tree.root_hash.to_hex()),
+            AttributeValue::Text(merkle_tree.root_hash.to_hex()),
         ));
 
         // Store total section count
@@ -1162,7 +1162,7 @@ impl<'a> NoteIngestor<'a> {
             entity_id.clone(),
             "section",
             "total_sections",
-            PropertyValue::Number(merkle_tree.sections.len() as f64),
+            AttributeValue::Number(merkle_tree.sections.len() as f64),
         ));
 
         // Store metadata for each section
@@ -1174,7 +1174,7 @@ impl<'a> NoteIngestor<'a> {
                 entity_id.clone(),
                 "section",
                 &hash_key,
-                PropertyValue::Text(section.binary_tree.root_hash.to_hex()),
+                AttributeValue::Text(section.binary_tree.root_hash.to_hex()),
             ));
 
             // Store section metadata as JSON
@@ -1199,7 +1199,7 @@ impl<'a> NoteIngestor<'a> {
                 entity_id.clone(),
                 "section",
                 &metadata_key,
-                PropertyValue::Json(Value::Object(metadata)),
+                AttributeValue::Json(Value::Object(metadata)),
             ));
         }
 
@@ -1224,7 +1224,7 @@ impl<'a> NoteIngestor<'a> {
             entity_id.clone(),
             "core",
             "path",
-            PropertyValue::Text(doc.path.to_string_lossy().to_string()),
+            AttributeValue::Text(doc.path.to_string_lossy().to_string()),
         ));
 
         props.push(Property::new(
@@ -1232,7 +1232,7 @@ impl<'a> NoteIngestor<'a> {
             entity_id.clone(),
             "core",
             "relative_path",
-            PropertyValue::Text(relative_path.to_string()),
+            AttributeValue::Text(relative_path.to_string()),
         ));
 
         props.push(Property::new(
@@ -1240,7 +1240,7 @@ impl<'a> NoteIngestor<'a> {
             entity_id.clone(),
             "core",
             "title",
-            PropertyValue::Text(doc.title()),
+            AttributeValue::Text(doc.title()),
         ));
 
         props.push(Property::new(
@@ -1248,7 +1248,7 @@ impl<'a> NoteIngestor<'a> {
             entity_id.clone(),
             "core",
             "tags",
-            PropertyValue::Json(Value::Array(
+            AttributeValue::Json(Value::Array(
                 doc.all_tags()
                     .into_iter()
                     .map(Value::String)
@@ -1269,7 +1269,7 @@ impl<'a> NoteIngestor<'a> {
                 entity_id.clone(),
                 "core",
                 "frontmatter",
-                PropertyValue::Json(fm_value),
+                AttributeValue::Json(fm_value),
             ));
         }
 

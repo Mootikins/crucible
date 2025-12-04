@@ -6,11 +6,11 @@
 //! ## Design Principles
 //!
 //! 1. **Flat Structure**: All frontmatter properties use "frontmatter" namespace
-//! 2. **Type Inference**: Automatically maps to PropertyValue types
+//! 2. **Type Inference**: Automatically maps to AttributeValue types
 //! 3. **No Nesting**: Complex objects serialized to JSON (following Obsidian conventions)
 //! 4. **Timestamps**: All properties get created_at/updated_at metadata
 
-use crate::storage::{Property, PropertyNamespace, PropertyValue};
+use crate::storage::{Property, PropertyNamespace, AttributeValue};
 use chrono::{NaiveDate, Utc};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -39,12 +39,12 @@ impl FrontmatterPropertyMapper {
     /// Map a HashMap of frontmatter to Property objects
     ///
     /// Performs type inference for each value:
-    /// - String → PropertyValue::Text
-    /// - Number → PropertyValue::Number
-    /// - Boolean → PropertyValue::Bool
-    /// - Date string (YYYY-MM-DD) → PropertyValue::Date
-    /// - Array → PropertyValue::Json
-    /// - Object → PropertyValue::Json (with warning logged)
+    /// - String → AttributeValue::Text
+    /// - Number → AttributeValue::Number
+    /// - Boolean → AttributeValue::Bool
+    /// - Date string (YYYY-MM-DD) → AttributeValue::Date
+    /// - Array → AttributeValue::Json
+    /// - Object → AttributeValue::Json (with warning logged)
     ///
     /// # Arguments
     ///
@@ -73,31 +73,31 @@ impl FrontmatterPropertyMapper {
         properties
     }
 
-    /// Infer PropertyValue type from serde_json::Value
-    fn infer_property_value(&self, key: &str, value: &Value) -> PropertyValue {
+    /// Infer AttributeValue type from serde_json::Value
+    fn infer_property_value(&self, key: &str, value: &Value) -> AttributeValue {
         match value {
             // String - check if it's a date format first
             Value::String(s) => {
                 // Try to parse as ISO 8601 date
                 if let Ok(date) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-                    return PropertyValue::Date(date);
+                    return AttributeValue::Date(date);
                 }
                 // Try RFC 3339 datetime
                 if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
-                    return PropertyValue::Date(dt.date_naive());
+                    return AttributeValue::Date(dt.date_naive());
                 }
                 // Regular string
-                PropertyValue::Text(s.clone())
+                AttributeValue::Text(s.clone())
             }
 
             // Number (JSON numbers are always f64)
-            Value::Number(n) => PropertyValue::Number(n.as_f64().unwrap_or(0.0)),
+            Value::Number(n) => AttributeValue::Number(n.as_f64().unwrap_or(0.0)),
 
             // Boolean
-            Value::Bool(b) => PropertyValue::Bool(*b),
+            Value::Bool(b) => AttributeValue::Bool(*b),
 
             // Array - serialize to JSON
-            Value::Array(_) => PropertyValue::Json(value.clone()),
+            Value::Array(_) => AttributeValue::Json(value.clone()),
 
             // Object - serialize to JSON (log warning about nesting)
             Value::Object(_) => {
@@ -106,11 +106,11 @@ impl FrontmatterPropertyMapper {
                     entity = %self.entity_id,
                     "Nested object in frontmatter - consider flattening keys (e.g., 'author.name' instead of nested 'author' object)"
                 );
-                PropertyValue::Json(value.clone())
+                AttributeValue::Json(value.clone())
             }
 
             // Null - treat as empty string
-            Value::Null => PropertyValue::Text(String::new()),
+            Value::Null => AttributeValue::Text(String::new()),
         }
     }
 }
@@ -121,7 +121,7 @@ mod tests {
     use serde_json::json;
 
     // ============================================================================
-    // Phase 1.2.1: String → PropertyValue::Text
+    // Phase 1.2.1: String → AttributeValue::Text
     // ============================================================================
 
     #[test]
@@ -138,17 +138,17 @@ mod tests {
         let title_prop = properties.iter().find(|p| p.key == "title").unwrap();
         assert_eq!(title_prop.entity_id, "note:test");
         assert_eq!(title_prop.namespace, PropertyNamespace::frontmatter());
-        assert_eq!(title_prop.value, PropertyValue::Text("My Note".to_string()));
+        assert_eq!(title_prop.value, AttributeValue::Text("My Note".to_string()));
 
         let author_prop = properties.iter().find(|p| p.key == "author").unwrap();
         assert_eq!(
             author_prop.value,
-            PropertyValue::Text("John Doe".to_string())
+            AttributeValue::Text("John Doe".to_string())
         );
     }
 
     // ============================================================================
-    // Phase 1.2.2: Number → PropertyValue::Number
+    // Phase 1.2.2: Number → AttributeValue::Number
     // ============================================================================
 
     #[test]
@@ -164,17 +164,17 @@ mod tests {
         assert_eq!(properties.len(), 3);
 
         let count_prop = properties.iter().find(|p| p.key == "count").unwrap();
-        assert_eq!(count_prop.value, PropertyValue::Number(42.0));
+        assert_eq!(count_prop.value, AttributeValue::Number(42.0));
 
         let rating_prop = properties.iter().find(|p| p.key == "rating").unwrap();
-        assert_eq!(rating_prop.value, PropertyValue::Number(4.5));
+        assert_eq!(rating_prop.value, AttributeValue::Number(4.5));
 
         let neg_prop = properties.iter().find(|p| p.key == "negative").unwrap();
-        assert_eq!(neg_prop.value, PropertyValue::Number(-10.0));
+        assert_eq!(neg_prop.value, AttributeValue::Number(-10.0));
     }
 
     // ============================================================================
-    // Phase 1.2.3: Boolean → PropertyValue::Bool
+    // Phase 1.2.3: Boolean → AttributeValue::Bool
     // ============================================================================
 
     #[test]
@@ -189,14 +189,14 @@ mod tests {
         assert_eq!(properties.len(), 2);
 
         let pub_prop = properties.iter().find(|p| p.key == "published").unwrap();
-        assert_eq!(pub_prop.value, PropertyValue::Bool(true));
+        assert_eq!(pub_prop.value, AttributeValue::Bool(true));
 
         let draft_prop = properties.iter().find(|p| p.key == "draft").unwrap();
-        assert_eq!(draft_prop.value, PropertyValue::Bool(false));
+        assert_eq!(draft_prop.value, AttributeValue::Bool(false));
     }
 
     // ============================================================================
-    // Phase 1.2.4: Date String → PropertyValue::Date
+    // Phase 1.2.4: Date String → AttributeValue::Date
     // ============================================================================
 
     #[test]
@@ -213,18 +213,18 @@ mod tests {
         let created_prop = properties.iter().find(|p| p.key == "created").unwrap();
         assert_eq!(
             created_prop.value,
-            PropertyValue::Date(NaiveDate::from_ymd_opt(2024, 11, 8).unwrap())
+            AttributeValue::Date(NaiveDate::from_ymd_opt(2024, 11, 8).unwrap())
         );
 
         let modified_prop = properties.iter().find(|p| p.key == "modified").unwrap();
         assert_eq!(
             modified_prop.value,
-            PropertyValue::Date(NaiveDate::from_ymd_opt(2024, 11, 9).unwrap())
+            AttributeValue::Date(NaiveDate::from_ymd_opt(2024, 11, 9).unwrap())
         );
     }
 
     // ============================================================================
-    // Phase 1.2.5: Array → PropertyValue::Json
+    // Phase 1.2.5: Array → AttributeValue::Json
     // ============================================================================
 
     #[test]
@@ -241,18 +241,18 @@ mod tests {
         let tags_prop = properties.iter().find(|p| p.key == "tags").unwrap();
         assert_eq!(
             tags_prop.value,
-            PropertyValue::Json(json!(["rust", "testing", "tdd"]))
+            AttributeValue::Json(json!(["rust", "testing", "tdd"]))
         );
 
         let aliases_prop = properties.iter().find(|p| p.key == "aliases").unwrap();
         assert_eq!(
             aliases_prop.value,
-            PropertyValue::Json(json!(["note", "example"]))
+            AttributeValue::Json(json!(["note", "example"]))
         );
     }
 
     // ============================================================================
-    // Phase 1.2.6: Nested Object → PropertyValue::Json (with warning)
+    // Phase 1.2.6: Nested Object → AttributeValue::Json (with warning)
     // ============================================================================
 
     #[test]
@@ -271,7 +271,7 @@ mod tests {
         let author_prop = properties.iter().find(|p| p.key == "author").unwrap();
         assert_eq!(
             author_prop.value,
-            PropertyValue::Json(json!({"name": "John Doe", "email": "john@example.com"}))
+            AttributeValue::Json(json!({"name": "John Doe", "email": "john@example.com"}))
         );
     }
 

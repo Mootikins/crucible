@@ -10,7 +10,7 @@
 //! - Parser types: `parser::types` (ParsedNote, Wikilink, Tag, etc.)
 //! - Database types: `database` (Record, QueryResult, Node, Edge, Note, etc.)
 //! - Note types: `note` (NoteNode, ViewportState)
-//! - Property types: `properties` (PropertyMap, PropertyValue)
+//! - Property types: `properties` (PropertyMap, AttributeValue)
 //! - Hashing types: `hashing` (FileHash, BlockHash, HashAlgorithm, etc.)
 //!
 //! This module serves as a central re-export point for types that cross module boundaries.
@@ -52,7 +52,7 @@ pub use crate::database::{
 pub use crate::note::{NoteNode, ViewportState};
 
 // Re-export property types
-pub use crate::properties::{PropertyMap, PropertyValue};
+pub use crate::properties::{PropertyMap, AttributeValue};
 
 // Re-export hashing types
 pub use crate::types::hashing::{
