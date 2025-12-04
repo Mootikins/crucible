@@ -53,6 +53,7 @@ pub mod acp_client;
 pub mod chat;
 pub mod client;
 pub mod context;
+pub mod discovery;
 pub mod filesystem;
 pub mod history;
 pub mod mcp_host;
@@ -70,6 +71,7 @@ pub use acp_client::CrucibleClient;
 pub use chat::{ChatConfig, ChatSession, ConversationState, SessionMetadata};
 pub use client::CrucibleAcpClient; // Legacy, will be removed
 pub use context::{ContextConfig, PromptEnricher};
+pub use discovery::{clear_agent_cache, discover_agent, is_agent_available, AgentInfo};
 pub use filesystem::FileSystemHandler;
 pub use history::{ConversationHistory, HistoryConfig, HistoryMessage, MessageRole};
 pub use mcp_host::InProcessMcpHost;

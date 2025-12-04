@@ -1,8 +1,7 @@
-//! Core Facade Pattern
+//! Kiln Context
 //!
-//! Provides a clean, trait-based interface between the CLI and core functionality.
-//! This facade pattern simplifies testing and maintains separation of concerns.
-//! Phase 5: Uses public adapters API instead of importing concrete types.
+//! Provides the runtime context for interacting with a Kiln (knowledge base).
+//! This includes storage access, semantic search, and configuration.
 
 use anyhow::{anyhow, Result};
 use crucible_surrealdb::adapters::SurrealClientHandle;
@@ -11,19 +10,19 @@ use std::sync::Arc;
 
 use crate::config::CliConfig;
 
-/// Main facade for accessing Crucible core functionality
+/// Runtime context for interacting with a Kiln
 ///
-/// This struct provides a clean interface to the underlying systems:
+/// Provides access to:
 /// - Storage (SurrealDB via opaque handle)
-/// - Semantic search
+/// - Semantic search capabilities
 /// - Configuration
 #[derive(Clone)]
-pub struct CrucibleCoreFacade {
+pub struct KilnContext {
     storage: SurrealClientHandle,
     config: Arc<CliConfig>,
 }
 
-impl CrucibleCoreFacade {
+impl KilnContext {
     /// Create a new facade from configuration
     pub async fn from_config(config: CliConfig) -> Result<Self> {
         // Initialize storage using factory function

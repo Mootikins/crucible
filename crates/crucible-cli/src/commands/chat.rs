@@ -10,7 +10,7 @@ use tracing::{debug, info, trace, warn};
 use crate::acp::{discover_agent, ContextEnricher, CrucibleAcpClient};
 use crate::chat::{ChatMode, ChatModeDisplay};
 use crate::config::CliConfig;
-use crate::core_facade::CrucibleCoreFacade;
+use crate::core_facade::KilnContext;
 use crate::factories;
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
 use crucible_pipeline::NotePipeline;
@@ -148,7 +148,7 @@ pub async fn execute(
 
     // Initialize core facade
     status.update("Initializing core...");
-    let core = Arc::new(CrucibleCoreFacade::from_storage(
+    let core = Arc::new(KilnContext::from_storage(
         storage_client.clone(),
         config,
     ));
@@ -212,7 +212,7 @@ pub async fn execute(
 
 /// Run an interactive chat session with mode toggling support
 async fn run_interactive_session(
-    core: Arc<CrucibleCoreFacade>,
+    core: Arc<KilnContext>,
     client: &mut CrucibleAcpClient,
     initial_mode: ChatMode,
     no_context: bool,

@@ -14,8 +14,6 @@ path = "src/lib.rs"
 [features]
 # Enable test utilities (MockEmbeddingProvider) for integration tests in other crates
 test-utils = []
-# Enable Burn ML framework for GPU-accelerated embeddings
-burn = ["crucible-burn"]
 
 [dependencies]
 # Core types and traits
@@ -50,9 +48,6 @@ tracing = { workspace = true }
 
 # FastEmbed for local embeddings and reranking
 fastembed = "5.2"
-
-# Burn ML framework (optional, GPU-accelerated)
-crucible-burn = { path = "../crucible-burn", optional = true }
 
 # Path expansion (for tilde expansion)
 shellexpand = "3.1"

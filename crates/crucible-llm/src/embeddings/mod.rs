@@ -28,14 +28,7 @@ pub mod provider;
 /// Mock provider for testing
 pub mod mock;
 
-/// Burn ML framework provider adapter (GPU-accelerated)
-#[cfg(feature = "burn")]
-pub mod burn_adapter;
-
 pub use config::{EmbeddingConfig, EmbeddingProviderType, ProviderType};
-
-#[cfg(feature = "burn")]
-pub use burn_adapter::BurnProviderAdapter;
 pub use core_adapter::CoreProviderAdapter;
 pub use error::{EmbeddingError, EmbeddingResult};
 pub use fastembed::FastEmbedProvider;
@@ -70,30 +63,6 @@ pub async fn create_provider(
             let dimensions = config.dimensions().unwrap_or(768) as usize;
             let provider = mock::MockEmbeddingProvider::with_dimensions(dimensions);
             Ok(Arc::new(provider))
-        }
-        EmbeddingProviderType::Burn => {
-            #[cfg(feature = "burn")]
-            {
-                // Extract BurnEmbedConfig from the EmbeddingConfig
-                let burn_config = match config {
-                    EmbeddingConfig::Burn(c) => c,
-                    _ => {
-                        return Err(EmbeddingError::ConfigError(
-                            "Expected Burn configuration for Burn provider".to_string(),
-                        ))
-                    }
-                };
-                let provider = burn_adapter::BurnProviderAdapter::new(burn_config).await?;
-                Ok(Arc::new(provider))
-            }
-            #[cfg(not(feature = "burn"))]
-            {
-                Err(EmbeddingError::ConfigError(
-                    "Burn provider requires the 'burn' feature to be enabled. \
-                     Rebuild with: cargo build --features burn"
-                        .to_string(),
-                ))
-            }
         }
         _ => Err(EmbeddingError::ConfigError(format!(
             "Unsupported provider type: {:?}",

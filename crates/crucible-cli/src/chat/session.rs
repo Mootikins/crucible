@@ -16,7 +16,7 @@ use tracing::{debug, error};
 
 use crate::acp::ContextEnricher;
 use crate::chat::{ChatAgent, ChatMode, ChatModeDisplay, Command, CommandParser, Display, ToolCallDisplay};
-use crate::core_facade::CrucibleCoreFacade;
+use crate::core_facade::KilnContext;
 
 /// Default number of context results to include in enriched prompts
 pub const DEFAULT_CONTEXT_SIZE: usize = 5;
@@ -74,13 +74,13 @@ impl SessionConfig {
 /// Interactive chat session orchestrator
 pub struct ChatSession {
     config: SessionConfig,
-    core: Arc<CrucibleCoreFacade>,
+    core: Arc<KilnContext>,
     enricher: ContextEnricher,
 }
 
 impl ChatSession {
     /// Create a new chat session
-    pub fn new(config: SessionConfig, core: Arc<CrucibleCoreFacade>) -> Self {
+    pub fn new(config: SessionConfig, core: Arc<KilnContext>) -> Self {
         let context_size = config.context_size.unwrap_or(5);
         let enricher = ContextEnricher::new(core.clone(), Some(context_size));
 
