@@ -3034,7 +3034,7 @@ pub fn generate_document_id(
 // ==============================================================================
 
 use async_trait::async_trait;
-use crucible_core::traits::{KnowledgeRepository, NoteMetadata};
+use crucible_core::traits::{KnowledgeRepository, NoteInfo};
 use crucible_core::types::SearchResult;
 
 async fn get_note_by_name_internal(
@@ -3074,7 +3074,7 @@ async fn get_note_by_name_internal(
 async fn list_notes_internal(
     client: &SurrealClient,
     path_filter: Option<&str>,
-) -> Result<Vec<NoteMetadata>> {
+) -> Result<Vec<NoteInfo>> {
     let sql = if let Some(_path) = path_filter {
         r#"
             SELECT * FROM entities
@@ -3099,7 +3099,7 @@ async fn list_notes_internal(
 
     for record in result.records {
         let doc = convert_record_to_parsed_document(&record).await?;
-        notes.push(NoteMetadata {
+        notes.push(NoteInfo {
             name: doc
                 .path
                 .file_name()
@@ -3184,7 +3184,7 @@ impl KnowledgeRepository for SurrealClient {
             .map_err(|e| CrucibleError::DatabaseError(e.to_string()))
     }
 
-    async fn list_notes(&self, path_filter: Option<&str>) -> CoreResult<Vec<NoteMetadata>> {
+    async fn list_notes(&self, path_filter: Option<&str>) -> CoreResult<Vec<NoteInfo>> {
         list_notes_internal(self, path_filter)
             .await
             .map_err(|e| CrucibleError::DatabaseError(e.to_string()))

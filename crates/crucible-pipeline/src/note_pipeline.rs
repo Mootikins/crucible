@@ -298,11 +298,11 @@ impl NotePipeline {
             debug!("Phase 4: Enrichment skipped (disabled in config)");
 
             // Create minimal enriched note without embeddings
-            use crucible_core::enrichment::{EnrichedNote, NoteMetadata};
+            use crucible_core::enrichment::{EnrichedNote, EnrichmentMetadata};
             EnrichedNote::new(
                 parsed.clone(),
                 Vec::new(), // No embeddings
-                NoteMetadata::default(),
+                EnrichmentMetadata::default(),
                 Vec::new(), // No inferred relations
             )
         };

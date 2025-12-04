@@ -162,7 +162,7 @@ pub struct Property {
 /// - Self-documenting APIs
 ///
 /// Note: This is the EAV-specific attribute value type. For generic property
-/// values (JSON-like), see `crucible_core::properties::PropertyValue`.
+/// values (JSON-like), see `crucible_core::properties::AttributeValue`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type", content = "value")]
 #[serde(rename_all = "snake_case")]
@@ -174,9 +174,6 @@ pub enum AttributeValue {
     Json(Value),
 }
 
-/// Type alias for backward compatibility
-#[deprecated(since = "0.2.0", note = "Use AttributeValue instead")]
-pub type PropertyValue = AttributeValue;
 
 // ============================================================================
 // EntityStorage Trait
@@ -993,7 +990,7 @@ mod tests {
                 entity_id: "note:test".to_string(),
                 namespace: PropertyNamespace::frontmatter(),
                 key: "author".to_string(),
-                value: PropertyValue::Text("John Doe".to_string()),
+                value: AttributeValue::Text("John Doe".to_string()),
                 created_at: now,
                 updated_at: now,
             },
@@ -1001,7 +998,7 @@ mod tests {
                 entity_id: "note:test".to_string(),
                 namespace: PropertyNamespace::frontmatter(),
                 key: "priority".to_string(),
-                value: PropertyValue::Number(5.0),
+                value: AttributeValue::Number(5.0),
                 created_at: now,
                 updated_at: now,
             },
@@ -1009,7 +1006,7 @@ mod tests {
                 entity_id: "note:test".to_string(),
                 namespace: PropertyNamespace::frontmatter(),
                 key: "published".to_string(),
-                value: PropertyValue::Bool(true),
+                value: AttributeValue::Bool(true),
                 created_at: now,
                 updated_at: now,
             },
@@ -1031,7 +1028,7 @@ mod tests {
             entity_id: "note:test".to_string(),
             namespace: PropertyNamespace::frontmatter(),
             key: "author".to_string(),
-            value: PropertyValue::Text("Jane Smith".to_string()),
+            value: AttributeValue::Text("Jane Smith".to_string()),
             created_at: now,
             updated_at: Utc::now(),
         };
@@ -1051,7 +1048,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(author.value, PropertyValue::Text("Jane Smith".to_string()));
+        assert_eq!(author.value, AttributeValue::Text("Jane Smith".to_string()));
     }
 
     #[tokio::test]
@@ -1065,7 +1062,7 @@ mod tests {
                 entity_id: "note:test".to_string(),
                 namespace: PropertyNamespace::frontmatter(),
                 key: "author".to_string(),
-                value: PropertyValue::Text("John Doe".to_string()),
+                value: AttributeValue::Text("John Doe".to_string()),
                 created_at: now,
                 updated_at: now,
             },
@@ -1073,7 +1070,7 @@ mod tests {
                 entity_id: "note:test".to_string(),
                 namespace: PropertyNamespace::core(),
                 key: "version".to_string(),
-                value: PropertyValue::Number(2.0),
+                value: AttributeValue::Number(2.0),
                 created_at: now,
                 updated_at: now,
             },
@@ -1081,7 +1078,7 @@ mod tests {
                 entity_id: "note:test".to_string(),
                 namespace: PropertyNamespace::plugin("my_plugin"),
                 key: "custom_field".to_string(),
-                value: PropertyValue::Text("custom value".to_string()),
+                value: AttributeValue::Text("custom value".to_string()),
                 created_at: now,
                 updated_at: now,
             },
@@ -1127,7 +1124,7 @@ mod tests {
                 entity_id: "note:test".to_string(),
                 namespace: PropertyNamespace::frontmatter(),
                 key: "author".to_string(),
-                value: PropertyValue::Text("John Doe".to_string()),
+                value: AttributeValue::Text("John Doe".to_string()),
                 created_at: now,
                 updated_at: now,
             },
@@ -1135,7 +1132,7 @@ mod tests {
                 entity_id: "note:test".to_string(),
                 namespace: PropertyNamespace::frontmatter(),
                 key: "tags".to_string(),
-                value: PropertyValue::Json(serde_json::json!(["test", "example"])),
+                value: AttributeValue::Json(serde_json::json!(["test", "example"])),
                 created_at: now,
                 updated_at: now,
             },
@@ -1143,7 +1140,7 @@ mod tests {
                 entity_id: "note:test".to_string(),
                 namespace: PropertyNamespace::core(),
                 key: "version".to_string(),
-                value: PropertyValue::Number(1.0),
+                value: AttributeValue::Number(1.0),
                 created_at: now,
                 updated_at: now,
             },
@@ -1184,49 +1181,49 @@ mod tests {
     #[tokio::test]
     async fn test_property_value_types() {
         // Test all property value types
-        let text_val = PropertyValue::Text("hello".to_string());
-        let num_val = PropertyValue::Number(42.5);
-        let bool_val = PropertyValue::Bool(true);
-        let _date_val = PropertyValue::Date(NaiveDate::from_ymd_opt(2024, 1, 15).unwrap());
-        let _json_val = PropertyValue::Json(serde_json::json!({"key": "value"}));
+        let text_val = AttributeValue::Text("hello".to_string());
+        let num_val = AttributeValue::Number(42.5);
+        let bool_val = AttributeValue::Bool(true);
+        let _date_val = AttributeValue::Date(NaiveDate::from_ymd_opt(2024, 1, 15).unwrap());
+        let _json_val = AttributeValue::Json(serde_json::json!({"key": "value"}));
 
         // Verify equality comparisons work
-        assert_eq!(text_val, PropertyValue::Text("hello".to_string()));
-        assert_eq!(num_val, PropertyValue::Number(42.5));
-        assert_eq!(bool_val, PropertyValue::Bool(true));
-        assert_ne!(text_val, PropertyValue::Text("world".to_string()));
+        assert_eq!(text_val, AttributeValue::Text("hello".to_string()));
+        assert_eq!(num_val, AttributeValue::Number(42.5));
+        assert_eq!(bool_val, AttributeValue::Bool(true));
+        assert_ne!(text_val, AttributeValue::Text("world".to_string()));
     }
 
     #[tokio::test]
     async fn test_property_value_tagged_serialization() {
-        // Test that PropertyValue serializes with tagged format
+        // Test that AttributeValue serializes with tagged format
 
         // Text variant
-        let text_val = PropertyValue::Text("hello".to_string());
+        let text_val = AttributeValue::Text("hello".to_string());
         let text_json = serde_json::to_value(&text_val).unwrap();
         assert_eq!(text_json["type"], "text");
         assert_eq!(text_json["value"], "hello");
 
         // Number variant
-        let num_val = PropertyValue::Number(42.5);
+        let num_val = AttributeValue::Number(42.5);
         let num_json = serde_json::to_value(&num_val).unwrap();
         assert_eq!(num_json["type"], "number");
         assert_eq!(num_json["value"], 42.5);
 
         // Bool variant
-        let bool_val = PropertyValue::Bool(true);
+        let bool_val = AttributeValue::Bool(true);
         let bool_json = serde_json::to_value(&bool_val).unwrap();
         assert_eq!(bool_json["type"], "bool");
         assert_eq!(bool_json["value"], true);
 
         // Date variant
-        let date_val = PropertyValue::Date(NaiveDate::from_ymd_opt(2024, 11, 8).unwrap());
+        let date_val = AttributeValue::Date(NaiveDate::from_ymd_opt(2024, 11, 8).unwrap());
         let date_json = serde_json::to_value(&date_val).unwrap();
         assert_eq!(date_json["type"], "date");
         assert_eq!(date_json["value"], "2024-11-08");
 
         // Json variant
-        let json_val = PropertyValue::Json(serde_json::json!({"key": "value"}));
+        let json_val = AttributeValue::Json(serde_json::json!({"key": "value"}));
         let json_json = serde_json::to_value(&json_val).unwrap();
         assert_eq!(json_json["type"], "json");
         assert_eq!(json_json["value"]["key"], "value");
@@ -1234,37 +1231,37 @@ mod tests {
 
     #[tokio::test]
     async fn test_property_value_tagged_deserialization() {
-        // Test that PropertyValue deserializes from tagged format
+        // Test that AttributeValue deserializes from tagged format
 
         // Text variant
         let text_json = serde_json::json!({"type": "text", "value": "hello"});
-        let text_val: PropertyValue = serde_json::from_value(text_json).unwrap();
-        assert_eq!(text_val, PropertyValue::Text("hello".to_string()));
+        let text_val: AttributeValue = serde_json::from_value(text_json).unwrap();
+        assert_eq!(text_val, AttributeValue::Text("hello".to_string()));
 
         // Number variant
         let num_json = serde_json::json!({"type": "number", "value": 42.5});
-        let num_val: PropertyValue = serde_json::from_value(num_json).unwrap();
-        assert_eq!(num_val, PropertyValue::Number(42.5));
+        let num_val: AttributeValue = serde_json::from_value(num_json).unwrap();
+        assert_eq!(num_val, AttributeValue::Number(42.5));
 
         // Bool variant
         let bool_json = serde_json::json!({"type": "bool", "value": true});
-        let bool_val: PropertyValue = serde_json::from_value(bool_json).unwrap();
-        assert_eq!(bool_val, PropertyValue::Bool(true));
+        let bool_val: AttributeValue = serde_json::from_value(bool_json).unwrap();
+        assert_eq!(bool_val, AttributeValue::Bool(true));
 
         // Date variant
         let date_json = serde_json::json!({"type": "date", "value": "2024-11-08"});
-        let date_val: PropertyValue = serde_json::from_value(date_json).unwrap();
+        let date_val: AttributeValue = serde_json::from_value(date_json).unwrap();
         assert_eq!(
             date_val,
-            PropertyValue::Date(NaiveDate::from_ymd_opt(2024, 11, 8).unwrap())
+            AttributeValue::Date(NaiveDate::from_ymd_opt(2024, 11, 8).unwrap())
         );
 
         // Json variant
         let json_json = serde_json::json!({"type": "json", "value": {"key": "value"}});
-        let json_val: PropertyValue = serde_json::from_value(json_json).unwrap();
+        let json_val: AttributeValue = serde_json::from_value(json_json).unwrap();
         assert_eq!(
             json_val,
-            PropertyValue::Json(serde_json::json!({"key": "value"}))
+            AttributeValue::Json(serde_json::json!({"key": "value"}))
         );
     }
 
@@ -1284,7 +1281,7 @@ mod tests {
                 entity_id: "note:perf_test".to_string(),
                 namespace: PropertyNamespace::frontmatter(),
                 key: format!("key_{}", i),
-                value: PropertyValue::Number(i as f64),
+                value: AttributeValue::Number(i as f64),
                 created_at: now,
                 updated_at: now,
             })
