@@ -23,6 +23,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 
+mod common;
+use common::create_test_file;
+
 // ============================================================================
 // Mock Implementations (copied from pipeline_integration_tests.rs)
 // ============================================================================
@@ -155,13 +158,6 @@ impl EnrichedNoteStore for MockEnrichedNoteStore {
 // ============================================================================
 // Test Helpers
 // ============================================================================
-
-fn create_test_file(content: &str) -> Result<(TempDir, PathBuf)> {
-    let temp_dir = TempDir::new()?;
-    let file_path = temp_dir.path().join("test_note.md");
-    std::fs::write(&file_path, content)?;
-    Ok((temp_dir, file_path))
-}
 
 fn create_pipeline_with_parser(
     backend: ParserBackend,

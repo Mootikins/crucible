@@ -7,12 +7,9 @@ use tabled::{settings::Style, Table, Tabled};
 
 use crate::cli::StorageCommands;
 use crate::config::CliConfig;
+use crate::factories::create_content_addressed_storage;
 use crate::output;
-use crucible_core::hashing::blake3::Blake3Hasher;
-use crucible_core::storage::builder::{
-    ContentAddressedStorageBuilder, HasherConfig, StorageBackendType,
-};
-use crucible_core::storage::{traits::StorageStats, ContentAddressedStorage, StorageResult};
+use crucible_core::storage::{traits::StorageStats, ContentAddressedStorage};
 
 /// Output formats for storage commands
 #[derive(Debug, Clone)]
@@ -103,7 +100,7 @@ async fn execute_stats(
     output::info("Gathering storage statistics...");
 
     // Create storage backend
-    let storage = create_storage_backend(&config)?;
+    let storage = create_content_addressed_storage(&config)?;
 
     // Get storage statistics
     let stats = storage
@@ -140,7 +137,7 @@ async fn execute_verify(
     output::info("Verifying storage integrity...");
 
     // Create storage backend
-    let storage = create_storage_backend(&config)?;
+    let storage = create_content_addressed_storage(&config)?;
 
     let results = if let Some(path) = path {
         output::info(&format!("Verifying path: {}", path.display()));
@@ -199,7 +196,7 @@ async fn execute_cleanup(
     }
 
     // Create storage backend
-    let storage = create_storage_backend(&config)?;
+    let storage = create_content_addressed_storage(&config)?;
 
     let mut cleanup_operations = Vec::new();
 
@@ -273,7 +270,7 @@ async fn execute_backup(
     output::info(&format!("Starting backup to: {}", dest.display()));
 
     // Create storage backend
-    let storage = create_storage_backend(&config)?;
+    let storage = create_content_addressed_storage(&config)?;
 
     // Ensure backup directory exists
     if let Some(parent) = dest.parent() {
@@ -356,7 +353,7 @@ async fn execute_restore(
     }
 
     // Create storage backend
-    let _storage = create_storage_backend(&config)?;
+    let _storage = create_content_addressed_storage(&config)?;
 
     if !merge {
         output::warning("This will replace all existing storage data");
@@ -383,14 +380,7 @@ async fn execute_restore(
     Ok(())
 }
 
-/// Create storage backend based on configuration
-fn create_storage_backend(_config: &CliConfig) -> StorageResult<Arc<dyn ContentAddressedStorage>> {
-    ContentAddressedStorageBuilder::new()
-        .with_backend(StorageBackendType::InMemory)
-        .with_hasher(HasherConfig::Blake3(Blake3Hasher::new()))
-        .with_block_size(crucible_core::storage::BlockSize::Medium)
-        .build()
-}
+// Use factory function from crate::factories::create_content_addressed_storage
 
 /// Verify a specific path
 async fn verify_path(
