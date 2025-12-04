@@ -461,22 +461,8 @@ impl NoteTools {
     }
 }
 
-/// Parse YAML frontmatter from markdown content
-fn parse_yaml_frontmatter(content: &str) -> Option<serde_json::Value> {
-    // Check if starts with ---
-    if !content.starts_with("---\n") && !content.starts_with("---\r\n") {
-        return None;
-    }
-
-    // Find closing ---
-    let rest = &content[4..]; // Skip opening ---\n
-    let end_pos = rest.find("\n---\n").or_else(|| rest.find("\r\n---\r\n"))?;
-
-    let yaml_str = &rest[..end_pos];
-
-    // Parse YAML to serde_json::Value
-    serde_yaml::from_str(yaml_str).ok()
-}
+// Use shared utility for frontmatter parsing
+use crate::utils::parse_yaml_frontmatter;
 
 /// Serialize frontmatter to YAML format with delimiters
 fn serialize_frontmatter_to_yaml(frontmatter: &serde_json::Value) -> Result<String, String> {

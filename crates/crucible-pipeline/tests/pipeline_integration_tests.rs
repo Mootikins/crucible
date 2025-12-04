@@ -18,6 +18,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 
+mod common;
+use common::create_test_file;
+
 // ============================================================================
 // Mock Implementations for Testing
 // ============================================================================
@@ -296,14 +299,6 @@ impl EnrichedNoteStore for MockEnrichedNoteStore {
 // ============================================================================
 // Test Helpers
 // ============================================================================
-
-/// Create a temporary test file with markdown content
-fn create_test_file(content: &str) -> Result<(TempDir, PathBuf)> {
-    let temp_dir = TempDir::new()?;
-    let file_path = temp_dir.path().join("test_note.md");
-    std::fs::write(&file_path, content)?;
-    Ok((temp_dir, file_path))
-}
 
 /// Create a basic test pipeline with all mocks
 fn create_test_pipeline() -> (

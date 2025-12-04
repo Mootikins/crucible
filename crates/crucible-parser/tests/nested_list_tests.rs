@@ -2,13 +2,7 @@
 //!
 //! Tests for parsing nested and complex list structures.
 
-use crucible_parser::{CrucibleParser, MarkdownParser, ParsedNote};
-use std::path::Path;
-
-async fn parse_note(content: &str, path: &str) -> Result<ParsedNote, Box<dyn std::error::Error>> {
-    let parser = CrucibleParser::with_default_extensions();
-    Ok(parser.parse_content(content, Path::new(path)).await?)
-}
+use crucible_parser::test_utils::parse_note;
 
 #[tokio::test]
 async fn test_simple_nested_list() {

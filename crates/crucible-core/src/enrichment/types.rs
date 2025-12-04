@@ -171,16 +171,18 @@ impl BlockEmbedding {
     }
 }
 
-/// Metadata extracted or computed from a note
+/// Metadata computed during the enrichment phase
 ///
-/// Contains only metadata computed during enrichment phase, not structural
+/// Contains only metadata computed during enrichment, not structural
 /// metadata extracted during parsing (which lives in `ParsedNoteMetadata`).
 ///
 /// This follows industry standard separation:
 /// - Parser: Structural metrics (word count, element counts)
 /// - Enrichment: Computed metrics (complexity, reading time, analysis)
+///
+/// For file-level metadata (name, path, tags), see `crucible_core::traits::NoteInfo`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct NoteMetadata {
+pub struct EnrichmentMetadata {
     /// Estimated reading time in minutes (computed from word count)
     pub reading_time_minutes: f32,
 
@@ -194,13 +196,17 @@ pub struct NoteMetadata {
     pub computed_at: DateTime<Utc>,
 }
 
-impl Default for NoteMetadata {
+/// Type alias for backward compatibility
+#[deprecated(since = "0.2.0", note = "Use EnrichmentMetadata instead")]
+pub type NoteMetadata = EnrichmentMetadata;
+
+impl Default for EnrichmentMetadata {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl NoteMetadata {
+impl EnrichmentMetadata {
     /// Create new metadata with defaults
     pub fn new() -> Self {
         Self {

@@ -2,15 +2,8 @@
 //!
 //! Tests for granular change detection, diff algorithms, and incremental updates.
 
-use crucible_core::ParsedNote;
 use crucible_merkle::HybridMerkleTree;
-use crucible_parser::{CrucibleParser, MarkdownParser};
-use std::path::Path;
-
-async fn parse_note(content: &str, path: &str) -> Result<ParsedNote, Box<dyn std::error::Error>> {
-    let parser = CrucibleParser::with_default_extensions();
-    Ok(parser.parse_content(content, Path::new(path)).await?)
-}
+use crucible_parser::test_utils::parse_note;
 
 #[tokio::test]
 async fn test_detect_new_section_addition() {

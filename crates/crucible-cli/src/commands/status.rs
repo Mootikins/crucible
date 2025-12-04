@@ -6,14 +6,11 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tabled::Tabled;
 
 use crate::config::CliConfig;
+use crate::factories::create_content_addressed_storage;
 use crate::formatting::{format_bytes, format_timestamp, render_table, OutputFormat};
 use crate::output;
-use crucible_core::hashing::blake3::Blake3Hasher;
 use crucible_core::parser::StorageAwareParser;
-use crucible_core::storage::builder::{
-    ContentAddressedStorageBuilder, HasherConfig, StorageBackendType,
-};
-use crucible_core::storage::{ContentAddressedStorage, StorageResult};
+use crucible_core::storage::ContentAddressedStorage;
 use crucible_parser::CrucibleParser;
 
 // Removed: Now using shared OutputFormat from formatting module
@@ -73,7 +70,7 @@ pub async fn execute(
     let start_time = Instant::now();
 
     // Create storage backend
-    let storage = create_storage_backend(&config)?;
+    let storage = create_content_addressed_storage(&config)?;
 
     // Create parser with storage integration
     let block_parser = CrucibleParser::with_default_extensions();
@@ -111,14 +108,7 @@ pub async fn execute(
     Ok(())
 }
 
-/// Create storage backend based on configuration
-fn create_storage_backend(_config: &CliConfig) -> StorageResult<Arc<dyn ContentAddressedStorage>> {
-    ContentAddressedStorageBuilder::new()
-        .with_backend(StorageBackendType::InMemory)
-        .with_hasher(HasherConfig::Blake3(Blake3Hasher::new()))
-        .with_block_size(crucible_core::storage::BlockSize::Medium)
-        .build()
-}
+// Use factory function from crate::factories::create_content_addressed_storage
 
 /// Get status for a specific path
 async fn get_path_status(_parser: &StorageAwareParser, path: &Path) -> Result<StatusInfo> {

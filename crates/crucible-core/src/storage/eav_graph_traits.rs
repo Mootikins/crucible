@@ -138,7 +138,7 @@ pub struct Property {
     pub entity_id: String,
     pub namespace: PropertyNamespace,
     pub key: String,
-    pub value: PropertyValue,
+    pub value: AttributeValue,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -160,16 +160,23 @@ pub struct Property {
 /// - Schema evolution and migration
 /// - Cross-language interoperability
 /// - Self-documenting APIs
+///
+/// Note: This is the EAV-specific attribute value type. For generic property
+/// values (JSON-like), see `crucible_core::properties::PropertyValue`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type", content = "value")]
 #[serde(rename_all = "snake_case")]
-pub enum PropertyValue {
+pub enum AttributeValue {
     Text(String),
     Number(f64),
     Bool(bool),
     Date(NaiveDate),
     Json(Value),
 }
+
+/// Type alias for backward compatibility
+#[deprecated(since = "0.2.0", note = "Use AttributeValue instead")]
+pub type PropertyValue = AttributeValue;
 
 // ============================================================================
 // EntityStorage Trait

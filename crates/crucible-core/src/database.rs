@@ -363,8 +363,22 @@ pub enum IndexType {
 /// Database record (row)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Record {
+    /// Optional record identifier
     pub id: Option<RecordId>,
+    /// Record field data (column values or note fields)
     pub data: HashMap<String, serde_json::Value>,
+}
+
+impl Record {
+    /// Create a new record without an ID
+    pub fn new(data: HashMap<String, serde_json::Value>) -> Self {
+        Self { id: None, data }
+    }
+
+    /// Create a new record with an ID
+    pub fn with_id(id: RecordId, data: HashMap<String, serde_json::Value>) -> Self {
+        Self { id: Some(id), data }
+    }
 }
 
 /// Record identifier
@@ -377,6 +391,18 @@ impl std::fmt::Display for RecordId {
     }
 }
 
+impl From<String> for RecordId {
+    fn from(s: String) -> Self {
+        RecordId(s)
+    }
+}
+
+impl From<&str> for RecordId {
+    fn from(s: &str) -> Self {
+        RecordId(s.to_string())
+    }
+}
+
 /// Query result containing records and metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryResult {
@@ -384,6 +410,29 @@ pub struct QueryResult {
     pub total_count: Option<u64>,
     pub execution_time_ms: Option<u64>,
     pub has_more: bool,
+}
+
+impl QueryResult {
+    /// Create a new empty query result
+    pub fn empty() -> Self {
+        Self {
+            records: Vec::new(),
+            total_count: Some(0),
+            execution_time_ms: None,
+            has_more: false,
+        }
+    }
+
+    /// Create a query result with records
+    pub fn with_records(records: Vec<Record>) -> Self {
+        let total_count = records.len() as u64;
+        Self {
+            records,
+            total_count: Some(total_count),
+            execution_time_ms: None,
+            has_more: false,
+        }
+    }
 }
 
 /// Select query with filtering, projection, sorting, and pagination
