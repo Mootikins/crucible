@@ -21,7 +21,7 @@ pub use super::components::EmbeddingProviderType;
 ///
 /// This configuration encompasses all settings related to document enrichment,
 /// including the embedding provider configuration and enrichment pipeline settings.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct EnrichmentConfig {
     /// Embedding provider configuration
     pub provider: EmbeddingProviderConfig,
@@ -30,14 +30,7 @@ pub struct EnrichmentConfig {
     pub pipeline: PipelineConfig,
 }
 
-impl Default for EnrichmentConfig {
-    fn default() -> Self {
-        Self {
-            provider: EmbeddingProviderConfig::default(),
-            pipeline: PipelineConfig::default(),
-        }
-    }
-}
+
 
 /// Embedding provider configuration
 ///
@@ -550,16 +543,19 @@ pub enum BurnBackendConfig {
     /// Use Vulkan backend with specified device ID
     Vulkan {
         #[serde(default)]
+        #[allow(missing_docs)]
         device_id: usize,
     },
     /// Use ROCm backend with specified device ID
     Rocm {
         #[serde(default)]
+        #[allow(missing_docs)]
         device_id: usize,
     },
     /// Use CPU backend with specified thread count
     Cpu {
         #[serde(default = "BurnBackendConfig::default_num_threads")]
+        #[allow(missing_docs)]
         num_threads: usize,
     },
 }
@@ -870,7 +866,7 @@ impl EmbeddingProviderConfig {
     }
 
     /// Validate the configuration
-    #[must_use]
+    #[must_use = "Configuration validation should be checked"]
     pub fn validate(&self) -> Result<(), crate::ConfigValidationError> {
         use crate::ConfigValidationError;
 
