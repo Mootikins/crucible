@@ -80,10 +80,6 @@ pub fn expected_dimensions_for_model(provider: &EmbeddingProviderType, model: &s
         (EmbeddingProviderType::OpenAI, "text-embedding-ada-002") => 1536,
         // Mock models for testing
         (EmbeddingProviderType::Mock, _) => 768,
-        // Burn models (local, GPU-accelerated)
-        (EmbeddingProviderType::Burn, "nomic-embed-text") => 768,
-        (EmbeddingProviderType::Burn, "bge-small-en-v1.5") => 384,
-        (EmbeddingProviderType::Burn, _) => 768, // Default for unknown burn models
         // Default to provider defaults for unknown models
         (EmbeddingProviderType::Ollama, _) => 768,
         (EmbeddingProviderType::OpenAI, _) => 1536,

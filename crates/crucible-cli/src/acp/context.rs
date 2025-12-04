@@ -6,7 +6,7 @@ use anyhow::Result;
 use std::sync::Arc;
 use tracing::{debug, info};
 
-use crate::core_facade::{CrucibleCoreFacade, SemanticSearchResult};
+use crate::core_facade::{KilnContext, SemanticSearchResult};
 
 /// Result of context enrichment containing both the prompt and found notes
 #[derive(Debug)]
@@ -19,7 +19,7 @@ pub struct EnrichmentResult {
 
 /// Enriches prompts with knowledge base context
 pub struct ContextEnricher {
-    core: Arc<CrucibleCoreFacade>,
+    core: Arc<KilnContext>,
     context_size: usize,
 }
 
@@ -29,7 +29,7 @@ impl ContextEnricher {
     /// # Arguments
     /// * `core` - The Crucible core facade
     /// * `context_size` - Number of semantic search results to include
-    pub fn new(core: Arc<CrucibleCoreFacade>, context_size: Option<usize>) -> Self {
+    pub fn new(core: Arc<KilnContext>, context_size: Option<usize>) -> Self {
         Self {
             core,
             context_size: context_size.unwrap_or(5),

@@ -123,10 +123,7 @@ pub fn clear_agent_cache() {
 /// Uses tokio::process::Command for async execution, allowing parallel probing.
 pub async fn is_agent_available(command: &str) -> bool {
     // Try to run the command with --version to check if it exists
-    let result = Command::new(command)
-        .arg("--version")
-        .output()
-        .await;
+    let result = Command::new(command).arg("--version").output().await;
 
     match result {
         Ok(output) => {

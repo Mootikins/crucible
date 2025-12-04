@@ -6,17 +6,13 @@ members = [
     "crates/crucible-merkle",
     "crates/crucible-enrichment",
     "crates/crucible-pipeline",
-    # "crates/crucible-tauri",  # Removed for CLI MVP - GUI not needed
     "crates/crucible-cli",
     "crates/crucible-surrealdb",
     "crates/crucible-config",
-    "crates/crucible-a2a",
     "crates/crucible-acp",
-    "crates/crucible-mock-agent",
     "crates/crucible-llm",
     "crates/crucible-tools",
     "crates/crucible-watch",
-    "crates/crucible-burn",
     "examples",
 ]
 default-members = ["crates/crucible-cli"]

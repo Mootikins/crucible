@@ -8,14 +8,12 @@ use std::sync::Arc;
 use tracing::{debug, info};
 
 use crucible_acp::{
-    ChatConfig, ChatSession, ContextConfig, CrucibleAcpClient as AcpClient, HistoryConfig,
-    InProcessMcpHost, StreamConfig,
+    AgentInfo, ChatConfig, ChatSession, ContextConfig, CrucibleAcpClient as AcpClient,
+    HistoryConfig, InProcessMcpHost, StreamConfig,
 };
 use crucible_config::AcpConfig;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
-
-use crate::acp::agent::AgentInfo;
 use crate::chat::{ChatAgent, ChatError, ChatMode, ChatResponse, ChatResult};
 
 /// ACP Client wrapper for CLI
