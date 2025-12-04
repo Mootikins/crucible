@@ -1,9 +1,7 @@
 //! Configuration and error handling integration tests
 
 use crucible_cli::config::CliConfig;
-use crucible_config::{
-    AcpConfig, ChatConfig, CliConfig as NewCliConfig, EmbeddingConfig, EmbeddingProviderType,
-};
+use crucible_config::EmbeddingProviderType;
 use serial_test::serial;
 use std::fs;
 use tempfile::TempDir;

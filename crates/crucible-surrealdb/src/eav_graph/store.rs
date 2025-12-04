@@ -4,10 +4,11 @@ use serde_json::{json, Value};
 use crate::{QueryResult, SurrealClient};
 
 use super::types::{
-    BlockNode, EmbeddingVector, Entity, EntityRecord, EntityTag as SurrealEntityTag, Property,
-    PropertyRecord, RecordId, Relation as SurrealRelation, RelationRecord, Tag as SurrealTag,
-    TagRecord,
+    BlockNode, Entity, EntityRecord, EntityTag as SurrealEntityTag, Property, PropertyRecord,
+    RecordId, Relation as SurrealRelation, RelationRecord, Tag as SurrealTag, TagRecord,
 };
+#[cfg(test)]
+use super::types::EmbeddingVector;
 use surrealdb::sql::Thing;
 
 /// High-level helper for writing entities, properties, and blocks into the EAV+Graph schema.
@@ -30,6 +31,7 @@ impl EAVGraphStore {
     ///
     /// * `params` - Parameters including `table`, `id`, and `content`
     /// * `return_after` - Whether to return the record after creation
+    #[allow(dead_code)]
     async fn upsert_with_content(&self, params: &Value, return_after: bool) -> Result<QueryResult> {
         let return_clause = if return_after {
             "RETURN AFTER"
@@ -315,6 +317,7 @@ impl EAVGraphStore {
     }
 
     /// Upsert an embedding vector for an entity (optionally at block level).
+    #[cfg(test)]
     pub async fn upsert_embedding(&self, embedding: &EmbeddingVector) -> Result<()> {
         let id = embedding
             .id

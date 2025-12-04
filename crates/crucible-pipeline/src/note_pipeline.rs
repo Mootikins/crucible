@@ -464,8 +464,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_pipeline_creation() {
-        let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
-        let merkle_store = Arc::new(InMemoryMerkleStore::new());
+        let _change_detector = Arc::new(InMemoryChangeDetectionStore::new());
+        let _merkle_store = Arc::new(InMemoryMerkleStore::new());
 
         // For now, we can't test without a mock EnrichmentService
         // This will be added once we wire up the full implementation

@@ -59,7 +59,7 @@ impl Default for CliConfigBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
+    
     use std::fs;
     use tempfile::TempDir;
 

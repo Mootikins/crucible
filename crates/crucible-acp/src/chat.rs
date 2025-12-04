@@ -195,7 +195,6 @@ pub struct ChatSession {
     config: ChatConfig,
     history: ConversationHistory,
     enricher: PromptEnricher,
-    stream_handler: StreamHandler,
     state: ConversationState,
     metadata: SessionMetadata,
     agent_client: Option<CrucibleAcpClient>,
@@ -213,7 +212,6 @@ impl ChatSession {
     pub fn new(config: ChatConfig) -> Self {
         let history = ConversationHistory::new(config.history.clone());
         let enricher = PromptEnricher::new(config.context.clone());
-        let stream_handler = StreamHandler::new(config.streaming.clone());
         let state = ConversationState::new();
         let metadata = SessionMetadata::new();
 
@@ -224,7 +222,6 @@ impl ChatSession {
             config,
             history,
             enricher,
-            stream_handler,
             state,
             metadata,
             agent_client: None,
@@ -247,7 +244,6 @@ impl ChatSession {
     pub fn with_agent(config: ChatConfig, agent_client: CrucibleAcpClient) -> Self {
         let history = ConversationHistory::new(config.history.clone());
         let enricher = PromptEnricher::new(config.context.clone());
-        let stream_handler = StreamHandler::new(config.streaming.clone());
         let state = ConversationState::new();
         let metadata = SessionMetadata::new();
 
@@ -258,7 +254,6 @@ impl ChatSession {
             config,
             history,
             enricher,
-            stream_handler,
             state,
             metadata,
             agent_client: Some(agent_client),

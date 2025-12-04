@@ -1422,7 +1422,7 @@ mod tests {
     #[tokio::test]
     async fn test_relation_storage_basic_operations() {
         let storage = MockRelationStorage::new();
-        let now = Utc::now();
+        let _now = Utc::now();
 
         // Test store_relation with builder pattern
         let relation = Relation::wikilink("note:source", "note:target")

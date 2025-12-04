@@ -13,6 +13,7 @@ pub enum RelationRecord {}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BlockRecord {}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub enum EmbeddingRecord {}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TagRecord {}
@@ -245,10 +246,12 @@ impl Entity {
 pub struct PropertyNamespace(pub String);
 
 impl PropertyNamespace {
+    #[allow(dead_code)]
     pub fn core() -> Self {
         Self("core".to_string())
     }
 
+    #[allow(dead_code)]
     pub fn plugin(name: impl Into<String>) -> Self {
         Self(format!("plugin:{}", name.into()))
     }
@@ -355,6 +358,7 @@ pub struct BlockNode {
 
 /// Embedding vectors for either entities or individual blocks.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg(test)]
 pub struct EmbeddingVector {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<RecordId<EmbeddingRecord>>,
@@ -420,6 +424,7 @@ impl BlockNode {
     }
 }
 
+#[cfg(test)]
 impl EmbeddingVector {
     pub fn new(
         id: RecordId<EmbeddingRecord>,

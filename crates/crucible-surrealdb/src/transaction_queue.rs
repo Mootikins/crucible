@@ -258,9 +258,6 @@ pub struct TransactionQueue {
     /// Channel receiver for consumer - wrapped in Arc<Mutex> for thread safety
     receiver: Arc<std::sync::Mutex<Option<TransactionReceiver>>>,
 
-    /// Configuration for the queue
-    config: TransactionQueueConfig,
-
     /// Watcher for queue statistics
     stats_watcher: StatsWatcher,
 
@@ -335,7 +332,6 @@ impl TransactionQueue {
         Self {
             sender,
             receiver: Arc::new(std::sync::Mutex::new(Some(receiver))),
-            config,
             stats_watcher,
             metrics,
         }
@@ -454,7 +450,7 @@ mod tests {
         };
 
         // Enqueue the transaction
-        let result_receiver = queue.enqueue(transaction).await.unwrap();
+        let _result_receiver = queue.enqueue(transaction).await.unwrap();
 
         // Verify we got a result receiver (oneshot receiver doesn't have is_closed method)
     }

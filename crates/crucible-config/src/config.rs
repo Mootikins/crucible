@@ -524,22 +524,6 @@ impl CliAppConfig {
         info!("  cli.verbose: {}", self.cli.verbose);
     }
 
-    /// Convert from general Config to CliAppConfig
-    fn from_general_config(general: Config) -> Self {
-        Self {
-            kiln_path: general
-                .kiln_path_opt()
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(default_kiln_path),
-            embedding: general.embedding_config().unwrap_or_default(),
-            acp: general.acp_config().unwrap_or_default(),
-            chat: general.chat_config().unwrap_or_default(),
-            cli: general.cli_config().unwrap_or_default(),
-            logging: general.logging,
-            processing: ProcessingConfig::default(), // General Config doesn't have processing
-        }
-    }
-
     /// Get database path (always derived from kiln path)
     pub fn database_path(&self) -> std::path::PathBuf {
         // Only use PID suffix in test mode to prevent RocksDB lock collisions

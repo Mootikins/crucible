@@ -670,6 +670,7 @@ impl MerklePersistence {
 /// # Panics
 ///
 /// Panics if the ID is empty or longer than 255 characters.
+#[allow(dead_code)]
 fn tree_record_id(tree_id: &str) -> String {
     assert!(
         !tree_id.is_empty() && tree_id.len() <= 255,
@@ -683,6 +684,7 @@ fn tree_record_id(tree_id: &str) -> String {
 ///
 /// This helper function URL-encodes tree IDs for safe use as SurrealDB record IDs.
 /// Unlike the deprecated `sanitize_id()`, this preserves the original path.
+#[allow(dead_code)]
 fn tree_record_id_helper(tree_id: &str) -> String {
     tree_record_id(tree_id)
 }

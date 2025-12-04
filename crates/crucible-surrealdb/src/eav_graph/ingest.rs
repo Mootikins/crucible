@@ -242,6 +242,7 @@ impl<'a> NoteIngestor<'a> {
     ///
     /// # Example
     ///
+    #[allow(dead_code)]
     pub fn with_merkle_store(
         store: &'a EAVGraphStore,
         merkle_store: Box<dyn crucible_merkle::MerkleStore>,
@@ -746,6 +747,7 @@ impl<'a> NoteIngestor<'a> {
     ///
     /// Processes embed variants like `![[Note#Section|Alias]]`, `![[Note^block-id|Alias]]`,
     /// and `![[Note#Section^block-id|Alias]]` combinations.
+    #[allow(dead_code)]
     fn add_embed_variant_metadata(
         &self,
         metadata: &mut serde_json::Map<String, serde_json::Value>,
@@ -2022,6 +2024,7 @@ impl<'a> NoteIngestor<'a> {
     ///
     /// Attempts to extract useful metadata from external URLs without
     /// making network requests. Uses pattern matching on known services.
+    #[allow(dead_code)]
     fn extract_external_url_metadata(
         &self,
         target: &str,
@@ -3031,7 +3034,7 @@ mod tests {
         doc.tags.push(Tag::new("status/active", 0));
 
         // Tags are now automatically stored during ingestion
-        let entity_id = ingestor.ingest(&doc, "notes/test-tags.md").await.unwrap();
+        let _entity_id = ingestor.ingest(&doc, "notes/test-tags.md").await.unwrap();
 
         // Check that all tag levels were created
         let project_tag = store.get_tag("project").await.unwrap();
@@ -4996,7 +4999,7 @@ mod tests {
             ("config.conf", "note", "conf"),
         ];
 
-        for (i, (target, expected_type, _ext)) in embed_types.iter().enumerate() {
+        for (i, (target, _expected_type, _ext)) in embed_types.iter().enumerate() {
             doc.wikilinks.push(Wikilink {
                 target: target.to_string(),
                 alias: None,
@@ -5461,7 +5464,7 @@ mod tests {
             ("guide.md", "note", vec![]),
         ];
 
-        for (i, (target, expected_type, expected_metadata)) in content_cases.iter().enumerate() {
+        for (i, (target, _expected_type, _expected_metadata)) in content_cases.iter().enumerate() {
             doc.wikilinks.push(Wikilink {
                 target: target.to_string(),
                 alias: None,
@@ -5877,7 +5880,7 @@ mod tests {
             ("note.md", "note", false),
         ];
 
-        for (i, (url, expected_embed_type, is_external)) in test_cases.iter().enumerate() {
+        for (i, (url, _expected_embed_type, _is_external)) in test_cases.iter().enumerate() {
             doc.wikilinks.push(Wikilink {
                 target: url.to_string(),
                 alias: Some(format!("Test URL {}", i)),
@@ -6023,7 +6026,7 @@ mod tests {
             ("guide.md", "note"),
         ];
 
-        for (i, (target, expected_embed_type)) in metadata_test_cases.iter().enumerate() {
+        for (i, (target, _expected_embed_type)) in metadata_test_cases.iter().enumerate() {
             doc.wikilinks.push(Wikilink {
                 target: target.to_string(),
                 alias: Some(format!("Metadata Test {}", i)),
@@ -6141,7 +6144,7 @@ mod tests {
             ("style.CSS", "note"),
         ];
 
-        for (i, (filename, expected_embed_type)) in case_test_cases.iter().enumerate() {
+        for (i, (filename, _expected_embed_type)) in case_test_cases.iter().enumerate() {
             doc.wikilinks.push(Wikilink {
                 target: filename.to_string(),
                 alias: Some(format!("Case test {}", i)),
@@ -6643,7 +6646,7 @@ mod tests {
         ];
 
         for (i, (target, expected_embed_type_or_alias)) in unicode_test_cases.iter().enumerate() {
-            let (alias, heading_ref, expected_embed_type) = if i < 5 {
+            let (alias, heading_ref, _expected_embed_type) = if i < 5 {
                 // First 5 are Unicode filenames, no alias or heading
                 (None, None, *expected_embed_type_or_alias)
             } else if i < 8 {
@@ -6687,7 +6690,7 @@ mod tests {
         );
 
         // Verify Unicode and special characters don't break basic embed processing
-        for (i, (target, expected_embed_type_or_alias)) in unicode_test_cases.iter().enumerate() {
+        for (i, (target, _expected_embed_type_or_alias)) in unicode_test_cases.iter().enumerate() {
             let relation = relations
                 .iter()
                 .find(|r| r.metadata.get("target").and_then(|v| v.as_str()) == Some(target))
@@ -6862,7 +6865,7 @@ mod tests {
             ("audio.mp3a", "external"),    // Variant of mp3 - should be external
         ];
 
-        for (i, (target, expected_embed_type)) in edge_case_test_cases.iter().enumerate() {
+        for (i, (target, _expected_embed_type)) in edge_case_test_cases.iter().enumerate() {
             doc.wikilinks.push(Wikilink {
                 target: target.to_string(),
                 alias: Some(format!("Edge case {}", i)),
