@@ -3,6 +3,13 @@
 //! This module provides a wrapper around SurrealClient that can check for pending
 //! batch operations before performing database reads, ensuring consistency
 //! between the database state and in-flight batch processing.
+//!
+//! # Note
+//! This module is part of the ongoing queue-based processing architecture refactoring.
+//! The code is strategically preserved but not yet integrated into the main system.
+//! It will be activated when the batch processing infrastructure is fully implemented.
+
+#![allow(dead_code)]
 
 use crate::consistency::{ConsistencyLevel, FlushResult, PendingOperationsResult};
 use crate::surreal_client::SurrealClient;

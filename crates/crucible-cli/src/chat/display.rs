@@ -62,7 +62,7 @@ impl Display {
     }
 
     /// Display search results header
-    pub fn search_results_header(query: &str, count: usize) {
+    pub fn search_results_header(_query: &str, count: usize) {
         println!(
             "{} Found {} results:\n",
             "●".bright_blue(),

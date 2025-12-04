@@ -131,7 +131,7 @@ verbose = false
     #[test]
     fn test_database_path_derivation() {
         let temp = TempDir::new().unwrap();
-        let kiln_path = temp.path().join("kiln");
+        let _kiln_path = temp.path().join("kiln");
 
         let config = CliConfig::default();
         // Note: We can't set kiln_path via builder in this simplified version,

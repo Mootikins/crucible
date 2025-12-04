@@ -55,7 +55,7 @@ pub async fn execute(config: CliConfig) -> Result<()> {
 
     // Serve via stdio (blocks until shutdown)
     // Keep the service alive - it needs to stay in scope to handle requests
-    let service = server
+    let _service = server
         .serve((tokio::io::stdin(), tokio::io::stdout()))
         .await?;
 
