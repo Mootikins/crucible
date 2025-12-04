@@ -80,7 +80,7 @@ impl AgentProcess {
 
 enum ResponseSegment {
     Text(String),
-    Tool { label: String, indent: bool },
+    Tool { label: String },
 }
 
 #[derive(Default)]
@@ -1069,7 +1069,7 @@ impl CrucibleAcpClient {
             state.segments.last(),
             Some(ResponseSegment::Text(last)) if !last.trim().is_empty()
         );
-        let indent = has_prior_text || state.tool_block_active;
+        let _indent = has_prior_text || state.tool_block_active;
 
         if let Some(&idx) = state.tool_segment_index.get(&id) {
             if let Some(ResponseSegment::Tool {
@@ -1084,7 +1084,6 @@ impl CrucibleAcpClient {
                 .insert(id.clone(), state.segments.len());
             state.segments.push(ResponseSegment::Tool {
                 label: label.clone(),
-                indent,
             });
         }
 

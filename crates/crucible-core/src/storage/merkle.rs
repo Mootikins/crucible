@@ -776,7 +776,7 @@ mod tests {
 
     #[test]
     fn test_merkle_node_creation_leaf() {
-        let hasher = MockHasher::new();
+        let _hasher = MockHasher::new();
 
         // Test valid leaf creation
         let leaf = MerkleNode::new_leaf("abc123".to_string(), 0, 0, 0).unwrap();
@@ -1099,7 +1099,7 @@ mod tests {
 
     #[test]
     fn test_invalid_hash_formats() {
-        let hasher = MockHasher::new();
+        let _hasher = MockHasher::new();
 
         // Test node with invalid hash
         let result = MerkleNode::new_leaf("invalid_hash".to_string(), 0, 0, 0);
@@ -1153,7 +1153,7 @@ mod tests {
     #[test]
     fn test_tree_change_detection_edge_cases() {
         let blocks1 = vec![create_test_block("Block 1", 0, 0)];
-        let blocks2: Vec<HashedBlock> = vec![]; // Empty
+        let _blocks2: Vec<HashedBlock> = vec![]; // Empty
         let hasher = MockHasher::new();
 
         let tree1 = MerkleTree::from_blocks(&blocks1, &hasher).unwrap();

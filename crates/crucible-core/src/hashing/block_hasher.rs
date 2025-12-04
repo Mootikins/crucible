@@ -1448,7 +1448,7 @@ mod tests {
         let hashes: Vec<(usize, BlockHash)> = blocks
             .iter()
             .enumerate()
-            .map(|(i, block)| {
+            .map(|(i, _block)| {
                 // This is a simplified version - in practice you'd use hasher.hash_ast_block
                 (i, BlockHash::new([i as u8; 32]))
             })
@@ -1602,7 +1602,7 @@ mod tests {
         assert_eq!(hashed_blocks[1].data, blocks[1].content.as_bytes());
 
         // Verify hashes are correct
-        for (i, (hashed_block, original_block)) in
+        for (_i, (hashed_block, original_block)) in
             hashed_blocks.iter().zip(blocks.iter()).enumerate()
         {
             let expected_hash = hasher.hash_ast_block(original_block).await.unwrap();
@@ -1749,8 +1749,8 @@ mod tests {
         assert!(tree.verify_integrity(&hasher).is_ok());
 
         // Verify all different block types are handled correctly
-        for (i, block) in blocks.iter().enumerate() {
-            let is_valid = hasher
+        for (i, _block) in blocks.iter().enumerate() {
+            let _is_valid = hasher
                 .verify_merkle_tree(&tree, &blocks[i..i + 1])
                 .await
                 .unwrap();

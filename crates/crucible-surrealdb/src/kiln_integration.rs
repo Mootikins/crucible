@@ -2652,7 +2652,7 @@ mod tests {
         doc.tags.push(Tag::new("project/crucible", 0));
         doc.tags.push(Tag::new("design/ui", 0));
 
-        let doc_id = store_parsed_document(&client, &doc, &kiln_root)
+        let _doc_id = store_parsed_document(&client, &doc, &kiln_root)
             .await
             .unwrap();
 
@@ -3075,7 +3075,7 @@ async fn list_notes_internal(
     client: &SurrealClient,
     path_filter: Option<&str>,
 ) -> Result<Vec<NoteMetadata>> {
-    let sql = if let Some(path) = path_filter {
+    let sql = if let Some(_path) = path_filter {
         r#"
             SELECT * FROM entities
             WHERE content_category = 'note'
