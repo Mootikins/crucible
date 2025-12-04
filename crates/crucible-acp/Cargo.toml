@@ -45,6 +45,10 @@ async-trait = { workspace = true }
 # Logging
 tracing = { workspace = true }
 
+# Agent discovery
+futures = { workspace = true }
+once_cell = "1.19"
+
 # Random ID generation
 rand = { workspace = true }
 

@@ -47,9 +47,7 @@ crucible-config = { path = "../crucible-config" }
 # With Dependency Inversion, Core defines Storage trait, surrealdb implements it
 # Higher-level crates (CLI, Tauri) inject the implementation
 
-# Configuration management
-config = { workspace = true }
-schemars = { workspace = true, features = ["derive"] }
+# File watching (used by processing module)
 notify = { workspace = true }
 
 # Enhanced change detection dependencies
