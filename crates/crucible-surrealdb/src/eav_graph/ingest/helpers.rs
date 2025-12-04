@@ -100,7 +100,9 @@ pub(crate) fn extract_timestamps(doc: &ParsedNote) -> (DateTime<Utc>, DateTime<U
 
     // Helper to convert NaiveDate to DateTime<Utc> at midnight
     fn date_to_datetime(date: NaiveDate) -> DateTime<Utc> {
-        let datetime = date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+        // SAFETY: 0:0:0 is always a valid time - this is effectively a compile-time constant
+        let midnight = NaiveTime::from_hms_opt(0, 0, 0).expect("midnight is always valid");
+        let datetime = date.and_time(midnight);
         Utc.from_utc_datetime(&datetime)
     }
 

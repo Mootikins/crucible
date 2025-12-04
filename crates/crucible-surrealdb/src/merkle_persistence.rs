@@ -332,7 +332,9 @@ impl MerklePersistence {
                 if let Some(doc_path) = data.remove("document_path") {
                     data.insert("id".to_string(), doc_path);
                 }
-                serde_json::from_value(serde_json::to_value(&data).unwrap())
+                let value = serde_json::to_value(&data)
+                    .map_err(|e| DbError::Query(format!("Failed to serialize tree data: {}", e)))?;
+                serde_json::from_value(value)
                     .map_err(|e| DbError::Query(format!("Failed to parse tree metadata: {}", e)))
             })?;
 
@@ -350,7 +352,9 @@ impl MerklePersistence {
             .records
             .iter()
             .map(|record| {
-                serde_json::from_value(serde_json::to_value(&record.data).unwrap())
+                let value = serde_json::to_value(&record.data)
+                    .map_err(|e| DbError::Query(format!("Failed to serialize section data: {}", e)))?;
+                serde_json::from_value(value)
                     .map_err(|e| DbError::Query(format!("Failed to parse section: {}", e)))
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -396,7 +400,9 @@ impl MerklePersistence {
                 .records
                 .iter()
                 .map(|record| {
-                    serde_json::from_value(serde_json::to_value(&record.data).unwrap()).map_err(
+                    let value = serde_json::to_value(&record.data)
+                        .map_err(|e| DbError::Query(format!("Failed to serialize virtual section data: {}", e)))?;
+                    serde_json::from_value(value).map_err(
                         |e| DbError::Query(format!("Failed to parse virtual section: {}", e)),
                     )
                 })
@@ -605,7 +611,9 @@ impl MerklePersistence {
                 if let Some(doc_path) = data.remove("document_path") {
                     data.insert("id".to_string(), doc_path);
                 }
-                serde_json::from_value(serde_json::to_value(&data).unwrap())
+                let value = serde_json::to_value(&data)
+                    .map_err(|e| DbError::Query(format!("Failed to serialize tree data: {}", e)))?;
+                serde_json::from_value(value)
                     .map_err(|e| DbError::Query(format!("Failed to parse tree metadata: {}", e)))
             })
             .transpose()
@@ -633,7 +641,9 @@ impl MerklePersistence {
                 if let Some(doc_path) = data.remove("document_path") {
                     data.insert("id".to_string(), doc_path);
                 }
-                serde_json::from_value(serde_json::to_value(&data).unwrap())
+                let value = serde_json::to_value(&data)
+                    .map_err(|e| DbError::Query(format!("Failed to serialize tree data: {}", e)))?;
+                serde_json::from_value(value)
                     .map_err(|e| DbError::Query(format!("Failed to parse tree record: {}", e)))
             })
             .collect::<Result<Vec<_>, _>>()
