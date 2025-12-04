@@ -1501,11 +1501,10 @@ impl CoreTagStorage for EAVGraphStore {
         // First, get the parent tag to find its record ID
         let parent_tag = self.get_tag(parent_tag_name).await?;
 
-        if parent_tag.is_none() {
-            return Ok(Vec::new());
-        }
-
-        let parent_id = parent_tag.unwrap().id;
+        let parent_id = match parent_tag {
+            Some(tag) => tag.id,
+            None => return Ok(Vec::new()),
+        };
 
         let params = json!({"parent_id": parent_id});
         let result = self
