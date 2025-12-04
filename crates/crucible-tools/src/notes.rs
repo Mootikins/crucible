@@ -10,6 +10,7 @@ use std::path::Path;
 use walkdir::WalkDir;
 
 #[derive(Clone)]
+#[allow(missing_docs)]
 pub struct NoteTools {
     kiln_path: String,
 }
@@ -80,6 +81,7 @@ fn default_true() -> bool {
 }
 
 impl NoteTools {
+    #[allow(missing_docs)]
     pub fn new(kiln_path: String) -> Self {
         Self { kiln_path }
     }

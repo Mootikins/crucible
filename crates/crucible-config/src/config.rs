@@ -647,6 +647,7 @@ verbose = false
     }
 
     // Legacy compatibility methods
+    #[allow(missing_docs)]
     pub fn chat_model(&self) -> String {
         self.chat
             .model
@@ -654,34 +655,42 @@ verbose = false
             .unwrap_or_else(|| "llama3.2".to_string())
     }
 
+    #[allow(missing_docs)]
     pub fn temperature(&self) -> f32 {
         0.7 // Default temperature
     }
 
+    #[allow(missing_docs)]
     pub fn max_tokens(&self) -> u32 {
         2048 // Default max tokens
     }
 
+    #[allow(missing_docs)]
     pub fn streaming(&self) -> bool {
         true // Default streaming
     }
 
+    #[allow(missing_docs)]
     pub fn system_prompt(&self) -> String {
         "You are a helpful assistant.".to_string()
     }
 
+    #[allow(missing_docs)]
     pub fn ollama_endpoint(&self) -> String {
         "http://localhost:11434".to_string()
     }
 
+    #[allow(missing_docs)]
     pub fn timeout(&self) -> u64 {
         30 // Default timeout
     }
 
+    #[allow(missing_docs)]
     pub fn openai_api_key(&self) -> Option<String> {
         std::env::var("OPENAI_API_KEY").ok()
     }
 
+    #[allow(missing_docs)]
     pub fn anthropic_api_key(&self) -> Option<String> {
         std::env::var("ANTHROPIC_API_KEY").ok()
     }

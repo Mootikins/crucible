@@ -2,6 +2,13 @@
 //!
 //! This module provides consistency guarantees when reading metadata
 //! from the database while batch operations may be pending.
+//!
+//! # Note
+//! This module provides the consistency framework for the batch-aware client.
+//! It's part of the ongoing queue-based processing architecture refactoring and
+//! is strategically preserved until the infrastructure is fully integrated.
+
+#![allow(dead_code)]
 
 use anyhow::Result;
 use std::path::PathBuf;
