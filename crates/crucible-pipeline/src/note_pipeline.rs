@@ -253,7 +253,7 @@ impl NotePipeline {
         let mut changed_block_ids = Vec::with_capacity(changed_count);
 
         // Add modified sections
-        for (idx, section) in diff.changed_sections.iter().enumerate() {
+        for (_idx, section) in diff.changed_sections.iter().enumerate() {
             changed_block_ids.push(format!("modified_section_{}", section.section_index));
         }
 
