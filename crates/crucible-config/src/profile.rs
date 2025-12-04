@@ -112,7 +112,7 @@ impl ProfileConfig {
     where
         T: serde::Serialize,
     {
-        let json_value = serde_json::to_value(value).map_err(|e| ConfigError::Serialization(e))?;
+        let json_value = serde_json::to_value(value).map_err(ConfigError::Serialization)?;
         self.settings.insert(key, json_value);
         Ok(self)
     }

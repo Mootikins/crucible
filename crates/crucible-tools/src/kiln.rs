@@ -5,11 +5,13 @@
 use rmcp::{model::CallToolResult, tool, tool_router};
 
 #[derive(Clone)]
+#[allow(missing_docs)]
 pub struct KilnTools {
     kiln_path: String,
 }
 
 impl KilnTools {
+    #[allow(missing_docs)]
     pub fn new(kiln_path: String) -> Self {
         Self { kiln_path }
     }

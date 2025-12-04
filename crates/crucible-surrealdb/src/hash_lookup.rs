@@ -59,9 +59,6 @@ fn entity_id_body_from_path(relative_path: &str) -> String {
     }
 }
 
-fn entity_record_id(relative_path: &str) -> String {
-    format!("entities:{}", entity_id_body_from_path(relative_path))
-}
 
 /// Batch hash lookup configuration
 #[derive(Debug, Clone)]
