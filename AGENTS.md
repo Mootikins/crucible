@@ -31,10 +31,10 @@ This file provides essential information for AI agents to understand and contrib
 
 ### Type Ownership
 
-**Parser Types** are canonically defined in `crucible-parser/src/types.rs`.
+**Parser Types** are canonically defined in `crucible-core/src/parser/types/` (split into 10 submodules).
 Core re-exports these types via `crucible_core::parser::*` for convenience.
 
-**Hash Types**: `BlockHash` is defined in `crucible-parser/src/types.rs` to avoid circular
+**Hash Types**: `BlockHash` is defined in `crucible-core/src/parser/types/block_hash.rs` to avoid circular
 dependencies. Other hash infrastructure is in `crucible-core/src/types/hashing.rs`.
 
 **DO NOT duplicate types between crates.** Each type should be defined in exactly
@@ -43,10 +43,10 @@ one location. Use re-exports for convenience.
 **Import patterns:**
 ```rust
 // Parser types - prefer canonical location
-use crucible_parser::types::{ParsedDocument, Wikilink, Tag, BlockHash};
+use crucible_core::parser::{ParsedNote, Wikilink, Tag, BlockHash};
 
-// Or use re-export for convenience
-use crucible_core::parser::{ParsedDocument, Wikilink, Tag};
+// Or use re-export for convenience (same location)
+use crucible_core::parser::{ParsedNote, Wikilink, Tag, BlockHash};
 
 // Hash infrastructure - from core
 use crucible_core::types::hashing::{FileHash, HashAlgorithm};
@@ -56,7 +56,7 @@ use crucible_core::types::hashing::{FileHash, HashAlgorithm};
 - **Rust Core** (`crates/crucible-core/`): Business logic, parsing, storage traits
 - **CLI** (`crates/crucible-cli/`): Command-line interface (current primary interface)
 - **SurrealDB Layer** (`crates/crucible-surrealdb/`): Database integration with EPR schema
-- **Desktop App** (`crates/crucible-tauri/`): Tauri-based desktop application (future)
+- **Parser Implementation** (`crates/crucible-parser/`): Markdown parsing implementation
 
 ### Key Technologies
 - **Rust**: Core performance-critical components
@@ -73,7 +73,7 @@ crucible/
 │   ├── crucible-core/           # Core business logic
 │   ├── crucible-cli/            # CLI application
 │   ├── crucible-surrealdb/      # Database layer
-│   ├── crucible-tauri/          # Desktop app (future)
+│   ├── crucible-parser/         # Markdown parsing implementation
 │   └── ...                      # Other crates
 ├── openspec/                    # Change proposals & specs (see AGENTS.md there)
 │   ├── AGENTS.md                # OpenSpec workflow guide

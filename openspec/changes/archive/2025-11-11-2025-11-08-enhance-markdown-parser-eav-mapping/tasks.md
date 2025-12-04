@@ -1400,7 +1400,7 @@ metadata.insert("security_validated", true);
    impl<'a> DocumentIngestorV2<'a> {
        pub async fn ingest_full(
            &self,
-           parsed: &ParsedDocument,
+           parsed: &ParsedNote,
            kiln_root: &Path,
        ) -> Result<String> {
            // 1. Create entity

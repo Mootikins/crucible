@@ -122,7 +122,7 @@ This implementation corrects severe architectural violations and establishes the
 - `crates/crucible-parser/src/metadata.rs` (new)
 
 **Files to Modify:**
-- `crates/crucible-parser/src/types.rs` (add ParsedNoteMetadata)
+- `crates/crucible-core/src/parser/types/` (add ParsedNoteMetadata)
 - `crates/crucible-enrichment/src/types.rs` (update NoteMetadata)
 - `crates/crucible-enrichment/src/service.rs` (use parser metadata)
 
