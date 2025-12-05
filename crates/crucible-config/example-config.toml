@@ -4,6 +4,10 @@
 # Path to your Obsidian vault (kiln)
 kiln_path = "/home/user/Documents/my-vault"
 
+# Additional directories to search for agent cards (optional)
+# Paths can be absolute or relative to this config file location
+# agent_directories = ["/home/user/shared-agents", "./docs/agents"]
+
 # Embedding configuration
 [embedding]
 provider = "fastembed"  # fastembed, openai, anthropic

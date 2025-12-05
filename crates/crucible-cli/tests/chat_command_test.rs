@@ -25,6 +25,7 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
     // Create test config
     let config = CliConfig {
         kiln_path: kiln_path.clone(),
+        agent_directories: Vec::new(),
         embedding: EmbeddingConfig {
             provider: EmbeddingProviderType::Ollama,
             model: Some("nomic-embed-text-v1.5-q8_0".to_string()),
@@ -102,6 +103,7 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
 
     let config = CliConfig {
         kiln_path: kiln_path.clone(),
+        agent_directories: Vec::new(),
         embedding: EmbeddingConfig {
             provider: EmbeddingProviderType::Ollama,
             model: Some("nomic-embed-text-v1.5-q8_0".to_string()),

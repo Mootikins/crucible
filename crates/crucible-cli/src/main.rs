@@ -227,6 +227,8 @@ async fn main() -> Result<()> {
 
         Some(Commands::Storage(cmd)) => commands::storage::execute(config, cmd).await?,
 
+        Some(Commands::Agents { command }) => commands::agents::execute(config, command).await?,
+
         // Commands::EnhancedChat { // Temporarily disabled
         //     agent,
         //     model,

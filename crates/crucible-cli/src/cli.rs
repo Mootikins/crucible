@@ -164,6 +164,49 @@ pub enum Commands {
     /// Storage management and operations
     #[command(subcommand)]
     Storage(StorageCommands),
+
+    /// Agent card management (defaults to 'list' if no subcommand given)
+    Agents {
+        #[command(subcommand)]
+        command: Option<AgentsCommands>,
+    },
+}
+
+/// Agent card management subcommands
+#[derive(Subcommand)]
+pub enum AgentsCommands {
+    /// List all registered agent cards (default when no subcommand given)
+    #[command(name = "list")]
+    List {
+        /// Filter by tag
+        #[arg(short = 't', long)]
+        tag: Option<String>,
+
+        /// Output format (table, json)
+        #[arg(short = 'f', long, default_value = "table")]
+        format: String,
+    },
+
+    /// Show details of a specific agent card
+    Show {
+        /// Name of the agent card to show
+        name: String,
+
+        /// Output format (table, json)
+        #[arg(short = 'f', long, default_value = "table")]
+        format: String,
+
+        /// Show full system prompt (not truncated)
+        #[arg(long)]
+        full: bool,
+    },
+
+    /// Validate all agent cards in configured directories
+    Validate {
+        /// Show detailed output for each file
+        #[arg(long)]
+        verbose: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -290,4 +333,69 @@ pub enum StorageCommands {
         #[arg(short = 'f', long, default_value = "json")]
         format: String,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn test_agents_list_parses() {
+        let cli = Cli::try_parse_from(["cru", "agents", "list"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Agents {
+                command: Some(AgentsCommands::List { .. })
+            })
+        ));
+    }
+
+    #[test]
+    fn test_agents_list_with_tag_filter() {
+        let cli = Cli::try_parse_from(["cru", "agents", "list", "-t", "documentation"]).unwrap();
+        if let Some(Commands::Agents {
+            command: Some(AgentsCommands::List { tag, .. }),
+        }) = cli.command
+        {
+            assert_eq!(tag, Some("documentation".to_string()));
+        } else {
+            panic!("Expected Agents List command");
+        }
+    }
+
+    #[test]
+    fn test_agents_show_parses() {
+        let cli = Cli::try_parse_from(["cru", "agents", "show", "General Assistant"]).unwrap();
+        if let Some(Commands::Agents {
+            command: Some(AgentsCommands::Show { name, .. }),
+        }) = cli.command
+        {
+            assert_eq!(name, "General Assistant");
+        } else {
+            panic!("Expected Agents Show command");
+        }
+    }
+
+    #[test]
+    fn test_agents_validate_parses() {
+        let cli = Cli::try_parse_from(["cru", "agents", "validate"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Agents {
+                command: Some(AgentsCommands::Validate { .. })
+            })
+        ));
+    }
+
+    #[test]
+    fn test_agents_defaults_to_list() {
+        // Per design decision: `cru agents` defaults to `list`
+        // When no subcommand is given, command is None, which we treat as List
+        let cli = Cli::try_parse_from(["cru", "agents"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Agents { command: None })
+        ));
+    }
 }
