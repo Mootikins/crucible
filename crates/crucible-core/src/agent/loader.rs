@@ -86,7 +86,7 @@ impl AgentCardLoader {
         let frontmatter: AgentCardFrontmatter = serde_yaml::from_str(frontmatter_str)
             .map_err(|e| anyhow!("Failed to parse YAML frontmatter in {}: {}", file_path, e))?;
 
-        // Convert frontmatter to full agent card
+        // Convert frontmatter to agent card
         let card_id = uuid::Uuid::new_v4();
         let now = chrono::Utc::now();
 
@@ -95,34 +95,11 @@ impl AgentCardLoader {
             name: frontmatter.name.clone(),
             version: frontmatter.version,
             description: frontmatter.description,
-            capabilities: frontmatter
-                .capabilities
-                .into_iter()
-                .map(|cap| Capability {
-                    name: cap.name,
-                    description: cap.description,
-                    required_tools: cap.required_tools.unwrap_or_default(),
-                })
-                .collect(),
-            required_tools: frontmatter.required_tools,
-            optional_tools: frontmatter.optional_tools.unwrap_or_default(),
             tags: frontmatter.tags,
             system_prompt: self.extract_system_prompt(markdown_content)?,
-            skills: frontmatter
-                .skills
-                .into_iter()
-                .map(|skill| Skill {
-                    name: skill.name,
-                    category: skill.category,
-                })
-                .collect(),
+            mcp_servers: frontmatter.mcp_servers,
             config: frontmatter.config.unwrap_or_default(),
-            dependencies: frontmatter.dependencies.unwrap_or_default(),
-            created_at: now,
-            updated_at: now,
-            status: frontmatter.status.unwrap_or(AgentCardStatus::Active),
-            author: frontmatter.author,
-            documentation_url: frontmatter.documentation_url,
+            loaded_at: now,
         };
 
         // Validate the agent card
