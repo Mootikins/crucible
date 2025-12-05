@@ -1,16 +1,30 @@
+//! Agent card types for defining reusable agent configurations
+//!
+//! Agent cards are markdown files with YAML frontmatter that describe
+//! an agent's purpose, capabilities, and system prompt. They follow
+//! the "Model Card" pattern from HuggingFace - metadata about an agent,
+//! not the agent itself.
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
 
+/// An agent card - static definition of an agent's configuration
+///
+/// Agent cards are loaded from markdown files and contain:
+/// - Metadata (name, description, tags)
+/// - System prompt template
+/// - Required/optional tools
+/// - Capabilities for matching
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentDefinition {
-    /// Unique identifier for this agent
+pub struct AgentCard {
+    /// Unique identifier for this agent card
     pub id: Uuid,
 
     /// Human-readable name of the agent
     pub name: String,
 
-    /// Version of this agent definition (semantic versioning)
+    /// Version of this agent card (semantic versioning)
     pub version: String,
 
     /// Brief description of what this agent does
@@ -28,29 +42,26 @@ pub struct AgentDefinition {
     /// Tags for categorization and discovery
     pub tags: Vec<String>,
 
-    /// Personality and behavior configuration
-    pub personality: Personality,
-
     /// System prompt template (can use placeholders)
     pub system_prompt: String,
 
-    /// Skills this agent possesses
+    /// Skills this agent possesses (for matching)
     pub skills: Vec<Skill>,
 
     /// Default configuration values
     pub config: HashMap<String, serde_json::Value>,
 
-    /// Dependencies on other agents (by ID or name)
+    /// Dependencies on other agent cards (by ID or name)
     pub dependencies: Vec<String>,
 
-    /// When this agent was created
+    /// When this agent card was created
     pub created_at: chrono::DateTime<chrono::Utc>,
 
-    /// When this agent was last updated
+    /// When this agent card was last updated
     pub updated_at: chrono::DateTime<chrono::Utc>,
 
-    /// Status of the agent (active, deprecated, experimental)
-    pub status: AgentStatus,
+    /// Status of the agent card (active, deprecated, experimental)
+    pub status: AgentCardStatus,
 
     /// Author/maintainer information
     pub author: Option<String>,
@@ -59,6 +70,7 @@ pub struct AgentDefinition {
     pub documentation_url: Option<String>,
 }
 
+/// A capability that an agent card provides
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Capability {
     /// Name of the capability
@@ -67,13 +79,11 @@ pub struct Capability {
     /// Description of what this capability enables
     pub description: String,
 
-    /// Skill level (beginner, intermediate, advanced, expert)
-    pub skill_level: SkillLevel,
-
     /// Tool requirements for this specific capability
     pub required_tools: Vec<String>,
 }
 
+/// A skill that an agent possesses (for matching purposes)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Skill {
     /// Name of the skill
@@ -81,60 +91,20 @@ pub struct Skill {
 
     /// Category of the skill (e.g., "programming", "analysis", "communication")
     pub category: String,
-
-    /// Proficiency level (1-10)
-    pub proficiency: u8,
-
-    /// Years of experience (simulated)
-    pub experience_years: f32,
-
-    /// Certifications or special qualifications
-    pub certifications: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Personality {
-    /// Tone of communication (professional, casual, friendly, etc.)
-    pub tone: String,
-
-    /// Communication style (concise, detailed, formal, etc.)
-    pub style: String,
-
-    /// Response verbosity (brief, moderate, detailed)
-    pub verbosity: Verbosity,
-
-    /// Key personality traits
-    pub traits: Vec<String>,
-
-    /// Behavioral preferences
-    pub preferences: HashMap<String, String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum SkillLevel {
-    Beginner,
-    Intermediate,
-    Advanced,
-    Expert,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Verbosity {
-    Brief,
-    Moderate,
-    Detailed,
-}
-
+/// Status of an agent card
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum AgentStatus {
+pub enum AgentCardStatus {
     Active,
     Deprecated,
     Experimental,
     Disabled,
 }
 
+/// Query for finding agent cards
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentQuery {
+pub struct AgentCardQuery {
     /// Search by capabilities
     pub capabilities: Vec<String>,
 
@@ -147,20 +117,18 @@ pub struct AgentQuery {
     /// Required tools
     pub required_tools: Vec<String>,
 
-    /// Skill level filter
-    pub min_skill_level: Option<SkillLevel>,
-
     /// Status filter
-    pub status: Option<AgentStatus>,
+    pub status: Option<AgentCardStatus>,
 
     /// Text search in name and description
     pub text_search: Option<String>,
 }
 
+/// Result of matching an agent card to a query
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentMatch {
-    /// The matched agent
-    pub agent: AgentDefinition,
+pub struct AgentCardMatch {
+    /// The matched agent card
+    pub card: AgentCard,
 
     /// Match score (0-100)
     pub score: u32,
@@ -174,45 +142,37 @@ pub struct AgentMatch {
 
 /// Frontmatter structure for parsing YAML frontmatter from markdown files
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentFrontmatter {
+pub struct AgentCardFrontmatter {
     pub name: String,
     pub version: String,
     pub description: String,
+    #[serde(default)]
     pub capabilities: Vec<CapabilityFrontmatter>,
+    #[serde(default)]
     pub required_tools: Vec<String>,
     pub optional_tools: Option<Vec<String>>,
+    #[serde(default)]
     pub tags: Vec<String>,
-    pub personality: PersonalityFrontmatter,
+    #[serde(default)]
     pub skills: Vec<SkillFrontmatter>,
     pub config: Option<HashMap<String, serde_json::Value>>,
     pub dependencies: Option<Vec<String>>,
-    pub status: Option<AgentStatus>,
+    pub status: Option<AgentCardStatus>,
     pub author: Option<String>,
     pub documentation_url: Option<String>,
 }
 
+/// Capability definition in frontmatter
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapabilityFrontmatter {
     pub name: String,
     pub description: String,
-    pub skill_level: SkillLevel,
     pub required_tools: Option<Vec<String>>,
 }
 
+/// Skill definition in frontmatter
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillFrontmatter {
     pub name: String,
     pub category: String,
-    pub proficiency: u8,
-    pub experience_years: Option<f32>,
-    pub certifications: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PersonalityFrontmatter {
-    pub tone: String,
-    pub style: String,
-    pub verbosity: Verbosity,
-    pub traits: Vec<String>,
-    pub preferences: Option<HashMap<String, String>>,
 }

@@ -1,15 +1,19 @@
 //! Chat framework abstraction traits
 //!
-//! Following SOLID principles established in traits/agent.rs and traits/acp.rs,
-//! this module defines backend-agnostic chat abstractions.
+//! Following SOLID principles, this module defines backend-agnostic chat abstractions.
 //!
 //! ## Architecture
 //!
-//! - **ChatAgent**: Core abstraction for any chat backend (ACP, internal, direct LLM)
+//! - **AgentHandle**: Runtime handle to an active agent (ACP, internal, direct LLM)
 //! - **ChatMode**: Permission model (Plan/Act/AutoApprove)
 //! - **CommandRegistry**: Extensible command system (static + dynamic)
 //! - **CommandHandler**: Trait for implementing slash commands
 //! - **ChatContext**: Execution context for command handlers
+//!
+//! ## Naming Convention
+//!
+//! - **AgentCard**: Static definition (prompt + metadata) - see `agent::types`
+//! - **AgentHandle**: Runtime handle to active agent - this module
 //!
 //! ## Design Principles
 //!
@@ -97,18 +101,21 @@ impl ChatMode {
     }
 }
 
-/// Chat agent abstraction
+/// Runtime handle to an active agent
 ///
 /// This trait defines the interface for any chat backend:
 /// - External agents via ACP (claude-code, gemini-cli, etc.)
 /// - Internal agents (direct LLM API integration)
 /// - Custom agent implementations
 ///
+/// Handles are created when spawning an agent and dropped when the task completes.
+/// This follows the systems programming convention of handles as runtime references.
+///
 /// ## Thread Safety
 ///
 /// Implementations must be Send + Sync for concurrent usage across async boundaries.
 #[async_trait]
-pub trait ChatAgent: Send + Sync {
+pub trait AgentHandle: Send + Sync {
     /// Send a message to the agent and receive a response
     ///
     /// # Arguments
