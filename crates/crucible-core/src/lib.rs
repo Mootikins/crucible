@@ -18,7 +18,8 @@ pub mod traits;
 pub mod types;
 
 pub use agent::{
-    AgentDefinition, AgentLoader, AgentMatch, AgentQuery, AgentRegistry, CapabilityMatcher,
+    AgentCard, AgentCardLoader, AgentCardMatch, AgentCardQuery, AgentCardRegistry,
+    AgentCardStatus, Capability, CapabilityMatcher, Skill,
 };
 pub use canvas::{CanvasEdge, CanvasNode};
 pub use content_category::{ContentCategory, ContentCategoryError};
@@ -43,8 +44,8 @@ pub use processing::{
 
 // Re-export core traits (abstractions for Dependency Inversion)
 pub use traits::{
-    AgentProvider, ChangeDetector, ContentHasher, FilesystemHandler, HashLookupStorage,
-    MarkdownParser, SessionManager, Storage, StreamHandler, ToolBridge, ToolExecutor,
+    ChangeDetector, ContentHasher, FilesystemHandler, HashLookupStorage, MarkdownParser,
+    SessionManager, Storage, StreamHandler, ToolBridge, ToolExecutor,
 };
 
 // Re-export key types used across module boundaries

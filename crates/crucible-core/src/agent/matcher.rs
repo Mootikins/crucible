@@ -1,7 +1,9 @@
+//! Matcher for finding agent cards based on capabilities, skills, and other criteria
+
 use crate::agent::types::*;
 use std::collections::HashMap;
 
-/// Matcher for finding agents based on capabilities, skills, and other criteria
+/// Matcher for finding agent cards based on capabilities, skills, and other criteria
 #[derive(Debug)]
 pub struct CapabilityMatcher {
     /// Weights for different matching criteria
@@ -20,8 +22,6 @@ pub struct MatchingWeights {
     pub tool_match: u32,
     /// Weight for text search matches
     pub text_match: u32,
-    /// Weight for skill level matches
-    pub skill_level_match: u32,
 }
 
 impl Default for MatchingWeights {
@@ -32,7 +32,6 @@ impl Default for MatchingWeights {
             tag_match: 15,
             tool_match: 20,
             text_match: 10,
-            skill_level_match: 15,
         }
     }
 }
@@ -56,17 +55,17 @@ impl CapabilityMatcher {
         Self { weights }
     }
 
-    /// Find agents matching the given query
-    pub fn find_matching_agents(
+    /// Find agent cards matching the given query
+    pub fn find_matching(
         &self,
-        agents: &HashMap<String, AgentDefinition>,
-        query: &AgentQuery,
-    ) -> Vec<AgentMatch> {
+        cards: &HashMap<String, AgentCard>,
+        query: &AgentCardQuery,
+    ) -> Vec<AgentCardMatch> {
         let mut matches = Vec::new();
 
-        for agent in agents.values() {
-            if let Some(agent_match) = self.match_agent(agent, query) {
-                matches.push(agent_match);
+        for card in cards.values() {
+            if let Some(card_match) = self.match_card(card, query) {
+                matches.push(card_match);
             }
         }
 
@@ -75,11 +74,11 @@ impl CapabilityMatcher {
         matches
     }
 
-    /// Match a single agent against the query
-    fn match_agent(&self, agent: &AgentDefinition, query: &AgentQuery) -> Option<AgentMatch> {
+    /// Match a single agent card against the query
+    fn match_card(&self, card: &AgentCard, query: &AgentCardQuery) -> Option<AgentCardMatch> {
         // Check status filter
         if let Some(required_status) = &query.status {
-            if &agent.status != required_status {
+            if &card.status != required_status {
                 return None;
             }
         }
@@ -89,7 +88,7 @@ impl CapabilityMatcher {
         let mut missing_requirements = Vec::new();
 
         // Check capabilities
-        let capability_matches = self.count_capability_matches(agent, &query.capabilities);
+        let capability_matches = self.count_capability_matches(card, &query.capabilities);
         if capability_matches > 0 {
             score += (capability_matches as u32) * self.weights.capability_match;
             matched_criteria.push(format!("{} capabilities", capability_matches));
@@ -98,7 +97,7 @@ impl CapabilityMatcher {
         }
 
         // Check skills
-        let skill_matches = self.count_skill_matches(agent, &query.skills);
+        let skill_matches = self.count_skill_matches(card, &query.skills);
         if skill_matches > 0 {
             score += (skill_matches as u32) * self.weights.skill_match;
             matched_criteria.push(format!("{} skills", skill_matches));
@@ -107,14 +106,14 @@ impl CapabilityMatcher {
         }
 
         // Check tags
-        let tag_matches = self.count_tag_matches(agent, &query.tags);
+        let tag_matches = self.count_tag_matches(card, &query.tags);
         if tag_matches > 0 {
             score += (tag_matches as u32) * self.weights.tag_match;
             matched_criteria.push(format!("{} tags", tag_matches));
         }
 
         // Check required tools
-        let tool_matches = self.count_tool_matches(agent, &query.required_tools);
+        let tool_matches = self.count_tool_matches(card, &query.required_tools);
         if tool_matches > 0 {
             score += (tool_matches as u32) * self.weights.tool_match;
             matched_criteria.push(format!("{} tools", tool_matches));
@@ -122,18 +121,9 @@ impl CapabilityMatcher {
             missing_requirements.extend(query.required_tools.clone());
         }
 
-        // Check skill level
-        if let Some(min_level) = &query.min_skill_level {
-            let level_matches = self.count_skill_level_matches(agent, min_level);
-            if level_matches > 0 {
-                score += (level_matches as u32) * self.weights.skill_level_match;
-                matched_criteria.push(format!("{} skills at required level", level_matches));
-            }
-        }
-
         // Check text search
         if let Some(search_text) = &query.text_search {
-            if let Some(text_score) = self.check_text_match(agent, search_text) {
+            if let Some(text_score) = self.check_text_match(card, search_text) {
                 score += text_score * self.weights.text_match;
                 matched_criteria.push("text search match".to_string());
             }
@@ -141,8 +131,8 @@ impl CapabilityMatcher {
 
         // Only return a match if we have some positive score
         if score > 0 {
-            Some(AgentMatch {
-                agent: agent.clone(),
+            Some(AgentCardMatch {
+                card: card.clone(),
                 score,
                 matched_criteria,
                 missing_requirements,
@@ -153,64 +143,54 @@ impl CapabilityMatcher {
     }
 
     /// Count how many capabilities match
-    fn count_capability_matches(&self, agent: &AgentDefinition, required_caps: &[String]) -> usize {
+    fn count_capability_matches(&self, card: &AgentCard, required_caps: &[String]) -> usize {
         required_caps
             .iter()
-            .filter(|req_cap| agent.capabilities.iter().any(|cap| cap.name == **req_cap))
+            .filter(|req_cap| card.capabilities.iter().any(|cap| cap.name == **req_cap))
             .count()
     }
 
     /// Count how many skills match
-    fn count_skill_matches(&self, agent: &AgentDefinition, required_skills: &[String]) -> usize {
+    fn count_skill_matches(&self, card: &AgentCard, required_skills: &[String]) -> usize {
         required_skills
             .iter()
-            .filter(|req_skill| agent.skills.iter().any(|skill| skill.name == **req_skill))
+            .filter(|req_skill| card.skills.iter().any(|skill| skill.name == **req_skill))
             .count()
     }
 
     /// Count how many tags match
-    fn count_tag_matches(&self, agent: &AgentDefinition, required_tags: &[String]) -> usize {
+    fn count_tag_matches(&self, card: &AgentCard, required_tags: &[String]) -> usize {
         required_tags
             .iter()
-            .filter(|req_tag| agent.tags.contains(*req_tag))
+            .filter(|req_tag| card.tags.contains(*req_tag))
             .count()
     }
 
     /// Count how many required tools are available
-    fn count_tool_matches(&self, agent: &AgentDefinition, required_tools: &[String]) -> usize {
+    fn count_tool_matches(&self, card: &AgentCard, required_tools: &[String]) -> usize {
         required_tools
             .iter()
-            .filter(|tool| agent.required_tools.contains(*tool))
-            .count()
-    }
-
-    /// Count skills at or above the required level
-    fn count_skill_level_matches(&self, agent: &AgentDefinition, min_level: &SkillLevel) -> usize {
-        let level_value = self.skill_level_to_value(min_level);
-        agent
-            .capabilities
-            .iter()
-            .filter(|cap| self.skill_level_to_value(&cap.skill_level) >= level_value)
+            .filter(|tool| card.required_tools.contains(*tool))
             .count()
     }
 
     /// Check text search in name and description
-    fn check_text_match(&self, agent: &AgentDefinition, search_text: &str) -> Option<u32> {
+    fn check_text_match(&self, card: &AgentCard, search_text: &str) -> Option<u32> {
         let search_lower = search_text.to_lowercase();
         let mut score = 0u32;
 
         // Check name match (higher weight)
-        if agent.name.to_lowercase().contains(&search_lower) {
+        if card.name.to_lowercase().contains(&search_lower) {
             score += 10;
         }
 
         // Check description match
-        if agent.description.to_lowercase().contains(&search_lower) {
+        if card.description.to_lowercase().contains(&search_lower) {
             score += 5;
         }
 
         // Check capabilities match
-        for cap in &agent.capabilities {
+        for cap in &card.capabilities {
             if cap.name.to_lowercase().contains(&search_lower)
                 || cap.description.to_lowercase().contains(&search_lower)
             {
@@ -219,7 +199,7 @@ impl CapabilityMatcher {
         }
 
         // Check tags match
-        for tag in &agent.tags {
+        for tag in &card.tags {
             if tag.to_lowercase().contains(&search_lower) {
                 score += 2;
             }
@@ -232,30 +212,20 @@ impl CapabilityMatcher {
         }
     }
 
-    /// Convert skill level to numeric value for comparison
-    fn skill_level_to_value(&self, level: &SkillLevel) -> u8 {
-        match level {
-            SkillLevel::Beginner => 1,
-            SkillLevel::Intermediate => 2,
-            SkillLevel::Advanced => 3,
-            SkillLevel::Expert => 4,
-        }
-    }
-
-    /// Find agents that can work together (have compatible tools and capabilities)
-    pub fn find_compatible_agents(
+    /// Find agent cards that can work together (have compatible tools and capabilities)
+    pub fn find_compatible(
         &self,
-        agents: &HashMap<String, AgentDefinition>,
-        primary_agent: &str,
-    ) -> Vec<AgentMatch> {
-        let primary = match agents.get(primary_agent) {
-            Some(agent) => agent,
+        cards: &HashMap<String, AgentCard>,
+        primary_card: &str,
+    ) -> Vec<AgentCardMatch> {
+        let primary = match cards.get(primary_card) {
+            Some(card) => card,
             None => return Vec::new(),
         };
         let mut compatible = Vec::new();
 
-        for (name, agent) in agents {
-            if name == primary_agent {
+        for (name, card) in cards {
+            if name == primary_card {
                 continue;
             }
 
@@ -266,7 +236,7 @@ impl CapabilityMatcher {
             let shared_tools = primary
                 .required_tools
                 .iter()
-                .filter(|tool| agent.required_tools.contains(*tool))
+                .filter(|tool| card.required_tools.contains(*tool))
                 .count();
             if shared_tools > 0 {
                 score += shared_tools as u32 * 10;
@@ -274,7 +244,7 @@ impl CapabilityMatcher {
             }
 
             // Check for complementary capabilities
-            let complementary_caps = agent
+            let complementary_caps = card
                 .capabilities
                 .iter()
                 .filter(|cap| {
@@ -290,7 +260,7 @@ impl CapabilityMatcher {
             }
 
             // Check for complementary skills
-            let complementary_skills = agent
+            let complementary_skills = card
                 .skills
                 .iter()
                 .filter(|skill| {
@@ -306,8 +276,8 @@ impl CapabilityMatcher {
             }
 
             if score > 0 {
-                compatible.push(AgentMatch {
-                    agent: agent.clone(),
+                compatible.push(AgentCardMatch {
+                    card: card.clone(),
                     score,
                     matched_criteria,
                     missing_requirements: Vec::new(),
@@ -319,24 +289,23 @@ impl CapabilityMatcher {
         compatible
     }
 
-    /// Suggest agents for a specific task based on task requirements
-    pub fn suggest_agents_for_task(
+    /// Suggest agent cards for a specific task based on task requirements
+    pub fn suggest_for_task(
         &self,
-        agents: &HashMap<String, AgentDefinition>,
+        cards: &HashMap<String, AgentCard>,
         task_description: &str,
         required_capabilities: &[String],
         preferred_skills: &[String],
-    ) -> Vec<AgentMatch> {
-        let query = AgentQuery {
+    ) -> Vec<AgentCardMatch> {
+        let query = AgentCardQuery {
             capabilities: required_capabilities.to_vec(),
             skills: preferred_skills.to_vec(),
             tags: Vec::new(),
             required_tools: Vec::new(),
-            min_skill_level: Some(SkillLevel::Intermediate),
-            status: Some(AgentStatus::Active),
+            status: Some(AgentCardStatus::Active),
             text_search: Some(task_description.to_string()),
         };
 
-        self.find_matching_agents(agents, &query)
+        self.find_matching(cards, &query)
     }
 }

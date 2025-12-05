@@ -24,7 +24,7 @@ pub mod session;
 
 // Re-export core traits for convenience
 pub use crucible_core::traits::chat::{
-    ChatAgent, ChatContext, ChatError, ChatMode, ChatResponse, ChatResult, CommandDescriptor,
+    AgentHandle, ChatContext, ChatError, ChatMode, ChatResponse, ChatResult, CommandDescriptor,
     CommandHandler, CommandRegistry, SearchResult, ToolCall as ChatToolCall,
 };
 

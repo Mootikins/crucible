@@ -15,7 +15,7 @@ use std::time::Instant;
 use tracing::{debug, error};
 
 use crate::acp::ContextEnricher;
-use crate::chat::{ChatAgent, ChatMode, ChatModeDisplay, Command, CommandParser, Display, ToolCallDisplay};
+use crate::chat::{AgentHandle, ChatMode, ChatModeDisplay, Command, CommandParser, Display, ToolCallDisplay};
 use crate::core_facade::KilnContext;
 
 /// Default number of context results to include in enriched prompts
@@ -92,7 +92,7 @@ impl ChatSession {
     }
 
     /// Run the interactive session loop
-    pub async fn run<A: ChatAgent>(&mut self, agent: &mut A) -> Result<()> {
+    pub async fn run<A: AgentHandle>(&mut self, agent: &mut A) -> Result<()> {
         let mut current_mode = self.config.initial_mode;
         let mut last_ctrl_c: Option<Instant> = None;
 
@@ -173,7 +173,7 @@ impl ChatSession {
     /// Handle a parsed command
     ///
     /// Returns true if the session should exit.
-    async fn handle_command<A: ChatAgent>(
+    async fn handle_command<A: AgentHandle>(
         &self,
         command: Command,
         current_mode: &mut ChatMode,
@@ -251,7 +251,7 @@ impl ChatSession {
     }
 
     /// Handle a regular message (not a command)
-    async fn handle_message<A: ChatAgent>(&self, input: &str, agent: &mut A) -> Result<()> {
+    async fn handle_message<A: AgentHandle>(&self, input: &str, agent: &mut A) -> Result<()> {
 
         // Prepare the message (with or without context enrichment)
         let message = if !self.config.context_enabled {
