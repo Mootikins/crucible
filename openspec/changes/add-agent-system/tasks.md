@@ -25,20 +25,19 @@
 - [x] 1.14 Update all tests for simplified frontmatter format
 - [x] 1.15 Update lib.rs exports
 
-## Phase 2: Agent Card Format Specification
+## Phase 2: Agent Card Format Specification (DONE)
 
-- [ ] 2.1 Create `openspec/specs/agent-cards.md` defining:
+- [x] 2.1 Create `openspec/specs/agent-cards/spec.md` defining:
   - Required frontmatter fields (name, version, description)
   - Optional frontmatter fields (tags, mcp_servers, config)
-  - System prompt extraction rules (# System Prompt section or full body)
+  - System prompt extraction rules (full markdown body)
   - File naming conventions
   - Directory structure (.crucible/agents/, ~/.config/crucible/agents/)
-- [ ] 2.2 Create example agent cards in `examples/agent-cards/`
-  - `code-reviewer.md` - Code review specialist
-  - `researcher.md` - Research and summarization
-  - `refactorer.md` - Code refactoring expert
-- [ ] 2.3 Add validation for required fields in AgentCardLoader (already done)
-- [ ] 2.4 Document frontmatter schema with examples
+- [x] 2.2 Create example agent cards in `examples/agent-cards/`
+  - `general.md` - Default general-purpose assistant
+  - `kiln-specialist.md` - Zettelkasten/atomic note expert
+- [x] 2.3 Add validation for required fields in AgentCardLoader (already done in Phase 1)
+- [x] 2.4 Document frontmatter schema with examples (in spec.md)
 
 ## Phase 3: CLI Integration
 
@@ -67,4 +66,5 @@
 1. `90ffb69` - docs: add agent naming clarification design
 2. `86eacef` - docs(openspec): update add-agent-system tasks
 3. `fdac746` - refactor: agent naming clarification (AgentCard, AgentHandle)
-4. (pending) - refactor: simplify AgentCard structure
+4. `bd6ce79` - refactor: simplify AgentCard structure
+5. (pending) - docs: add agent cards specification and examples
