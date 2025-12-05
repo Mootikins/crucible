@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::agent::{AgentCardLoader, AgentCardQuery, AgentCardRegistry, AgentCardStatus};
+    use crate::agent::{AgentCardLoader, AgentCardQuery, AgentCardRegistry};
     use std::fs;
     use tempfile::TempDir;
 
@@ -15,24 +15,11 @@ mod tests {
 name: "Test Agent"
 version: "1.0.0"
 description: "A test agent for unit testing"
-
-capabilities:
-  - name: "Testing"
-    description: "Ability to run and write tests"
-
-required_tools:
-  - "search_by_content"
-
 tags:
   - "test"
   - "sample"
-
-skills:
-  - name: "Testing"
-    category: "development"
-
-status: "Active"
-author: "Test Author"
+mcp_servers:
+  - "crucible"
 ---
 
 # System Prompt
@@ -74,14 +61,8 @@ This agent follows simple patterns and provides predictable responses for testin
         assert_eq!(card.name, "Test Agent");
         assert_eq!(card.version, "1.0.0");
         assert_eq!(card.description, "A test agent for unit testing");
-        assert_eq!(card.required_tools, vec!["search_by_content"]);
         assert_eq!(card.tags, vec!["test", "sample"]);
-        assert_eq!(card.capabilities.len(), 1);
-        assert_eq!(card.capabilities[0].name, "Testing");
-        assert_eq!(card.skills.len(), 1);
-        assert_eq!(card.skills[0].name, "Testing");
-        assert_eq!(card.status, AgentCardStatus::Active);
-        assert_eq!(card.author, Some("Test Author".to_string()));
+        assert_eq!(card.mcp_servers, vec!["crucible"]);
         assert!(card
             .system_prompt
             .contains("test agent used for unit testing"));
@@ -94,11 +75,7 @@ This agent follows simple patterns and provides predictable responses for testin
 name: "Test Agent"
 version: 1.0.0
 description: "Invalid YAML - version should be quoted"
-
-capabilities:
-  - name: "Testing"
-    description: "Invalid frontmatter"
-
+tags: []
 # Missing closing ---
 "#;
 
@@ -199,18 +176,6 @@ Some content here.
         let tagged_cards = registry.get_by_tag("test");
         assert_eq!(tagged_cards.len(), 1);
 
-        // Test getting agent cards by capability
-        let capable_cards = registry.get_by_capability("Testing");
-        assert_eq!(capable_cards.len(), 1);
-
-        // Test getting agent cards by skill
-        let skilled_cards = registry.get_by_skill("Testing");
-        assert_eq!(skilled_cards.len(), 1);
-
-        // Test getting agent cards requiring tools
-        let tool_cards = registry.get_requiring_tools(&vec!["search_by_content".to_string()]);
-        assert_eq!(tool_cards.len(), 1);
-
         // Test count
         assert_eq!(registry.count(), 1);
 
@@ -221,7 +186,7 @@ Some content here.
     }
 
     #[test]
-    fn test_capability_matching() {
+    fn test_tag_matching() {
         let temp_dir = TempDir::new().unwrap();
 
         // Create a test agent card
@@ -231,13 +196,9 @@ Some content here.
         let mut registry = AgentCardRegistry::new(AgentCardLoader::new());
         registry.load_from_file(&file_path).unwrap();
 
-        // Test exact capability match
+        // Test tag match
         let query = AgentCardQuery {
-            capabilities: vec!["Testing".to_string()],
-            tags: vec![],
-            skills: vec![],
-            required_tools: vec![],
-            status: None,
+            tags: vec!["test".to_string()],
             text_search: None,
         };
 
@@ -248,41 +209,11 @@ Some content here.
         assert!(matches[0]
             .matched_criteria
             .iter()
-            .any(|c| c.contains("capabilities")));
-
-        // Test tag match
-        let query = AgentCardQuery {
-            capabilities: vec![],
-            tags: vec!["test".to_string()],
-            skills: vec![],
-            required_tools: vec![],
-            status: None,
-            text_search: None,
-        };
-
-        let matches = registry.find(&query);
-        assert_eq!(matches.len(), 1);
-
-        // Test tool requirement match
-        let query = AgentCardQuery {
-            capabilities: vec![],
-            tags: vec![],
-            skills: vec![],
-            required_tools: vec!["search_by_content".to_string()],
-            status: None,
-            text_search: None,
-        };
-
-        let matches = registry.find(&query);
-        assert_eq!(matches.len(), 1);
+            .any(|c| c.contains("tags")));
 
         // Test text search
         let query = AgentCardQuery {
-            capabilities: vec![],
             tags: vec![],
-            skills: vec![],
-            required_tools: vec![],
-            status: None,
             text_search: Some("test agent".to_string()),
         };
 
@@ -291,11 +222,7 @@ Some content here.
 
         // Test no matches
         let query = AgentCardQuery {
-            capabilities: vec!["Nonexistent Capability".to_string()],
-            tags: vec![],
-            skills: vec![],
-            required_tools: vec![],
-            status: None,
+            tags: vec!["nonexistent".to_string()],
             text_search: None,
         };
 
@@ -400,20 +327,7 @@ Some content here.
 name: "Test Agent"
 version: "1.0.0"
 description: "A test agent"
-
-capabilities:
-  - name: "Testing"
-    description: "Test capability"
-
-required_tools: []
 tags: []
-
-skills:
-  - name: "Testing"
-    category: "test"
-
-status: "Active"
-author: "Test"
 ---
 "#;
 
@@ -470,17 +384,14 @@ author: "Test"
 
     #[test]
     fn test_matcher_with_custom_weights() {
-        use crate::agent::matcher::{CapabilityMatcher, MatchingWeights};
+        use crate::agent::matcher::{AgentCardMatcher, MatchingWeights};
 
         let custom_weights = MatchingWeights {
-            capability_match: 50,
-            skill_match: 40,
-            tag_match: 30,
-            tool_match: 25,
+            tag_match: 50,
             text_match: 15,
         };
 
-        let matcher = CapabilityMatcher::with_weights(custom_weights);
+        let matcher = AgentCardMatcher::with_weights(custom_weights);
 
         // Verify matcher was created (implicit test via successful construction)
         let temp_dir = TempDir::new().unwrap();
@@ -492,11 +403,7 @@ author: "Test"
 
         // Test that custom weights affect scoring
         let query = AgentCardQuery {
-            capabilities: vec!["Testing".to_string()],
-            tags: vec![],
-            skills: vec![],
-            required_tools: vec![],
-            status: None,
+            tags: vec!["test".to_string()],
             text_search: None,
         };
 
@@ -511,60 +418,12 @@ author: "Test"
 
         let matches = matcher.find_matching(&cards, &query);
         assert!(!matches.is_empty());
-        // With custom weight of 50 for capability_match, score should be 50
+        // With custom weight of 50 for tag_match, score should be 50
         assert_eq!(matches[0].score, 50);
     }
 
     #[test]
-    fn test_status_filtering() {
-        let temp_dir = TempDir::new().unwrap();
-
-        // Create experimental agent card
-        let experimental_content = get_sample_agent_frontmatter()
-            .replace("status: \"Active\"", "status: \"Experimental\"");
-        let file_path =
-            create_test_agent_file(&temp_dir, "experimental_agent.md", &experimental_content);
-
-        let mut registry = AgentCardRegistry::new(AgentCardLoader::new());
-        registry.load_from_file(&file_path).unwrap();
-
-        // Query for Active agent cards with text search - should not match Experimental
-        let query = AgentCardQuery {
-            capabilities: vec![],
-            tags: vec![],
-            skills: vec![],
-            required_tools: vec![],
-            status: Some(AgentCardStatus::Active),
-            text_search: Some("test".to_string()),
-        };
-
-        let matches = registry.find(&query);
-        assert_eq!(
-            matches.len(),
-            0,
-            "Should not match when status doesn't match"
-        );
-
-        // Query for Experimental agent cards with text search - should match
-        let query_experimental = AgentCardQuery {
-            capabilities: vec![],
-            tags: vec![],
-            skills: vec![],
-            required_tools: vec![],
-            status: Some(AgentCardStatus::Experimental),
-            text_search: Some("test".to_string()),
-        };
-
-        let matches_experimental = registry.find(&query_experimental);
-        assert_eq!(
-            matches_experimental.len(),
-            1,
-            "Should match when status is Experimental"
-        );
-    }
-
-    #[test]
-    fn test_missing_requirements_tracking() {
+    fn test_text_search_in_name_and_tags() {
         let temp_dir = TempDir::new().unwrap();
         let content = get_sample_agent_frontmatter();
         let file_path = create_test_agent_file(&temp_dir, "test_agent.md", content);
@@ -572,41 +431,10 @@ author: "Test"
         let mut registry = AgentCardRegistry::new(AgentCardLoader::new());
         registry.load_from_file(&file_path).unwrap();
 
-        // Query for capabilities the agent card doesn't have
+        // Test search in name
         let query = AgentCardQuery {
-            capabilities: vec!["NonexistentCapability".to_string()],
-            skills: vec!["NonexistentSkill".to_string()],
             tags: vec![],
-            required_tools: vec!["nonexistent_tool".to_string()],
-            status: None,
-            text_search: None,
-        };
-
-        let matches = registry.find(&query);
-        assert_eq!(
-            matches.len(),
-            0,
-            "Should not match when missing all requirements"
-        );
-    }
-
-    #[test]
-    fn test_text_search_in_capabilities_and_tags() {
-        let temp_dir = TempDir::new().unwrap();
-        let content = get_sample_agent_frontmatter();
-        let file_path = create_test_agent_file(&temp_dir, "test_agent.md", content);
-
-        let mut registry = AgentCardRegistry::new(AgentCardLoader::new());
-        registry.load_from_file(&file_path).unwrap();
-
-        // Test search in capability name
-        let query = AgentCardQuery {
-            capabilities: vec![],
-            tags: vec![],
-            skills: vec![],
-            required_tools: vec![],
-            status: None,
-            text_search: Some("Testing".to_string()),
+            text_search: Some("Test Agent".to_string()),
         };
 
         let matches = registry.find(&query);
@@ -614,11 +442,7 @@ author: "Test"
 
         // Test search in tag
         let query_tag = AgentCardQuery {
-            capabilities: vec![],
             tags: vec![],
-            skills: vec![],
-            required_tools: vec![],
-            status: None,
             text_search: Some("test".to_string()),
         };
 
@@ -627,11 +451,7 @@ author: "Test"
 
         // Test search with no matches
         let query_no_match = AgentCardQuery {
-            capabilities: vec![],
             tags: vec![],
-            skills: vec![],
-            required_tools: vec![],
-            status: None,
             text_search: Some("xyznonexistent".to_string()),
         };
 
@@ -640,112 +460,28 @@ author: "Test"
     }
 
     #[test]
-    fn test_find_compatible_cards() {
-        use crate::agent::matcher::CapabilityMatcher;
-
+    fn test_minimal_agent_card() {
         let temp_dir = TempDir::new().unwrap();
-
-        // Create primary agent card
-        let primary_content = get_sample_agent_frontmatter();
-        create_test_agent_file(&temp_dir, "primary_agent.md", &primary_content);
-
-        // Create compatible agent card with shared tools
-        let compatible_content = get_sample_agent_frontmatter()
-            .replace("name: \"Test Agent\"", "name: \"Compatible Agent\"")
-            .replace("test agent", "compatible agent");
-        create_test_agent_file(&temp_dir, "compatible_agent.md", &compatible_content);
-
-        // Create agent card with complementary capabilities
-        let complementary_content = r#"---
-name: "Complementary Agent"
+        // Minimal agent card - only required fields
+        let minimal_content = r#"---
+name: "Minimal Agent"
 version: "1.0.0"
-description: "Agent with different capabilities"
-
-capabilities:
-  - name: "Different Capability"
-    description: "A different capability"
-
-required_tools:
-  - "search_by_content"
-
-tags:
-  - "different"
-
-skills:
-  - name: "Different Skill"
-    category: "analysis"
-
-status: "Active"
-author: "Test"
+description: "A minimal agent card"
 ---
 
 # System Prompt
-Complementary agent for testing.
+
+This is a minimal agent with just required fields.
 "#;
-        create_test_agent_file(&temp_dir, "complementary_agent.md", complementary_content);
 
+        let file_path = create_test_agent_file(&temp_dir, "minimal_agent.md", minimal_content);
         let mut loader = AgentCardLoader::new();
-        let cards_list = loader
-            .load_from_directory(temp_dir.path().to_str().unwrap())
-            .unwrap();
+        let result = loader.load_from_file(&file_path);
 
-        let cards: std::collections::HashMap<String, crate::agent::AgentCard> = cards_list
-            .into_iter()
-            .map(|card| (card.name.clone(), card))
-            .collect();
-
-        let matcher = CapabilityMatcher::new();
-        let compatible = matcher.find_compatible(&cards, "Test Agent");
-
-        assert!(!compatible.is_empty(), "Should find compatible agent cards");
-
-        // Verify scoring is working
-        for match_result in &compatible {
-            assert!(match_result.score > 0);
-            assert!(!match_result.matched_criteria.is_empty());
-        }
-    }
-
-    #[test]
-    fn test_suggest_cards_for_task() {
-        use crate::agent::matcher::CapabilityMatcher;
-
-        let temp_dir = TempDir::new().unwrap();
-        let content = get_sample_agent_frontmatter();
-        let file_path = create_test_agent_file(&temp_dir, "test_agent.md", content);
-
-        let mut loader = AgentCardLoader::new();
-        let card = loader.load_from_file(&file_path).unwrap();
-
-        let mut cards: std::collections::HashMap<String, crate::agent::AgentCard> =
-            std::collections::HashMap::new();
-        cards.insert(card.name.clone(), card);
-
-        let matcher = CapabilityMatcher::new();
-        let suggestions = matcher.suggest_for_task(
-            &cards,
-            "Need help with testing tasks",
-            &["Testing".to_string()],
-            &["Testing".to_string()],
-        );
-
-        assert_eq!(suggestions.len(), 1);
-        assert_eq!(suggestions[0].card.name, "Test Agent");
-    }
-
-    #[test]
-    fn test_find_compatible_cards_nonexistent_primary() {
-        use crate::agent::matcher::CapabilityMatcher;
-
-        let cards: std::collections::HashMap<String, crate::agent::AgentCard> =
-            std::collections::HashMap::new();
-
-        let matcher = CapabilityMatcher::new();
-        let compatible = matcher.find_compatible(&cards, "Nonexistent Agent");
-
-        assert!(
-            compatible.is_empty(),
-            "Should return empty vec for nonexistent primary"
-        );
+        assert!(result.is_ok(), "Should load minimal agent card");
+        let card = result.unwrap();
+        assert_eq!(card.name, "Minimal Agent");
+        assert!(card.tags.is_empty());
+        assert!(card.mcp_servers.is_empty());
     }
 }
