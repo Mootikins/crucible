@@ -326,6 +326,13 @@ pub struct CliAppConfig {
     #[serde(default = "default_kiln_path")]
     pub kiln_path: std::path::PathBuf,
 
+    /// Additional directories to search for agent cards
+    ///
+    /// Paths can be absolute or relative (to config file location).
+    /// These are loaded after the default locations.
+    #[serde(default)]
+    pub agent_directories: Vec<std::path::PathBuf>,
+
     /// Embedding configuration
     #[serde(default)]
     pub embedding: EmbeddingConfig,
@@ -359,6 +366,7 @@ impl Default for CliAppConfig {
     fn default() -> Self {
         Self {
             kiln_path: default_kiln_path(),
+            agent_directories: Vec::new(),
             embedding: EmbeddingConfig::default(),
             acp: AcpConfig::default(),
             chat: ChatConfig::default(),
@@ -584,6 +592,10 @@ impl CliAppConfig {
 # Path to your Obsidian kiln
 # Default: current directory
 kiln_path = "/home/user/Documents/my-kiln"
+
+# Additional directories to search for agent cards (optional)
+# Paths can be absolute or relative to this config file location
+# agent_directories = ["/home/user/shared-agents", "./docs/agents"]
 
 # Embedding configuration
 [embedding]
@@ -949,5 +961,59 @@ impl Default for LoggingConfig {
             target: true,
             ansi: true,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_agent_directories_default_empty() {
+        let config = CliAppConfig::default();
+        assert!(config.agent_directories.is_empty());
+    }
+
+    #[test]
+    fn test_agent_directories_loads_from_toml() {
+        let toml_content = r#"
+kiln_path = "/tmp/test-kiln"
+agent_directories = ["/home/user/shared-agents", "./local-agents"]
+
+[embedding]
+provider = "fastembed"
+"#;
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(toml_content.as_bytes()).unwrap();
+
+        let config = CliAppConfig::load(Some(temp_file.path().to_path_buf()), None, None).unwrap();
+
+        assert_eq!(config.agent_directories.len(), 2);
+        assert_eq!(
+            config.agent_directories[0],
+            std::path::PathBuf::from("/home/user/shared-agents")
+        );
+        assert_eq!(
+            config.agent_directories[1],
+            std::path::PathBuf::from("./local-agents")
+        );
+    }
+
+    #[test]
+    fn test_agent_directories_optional_when_missing() {
+        let toml_content = r#"
+kiln_path = "/tmp/test-kiln"
+
+[embedding]
+provider = "fastembed"
+"#;
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(toml_content.as_bytes()).unwrap();
+
+        let config = CliAppConfig::load(Some(temp_file.path().to_path_buf()), None, None).unwrap();
+
+        assert!(config.agent_directories.is_empty());
     }
 }

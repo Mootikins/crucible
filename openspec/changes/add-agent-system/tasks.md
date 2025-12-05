@@ -39,15 +39,18 @@
 - [x] 2.3 Add validation for required fields in AgentCardLoader (already done in Phase 1)
 - [x] 2.4 Document frontmatter schema with examples (in spec.md)
 
-## Phase 3: CLI Integration
+## Phase 3: CLI Integration (DONE)
 
-- [ ] 3.1 Add `cru agents` subcommand group
-- [ ] 3.2 Implement `cru agents list` - List all registered agent cards
-- [ ] 3.3 Implement `cru agents show <name>` - Display agent card details
-- [ ] 3.4 Implement `cru agents validate` - Validate all agent cards
-- [ ] 3.5 Auto-load agent cards on CLI startup from:
-  - `.crucible/agents/` (project-specific, higher priority)
-  - `~/.config/crucible/agents/` (system-wide, lower priority)
+- [x] 3.1 Add `cru agents` subcommand group
+- [x] 3.2 Implement `cru agents list` - List all registered agent cards
+- [x] 3.3 Implement `cru agents show <name>` - Display agent card details
+- [x] 3.4 Implement `cru agents validate` - Validate all agent cards
+- [x] 3.5 Auto-load agent cards from directories (in load order, later overrides earlier):
+  - `~/.config/crucible/agents/` (global default)
+  - Paths from global config `agent_directories`
+  - `KILN_DIR/.crucible/agents/` (kiln hidden)
+  - `KILN_DIR/agents/` (kiln visible)
+  - Paths from kiln config `agent_directories` (future)
 
 ## Phase 4: Agent Card Integration with Chat
 
@@ -68,3 +71,4 @@
 3. `fdac746` - refactor: agent naming clarification (AgentCard, AgentHandle)
 4. `bd6ce79` - refactor: simplify AgentCard structure
 5. (pending) - docs: add agent cards specification and examples
+6. (pending) - feat(cli): add agents command with list/show/validate subcommands

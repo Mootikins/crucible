@@ -45,6 +45,7 @@ fn create_test_kiln() -> Result<TempDir> {
 fn create_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfig {
     CliConfig {
         kiln_path,
+        agent_directories: Vec::new(),
         embedding: EmbeddingConfig {
             provider: EmbeddingProviderType::Ollama,
             model: Some("nomic-embed-text-v1.5-q8_0".to_string()),
