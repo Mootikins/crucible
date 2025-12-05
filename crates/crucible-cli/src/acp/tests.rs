@@ -418,7 +418,6 @@ mod client_tests {
         assert_eq!(client.mode(), ChatMode::Act);
 
         // Should be able to call set_mode through trait
-        use crate::chat::AgentHandle as _;
         client.set_mode(ChatMode::Plan).await.unwrap();
         assert_eq!(client.mode(), ChatMode::Plan);
 

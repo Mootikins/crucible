@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod integration_tests {
-    use crate::agent::{AgentCardLoader, AgentCardQuery, AgentCardRegistry, AgentCardStatus};
+    use crate::agent::{AgentCardLoader, AgentCardQuery, AgentCardRegistry};
 
     #[test]
     fn test_load_example_agents() {
@@ -14,13 +14,9 @@ mod integration_tests {
             if let Ok(count) = result {
                 println!("Successfully loaded {} example agent cards", count);
 
-                // Test that we can find agent cards by capability
+                // Test that we can find agent cards by tag
                 let backend_query = AgentCardQuery {
-                    capabilities: vec!["Rust Development".to_string()],
                     tags: vec!["backend".to_string()],
-                    skills: vec![],
-                    required_tools: vec![],
-                    status: Some(AgentCardStatus::Active),
                     text_search: None,
                 };
 

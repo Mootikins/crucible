@@ -18,8 +18,8 @@ pub mod traits;
 pub mod types;
 
 pub use agent::{
-    AgentCard, AgentCardLoader, AgentCardMatch, AgentCardQuery, AgentCardRegistry,
-    AgentCardStatus, Capability, CapabilityMatcher, Skill,
+    AgentCard, AgentCardFrontmatter, AgentCardLoader, AgentCardMatch, AgentCardMatcher,
+    AgentCardQuery, AgentCardRegistry,
 };
 pub use canvas::{CanvasEdge, CanvasNode};
 pub use content_category::{ContentCategory, ContentCategoryError};
