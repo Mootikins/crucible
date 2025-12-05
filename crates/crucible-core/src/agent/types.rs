@@ -1,9 +1,8 @@
 //! Agent card types for defining reusable agent configurations
 //!
 //! Agent cards are markdown files with YAML frontmatter that describe
-//! an agent's purpose, capabilities, and system prompt. They follow
-//! the "Model Card" pattern from HuggingFace - metadata about an agent,
-//! not the agent itself.
+//! an agent's purpose and system prompt. They follow the "Model Card"
+//! pattern from HuggingFace - metadata about an agent, not the agent itself.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -12,13 +11,13 @@ use uuid::Uuid;
 /// An agent card - static definition of an agent's configuration
 ///
 /// Agent cards are loaded from markdown files and contain:
-/// - Metadata (name, description, tags)
-/// - System prompt template
-/// - Required/optional tools
-/// - Capabilities for matching
+/// - Identity (name, version, description)
+/// - Discovery (tags)
+/// - System prompt (markdown body)
+/// - Optional MCP server references
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentCard {
-    /// Unique identifier for this agent card
+    /// Unique identifier for this agent card (generated on load)
     pub id: Uuid,
 
     /// Human-readable name of the agent
@@ -30,95 +29,28 @@ pub struct AgentCard {
     /// Brief description of what this agent does
     pub description: String,
 
-    /// Detailed capabilities and specializations
-    pub capabilities: Vec<Capability>,
-
-    /// MCP tools required by this agent
-    pub required_tools: Vec<String>,
-
-    /// Optional MCP tools that enhance functionality
-    pub optional_tools: Vec<String>,
-
     /// Tags for categorization and discovery
     pub tags: Vec<String>,
 
-    /// System prompt template (can use placeholders)
+    /// System prompt (extracted from markdown body)
     pub system_prompt: String,
 
-    /// Skills this agent possesses (for matching)
-    pub skills: Vec<Skill>,
+    /// Optional MCP servers this agent can use
+    pub mcp_servers: Vec<String>,
 
     /// Default configuration values
     pub config: HashMap<String, serde_json::Value>,
 
-    /// Dependencies on other agent cards (by ID or name)
-    pub dependencies: Vec<String>,
-
-    /// When this agent card was created
-    pub created_at: chrono::DateTime<chrono::Utc>,
-
-    /// When this agent card was last updated
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-
-    /// Status of the agent card (active, deprecated, experimental)
-    pub status: AgentCardStatus,
-
-    /// Author/maintainer information
-    pub author: Option<String>,
-
-    /// Documentation URL (optional)
-    pub documentation_url: Option<String>,
-}
-
-/// A capability that an agent card provides
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Capability {
-    /// Name of the capability
-    pub name: String,
-
-    /// Description of what this capability enables
-    pub description: String,
-
-    /// Tool requirements for this specific capability
-    pub required_tools: Vec<String>,
-}
-
-/// A skill that an agent possesses (for matching purposes)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Skill {
-    /// Name of the skill
-    pub name: String,
-
-    /// Category of the skill (e.g., "programming", "analysis", "communication")
-    pub category: String,
-}
-
-/// Status of an agent card
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum AgentCardStatus {
-    Active,
-    Deprecated,
-    Experimental,
-    Disabled,
+    /// When this agent card was loaded
+    pub loaded_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// Query for finding agent cards
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AgentCardQuery {
-    /// Search by capabilities
-    pub capabilities: Vec<String>,
-
     /// Search by tags
+    #[serde(default)]
     pub tags: Vec<String>,
-
-    /// Search by skills
-    pub skills: Vec<String>,
-
-    /// Required tools
-    pub required_tools: Vec<String>,
-
-    /// Status filter
-    pub status: Option<AgentCardStatus>,
 
     /// Text search in name and description
     pub text_search: Option<String>,
@@ -135,44 +67,28 @@ pub struct AgentCardMatch {
 
     /// Which criteria matched
     pub matched_criteria: Vec<String>,
-
-    /// Missing requirements (if any)
-    pub missing_requirements: Vec<String>,
 }
 
 /// Frontmatter structure for parsing YAML frontmatter from markdown files
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentCardFrontmatter {
+    /// Required: agent name
     pub name: String,
+
+    /// Required: semantic version
     pub version: String,
+
+    /// Required: brief description
     pub description: String,
-    #[serde(default)]
-    pub capabilities: Vec<CapabilityFrontmatter>,
-    #[serde(default)]
-    pub required_tools: Vec<String>,
-    pub optional_tools: Option<Vec<String>>,
+
+    /// Optional: tags for discovery
     #[serde(default)]
     pub tags: Vec<String>,
+
+    /// Optional: MCP servers this agent uses
     #[serde(default)]
-    pub skills: Vec<SkillFrontmatter>,
+    pub mcp_servers: Vec<String>,
+
+    /// Optional: configuration values
     pub config: Option<HashMap<String, serde_json::Value>>,
-    pub dependencies: Option<Vec<String>>,
-    pub status: Option<AgentCardStatus>,
-    pub author: Option<String>,
-    pub documentation_url: Option<String>,
-}
-
-/// Capability definition in frontmatter
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CapabilityFrontmatter {
-    pub name: String,
-    pub description: String,
-    pub required_tools: Option<Vec<String>>,
-}
-
-/// Skill definition in frontmatter
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SkillFrontmatter {
-    pub name: String,
-    pub category: String,
 }

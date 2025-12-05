@@ -8,7 +8,7 @@ pub mod matcher;
 pub mod types;
 
 pub use loader::AgentCardLoader;
-pub use matcher::CapabilityMatcher;
+pub use matcher::AgentCardMatcher;
 pub use types::*;
 
 use anyhow::Result;
@@ -19,13 +19,13 @@ use std::collections::HashMap;
 pub struct AgentCardRegistry {
     cards: HashMap<String, AgentCard>,
     loader: AgentCardLoader,
-    matcher: CapabilityMatcher,
+    matcher: AgentCardMatcher,
 }
 
 impl AgentCardRegistry {
     /// Create a new agent card registry
     pub fn new(loader: AgentCardLoader) -> Self {
-        let matcher = CapabilityMatcher::new();
+        let matcher = AgentCardMatcher::new();
         Self {
             cards: HashMap::new(),
             loader,
@@ -72,35 +72,11 @@ impl AgentCardRegistry {
         self.matcher.find_matching(&self.cards, query)
     }
 
-    /// Get agent cards by capability
-    pub fn get_by_capability(&self, capability: &str) -> Vec<&AgentCard> {
-        self.cards
-            .values()
-            .filter(|card| card.capabilities.iter().any(|cap| cap.name == capability))
-            .collect()
-    }
-
     /// Get agent cards by tag
     pub fn get_by_tag(&self, tag: &str) -> Vec<&AgentCard> {
         self.cards
             .values()
             .filter(|card| card.tags.contains(&tag.to_string()))
-            .collect()
-    }
-
-    /// Get agent cards by skill
-    pub fn get_by_skill(&self, skill: &str) -> Vec<&AgentCard> {
-        self.cards
-            .values()
-            .filter(|card| card.skills.iter().any(|s| s.name == skill))
-            .collect()
-    }
-
-    /// Get all agent cards that require specific tools
-    pub fn get_requiring_tools(&self, tools: &[String]) -> Vec<&AgentCard> {
-        self.cards
-            .values()
-            .filter(|card| tools.iter().any(|tool| card.required_tools.contains(tool)))
             .collect()
     }
 
