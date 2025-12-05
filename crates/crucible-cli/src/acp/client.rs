@@ -14,7 +14,7 @@ use crucible_acp::{
 use crucible_config::AcpConfig;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
-use crate::chat::{ChatAgent, ChatError, ChatMode, ChatResponse, ChatResult};
+use crate::chat::{AgentHandle, ChatError, ChatMode, ChatResponse, ChatResult};
 
 /// ACP Client wrapper for CLI
 ///
@@ -354,9 +354,9 @@ impl Drop for CrucibleAcpClient {
     }
 }
 
-// Implement ChatAgent trait for backend-agnostic chat interface
+// Implement AgentHandle trait for backend-agnostic chat interface
 #[async_trait::async_trait]
-impl ChatAgent for CrucibleAcpClient {
+impl AgentHandle for CrucibleAcpClient {
     async fn send_message(&mut self, message: &str) -> ChatResult<ChatResponse> {
         // Call the ACP-specific send_message method
         let (content, acp_tool_calls) = self

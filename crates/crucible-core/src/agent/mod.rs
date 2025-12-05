@@ -1,128 +1,133 @@
+//! Agent card module for defining reusable agent configurations
+//!
+//! Agent cards follow the "Model Card" pattern - they are metadata
+//! about agents, not the agents themselves.
+
 pub mod loader;
 pub mod matcher;
 pub mod types;
 
-pub use loader::AgentLoader;
+pub use loader::AgentCardLoader;
 pub use matcher::CapabilityMatcher;
 pub use types::*;
 
 use anyhow::Result;
 use std::collections::HashMap;
 
-/// Registry for managing loaded agents
+/// Registry for managing loaded agent cards
 #[derive(Debug)]
-pub struct AgentRegistry {
-    agents: HashMap<String, AgentDefinition>,
-    loader: AgentLoader,
+pub struct AgentCardRegistry {
+    cards: HashMap<String, AgentCard>,
+    loader: AgentCardLoader,
     matcher: CapabilityMatcher,
 }
 
-impl AgentRegistry {
-    /// Create a new agent registry
-    pub fn new(loader: AgentLoader) -> Self {
+impl AgentCardRegistry {
+    /// Create a new agent card registry
+    pub fn new(loader: AgentCardLoader) -> Self {
         let matcher = CapabilityMatcher::new();
         Self {
-            agents: HashMap::new(),
+            cards: HashMap::new(),
             loader,
             matcher,
         }
     }
 
-    /// Load all agents from a directory
-    pub fn load_agents_from_directory(&mut self, dir_path: &str) -> Result<usize> {
-        let agents = self.loader.load_from_directory(dir_path)?;
-        let count = agents.len();
+    /// Load all agent cards from a directory
+    pub fn load_from_directory(&mut self, dir_path: &str) -> Result<usize> {
+        let cards = self.loader.load_from_directory(dir_path)?;
+        let count = cards.len();
 
-        for agent in agents {
-            self.agents.insert(agent.name.clone(), agent);
+        for card in cards {
+            self.cards.insert(card.name.clone(), card);
         }
 
         Ok(count)
     }
 
-    /// Load a single agent from a file
-    pub fn load_agent_from_file(&mut self, file_path: &str) -> Result<()> {
-        let agent = self.loader.load_from_file(file_path)?;
-        self.agents.insert(agent.name.clone(), agent);
+    /// Load a single agent card from a file
+    pub fn load_from_file(&mut self, file_path: &str) -> Result<()> {
+        let card = self.loader.load_from_file(file_path)?;
+        self.cards.insert(card.name.clone(), card);
         Ok(())
     }
 
-    /// Get an agent by name
-    pub fn get_agent(&self, name: &str) -> Option<&AgentDefinition> {
-        self.agents.get(name)
+    /// Get an agent card by name
+    pub fn get(&self, name: &str) -> Option<&AgentCard> {
+        self.cards.get(name)
     }
 
-    /// Get an agent by ID
-    pub fn get_agent_by_id(&self, id: &uuid::Uuid) -> Option<&AgentDefinition> {
-        self.agents.values().find(|agent| &agent.id == id)
+    /// Get an agent card by ID
+    pub fn get_by_id(&self, id: &uuid::Uuid) -> Option<&AgentCard> {
+        self.cards.values().find(|card| &card.id == id)
     }
 
-    /// List all agent names
-    pub fn list_agents(&self) -> Vec<&String> {
-        self.agents.keys().collect()
+    /// List all agent card names
+    pub fn list(&self) -> Vec<&String> {
+        self.cards.keys().collect()
     }
 
-    /// Find agents matching a query
-    pub fn find_agents(&self, query: &AgentQuery) -> Vec<AgentMatch> {
-        self.matcher.find_matching_agents(&self.agents, query)
+    /// Find agent cards matching a query
+    pub fn find(&self, query: &AgentCardQuery) -> Vec<AgentCardMatch> {
+        self.matcher.find_matching(&self.cards, query)
     }
 
-    /// Get agents by capability
-    pub fn get_agents_by_capability(&self, capability: &str) -> Vec<&AgentDefinition> {
-        self.agents
+    /// Get agent cards by capability
+    pub fn get_by_capability(&self, capability: &str) -> Vec<&AgentCard> {
+        self.cards
             .values()
-            .filter(|agent| agent.capabilities.iter().any(|cap| cap.name == capability))
+            .filter(|card| card.capabilities.iter().any(|cap| cap.name == capability))
             .collect()
     }
 
-    /// Get agents by tag
-    pub fn get_agents_by_tag(&self, tag: &str) -> Vec<&AgentDefinition> {
-        self.agents
+    /// Get agent cards by tag
+    pub fn get_by_tag(&self, tag: &str) -> Vec<&AgentCard> {
+        self.cards
             .values()
-            .filter(|agent| agent.tags.contains(&tag.to_string()))
+            .filter(|card| card.tags.contains(&tag.to_string()))
             .collect()
     }
 
-    /// Get agents by skill
-    pub fn get_agents_by_skill(&self, skill: &str) -> Vec<&AgentDefinition> {
-        self.agents
+    /// Get agent cards by skill
+    pub fn get_by_skill(&self, skill: &str) -> Vec<&AgentCard> {
+        self.cards
             .values()
-            .filter(|agent| agent.skills.iter().any(|s| s.name == skill))
+            .filter(|card| card.skills.iter().any(|s| s.name == skill))
             .collect()
     }
 
-    /// Get all agents that require specific tools
-    pub fn get_agents_requiring_tools(&self, tools: &[String]) -> Vec<&AgentDefinition> {
-        self.agents
+    /// Get all agent cards that require specific tools
+    pub fn get_requiring_tools(&self, tools: &[String]) -> Vec<&AgentCard> {
+        self.cards
             .values()
-            .filter(|agent| tools.iter().any(|tool| agent.required_tools.contains(tool)))
+            .filter(|card| tools.iter().any(|tool| card.required_tools.contains(tool)))
             .collect()
     }
 
-    /// Get the total number of registered agents
+    /// Get the total number of registered agent cards
     pub fn count(&self) -> usize {
-        self.agents.len()
+        self.cards.len()
     }
 
-    /// Check if an agent exists
-    pub fn has_agent(&self, name: &str) -> bool {
-        self.agents.contains_key(name)
+    /// Check if an agent card exists
+    pub fn has(&self, name: &str) -> bool {
+        self.cards.contains_key(name)
     }
 
-    /// Remove an agent by name
-    pub fn remove_agent(&mut self, name: &str) -> Option<AgentDefinition> {
-        self.agents.remove(name)
+    /// Remove an agent card by name
+    pub fn remove(&mut self, name: &str) -> Option<AgentCard> {
+        self.cards.remove(name)
     }
 
-    /// Clear all agents
+    /// Clear all agent cards
     pub fn clear(&mut self) {
-        self.agents.clear();
+        self.cards.clear();
     }
 }
 
-impl Default for AgentRegistry {
+impl Default for AgentCardRegistry {
     fn default() -> Self {
-        Self::new(AgentLoader::new())
+        Self::new(AgentCardLoader::new())
     }
 }
 
