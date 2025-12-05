@@ -401,7 +401,7 @@ mod client_tests {
 
     #[tokio::test]
     async fn test_chat_agent_trait_impl() {
-        use crate::chat::{ChatAgent, ChatMode};
+        use crate::chat::{AgentHandle, ChatMode};
 
         let agent = AgentInfo {
             name: "test".to_string(),
@@ -411,19 +411,19 @@ mod client_tests {
 
         let mut client = CrucibleAcpClient::new(agent, false);
 
-        // Test ChatAgent trait methods
+        // Test AgentHandle trait methods
         assert!(!client.is_connected());
 
         // Mode should work through trait
         assert_eq!(client.mode(), ChatMode::Act);
 
         // Should be able to call set_mode through trait
-        use crate::chat::ChatAgent as _;
+        use crate::chat::AgentHandle as _;
         client.set_mode(ChatMode::Plan).await.unwrap();
         assert_eq!(client.mode(), ChatMode::Plan);
 
         // send_message should fail (not connected) but be callable through trait
-        let result = ChatAgent::send_message(&mut client, "test").await;
+        let result = AgentHandle::send_message(&mut client, "test").await;
         assert!(result.is_err());
     }
 }
