@@ -27,6 +27,15 @@ resume_point: null
 
 User requested implementation of workflow session logging system.
 
+```tasks
+[
+  {"id": "1", "content": "Research existing session logging patterns", "status": "completed", "priority": "high"},
+  {"id": "2", "content": "Design session format with frontmatter", "status": "completed", "priority": "high"},
+  {"id": "3", "content": "Implement core session types", "status": "completed", "priority": "high"},
+  {"id": "4", "content": "Review and document", "status": "completed", "priority": "medium"}
+]
+```
+
 ## Research Phase @orchestrator #dev
 
 Investigating existing patterns for session logging in agent frameworks.
