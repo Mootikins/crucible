@@ -17,16 +17,27 @@ use crate::{Message, MessageRole};
 actions!(crucible_chat, [ClearChat]);
 
 /// Main chat view state
+///
+/// Contains the message history, input field state, and agent for generating responses.
+/// Uses GPUI's Entity and Subscription systems for reactive updates.
 pub struct ChatView {
     messages: Vec<Message>,
     input_state: Entity<InputState>,
     agent: MockAgent,
     focus_handle: FocusHandle,
-    #[allow(dead_code)]
-    subscriptions: Vec<Subscription>,
+    /// Held to keep input event subscription alive
+    _subscriptions: Vec<Subscription>,
 }
 
 impl ChatView {
+    /// Creates a new chat view with default welcome message.
+    ///
+    /// Initializes the input field, mock agent, and keyboard shortcuts.
+    /// The view subscribes to input events for Cmd+Enter message sending.
+    ///
+    /// # Arguments
+    /// * `window` - GPUI window handle
+    /// * `cx` - GPUI context for view creation
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         // Register key bindings
         cx.bind_keys([KeyBinding::new("cmd-k", ClearChat, None)]);
@@ -54,7 +65,7 @@ impl ChatView {
             input_state,
             agent,
             focus_handle,
-            subscriptions: vec![subscription],
+            _subscriptions: vec![subscription],
         }
     }
 
