@@ -41,7 +41,7 @@ pub use acp::{FilesystemHandler, SessionManager, StreamHandler, ToolBridge};
 pub use change_detection::{ChangeDetector, ContentHasher, HashLookupStorage};
 pub use chat::{
     AgentHandle, ChatContext, ChatError, ChatMode, ChatResponse, ChatResult, CommandDescriptor,
-    CommandHandler, CommandRegistry, SearchResult, ToolCall as ChatToolCall,
+    CommandHandler, SearchResult, ToolCall as ChatToolCall,
 };
 pub use knowledge::{KnowledgeRepository, NoteInfo};
 pub use llm::{
