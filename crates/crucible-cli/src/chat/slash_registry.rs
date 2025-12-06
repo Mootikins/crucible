@@ -65,6 +65,7 @@ impl SlashCommand {
 ///
 /// Implements the generic Registry trait for command lookups.
 /// Built using SlashCommandRegistryBuilder.
+#[derive(Clone)]
 pub struct SlashCommandRegistry {
     /// Command storage (name -> command)
     commands: HashMap<String, SlashCommand>,
