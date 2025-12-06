@@ -1,4 +1,4 @@
-# Sync System: Merkle-CRDT Architecture
+# Sync System: Merkle Diff + CRDT Sessions
 
 ## Why
 
@@ -7,112 +7,146 @@ Crucible needs to sync knowledge across boundaries:
 - **Collaboration** - Multiple users editing same vault, real-time
 - **Federation** - A2A agents across networks, eventual consistency, untrusted peers
 
-Currently there's no sync - each instance is isolated. This change adds a unified sync architecture that handles all three scenarios with the same core primitives.
+Currently there's no sync - each instance is isolated. This change adds a layered sync architecture that keeps markdown pristine while enabling collaboration.
 
 ## Key Insight
 
-All three scenarios converge on **Merkle-CRDT**:
-- Use existing content-addressed blocks and Merkle trees
-- Add CRDT layer per block for conflict-free merging
-- Different transports/trust models, same sync protocol
+**CRDT is for local real-time editing, not server sync.**
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Transport Layer                       │
-│  ┌──────────┐  ┌──────────────┐  ┌───────────────────┐  │
-│  │ Local FS │  │  WebSocket   │  │  Libp2p/Gossip    │  │
-│  │(devices) │  │(collaboration)│  │  (federation)    │  │
-│  └────┬─────┘  └──────┬───────┘  └─────────┬─────────┘  │
-└───────┼───────────────┼────────────────────┼────────────┘
-        │               │                    │
-        ▼               ▼                    ▼
-┌─────────────────────────────────────────────────────────┐
-│                   Sync Protocol                          │
-│           Merkle root compare → diff → fetch             │
-│           (same algorithm, different transports)         │
-└─────────────────────────────────────────────────────────┘
-                        │
-                        ▼
-┌─────────────────────────────────────────────────────────┐
-│                    CRDT Layer                            │
-│  Per-Block CRDT (Loro for text, LWW for metadata)       │
-│  Optional: BFT signatures for untrusted peers           │
-└─────────────────────────────────────────────────────────┘
-                        │
-                        ▼
-┌─────────────────────────────────────────────────────────┐
-│              Existing Infrastructure                     │
-│    Content-addressed blocks → Merkle tree → SurrealDB   │
-└─────────────────────────────────────────────────────────┘
+Server Sync:     Merkle diff + LWW (simple, git-like)
+Live Sessions:   CRDT (real-time, desktop/browser only)
+```
+
+This separation means:
+- No CRDT metadata in files or frontmatter
+- Server stores diffs, not operation logs
+- CRDT complexity isolated to live collaboration
+- Local compute with remote data
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Crucible Server                              │
+│        (self-hosted, sync + history + auth + sessions)          │
+├─────────────────────────────────────────────────────────────────┤
+│  /api/sync      Merkle diff, pull/push blocks                   │
+│  /api/history   Version history (text diffs + binary LWW)       │
+│  /api/auth      Token issuance/verification                     │
+│  /api/sessions  WS/SSE for live collaboration                   │
+└─────────────────────────────────────────────────────────────────┘
+                            ▲
+                            │ HTTP + WS/SSE
+        ┌───────────────────┼───────────────────┐
+        ▼                   ▼                   ▼
+┌───────────────┐   ┌───────────────┐   ┌───────────────┐
+│  CLI Client   │   │ Local Server  │   │ Tauri Desktop │
+│  (thin)       │   │ (localhost)   │   │ (embeds all)  │
+└───────────────┘   └───────────────┘   └───────────────┘
+        │                   │                   │
+        ▼                   ▼                   ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        Local Vault                               │
+│  notes/*.md           (plaintext, NO artifacts)                 │
+│  assets/*             (content-addressed binaries)              │
+│  .crucible/                                                     │
+│    ├─ sync.db         (hashes, vector clocks, sync state)       │
+│    ├─ crdt.db         (local CRDT state for live sessions)      │
+│    └─ config.toml     (server URL, auth token)                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## What Changes
 
-### Sync Localities
+### Two-Layer Architecture
 
-Three sync modes, configured per vault:
+**Layer 1: Server Sync (Merkle + LWW)**
+- Batch sync on push/pull
+- Plaintext diffs for text, LWW for binaries
+- Server keeps full history
+- Simple, reliable, git-like
+- Works for: multi-device, async collaboration, federation
 
-**Local** (multi-device):
-- Sync via shared folder, mDNS discovery, or manual export/import
-- No coordinator needed
-- Fully trusted (same user)
+**Layer 2: Live Sessions (CRDT)**
+- Real-time cursors, selections, edits
+- Character-level merge during session
+- Only when users request collaboration
+- Desktop/browser only (not CLI)
+- On session end: winner writes markdown, syncs to server
 
-**Coordinated** (collaboration):
-- Coordinator server for discovery, presence, relay
-- WebSocket for real-time updates
-- Authenticated users with capability tokens
+### Sync Modes
 
-**Federated** (A2A):
-- DHT or bootstrap nodes for discovery
-- Gossip protocol for sync
-- BFT-CRDT for untrusted peers
-- Capability-based partial sharing
+| Mode | Server | CRDT Sessions | Use Case |
+|------|--------|---------------|----------|
+| **Local** | None | None | Single device |
+| **LAN** | None (mDNS) | Optional | Home network |
+| **Remote** | Required | Optional | Team collaboration |
+| **Federated** | Multiple | None | A2A agents |
 
-### CRDT Types
+### Content Strategies
 
-| Content Type | CRDT | Notes |
-|-------------|------|-------|
-| Text blocks | Loro (Fugue) | Minimal interleaving, Rust-native |
-| Frontmatter | LWW-Register | Timestamp-based, simple |
-| Tags | OR-Set | Add-wins, no conflicts |
-| Links/refs | OR-Set | Additive |
-| Block order | RGA | Ordered list CRDT |
+| Content | Server Sync | Live Session |
+|---------|-------------|--------------|
+| Text blocks | Plaintext diff + vector clock | Loro/Yjs CRDT |
+| Frontmatter | LWW (timestamp) | LWW |
+| Tags | OR-Set | OR-Set |
+| Binaries | Content-addressed + LWW | N/A (not editable) |
 
-### Merkle-CRDT Sync Protocol
+### Merkle Sync Protocol (Layer 1)
 
 ```
 1. Exchange Merkle root hashes
 2. If roots match → already synced, done
 3. If roots differ → walk tree to find divergent blocks
-4. Exchange CRDT operations for divergent blocks only
-5. Merge operations (automatic, conflict-free)
+4. Exchange plaintext diffs for changed blocks
+5. Apply LWW merge (vector clock decides winner)
 6. Rebuild Merkle tree from merged state
 7. Repeat until roots match
 ```
 
-### Coordinator Server
+### Live Session Protocol (Layer 2)
 
-For collaboration mode, a lightweight coordinator provides:
+```
+1. User A requests session on note via server
+2. Server creates session, notifies other online users
+3. User B joins session
+4. Both load note, initialize local CRDT from markdown
+5. Edits broadcast via WS/SSE, CRDT merge locally
+6. On session end (or timeout):
+   - Last editor's state becomes canonical
+   - Written back to markdown
+   - Synced to server via Layer 1
+```
+
+### Crucible Server
+
+Self-hosted server (inspired by [Oxen](https://github.com/Oxen-AI/Oxen)):
 
 | Endpoint | Purpose |
 |----------|---------|
-| `/discover` | Register/find peers editing same vault |
-| `/presence` | Cursor positions, who's online |
-| `/relay` | WebSocket relay for NAT traversal |
-| `/auth` | Token issuance and verification |
-| `/sync` | Optional: Merkle hub for offline peers |
+| `/api/sync` | Merkle diff, pull/push blocks |
+| `/api/history` | Version history for notes and binaries |
+| `/api/auth` | Token issuance (per-user) |
+| `/api/sessions` | WS/SSE for live collaboration |
 
-Coordinator is optional - clients sync P2P after discovery.
+**Auth model:** Token-based (like Oxen). User runs:
+```bash
+cru auth add-user --email user@example.com
+# Generates token, user stores in ~/.crucible/auth.toml
+```
 
-### Storage Overhead
+### Storage
 
-| Aspect | Overhead | Mitigation |
-|--------|----------|------------|
-| CRDT metadata | ~30-40% | Epoch-based compaction |
-| Operation log | Unbounded | GC after sync confirmed |
-| Tombstones | Accumulate | Block-level aggregation |
+**Local vault (`.crucible/`):**
+- `sync.db` - Hashes, vector clocks, last sync state
+- `crdt.db` - CRDT state only during live sessions (temporary)
+- `config.toml` - Server URL, auth token
 
-For a 1000-note vault: ~1-3 MB total CRDT overhead.
+**Server:**
+- Full history of all synced changes
+- User tracking (who changed what)
+- Binary deduplication (content-addressed)
+
+**No overhead in markdown files.** All sync state external.
 
 ### Trust Models
 

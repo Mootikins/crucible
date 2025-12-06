@@ -1,102 +1,101 @@
 # Implementation Tasks
 
-## Phase 1: CRDT Foundation
+## Phase 1: Local Foundation (No Network)
 
-- [ ] 1.1 Add `loro` dependency to workspace
-- [ ] 1.2 Create `crucible-sync` crate structure
-- [ ] 1.3 Implement `CrdtBlock` wrapper around Loro document
-- [ ] 1.4 Implement LWW-Register for frontmatter fields
-- [ ] 1.5 Implement OR-Set for tags
-- [ ] 1.6 Add CRDT metadata to block storage schema
-- [ ] 1.7 Unit tests for all CRDT types
+- [ ] 1.1 Create `crucible-sync` crate structure
+- [ ] 1.2 Implement block hash tracking in `.crucible/sync.db`
+- [ ] 1.3 Implement vector clock per block
+- [ ] 1.4 Detect local changes since last sync (hash compare)
+- [ ] 1.5 Add `cru sync status` command (local state only)
+- [ ] 1.6 Unit tests for hash tracking and change detection
 
-## Phase 2: Merkle-CRDT Protocol
+## Phase 2: Local HTTP Server + LAN Sync
 
-- [ ] 2.1 Define `SyncMessage` enum (RootHash, TreeDiff, Operations, Ack)
-- [ ] 2.2 Implement Merkle root comparison
-- [ ] 2.3 Implement tree traversal to find divergent blocks
-- [ ] 2.4 Implement operation exchange for divergent blocks
-- [ ] 2.5 Implement merge and tree rebuild
-- [ ] 2.6 Add protocol state machine
-- [ ] 2.7 Integration tests with two in-memory peers
+- [ ] 2.1 Create `crucible-api` crate (local HTTP server)
+- [ ] 2.2 Implement `/api/vault` endpoint (list notes, metadata)
+- [ ] 2.3 Implement `/api/note/:id` endpoint (read/write)
+- [ ] 2.4 Serve static UI at localhost (placeholder)
+- [ ] 2.5 Implement mDNS discovery for LAN peers
+- [ ] 2.6 Implement Merkle diff exchange over HTTP
+- [ ] 2.7 Add `cru sync lan` command
+- [ ] 2.8 Integration tests with two local instances
 
-## Phase 3: Local Transport
+## Phase 3: Crucible Server + Remote Sync
 
-- [ ] 3.1 Implement shared folder transport (watch + sync)
-- [ ] 3.2 Implement mDNS discovery for local network
-- [ ] 3.3 Implement manual peer addition
-- [ ] 3.4 Add sync trigger on file change
-- [ ] 3.5 Integration tests for local sync
+- [ ] 3.1 Create `crucible-server` crate
+- [ ] 3.2 Implement `/api/sync` - Merkle diff endpoint
+- [ ] 3.3 Implement `/api/history` - Version history storage
+- [ ] 3.4 Implement `/api/auth` - Token issuance
+- [ ] 3.5 Add `cru auth add-user` command
+- [ ] 3.6 Add `cru sync remote` command
+- [ ] 3.7 Implement binary content-addressed storage
+- [ ] 3.8 Implement LWW merge for binaries
+- [ ] 3.9 Add server deployment docs
+- [ ] 3.10 Integration tests with real server
 
-## Phase 4: CLI Commands
+## Phase 4: Live Sessions (CRDT)
 
-- [ ] 4.1 Add `cru sync` subcommand group
-- [ ] 4.2 Implement `cru sync status`
-- [ ] 4.3 Implement `cru sync now`
-- [ ] 4.4 Implement `cru sync add-peer`
-- [ ] 4.5 Implement `cru sync config`
-- [ ] 4.6 Add sync mode to vault config
+- [ ] 4.1 Create `crucible-crdt` crate
+- [ ] 4.2 Add Yjs or Loro dependency
+- [ ] 4.3 Implement `/api/sessions` - WS/SSE endpoint
+- [ ] 4.4 Implement session join/leave protocol
+- [ ] 4.5 Implement CRDT initialization from markdown
+- [ ] 4.6 Implement real-time edit broadcasting
+- [ ] 4.7 Implement cursor/selection awareness
+- [ ] 4.8 Implement session end → markdown write
+- [ ] 4.9 Add session timeout handling
+- [ ] 4.10 Integration tests with multiple users
 
-## Phase 5: Compaction
+## Phase 5: Desktop Integration
 
-- [ ] 5.1 Implement snapshot creation
-- [ ] 5.2 Implement operation log truncation
-- [ ] 5.3 Implement tombstone garbage collection
-- [ ] 5.4 Add configurable compaction threshold
-- [ ] 5.5 Add scheduled compaction
+- [ ] 5.1 Create `crucible-desktop` Tauri app
+- [ ] 5.2 Embed local HTTP server
+- [ ] 5.3 Build web UI for note editing
+- [ ] 5.4 Integrate CRDT for live editing
+- [ ] 5.5 Show sync status in UI
+- [ ] 5.6 Show collaboration cursors
+- [ ] 5.7 Package for macOS/Linux/Windows
 
-## Phase 6: WebSocket Transport (Collaboration)
+## Phase 6: Federation (A2A)
 
-- [ ] 6.1 Implement WebSocket client transport
-- [ ] 6.2 Implement reconnection with exponential backoff
-- [ ] 6.3 Add presence/awareness protocol
-- [ ] 6.4 Implement cursor position broadcasting
-- [ ] 6.5 Integration tests with mock coordinator
-
-## Phase 7: Coordinator Server
-
-- [ ] 7.1 Create `crucible-coordinator` binary
-- [ ] 7.2 Implement `/discover` endpoint
-- [ ] 7.3 Implement `/presence` WebSocket endpoint
-- [ ] 7.4 Implement `/relay` for NAT traversal
-- [ ] 7.5 Implement `/auth` for token issuance
-- [ ] 7.6 Add coordinator to example-config
-- [ ] 7.7 Integration tests with real coordinator
-
-## Phase 8: Capability Tokens
-
-- [ ] 8.1 Define capability token schema
-- [ ] 8.2 Implement token signing
-- [ ] 8.3 Implement token verification
-- [ ] 8.4 Add path-based restrictions
-- [ ] 8.5 Implement token revocation list
-- [ ] 8.6 Add `cru sync share` command
-- [ ] 8.7 Add `cru sync revoke` command
-
-## Phase 9: BFT-CRDT (Federation)
-
-- [ ] 9.1 Add ed25519 signing to operations
-- [ ] 9.2 Implement signature verification
-- [ ] 9.3 Add causal dependency tracking
-- [ ] 9.4 Implement Byzantine peer detection
-- [ ] 9.5 Add audit logging for rejected operations
-- [ ] 9.6 Integration tests with malicious peer simulation
-
-## Phase 10: Libp2p Transport (Federation)
-
-- [ ] 10.1 Add libp2p dependency
-- [ ] 10.2 Implement DHT discovery
-- [ ] 10.3 Implement gossip protocol transport
-- [ ] 10.4 Add bootstrap node configuration
-- [ ] 10.5 Implement peer reputation tracking
-- [ ] 10.6 Integration tests with multiple federated peers
+- [ ] 6.1 Implement multi-server sync
+- [ ] 6.2 Add capability tokens for partial sharing
+- [ ] 6.3 Implement BFT signatures for untrusted peers
+- [ ] 6.4 Add libp2p for decentralized discovery
+- [ ] 6.5 Integration tests with federated setup
 
 ## Future TODOs (not this change)
 
-- Streaming sync for large vaults
-- Selective sync (folder/tag filters)
-- E2E encryption for federated mode
-- Coordinator clustering (HA)
-- Mobile-specific optimizations
+- E2E encryption for all sync
+- Mobile sync (battery/bandwidth optimizations)
 - Conflict visualization UI (time-travel)
-- Yjs bridge for real-time collab MVP
+- Selective sync (folder/tag filters)
+- Coordinator clustering (HA)
+- Browser-only client (WASM)
+
+## Crate Structure
+
+```
+crates/
+├── crucible-core/       # Parsing, storage, merkle (Phase 1)
+├── crucible-sync/       # Sync primitives, diff/patch (Phase 1-2)
+├── crucible-api/        # Local HTTP server (Phase 2)
+├── crucible-server/     # Remote server (Phase 3)
+├── crucible-crdt/       # CRDT for live sessions (Phase 4)
+├── crucible-cli/        # CLI client (all phases)
+└── crucible-config/     # Config management (all phases)
+
+packages/
+└── crucible-desktop/    # Tauri app (Phase 5)
+```
+
+## Progressive Rollout Summary
+
+| Phase | What Works | UI |
+|-------|------------|-----|
+| 1 | Local vault, change detection | CLI |
+| 2 | LAN sync, local web access | CLI + browser |
+| 3 | Remote sync, auth, history | CLI + browser |
+| 4 | Real-time collaboration | CLI + browser |
+| 5 | Desktop app | Tauri |
+| 6 | Federation | All |
