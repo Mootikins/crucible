@@ -32,6 +32,7 @@ pub mod chat;
 pub mod knowledge;
 pub mod llm;
 pub mod parser;
+pub mod registry;
 pub mod storage;
 pub mod tools;
 
@@ -48,5 +49,6 @@ pub use llm::{
     MessageRole, ToolCall, TokenUsage,
 };
 pub use parser::MarkdownParser;
+pub use registry::{Registry, RegistryBuilder};
 pub use storage::Storage;
 pub use tools::{ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult};
