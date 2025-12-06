@@ -15,10 +15,12 @@
 //! - `slash_registry`: Generic Registry trait implementation for slash commands
 //! - `handlers`: Built-in command handlers (exit, mode, search, help)
 //! - `commands`: Static command handlers
+//! - `context`: CLI chat context implementation
 //! - `display`: Terminal UI formatting
 //! - `session`: Interactive session orchestrator
 
 pub mod commands;
+pub mod context;
 pub mod display;
 pub mod handlers;
 pub mod mode_ext;
@@ -34,6 +36,7 @@ pub use crucible_core::traits::chat::{
 
 // Re-export CLI implementations
 pub use commands::{Command, CommandParser};
+pub use context::CliChatContext;
 pub use display::{Display, ToolCallDisplay, format_tool_args};
 pub use handlers::{ExitHandler, HelpHandler, ModeCycleHandler, ModeHandler, SearchHandler};
 pub use mode_ext::ChatModeDisplay;

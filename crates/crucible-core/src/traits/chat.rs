@@ -304,6 +304,27 @@ pub trait ChatContext: Send {
     /// Get the current chat mode
     fn get_mode(&self) -> ChatMode;
 
+    /// Request the chat session to exit
+    fn request_exit(&mut self);
+
+    /// Check if exit has been requested
+    fn exit_requested(&self) -> bool;
+
+    /// Set the chat mode
+    ///
+    /// # Arguments
+    ///
+    /// * `mode` - New mode to set
+    ///
+    /// # Returns
+    ///
+    /// Returns Ok(()) on success.
+    ///
+    /// # Errors
+    ///
+    /// - `ChatError::ModeChange` - Failed to change mode
+    async fn set_mode(&mut self, mode: ChatMode) -> ChatResult<()>;
+
     /// Perform semantic search on the knowledge base
     ///
     /// # Arguments
@@ -334,6 +355,31 @@ pub trait ChatContext: Send {
     ///
     /// Returns Ok(()) after the command has been sent to the agent.
     async fn send_command_to_agent(&mut self, name: &str, args: &str) -> ChatResult<()>;
+
+    /// Display search results
+    ///
+    /// # Arguments
+    ///
+    /// * `query` - The search query
+    /// * `results` - Search results to display
+    fn display_search_results(&self, query: &str, results: &[SearchResult]);
+
+    /// Display help information
+    fn display_help(&self);
+
+    /// Display error message
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - Error message to display
+    fn display_error(&self, message: &str);
+
+    /// Display informational message
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - Info message to display
+    fn display_info(&self, message: &str);
 }
 
 /// Search result from semantic search
