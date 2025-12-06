@@ -24,7 +24,7 @@ pub fn run_app() -> Result<()> {
                 ))),
                 ..Default::default()
             },
-            |_, cx| cx.new(|cx| ChatView::new(cx)),
+            |window, cx| cx.new(|cx| ChatView::new(window, cx)),
         )
         .expect("Failed to open window");
 
