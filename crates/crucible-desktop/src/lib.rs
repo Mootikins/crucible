@@ -12,11 +12,17 @@
 //! - **ChatInput**: Multiline text input with send action
 
 pub mod app;
+pub mod backend;
 pub mod chat;
 pub mod theme;
 
 // Re-export core traits we consume
-pub use crucible_core::traits::chat::{AgentHandle, ChatContext, ChatMode, ChatResponse};
+pub use crucible_core::traits::chat::{
+    AgentHandle, ChatContext, ChatMode, ChatResponse, ChatResult, CommandDescriptor, ToolCall,
+};
+
+// Re-export backend types
+pub use backend::MockAgent;
 
 /// Message role in conversation
 #[derive(Debug, Clone, PartialEq, Eq)]
