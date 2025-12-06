@@ -52,6 +52,21 @@ use crucible_core::parser::{ParsedNote, Wikilink, Tag, BlockHash};
 use crucible_core::types::hashing::{FileHash, HashAlgorithm};
 ```
 
+### Systems
+
+Crucible is organized into orthogonal systems. See **[openspec/SYSTEMS.md](./openspec/SYSTEMS.md)** for full details.
+
+| System | Scope |
+|--------|-------|
+| **parser** | Markdown → structured data |
+| **storage** | SurrealDB, EAV graph, Merkle trees |
+| **agents** | Agent cards, LLM providers, tools |
+| **workflows** | Definitions + sessions |
+| **plugins** | Extension points, scripting |
+| **apis** | HTTP, WebSocket, events |
+| **cli** | Commands, REPL, configuration |
+| **desktop** | Tauri GUI (future) |
+
 ### Core Components
 - **Rust Core** (`crates/crucible-core/`): Business logic, parsing, storage traits
 - **CLI** (`crates/crucible-cli/`): Command-line interface (current primary interface)
@@ -75,10 +90,12 @@ crucible/
 │   ├── crucible-surrealdb/      # Database layer
 │   ├── crucible-parser/         # Markdown parsing implementation
 │   └── ...                      # Other crates
-├── openspec/                    # Change proposals & specs (see AGENTS.md there)
+├── openspec/                    # Change proposals & specs
+│   ├── SYSTEMS.md               # System boundaries and organization
 │   ├── AGENTS.md                # OpenSpec workflow guide
-│   ├── changes/                 # Proposed changes
-│   └── specs/                   # Current specifications
+│   ├── changes/                 # Active proposals
+│   ├── specs/                   # Current specs (organized by system)
+│   └── archive/                 # Completed changes (organized by system)
 ├── docs/                        # EMPTY - reserved for future user docs
 ├── examples/                    # Example code and demos
 ├── packages/                    # Other packages (web UI for desktop, MCP, etc.)
