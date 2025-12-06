@@ -76,21 +76,11 @@ impl CommandHandler for ModeHandler {
         let current_mode = ctx.get_mode();
 
         if new_mode == current_mode {
-            println!(
-                "{}",
-                format!("Already in {} mode", mode_name(new_mode)).bright_yellow()
-            );
+            ctx.display_info(&format!("Already in {} mode", mode_name(new_mode)));
         } else {
-            // Mode change happens via context
-            println!(
-                "{}",
-                format!(
-                    "Switched from {} to {} mode",
-                    mode_name(current_mode),
-                    mode_name(new_mode)
-                )
-                .bright_cyan()
-            );
+            // Actually perform the mode change via context
+            // This will also display the mode change notification
+            ctx.set_mode(new_mode).await?;
         }
 
         Ok(())
@@ -108,15 +98,9 @@ impl CommandHandler for ModeCycleHandler {
         let current_mode = ctx.get_mode();
         let new_mode = current_mode.cycle_next();
 
-        println!(
-            "{}",
-            format!(
-                "Mode cycled from {} to {}",
-                mode_name(current_mode),
-                mode_name(new_mode)
-            )
-            .bright_cyan()
-        );
+        // Actually perform the mode change via context
+        // This will also display the mode change notification
+        ctx.set_mode(new_mode).await?;
 
         Ok(())
     }
