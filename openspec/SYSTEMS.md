@@ -14,7 +14,7 @@ This document defines the orthogonal systems that make up Crucible. Each system 
 | **plugins** | Extension points, hooks, scripting (Rune on CLI, WASM on desktop) | `crucible-plugins` (future) |
 | **apis** | HTTP REST, WebSocket, events, A2A protocol | `crucible-api` (future) |
 | **cli** | Commands, REPL, TUI, configuration | `crucible-cli`, `crucible-config` |
-| **desktop** | Tauri app, GUI | `packages/crucible-desktop` (future) |
+| **desktop** | Native GPUI app, chat, notes browser, graph view | `crucible-desktop` |
 
 ## System Descriptions
 
@@ -81,11 +81,13 @@ Command-line user interface.
 - Output formatting (table, JSON)
 
 ### desktop
-Graphical user interface (future).
-- Tauri-based desktop app
-- Note editing and navigation
-- Workflow visualization
-- Agent chat interface
+Native graphical user interface using GPUI.
+- Chat interface with streaming responses
+- Markdown rendering (reuses crucible-parser)
+- Notes browser with file tree (Phase 2)
+- Editor with live preview (Phase 3)
+- Graph view visualization (Phase 4)
+- Keyboard-first, power-user focused
 
 ## Directory Structure
 
