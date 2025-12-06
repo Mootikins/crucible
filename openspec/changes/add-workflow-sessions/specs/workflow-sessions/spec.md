@@ -297,9 +297,14 @@ The system SHALL provide CLI commands for session management.
 
 1. **Task list location** - Where should in-progress task lists live during sessions?
    - Option A: Frontmatter `tasks` field
-   - Option B: Dedicated ````tasks` code block
-   - Option C: Separate `.tasks.md` file
-   - Recommendation: Research OpenCode/Claude Code first
+   - Option B: Dedicated `tasks` code block (JSON array)
+   - Option C: Separate `.tasks.json` file (Claude Code approach)
+   - **Research findings:**
+     - Claude Code stores todos as JSON in `~/.claude/todos/` with fields: content, status, priority, id
+     - OpenCode uses SQLite for session persistence, tracks tasks implicitly through conversation
+     - Both use three states: pending, in_progress, completed
+   - **Recommendation:** Option B - JSON code block in session markdown keeps tasks with context,
+     readable, and parseable. Format: `{content, status, priority, id}`
 
 2. **Session file naming** - What naming convention?
    - Option A: `YYYY-MM-DD-<slug>.md`
