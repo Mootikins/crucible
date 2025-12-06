@@ -7,12 +7,14 @@ use gpui::{div, px, rgb, Context, Entity, FontWeight, MouseButton, Render, Share
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::text::TextView;
 
+use crate::backend::MockAgent;
 use crate::{Message, MessageRole};
 
 /// Main chat view state
 pub struct ChatView {
     messages: Vec<Message>,
     input_state: Entity<InputState>,
+    agent: MockAgent,
     #[allow(dead_code)]
     subscriptions: Vec<Subscription>,
 }
@@ -27,11 +29,16 @@ impl ChatView {
         // Subscribe to input events
         let subscription = cx.subscribe_in(&input_state, window, Self::on_input_event);
 
+        // Create mock agent
+        let agent = MockAgent::new();
+
         Self {
             messages: vec![Message::assistant(
-                "Hello! I'm your Crucible assistant. How can I help you today?",
+                "Hello! I'm your Crucible assistant. How can I help you today?\n\n\
+                Try saying **hello**, asking for **help**, or testing **markdown** rendering!",
             )],
             input_state,
+            agent,
             subscriptions: vec![subscription],
         }
     }
@@ -59,17 +66,16 @@ impl ChatView {
         }
 
         // Add user message
-        self.messages.push(Message::user(text));
+        self.messages.push(Message::user(text.clone()));
 
         // Clear input
         self.input_state.update(cx, |state, cx| {
             state.set_value("", window, cx);
         });
 
-        // TODO: Send to backend and get response
-        // For now, add a placeholder response
-        self.messages
-            .push(Message::assistant("I received your message!"));
+        // Get response from mock agent (synchronous for now)
+        let response = self.agent.send_message_sync(&text);
+        self.messages.push(Message::assistant(response));
 
         cx.notify();
     }
