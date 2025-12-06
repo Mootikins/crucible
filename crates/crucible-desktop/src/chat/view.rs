@@ -3,38 +3,67 @@
 //! Container for the chat interface with message list and input.
 
 use gpui::prelude::*;
-use gpui::{div, px, rgb, Context, FontWeight, Render};
+use gpui::{div, px, rgb, Context, Entity, FontWeight, MouseButton, Render, Subscription, Window};
+use gpui_component::input::{Input, InputEvent, InputState};
 
 use crate::{Message, MessageRole};
 
 /// Main chat view state
 pub struct ChatView {
     messages: Vec<Message>,
-    input_text: String,
+    input_state: Entity<InputState>,
+    #[allow(dead_code)]
+    subscriptions: Vec<Subscription>,
 }
 
 impl ChatView {
-    pub fn new(_cx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        // Create input state for the text field
+        let input_state = cx.new(|cx| {
+            InputState::new(window, cx).placeholder("Type a message... (Cmd+Enter to send)")
+        });
+
+        // Subscribe to input events
+        let subscription = cx.subscribe_in(&input_state, window, Self::on_input_event);
+
         Self {
             messages: vec![Message::assistant(
                 "Hello! I'm your Crucible assistant. How can I help you today?",
             )],
-            input_text: String::new(),
+            input_state,
+            subscriptions: vec![subscription],
         }
     }
 
-    #[allow(dead_code)]
-    fn send_message(&mut self, cx: &mut Context<Self>) {
-        if self.input_text.trim().is_empty() {
+    fn on_input_event(
+        &mut self,
+        _input: &Entity<InputState>,
+        event: &InputEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let InputEvent::PressEnter { secondary } = event {
+            // Cmd+Enter or Ctrl+Enter sends message
+            if *secondary {
+                self.send_message(window, cx);
+            }
+        }
+    }
+
+    fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let text = self.input_state.read(cx).value().to_string();
+
+        if text.trim().is_empty() {
             return;
         }
 
         // Add user message
-        let user_msg = Message::user(self.input_text.clone());
-        self.messages.push(user_msg);
+        self.messages.push(Message::user(text));
 
         // Clear input
-        self.input_text.clear();
+        self.input_state.update(cx, |state, cx| {
+            state.set_value("", window, cx);
+        });
 
         // TODO: Send to backend and get response
         // For now, add a placeholder response
@@ -46,7 +75,7 @@ impl ChatView {
 }
 
 impl Render for ChatView {
-    fn render(&mut self, _window: &mut gpui::Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .flex()
             .flex_col()
@@ -54,7 +83,7 @@ impl Render for ChatView {
             .bg(rgb(0x1e1e2e))
             .child(self.render_header())
             .child(self.render_messages())
-            .child(self.render_input())
+            .child(self.render_input(cx))
     }
 }
 
@@ -115,12 +144,8 @@ impl ChatView {
         )
     }
 
-    fn render_input(&self) -> impl IntoElement {
-        let placeholder_text: &str = if self.input_text.is_empty() {
-            "Type a message... (Cmd+Enter to send)"
-        } else {
-            &self.input_text
-        };
+    fn render_input(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let input_state = self.input_state.clone();
 
         div()
             .h(px(80.0))
@@ -135,17 +160,11 @@ impl ChatView {
             .child(
                 div()
                     .flex_1()
-                    .h(px(48.0))
-                    .px_4()
-                    .rounded_lg()
-                    .bg(rgb(0x313244))
-                    .flex()
-                    .items_center()
-                    .text_color(rgb(0x6c7086))
-                    .child(placeholder_text.to_string()),
+                    .child(Input::new(&input_state).h(px(48.0))),
             )
             .child(
                 div()
+                    .id("send-button")
                     .h(px(48.0))
                     .px_4()
                     .rounded_lg()
@@ -156,6 +175,9 @@ impl ChatView {
                     .text_color(rgb(0x1e1e2e))
                     .font_weight(FontWeight::SEMIBOLD)
                     .cursor_pointer()
+                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
+                        this.send_message(window, cx);
+                    }))
                     .child("Send"),
             )
     }
