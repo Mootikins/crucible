@@ -18,35 +18,36 @@ use crate::chat::slash_registry::SlashCommandRegistry;
 ///
 /// Provides command handlers with access to:
 /// - Kiln context (storage, semantic search)
-/// - Chat mode state
-/// - Agent handle for forwarding commands
+/// - Chat mode state (read-only - use set_mode to change)
+/// - Agent handle reference for forwarding commands
 /// - Display utilities for terminal output
-pub struct CliChatContext {
+///
+/// Note: This context does NOT own the agent. The agent is borrowed
+/// when needed for `send_command_to_agent()` operations.
+pub struct CliChatContext<'a> {
     /// Reference to kiln context for storage and search
     kiln: Arc<KilnContext>,
-    /// Current chat mode
+    /// Current chat mode (read-only)
     mode: ChatMode,
-    /// Agent handle for sending commands
-    agent: Box<dyn AgentHandle>,
+    /// Mutable reference to agent for sending commands
+    agent: &'a mut dyn AgentHandle,
     /// Command registry for listing available commands
     registry: Arc<SlashCommandRegistry>,
-    /// Exit requested flag
-    exit_requested: bool,
 }
 
-impl CliChatContext {
+impl<'a> CliChatContext<'a> {
     /// Create a new CLI chat context
     ///
     /// # Arguments
     ///
     /// * `kiln` - Kiln context for storage and search
-    /// * `mode` - Initial chat mode
-    /// * `agent` - Agent handle for forwarding commands
+    /// * `mode` - Current chat mode (read-only snapshot)
+    /// * `agent` - Mutable reference to agent handle
     /// * `registry` - Command registry for listing commands
     pub fn new(
         kiln: Arc<KilnContext>,
         mode: ChatMode,
-        agent: Box<dyn AgentHandle>,
+        agent: &'a mut dyn AgentHandle,
         registry: Arc<SlashCommandRegistry>,
     ) -> Self {
         Self {
@@ -54,31 +55,25 @@ impl CliChatContext {
             mode,
             agent,
             registry,
-            exit_requested: false,
         }
-    }
-
-    /// Consume the context and extract the agent handle
-    ///
-    /// This is useful when the session needs to take ownership of the agent
-    /// after command execution completes.
-    pub fn into_agent(self) -> Box<dyn AgentHandle> {
-        self.agent
     }
 }
 
 #[async_trait]
-impl ChatContext for CliChatContext {
+impl<'a> ChatContext for CliChatContext<'a> {
     fn get_mode(&self) -> ChatMode {
         self.mode
     }
 
     fn request_exit(&mut self) {
-        self.exit_requested = true;
+        // Exit is handled via shared Arc<AtomicBool> in session, not through context
+        // This method is a no-op for CLI context
     }
 
     fn exit_requested(&self) -> bool {
-        self.exit_requested
+        // Exit is handled via shared Arc<AtomicBool> in session, not through context
+        // This method always returns false for CLI context
+        false
     }
 
     async fn set_mode(&mut self, mode: ChatMode) -> ChatResult<()> {
