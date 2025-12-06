@@ -3,8 +3,9 @@
 //! Container for the chat interface with message list and input.
 
 use gpui::prelude::*;
-use gpui::{div, px, rgb, Context, Entity, FontWeight, MouseButton, Render, Subscription, Window};
+use gpui::{div, px, rgb, Context, Entity, FontWeight, MouseButton, Render, SharedString, Subscription, Window};
 use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::text::TextView;
 
 use crate::{Message, MessageRole};
 
@@ -75,14 +76,14 @@ impl ChatView {
 }
 
 impl Render for ChatView {
-    fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .flex()
             .flex_col()
             .size_full()
             .bg(rgb(0x1e1e2e))
             .child(self.render_header())
-            .child(self.render_messages())
+            .child(self.render_messages(window, cx))
             .child(self.render_input(cx))
     }
 }
@@ -107,18 +108,23 @@ impl ChatView {
             )
     }
 
-    fn render_messages(&self) -> impl IntoElement {
-        // Note: overflow methods not available in gpui 0.2, use flex layout instead
-        div()
-            .flex_1()
-            .p_4()
-            .gap_3()
-            .flex()
-            .flex_col()
-            .children(self.messages.iter().map(|msg| self.render_message(msg)))
+    fn render_messages(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let mut messages_div = div().flex_1().p_4().gap_3().flex().flex_col();
+
+        for (i, msg) in self.messages.iter().enumerate() {
+            messages_div = messages_div.child(self.render_message(i, msg, window, cx));
+        }
+
+        messages_div
     }
 
-    fn render_message(&self, message: &Message) -> impl IntoElement {
+    fn render_message(
+        &self,
+        index: usize,
+        message: &Message,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let (bg_color, text_color, is_user) = match message.role {
             MessageRole::User => (rgb(0x89b4fa), rgb(0x1e1e2e), true),
             MessageRole::Assistant => (rgb(0x313244), rgb(0xcdd6f4), false),
@@ -132,16 +138,23 @@ impl ChatView {
             container
         };
 
-        container.child(
-            div()
-                .max_w(px(600.0))
-                .px_4()
-                .py_2()
-                .rounded_lg()
-                .bg(bg_color)
-                .text_color(text_color)
-                .child(message.content.clone()),
-        )
+        let bubble = div()
+            .max_w(px(600.0))
+            .px_4()
+            .py_2()
+            .rounded_lg()
+            .bg(bg_color);
+
+        let bubble = if is_user {
+            // User messages: plain text
+            bubble.text_color(text_color).child(message.content.clone())
+        } else {
+            // Assistant messages: markdown rendering
+            let id: SharedString = format!("msg-{}", index).into();
+            bubble.child(TextView::markdown(id, &message.content, window, cx))
+        };
+
+        container.child(bubble)
     }
 
     fn render_input(&self, cx: &mut Context<Self>) -> impl IntoElement {
