@@ -223,6 +223,13 @@ pub struct CommandDescriptor {
 /// Provides a registry for:
 /// - **Static commands**: CLI-defined, always available (/plan, /act, /search, etc.)
 /// - **Dynamic commands**: Agent-published, can change during session (/web, /test, etc.)
+///
+/// DEPRECATED: This trait is being replaced by the generic `Registry` trait pattern.
+/// See `crucible_cli::chat::slash_registry::SlashCommandRegistry` for the new implementation.
+#[deprecated(
+    since = "0.1.0",
+    note = "Use the generic Registry trait pattern with SlashCommandRegistry instead"
+)]
 #[async_trait]
 pub trait CommandRegistry: Send + Sync {
     /// Register a static command (always available)

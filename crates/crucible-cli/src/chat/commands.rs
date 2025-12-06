@@ -1,8 +1,17 @@
 //! Command parsing for chat interface
 //!
 //! Parses slash commands and special keybindings into Command enum.
+//!
+//! DEPRECATED: This module is deprecated in favor of the Registry-based slash command system.
+//! Use `crate::chat::slash_registry::SlashCommandRegistry` instead.
 
 /// Chat command variants
+///
+/// DEPRECATED: Use `SlashCommandRegistry` with `CommandHandler` trait instead.
+#[deprecated(
+    since = "0.1.0",
+    note = "Use SlashCommandRegistry with CommandHandler trait instead"
+)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     /// Exit the chat (/exit or /quit)
@@ -22,6 +31,12 @@ pub enum Command {
 }
 
 /// Command parser
+///
+/// DEPRECATED: Use `SlashCommandRegistry` instead.
+#[deprecated(
+    since = "0.1.0",
+    note = "Use SlashCommandRegistry instead"
+)]
 pub struct CommandParser;
 
 impl CommandParser {
