@@ -274,3 +274,69 @@ default_acp_agent = "claude-code"
 4. **Snake_case config** - Matches existing config. Kebab-case migration later.
 
 5. **No keyring in v1** - Adds platform complexity. Env/file/plain sufficient for now.
+
+---
+
+## Future: Channel/Workflow Architecture
+
+> **Note:** This section documents future architecture direction. Not implemented in v1.
+
+### Why Channels (Not Chatrooms)
+
+Two multi-agent patterns exist:
+
+**Chatroom (ElizaOS/AutoGen style):**
+- Multiple agents in same space, reacting to each other
+- Requires parallelism to be useful (agents "overhear" and respond)
+- Without parallelism: just sequential turn-taking with overhead
+
+**Workflow/Pipeline (preferred for Crucible):**
+- Channels as stages or domains in a pipeline
+- Sequential execution is fine - it's a workflow, not a conversation
+- Isolation is a feature: stage N can't access stage N+2's context until handoff
+
+### Workflow Channel Model
+
+```
+[user request]
+       ↓
+[intake_channel] → parse, classify, route
+       ↓
+[specialist_channel] → domain work (isolated context)
+       ↓
+[synthesis_channel] → combine results, format
+       ↓
+[user response]
+```
+
+### Scaffolding for Future
+
+Add optional fields to `CrucibleAgentHandle` now (unused in v1):
+
+```rust
+pub struct ChannelContext {
+    pub channel_id: Option<String>,       // None = default/global
+    pub domain: Option<String>,           // Routing hints
+    pub isolation_level: IsolationLevel,  // Privacy boundaries
+}
+
+pub enum IsolationLevel {
+    Shared,     // Can see other channels' context
+    Isolated,   // Own context only
+    // Future: Encrypted, RemoteOnly, etc.
+}
+```
+
+### Use Cases for Channel Isolation
+
+1. **Privacy boundaries**: "work" channel can't see "personal" data
+2. **Trust levels**: "untrusted_input" channel vs "verified" channel
+3. **Memory scoping**: Channel membership controls context/memory access
+4. **Workflow stages**: Each stage has clear input/output contracts
+
+### Why Not Now
+
+- Single LLM = no parallelism benefit
+- Adds routing/orchestration complexity
+- Agent cards + subagents (future) cover most use cases
+- Can add channel fields later without breaking changes
