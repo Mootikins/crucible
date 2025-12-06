@@ -15,8 +15,11 @@ use std::time::Instant;
 use tracing::{debug, error};
 
 use crate::acp::ContextEnricher;
-use crate::chat::{AgentHandle, ChatMode, ChatModeDisplay, Command, CommandParser, Display, ToolCallDisplay};
+use crate::chat::{AgentHandle, ChatMode, ChatModeDisplay, Display, ToolCallDisplay};
+use crate::chat::handlers;
+use crate::chat::slash_registry::{SlashCommandRegistry, SlashCommandRegistryBuilder};
 use crate::core_facade::KilnContext;
+use crucible_core::traits::registry::RegistryBuilder;
 
 /// Default number of context results to include in enriched prompts
 pub const DEFAULT_CONTEXT_SIZE: usize = 5;
@@ -76,6 +79,8 @@ pub struct ChatSession {
     config: SessionConfig,
     core: Arc<KilnContext>,
     enricher: ContextEnricher,
+    registry: SlashCommandRegistry,
+    exit_flag: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl ChatSession {
@@ -84,10 +89,58 @@ impl ChatSession {
         let context_size = config.context_size.unwrap_or(5);
         let enricher = ContextEnricher::new(core.clone(), Some(context_size));
 
+        // Build the command registry with all static commands
+        let exit_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let registry = SlashCommandRegistryBuilder::default()
+            .command(
+                "exit",
+                Arc::new(handlers::ExitHandler::new(exit_flag.clone())),
+                "Exit the chat session",
+            )
+            .command(
+                "quit",
+                Arc::new(handlers::ExitHandler::new(exit_flag.clone())),
+                "Exit the chat session",
+            )
+            .command(
+                "plan",
+                Arc::new(handlers::ModeHandler),
+                "Switch to Plan mode (read-only)",
+            )
+            .command(
+                "act",
+                Arc::new(handlers::ModeHandler),
+                "Switch to Act mode (write-enabled)",
+            )
+            .command(
+                "auto",
+                Arc::new(handlers::ModeHandler),
+                "Switch to AutoApprove mode",
+            )
+            .command(
+                "mode",
+                Arc::new(handlers::ModeCycleHandler),
+                "Cycle to the next mode",
+            )
+            .command_with_hint(
+                "search",
+                Arc::new(handlers::SearchHandler),
+                "Search the knowledge base",
+                Some("query".to_string()),
+            )
+            .command(
+                "help",
+                Arc::new(handlers::HelpHandler),
+                "Show available commands",
+            )
+            .build();
+
         Self {
             config,
             core,
             enricher,
+            registry,
+            exit_flag,
         }
     }
 
@@ -131,12 +184,128 @@ impl ChatSession {
                         continue;
                     }
 
-                    // Parse and handle commands
-                    if let Some(command) = CommandParser::parse(&input) {
-                        if self.handle_command(command, &mut current_mode, agent).await? {
-                            break; // Exit command
+                    // Check if this is a slash command or silent mode keybinding
+                    if input.starts_with('/') || input == "\x00mode" {
+                        let (command_name, args) = parse_slash_command(&input);
+
+                        // Try to find handler in registry
+                        if let Some(handler) = self.registry.get_handler(command_name) {
+                            // Special handling for plan/act/auto - pass mode name as args to ModeHandler
+                            let effective_args = match command_name {
+                                "plan" => "plan",
+                                "act" => "act",
+                                "auto" => "auto",
+                                _ => args,
+                            };
+
+                            // Execute command inline
+                            // Note: We handle commands directly here instead of using CommandHandler trait
+                            // due to agent lifetime constraints with CliChatContext.
+                            // Full ChatContext integration is deferred to a future phase.
+                            let result: Result<()> = match command_name {
+                                "exit" | "quit" => {
+                                    Display::goodbye();
+                                    self.exit_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+                                    Ok(())
+                                }
+                                "plan" | "act" | "auto" => {
+                                    // Handle mode switch
+                                    let new_mode = match command_name {
+                                        "plan" => ChatMode::Plan,
+                                        "act" => ChatMode::Act,
+                                        "auto" => ChatMode::AutoApprove,
+                                        _ => unreachable!(),
+                                    };
+                                    agent.set_mode(new_mode).await?;
+                                    current_mode = new_mode;
+                                    Display::mode_change(new_mode);
+                                    Ok(())
+                                }
+                                "mode" => {
+                                    // Cycle mode
+                                    current_mode = current_mode.cycle_next();
+                                    agent.set_mode(current_mode).await?;
+                                    // Silent for keybinding, display for command
+                                    if input != "\x00mode" {
+                                        Display::mode_change(current_mode);
+                                    }
+                                    Ok(())
+                                }
+                                "search" => {
+                                    // Handle search
+                                    if effective_args.is_empty() {
+                                        Display::error("Search query required. Usage: /search <query>");
+                                        Ok(())
+                                    } else {
+                                        print!("{} ", "🔍 Searching...".bright_cyan().dimmed());
+                                        flush_stdout();
+
+                                        match self.core.semantic_search(effective_args, DEFAULT_SEARCH_LIMIT).await {
+                                            Ok(results) => {
+                                                print!("\r{}\r", " ".repeat(20));
+                                                flush_stdout();
+
+                                                if results.is_empty() {
+                                                    Display::no_results(effective_args);
+                                                } else {
+                                                    Display::search_results_header(effective_args, results.len());
+                                                    for (i, result) in results.iter().enumerate() {
+                                                        Display::search_result(
+                                                            i,
+                                                            &result.title,
+                                                            result.similarity,
+                                                            &result.snippet,
+                                                        );
+                                                    }
+                                                }
+                                                println!();
+                                                Ok(())
+                                            }
+                                            Err(e) => {
+                                                print!("\r{}\r", " ".repeat(20));
+                                                flush_stdout();
+                                                Display::search_error(&e.to_string());
+                                                Ok(())
+                                            }
+                                        }
+                                    }
+                                }
+                                "help" => {
+                                    // Display help
+                                    println!("\nAvailable Commands:");
+                                    println!("{}", "=".repeat(40));
+                                    for cmd in self.registry.list_all() {
+                                        let hint = cmd
+                                            .input_hint
+                                            .as_ref()
+                                            .map(|h| format!(" <{}>", h))
+                                            .unwrap_or_default();
+                                        println!("  /{}{:20} - {}", cmd.name, hint, cmd.description);
+                                    }
+                                    println!();
+                                    Ok(())
+                                }
+                                _ => {
+                                    Display::error(&format!("Command '{}' registered but not implemented", command_name));
+                                    Ok(())
+                                }
+                            };
+
+                            if let Err(e) = result {
+                                Display::error(&e.to_string());
+                            }
+
+                            // Check if exit was requested
+                            if self.exit_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                                break;
+                            }
+
+                            continue;
+                        } else {
+                            // Unknown command
+                            Display::error(&format!("Unknown command: /{}", command_name));
+                            continue;
                         }
-                        continue;
                     }
 
                     // Handle regular message
@@ -170,85 +339,6 @@ impl ChatSession {
         Ok(())
     }
 
-    /// Handle a parsed command
-    ///
-    /// Returns true if the session should exit.
-    async fn handle_command<A: AgentHandle>(
-        &self,
-        command: Command,
-        current_mode: &mut ChatMode,
-        agent: &mut A,
-    ) -> Result<bool> {
-
-        match command {
-            Command::Exit => {
-                Display::goodbye();
-                return Ok(true); // Signal to exit
-            }
-            Command::Plan => {
-                *current_mode = ChatMode::Plan;
-                agent.set_mode(*current_mode).await?;
-                Display::mode_change(*current_mode);
-            }
-            Command::Act => {
-                *current_mode = ChatMode::Act;
-                agent.set_mode(*current_mode).await?;
-                Display::mode_change(*current_mode);
-            }
-            Command::Auto => {
-                *current_mode = ChatMode::AutoApprove;
-                agent.set_mode(*current_mode).await?;
-                Display::mode_change(*current_mode);
-            }
-            Command::Mode => {
-                *current_mode = current_mode.cycle_next();
-                agent.set_mode(*current_mode).await?;
-                Display::mode_change(*current_mode);
-            }
-            Command::SilentMode => {
-                // Cycle mode without visual output - prompt updates on next iteration
-                *current_mode = current_mode.cycle_next();
-                agent.set_mode(*current_mode).await?;
-            }
-            Command::Search(query) => {
-                // Show searching indicator
-                print!("{} ", "🔍 Searching...".bright_cyan().dimmed());
-                flush_stdout();
-
-                match self.core.semantic_search(&query, DEFAULT_SEARCH_LIMIT).await {
-                    Ok(results) => {
-                        // Clear searching indicator
-                        print!("\r{}\r", " ".repeat(20));
-                        flush_stdout();
-
-                        if results.is_empty() {
-                            Display::no_results(&query);
-                        } else {
-                            Display::search_results_header(&query, results.len());
-                            for (i, result) in results.iter().enumerate() {
-                                Display::search_result(
-                                    i,
-                                    &result.title,
-                                    result.similarity,
-                                    &result.snippet,
-                                );
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        // Clear searching indicator
-                        print!("\r{}\r", " ".repeat(20));
-                        flush_stdout();
-
-                        Display::search_error(&e.to_string());
-                    }
-                }
-                println!();
-            }
-        }
-
-        Ok(false) // Continue session
-    }
 
     /// Handle a regular message (not a command)
     async fn handle_message<A: AgentHandle>(&self, input: &str, agent: &mut A) -> Result<()> {
@@ -328,6 +418,27 @@ impl ChatSession {
         }
 
         Ok(())
+    }
+}
+
+/// Parse a slash command into (command_name, args)
+///
+/// Strips leading `/` and splits on first space.
+/// Returns ("mode", "") for the special "\x00mode" keybinding.
+fn parse_slash_command(input: &str) -> (&str, &str) {
+    // Handle silent mode keybinding
+    if input == "\x00mode" {
+        return ("mode", "");
+    }
+
+    // Strip leading `/`
+    let input = input.strip_prefix('/').unwrap_or(input);
+
+    // Split on first space
+    if let Some(pos) = input.find(' ') {
+        (&input[..pos], input[pos + 1..].trim())
+    } else {
+        (input, "")
     }
 }
 
