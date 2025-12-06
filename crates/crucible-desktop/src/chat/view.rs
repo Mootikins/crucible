@@ -3,24 +3,37 @@
 //! Container for the chat interface with message list and input.
 
 use gpui::prelude::*;
-use gpui::{div, px, rgb, Context, Entity, FontWeight, MouseButton, Render, SharedString, Subscription, Window};
+use gpui::{
+    actions, div, px, rgb, Context, Entity, FocusHandle, Focusable, FontWeight, KeyBinding,
+    MouseButton, Render, SharedString, Subscription, Window,
+};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::text::TextView;
 
 use crate::backend::MockAgent;
 use crate::{Message, MessageRole};
 
+// Define actions for keyboard shortcuts
+actions!(crucible_chat, [ClearChat]);
+
 /// Main chat view state
 pub struct ChatView {
     messages: Vec<Message>,
     input_state: Entity<InputState>,
     agent: MockAgent,
+    focus_handle: FocusHandle,
     #[allow(dead_code)]
     subscriptions: Vec<Subscription>,
 }
 
 impl ChatView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        // Register key bindings
+        cx.bind_keys([KeyBinding::new("cmd-k", ClearChat, None)]);
+
+        // Create focus handle
+        let focus_handle = cx.focus_handle();
+
         // Create input state for the text field
         let input_state = cx.new(|cx| {
             InputState::new(window, cx).placeholder("Type a message... (Cmd+Enter to send)")
@@ -35,12 +48,23 @@ impl ChatView {
         Self {
             messages: vec![Message::assistant(
                 "Hello! I'm your Crucible assistant. How can I help you today?\n\n\
-                Try saying **hello**, asking for **help**, or testing **markdown** rendering!",
+                Try saying **hello**, asking for **help**, or testing **markdown** rendering!\n\n\
+                **Shortcuts:** `Cmd+Enter` to send, `Cmd+K` to clear chat",
             )],
             input_state,
             agent,
+            focus_handle,
             subscriptions: vec![subscription],
         }
+    }
+
+    /// Clear all messages from the chat
+    fn clear_chat(&mut self, cx: &mut Context<Self>) {
+        self.messages.clear();
+        self.messages.push(Message::assistant(
+            "Chat cleared. How can I help you?",
+        ));
+        cx.notify();
     }
 
     fn on_input_event(
@@ -81,9 +105,20 @@ impl ChatView {
     }
 }
 
+impl Focusable for ChatView {
+    fn focus_handle(&self, _cx: &gpui::App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
 impl Render for ChatView {
     fn render(&mut self, window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
+            .id("chat-view")
+            .track_focus(&self.focus_handle)
+            .on_action(cx.listener(|this, _: &ClearChat, _window, cx| {
+                this.clear_chat(cx);
+            }))
             .flex()
             .flex_col()
             .size_full()
