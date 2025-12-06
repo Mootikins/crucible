@@ -199,7 +199,6 @@ impl ChatSession {
                             };
 
                             // Execute command through the handler trait
-                            use crucible_core::traits::chat::CommandHandler;
                             use crate::chat::CliChatContext;
 
                             // Create context with borrowed agent

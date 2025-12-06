@@ -6,7 +6,6 @@
 //!
 //! - **AgentHandle**: Runtime handle to an active agent (ACP, internal, direct LLM)
 //! - **ChatMode**: Permission model (Plan/Act/AutoApprove)
-//! - **CommandRegistry**: Extensible command system (static + dynamic)
 //! - **CommandHandler**: Trait for implementing slash commands
 //! - **ChatContext**: Execution context for command handlers
 //!
@@ -216,66 +215,6 @@ pub struct CommandDescriptor {
 
     /// Input hint for when input hasn't been provided (optional)
     pub input_hint: Option<String>,
-}
-
-/// Command registry trait for managing static and dynamic commands
-///
-/// Provides a registry for:
-/// - **Static commands**: CLI-defined, always available (/plan, /act, /search, etc.)
-/// - **Dynamic commands**: Agent-published, can change during session (/web, /test, etc.)
-///
-/// DEPRECATED: This trait is being replaced by the generic `Registry` trait pattern.
-/// See `crucible_cli::chat::slash_registry::SlashCommandRegistry` for the new implementation.
-#[deprecated(
-    since = "0.1.0",
-    note = "Use the generic Registry trait pattern with SlashCommandRegistry instead"
-)]
-#[async_trait]
-pub trait CommandRegistry: Send + Sync {
-    /// Register a static command (always available)
-    ///
-    /// Static commands are defined by the CLI and don't change during a session.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Command name (without / prefix)
-    /// * `handler` - Command handler implementation
-    fn register_static(&mut self, name: &str, handler: Box<dyn CommandHandler>);
-
-    /// Update dynamic commands (from agent)
-    ///
-    /// Dynamic commands are published by agents and can change during a session.
-    /// This is called when an agent sends an `available_commands_update` notification.
-    ///
-    /// # Arguments
-    ///
-    /// * `commands` - List of commands to register
-    fn update_dynamic(&mut self, commands: Vec<CommandDescriptor>);
-
-    /// Execute a command by name
-    ///
-    /// Routes the command to the appropriate handler (static or dynamic).
-    /// If the command is dynamic (agent-provided), forwards it to the agent.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Command name (without / prefix)
-    /// * `args` - Command arguments (text after command name)
-    /// * `ctx` - Execution context
-    ///
-    /// # Returns
-    ///
-    /// Returns Ok(()) on successful execution.
-    ///
-    /// # Errors
-    ///
-    /// - `ChatError::UnknownCommand` - Command not found
-    /// - `ChatError::CommandFailed` - Execution failed
-    async fn execute(&self, name: &str, args: &str, ctx: &mut dyn ChatContext)
-        -> ChatResult<()>;
-
-    /// List all available commands (static + dynamic)
-    fn list_commands(&self) -> Vec<CommandDescriptor>;
 }
 
 /// Command handler trait
