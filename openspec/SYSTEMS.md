@@ -68,8 +68,10 @@ Extension and customization layer.
 External interfaces for programmatic access.
 - HTTP REST (trigger flows, query data)
 - WebSocket (real-time sync, A2A protocol)
+- SSE bridge (firewall-friendly web real-time)
 - Event system (webhooks, triggers)
 - Authentication and authorization
+- Deployment tiers (Local → Light → Team → Enterprise)
 
 ### cli
 Command-line user interface.
