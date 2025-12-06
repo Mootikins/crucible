@@ -197,10 +197,12 @@ payment_confirmation → tracking_number::String
 ### Affected Specs
 
 - **workflow-markup** (NEW) - Complete workflow markup specification
+- **workflow-sessions** (companion) - Session logging, resumption, codification
 - **parser** (extends) - Add workflow parsing to extension system
 - **toon-integration** (NEW) - Toon-format for session storage
 - **agent-system** (reference) - Agents execute and modify workflows
 - **meta-systems** (reference) - Workflow engines as plugins
+- **rune-integration** (future) - Extensible workflow/session scripting
 
 ### Affected Code
 
