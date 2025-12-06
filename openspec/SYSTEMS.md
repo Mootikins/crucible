@@ -8,6 +8,7 @@ This document defines the orthogonal systems that make up Crucible. Each system 
 |--------|-------|--------|
 | **parser** | Markdown → structured data (extensions, frontmatter, blocks) | `crucible-parser`, `crucible-core/parser` |
 | **storage** | Persistence: SurrealDB, EAV graph, content-addressed blocks, Merkle trees | `crucible-surrealdb`, `crucible-merkle` |
+| **sync** | Merkle-CRDT sync across devices, collaborators, and federated agents | `crucible-sync`, `crucible-coordinator` (future) |
 | **agents** | Agent cards, handles, LLM providers, tool registry | `crucible-core/agents`, `crucible-llm`, `crucible-tools`, `crucible-acp` |
 | **workflows** | Definitions (markup) + sessions (logging, resumption, codification) | `crucible-core/workflow` (future) |
 | **plugins** | Extension points, hooks, scripting (Rune on CLI, WASM on desktop) | `crucible-plugins` (future) |
@@ -31,6 +32,14 @@ Persistence layer. Stores and retrieves structured data.
 - Content-addressed block storage
 - Merkle tree integrity verification
 - Kiln (vault) management
+
+### sync
+Synchronization across boundaries. Enables conflict-free collaboration.
+- Merkle-CRDT protocol (compare roots, sync divergent blocks)
+- Three localities: local (multi-device), coordinated (collaboration), federated (A2A)
+- CRDT types: Loro for text, LWW for metadata, OR-Set for tags
+- Optional coordinator for discovery and presence
+- BFT-CRDT with signatures for untrusted peers
 
 ### agents
 AI agent infrastructure. Manages agent definitions and execution.
