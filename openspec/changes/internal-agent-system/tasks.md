@@ -22,11 +22,12 @@
 
 - [ ] 3.1 Create `crucible-cli/src/agents/` module structure
 - [ ] 3.2 Implement `CrucibleAgentHandle` struct
-- [ ] 3.3 Implement `AgentHandle` trait for `CrucibleAgentHandle`
-- [ ] 3.4 Implement automatic context compaction in `send_message`
-- [ ] 3.5 Implement token usage tracking from API responses
-- [ ] 3.6 Create `AgentFactory` for spawning handles from cards
-- [ ] 3.7 Add unit tests for handle (mocked provider)
+- [ ] 3.3 Add `ChannelContext` struct with optional fields (scaffolding for future)
+- [ ] 3.4 Implement `AgentHandle` trait for `CrucibleAgentHandle`
+- [ ] 3.5 Implement automatic context compaction in `send_message`
+- [ ] 3.6 Implement token usage tracking from API responses
+- [ ] 3.7 Create `AgentFactory` for spawning handles from cards
+- [ ] 3.8 Add unit tests for handle (mocked provider)
 
 ## Phase 4: Configuration
 
@@ -61,3 +62,8 @@
 - `SummarizationStrategy` for context compaction via LLM
 - Kebab-case config migration
 - Streaming response support
+- Channel/workflow architecture:
+  - Activate `ChannelContext` fields (channel_id, domain, isolation_level)
+  - Channel routing/orchestration layer
+  - Privacy boundaries between channels
+  - Workflow pipeline definitions
