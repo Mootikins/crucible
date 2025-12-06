@@ -189,7 +189,7 @@ impl ChatSession {
                         let (command_name, args) = parse_slash_command(&input);
 
                         // Try to find handler in registry
-                        if let Some(handler) = self.registry.get_handler(command_name) {
+                        if let Some(_handler) = self.registry.get_handler(command_name) {
                             // Special handling for plan/act/auto - pass mode name as args to ModeHandler
                             let effective_args = match command_name {
                                 "plan" => "plan",
