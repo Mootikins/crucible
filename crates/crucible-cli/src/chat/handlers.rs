@@ -267,6 +267,14 @@ mod tests {
         async fn send_command_to_agent(&mut self, _name: &str, _args: &str) -> ChatResult<()> {
             Ok(())
         }
+
+        fn request_exit(&mut self) {}
+        fn exit_requested(&self) -> bool { false }
+        async fn set_mode(&mut self, _mode: ChatMode) -> ChatResult<()> { Ok(()) }
+        fn display_search_results(&self, _query: &str, _results: &[SearchResult]) {}
+        fn display_help(&self) {}
+        fn display_error(&self, _message: &str) {}
+        fn display_info(&self, _message: &str) {}
     }
 
     #[tokio::test]
