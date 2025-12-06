@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Crucible Chat
+Comment=Native desktop chat interface for Crucible knowledge management
+Exec=cru-desktop
+Icon=crucible
+Type=Application
+Categories=Office;Utility;
+Keywords=chat;knowledge;notes;ai;
+StartupWMClass=crucible-desktop
