@@ -197,8 +197,7 @@ impl ChatContext for CliChatContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_core::traits::chat::{ChatResponse, ToolCall};
-    use crucible_core::traits::registry::RegistryBuilder;
+    use crucible_core::traits::chat::ChatResponse;
 
     // Mock agent for testing
     struct MockAgent {
