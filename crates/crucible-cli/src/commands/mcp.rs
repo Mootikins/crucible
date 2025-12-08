@@ -20,7 +20,7 @@ use clap::Parser;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_llm::embeddings::CoreProviderAdapter;
 use crucible_rune::RuneDiscoveryConfig;
-use crucible_tools::ExtendedMcpServer;
+use crucible_tools::{ExtendedMcpServer, ExtendedMcpService};
 use rmcp::transport::SseServer;
 use rmcp::ServiceExt;
 use std::net::SocketAddr;
@@ -124,21 +124,30 @@ pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
     // Create Rune discovery config
+    // Load order matches agent discovery (later sources override earlier by tool name):
+    // 1. ~/.config/crucible/runes/ - Global default directory
+    // 2. KILN_DIR/.crucible/runes/ - Kiln hidden config directory
+    // 3. KILN_DIR/runes/ - Kiln visible content directory
     let rune_config = if args.no_rune {
         RuneDiscoveryConfig::default()
     } else {
-        // Default directories: ~/.crucible/runes/ and {kiln}/runes/
         let mut dirs = vec![];
 
-        // Global runes directory
-        if let Some(home) = dirs::home_dir() {
-            let global_runes = home.join(".crucible").join("runes");
+        // 1. Global runes directory: ~/.config/crucible/runes/
+        if let Some(config_dir) = dirs::config_dir() {
+            let global_runes = config_dir.join("crucible").join("runes");
             if global_runes.exists() {
                 dirs.push(global_runes);
             }
         }
 
-        // Kiln-specific runes directory
+        // 2. Kiln hidden: KILN_DIR/.crucible/runes/
+        let kiln_hidden_runes = core.kiln_root().join(".crucible").join("runes");
+        if kiln_hidden_runes.exists() {
+            dirs.push(kiln_hidden_runes);
+        }
+
+        // 3. Kiln visible: KILN_DIR/runes/
         let kiln_runes = core.kiln_root().join("runes");
         if kiln_runes.exists() {
             dirs.push(kiln_runes);
@@ -175,14 +184,15 @@ pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
     let tool_count = server.tool_count().await;
     info!("MCP server initialized with {} tools", tool_count);
 
+    // Wrap in service for MCP protocol handling
+    let service = ExtendedMcpService::new(server).await;
+
     // Serve based on transport mode
     if args.stdio {
         info!("Server ready - waiting for stdio connection...");
 
         // Serve via stdio (blocks until shutdown)
-        let _service = server
-            .kiln_server()
-            .clone()
+        let _service = service
             .serve((tokio::io::stdin(), tokio::io::stdout()))
             .await?;
 
@@ -198,9 +208,8 @@ pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
         // Start SSE server
         let sse_server = SseServer::serve(addr).await?;
 
-        // Clone server for each connection
-        let kiln_server = server.kiln_server().clone();
-        let _ct = sse_server.with_service(move || kiln_server.clone());
+        // Clone service for each connection
+        let _ct = sse_server.with_service(move || service.clone());
 
         info!("MCP server running. Press Ctrl+C to stop.");
 

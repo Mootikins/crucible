@@ -43,7 +43,7 @@ pub mod utils;
 
 // ===== PUBLIC API EXPORTS =====
 
-pub use extended_mcp_server::ExtendedMcpServer;
+pub use extended_mcp_server::{ExtendedMcpServer, ExtendedMcpService};
 pub use kiln::KilnTools;
 pub use mcp_server::CrucibleMcpServer;
 pub use notes::NoteTools;

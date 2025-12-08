@@ -13,10 +13,13 @@ use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_just::JustTools;
 use crucible_rune::{RuneDiscoveryConfig, RuneToolRegistry};
-use rmcp::model::{CallToolResult, Tool};
+use rmcp::model::{CallToolResult, Content, Tool};
+use rmcp::service::RequestContext;
+use rmcp::ServerHandler;
 use serde_json::{json, Value};
 use std::path::Path;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 /// Extended MCP server exposing all Crucible tools plus Just and Rune
@@ -215,7 +218,10 @@ impl ExtendedMcpServer {
         }
     }
 
-    /// Execute a Rune tool and return TOON-formatted result
+    /// Execute a Rune tool and return the result directly
+    ///
+    /// Returns the raw result value for simple types (strings, numbers, bools).
+    /// Only uses TOON formatting for structured JSON objects/arrays.
     pub async fn call_rune_tool(
         &self,
         name: &str,
@@ -226,21 +232,36 @@ impl ExtendedMcpServer {
         match self.rune_registry.execute(name, arguments).await {
             Ok(result) => {
                 if result.success {
-                    let response = json!({
-                        "tool": result.tool_name,
-                        "result": result.result,
-                        "execution_time_ms": result.execution_time_ms,
-                        "success": true
-                    });
-                    Ok(toon_success_smart(response))
+                    // Return result directly - only use TOON for structured data
+                    match &result.result {
+                        Some(Value::Object(_)) | Some(Value::Array(_)) => {
+                            // Structured data - use TOON
+                            Ok(toon_success_smart(result.result.unwrap_or(Value::Null)))
+                        }
+                        Some(Value::String(s)) => {
+                            // Plain string - return as-is
+                            Ok(CallToolResult::success(vec![Content::text(s.clone())]))
+                        }
+                        Some(Value::Number(n)) => {
+                            // Number - return as string representation
+                            Ok(CallToolResult::success(vec![Content::text(n.to_string())]))
+                        }
+                        Some(Value::Bool(b)) => {
+                            // Bool - return as string representation
+                            Ok(CallToolResult::success(vec![Content::text(b.to_string())]))
+                        }
+                        Some(Value::Null) | None => {
+                            // Null/empty - return empty success
+                            Ok(CallToolResult::success(vec![]))
+                        }
+                    }
                 } else {
-                    let response = json!({
-                        "tool": result.tool_name,
-                        "error": result.error,
-                        "execution_time_ms": result.execution_time_ms,
-                        "success": false
-                    });
-                    Ok(toon_success_smart(response))
+                    // Error - return as error message
+                    let error_msg = result.error.unwrap_or_else(|| "Unknown error".to_string());
+                    Err(rmcp::ErrorData::internal_error(
+                        format!("Rune tool '{}' failed: {}", name, error_msg),
+                        None,
+                    ))
                 }
             }
             Err(e) => Err(rmcp::ErrorData::internal_error(
@@ -258,6 +279,106 @@ impl ExtendedMcpServer {
     /// Refresh Rune tools (re-discover scripts)
     pub async fn refresh_rune(&self) -> Result<usize, crucible_rune::RuneError> {
         self.rune_registry.discover().await
+    }
+}
+
+/// Wrapper to make ExtendedMcpServer implement Clone (required by rmcp)
+///
+/// Since ExtendedMcpServer contains Arc fields, we wrap it in Arc for cloning.
+#[derive(Clone)]
+pub struct ExtendedMcpService {
+    inner: Arc<ExtendedMcpServer>,
+    /// Cached tools list (refreshed on demand)
+    cached_tools: Arc<RwLock<Vec<Tool>>>,
+}
+
+impl ExtendedMcpService {
+    /// Create from an ExtendedMcpServer
+    pub async fn new(server: ExtendedMcpServer) -> Self {
+        let tools = server.list_all_tools().await;
+        Self {
+            inner: Arc::new(server),
+            cached_tools: Arc::new(RwLock::new(tools)),
+        }
+    }
+
+    /// Refresh the cached tools list
+    pub async fn refresh_tools(&self) {
+        let tools = self.inner.list_all_tools().await;
+        *self.cached_tools.write().await = tools;
+    }
+
+    /// Get inner server reference
+    pub fn server(&self) -> &ExtendedMcpServer {
+        &self.inner
+    }
+}
+
+impl ServerHandler for ExtendedMcpService {
+    fn get_info(&self) -> rmcp::model::ServerInfo {
+        rmcp::model::ServerInfo {
+            protocol_version: rmcp::model::ProtocolVersion::default(),
+            capabilities: rmcp::model::ServerCapabilities {
+                tools: Some(rmcp::model::ToolsCapability {
+                    list_changed: None,
+                }),
+                ..Default::default()
+            },
+            server_info: rmcp::model::Implementation {
+                name: "crucible-mcp-server".into(),
+                version: env!("CARGO_PKG_VERSION").into(),
+                title: Some("Crucible MCP Server".into()),
+                icons: None,
+                website_url: None,
+            },
+            instructions: Some(
+                "Crucible MCP server exposing kiln tools (notes, search, metadata), \
+                Just recipes, and Rune scripts for knowledge management."
+                    .into(),
+            ),
+        }
+    }
+
+    async fn list_tools(
+        &self,
+        _request: Option<rmcp::model::PaginatedRequestParam>,
+        _context: RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::ListToolsResult, rmcp::ErrorData> {
+        let tools = self.cached_tools.read().await.clone();
+        debug!("Listing {} tools", tools.len());
+        Ok(rmcp::model::ListToolsResult {
+            tools,
+            next_cursor: None,
+        })
+    }
+
+    async fn call_tool(
+        &self,
+        request: rmcp::model::CallToolRequestParam,
+        context: RequestContext<rmcp::RoleServer>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let name = request.name.as_ref();
+        let arguments = request
+            .arguments
+            .clone()
+            .map(|m| Value::Object(m))
+            .unwrap_or(Value::Null);
+
+        debug!("Calling tool: {} with args: {:?}", name, arguments);
+
+        // Route to appropriate handler based on prefix
+        if ExtendedMcpServer::is_just_tool(name) {
+            self.inner.call_just_tool(name, arguments).await
+        } else if ExtendedMcpServer::is_rune_tool(name) {
+            // Pass full name to registry (it stores tools with rune_ prefix)
+            self.inner.call_rune_tool(name, arguments).await
+        } else {
+            // Delegate to kiln server for core tools
+            self.inner
+                .kiln_server
+                .call_tool(request, context)
+                .await
+        }
     }
 }
 
