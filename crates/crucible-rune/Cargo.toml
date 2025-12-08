@@ -1,0 +1,38 @@
+[package]
+name = "crucible-rune"
+version = "0.1.0"
+edition = "2021"
+description = "Rune scripting integration for Crucible tools"
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+# Rune scripting
+rune = "0.14"
+rune-modules = { version = "0.14", features = ["json", "toml"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Regex for attribute parsing
+regex = { workspace = true }
+
+# File system
+glob = { workspace = true }
+dirs = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio-test = { workspace = true }

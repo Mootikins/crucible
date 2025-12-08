@@ -1,36 +1,111 @@
 //! MCP Server Command
 //!
-//! Starts an MCP (Model Context Protocol) server that exposes Crucible's tools
-//! via stdio transport. This allows AI agents to discover and use Crucible's
-//! note management capabilities through the standard MCP protocol.
+//! Starts an MCP (Model Context Protocol) server that exposes Crucible's tools.
+//! Supports both SSE (default) and stdio transports.
+//!
+//! ## Transport Options
+//!
+//! - **SSE (default)**: HTTP-based Server-Sent Events on port 3847
+//!   - Logs to stdout (visible in terminal)
+//!   - Multiple clients can connect
+//!   - Easy to debug with browser DevTools
+//!
+//! - **Stdio**: Traditional stdin/stdout transport
+//!   - Logs to file (`~/.crucible/logs/mcp.log`)
+//!   - Single client connection
+//!   - Used by AI agents via subprocess
 
 use anyhow::Result;
+use clap::Parser;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_llm::embeddings::CoreProviderAdapter;
-use crucible_tools::CrucibleMcpServer;
+use crucible_rune::RuneDiscoveryConfig;
+use crucible_tools::ExtendedMcpServer;
+use rmcp::transport::SseServer;
 use rmcp::ServiceExt;
+use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, info};
 
 use crate::config::CliConfig;
 use crate::core_facade::KilnContext;
 
+/// MCP server command arguments
+#[derive(Parser, Debug)]
+pub struct McpArgs {
+    /// Use stdio transport instead of SSE (default: SSE)
+    #[arg(long)]
+    pub stdio: bool,
+
+    /// SSE server port (default: 3847)
+    #[arg(long, default_value = "3847")]
+    pub port: u16,
+
+    /// Override kiln path (default: CRUCIBLE_KILN_PATH)
+    #[arg(long)]
+    pub kiln_path: Option<PathBuf>,
+
+    /// Override justfile directory (default: PWD)
+    #[arg(long)]
+    pub just_dir: Option<PathBuf>,
+
+    /// Disable Just tools
+    #[arg(long)]
+    pub no_just: bool,
+
+    /// Disable Rune tools
+    #[arg(long)]
+    pub no_rune: bool,
+
+    /// Log file path (default: ~/.crucible/logs/mcp.log for stdio mode)
+    #[arg(long)]
+    pub log_file: Option<PathBuf>,
+}
+
+impl Default for McpArgs {
+    fn default() -> Self {
+        Self {
+            stdio: false,
+            port: 3847,
+            kiln_path: None,
+            just_dir: None,
+            no_just: false,
+            no_rune: false,
+            log_file: None,
+        }
+    }
+}
+
 /// Execute the MCP server command
 ///
 /// This starts an MCP server that:
-/// - Exposes 12 Crucible tools (6 note + 3 search + 3 kiln operations)
-/// - Communicates via stdio transport
-/// - Blocks until the server is shut down (Ctrl+C or EOF)
-/// - Logs to file at `~/.crucible/mcp.log` (configurable via CRUCIBLE_MCP_LOG_FILE)
+/// - Exposes 12 Crucible kiln tools (6 note + 3 search + 3 kiln operations)
+/// - Exposes Just recipe tools (if justfile exists and --no-just not set)
+/// - Exposes Rune script tools (from ~/.crucible/runes/ and {kiln}/runes/)
+/// - All responses are TOON-formatted for token efficiency
 ///
-/// The server is typically invoked by AI agents through the ACP protocol's
-/// `mcp_servers` field in NewSessionRequest.
-pub async fn execute(config: CliConfig) -> Result<()> {
+/// ## Transport Modes
+///
+/// - **SSE (default)**: Starts HTTP server on specified port
+/// - **Stdio**: Uses stdin/stdout, logs to file
+pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
+    // Apply kiln_path override if provided
+    let config = if let Some(kiln_path) = args.kiln_path {
+        CliConfig {
+            kiln_path,
+            ..config
+        }
+    } else {
+        config
+    };
+
     info!("Starting Crucible MCP server...");
     debug!("Kiln path: {}", config.kiln_path.display());
+    debug!("Transport: {}", if args.stdio { "stdio" } else { "SSE" });
 
     // Initialize core facade
-    let core = Arc::new(KilnContext::from_config(config).await?);
+    let core = Arc::new(KilnContext::from_config(config.clone()).await?);
 
     // Get embedding config and create provider
     let embedding_config = core.config().embedding.to_provider_config();
@@ -43,24 +118,96 @@ pub async fn execute(config: CliConfig) -> Result<()> {
     // Create knowledge repository from storage
     let knowledge_repo = core.storage().as_knowledge_repository();
 
-    // Create MCP server
-    let server = CrucibleMcpServer::new(
-        core.kiln_root().to_string_lossy().to_string(),
-        knowledge_repo,
-        embedding_provider,
-    );
+    // Determine Just directory
+    let just_dir = args
+        .just_dir
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
-    info!("MCP server initialized with 12 tools");
-    info!("Server ready - waiting for stdio connection...");
+    // Create Rune discovery config
+    let rune_config = if args.no_rune {
+        RuneDiscoveryConfig::default()
+    } else {
+        // Default directories: ~/.crucible/runes/ and {kiln}/runes/
+        let mut dirs = vec![];
 
-    // Serve via stdio (blocks until shutdown)
-    // Keep the service alive - it needs to stay in scope to handle requests
-    let _service = server
-        .serve((tokio::io::stdin(), tokio::io::stdout()))
-        .await?;
+        // Global runes directory
+        if let Some(home) = dirs::home_dir() {
+            let global_runes = home.join(".crucible").join("runes");
+            if global_runes.exists() {
+                dirs.push(global_runes);
+            }
+        }
 
-    // Wait forever - the service will handle requests until EOF or error
-    std::future::pending::<()>().await;
+        // Kiln-specific runes directory
+        let kiln_runes = core.kiln_root().join("runes");
+        if kiln_runes.exists() {
+            dirs.push(kiln_runes);
+        }
+
+        RuneDiscoveryConfig {
+            tool_directories: dirs,
+            extensions: vec!["rn".to_string(), "rune".to_string()],
+            recursive: true,
+        }
+    };
+
+    // Create extended MCP server
+    let server = if args.no_just && args.no_rune {
+        // Kiln-only mode
+        ExtendedMcpServer::kiln_only(
+            core.kiln_root().to_string_lossy().to_string(),
+            knowledge_repo,
+            embedding_provider,
+        )
+    } else {
+        // Full mode with Just and/or Rune
+        ExtendedMcpServer::new(
+            core.kiln_root().to_string_lossy().to_string(),
+            knowledge_repo,
+            embedding_provider,
+            &just_dir,
+            rune_config,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to create ExtendedMcpServer: {}", e))?
+    };
+
+    let tool_count = server.tool_count().await;
+    info!("MCP server initialized with {} tools", tool_count);
+
+    // Serve based on transport mode
+    if args.stdio {
+        info!("Server ready - waiting for stdio connection...");
+
+        // Serve via stdio (blocks until shutdown)
+        let _service = server
+            .kiln_server()
+            .clone()
+            .serve((tokio::io::stdin(), tokio::io::stdout()))
+            .await?;
+
+        // Wait forever - the service will handle requests until EOF or error
+        std::future::pending::<()>().await;
+    } else {
+        // SSE mode
+        let addr: SocketAddr = format!("127.0.0.1:{}", args.port).parse()?;
+        info!("Starting SSE server on http://{}", addr);
+        info!("SSE endpoint: http://{}/sse", addr);
+        info!("Message endpoint: http://{}/message", addr);
+
+        // Start SSE server
+        let sse_server = SseServer::serve(addr).await?;
+
+        // Clone server for each connection
+        let kiln_server = server.kiln_server().clone();
+        let _ct = sse_server.with_service(move || kiln_server.clone());
+
+        info!("MCP server running. Press Ctrl+C to stop.");
+
+        // Wait for shutdown signal
+        tokio::signal::ctrl_c().await?;
+        info!("Shutdown signal received");
+    }
 
     info!("MCP server terminated");
     Ok(())
