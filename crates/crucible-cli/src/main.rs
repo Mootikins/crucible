@@ -58,10 +58,13 @@ async fn main() -> Result<()> {
     // Initialize logging based on command type
     // MCP and Chat use stdio (stdin/stdout) for JSON-RPC, so we must avoid stderr output
     // These commands log to file instead to preserve debugging capability
-    let uses_stdio = matches!(
-        &cli.command,
-        Some(Commands::Mcp) | Some(Commands::Chat { .. })
-    );
+    // Check if the command uses stdio for communication
+    // For MCP: stdio mode uses stdio, SSE mode doesn't
+    let uses_stdio = match &cli.command {
+        Some(Commands::Mcp { stdio, .. }) => *stdio,
+        Some(Commands::Chat { .. }) => true,
+        _ => false,
+    };
 
     // Only initialize logging if level is not OFF
     if level_filter != LevelFilter::OFF {
@@ -69,7 +72,7 @@ async fn main() -> Result<()> {
             // File-only logging for stdio-based commands (MCP, Chat)
             // Default to ~/.crucible/<command>.log, override with CRUCIBLE_LOG_FILE
             let log_file_name = match &cli.command {
-                Some(Commands::Mcp) => "mcp.log",
+                Some(Commands::Mcp { .. }) => "mcp.log",
                 Some(Commands::Chat { .. }) => "chat.log",
                 _ => "crucible.log",
             };
@@ -201,7 +204,26 @@ async fn main() -> Result<()> {
             .await?
         }
 
-        Some(Commands::Mcp) => commands::mcp::execute(config).await?,
+        Some(Commands::Mcp {
+            stdio,
+            port,
+            kiln_path,
+            just_dir,
+            no_just,
+            no_rune,
+            log_file,
+        }) => {
+            let args = commands::mcp::McpArgs {
+                stdio,
+                port,
+                kiln_path,
+                just_dir,
+                no_just,
+                no_rune,
+                log_file,
+            };
+            commands::mcp::execute(config, args).await?
+        }
 
         Some(Commands::Process {
             path,

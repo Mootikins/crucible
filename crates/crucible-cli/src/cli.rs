@@ -109,8 +109,40 @@ pub enum Commands {
         act: bool,
     },
 
-    /// Start MCP server exposing Crucible tools via stdio
-    Mcp,
+    /// Start MCP server exposing Crucible tools
+    ///
+    /// By default, starts an SSE (Server-Sent Events) server on port 3847.
+    /// Use --stdio for traditional stdin/stdout transport.
+    #[command(name = "mcp")]
+    Mcp {
+        /// Use stdio transport instead of SSE (default: SSE)
+        #[arg(long)]
+        stdio: bool,
+
+        /// SSE server port (default: 3847)
+        #[arg(long, default_value = "3847")]
+        port: u16,
+
+        /// Override kiln path (default: CRUCIBLE_KILN_PATH)
+        #[arg(long)]
+        kiln_path: Option<std::path::PathBuf>,
+
+        /// Override justfile directory (default: PWD)
+        #[arg(long)]
+        just_dir: Option<std::path::PathBuf>,
+
+        /// Disable Just tools
+        #[arg(long)]
+        no_just: bool,
+
+        /// Disable Rune tools
+        #[arg(long)]
+        no_rune: bool,
+
+        /// Log file path (default: ~/.crucible/logs/mcp.log for stdio mode)
+        #[arg(long)]
+        log_file: Option<std::path::PathBuf>,
+    },
 
     /// Process files through the pipeline (parse, enrich, store)
     Process {
