@@ -11,6 +11,8 @@ description = "System and Rune tools for Crucible knowledge management with dyna
 crucible-core = { workspace = true }
 crucible-config = { workspace = true }
 crucible-llm = { workspace = true, features = ["test-utils"] }
+crucible-just = { path = "../crucible-just" }
+crucible-rune = { workspace = true }
 tq = { workspace = true }
 
 # MCP support
