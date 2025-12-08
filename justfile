@@ -88,6 +88,32 @@ bench:
     @echo "Benchmarks not yet configured"
     # cargo bench
 
+# === Web Interface ===
+
+# Build Svelte frontend and run web server (for production-like dev)
+web: web-build
+    cargo run -p crucible-cli -- serve --host 0.0.0.0 --port 3000
+
+# Build only the Svelte frontend
+web-build:
+    cd crates/crucible-web/web && bun install && bun run build
+
+# Run Vite dev server (hot reload, localhost only)
+web-vite:
+    cd crates/crucible-web/web && bun run dev
+
+# Run Vite dev server exposed to network
+web-vite-host:
+    cd crates/crucible-web/web && bun run dev --host
+
+# Run web server pointing to Vite dev server (for API + hot reload)
+web-dev:
+    cargo run -p crucible-cli -- serve --host 0.0.0.0 --port 3000 --web-dir crates/crucible-web/web/dist
+
+# Build release with embedded web assets
+release-web: web-build
+    cargo build -p crucible-cli --release
+
 # === CI ===
 
 # Run full CI check
