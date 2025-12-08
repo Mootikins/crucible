@@ -48,6 +48,17 @@ use agent_client_protocol::{
 
 use crate::{AcpError as CrucibleAcpError, Result};
 
+/// Information about a file write operation for diff display
+#[derive(Debug, Clone)]
+pub struct WriteInfo {
+    /// Path to the file that was written
+    pub path: PathBuf,
+    /// Content before the write (None if file didn't exist)
+    pub old_content: Option<String>,
+    /// New content written to the file
+    pub new_content: String,
+}
+
 /// Crucible's implementation of the ACP Client trait
 ///
 /// This struct provides the client-side functionality for ACP,
@@ -60,6 +71,8 @@ pub struct CrucibleClient {
     read_only: bool,
     /// Session notifications received from the agent
     notifications: Arc<Mutex<Vec<SessionNotification>>>,
+    /// Information about the last write operation (for diff display)
+    last_write: Arc<Mutex<Option<WriteInfo>>>,
 }
 
 impl CrucibleClient {
@@ -74,6 +87,7 @@ impl CrucibleClient {
             kiln_path,
             read_only,
             notifications: Arc::new(Mutex::new(Vec::new())),
+            last_write: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -95,6 +109,18 @@ impl CrucibleClient {
     /// Clear notifications
     pub fn clear_notifications(&self) {
         self.notifications.lock().unwrap().clear();
+    }
+
+    /// Get information about the last write operation (for diff display)
+    ///
+    /// Returns None if no write has occurred yet in this session.
+    pub fn last_write_info(&self) -> Option<WriteInfo> {
+        self.last_write.lock().unwrap().clone()
+    }
+
+    /// Clear the last write info
+    pub fn clear_last_write(&self) {
+        *self.last_write.lock().unwrap() = None;
     }
 }
 
@@ -148,6 +174,8 @@ impl Client for CrucibleClient {
     /// for any file in the current working directory. Only allowed in write mode (act mode).
     ///
     /// For kiln-specific operations, the agent should use Crucible MCP tools.
+    ///
+    /// After a successful write, call `last_write_info()` to get the old/new content for diff display.
     async fn write_text_file(
         &self,
         args: WriteTextFileRequest,
@@ -161,6 +189,9 @@ impl Client for CrucibleClient {
         }
 
         tracing::info!("Writing file: {}", args.path.display());
+
+        // Capture old content before write (for diff display)
+        let old_content = tokio::fs::read_to_string(&args.path).await.ok();
 
         // Work relative to current directory (not kiln)
         // Agent can write any file in its working directory
@@ -178,6 +209,13 @@ impl Client for CrucibleClient {
             tracing::error!("Failed to write file {}: {}", args.path.display(), e);
             return Err(AcpError::internal_error());
         }
+
+        // Store write info for diff display
+        *self.last_write.lock().unwrap() = Some(WriteInfo {
+            path: args.path.clone(),
+            old_content,
+            new_content: args.content.clone(),
+        });
 
         tracing::info!("File written successfully: {}", args.path.display());
 
@@ -462,5 +500,121 @@ mod tests {
         assert!(result.is_ok());
         let outcome = result.unwrap().outcome;
         assert!(matches!(outcome, RequestPermissionOutcome::Selected { .. }));
+    }
+
+    // === WriteInfo tests ===
+
+    #[test]
+    fn test_last_write_info_initially_none() {
+        let temp = TempDir::new().unwrap();
+        let client = CrucibleClient::new(temp.path().to_path_buf(), false);
+        assert!(client.last_write_info().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_write_captures_write_info_for_new_file() {
+        let temp = TempDir::new().unwrap();
+        let client = CrucibleClient::new(temp.path().to_path_buf(), false);
+        let new_file = temp.path().join("new.txt");
+
+        let _ = client
+            .write_text_file(WriteTextFileRequest {
+                session_id: "test".into(),
+                path: new_file.clone(),
+                content: "new content".to_string(),
+                meta: None,
+            })
+            .await;
+
+        let info = client.last_write_info().expect("Should have write info");
+        assert_eq!(info.path, new_file);
+        assert!(info.old_content.is_none()); // New file, no old content
+        assert_eq!(info.new_content, "new content");
+    }
+
+    #[tokio::test]
+    async fn test_write_captures_old_content_for_existing_file() {
+        let temp = TempDir::new().unwrap();
+        let client = CrucibleClient::new(temp.path().to_path_buf(), false);
+        let existing_file = temp.path().join("existing.txt");
+
+        // Create file with initial content
+        tokio::fs::write(&existing_file, "original content").await.unwrap();
+
+        // Write new content
+        let _ = client
+            .write_text_file(WriteTextFileRequest {
+                session_id: "test".into(),
+                path: existing_file.clone(),
+                content: "updated content".to_string(),
+                meta: None,
+            })
+            .await;
+
+        let info = client.last_write_info().expect("Should have write info");
+        assert_eq!(info.path, existing_file);
+        assert_eq!(info.old_content, Some("original content".to_string()));
+        assert_eq!(info.new_content, "updated content");
+    }
+
+    #[tokio::test]
+    async fn test_clear_last_write() {
+        let temp = TempDir::new().unwrap();
+        let client = CrucibleClient::new(temp.path().to_path_buf(), false);
+        let new_file = temp.path().join("test.txt");
+
+        // Write a file
+        let _ = client
+            .write_text_file(WriteTextFileRequest {
+                session_id: "test".into(),
+                path: new_file,
+                content: "content".to_string(),
+                meta: None,
+            })
+            .await;
+
+        // Verify write info exists
+        assert!(client.last_write_info().is_some());
+
+        // Clear it
+        client.clear_last_write();
+
+        // Should be None now
+        assert!(client.last_write_info().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_write_info_updates_on_subsequent_writes() {
+        let temp = TempDir::new().unwrap();
+        let client = CrucibleClient::new(temp.path().to_path_buf(), false);
+        let file1 = temp.path().join("file1.txt");
+        let file2 = temp.path().join("file2.txt");
+
+        // First write
+        let _ = client
+            .write_text_file(WriteTextFileRequest {
+                session_id: "test".into(),
+                path: file1.clone(),
+                content: "content1".to_string(),
+                meta: None,
+            })
+            .await;
+
+        let info1 = client.last_write_info().expect("Should have write info");
+        assert_eq!(info1.path, file1);
+
+        // Second write should replace first
+        let _ = client
+            .write_text_file(WriteTextFileRequest {
+                session_id: "test".into(),
+                path: file2.clone(),
+                content: "content2".to_string(),
+                meta: None,
+            })
+            .await;
+
+        let info2 = client.last_write_info().expect("Should have write info");
+        assert_eq!(info2.path, file2);
+        assert_eq!(info2.new_content, "content2");
     }
 }

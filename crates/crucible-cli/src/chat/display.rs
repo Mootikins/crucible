@@ -5,7 +5,9 @@
 use colored::Colorize;
 use crucible_core::traits::chat::ChatMode;
 use crate::chat::mode_ext::ChatModeDisplay;
+use crate::chat::diff::DiffRenderer;
 use crate::formatting::render_markdown;
+use std::path::Path;
 
 /// Display utilities for chat interface
 pub struct Display;
@@ -136,9 +138,64 @@ impl Display {
                     display_title,
                     args_str.dimmed()
                 );
+
+                // Try to display diff for write operations
+                Self::maybe_display_diff(tool);
             }
         }
         println!(); // Blank line after response
+    }
+
+    /// Check if tool call is a write operation and display diff if possible
+    fn maybe_display_diff(tool: &ToolCallDisplay) {
+        // Identify write operations by common tool names
+        let write_tools = [
+            "Edit", "edit", "WriteFile", "write_file", "write_text_file",
+            "update_note", "create_note", "Write", "write",
+        ];
+
+        let tool_name = humanize_tool_title(&tool.title);
+        if !write_tools.iter().any(|w| tool_name.contains(w)) {
+            return;
+        }
+
+        // Extract path and content from arguments
+        let Some(args) = &tool.arguments else {
+            return;
+        };
+
+        let Some(obj) = args.as_object() else {
+            return;
+        };
+
+        // Try common parameter names for file path
+        let path = obj.get("path")
+            .or_else(|| obj.get("file_path"))
+            .or_else(|| obj.get("file"))
+            .and_then(|v| v.as_str());
+
+        // Try common parameter names for content
+        let new_content = obj.get("content")
+            .or_else(|| obj.get("new_content"))
+            .or_else(|| obj.get("text"))
+            .and_then(|v| v.as_str());
+
+        let Some(path_str) = path else {
+            return;
+        };
+
+        let Some(new_content) = new_content else {
+            return;
+        };
+
+        // Try to read current file content for diff
+        let path = Path::new(path_str);
+        let old_content = std::fs::read_to_string(path).ok();
+
+        // Display diff
+        let renderer = DiffRenderer::new();
+        let old = old_content.as_deref().unwrap_or("");
+        renderer.print_result(path_str, old, new_content);
     }
 
     /// Display error message
@@ -332,4 +389,70 @@ mod tests {
     // Note: Display methods output to stdout, so we can't easily test exact output.
     // We test the underlying formatting functions that they use.
     // Integration tests would verify actual terminal output.
+
+    // === Diff display helper tests ===
+
+    #[test]
+    fn test_write_tools_detected() {
+        // Test that write tool names are properly detected
+        let write_names = ["Edit", "write_file", "update_note", "create_note"];
+        for name in write_names {
+            let tool = ToolCallDisplay {
+                title: name.to_string(),
+                arguments: None,
+            };
+            // This just verifies the function doesn't panic with various tool names
+            Display::maybe_display_diff(&tool);
+        }
+    }
+
+    #[test]
+    fn test_non_write_tools_ignored() {
+        // Non-write tools should not attempt to display diff
+        let non_write_names = ["read_file", "search", "list_notes", "get_info"];
+        for name in non_write_names {
+            let tool = ToolCallDisplay {
+                title: name.to_string(),
+                arguments: Some(json!({"path": "/tmp/test.txt", "content": "test"})),
+            };
+            // Should return early without panicking
+            Display::maybe_display_diff(&tool);
+        }
+    }
+
+    #[test]
+    fn test_write_tool_without_args_ignored() {
+        let tool = ToolCallDisplay {
+            title: "Edit".to_string(),
+            arguments: None,
+        };
+        Display::maybe_display_diff(&tool);
+    }
+
+    #[test]
+    fn test_write_tool_without_path_ignored() {
+        let tool = ToolCallDisplay {
+            title: "Edit".to_string(),
+            arguments: Some(json!({"content": "test"})),
+        };
+        Display::maybe_display_diff(&tool);
+    }
+
+    #[test]
+    fn test_write_tool_without_content_ignored() {
+        let tool = ToolCallDisplay {
+            title: "Edit".to_string(),
+            arguments: Some(json!({"path": "/tmp/test.txt"})),
+        };
+        Display::maybe_display_diff(&tool);
+    }
+
+    #[test]
+    fn test_write_tool_non_object_args_ignored() {
+        let tool = ToolCallDisplay {
+            title: "Edit".to_string(),
+            arguments: Some(json!("string args")),
+        };
+        Display::maybe_display_diff(&tool);
+    }
 }
