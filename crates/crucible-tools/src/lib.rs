@@ -33,6 +33,7 @@
 #![warn(clippy::all)]
 #![deny(clippy::pedantic)]
 
+pub mod extended_mcp_server;
 pub mod kiln;
 pub mod mcp_server;
 pub mod notes;
@@ -42,6 +43,7 @@ pub mod utils;
 
 // ===== PUBLIC API EXPORTS =====
 
+pub use extended_mcp_server::ExtendedMcpServer;
 pub use kiln::KilnTools;
 pub use mcp_server::CrucibleMcpServer;
 pub use notes::NoteTools;
