@@ -67,7 +67,7 @@ pub mod tools;
 pub mod mock_agent;
 
 // Public exports - Export traits and types, following Dependency Inversion
-pub use acp_client::CrucibleClient;
+pub use acp_client::{CrucibleClient, WriteInfo};
 pub use chat::{ChatConfig, ChatSession, ConversationState, SessionMetadata};
 pub use client::CrucibleAcpClient; // Legacy, will be removed
 pub use context::{ContextConfig, PromptEnricher};
