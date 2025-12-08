@@ -1,4 +1,8 @@
 
+## 2025-12-08 - Progressive tool call display during streaming
+Currently streaming accumulates all updates into StreamingState, then returns formatted output after completion. User wants progressive display as tools execute (show each tool call as it happens, not all at once at the end). Requires either: (1) callback/closure in send_prompt_with_streaming, (2) channel-based streaming, or (3) ratatui widget approach. Related to concurrent typing feature.
+Context: Observed in cru chat - tool calls display all at once instead of progressively
+
 ## 2025-12-08 - Concurrent typing during streaming ticker
 Save cursor position at ticker line, allow user to type at prompt while ticker updates above, jump back to update ticker then return to prompt position.
 Context: Brainstorming diff display feature - deferred until ratatui migration
