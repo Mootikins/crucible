@@ -18,6 +18,7 @@
 //! - `session`: Interactive session orchestrator
 
 pub mod context;
+pub mod diff;
 pub mod display;
 pub mod handlers;
 pub mod mode_ext;
@@ -32,6 +33,7 @@ pub use crucible_core::traits::chat::{
 
 // Re-export CLI implementations
 pub use context::CliChatContext;
+pub use diff::DiffRenderer;
 pub use display::{Display, ToolCallDisplay, format_tool_args};
 pub use handlers::{ExitHandler, HelpHandler, ModeCycleHandler, ModeHandler, SearchHandler};
 pub use mode_ext::ChatModeDisplay;
