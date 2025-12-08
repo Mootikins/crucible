@@ -1,0 +1,48 @@
+[package]
+name = "crucible-web"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Web interface for Crucible chat with ACP agents"
+
+[dependencies]
+# Web framework
+axum = { workspace = true, features = ["macros"] }
+tower = { workspace = true }
+tower-http = { version = "0.6", features = ["fs", "cors"] }
+
+# Async runtime
+tokio = { workspace = true, features = ["sync", "macros"] }
+tokio-stream = { workspace = true, features = ["sync"] }
+futures = { workspace = true }
+futures-util = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# UUID generation
+uuid = { workspace = true }
+
+# Internal crates
+crucible-acp = { workspace = true }
+crucible-config = { workspace = true }
+
+# Asset embedding (release builds)
+rust-embed = { version = "8", features = ["interpolate-folder-path"] }
+mime_guess = "2"
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+
+[features]
+default = []
