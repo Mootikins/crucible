@@ -113,8 +113,17 @@ impl Display {
 
     /// Display agent response with optional tool calls
     pub fn agent_response(response: &str, tool_calls: &[ToolCallDisplay]) {
-        // Print agent response with markdown rendering
-        let rendered = render_markdown(response);
+        // Check if response contains inline tools (▷)
+        let has_inline_tools = response.contains('▷');
+
+        // For responses with inline tools, skip markdown rendering to preserve formatting
+        // Markdown rendering converts single newlines to spaces, breaking tool display
+        let rendered = if has_inline_tools {
+            response.to_string()
+        } else {
+            render_markdown(response)
+        };
+
         // Print with indicator on first line, rest indented
         let mut lines = rendered.lines();
         if let Some(first) = lines.next() {
@@ -125,7 +134,6 @@ impl Display {
         }
 
         // Show tool calls that are missing from the inline stream (fallback)
-        let has_inline_tools = response.contains('▷');
         if !tool_calls.is_empty()
             && (response.trim().is_empty() || !has_inline_tools)
         {
@@ -149,13 +157,17 @@ impl Display {
     /// Check if tool call is a write operation and display diff if possible
     fn maybe_display_diff(tool: &ToolCallDisplay) {
         // Identify write operations by common tool names
+        // Check both original title (e.g., "mcp__crucible__update_note") and humanized
         let write_tools = [
             "Edit", "edit", "WriteFile", "write_file", "write_text_file",
             "update_note", "create_note", "Write", "write",
         ];
 
-        let tool_name = humanize_tool_title(&tool.title);
-        if !write_tools.iter().any(|w| tool_name.contains(w)) {
+        let humanized = humanize_tool_title(&tool.title);
+        let is_write = write_tools.iter().any(|w| {
+            tool.title.contains(w) || humanized.contains(w)
+        });
+        if !is_write {
             return;
         }
 
