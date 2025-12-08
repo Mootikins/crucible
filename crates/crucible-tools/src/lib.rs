@@ -37,6 +37,7 @@ pub mod kiln;
 pub mod mcp_server;
 pub mod notes;
 pub mod search;
+pub mod toon_response;
 pub mod utils;
 
 // ===== PUBLIC API EXPORTS =====

@@ -13,6 +13,7 @@ members = [
     "crates/crucible-llm",
     "crates/crucible-tools",
     "crates/crucible-watch",
+    "crates/tq",
     "examples",
 ]
 default-members = ["crates/crucible-cli"]
@@ -159,6 +160,7 @@ crucible-acp = { path = "crates/crucible-acp" }
 crucible-tools = { path = "crates/crucible-tools" }
 crucible-llm = { path = "crates/crucible-llm" }
 crucible-surrealdb = { path = "crates/crucible-surrealdb" }
+tq = { path = "crates/tq" }
 
 [profile.release]
 opt-level = 3
