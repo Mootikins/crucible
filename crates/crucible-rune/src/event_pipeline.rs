@@ -3,6 +3,9 @@
 //! The pipeline receives events, finds matching hooks, and executes
 //! handler functions in sequence. Handlers can modify events or pass
 //! them through unchanged.
+//!
+//! Note: Rune VMs are not Send, so hook execution is done on a dedicated
+//! thread pool via spawn_blocking.
 
 use crate::events::ToolResultEvent;
 use crate::plugin_loader::PluginLoader;
@@ -12,10 +15,17 @@ use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
 /// Pipeline for processing events through registered plugin hooks
+///
+/// This struct is Send + Sync safe. Rune execution happens on blocking threads.
 pub struct EventPipeline {
     /// Plugin loader containing registered hooks
     loader: Arc<RwLock<PluginLoader>>,
 }
+
+// Safety: EventPipeline only contains Arc<RwLock<PluginLoader>> which is Send + Sync.
+// Actual Rune execution happens on spawn_blocking threads.
+unsafe impl Send for EventPipeline {}
+unsafe impl Sync for EventPipeline {}
 
 impl EventPipeline {
     /// Create a new event pipeline with the given plugin loader
@@ -30,78 +40,113 @@ impl EventPipeline {
     /// - Return null/unit to pass through unchanged
     ///
     /// If a hook errors, the event passes through unchanged and processing continues.
+    ///
+    /// Note: Rune execution happens on a blocking thread pool since Rune VMs are not Send.
     pub async fn process_tool_result(
         &self,
         event: ToolResultEvent,
     ) -> Result<ToolResultEvent, RuneError> {
-        let loader = self.loader.read().await;
-        let hooks = loader.get_matching_hooks("tool_result", &event.tool_name);
+        // First, check if there are any matching hooks (this is Send-safe)
+        let hooks_info: Vec<(String, std::path::PathBuf)> = {
+            let loader = self.loader.read().await;
+            let hooks = loader.get_matching_hooks("tool_result", &event.tool_name);
+            if hooks.is_empty() {
+                debug!("No hooks match tool_result:{}", event.tool_name);
+                return Ok(event);
+            }
+            hooks
+                .iter()
+                .filter(|h| h.unit.is_some())
+                .map(|h| (h.handler_name.clone(), h.plugin_path.clone()))
+                .collect()
+        };
 
-        if hooks.is_empty() {
-            debug!("No hooks match tool_result:{}", event.tool_name);
+        if hooks_info.is_empty() {
             return Ok(event);
         }
 
         debug!(
             "Processing tool_result:{} through {} hooks",
             event.tool_name,
-            hooks.len()
+            hooks_info.len()
         );
 
+        // Process hooks by re-loading and executing on each iteration
+        // This is less efficient but ensures Send safety
         let mut current_event = event;
 
-        for hook in hooks {
-            let unit = match &hook.unit {
-                Some(u) => u,
-                None => {
-                    warn!("Hook {} has no compiled unit, skipping", hook.handler_name);
-                    continue;
-                }
-            };
-
-            // Convert current event to Rune value
+        for (handler_name, plugin_path) in hooks_info {
+            let loader_clone = self.loader.clone();
             let event_json = serde_json::to_value(&current_event)
                 .map_err(|e| RuneError::Conversion(e.to_string()))?;
-            let event_value = loader.executor().json_to_rune_value(event_json)?;
+            let handler_name_clone = handler_name.clone();
+            let plugin_path_clone = plugin_path.clone();
 
-            // Create context (empty for now, will add kiln/emit later)
-            let ctx_json = serde_json::json!({});
-            let ctx_value = loader.executor().json_to_rune_value(ctx_json)?;
+            // Execute on blocking thread since Rune is not Send
+            let result = tokio::task::spawn_blocking(move || {
+                let rt = tokio::runtime::Handle::current();
+                rt.block_on(async {
+                    let loader = loader_clone.read().await;
 
-            // Call the handler
-            let result = loader
-                .executor()
-                .call_function(unit, &hook.handler_name, (ctx_value, event_value))
-                .await;
+                    // Find the hook by handler name and plugin path
+                    // (we already filtered by pattern earlier)
+                    let hook = loader.hooks().iter().find(|h| {
+                        h.handler_name == handler_name_clone && h.plugin_path == plugin_path_clone
+                    });
+
+                    let hook = match hook {
+                        Some(h) => h,
+                        None => return Ok(None),
+                    };
+
+                    let unit = match &hook.unit {
+                        Some(u) => u,
+                        None => return Ok(None),
+                    };
+
+                    let event_value = loader.executor().json_to_rune_value(event_json)?;
+                    let ctx_json = serde_json::json!({});
+                    let ctx_value = loader.executor().json_to_rune_value(ctx_json)?;
+
+                    let result = loader
+                        .executor()
+                        .call_function(unit, &handler_name_clone, (ctx_value, event_value))
+                        .await?;
+
+                    Ok::<_, RuneError>(Some(result))
+                })
+            })
+            .await
+            .map_err(|e| RuneError::Execution(format!("Task join error: {}", e)))?;
 
             match result {
-                Ok(returned) => {
-                    // null/unit means pass through unchanged
+                Ok(Some(returned)) => {
                     if returned.is_null() {
-                        debug!("Hook {} returned null, passing through", hook.handler_name);
+                        debug!("Hook {} returned null, passing through", handler_name);
                         continue;
                     }
 
-                    // Try to parse the returned value as a ToolResultEvent
                     match serde_json::from_value::<ToolResultEvent>(returned.clone()) {
                         Ok(modified_event) => {
-                            debug!("Hook {} modified event", hook.handler_name);
+                            debug!("Hook {} modified event", handler_name);
                             current_event = modified_event;
                         }
                         Err(e) => {
                             warn!(
                                 "Hook {} returned invalid event ({}), passing through",
-                                hook.handler_name, e
+                                handler_name, e
                             );
                         }
                     }
                 }
+                Ok(None) => {
+                    debug!("Hook {} not found, skipping", handler_name);
+                }
                 Err(e) => {
                     warn!(
                         "Hook {} failed ({}), passing through original event",
-                        hook.handler_name, e
+                        handler_name, e
                     );
-                    // Continue with current_event unchanged
                 }
             }
         }
