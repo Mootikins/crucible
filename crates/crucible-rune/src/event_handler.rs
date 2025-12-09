@@ -5,6 +5,7 @@
 //! - `{kiln}/runes/events/<event_name>/`
 
 use crate::events::{CrucibleEvent, EnrichedRecipe};
+use crate::regex_module::regex_module;
 use crate::rune_types::{crucible_module, RuneRecipeEnrichment};
 use crate::RuneError;
 use rune::runtime::RuntimeContext;
@@ -67,6 +68,11 @@ impl EventHandler {
         // Install standard modules
         context
             .install(rune_modules::json::module(false)?)
+            .map_err(|e| RuneError::Context(e.to_string()))?;
+
+        // Install regex module
+        context
+            .install(regex_module()?)
             .map_err(|e| RuneError::Context(e.to_string()))?;
 
         // Install our crucible module with types
@@ -202,7 +208,7 @@ impl EventHandler {
 
         if !diagnostics.is_empty() {
             for diag in diagnostics.diagnostics() {
-                debug!("Rune diagnostic: {:?}", diag);
+                warn!("Rune diagnostic: {:?}", diag);
             }
         }
 
