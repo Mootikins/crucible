@@ -35,6 +35,7 @@ mod events;
 mod executor;
 mod hook_system;
 mod hook_types;
+pub mod mcp_gateway;
 pub mod note_events;
 mod plugin_loader;
 mod plugin_types;
@@ -46,8 +47,9 @@ mod types;
 
 pub use attribute_discovery::{attr_parsers, AttributeDiscovery, FromAttributes};
 pub use builtin_hooks::{
-    create_event_emit_hook, create_test_filter_hook, create_toon_transform_hook,
-    register_builtin_hooks, BuiltinHooksConfig, EventEmitConfig, HookToggle,
+    create_event_emit_hook, create_test_filter_hook, create_tool_selector_hook,
+    create_toon_transform_hook, register_builtin_hooks, BuiltinHooksConfig, EventEmitConfig,
+    HookToggle, ToolSelectorConfig,
 };
 pub use discovery::ToolDiscovery;
 pub use discovery_paths::{DiscoveryConfig, DiscoveryPaths};
@@ -60,6 +62,10 @@ pub use note_events::{
     BlockChange, BlockChangeOperation, BlockInfo, BlockType, InlineLinkInfo, NoteChangeType,
     NoteCreatedPayload, NoteEventEmitter, NoteMetadata, NoteModifiedPayload, NotePayload,
     WikilinkInfo,
+};
+pub use mcp_gateway::{
+    ContentBlock as GatewayContentBlock, GatewayError, McpGatewayManager, ToolCallResult,
+    TransportConfig, UpstreamConfig, UpstreamMcpClient, UpstreamServerInfo, UpstreamTool,
 };
 pub use event_pipeline::EventPipeline;
 pub use events::{
