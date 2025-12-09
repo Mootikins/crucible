@@ -41,11 +41,11 @@
 
 ## 5. Built-in Hooks (Filters)
 
-- [ ] 5.1 Refactor `filter_test_output` into `TestFilterHook` on `tool:after`
-- [ ] 5.2 Create `ToonTransformHook` on `tool:after` using tq crate
-- [ ] 5.3 Create `EventEmitHook` that publishes to external consumers
-- [ ] 5.4 Add configurable patterns for built-in hooks (default: `just_test*`, `just_ci*`)
-- [ ] 5.5 Add unit tests for each built-in hook
+- [x] 5.1 Refactor `filter_test_output` into `TestFilterHook` on `tool:after`
+- [x] 5.2 Create `ToonTransformHook` on `tool:after` using tq crate (stub - needs tq integration)
+- [x] 5.3 Create `EventEmitHook` that publishes to external consumers
+- [x] 5.4 Add configurable patterns for built-in hooks (default: `just_test*`, `just_ci*`)
+- [x] 5.5 Add unit tests for each built-in hook
 
 ## 6. Tool Events
 
