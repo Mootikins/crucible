@@ -37,6 +37,7 @@ pub mod extended_mcp_server;
 pub mod kiln;
 pub mod mcp_server;
 pub mod notes;
+pub mod output_filter;
 pub mod search;
 pub mod toon_response;
 pub mod utils;
