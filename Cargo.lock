@@ -2267,12 +2267,14 @@ dependencies = [
  "crucible-enrichment",
  "crucible-llm",
  "crucible-merkle",
+ "fake",
  "futures",
  "hex",
  "ndarray 0.16.1",
  "num_cpus",
  "once_cell",
  "petgraph",
+ "rand 0.8.5",
  "rayon",
  "serde",
  "serde_json",
@@ -3008,6 +3010,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dummy"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1cac124e13ae9aa56acc4241f8c8207501d93afdd8d8e62f0c1f2e12f6508c65"
+dependencies = [
+ "darling 0.20.11",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
+]
+
+[[package]]
 name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3191,6 +3205,17 @@ dependencies = [
  "rmp-serde",
  "serde",
  "tempfile",
+]
+
+[[package]]
+name = "fake"
+version = "2.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d391ba4af7f1d93f01fcf7b2f29e2bc9348e109dfdbf4dcbdc51dfa38dab0b6"
+dependencies = [
+ "deunicode",
+ "dummy",
+ "rand 0.8.5",
 ]
 
 [[package]]

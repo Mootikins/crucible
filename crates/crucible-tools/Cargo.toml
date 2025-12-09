@@ -13,6 +13,7 @@ crucible-config = { workspace = true }
 crucible-llm = { workspace = true, features = ["test-utils"] }
 crucible-just = { path = "../crucible-just" }
 crucible-rune = { workspace = true }
+crucible-surrealdb = { workspace = true }
 tq = { workspace = true }
 
 # MCP support
@@ -58,7 +59,7 @@ urlencoding = { workspace = true }
 # Rune scripting language (commented out - not MVP critical)
 # rune = { workspace = true, optional = true }
 # rune-modules = { workspace = true, optional = true }
-# crucible-rune-macros = { workspace = true, optional = true }
+# crucible-rune-macros = { workspace = true }
 
 # File operations
 pathdiff = "0.2"

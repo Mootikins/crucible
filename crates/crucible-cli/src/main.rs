@@ -251,6 +251,37 @@ async fn main() -> Result<()> {
 
         Some(Commands::Agents { command }) => commands::agents::execute(config, command).await?,
 
+        Some(Commands::Cluster {
+            action,
+            algorithm,
+            min_similarity,
+            min_cluster_size,
+            min_moc_score,
+            format,
+            output,
+        }) => {
+            let action = action
+                .map(|cmd| match cmd {
+                    ClusterActions::Mocs => ClusterAction::Mocs,
+                    ClusterActions::Documents => ClusterAction::Documents,
+                    ClusterActions::Stats => ClusterAction::Statistics,
+                    ClusterActions::All => ClusterAction::All,
+                })
+                .unwrap_or(ClusterAction::All); // Default to all if no subcommand
+
+            commands::cluster::execute(
+                action,
+                algorithm,
+                min_similarity,
+                min_cluster_size,
+                min_moc_score,
+                format,
+                output,
+                config,
+            )
+            .await?
+        }
+
         // Commands::EnhancedChat { // Temporarily disabled
         //     agent,
         //     model,
