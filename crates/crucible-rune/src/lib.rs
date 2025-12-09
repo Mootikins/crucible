@@ -27,10 +27,12 @@
 mod attribute_discovery;
 mod discovery;
 mod discovery_paths;
+pub mod event_bus;
 mod event_handler;
 mod event_pipeline;
 mod events;
 mod executor;
+mod hook_system;
 mod hook_types;
 mod plugin_loader;
 mod plugin_types;
@@ -42,8 +44,10 @@ mod types;
 pub use attribute_discovery::{attr_parsers, AttributeDiscovery, FromAttributes};
 pub use discovery::ToolDiscovery;
 pub use discovery_paths::{DiscoveryConfig, DiscoveryPaths};
-pub use hook_types::RuneHook;
+pub use event_bus::{Event, EventBus, EventContext, EventType, Handler, HandlerError, HandlerResult};
 pub use event_handler::{EventHandler, EventHandlerConfig};
+pub use hook_system::{BuiltinHook, Hook, HookManager, HookRegistry, RuneHookHandler};
+pub use hook_types::RuneHook;
 pub use event_pipeline::EventPipeline;
 pub use events::{
     ContentBlock, CrucibleEvent, EnrichedRecipe, RecipeEnrichment, RecipeParameter,
