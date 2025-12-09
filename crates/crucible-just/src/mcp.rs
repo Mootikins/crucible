@@ -4,11 +4,22 @@ use crate::{Justfile, Recipe};
 use serde_json::{json, Value};
 
 /// MCP Tool definition (matches rmcp::model::Tool structure)
+///
+/// Includes optional enrichment fields that can be populated
+/// by Rune event handlers.
 #[derive(Debug, Clone)]
 pub struct McpTool {
     pub name: String,
     pub description: String,
     pub input_schema: Value,
+
+    // Enrichment fields (populated by event handlers)
+    /// Category for grouping (e.g., "testing", "build", "deploy")
+    pub category: Option<String>,
+    /// Tags for filtering (e.g., ["ci", "quick"])
+    pub tags: Vec<String>,
+    /// Priority for ordering (lower = higher priority)
+    pub priority: Option<i32>,
 }
 
 impl Justfile {
@@ -23,6 +34,9 @@ impl Justfile {
 
 impl Recipe {
     /// Convert recipe to MCP tool definition
+    ///
+    /// Enrichment fields (category, tags, priority) are initially empty
+    /// and can be populated later by Rune event handlers.
     pub fn to_mcp_tool(&self) -> McpTool {
         let description = self
             .doc
@@ -35,6 +49,10 @@ impl Recipe {
             name: format!("just_{}", self.name.replace('-', "_")),
             description,
             input_schema,
+            // Enrichment fields start empty
+            category: None,
+            tags: vec![],
+            priority: None,
         }
     }
 
