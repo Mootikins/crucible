@@ -21,7 +21,10 @@ use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_just::JustTools;
 use crucible_rune::{
-    event_bus::EventBus, ContentBlock, EnrichedRecipe, EventHandler, EventHandlerConfig,
+    builtin_hooks::{create_test_filter_hook, BuiltinHooksConfig},
+    event_bus::EventBus,
+    tool_events::ToolSource,
+    ContentBlock, EnrichedRecipe, EventHandler, EventHandlerConfig,
     EventPipeline, PluginLoader, RuneDiscoveryConfig, RuneToolRegistry, ToolResultEvent,
 };
 use rmcp::model::{CallToolResult, Content, Tool};
@@ -30,6 +33,7 @@ use rmcp::ServerHandler;
 use serde_json::{json, Value};
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
@@ -142,6 +146,20 @@ impl ExtendedMcpServer {
             }
         };
 
+        // Create unified event bus and register built-in hooks
+        let event_bus = {
+            let mut bus = EventBus::new();
+
+            // Register test filter hook (enabled by default)
+            let builtin_config = BuiltinHooksConfig::default();
+            if builtin_config.test_filter.enabled {
+                bus.register(create_test_filter_hook(&builtin_config.test_filter));
+                info!("Registered builtin:test_filter hook");
+            }
+
+            Arc::new(RwLock::new(bus))
+        };
+
         Ok(Self {
             kiln_server,
             just_tools,
@@ -149,7 +167,7 @@ impl ExtendedMcpServer {
             event_handler,
             event_pipeline,
             filter_config: FilterConfig::default(),
-            event_bus: Arc::new(RwLock::new(EventBus::new())),
+            event_bus,
         })
     }
 
@@ -364,10 +382,35 @@ impl ExtendedMcpServer {
         arguments: Value,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let recipe_name = name.strip_prefix("just_").unwrap_or(name);
+        let start = Instant::now();
+
         debug!("Executing Just recipe: {} with args: {:?}", recipe_name, arguments);
+
+        // Emit tool:before event
+        {
+            let bus = self.event_bus.read().await;
+            let event = crucible_rune::event_bus::Event::tool_before(name, arguments.clone())
+                .with_source(ToolSource::Just.as_str());
+            let (result_event, _ctx, errors) = bus.emit(event);
+
+            if !errors.is_empty() {
+                for e in &errors {
+                    warn!("Hook error during tool:before: {}", e);
+                }
+            }
+
+            // Check if execution was cancelled
+            if result_event.is_cancelled() {
+                return Err(rmcp::ErrorData::internal_error(
+                    format!("Just recipe '{}' execution cancelled by hook", recipe_name),
+                    None,
+                ));
+            }
+        }
 
         match self.just_tools.execute(recipe_name, arguments.clone()).await {
             Ok(result) => {
+                let duration_ms = start.elapsed().as_millis() as u64;
                 let is_error = result.exit_code != Some(0);
 
                 // Combine stdout and stderr for the output
@@ -404,7 +447,7 @@ impl ExtendedMcpServer {
                         content: vec![ContentBlock::Text {
                             text: filtered_output.clone(),
                         }],
-                        duration_ms: 0, // TODO: track actual duration
+                        duration_ms,
                     };
 
                     match pipeline.process_tool_result(event).await {
@@ -425,12 +468,55 @@ impl ExtendedMcpServer {
                     "stderr": result.stderr,
                     "success": !is_error
                 });
+
+                // Emit tool:after event with the response
+                {
+                    let bus = self.event_bus.read().await;
+                    let event = crucible_rune::event_bus::Event::tool_after(
+                        name,
+                        json!({
+                            "content": [{
+                                "type": "text",
+                                "text": &final_output
+                            }],
+                            "is_error": is_error,
+                            "duration_ms": duration_ms,
+                        })
+                    ).with_source(ToolSource::Just.as_str());
+
+                    let (_result_event, _ctx, errors) = bus.emit(event);
+
+                    if !errors.is_empty() {
+                        for e in &errors {
+                            warn!("Hook error during tool:after: {}", e);
+                        }
+                    }
+                }
+
                 Ok(toon_success_smart(response))
             }
-            Err(e) => Err(rmcp::ErrorData::internal_error(
-                format!("Just recipe '{}' failed: {}", recipe_name, e),
-                None,
-            )),
+            Err(e) => {
+                let duration_ms = start.elapsed().as_millis() as u64;
+
+                // Emit tool:error event
+                {
+                    let bus = self.event_bus.read().await;
+                    let event = crucible_rune::event_bus::Event::tool_error(
+                        name,
+                        json!({
+                            "error": e.to_string(),
+                            "duration_ms": duration_ms,
+                        })
+                    ).with_source(ToolSource::Just.as_str());
+
+                    let (_result_event, _ctx, _errors) = bus.emit(event);
+                }
+
+                Err(rmcp::ErrorData::internal_error(
+                    format!("Just recipe '{}' failed: {}", recipe_name, e),
+                    None,
+                ))
+            }
         }
     }
 
@@ -443,11 +529,66 @@ impl ExtendedMcpServer {
         name: &str,
         arguments: Value,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let start = Instant::now();
+
         debug!("Executing Rune tool: {} with args: {:?}", name, arguments);
+
+        // Emit tool:before event
+        {
+            let bus = self.event_bus.read().await;
+            let event = crucible_rune::event_bus::Event::tool_before(name, arguments.clone())
+                .with_source(ToolSource::Rune.as_str());
+            let (result_event, _ctx, errors) = bus.emit(event);
+
+            if !errors.is_empty() {
+                for e in &errors {
+                    warn!("Hook error during tool:before: {}", e);
+                }
+            }
+
+            // Check if execution was cancelled
+            if result_event.is_cancelled() {
+                return Err(rmcp::ErrorData::internal_error(
+                    format!("Rune tool '{}' execution cancelled by hook", name),
+                    None,
+                ));
+            }
+        }
 
         match self.rune_registry.execute(name, arguments).await {
             Ok(result) => {
+                let duration_ms = start.elapsed().as_millis() as u64;
+
                 if result.success {
+                    // Emit tool:after event
+                    {
+                        let bus = self.event_bus.read().await;
+                        let result_text = match &result.result {
+                            Some(v) => serde_json::to_string(v).unwrap_or_default(),
+                            None => String::new(),
+                        };
+
+                        let event = crucible_rune::event_bus::Event::tool_after(
+                            name,
+                            json!({
+                                "content": [{
+                                    "type": "text",
+                                    "text": result_text
+                                }],
+                                "is_error": false,
+                                "duration_ms": duration_ms,
+                            })
+                        ).with_source(ToolSource::Rune.as_str());
+
+                        let (_result_event, _ctx, errors) = bus.emit(event);
+
+                        if !errors.is_empty() {
+                            for e in &errors {
+                                warn!("Hook error during tool:after: {}", e);
+                            }
+                        }
+                    }
+
                     // Return result directly - only use TOON for structured data
                     match &result.result {
                         Some(Value::Object(_)) | Some(Value::Array(_)) => {
@@ -472,18 +613,52 @@ impl ExtendedMcpServer {
                         }
                     }
                 } else {
-                    // Error - return as error message
+                    let duration_ms = start.elapsed().as_millis() as u64;
                     let error_msg = result.error.unwrap_or_else(|| "Unknown error".to_string());
+
+                    // Emit tool:error event
+                    {
+                        let bus = self.event_bus.read().await;
+                        let event = crucible_rune::event_bus::Event::tool_error(
+                            name,
+                            json!({
+                                "error": &error_msg,
+                                "duration_ms": duration_ms,
+                            })
+                        ).with_source(ToolSource::Rune.as_str());
+
+                        let (_result_event, _ctx, _errors) = bus.emit(event);
+                    }
+
+                    // Error - return as error message
                     Err(rmcp::ErrorData::internal_error(
                         format!("Rune tool '{}' failed: {}", name, error_msg),
                         None,
                     ))
                 }
             }
-            Err(e) => Err(rmcp::ErrorData::internal_error(
-                format!("Rune tool '{}' failed: {}", name, e),
-                None,
-            )),
+            Err(e) => {
+                let duration_ms = start.elapsed().as_millis() as u64;
+
+                // Emit tool:error event
+                {
+                    let bus = self.event_bus.read().await;
+                    let event = crucible_rune::event_bus::Event::tool_error(
+                        name,
+                        json!({
+                            "error": e.to_string(),
+                            "duration_ms": duration_ms,
+                        })
+                    ).with_source(ToolSource::Rune.as_str());
+
+                    let (_result_event, _ctx, _errors) = bus.emit(event);
+                }
+
+                Err(rmcp::ErrorData::internal_error(
+                    format!("Rune tool '{}' failed: {}", name, e),
+                    None,
+                ))
+            }
         }
     }
 
@@ -603,6 +778,7 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use tempfile::TempDir;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct MockKnowledgeRepository;
     struct MockEmbeddingProvider;
@@ -784,6 +960,137 @@ mod tests {
 
             assert_eq!(result.identifier, "just_test");
             assert!(errors.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tool_events_emitted() {
+        use crucible_rune::event_bus::{EventType, Handler};
+        use serde_json::json;
+
+        let temp = TempDir::new().unwrap();
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+        let server = ExtendedMcpServer::kiln_only(
+            temp.path().to_str().unwrap().to_string(),
+            knowledge_repo,
+            embedding_provider,
+        );
+
+        let event_bus = server.event_bus();
+
+        // Track events emitted
+        let before_count = Arc::new(AtomicUsize::new(0));
+        let after_count = Arc::new(AtomicUsize::new(0));
+
+        let before_count_clone = Arc::clone(&before_count);
+        let after_count_clone = Arc::clone(&after_count);
+
+        // Register handlers to count events
+        {
+            let mut bus = event_bus.write().await;
+
+            bus.register(Handler::new(
+                "count_before",
+                EventType::ToolBefore,
+                "*",
+                move |_ctx, event| {
+                    before_count_clone.fetch_add(1, Ordering::SeqCst);
+                    Ok(event)
+                },
+            ));
+
+            bus.register(Handler::new(
+                "count_after",
+                EventType::ToolAfter,
+                "*",
+                move |_ctx, event| {
+                    after_count_clone.fetch_add(1, Ordering::SeqCst);
+                    Ok(event)
+                },
+            ));
+        }
+
+        // Call a just tool (need to create a justfile first)
+        // For this test, we'll create a simple justfile
+        let justfile_path = temp.path().join("justfile");
+        std::fs::write(&justfile_path, "hello:\n\techo 'Hello World'\n").unwrap();
+
+        // Create a new server with the justfile
+        let server = ExtendedMcpServer::new(
+            temp.path().to_str().unwrap().to_string(),
+            Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
+            Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
+            temp.path(),
+            RuneDiscoveryConfig::default(),
+        )
+        .await
+        .unwrap();
+
+        // Copy the handlers to the new server's event bus
+        let new_event_bus = server.event_bus();
+        {
+            let mut bus = new_event_bus.write().await;
+
+            let before_count_clone2 = Arc::clone(&before_count);
+            let after_count_clone2 = Arc::clone(&after_count);
+
+            bus.register(Handler::new(
+                "count_before",
+                EventType::ToolBefore,
+                "*",
+                move |_ctx, event| {
+                    before_count_clone2.fetch_add(1, Ordering::SeqCst);
+                    Ok(event)
+                },
+            ));
+
+            bus.register(Handler::new(
+                "count_after",
+                EventType::ToolAfter,
+                "*",
+                move |_ctx, event| {
+                    after_count_clone2.fetch_add(1, Ordering::SeqCst);
+                    Ok(event)
+                },
+            ));
+        }
+
+        // Execute a just tool
+        let _ = server.call_just_tool("just_hello", json!({})).await;
+
+        // Verify events were emitted
+        assert_eq!(before_count.load(Ordering::SeqCst), 1, "tool:before event should be emitted");
+        assert_eq!(after_count.load(Ordering::SeqCst), 1, "tool:after event should be emitted");
+    }
+
+    #[tokio::test]
+    async fn test_test_filter_hook_registered() {
+        use crucible_rune::event_bus::EventType;
+
+        let temp = TempDir::new().unwrap();
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+        let server = ExtendedMcpServer::new(
+            temp.path().to_str().unwrap().to_string(),
+            knowledge_repo,
+            embedding_provider,
+            temp.path(),
+            RuneDiscoveryConfig::default(),
+        )
+        .await
+        .unwrap();
+
+        let event_bus = server.event_bus();
+
+        // Check if test_filter hook is registered
+        {
+            let bus = event_bus.read().await;
+            let handler = bus.get_handler("builtin:test_filter");
+            assert!(handler.is_some(), "builtin:test_filter hook should be registered");
+            assert_eq!(handler.unwrap().event_type, EventType::ToolAfter);
         }
     }
 }

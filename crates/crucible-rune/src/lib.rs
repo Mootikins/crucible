@@ -25,7 +25,7 @@
 //! ```
 
 mod attribute_discovery;
-mod builtin_hooks;
+pub mod builtin_hooks;
 mod discovery;
 mod discovery_paths;
 pub mod event_bus;
