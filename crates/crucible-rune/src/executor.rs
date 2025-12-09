@@ -164,10 +164,18 @@ impl RuneExecutor {
             .call(hash, args)
             .map_err(|e| RuneError::Execution(format_vm_error(e)))?;
 
-        // Handle async functions - check if output is a generator/future
-        let output = match vm.async_complete().await {
-            Ok(val) => val,
-            Err(_) => output, // Not async, use original output
+        // Check if the return value is a generator/future (async function)
+        // Only call async_complete() if it's actually an async function
+        let type_info = output.type_info();
+        let type_name = format!("{}", type_info);
+
+        let output = if type_name.contains("Generator") || type_name.contains("Future") {
+            // This is an async function, complete it
+            vm.async_complete().await
+                .map_err(|e| RuneError::Execution(format_vm_error(e)))?
+        } else {
+            // Synchronous function, use the output directly
+            output
         };
 
         // Convert output to JSON
