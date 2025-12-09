@@ -16,7 +16,7 @@
 - [ ] 2.4 Implement `FromAttributes` for `RuneTool`
 - [ ] 2.5 Implement `FromAttributes` for `RuneHook` (new)
 - [ ] 2.6 Register `#[hook(...)]` no-op macro in executor (like `#[tool]`, `#[param]`)
-- [ ] 2.7 Add caching of discovered attributes in SurrealDB for fast reload
+- [ ] 2.7 (DEFERRED) Add caching of discovered attributes in SurrealDB for fast reload
 - [ ] 2.8 Add unit tests for attribute parsing
 
 ## 3. Core Event System
