@@ -68,6 +68,8 @@ tokio-test = "0.4"
 num_cpus = "1.16"
 tracing-test = "0.2"
 criterion = { version = "0.7", features = ["async_tokio"] }
+fake = { version = "2.9", features = ["derive"] }
+rand = "0.8"
 
 [[bench]]
 name = "graph_relations_bench"
