@@ -1,6 +1,9 @@
 //! Core configuration types and structures.
 
-use crate::components::{AcpConfig, ChatConfig, CliConfig, EmbeddingConfig, EmbeddingProviderType};
+use crate::components::{
+    AcpConfig, ChatConfig, CliConfig, DiscoveryPathsConfig, EmbeddingConfig, EmbeddingProviderType,
+    GatewayConfig, HooksConfig,
+};
 use crate::{EnrichmentConfig, ProfileConfig};
 
 #[cfg(feature = "toml")]
@@ -125,6 +128,18 @@ pub struct Config {
     /// Logging configuration.
     pub logging: Option<LoggingConfig>,
 
+    /// Discovery paths configuration.
+    #[serde(default)]
+    pub discovery: Option<DiscoveryPathsConfig>,
+
+    /// Gateway configuration for upstream MCP servers.
+    #[serde(default)]
+    pub gateway: Option<GatewayConfig>,
+
+    /// Hooks configuration.
+    #[serde(default)]
+    pub hooks: Option<HooksConfig>,
+
     /// Custom configuration values.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub custom: HashMap<String, serde_json::Value>,
@@ -143,6 +158,9 @@ impl Default for Config {
             chat: Some(ChatConfig::default()),
             server: None,
             logging: None,
+            discovery: None,
+            gateway: None,
+            hooks: None,
             custom: HashMap::new(),
         }
     }
@@ -305,6 +323,116 @@ impl Config {
 
         // Fall back to default
         Ok(ChatConfig::default())
+    }
+
+    /// Get the effective discovery configuration.
+    pub fn discovery_config(&self) -> Option<&DiscoveryPathsConfig> {
+        self.discovery.as_ref()
+    }
+
+    /// Get the effective gateway configuration.
+    pub fn gateway_config(&self) -> Option<&GatewayConfig> {
+        self.gateway.as_ref()
+    }
+
+    /// Get the effective hooks configuration.
+    pub fn hooks_config(&self) -> Option<&HooksConfig> {
+        self.hooks.as_ref()
+    }
+
+    /// Validate gateway configuration
+    pub fn validate_gateway(&self) -> Result<(), ConfigValidationError> {
+        if let Some(gateway) = &self.gateway {
+            let mut errors = Vec::new();
+
+            for server in &gateway.servers {
+                // Validate server name is not empty
+                if server.name.is_empty() {
+                    errors.push("Gateway server name cannot be empty".to_string());
+                }
+
+                // Validate transport configuration
+                match &server.transport {
+                    crate::components::TransportType::Stdio { command, .. } => {
+                        if command.is_empty() {
+                            errors.push(format!(
+                                "Gateway server '{}': stdio command cannot be empty",
+                                server.name
+                            ));
+                        }
+                    }
+                    crate::components::TransportType::Sse { url, .. } => {
+                        if url.is_empty() {
+                            errors.push(format!(
+                                "Gateway server '{}': SSE url cannot be empty",
+                                server.name
+                            ));
+                        }
+                        // Validate URL format
+                        if !url.starts_with("http://") && !url.starts_with("https://") {
+                            errors.push(format!(
+                                "Gateway server '{}': SSE url must start with http:// or https://",
+                                server.name
+                            ));
+                        }
+                    }
+                }
+
+                // Validate prefix/suffix if present
+                if let Some(prefix) = &server.prefix {
+                    if prefix.is_empty() {
+                        errors.push(format!(
+                            "Gateway server '{}': prefix cannot be empty string",
+                            server.name
+                        ));
+                    }
+                }
+            }
+
+            if !errors.is_empty() {
+                return Err(ConfigValidationError::Multiple { errors });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Validate hooks configuration (checks pattern validity)
+    pub fn validate_hooks(&self) -> Result<(), ConfigValidationError> {
+        if let Some(hooks) = &self.hooks {
+            let mut errors = Vec::new();
+
+            // Validate patterns are valid glob patterns
+            // For now, just check they're not empty if present
+            let mut check_pattern = |name: &str, pattern: &Option<String>| {
+                if let Some(p) = pattern {
+                    if p.is_empty() {
+                        errors.push(format!("Hook '{}': pattern cannot be empty string", name));
+                    }
+                }
+            };
+
+            check_pattern("test_filter", &hooks.builtin.test_filter.pattern);
+            check_pattern("toon_transform", &hooks.builtin.toon_transform.pattern);
+            check_pattern(
+                "recipe_enrichment",
+                &hooks.builtin.recipe_enrichment.pattern,
+            );
+            check_pattern("tool_selector", &hooks.builtin.tool_selector.pattern);
+
+            if !errors.is_empty() {
+                return Err(ConfigValidationError::Multiple { errors });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Validate all configuration sections
+    pub fn validate(&self) -> Result<(), ConfigValidationError> {
+        self.validate_gateway()?;
+        self.validate_hooks()?;
+        Ok(())
     }
 }
 
@@ -1015,5 +1143,210 @@ provider = "fastembed"
         let config = CliAppConfig::load(Some(temp_file.path().to_path_buf()), None, None).unwrap();
 
         assert!(config.agent_directories.is_empty());
+    }
+
+    #[test]
+    fn test_config_with_new_sections() {
+        let toml_content = r#"
+profile = "default"
+
+[discovery.type_configs.tools]
+additional_paths = ["/custom/tools"]
+use_defaults = true
+
+[[gateway.servers]]
+name = "github"
+prefix = "gh_"
+
+[gateway.servers.transport]
+type = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github"]
+
+[hooks.builtin.test_filter]
+enabled = true
+pattern = "just_test*"
+priority = 10
+
+[hooks.builtin.tool_selector]
+enabled = true
+allowed_tools = ["search_*"]
+"#;
+
+        let config: Config = toml::from_str(toml_content).unwrap();
+
+        // Check discovery config
+        assert!(config.discovery.is_some());
+        let discovery = config.discovery.as_ref().unwrap();
+        assert!(discovery.type_configs.contains_key("tools"));
+
+        // Check gateway config
+        assert!(config.gateway.is_some());
+        let gateway = config.gateway.as_ref().unwrap();
+        assert_eq!(gateway.servers.len(), 1);
+        assert_eq!(gateway.servers[0].name, "github");
+
+        // Check hooks config
+        assert!(config.hooks.is_some());
+        let hooks = config.hooks.as_ref().unwrap();
+        assert!(hooks.builtin.test_filter.enabled);
+        assert!(hooks.builtin.tool_selector.enabled);
+    }
+
+    #[test]
+    fn test_validate_gateway_empty_name() {
+        let config = Config {
+            gateway: Some(GatewayConfig {
+                servers: vec![crate::components::UpstreamServerConfig {
+                    name: "".to_string(),
+                    transport: crate::components::TransportType::Stdio {
+                        command: "test".to_string(),
+                        args: vec![],
+                        env: std::collections::HashMap::new(),
+                    },
+                    prefix: None,
+                    allowed_tools: None,
+                    blocked_tools: None,
+                    auto_reconnect: true,
+                }],
+            }),
+            ..Config::default()
+        };
+
+        let result = config.validate_gateway();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_gateway_invalid_sse_url() {
+        let config = Config {
+            gateway: Some(GatewayConfig {
+                servers: vec![crate::components::UpstreamServerConfig {
+                    name: "test".to_string(),
+                    transport: crate::components::TransportType::Sse {
+                        url: "invalid-url".to_string(),
+                        auth_header: None,
+                    },
+                    prefix: None,
+                    allowed_tools: None,
+                    blocked_tools: None,
+                    auto_reconnect: true,
+                }],
+            }),
+            ..Config::default()
+        };
+
+        let result = config.validate_gateway();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_gateway_valid() {
+        let config = Config {
+            gateway: Some(GatewayConfig {
+                servers: vec![crate::components::UpstreamServerConfig {
+                    name: "test".to_string(),
+                    transport: crate::components::TransportType::Sse {
+                        url: "http://localhost:3000/sse".to_string(),
+                        auth_header: None,
+                    },
+                    prefix: Some("test_".to_string()),
+                    allowed_tools: None,
+                    blocked_tools: None,
+                    auto_reconnect: true,
+                }],
+            }),
+            ..Config::default()
+        };
+
+        let result = config.validate_gateway();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_hooks_empty_pattern() {
+        let config = Config {
+            hooks: Some(HooksConfig {
+                builtin: crate::components::BuiltinHooksTomlConfig {
+                    test_filter: crate::components::HookConfig {
+                        enabled: true,
+                        pattern: Some("".to_string()),
+                        priority: Some(10),
+                    },
+                    ..Default::default()
+                },
+            }),
+            ..Config::default()
+        };
+
+        let result = config.validate_hooks();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_hooks_valid() {
+        let config = Config {
+            hooks: Some(HooksConfig {
+                builtin: crate::components::BuiltinHooksTomlConfig {
+                    test_filter: crate::components::HookConfig {
+                        enabled: true,
+                        pattern: Some("just_test*".to_string()),
+                        priority: Some(10),
+                    },
+                    ..Default::default()
+                },
+            }),
+            ..Config::default()
+        };
+
+        let result = config.validate_hooks();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_all_sections() {
+        let config = Config {
+            gateway: Some(GatewayConfig {
+                servers: vec![crate::components::UpstreamServerConfig {
+                    name: "test".to_string(),
+                    transport: crate::components::TransportType::Stdio {
+                        command: "npx".to_string(),
+                        args: vec![],
+                        env: std::collections::HashMap::new(),
+                    },
+                    prefix: None,
+                    allowed_tools: None,
+                    blocked_tools: None,
+                    auto_reconnect: true,
+                }],
+            }),
+            hooks: Some(HooksConfig::default()),
+            ..Config::default()
+        };
+
+        let result = config.validate();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_config_default_has_new_sections_none() {
+        let config = Config::default();
+        assert!(config.discovery.is_none());
+        assert!(config.gateway.is_none());
+        assert!(config.hooks.is_none());
+    }
+
+    #[test]
+    fn test_config_accessor_methods() {
+        let config = Config {
+            discovery: Some(DiscoveryPathsConfig::default()),
+            gateway: Some(GatewayConfig::default()),
+            hooks: Some(HooksConfig::default()),
+            ..Config::default()
+        };
+
+        assert!(config.discovery_config().is_some());
+        assert!(config.gateway_config().is_some());
+        assert!(config.hooks_config().is_some());
     }
 }
