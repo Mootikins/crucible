@@ -24,11 +24,14 @@
 //! let result = registry.execute("rune_my_tool", args).await?;
 //! ```
 
+mod attribute_discovery;
 mod discovery;
+mod discovery_paths;
 mod event_handler;
 mod event_pipeline;
 mod events;
 mod executor;
+mod hook_types;
 mod plugin_loader;
 mod plugin_types;
 mod regex_module;
@@ -36,7 +39,10 @@ mod registry;
 mod rune_types;
 mod types;
 
+pub use attribute_discovery::{attr_parsers, AttributeDiscovery, FromAttributes};
 pub use discovery::ToolDiscovery;
+pub use discovery_paths::{DiscoveryConfig, DiscoveryPaths};
+pub use hook_types::RuneHook;
 pub use event_handler::{EventHandler, EventHandlerConfig};
 pub use event_pipeline::EventPipeline;
 pub use events::{

@@ -1,23 +1,23 @@
 ## 1. Refactor: Unified Discovery Paths
 
-- [ ] 1.1 Create `DiscoveryPaths` struct with type_name, defaults, additional, use_defaults
-- [ ] 1.2 Implement `new(type_name, kiln_path)` with global + kiln defaults
-- [ ] 1.3 Add `all_paths()` method combining defaults + additional
+- [x] 1.1 Create `DiscoveryPaths` struct with type_name, defaults, additional, use_defaults
+- [x] 1.2 Implement `new(type_name, kiln_path)` with global + kiln defaults
+- [x] 1.3 Add `all_paths()` method combining defaults + additional
 - [ ] 1.4 Add TOML config schema `[discovery.<type>]` with additional_paths, use_defaults
-- [ ] 1.5 Migrate existing tool discovery to use `DiscoveryPaths`
-- [ ] 1.6 Migrate existing event handler discovery to use `DiscoveryPaths`
-- [ ] 1.7 Add unit tests for path resolution
+- [x] 1.5 Migrate existing tool discovery to use `DiscoveryPaths`
+- [x] 1.6 Migrate existing event handler discovery to use `DiscoveryPaths`
+- [x] 1.7 Add unit tests for path resolution
 
 ## 2. Refactor: Unified Attribute Discovery
 
-- [ ] 2.1 Create `FromAttributes` trait with `attribute_name()` and `from_attrs()`
-- [ ] 2.2 Create `AttributeDiscovery` struct with generic `discover_all<T: FromAttributes>()`
-- [ ] 2.3 Extract common regex parsing from discovery.rs into shared module
-- [ ] 2.4 Implement `FromAttributes` for `RuneTool`
-- [ ] 2.5 Implement `FromAttributes` for `RuneHook` (new)
-- [ ] 2.6 Register `#[hook(...)]` no-op macro in executor (like `#[tool]`, `#[param]`)
+- [x] 2.1 Create `FromAttributes` trait with `attribute_name()` and `from_attrs()`
+- [x] 2.2 Create `AttributeDiscovery` struct with generic `discover_all<T: FromAttributes>()`
+- [x] 2.3 Extract common regex parsing from discovery.rs into shared module
+- [x] 2.4 Implement `FromAttributes` for `RuneTool`
+- [x] 2.5 Implement `FromAttributes` for `RuneHook` (new)
+- [x] 2.6 Register `#[hook(...)]` no-op macro in executor (like `#[tool]`, `#[param]`)
 - [ ] 2.7 (DEFERRED) Add caching of discovered attributes in SurrealDB for fast reload
-- [ ] 2.8 Add unit tests for attribute parsing
+- [x] 2.8 Add unit tests for attribute parsing
 
 ## 3. Core Event System
 

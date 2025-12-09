@@ -1,8 +1,11 @@
 //! Types for Rune tool system
 
+use crate::attribute_discovery::{attr_parsers, FromAttributes};
+use crate::discovery_paths::DiscoveryPaths;
+use crate::RuneError;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::path::PathBuf;
+use serde_json::{json, Value};
+use std::path::{Path, PathBuf};
 
 /// A discovered Rune tool
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,6 +79,44 @@ impl RuneTool {
     }
 }
 
+impl FromAttributes for RuneTool {
+    fn attribute_name() -> &'static str {
+        "tool"
+    }
+
+    fn from_attrs(attrs: &str, fn_name: &str, path: &Path, docs: &str) -> Result<Self, RuneError> {
+        // Extract description (from attr or doc comment)
+        let description = attr_parsers::extract_string(attrs, "desc")
+            .or_else(|| attr_parsers::extract_string(attrs, "description"))
+            .or_else(|| attr_parsers::extract_doc_description(docs))
+            .unwrap_or_else(|| format!("Rune tool: {}", fn_name));
+
+        // Extract version
+        let version = attr_parsers::extract_string(attrs, "version");
+
+        // Extract tags (array format or category)
+        let mut tags = attr_parsers::extract_string_array(attrs, "tags").unwrap_or_default();
+        if let Some(category) = attr_parsers::extract_string(attrs, "category") {
+            tags.insert(0, category);
+        }
+
+        Ok(RuneTool {
+            name: fn_name.to_string(),
+            description,
+            input_schema: json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+            path: path.to_path_buf(),
+            entry_point: fn_name.to_string(),
+            version,
+            tags,
+            enabled: true,
+        })
+    }
+}
+
 /// Configuration for Rune tool discovery
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuneDiscoveryConfig {
@@ -101,23 +142,23 @@ impl RuneDiscoveryConfig {
     /// Create config with default directories
     ///
     /// Default directories:
-    /// - `~/.crucible/runes/` (global)
-    /// - `{kiln}/runes/` (kiln-specific, if provided)
+    /// - `~/.crucible/tools/` (global)
+    /// - `KILN/.crucible/tools/` (kiln-specific, if provided)
+    ///
+    /// Note: Uses `DiscoveryPaths` internally for consistent path resolution.
     pub fn with_defaults(kiln_path: Option<&std::path::Path>) -> Self {
-        let mut dirs = vec![];
-
-        // Global runes directory
-        if let Some(home) = dirs::home_dir() {
-            dirs.push(home.join(".crucible").join("runes"));
-        }
-
-        // Kiln-specific runes directory
-        if let Some(kiln) = kiln_path {
-            dirs.push(kiln.join("runes"));
-        }
+        let paths = DiscoveryPaths::new("tools", kiln_path);
 
         Self {
-            tool_directories: dirs,
+            tool_directories: paths.all_paths(),
+            ..Default::default()
+        }
+    }
+
+    /// Create config from DiscoveryPaths
+    pub fn from_discovery_paths(paths: &DiscoveryPaths) -> Self {
+        Self {
+            tool_directories: paths.all_paths(),
             ..Default::default()
         }
     }

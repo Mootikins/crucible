@@ -1,6 +1,6 @@
 //! Integration tests for the event handler system
 
-use crucible_rune::{EnrichedRecipe, EventHandler, EventHandlerConfig};
+use crucible_rune::{DiscoveryPaths, EnrichedRecipe, EventHandler, EventHandlerConfig};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -22,16 +22,19 @@ fn examples_runes_dir() -> PathBuf {
         .join("runes")
 }
 
+/// Helper to create EventHandlerConfig from a temp directory
+/// The temp directory structure should be: <temp>/events/<event_name>/*.rn
+fn config_from_temp(temp_path: &std::path::Path) -> EventHandlerConfig {
+    let paths = DiscoveryPaths::empty("events").with_path(temp_path.join("events"));
+    EventHandlerConfig::from_discovery_paths(paths)
+}
+
 /// Test the full event processing flow with a real script
 #[tokio::test]
 async fn test_recipe_categorization_with_script() {
     // Create temp directory with event handler
     let temp = TempDir::new().unwrap();
-    let event_dir = temp
-        .path()
-        .join("runes")
-        .join("events")
-        .join("recipe_discovered");
+    let event_dir = temp.path().join("events").join("recipe_discovered");
     std::fs::create_dir_all(&event_dir).unwrap();
 
     // Write categorizer script
@@ -47,9 +50,7 @@ pub fn on_recipe_discovered(recipe) {
     std::fs::write(event_dir.join("categorizer.rn"), script).unwrap();
 
     // Create handler
-    let config = EventHandlerConfig {
-        base_directories: vec![temp.path().to_path_buf()],
-    };
+    let config = config_from_temp(temp.path());
     let handler = EventHandler::new(config).unwrap();
 
     // Test various recipe names
@@ -94,11 +95,7 @@ pub fn on_recipe_discovered(recipe) {
 #[tokio::test]
 async fn test_multiple_handlers_chain() {
     let temp = TempDir::new().unwrap();
-    let event_dir = temp
-        .path()
-        .join("runes")
-        .join("events")
-        .join("recipe_discovered");
+    let event_dir = temp.path().join("events").join("recipe_discovered");
     std::fs::create_dir_all(&event_dir).unwrap();
 
     // First handler: adds category
@@ -117,9 +114,7 @@ pub fn on_recipe_discovered(recipe) {
 "#;
     std::fs::write(event_dir.join("02_tagger.rn"), script2).unwrap();
 
-    let config = EventHandlerConfig {
-        base_directories: vec![temp.path().to_path_buf()],
-    };
+    let config = config_from_temp(temp.path());
     let handler = EventHandler::new(config).unwrap();
 
     let recipe = EnrichedRecipe::from_recipe("test".to_string(), None, vec![], false);
@@ -135,11 +130,7 @@ pub fn on_recipe_discovered(recipe) {
 #[tokio::test]
 async fn test_handler_returns_null() {
     let temp = TempDir::new().unwrap();
-    let event_dir = temp
-        .path()
-        .join("runes")
-        .join("events")
-        .join("recipe_discovered");
+    let event_dir = temp.path().join("events").join("recipe_discovered");
     std::fs::create_dir_all(&event_dir).unwrap();
 
     // Handler returns nothing for private recipes
@@ -154,9 +145,7 @@ pub fn on_recipe_discovered(recipe) {
 "#;
     std::fs::write(event_dir.join("conditional.rn"), script).unwrap();
 
-    let config = EventHandlerConfig {
-        base_directories: vec![temp.path().to_path_buf()],
-    };
+    let config = config_from_temp(temp.path());
     let handler = EventHandler::new(config).unwrap();
 
     // Public recipe gets enriched
@@ -174,11 +163,7 @@ pub fn on_recipe_discovered(recipe) {
 #[tokio::test]
 async fn test_process_recipes_batch() {
     let temp = TempDir::new().unwrap();
-    let event_dir = temp
-        .path()
-        .join("runes")
-        .join("events")
-        .join("recipe_discovered");
+    let event_dir = temp.path().join("events").join("recipe_discovered");
     std::fs::create_dir_all(&event_dir).unwrap();
 
     let script = r#"
@@ -190,9 +175,7 @@ pub fn on_recipe_discovered(recipe) {
 "#;
     std::fs::write(event_dir.join("categorizer.rn"), script).unwrap();
 
-    let config = EventHandlerConfig {
-        base_directories: vec![temp.path().to_path_buf()],
-    };
+    let config = config_from_temp(temp.path());
     let handler = EventHandler::new(config).unwrap();
 
     let recipes = vec![
@@ -213,11 +196,7 @@ pub fn on_recipe_discovered(recipe) {
 #[tokio::test]
 async fn test_handler_error_continues() {
     let temp = TempDir::new().unwrap();
-    let event_dir = temp
-        .path()
-        .join("runes")
-        .join("events")
-        .join("recipe_discovered");
+    let event_dir = temp.path().join("events").join("recipe_discovered");
     std::fs::create_dir_all(&event_dir).unwrap();
 
     // First handler: has a bug (undefined function)
@@ -236,9 +215,7 @@ pub fn on_recipe_discovered(recipe) {
 "#;
     std::fs::write(event_dir.join("02_working.rn"), script2).unwrap();
 
-    let config = EventHandlerConfig {
-        base_directories: vec![temp.path().to_path_buf()],
-    };
+    let config = config_from_temp(temp.path());
     let handler = EventHandler::new(config).unwrap();
 
     let recipe = EnrichedRecipe::from_recipe("test".to_string(), None, vec![], false);
@@ -253,11 +230,7 @@ pub fn on_recipe_discovered(recipe) {
 async fn test_regex_in_script() {
     init_test_logging();
     let temp = TempDir::new().unwrap();
-    let event_dir = temp
-        .path()
-        .join("runes")
-        .join("events")
-        .join("recipe_discovered");
+    let event_dir = temp.path().join("events").join("recipe_discovered");
     std::fs::create_dir_all(&event_dir).unwrap();
 
     // Script that uses regex for categorization
@@ -298,9 +271,7 @@ pub fn on_recipe_discovered(recipe) {
 "#;
     std::fs::write(event_dir.join("regex_categorizer.rn"), script).unwrap();
 
-    let config = EventHandlerConfig {
-        base_directories: vec![temp.path().to_path_buf()],
-    };
+    let config = config_from_temp(temp.path());
     let handler = EventHandler::new(config).unwrap();
 
     // Test various recipes
@@ -344,12 +315,9 @@ async fn test_example_categorizer_script() {
         script_path
     );
 
-    // Create handler pointing to examples dir (it expects runes/events/... structure)
-    // So we need to point to the parent of runes/
-    let base_dir = examples_dir.parent().unwrap();
-    let config = EventHandlerConfig {
-        base_directories: vec![base_dir.to_path_buf()],
-    };
+    // Create handler pointing to examples/runes (new structure: events/<event>/*.rn)
+    let paths = DiscoveryPaths::empty("events").with_path(examples_dir.join("events"));
+    let config = EventHandlerConfig::from_discovery_paths(paths);
     let handler = EventHandler::new(config).unwrap();
 
     // Test various recipes with the real script
@@ -391,11 +359,7 @@ async fn test_example_categorizer_script() {
 async fn test_regex_replace_in_script() {
     init_test_logging();
     let temp = TempDir::new().unwrap();
-    let event_dir = temp
-        .path()
-        .join("runes")
-        .join("events")
-        .join("recipe_discovered");
+    let event_dir = temp.path().join("events").join("recipe_discovered");
     std::fs::create_dir_all(&event_dir).unwrap();
 
     // Script that normalizes recipe names using regex
@@ -416,9 +380,7 @@ pub fn on_recipe_discovered(recipe) {
 "#;
     std::fs::write(event_dir.join("normalizer.rn"), script).unwrap();
 
-    let config = EventHandlerConfig {
-        base_directories: vec![temp.path().to_path_buf()],
-    };
+    let config = config_from_temp(temp.path());
     let handler = EventHandler::new(config).unwrap();
 
     let recipe = EnrichedRecipe::from_recipe("my_test__task".to_string(), None, vec![], false);
