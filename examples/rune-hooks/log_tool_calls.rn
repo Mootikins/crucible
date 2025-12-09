@@ -1,0 +1,103 @@
+/// Log all tool executions to audit trail
+///
+/// This hook runs after every tool execution and emits a custom audit event
+/// that can be captured by logging systems, webhooks, or other monitoring tools.
+///
+/// Captured information:
+/// - Tool name
+/// - Execution timestamp
+/// - Duration (if available)
+/// - Success/error status
+/// - Source (kiln, just, rune, upstream)
+#[hook(event = "tool:after", pattern = "*", priority = 200)]
+pub fn log_tool_calls(ctx, event) {
+    // Extract relevant information
+    let tool_name = event.identifier;
+    let timestamp = event.timestamp_ms;
+    let source = event.source;
+
+    // Get duration if available
+    let duration = if let Some(d) = event.payload.get("duration_ms") {
+        d
+    } else {
+        null
+    };
+
+    // Check if this was an error
+    let is_error = if let Some(err) = event.payload.get("is_error") {
+        err
+    } else {
+        false
+    };
+
+    // Emit audit event
+    ctx.emit_custom("audit:tool_executed", #{
+        tool: tool_name,
+        timestamp_ms: timestamp,
+        duration_ms: duration,
+        is_error: is_error,
+        source: source,
+    });
+
+    // Store audit info in context for potential webhook processing
+    ctx.set("audit_logged", true);
+    ctx.set("audit_timestamp", timestamp);
+
+    // Pass through unchanged
+    event
+}
+
+/// Log tool errors with additional context
+///
+/// This hook specifically handles tool errors and provides more detailed
+/// error information for debugging and monitoring.
+#[hook(event = "tool:error", pattern = "*", priority = 200)]
+pub fn log_tool_errors(ctx, event) {
+    let tool_name = event.identifier;
+    let timestamp = event.timestamp_ms;
+    let error_msg = event.payload.error;
+    let duration = event.payload.duration_ms;
+
+    // Emit detailed error event
+    ctx.emit_custom("audit:tool_error", #{
+        tool: tool_name,
+        timestamp_ms: timestamp,
+        duration_ms: duration,
+        error: error_msg,
+        source: event.source,
+    });
+
+    // Track error count in context
+    let error_count = if let Some(count) = ctx.get("error_count") {
+        count + 1
+    } else {
+        1
+    };
+
+    ctx.set("error_count", error_count);
+
+    event
+}
+
+/// Log tool discovery for monitoring new tools
+///
+/// This hook logs when new tools are discovered, useful for tracking
+/// what tools are available and when they were added.
+#[hook(event = "tool:discovered", pattern = "*", priority = 200)]
+pub fn log_tool_discovered(ctx, event) {
+    let tool_name = event.identifier;
+    let description = if let Some(desc) = event.payload.get("description") {
+        desc
+    } else {
+        "No description"
+    };
+
+    ctx.emit_custom("audit:tool_discovered", #{
+        tool: tool_name,
+        description: description,
+        upstream: event.payload.get("upstream"),
+        timestamp_ms: event.timestamp_ms,
+    });
+
+    event
+}
