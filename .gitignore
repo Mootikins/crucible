@@ -65,3 +65,4 @@ crates/crucible-llm/.fastembed_cache/
 
 # Temporary directories
 tree/
+.cargo/
