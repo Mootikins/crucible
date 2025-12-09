@@ -6,13 +6,23 @@
 //! - **RuneTools** (dynamic): Scripts from configured runes/ directories
 //!
 //! All responses are formatted with TOON for token efficiency.
+//!
+//! ## Recipe Enrichment
+//!
+//! Just recipes are automatically enriched by Rune event handlers:
+//! - Scripts in `runes/events/recipe_discovered/` are executed for each recipe
+//! - Handlers can add category, tags, priority, and custom metadata
+//! - Enrichment is visible in tool descriptions and schema annotations
 
 use crate::toon_response::toon_success_smart;
 use crate::CrucibleMcpServer;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_just::JustTools;
-use crucible_rune::{RuneDiscoveryConfig, RuneToolRegistry};
+use crucible_rune::{
+    ContentBlock, EnrichedRecipe, EventHandler, EventHandlerConfig, EventPipeline, PluginLoader,
+    RuneDiscoveryConfig, RuneToolRegistry, ToolResultEvent,
+};
 use rmcp::model::{CallToolResult, Content, Tool};
 use rmcp::service::RequestContext;
 use rmcp::ServerHandler;
@@ -28,6 +38,8 @@ use tracing::{debug, info, warn};
 /// - **Kiln tools** (12): NoteTools, SearchTools, KilnTools via CrucibleMcpServer
 /// - **Just tools** (dynamic): Recipes from justfile prefixed with `just_`
 /// - **Rune tools** (dynamic): Scripts from runes/ directories prefixed with `rune_`
+///
+/// Just recipes are automatically enriched via event handlers before being exposed.
 pub struct ExtendedMcpServer {
     /// Core Crucible MCP server with 12 kiln tools
     kiln_server: CrucibleMcpServer,
@@ -35,6 +47,10 @@ pub struct ExtendedMcpServer {
     just_tools: Arc<JustTools>,
     /// Rune script registry
     rune_registry: Arc<RuneToolRegistry>,
+    /// Event handler for recipe enrichment
+    event_handler: Option<Arc<EventHandler>>,
+    /// Event pipeline for filtering tool output
+    event_pipeline: Option<EventPipeline>,
 }
 
 impl ExtendedMcpServer {
@@ -56,10 +72,11 @@ impl ExtendedMcpServer {
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         // Create core kiln server
         let kiln_server =
-            CrucibleMcpServer::new(kiln_path, knowledge_repo, embedding_provider);
+            CrucibleMcpServer::new(kiln_path.clone(), knowledge_repo, embedding_provider);
 
         // Create Just tools wrapper
-        let just_tools = Arc::new(JustTools::new(just_dir));
+        let just_dir = just_dir.as_ref().to_path_buf();
+        let just_tools = Arc::new(JustTools::new(&just_dir));
         if just_tools.has_justfile() {
             if let Err(e) = just_tools.refresh().await {
                 warn!("Failed to load justfile: {}", e);
@@ -74,10 +91,58 @@ impl ExtendedMcpServer {
         let rune_count = rune_registry.tool_count().await;
         info!("Loaded {} Rune tools", rune_count);
 
+        // Create event handler for recipe enrichment
+        // Looks in ~/.crucible/runes/events/ and {just_dir}/runes/events/
+        let event_handler = match EventHandler::new(EventHandlerConfig::with_defaults(Some(
+            &just_dir,
+        ))) {
+            Ok(handler) => {
+                // Ensure event directories exist
+                if let Err(e) = handler.ensure_event_directories(&["recipe_discovered"]) {
+                    warn!("Failed to ensure event directories: {}", e);
+                }
+                info!("Recipe event handler initialized");
+                Some(Arc::new(handler))
+            }
+            Err(e) => {
+                warn!("Failed to create event handler: {}", e);
+                None
+            }
+        };
+
+        // Create event pipeline for filtering tool output
+        // Looks for plugins in {just_dir}/runes/plugins/
+        let event_pipeline = {
+            let plugin_dir = just_dir.join("runes").join("plugins");
+            if plugin_dir.exists() {
+                match PluginLoader::new(&plugin_dir) {
+                    Ok(mut loader) => {
+                        if let Err(e) = loader.load_plugins().await {
+                            warn!("Failed to load plugins: {}", e);
+                        }
+                        let hook_count = loader.hooks().len();
+                        if hook_count > 0 {
+                            info!("Loaded {} plugin hooks from {}", hook_count, plugin_dir.display());
+                        }
+                        Some(EventPipeline::new(Arc::new(RwLock::new(loader))))
+                    }
+                    Err(e) => {
+                        warn!("Failed to create plugin loader: {}", e);
+                        None
+                    }
+                }
+            } else {
+                debug!("No plugins directory at {}", plugin_dir.display());
+                None
+            }
+        };
+
         Ok(Self {
             kiln_server,
             just_tools,
             rune_registry,
+            event_handler,
+            event_pipeline,
         })
     }
 
@@ -98,6 +163,8 @@ impl ExtendedMcpServer {
             kiln_server,
             just_tools,
             rune_registry,
+            event_handler: None,
+            event_pipeline: None,
         }
     }
 
@@ -117,12 +184,16 @@ impl ExtendedMcpServer {
     }
 
     /// List all available tools from all sources
+    ///
+    /// Just recipes are enriched via event handlers before being returned.
     pub async fn list_all_tools(&self) -> Vec<Tool> {
         let mut tools = self.kiln_server.list_tools();
 
-        // Add Just tools
+        // Add Just tools (enriched via event handlers)
         if let Ok(just_tools) = self.just_tools.list_tools().await {
-            for jt in just_tools {
+            // Enrich recipes via event handlers
+            let enriched_tools = self.enrich_just_tools(just_tools).await;
+            for jt in enriched_tools {
                 tools.push(self.mcp_tool_from_just(&jt));
             }
         }
@@ -135,17 +206,90 @@ impl ExtendedMcpServer {
         tools
     }
 
+    /// Enrich Just tools via Rune event handlers
+    ///
+    /// Converts McpTools to EnrichedRecipes, processes through handlers,
+    /// then updates the McpTools with enrichment data.
+    async fn enrich_just_tools(
+        &self,
+        mut tools: Vec<crucible_just::McpTool>,
+    ) -> Vec<crucible_just::McpTool> {
+        let handler = match &self.event_handler {
+            Some(h) => h,
+            None => return tools, // No handler, return unchanged
+        };
+
+        // Convert McpTools to EnrichedRecipes for processing
+        let recipes: Vec<EnrichedRecipe> = tools
+            .iter()
+            .map(|t| {
+                // Extract original recipe name from tool name (strip just_ prefix, restore hyphens)
+                let recipe_name = t
+                    .name
+                    .strip_prefix("just_")
+                    .unwrap_or(&t.name)
+                    .replace('_', "-");
+
+                EnrichedRecipe::from_recipe(
+                    recipe_name,
+                    Some(t.description.clone()),
+                    vec![], // Parameters not needed for enrichment
+                    false,
+                )
+            })
+            .collect();
+
+        // Process through event handlers
+        match handler.process_recipes(recipes).await {
+            Ok(enriched) => {
+                // Update tools with enrichment data
+                for (tool, recipe) in tools.iter_mut().zip(enriched.iter()) {
+                    tool.category = recipe.category.clone();
+                    tool.tags = recipe.tags.clone();
+                    tool.priority = recipe.priority;
+                }
+                debug!(
+                    "Enriched {} Just tools via event handlers",
+                    tools.len()
+                );
+            }
+            Err(e) => {
+                warn!("Failed to enrich recipes: {}", e);
+            }
+        }
+
+        tools
+    }
+
     /// Convert crucible_just::McpTool to rmcp::model::Tool
+    ///
+    /// If enrichment data is present (category, tags), it's appended to the description.
     fn mcp_tool_from_just(&self, jt: &crucible_just::McpTool) -> Tool {
         let schema = jt
             .input_schema
             .as_object()
             .cloned()
             .unwrap_or_default();
+
+        // Build description with enrichment metadata
+        let mut description = jt.description.clone();
+
+        // Append enrichment info if present
+        let mut enrichment_parts = vec![];
+        if let Some(cat) = &jt.category {
+            enrichment_parts.push(format!("[{}]", cat));
+        }
+        if !jt.tags.is_empty() {
+            enrichment_parts.push(format!("#{}", jt.tags.join(" #")));
+        }
+        if !enrichment_parts.is_empty() {
+            description = format!("{} {}", description, enrichment_parts.join(" "));
+        }
+
         Tool {
             name: jt.name.clone().into(),
             title: None,
-            description: Some(jt.description.clone().into()),
+            description: Some(description.into()),
             input_schema: Arc::new(schema),
             output_schema: None,
             annotations: None,
@@ -192,6 +336,10 @@ impl ExtendedMcpServer {
     }
 
     /// Execute a Just recipe and return TOON-formatted result
+    ///
+    /// If an event pipeline is configured, the result is processed through
+    /// any matching hooks before being returned. Hooks can filter or transform
+    /// the output (e.g., extracting test summaries).
     pub async fn call_just_tool(
         &self,
         name: &str,
@@ -200,14 +348,49 @@ impl ExtendedMcpServer {
         let recipe_name = name.strip_prefix("just_").unwrap_or(name);
         debug!("Executing Just recipe: {} with args: {:?}", recipe_name, arguments);
 
-        match self.just_tools.execute(recipe_name, arguments).await {
+        match self.just_tools.execute(recipe_name, arguments.clone()).await {
             Ok(result) => {
+                let is_error = result.exit_code != Some(0);
+
+                // Combine stdout and stderr for the output
+                let mut output = result.stdout.clone();
+                if !result.stderr.is_empty() {
+                    if !output.is_empty() {
+                        output.push_str("\n--- stderr ---\n");
+                    }
+                    output.push_str(&result.stderr);
+                }
+
+                // Process through event pipeline if available
+                let final_output = if let Some(pipeline) = &self.event_pipeline {
+                    let event = ToolResultEvent {
+                        tool_name: name.to_string(),
+                        arguments: arguments.clone(),
+                        is_error,
+                        content: vec![ContentBlock::Text { text: output.clone() }],
+                        duration_ms: 0, // TODO: track actual duration
+                    };
+
+                    match pipeline.process_tool_result(event).await {
+                        Ok(processed) => {
+                            // Extract text from processed event
+                            processed.text_content()
+                        }
+                        Err(e) => {
+                            warn!("Event pipeline error: {}, using original output", e);
+                            output
+                        }
+                    }
+                } else {
+                    output
+                };
+
                 let response = json!({
                     "recipe": recipe_name,
                     "exit_code": result.exit_code,
-                    "stdout": result.stdout,
+                    "stdout": final_output,
                     "stderr": result.stderr,
-                    "success": result.exit_code == Some(0)
+                    "success": !is_error
                 });
                 Ok(toon_success_smart(response))
             }
