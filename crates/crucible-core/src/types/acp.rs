@@ -479,9 +479,8 @@ impl ToolCallInfo {
 /// ```rust
 /// use crucible_core::types::acp::FileDiff;
 ///
-/// let diff = FileDiff::new("/path/to/file.rs")
-///     .with_old_content("fn old() {}")
-///     .with_new_content("fn new() {}");
+/// let diff = FileDiff::new("/path/to/file.rs", "fn new() {}")
+///     .with_old_content("fn old() {}");
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileDiff {
