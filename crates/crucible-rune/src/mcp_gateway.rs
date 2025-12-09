@@ -285,7 +285,7 @@ impl UpstreamMcpClient {
     }
 
     /// Check if a tool is allowed based on whitelist/blacklist
-    fn is_tool_allowed(&self, name: &str) -> bool {
+    pub fn is_tool_allowed(&self, name: &str) -> bool {
         // Check blacklist first
         if let Some(blocked) = &self.config.blocked_tools {
             if blocked.iter().any(|b| b == name || glob_match(b, name)) {
