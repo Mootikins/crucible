@@ -128,6 +128,59 @@ impl CrucibleEvent for EnrichedRecipe {
     }
 }
 
+/// MCP tool execution result event
+///
+/// Represents the result of executing an MCP tool, used for
+/// filtering and transforming tool output through Rune plugins.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolResultEvent {
+    /// Name of the tool that was executed (e.g., "just_test")
+    pub tool_name: String,
+    /// Arguments passed to the tool
+    pub arguments: JsonValue,
+    /// Whether the tool execution resulted in an error
+    pub is_error: bool,
+    /// Content blocks returned by the tool
+    pub content: Vec<ContentBlock>,
+    /// Execution duration in milliseconds
+    pub duration_ms: u64,
+}
+
+/// Content block types matching MCP specification
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum ContentBlock {
+    /// Text content
+    #[serde(rename = "text")]
+    Text { text: String },
+    /// Image content (base64 encoded)
+    #[serde(rename = "image")]
+    Image { data: String, mime_type: String },
+    /// Resource reference
+    #[serde(rename = "resource")]
+    Resource { uri: String, text: Option<String> },
+}
+
+impl ToolResultEvent {
+    /// Get all text content concatenated with newlines
+    pub fn text_content(&self) -> String {
+        self.content
+            .iter()
+            .filter_map(|c| match c {
+                ContentBlock::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Replace all content with a single text block
+    pub fn with_text_content(mut self, text: String) -> Self {
+        self.content = vec![ContentBlock::Text { text }];
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,5 +253,91 @@ mod tests {
         let json = serde_json::to_value(&recipe).unwrap();
         assert_eq!(json["name"], "build");
         assert_eq!(json["doc"], "Build the project");
+    }
+
+    #[test]
+    fn test_tool_result_event_serialize_deserialize() {
+        let event = ToolResultEvent {
+            tool_name: "just_test".to_string(),
+            arguments: serde_json::json!({"crate": "crucible-rune"}),
+            is_error: false,
+            content: vec![ContentBlock::Text {
+                text: "test output".to_string(),
+            }],
+            duration_ms: 1234,
+        };
+
+        let json = serde_json::to_string(&event).unwrap();
+        let parsed: ToolResultEvent = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.tool_name, "just_test");
+        assert_eq!(parsed.duration_ms, 1234);
+    }
+
+    #[test]
+    fn test_content_block_text_variant() {
+        let block = ContentBlock::Text {
+            text: "hello".to_string(),
+        };
+        let json = serde_json::to_value(&block).unwrap();
+        assert_eq!(json["type"], "text");
+        assert_eq!(json["text"], "hello");
+    }
+
+    #[test]
+    fn test_content_block_image_variant() {
+        let block = ContentBlock::Image {
+            data: "base64data".to_string(),
+            mime_type: "image/png".to_string(),
+        };
+        let json = serde_json::to_value(&block).unwrap();
+        assert_eq!(json["type"], "image");
+        assert_eq!(json["mime_type"], "image/png");
+    }
+
+    #[test]
+    fn test_text_content_extracts_text_blocks() {
+        let event = ToolResultEvent {
+            tool_name: "test".to_string(),
+            arguments: serde_json::json!(null),
+            is_error: false,
+            content: vec![
+                ContentBlock::Text {
+                    text: "line1".to_string(),
+                },
+                ContentBlock::Image {
+                    data: "x".to_string(),
+                    mime_type: "image/png".to_string(),
+                },
+                ContentBlock::Text {
+                    text: "line2".to_string(),
+                },
+            ],
+            duration_ms: 0,
+        };
+
+        assert_eq!(event.text_content(), "line1\nline2");
+    }
+
+    #[test]
+    fn test_with_text_content_replaces_all() {
+        let event = ToolResultEvent {
+            tool_name: "test".to_string(),
+            arguments: serde_json::json!(null),
+            is_error: false,
+            content: vec![
+                ContentBlock::Text {
+                    text: "old1".to_string(),
+                },
+                ContentBlock::Text {
+                    text: "old2".to_string(),
+                },
+            ],
+            duration_ms: 0,
+        };
+
+        let new_event = event.with_text_content("new content".to_string());
+        assert_eq!(new_event.content.len(), 1);
+        assert_eq!(new_event.text_content(), "new content");
     }
 }
