@@ -264,6 +264,15 @@ impl ExtendedMcpServer {
             tools.push(self.mcp_tool_from_rune(&rt));
         }
 
+        // Add upstream MCP tools if available
+        if let Some(gateway) = &self.upstream_clients {
+            for upstream_tool in gateway.all_tools().await {
+                // Emit tool:discovered event for upstream tools
+                self.emit_upstream_tool_discovered(&upstream_tool).await;
+                tools.push(self.mcp_tool_from_upstream(&upstream_tool));
+            }
+        }
+
         tools
     }
 
@@ -430,6 +439,51 @@ impl ExtendedMcpServer {
         }
     }
 
+    /// Convert crucible_rune::mcp_gateway::UpstreamTool to rmcp::model::Tool
+    fn mcp_tool_from_upstream(&self, ut: &crucible_rune::mcp_gateway::UpstreamTool) -> Tool {
+        let schema = ut
+            .input_schema
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+        Tool {
+            name: ut.prefixed_name.clone().into(),
+            title: None,
+            description: ut.description.clone().map(|s| s.into()),
+            input_schema: Arc::new(schema),
+            output_schema: None,
+            annotations: None,
+            icons: None,
+            meta: None,
+        }
+    }
+
+    /// Emit tool:discovered event for upstream tool
+    async fn emit_upstream_tool_discovered(&self, tool: &crucible_rune::mcp_gateway::UpstreamTool) {
+        let bus = self.event_bus.read().await;
+
+        // Create tool metadata payload
+        let metadata = json!({
+            "name": tool.prefixed_name,
+            "original_name": tool.name,
+            "description": tool.description,
+            "input_schema": tool.input_schema,
+            "upstream": tool.upstream,
+        });
+
+        // Emit tool:discovered event
+        let event = crucible_rune::event_bus::Event::tool_discovered(&tool.prefixed_name, metadata)
+            .with_source(ToolSource::Upstream.as_str());
+
+        let (_result_event, _ctx, errors) = bus.emit(event);
+
+        if !errors.is_empty() {
+            for e in &errors {
+                warn!("Hook error during tool:discovered for upstream tool: {}", e);
+            }
+        }
+    }
+
     /// Get total tool count
     pub async fn tool_count(&self) -> usize {
         let kiln = self.kiln_server.tool_count();
@@ -446,6 +500,20 @@ impl ExtendedMcpServer {
     /// Check if a tool name is handled by Rune
     pub fn is_rune_tool(name: &str) -> bool {
         name.starts_with("rune_")
+    }
+
+    /// Check if a tool name might be from an upstream MCP server
+    ///
+    /// Upstream tools have a prefix from their upstream config.
+    /// Common prefixes: gh_, fs_, slack_, etc.
+    /// We detect them by checking if they're NOT kiln/just/rune tools.
+    pub fn is_upstream_tool(name: &str) -> bool {
+        // If it's a known prefix, it's not upstream
+        if Self::is_just_tool(name) || Self::is_rune_tool(name) {
+            return false;
+        }
+        // Otherwise, we need to check against the gateway manager at runtime
+        true
     }
 
     /// Execute a Just recipe and return TOON-formatted result
@@ -752,6 +820,58 @@ impl ExtendedMcpServer {
     pub async fn refresh_rune(&self) -> Result<usize, crucible_rune::RuneError> {
         self.rune_registry.discover().await
     }
+
+    /// Execute an upstream MCP tool and return the result
+    pub async fn call_upstream_tool(
+        &self,
+        name: &str,
+        arguments: Value,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let gateway = self.upstream_clients.as_ref().ok_or_else(|| {
+            rmcp::ErrorData::internal_error(
+                "No upstream MCP clients configured".to_string(),
+                None,
+            )
+        })?;
+
+        match gateway.call_tool(name, arguments).await {
+            Ok(result) => {
+                // Convert ToolCallResult to CallToolResult
+                let content_blocks: Vec<Content> = result
+                    .content
+                    .into_iter()
+                    .map(|block| match block {
+                        crucible_rune::mcp_gateway::ContentBlock::Text { text } => {
+                            Content::text(text)
+                        }
+                        crucible_rune::mcp_gateway::ContentBlock::Image { data, mime_type } => {
+                            Content::image(data, mime_type)
+                        }
+                        crucible_rune::mcp_gateway::ContentBlock::Resource { uri, text } => {
+                            // ResourceContents needs text and uri
+                            use rmcp::model::ResourceContents;
+                            let resource_contents = if let Some(text_content) = text {
+                                ResourceContents::text(text_content, uri)
+                            } else {
+                                ResourceContents::text("", uri)
+                            };
+                            Content::resource(resource_contents)
+                        }
+                    })
+                    .collect();
+
+                if result.is_error {
+                    Ok(CallToolResult::error(content_blocks))
+                } else {
+                    Ok(CallToolResult::success(content_blocks))
+                }
+            }
+            Err(e) => Err(rmcp::ErrorData::internal_error(
+                format!("Upstream tool '{}' failed: {}", name, e),
+                None,
+            )),
+        }
+    }
 }
 
 /// Wrapper to make ExtendedMcpServer implement Clone (required by rmcp)
@@ -845,6 +965,14 @@ impl ServerHandler for ExtendedMcpService {
             // Pass full name to registry (it stores tools with rune_ prefix)
             self.inner.call_rune_tool(name, arguments).await
         } else {
+            // Try upstream tools first if configured
+            if let Some(gateway) = self.inner.upstream_clients() {
+                // Check if this tool exists in any upstream client
+                if gateway.find_client_for_tool(name).await.is_some() {
+                    return self.inner.call_upstream_tool(name, arguments).await;
+                }
+            }
+
             // Delegate to kiln server for core tools
             self.inner
                 .kiln_server
@@ -1335,5 +1463,135 @@ mod tests {
         // Verify it's the same manager (Arc pointer equality)
         let retrieved = server.upstream_clients().unwrap();
         assert!(Arc::ptr_eq(&retrieved, &manager), "Should return the same Arc instance");
+    }
+
+    #[tokio::test]
+    async fn test_list_all_tools_includes_upstream() {
+        use crucible_rune::mcp_gateway::{McpGatewayManager, UpstreamConfig, UpstreamTool, TransportConfig};
+        use serde_json::json;
+
+        let temp = TempDir::new().unwrap();
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+        let server = ExtendedMcpServer::kiln_only(
+            temp.path().to_str().unwrap().to_string(),
+            knowledge_repo,
+            embedding_provider,
+        );
+
+        // Create a manager with a mock upstream client
+        let bus = EventBus::new();
+        let mut manager = McpGatewayManager::new(bus);
+
+        // Add a mock upstream config
+        let config = UpstreamConfig {
+            name: "test_upstream".to_string(),
+            transport: TransportConfig::Stdio {
+                command: "echo".to_string(),
+                args: vec![],
+                env: vec![],
+            },
+            prefix: Some("upstream_".to_string()),
+            allowed_tools: None,
+            blocked_tools: None,
+            auto_reconnect: false,
+        };
+
+        let client = manager.add_client(config);
+
+        // Manually add some mock tools to the client
+        let mock_tool = UpstreamTool {
+            name: "test_tool".to_string(),
+            prefixed_name: "upstream_test_tool".to_string(),
+            description: Some("Test upstream tool".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "input": {"type": "string"}
+                }
+            }),
+            upstream: "test_upstream".to_string(),
+        };
+
+        client.update_tools(vec![mock_tool]).await;
+
+        // Set the manager on the server
+        let server = server.with_upstream_clients(Arc::new(manager));
+
+        // List all tools
+        let tools = server.list_all_tools().await;
+
+        // Should have kiln tools + upstream tools
+        let upstream_tools: Vec<_> = tools.iter().filter(|t| t.name.as_ref().starts_with("upstream_")).collect();
+        assert_eq!(upstream_tools.len(), 1, "Should have 1 upstream tool");
+        assert_eq!(upstream_tools[0].name.as_ref(), "upstream_test_tool");
+    }
+
+    #[tokio::test]
+    async fn test_upstream_tool_routing() {
+        use crucible_rune::mcp_gateway::{McpGatewayManager, UpstreamConfig, UpstreamTool, TransportConfig};
+        use serde_json::json;
+
+        let temp = TempDir::new().unwrap();
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+        let server = ExtendedMcpServer::kiln_only(
+            temp.path().to_str().unwrap().to_string(),
+            knowledge_repo,
+            embedding_provider,
+        );
+
+        // Create a manager with a mock upstream client
+        let bus = EventBus::new();
+        let mut manager = McpGatewayManager::new(bus);
+
+        let config = UpstreamConfig {
+            name: "test_upstream".to_string(),
+            transport: TransportConfig::Stdio {
+                command: "echo".to_string(),
+                args: vec![],
+                env: vec![],
+            },
+            prefix: Some("gh_".to_string()),
+            allowed_tools: None,
+            blocked_tools: None,
+            auto_reconnect: false,
+        };
+
+        let client = manager.add_client(config);
+
+        // Add a mock tool
+        let mock_tool = UpstreamTool {
+            name: "search_repos".to_string(),
+            prefixed_name: "gh_search_repos".to_string(),
+            description: Some("Search repositories".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"}
+                }
+            }),
+            upstream: "test_upstream".to_string(),
+        };
+
+        client.update_tools(vec![mock_tool]).await;
+
+        let server = server.with_upstream_clients(Arc::new(manager));
+
+        // Verify the tool is discoverable
+        let tools = server.list_all_tools().await;
+        let gh_tool = tools.iter().find(|t| t.name.as_ref() == "gh_search_repos");
+        assert!(gh_tool.is_some(), "Should find gh_search_repos tool");
+
+        // Verify is_upstream_tool detection
+        assert!(!ExtendedMcpServer::is_upstream_tool("just_build"), "just_ tools are not upstream");
+        assert!(!ExtendedMcpServer::is_upstream_tool("rune_test"), "rune_ tools are not upstream");
+        assert!(ExtendedMcpServer::is_upstream_tool("gh_search_repos"), "gh_ tools could be upstream");
+
+        // Note: We can't actually test tool execution here without implementing
+        // the full rmcp transport, but we've verified the tool is discoverable
+        // and the routing logic is in place
     }
 }
