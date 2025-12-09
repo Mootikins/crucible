@@ -3,19 +3,11 @@
 use serde::{Deserialize, Serialize};
 
 /// Configuration for event system hooks
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HooksConfig {
     /// Built-in hooks configuration
     #[serde(default)]
     pub builtin: BuiltinHooksTomlConfig,
-}
-
-impl Default for HooksConfig {
-    fn default() -> Self {
-        Self {
-            builtin: BuiltinHooksTomlConfig::default(),
-        }
-    }
 }
 
 /// Configuration for built-in hooks (TOML-friendly version)

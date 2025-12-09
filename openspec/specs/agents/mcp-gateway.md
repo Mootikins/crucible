@@ -129,7 +129,25 @@ prefix = "custom_"
 type = "sse"
 url = "http://localhost:3000/sse"
 auth_header = "Bearer secret_token"
+
+# Context7 - Up-to-date code documentation for LLMs
+[[gateway.servers]]
+name = "context7"
+prefix = "c7_"
+auto_reconnect = true
+
+[gateway.servers.transport]
+type = "stdio"
+command = "npx"
+args = ["-y", "@upstash/context7-mcp"]
+
+[gateway.servers.transport.env]
+CONTEXT7_API_KEY = "your_api_key_here"
 ```
+
+> **Note**: Context7 provides up-to-date documentation for libraries and frameworks.
+> Get your API key from [context7.com](https://context7.com).
+> See [Context7 GitHub](https://github.com/upstash/context7) for more information.
 
 ## Configuration Reference
 
