@@ -94,6 +94,11 @@ cru mcp
 
 The MCP server exposes **12 tools** organized into three categories:
 
+**Agent Workflow Support:**
+- **Research-Plan-Implement Framework**: AI agents can use `/1_research_codebase`, `/2_create_plan`, `/3_validate_plan`, and `/4_implement_plan` commands
+- **Specialized Agents**: Access to `@codebase-locator`, `@codebase-analyzer`, and `@codebase-pattern-finder` for targeted exploration
+- **Persistent Storage**: Work artifacts stored in `~/.local/share/opencode/thoughts/` with proper data segregation
+
 **Note Tools (6 tools):**
 - `create_note` - Create new notes with YAML frontmatter
 - `read_note` - Read note content with optional line ranges
@@ -114,28 +119,52 @@ The MCP server exposes **12 tools** organized into three categories:
 
 When using the `cru chat` command with an ACP-compatible agent (like Claude Code), the agent automatically receives access to these tools and can use them to help you manage your knowledge base.
 
+**Available Agent Commands:**
+- `/1_research_codebase` - Parallel codebase exploration
+- `/2_create_plan` - Interactive implementation planning  
+- `/3_validate_plan` - Verify implementation matches plan
+- `/4_implement_plan` - Execute plan phase-by-phase
+- `/5_save_progress` - Checkpoint work session
+- `/6_resume_work` - Restore session context
+- `/7_research_cloud` - Read-only cloud analysis
+- `/8_define_test_cases` - DSL-based test design
+
 ## 🏗️ Architecture
 
-Crucible uses a clean, layered architecture:
+Crucible uses a clean, layered architecture with orthogonal systems:
 
 - **Core Layer** (`crucible-core`): Domain logic, parsing, storage traits, agent orchestration
 - **Infrastructure Layer**: SurrealDB storage, embedding providers (Fastembed, OpenAI, Ollama), file watching
-- **Interface Layer**: CLI (current), with future desktop/web interfaces planned
+- **Interface Layer**: CLI (current), Web UI, with future desktop interfaces planned
 - **Trait-Based Design**: All major components exposed via traits for testability and extensibility
+
+**System Organization:**
+- **parser**: Markdown → structured data with type ownership in `crucible-core/src/parser/types/`
+- **storage**: SurrealDB, EAV graph, Merkle trees
+- **agents**: Agent cards, LLM providers, tools with MCP integration
+- **workflows**: Definitions + sessions with Research-Plan-Implement framework
+- **plugins**: Extension points, Rune scripting with security sandboxing
+- **apis**: HTTP, WebSocket, events via Axum
+- **cli**: Commands, REPL, configuration with Justfile integration
+- **desktop**: Tauri GUI (future)
 
 ### Tech Stack
 
 - **Language**: Rust with Tokio async runtime
 - **Database**: SurrealDB (embedded) with vector extensions
 - **Embeddings**: Fastembed (local), OpenAI, or Ollama
-- **Scripting**: Rune with security sandboxing
-- **CLI**: Clap-based command line interface
+- **Scripting**: Rune with security sandboxing and MCP tool support
+- **CLI**: Clap-based command line interface with Justfile recipes
+- **Web**: Svelte 5 frontend with Axum backend and SSE support
+- **Agent Integration**: Model Context Protocol (MCP) with 12 exposed tools
+- **Query Language**: TOON Query (tq) - jq-like structured data manipulation
 
 ## 📚 Documentation
 
 - **[Philosophy](./docs/PHILOSOPHY.md)** - Core principles and design philosophy
 - **[Architecture](./docs/ARCHITECTURE.md)** - Comprehensive system architecture and technical details
 - **[AI Agent Guide](./AGENTS.md)** - Instructions for AI agents working on the codebase
+- **[OpenSpec Workflow](./openspec/AGENTS.md)** - Change proposal and specification system
 
 ## 🔒 Safety & Performance
 
