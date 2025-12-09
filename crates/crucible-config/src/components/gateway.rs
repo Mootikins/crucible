@@ -4,19 +4,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Configuration for the MCP Gateway
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GatewayConfig {
     /// Configured upstream MCP servers
     #[serde(default)]
     pub servers: Vec<UpstreamServerConfig>,
-}
-
-impl Default for GatewayConfig {
-    fn default() -> Self {
-        Self {
-            servers: Vec::new(),
-        }
-    }
 }
 
 /// Configuration for a single upstream MCP server
