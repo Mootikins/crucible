@@ -105,11 +105,11 @@ the handler. Blacklist takes precedence over whitelist.
 
 ## 11. Configuration
 
-- [ ] 11.1 Add `[discovery]` section for path configuration
-- [ ] 11.2 Add `[gateway]` section for upstream MCP server definitions
-- [ ] 11.3 Add `[hooks.builtin]` section for built-in hook settings
-- [ ] 11.4 Support pattern overrides for built-in hooks
-- [ ] 11.5 Add configuration validation at startup
+- [x] 11.1 Add `[discovery]` section for path configuration
+- [x] 11.2 Add `[gateway]` section for upstream MCP server definitions
+- [x] 11.3 Add `[hooks.builtin]` section for built-in hook settings
+- [x] 11.4 Support pattern overrides for built-in hooks
+- [x] 11.5 Add configuration validation at startup
 
 ## 12. Documentation
 
