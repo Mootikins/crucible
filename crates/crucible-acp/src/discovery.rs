@@ -109,9 +109,13 @@ pub async fn discover_agent(preferred: Option<&str>) -> Result<AgentInfo> {
         "No compatible ACP agent found.\n\
          \n\
          Compatible agents:\n\
-         • opencode: Built into Crucible (no installation needed)\n\
-         • claude: npm install -g @zed-industries/claude-code-acp\n\
+         \n\
+         Standalone agents:\n\
+         • opencode: go install github.com/grafana/opencode@latest\n\
          • gemini: npm install -g gemini-cli\n\
+         \n\
+         Bridge agents (require base CLI):\n\
+         • claude: npm install -g @zed-industries/claude-code-acp\n\
          • codex: npm install -g @zed-industries/codex-acp\n\
          • cursor: npm install -g cursor-acp\n\
          \n\
@@ -134,24 +138,27 @@ pub fn get_agent_help() -> String {
 =================
 
 • opencode
-  Built into Crucible (no installation needed)
-  Open source ACP agent with basic functionality
+  Installation: go install github.com/grafana/opencode@latest
+  Standalone ACP agent with basic functionality
 
 • claude
-  Installation: npm install -g @zed-industries/claude-code-acp
-  Claude Code agent with advanced code understanding
+  Requirements: Claude Code CLI installed
+  Bridge: npm install -g @zed-industries/claude-code-acp
+  Connects to Claude Code agent
 
 • gemini
   Installation: npm install -g gemini-cli
-  Google's Gemini AI agent
+  Google's Gemini AI standalone agent
 
 • codex
-  Installation: npm install -g @zed-industries/codex-acp
-  OpenAI Codex agent for code generation
+  Requirements: OpenAI Codex CLI installed
+  Bridge: npm install -g @zed-industries/codex-acp
+  Connects to OpenAI Codex agent
 
 • cursor
-  Installation: npm install -g cursor-acp
-  Cursor IDE's ACP agent
+  Requirements: Cursor CLI installed
+  Bridge: npm install -g cursor-acp
+  Connects to Cursor IDE's ACP agent
 
 Usage:
   cru chat                    # Auto-detect first available agent
@@ -161,6 +168,8 @@ Usage:
 Examples:
   cru chat --agent claude \"Refactor this function\"
   cru chat --agent cursor \"Add error handling\"
+
+Note: Some agents require both the base CLI and a bridge package.
 ".to_string()
 }
 
