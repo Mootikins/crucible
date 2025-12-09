@@ -25,13 +25,19 @@
 //! ```
 
 mod discovery;
+mod event_handler;
+mod events;
 mod executor;
 mod registry;
+mod rune_types;
 mod types;
 
 pub use discovery::ToolDiscovery;
+pub use event_handler::{EventHandler, EventHandlerConfig};
+pub use events::{CrucibleEvent, EnrichedRecipe, RecipeEnrichment, RecipeParameter};
 pub use executor::RuneExecutor;
 pub use registry::RuneToolRegistry;
+pub use rune_types::crucible_module;
 pub use types::{RuneDiscoveryConfig, RuneExecutionResult, RuneTool};
 
 use thiserror::Error;
