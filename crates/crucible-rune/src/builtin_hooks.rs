@@ -44,6 +44,10 @@ pub struct BuiltinHooksConfig {
     /// Tool selector hook configuration
     #[serde(default)]
     pub tool_selector: ToolSelectorConfig,
+
+    /// Recipe enrichment hook configuration
+    #[serde(default)]
+    pub recipe_enrichment: HookToggle,
 }
 
 impl Default for BuiltinHooksConfig {
@@ -61,6 +65,11 @@ impl Default for BuiltinHooksConfig {
             },
             event_emit: EventEmitConfig::default(),
             tool_selector: ToolSelectorConfig::default(),
+            recipe_enrichment: HookToggle {
+                enabled: true,
+                pattern: "just_*".to_string(),
+                priority: 5, // Run early, before other enrichment
+            },
         }
     }
 }
@@ -407,6 +416,121 @@ fn glob_match_recursive(pattern: &[char], text: &[char], pi: usize, ti: usize) -
     }
 }
 
+/// Create a recipe enrichment hook that categorizes Just recipes
+///
+/// This hook runs on `tool:discovered` events for Just recipes and automatically
+/// adds category, tags, and priority based on the recipe name.
+///
+/// Categorization logic:
+/// - test* → category: "testing", tags: ["ci"]
+/// - build*, release* → category: "build"
+/// - fmt*, clippy*, check* → category: "quality", tags: ["ci", "quick"]
+/// - docs* → category: "documentation"
+/// - clean → category: "maintenance"
+/// - deploy* → category: "deploy"
+/// - etc.
+pub fn create_recipe_enrichment_hook(config: &HookToggle) -> Handler {
+    let pattern = config.pattern.clone();
+    let priority = config.priority;
+
+    Handler::new(
+        "builtin:recipe_enrichment",
+        EventType::ToolDiscovered,
+        pattern,
+        move |_ctx, mut event| {
+            // Extract recipe name from tool name (strip just_ prefix)
+            let tool_name = event.identifier.clone();
+            let recipe_name = tool_name
+                .strip_prefix("just_")
+                .unwrap_or(&tool_name)
+                .replace('_', "-");
+
+            // Categorize by name
+            let category = categorize_recipe(&recipe_name);
+
+            // Determine tags based on category and name
+            let tags = determine_tags(&recipe_name, category);
+
+            // Determine priority
+            let priority = determine_priority(&recipe_name, category);
+
+            // Add enrichment to payload
+            if let Some(obj) = event.payload.as_object_mut() {
+                obj.insert("category".to_string(), json!(category));
+                obj.insert("tags".to_string(), json!(tags));
+                obj.insert("priority".to_string(), json!(priority));
+            }
+
+            debug!(
+                "Enriched recipe '{}' with category='{}', tags={:?}, priority={}",
+                recipe_name, category, tags, priority
+            );
+
+            Ok(event)
+        },
+    )
+    .with_priority(priority)
+    .with_enabled(config.enabled)
+}
+
+/// Categorize a recipe by name
+fn categorize_recipe(name: &str) -> &'static str {
+    // Use the existing categorize_by_name_impl from rune_types
+    crate::rune_types::categorize_by_name_impl(name)
+}
+
+/// Determine tags for a recipe based on name and category
+fn determine_tags(name: &str, category: &str) -> Vec<String> {
+    let mut tags = Vec::new();
+
+    // Add category-specific tags
+    match category {
+        "testing" => {
+            tags.push("ci".to_string());
+            if name.contains("unit") || name.contains("quick") {
+                tags.push("quick".to_string());
+            }
+        }
+        "quality" => {
+            tags.push("ci".to_string());
+            tags.push("quick".to_string());
+        }
+        "build" => {
+            tags.push("build".to_string());
+        }
+        "ci" => {
+            tags.push("ci".to_string());
+        }
+        _ => {}
+    }
+
+    tags
+}
+
+/// Determine priority for a recipe based on name and category
+fn determine_priority(name: &str, category: &str) -> i32 {
+    match category {
+        "testing" => {
+            if name.contains("unit") || name.contains("quick") {
+                10 // High priority for quick tests
+            } else {
+                20 // Normal priority for other tests
+            }
+        }
+        "quality" => 15, // High priority for quality checks
+        "build" => {
+            if name.contains("release") {
+                40 // Lower priority for release builds
+            } else {
+                30 // Normal priority for dev builds
+            }
+        }
+        "ci" => 5,            // Very high priority
+        "default" => 1,       // Highest priority (usually help/list)
+        _ => 50,              // Default priority
+    }
+}
+
 /// Register all enabled built-in hooks on an EventBus
 pub fn register_builtin_hooks(bus: &mut crate::event_bus::EventBus, config: &BuiltinHooksConfig) {
     if config.test_filter.enabled {
@@ -427,6 +551,11 @@ pub fn register_builtin_hooks(bus: &mut crate::event_bus::EventBus, config: &Bui
     if config.tool_selector.enabled {
         bus.register(create_tool_selector_hook(&config.tool_selector));
         debug!("Registered builtin:tool_selector hook");
+    }
+
+    if config.recipe_enrichment.enabled {
+        bus.register(create_recipe_enrichment_hook(&config.recipe_enrichment));
+        debug!("Registered builtin:recipe_enrichment hook");
     }
 }
 
@@ -1045,5 +1174,131 @@ test result: ok. 42 passed; 0 failed"#;
         assert!(parsed.enabled);
         assert_eq!(parsed.prefix, Some("gh_".to_string()));
         assert_eq!(parsed.allowed_tools, Some(vec!["search_*".to_string()]));
+    }
+
+    // ============================================================================
+    // Recipe Enrichment Hook Tests
+    // ============================================================================
+
+    #[test]
+    fn test_recipe_enrichment_hook_categorizes_test() {
+        let config = HookToggle {
+            enabled: true,
+            pattern: "just_*".to_string(),
+            priority: 5,
+        };
+
+        let hook = create_recipe_enrichment_hook(&config);
+        let mut ctx = EventContext::new();
+
+        let event = Event::tool_discovered("just_test", json!({"name": "just_test"}));
+        let result = hook.handle(&mut ctx, event).unwrap();
+
+        assert!(!result.is_cancelled());
+        assert_eq!(result.payload["category"], json!("testing"));
+        assert!(result.payload["tags"].as_array().unwrap().contains(&json!("ci")));
+        assert_eq!(result.payload["priority"], json!(20)); // Default test priority
+    }
+
+    #[test]
+    fn test_recipe_enrichment_hook_categorizes_build() {
+        let config = HookToggle {
+            enabled: true,
+            pattern: "just_*".to_string(),
+            priority: 5,
+        };
+
+        let hook = create_recipe_enrichment_hook(&config);
+        let mut ctx = EventContext::new();
+
+        let event = Event::tool_discovered("just_build", json!({"name": "just_build"}));
+        let result = hook.handle(&mut ctx, event).unwrap();
+
+        assert_eq!(result.payload["category"], json!("build"));
+        assert!(result.payload["tags"].as_array().unwrap().contains(&json!("build")));
+        assert_eq!(result.payload["priority"], json!(30));
+    }
+
+    #[test]
+    fn test_recipe_enrichment_hook_categorizes_quality() {
+        let config = HookToggle {
+            enabled: true,
+            pattern: "just_*".to_string(),
+            priority: 5,
+        };
+
+        let hook = create_recipe_enrichment_hook(&config);
+        let mut ctx = EventContext::new();
+
+        let event = Event::tool_discovered("just_fmt", json!({"name": "just_fmt"}));
+        let result = hook.handle(&mut ctx, event).unwrap();
+
+        assert_eq!(result.payload["category"], json!("quality"));
+        let tags = result.payload["tags"].as_array().unwrap();
+        assert!(tags.contains(&json!("ci")));
+        assert!(tags.contains(&json!("quick")));
+        assert_eq!(result.payload["priority"], json!(15));
+    }
+
+    #[test]
+    fn test_recipe_enrichment_hook_quick_test_priority() {
+        let config = HookToggle {
+            enabled: true,
+            pattern: "just_*".to_string(),
+            priority: 5,
+        };
+
+        let hook = create_recipe_enrichment_hook(&config);
+        let mut ctx = EventContext::new();
+
+        // Quick test should have higher priority than normal test
+        let event = Event::tool_discovered("just_test_unit", json!({"name": "just_test_unit"}));
+        let result = hook.handle(&mut ctx, event).unwrap();
+
+        assert_eq!(result.payload["category"], json!("testing"));
+        let tags = result.payload["tags"].as_array().unwrap();
+        assert!(tags.contains(&json!("ci")));
+        assert!(tags.contains(&json!("quick")));
+        assert_eq!(result.payload["priority"], json!(10)); // Higher priority for quick tests
+    }
+
+    #[test]
+    fn test_recipe_enrichment_hook_handles_hyphens() {
+        let config = HookToggle {
+            enabled: true,
+            pattern: "just_*".to_string(),
+            priority: 5,
+        };
+
+        let hook = create_recipe_enrichment_hook(&config);
+        let mut ctx = EventContext::new();
+
+        // Underscores in tool name should be converted to hyphens for categorization
+        let event = Event::tool_discovered("just_test_crate", json!({"name": "just_test_crate"}));
+        let result = hook.handle(&mut ctx, event).unwrap();
+
+        // test-crate should be categorized as testing
+        assert_eq!(result.payload["category"], json!("testing"));
+    }
+
+    #[test]
+    fn test_builtin_config_includes_recipe_enrichment() {
+        let config = BuiltinHooksConfig::default();
+        assert!(config.recipe_enrichment.enabled);
+        assert_eq!(config.recipe_enrichment.pattern, "just_*");
+        assert_eq!(config.recipe_enrichment.priority, 5);
+    }
+
+    #[test]
+    fn test_register_builtin_hooks_includes_recipe_enrichment() {
+        let mut bus = EventBus::new();
+        let config = BuiltinHooksConfig::default();
+
+        register_builtin_hooks(&mut bus, &config);
+
+        // Should have registered recipe enrichment hook
+        let handler = bus.get_handler("builtin:recipe_enrichment");
+        assert!(handler.is_some(), "builtin:recipe_enrichment hook should be registered");
+        assert_eq!(handler.unwrap().event_type, EventType::ToolDiscovered);
     }
 }
