@@ -130,7 +130,15 @@ impl RuneExecutor {
             }
         }
 
-        let unit = result.map_err(|e| RuneError::Compile(e.to_string()))?;
+        let unit = result.map_err(|e| {
+            // Include diagnostics in the error message
+            let diag_str: Vec<String> = diagnostics
+                .diagnostics()
+                .iter()
+                .map(|d| format!("{:?}", d))
+                .collect();
+            RuneError::Compile(format!("{}\nDiagnostics: {}", e, diag_str.join("\n")))
+        })?;
 
         Ok(Arc::new(unit))
     }
@@ -663,5 +671,144 @@ pub async fn async_compute() {
 
         let result = executor.call_function(&unit, "async_compute", ()).await.unwrap();
         assert_eq!(result, serde_json::json!(42));
+    }
+
+    // =========================================================================
+    // TDD: Tests for Option, Result, and iterator patterns
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_option_some_returns_value() {
+        let executor = RuneExecutor::new().unwrap();
+        let source = r#"
+pub fn maybe_value(x) {
+    if x > 0 { Some(x * 2) } else { None }
+}
+"#;
+        let unit = executor.compile("test", source).unwrap();
+
+        let result = executor.call_function(&unit, "maybe_value", (5i64,)).await.unwrap();
+        assert_eq!(result, serde_json::json!(10));
+    }
+
+    #[tokio::test]
+    async fn test_option_none_returns_null() {
+        let executor = RuneExecutor::new().unwrap();
+        let source = r#"
+pub fn maybe_value(x) {
+    if x > 0 { Some(x * 2) } else { None }
+}
+"#;
+        let unit = executor.compile("test", source).unwrap();
+
+        let result = executor.call_function(&unit, "maybe_value", (0i64,)).await.unwrap();
+        assert!(result.is_null());
+    }
+
+    #[tokio::test]
+    async fn test_vec_iter_map_collect() {
+        let executor = RuneExecutor::new().unwrap();
+        let source = r#"
+pub fn double_all(nums) {
+    nums.iter().map(|x| x * 2).collect::<Vec>()
+}
+"#;
+        let unit = executor.compile("test", source).unwrap();
+
+        let nums = executor.json_to_rune_value(serde_json::json!([1, 2, 3])).unwrap();
+        let result = executor.call_function(&unit, "double_all", (nums,)).await.unwrap();
+        assert_eq!(result, serde_json::json!([2, 4, 6]));
+    }
+
+    #[tokio::test]
+    async fn test_vec_iter_filter_collect() {
+        let executor = RuneExecutor::new().unwrap();
+        // Rune filter syntax - no dereference needed
+        let source = r#"
+pub fn filter_positive(nums) {
+    nums.iter().filter(|x| x > 0).collect::<Vec>()
+}
+"#;
+        let unit = executor.compile("test", source).unwrap();
+
+        let nums = executor.json_to_rune_value(serde_json::json!([-1, 2, -3, 4])).unwrap();
+        let result = executor.call_function(&unit, "filter_positive", (nums,)).await.unwrap();
+        assert_eq!(result, serde_json::json!([2, 4]));
+    }
+
+    #[tokio::test]
+    async fn test_string_split_iteration() {
+        let executor = RuneExecutor::new().unwrap();
+        // In Rune, variables are mutable by default (no `mut` keyword)
+        // Test basic split and iteration
+        let source = r#"
+pub fn count_words(text) {
+    let words = text.split(' ');
+    let count = 0;
+    for word in words {
+        count = count + 1;
+    }
+    count
+}
+"#;
+        let unit = executor.compile("test", source).expect("compile failed");
+
+        let text = executor.json_to_rune_value(serde_json::json!("hello world foo")).unwrap();
+        let result = executor.call_function(&unit, "count_words", (text,)).await.unwrap();
+        assert_eq!(result, serde_json::json!(3));
+    }
+
+    #[tokio::test]
+    async fn test_string_concat_in_loop() {
+        let executor = RuneExecutor::new().unwrap();
+        // Test building string in loop
+        let source = r#"
+pub fn join_words(text) {
+    let words = text.split(' ');
+    let result = "";
+    let first = true;
+    for word in words {
+        if !first {
+            result = result + "-";
+        }
+        result = result + word;
+        first = false;
+    }
+    result
+}
+"#;
+        let unit = executor.compile("test", source).expect("compile failed");
+
+        let text = executor.json_to_rune_value(serde_json::json!("hello world")).unwrap();
+        let result = executor.call_function(&unit, "join_words", (text,)).await.unwrap();
+        assert_eq!(result, serde_json::json!("hello-world"));
+    }
+
+    #[tokio::test]
+    async fn test_iter_map_collect() {
+        let executor = RuneExecutor::new().unwrap();
+        // Test iter().map().collect() - join is done manually
+        let source = r#"
+pub fn double_to_strings(nums) {
+    // Map numbers to strings
+    let doubled = nums.iter().map(|x| (x * 2).to_string()).collect::<Vec>();
+    // Manual join since Vec.join() isn't available
+    let result = "";
+    let first = true;
+    for s in doubled {
+        if !first {
+            result = result + ", ";
+        }
+        result = result + s;
+        first = false;
+    }
+    result
+}
+"#;
+        let unit = executor.compile("test", source).expect("compile failed");
+
+        let nums = executor.json_to_rune_value(serde_json::json!([1, 2, 3])).unwrap();
+        let result = executor.call_function(&unit, "double_to_strings", (nums,)).await.unwrap();
+        assert_eq!(result, serde_json::json!("2, 4, 6"));
     }
 }
