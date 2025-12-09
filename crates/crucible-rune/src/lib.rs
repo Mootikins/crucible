@@ -26,6 +26,7 @@
 
 mod discovery;
 mod event_handler;
+mod event_pipeline;
 mod events;
 mod executor;
 mod plugin_loader;
@@ -37,6 +38,7 @@ mod types;
 
 pub use discovery::ToolDiscovery;
 pub use event_handler::{EventHandler, EventHandlerConfig};
+pub use event_pipeline::EventPipeline;
 pub use events::{
     ContentBlock, CrucibleEvent, EnrichedRecipe, RecipeEnrichment, RecipeParameter,
     ToolResultEvent,
