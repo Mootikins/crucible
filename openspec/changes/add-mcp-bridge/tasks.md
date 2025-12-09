@@ -49,12 +49,14 @@
 
 ## 6. Tool Events
 
-- [ ] 6.1 Emit `tool:before` event before tool execution in ExtendedMcpServer
-- [ ] 6.2 Emit `tool:after` event after tool execution
-- [ ] 6.3 Emit `tool:error` event on tool failure
-- [ ] 6.4 Allow `tool:before` hooks to modify arguments or cancel execution
-- [ ] 6.5 Allow `tool:after` hooks to transform result
-- [ ] 6.6 Add tool source metadata (kiln, just, rune, upstream)
+- [x] 6.1 Emit `tool:before` event before tool execution (ToolEventEmitter)
+- [x] 6.2 Emit `tool:after` event after tool execution
+- [x] 6.3 Emit `tool:error` event on tool failure
+- [x] 6.4 Allow `tool:before` hooks to modify arguments or cancel execution
+- [x] 6.5 Allow `tool:after` hooks to transform result
+- [x] 6.6 Add tool source metadata (kiln, just, rune, upstream) via ToolSource enum
+
+Note: ToolEventEmitter provides the API, but ExtendedMcpServer integration is pending (Section 10)
 
 ## 7. Note Events
 

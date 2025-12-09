@@ -40,6 +40,7 @@ mod plugin_types;
 mod regex_module;
 mod registry;
 mod rune_types;
+pub mod tool_events;
 mod types;
 
 pub use attribute_discovery::{attr_parsers, AttributeDiscovery, FromAttributes};
@@ -53,6 +54,7 @@ pub use event_bus::{Event, EventBus, EventContext, EventType, Handler, HandlerEr
 pub use event_handler::{EventHandler, EventHandlerConfig};
 pub use hook_system::{BuiltinHook, Hook, HookManager, HookRegistry, RuneHookHandler};
 pub use hook_types::RuneHook;
+pub use tool_events::{ContentBlock as ToolContentBlock, ToolEventEmitter, ToolSource};
 pub use event_pipeline::EventPipeline;
 pub use events::{
     ContentBlock, CrucibleEvent, EnrichedRecipe, RecipeEnrichment, RecipeParameter,
