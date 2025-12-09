@@ -1,0 +1,33 @@
+/// Recipe categorizer - auto-categorizes recipes by name patterns
+///
+/// This script demonstrates the event system by categorizing
+/// recipes based on naming conventions.
+
+use crucible::categorize_by_name;
+
+/// Handle recipe_discovered event
+///
+/// Receives a recipe object and returns enrichment data.
+pub fn on_recipe_discovered(recipe) {
+    let name = recipe["name"];
+    let category = categorize_by_name(name);
+
+    // Build enrichment with category and tags
+    let tags = [];
+
+    // Add CI tag if recipe is likely used in CI
+    if name.starts_with("ci") || name.starts_with("test") || name.starts_with("check") {
+        tags.push("ci");
+    }
+
+    // Add "quick" tag for likely fast recipes
+    if name == "check" || name == "fmt" || name.starts_with("lint") {
+        tags.push("quick");
+    }
+
+    // Return enrichment object
+    #{
+        category: category,
+        tags: tags,
+    }
+}
