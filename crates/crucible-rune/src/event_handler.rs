@@ -1,9 +1,10 @@
 //! Event handler system - discovers and executes Rune scripts for events
 //!
 //! Scripts are discovered from:
-//! - `~/.crucible/runes/events/<event_name>/`
-//! - `{kiln}/runes/events/<event_name>/`
+//! - `~/.crucible/events/<event_name>/`
+//! - `KILN/.crucible/events/<event_name>/`
 
+use crate::discovery_paths::DiscoveryPaths;
 use crate::events::{CrucibleEvent, EnrichedRecipe};
 use crate::regex_module::regex_module;
 use crate::rune_types::{crucible_module, RuneRecipeEnrichment};
@@ -18,37 +19,37 @@ use tracing::{debug, warn};
 /// Configuration for event handler discovery
 #[derive(Debug, Clone)]
 pub struct EventHandlerConfig {
-    /// Base directories to search for `runes/events/` folders
-    pub base_directories: Vec<PathBuf>,
+    /// Discovery paths for events
+    discovery_paths: DiscoveryPaths,
 }
 
 impl EventHandlerConfig {
     /// Create config with default directories
+    ///
+    /// Default directories:
+    /// - `~/.crucible/events/` (global)
+    /// - `KILN/.crucible/events/` (kiln-specific, if provided)
     pub fn with_defaults(kiln_path: Option<&Path>) -> Self {
-        let mut dirs = vec![];
-
-        // Global runes directory
-        if let Some(home) = dirs::home_dir() {
-            dirs.push(home.join(".crucible"));
-        }
-
-        // Kiln-specific runes directory
-        if let Some(kiln) = kiln_path {
-            dirs.push(kiln.to_path_buf());
-        }
-
         Self {
-            base_directories: dirs,
+            discovery_paths: DiscoveryPaths::new("events", kiln_path),
         }
     }
 
-    /// Get all event directories for a given event name
+    /// Create config from DiscoveryPaths
+    pub fn from_discovery_paths(paths: DiscoveryPaths) -> Self {
+        Self {
+            discovery_paths: paths,
+        }
+    }
+
+    /// Get event directories for a given event name
     fn event_directories(&self, event_name: &str) -> Vec<PathBuf> {
-        self.base_directories
-            .iter()
-            .map(|base| base.join("runes").join("events").join(event_name))
-            .filter(|p| p.is_dir())
-            .collect()
+        self.discovery_paths.existing_subdir(event_name)
+    }
+
+    /// Get all base paths being searched
+    pub fn base_directories(&self) -> Vec<PathBuf> {
+        self.discovery_paths.all_paths()
     }
 }
 
@@ -95,9 +96,9 @@ impl EventHandler {
 
     /// Ensure event directories exist (creates empty folders)
     pub fn ensure_event_directories(&self, event_names: &[&str]) -> Result<(), RuneError> {
-        for base in &self.config.base_directories {
+        for base in self.config.base_directories() {
             for event_name in event_names {
-                let event_dir = base.join("runes").join("events").join(event_name);
+                let event_dir = base.join(event_name);
                 if !event_dir.exists() {
                     std::fs::create_dir_all(&event_dir)
                         .map_err(|e| RuneError::Io(format!("Failed to create {:?}: {}", event_dir, e)))?;
@@ -366,32 +367,29 @@ mod tests {
     fn test_event_handler_config_defaults() {
         let config = EventHandlerConfig::with_defaults(None);
         // Should have at least the home directory
-        assert!(!config.base_directories.is_empty() || dirs::home_dir().is_none());
+        assert!(!config.base_directories().is_empty() || dirs::home_dir().is_none());
     }
 
     #[test]
     fn test_event_handler_config_with_kiln() {
-        let config = EventHandlerConfig::with_defaults(Some(Path::new("/tmp/test-kiln")));
-        assert!(config
-            .base_directories
-            .iter()
-            .any(|p| p == Path::new("/tmp/test-kiln")));
+        let kiln_path = Path::new("/tmp/test-kiln");
+        let config = EventHandlerConfig::with_defaults(Some(kiln_path));
+        let expected = kiln_path.join(".crucible").join("events");
+        assert!(config.base_directories().iter().any(|p| p == &expected));
     }
 
     #[tokio::test]
     async fn test_event_handler_creation() {
-        let config = EventHandlerConfig {
-            base_directories: vec![],
-        };
+        let paths = DiscoveryPaths::empty("events");
+        let config = EventHandlerConfig::from_discovery_paths(paths);
         let handler = EventHandler::new(config);
         assert!(handler.is_ok());
     }
 
     #[tokio::test]
     async fn test_process_event_no_handlers() {
-        let config = EventHandlerConfig {
-            base_directories: vec![],
-        };
+        let paths = DiscoveryPaths::empty("events");
+        let config = EventHandlerConfig::from_discovery_paths(paths);
         let handler = EventHandler::new(config).unwrap();
 
         let recipe = EnrichedRecipe::from_recipe(
@@ -409,7 +407,8 @@ mod tests {
     #[tokio::test]
     async fn test_process_event_with_handler() {
         let temp = TempDir::new().unwrap();
-        let event_dir = temp.path().join("runes").join("events").join("recipe_discovered");
+        // New structure: events/<event_name>/ (no runes/ prefix)
+        let event_dir = temp.path().join("recipe_discovered");
         std::fs::create_dir_all(&event_dir).unwrap();
 
         // Create a simple categorizer script
@@ -423,9 +422,9 @@ pub fn on_recipe_discovered(recipe) {
 "#;
         std::fs::write(event_dir.join("categorizer.rn"), script).unwrap();
 
-        let config = EventHandlerConfig {
-            base_directories: vec![temp.path().to_path_buf()],
-        };
+        let paths = DiscoveryPaths::empty("events")
+            .with_path(temp.path().to_path_buf());
+        let config = EventHandlerConfig::from_discovery_paths(paths);
         let handler = EventHandler::new(config).unwrap();
 
         let recipe = EnrichedRecipe::from_recipe(
