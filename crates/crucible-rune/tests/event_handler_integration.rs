@@ -1,6 +1,7 @@
 //! Integration tests for the event handler system
 
 use crucible_rune::{EnrichedRecipe, EventHandler, EventHandlerConfig};
+use std::path::PathBuf;
 use tempfile::TempDir;
 
 fn init_test_logging() {
@@ -8,6 +9,17 @@ fn init_test_logging() {
         .with_max_level(tracing::Level::DEBUG)
         .with_test_writer()
         .try_init();
+}
+
+/// Get the path to the examples/runes directory in the repo
+fn examples_runes_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("examples")
+        .join("runes")
 }
 
 /// Test the full event processing flow with a real script
@@ -250,32 +262,33 @@ async fn test_regex_in_script() {
 
     // Script that uses regex for categorization
     // Note: Rune uses regular strings for patterns, not raw strings like Rust
-    // Note: Rune uses `let` for mutable variables (mut is not supported)
+    // Note: Values passed to functions are moved, use .clone() to keep using them
     let script = r#"
 use regex::{Regex, is_match};
 
 pub fn on_recipe_discovered(recipe) {
-    let name = recipe["name"];
+    let name = recipe["name"].clone();
     let tags = [];
 
     // Use regex for flexible pattern matching
-    if is_match("test|spec|check", name) {
+    // Need to clone name since is_match takes ownership
+    if is_match("test|spec|check", name.clone()) {
         tags.push("testing");
     }
 
-    if is_match("build|release|compile", name) {
+    if is_match("build|release|compile", name.clone()) {
         tags.push("build");
     }
 
     // Use Regex object for more complex patterns
     let version_re = Regex::new("v\\d+\\.\\d+");
-    if version_re.is_match(name) {
+    if version_re.is_match(name.clone()) {
         tags.push("versioned");
     }
 
     // Extract numbers using find_all
     let num_re = Regex::new("\\d+");
-    let numbers = num_re.find_all(name);
+    let numbers = num_re.find_all(name.clone());
     if numbers.len() > 0 {
         tags.push("has-numbers");
     }
@@ -308,6 +321,68 @@ pub fn on_recipe_discovered(recipe) {
             "Recipe '{}' should have tags {:?}, got {:?}",
             name, expected_tags, enriched.tags
         );
+    }
+}
+
+/// Test the actual example categorizer.rn script from examples/runes
+#[tokio::test]
+async fn test_example_categorizer_script() {
+    init_test_logging();
+
+    // Use the actual examples/runes directory
+    let examples_dir = examples_runes_dir();
+    println!("Examples dir: {:?}", examples_dir);
+
+    // Verify the script exists
+    let script_path = examples_dir
+        .join("events")
+        .join("recipe_discovered")
+        .join("categorizer.rn");
+    assert!(
+        script_path.exists(),
+        "Example script should exist at {:?}",
+        script_path
+    );
+
+    // Create handler pointing to examples dir (it expects runes/events/... structure)
+    // So we need to point to the parent of runes/
+    let base_dir = examples_dir.parent().unwrap();
+    let config = EventHandlerConfig {
+        base_directories: vec![base_dir.to_path_buf()],
+    };
+    let handler = EventHandler::new(config).unwrap();
+
+    // Test various recipes with the real script
+    let test_cases = vec![
+        ("test-unit", Some("testing"), vec!["ci"]),
+        ("build-release", Some("build"), vec!["build"]),
+        ("fmt", Some("quality"), vec!["quick"]),
+        ("docs", Some("documentation"), vec!["doc"]),
+        ("deploy-v1.0", Some("deploy"), vec!["versioned"]),
+        ("check-lint", Some("quality"), vec!["ci", "quick"]),
+    ];
+
+    for (name, expected_category, expected_tags) in test_cases {
+        let recipe = EnrichedRecipe::from_recipe(name.to_string(), None, vec![], false);
+        let enriched = handler.process_event(recipe).await.unwrap();
+
+        assert_eq!(
+            enriched.category,
+            expected_category.map(|s| s.to_string()),
+            "Recipe '{}' should have category {:?}",
+            name,
+            expected_category
+        );
+
+        for tag in &expected_tags {
+            assert!(
+                enriched.tags.contains(&tag.to_string()),
+                "Recipe '{}' should have tag '{}', got {:?}",
+                name,
+                tag,
+                enriched.tags
+            );
+        }
     }
 }
 
