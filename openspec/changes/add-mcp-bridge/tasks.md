@@ -21,23 +21,23 @@
 
 ## 3. Core Event System
 
-- [ ] 3.1 Define `Event` struct with type, pattern identifier, payload, timestamp
-- [ ] 3.2 Define `EventType` enum (tool:before, tool:after, note:parsed, etc.)
-- [ ] 3.3 Define `EventContext` with metadata storage and emit capability
-- [ ] 3.4 Implement `EventBus` for registration and dispatch
-- [ ] 3.5 Add wildcard pattern matching for event identifiers (glob-style)
-- [ ] 3.6 Add priority ordering for handler execution
-- [ ] 3.7 Add unit tests for event dispatch and pattern matching
+- [x] 3.1 Define `Event` struct with type, pattern identifier, payload, timestamp
+- [x] 3.2 Define `EventType` enum (tool:before, tool:after, note:parsed, etc.)
+- [x] 3.3 Define `EventContext` with metadata storage and emit capability
+- [x] 3.4 Implement `EventBus` for registration and dispatch
+- [x] 3.5 Add wildcard pattern matching for event identifiers (glob-style)
+- [x] 3.6 Add priority ordering for handler execution
+- [x] 3.7 Add unit tests for event dispatch and pattern matching
 
 ## 4. Hook System
 
-- [ ] 4.1 Define `Hook` trait with `handle(ctx, event) -> Option<Event>` signature
-- [ ] 4.2 Implement `RuneHook` wrapper for Rune script handlers
-- [ ] 4.3 Implement `BuiltinHook` wrapper for Rust function handlers
-- [ ] 4.4 Use `DiscoveryPaths::new("hooks", kiln_path)` for hook discovery
-- [ ] 4.5 Use `AttributeDiscovery::discover_all::<RuneHook>()` for parsing
-- [ ] 4.6 Add hot-reload for hook scripts via file watcher
-- [ ] 4.7 Add integration tests with sample Rune hooks
+- [x] 4.1 Define `Hook` trait with `handle(ctx, event) -> Option<Event>` signature
+- [x] 4.2 Implement `RuneHookHandler` wrapper for Rune script handlers
+- [x] 4.3 Implement `BuiltinHook` wrapper for Rust function handlers
+- [x] 4.4 Use `DiscoveryPaths::new("hooks", kiln_path)` for hook discovery
+- [x] 4.5 Use `AttributeDiscovery::discover_all::<RuneHook>()` for parsing
+- [ ] 4.6 Add hot-reload for hook scripts via file watcher (deferred - requires file watcher integration)
+- [x] 4.7 Add integration tests with sample Rune hooks
 
 ## 5. Built-in Hooks (Filters)
 
