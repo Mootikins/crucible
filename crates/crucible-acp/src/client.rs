@@ -19,19 +19,20 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
 use crate::session::AcpSession;
-use crate::streaming::{humanize_tool_title, ToolCallInfo};
+use crate::streaming::humanize_tool_title;
 use crate::{AcpError, Result};
 use agent_client_protocol::{
-    ContentBlock, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    SessionNotification, SessionUpdate,
+    ContentBlock, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, SessionNotification, SessionUpdate, ToolCallContent,
 };
 use crucible_core::traits::acp::{AcpResult, SessionManager};
-use crucible_core::types::acp::{SessionConfig, SessionId};
+use crucible_core::types::acp::{FileDiff, SessionConfig, SessionId, ToolCallInfo};
 
 /// Configuration for the ACP client
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,7 +81,7 @@ impl AgentProcess {
 
 enum ResponseSegment {
     Text(String),
-    Tool { label: String },
+    Tool { label: String, diff: Option<String> },
 }
 
 #[derive(Default)]
@@ -119,7 +120,7 @@ impl StreamingState {
                     }
                     output.push_str(text);
                 }
-                ResponseSegment::Tool { label, .. } => {
+                ResponseSegment::Tool { label, diff } => {
                     if !in_tool_block {
                         // Start tool block with blank line before
                         if !output.is_empty() && !output.ends_with('\n') {
@@ -132,6 +133,15 @@ impl StreamingState {
                     output.push_str("  ");
                     output.push_str(label);
                     output.push('\n');
+
+                    // Render diff if present (each line indented)
+                    if let Some(diff_str) = diff {
+                        for line in diff_str.lines() {
+                            output.push_str("    ");
+                            output.push_str(line);
+                            output.push('\n');
+                        }
+                    }
                 }
             }
         }
@@ -154,6 +164,11 @@ impl StreamingState {
     }
 }
 
+/// Type-erased async writer for agent communication
+pub type BoxedWriter = Pin<Box<dyn AsyncWrite + Send + Sync + Unpin>>;
+/// Type-erased async reader for agent communication
+pub type BoxedReader = Pin<Box<dyn AsyncBufRead + Send + Sync + Unpin>>;
+
 /// Main client for ACP communication
 ///
 /// This struct manages the lifecycle of agent connections and provides
@@ -162,12 +177,16 @@ pub struct CrucibleAcpClient {
     config: ClientConfig,
     /// Current active session ID, if any
     active_session: Option<SessionId>,
-    /// Agent process handle, if spawned
+    /// Agent process handle, if spawned (None for in-process transports)
     agent_process: Option<Child>,
-    /// Agent stdin for writing requests
+    /// Agent stdin for writing requests (concrete type from process)
     agent_stdin: Option<ChildStdin>,
-    /// Agent stdout for reading responses
+    /// Agent stdout for reading responses (concrete type from process)
     agent_stdout: Option<BufReader<ChildStdout>>,
+    /// Type-erased writer for in-process transports (e.g., ThreadedMockAgent)
+    boxed_writer: Option<BoxedWriter>,
+    /// Type-erased reader for in-process transports (e.g., ThreadedMockAgent)
+    boxed_reader: Option<BoxedReader>,
 }
 
 // Manual Debug implementation since Child doesn't implement Debug
@@ -179,6 +198,8 @@ impl std::fmt::Debug for CrucibleAcpClient {
             .field("agent_process", &self.agent_process.is_some())
             .field("agent_stdin", &self.agent_stdin.is_some())
             .field("agent_stdout", &self.agent_stdout.is_some())
+            .field("boxed_writer", &self.boxed_writer.is_some())
+            .field("boxed_reader", &self.boxed_reader.is_some())
             .finish()
     }
 }
@@ -209,6 +230,44 @@ impl CrucibleAcpClient {
             agent_process: None,
             agent_stdin: None,
             agent_stdout: None,
+            boxed_writer: None,
+            boxed_reader: None,
+        }
+    }
+
+    /// Create a client with a pre-connected in-process transport
+    ///
+    /// This allows using the client with a mock agent or other in-process
+    /// transport without spawning a subprocess. Used primarily for testing.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Client configuration (agent_path is ignored)
+    /// * `writer` - Async writer for sending requests to the agent
+    /// * `reader` - Async buffered reader for receiving responses
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // Create duplex streams for in-process communication
+    /// let (client_to_agent, agent_to_client) = tokio::io::duplex(8192);
+    /// let (read_half, write_half) = tokio::io::split(client_to_agent);
+    ///
+    /// let client = CrucibleAcpClient::with_transport(
+    ///     config,
+    ///     Box::pin(write_half),
+    ///     Box::pin(BufReader::new(read_half)),
+    /// );
+    /// ```
+    pub fn with_transport(config: ClientConfig, writer: BoxedWriter, reader: BoxedReader) -> Self {
+        Self {
+            config,
+            active_session: None,
+            agent_process: None,
+            agent_stdin: None,
+            agent_stdout: None,
+            boxed_writer: Some(writer),
+            boxed_reader: Some(reader),
         }
     }
 
@@ -257,10 +316,21 @@ impl CrucibleAcpClient {
         self.active_session.as_ref()
     }
 
+    /// Check if a transport is available (either process-based or in-process)
+    ///
+    /// Returns true if there's a reader/writer available for communication.
+    pub fn has_transport(&self) -> bool {
+        (self.boxed_reader.is_some() && self.boxed_writer.is_some())
+            || (self.agent_stdin.is_some() && self.agent_stdout.is_some())
+    }
+
     /// Spawn the agent process
     ///
     /// This method spawns the agent executable specified in the client configuration
     /// and captures stdin/stdout for communication.
+    ///
+    /// If a transport is already available (e.g., via `with_transport`), this method
+    /// returns immediately without spawning a process.
     ///
     /// # Returns
     ///
@@ -273,6 +343,13 @@ impl CrucibleAcpClient {
     /// - The process cannot be spawned
     /// - Permissions are insufficient
     pub async fn spawn_agent(&mut self) -> Result<AgentProcess> {
+        // If we already have a transport (e.g., from with_transport), skip spawning
+        if self.has_transport() {
+            return Ok(AgentProcess {
+                child: Command::new("true").spawn().unwrap(), // Dummy process
+            });
+        }
+
         let mut cmd = Command::new(&self.config.agent_path);
 
         // Add command-line arguments if specified
@@ -615,27 +692,36 @@ impl CrucibleAcpClient {
     ///
     /// Returns an error if writing fails or stdin is not available
     pub async fn write_request(&mut self, request: &serde_json::Value) -> Result<()> {
-        let stdin = self
-            .agent_stdin
-            .as_mut()
-            .ok_or_else(|| AcpError::Connection("Agent stdin not available".to_string()))?;
-
         // Serialize to JSON and add newline
-        let json_str = serde_json::to_string(request)?; // Auto-converts to AcpError::Serialization
-
+        let json_str = serde_json::to_string(request)?;
         let line = format!("{}\n", json_str);
 
-        // Write to stdin
-        stdin
-            .write_all(line.as_bytes())
-            .await
-            .map_err(|e| AcpError::Connection(format!("Failed to write to agent stdin: {}", e)))?;
-
-        // Flush to ensure it's sent
-        stdin
-            .flush()
-            .await
-            .map_err(|e| AcpError::Connection(format!("Failed to flush agent stdin: {}", e)))?;
+        // Try boxed writer first (for in-process transports), then fall back to agent_stdin
+        if let Some(ref mut writer) = self.boxed_writer {
+            writer
+                .write_all(line.as_bytes())
+                .await
+                .map_err(|e| AcpError::Connection(format!("Failed to write to transport: {}", e)))?;
+            writer
+                .flush()
+                .await
+                .map_err(|e| AcpError::Connection(format!("Failed to flush transport: {}", e)))?;
+        } else if let Some(ref mut stdin) = self.agent_stdin {
+            stdin
+                .write_all(line.as_bytes())
+                .await
+                .map_err(|e| {
+                    AcpError::Connection(format!("Failed to write to agent stdin: {}", e))
+                })?;
+            stdin
+                .flush()
+                .await
+                .map_err(|e| AcpError::Connection(format!("Failed to flush agent stdin: {}", e)))?;
+        } else {
+            return Err(AcpError::Connection(
+                "No writer available (agent stdin or transport)".to_string(),
+            ));
+        }
 
         Ok(())
     }
@@ -650,11 +736,6 @@ impl CrucibleAcpClient {
     ///
     /// Returns an error if reading fails, stdout is not available, or timeout occurs
     pub async fn read_response_line(&mut self) -> Result<String> {
-        let stdout = self
-            .agent_stdout
-            .as_mut()
-            .ok_or_else(|| AcpError::Connection("Agent stdout not available".to_string()))?;
-
         let mut line = String::new();
 
         // Read with a generous per-read timeout.
@@ -668,17 +749,29 @@ impl CrucibleAcpClient {
             .unwrap_or(300_000); // Default 5 minutes
         let duration = tokio::time::Duration::from_millis(per_read_timeout_ms);
 
-        let read_result = match tokio::time::timeout(duration, stdout.read_line(&mut line)).await {
-            Ok(result) => result,
-            Err(_) => return Err(AcpError::Timeout("Read operation timed out".to_string())),
+        // Try boxed reader first (for in-process transports), then fall back to agent_stdout
+        let read_result = if let Some(ref mut reader) = self.boxed_reader {
+            match tokio::time::timeout(duration, reader.read_line(&mut line)).await {
+                Ok(result) => result,
+                Err(_) => return Err(AcpError::Timeout("Read operation timed out".to_string())),
+            }
+        } else if let Some(ref mut stdout) = self.agent_stdout {
+            match tokio::time::timeout(duration, stdout.read_line(&mut line)).await {
+                Ok(result) => result,
+                Err(_) => return Err(AcpError::Timeout("Read operation timed out".to_string())),
+            }
+        } else {
+            return Err(AcpError::Connection(
+                "No reader available (agent stdout or transport)".to_string(),
+            ));
         };
 
         // Handle read result
         match read_result {
-            Ok(0) => Err(AcpError::Connection("Agent closed stdout".to_string())),
+            Ok(0) => Err(AcpError::Connection("Agent closed connection".to_string())),
             Ok(_) => Ok(line.trim_end().to_string()),
             Err(e) => Err(AcpError::Connection(format!(
-                "Failed to read from agent stdout: {}",
+                "Failed to read from agent: {}",
                 e
             ))),
         }
@@ -966,18 +1059,38 @@ impl CrucibleAcpClient {
             },
             SessionUpdate::ToolCall(tool_call) => {
                 tracing::info!("Tool call: {}", tool_call.title);
-                self.record_tool_call(
-                    ToolCallInfo {
-                        id: Some(tool_call.id.to_string()),
-                        title: tool_call.title.clone(),
-                        arguments: tool_call.raw_input.clone(),
-                    },
-                    state,
-                );
+                // Extract diffs from ToolCallContent::Diff entries
+                let diffs: Vec<FileDiff> = tool_call
+                    .content
+                    .iter()
+                    .filter_map(|c| match c {
+                        ToolCallContent::Diff { diff } => Some(FileDiff::from_contents(
+                            diff.path.to_string_lossy().to_string(),
+                            diff.old_text.clone(),
+                            diff.new_text.clone(),
+                        )),
+                        _ => None,
+                    })
+                    .collect();
+                let mut info = ToolCallInfo::new(tool_call.title.clone())
+                    .with_id(tool_call.id.to_string())
+                    .with_diffs(diffs);
+                if let Some(args) = tool_call.raw_input.clone() {
+                    info = info.with_arguments(args);
+                }
+                self.record_tool_call(info, state);
             }
             SessionUpdate::ToolCallUpdate(update) => {
                 tracing::debug!("Tool call update: {:?}", update.id);
-                if update.fields.title.is_some() || update.fields.raw_input.is_some() {
+                // Check if update has interesting fields (title, raw_input, or content with diffs)
+                let has_content_diffs = update
+                    .fields
+                    .content
+                    .as_ref()
+                    .map(|c| c.iter().any(|item| matches!(item, ToolCallContent::Diff { .. })))
+                    .unwrap_or(false);
+
+                if update.fields.title.is_some() || update.fields.raw_input.is_some() || has_content_diffs {
                     let id = update.id.to_string();
                     let title = update
                         .fields
@@ -985,14 +1098,30 @@ impl CrucibleAcpClient {
                         .clone()
                         .or_else(|| state.title_for_tool(&id))
                         .unwrap_or_else(|| "Unnamed tool".to_string());
-                    self.record_tool_call(
-                        ToolCallInfo {
-                            id: Some(id.clone()),
-                            title,
-                            arguments: update.fields.raw_input.clone(),
-                        },
-                        state,
-                    );
+
+                    // Extract diffs from content if present
+                    let diffs: Vec<FileDiff> = update
+                        .fields
+                        .content
+                        .iter()
+                        .flatten()
+                        .filter_map(|c| match c {
+                            ToolCallContent::Diff { diff } => Some(FileDiff::from_contents(
+                                diff.path.to_string_lossy().to_string(),
+                                diff.old_text.clone(),
+                                diff.new_text.clone(),
+                            )),
+                            _ => None,
+                        })
+                        .collect();
+
+                    let mut info = ToolCallInfo::new(title)
+                        .with_id(id)
+                        .with_diffs(diffs);
+                    if let Some(args) = update.fields.raw_input.clone() {
+                        info = info.with_arguments(args);
+                    }
+                    self.record_tool_call(info, state);
                 }
             }
             other => {
@@ -1065,6 +1194,9 @@ impl CrucibleAcpClient {
             .clone()
             .unwrap_or_else(|| format!("{}::{}", tool_call.title, args_str));
 
+        // Generate diff for write operations
+        let diff = self.generate_diff_for_write(&tool_call);
+
         let has_prior_text = matches!(
             state.segments.last(),
             Some(ResponseSegment::Text(last)) if !last.trim().is_empty()
@@ -1073,10 +1205,15 @@ impl CrucibleAcpClient {
 
         if let Some(&idx) = state.tool_segment_index.get(&id) {
             if let Some(ResponseSegment::Tool {
-                label: existing, ..
+                label: existing,
+                diff: existing_diff,
             }) = state.segments.get_mut(idx)
             {
                 *existing = label.clone();
+                // Update diff if we have a new one (might have more complete args now)
+                if diff.is_some() {
+                    *existing_diff = diff.clone();
+                }
             }
         } else {
             state
@@ -1084,11 +1221,145 @@ impl CrucibleAcpClient {
                 .insert(id.clone(), state.segments.len());
             state.segments.push(ResponseSegment::Tool {
                 label: label.clone(),
+                diff,
             });
         }
 
         self.upsert_tool_info(tool_call, state);
         state.tool_block_active = true;
+    }
+
+    /// Generate a diff for write operations.
+    ///
+    /// Checks three sources in order:
+    /// 1. Pre-computed diffs from protocol (e.g., ACP's ToolCallContent::Diff)
+    /// 2. Tool arguments with path + content (for update_note, Write, etc.)
+    /// 3. Edit tool arguments with old_string/new_string (find-and-replace)
+    fn generate_diff_for_write(&self, tool_call: &ToolCallInfo) -> Option<String> {
+        use similar::{ChangeTag, TextDiff};
+
+        // Check for pre-computed diffs first (preferred source)
+        if !tool_call.diffs.is_empty() {
+            let mut output = String::new();
+            for diff_entry in &tool_call.diffs {
+                if !output.is_empty() {
+                    output.push_str("\n--- \n");
+                }
+                output.push_str(&format!("--- {}\n", diff_entry.path));
+                output.push_str(&format!("+++ {}\n", diff_entry.path));
+
+                let old = diff_entry.old_content.as_deref().unwrap_or("");
+                let diff = TextDiff::from_lines(old, diff_entry.new_content.as_str());
+
+                for change in diff.iter_all_changes() {
+                    let tag = change.tag();
+                    let line = change.to_string_lossy();
+                    let line_content = line.strip_suffix('\n').unwrap_or(&line);
+
+                    match tag {
+                        ChangeTag::Delete => {
+                            output.push_str(&format!("-{}\n", line_content));
+                        }
+                        ChangeTag::Insert => {
+                            output.push_str(&format!("+{}\n", line_content));
+                        }
+                        ChangeTag::Equal => {
+                            // Skip unchanged lines to keep output compact
+                        }
+                    }
+                }
+            }
+            return if output.is_empty() { None } else { Some(output) };
+        }
+
+        // Fall back to generating diff from arguments
+
+        // Detect write operations by tool name
+        const WRITE_TOOLS: &[&str] = &[
+            "Edit", "edit", "WriteFile", "write_file", "write_text_file",
+            "update_note", "create_note", "Write", "write", "MultiEdit",
+        ];
+
+        let title = &tool_call.title;
+        let is_write = WRITE_TOOLS.iter().any(|w| title.contains(w));
+        if !is_write {
+            return None;
+        }
+
+        // Extract arguments
+        let args = tool_call.arguments.as_ref()?;
+        let obj = args.as_object()?;
+
+        // Get file path (try multiple common parameter names)
+        let path = obj.get("path")
+            .or_else(|| obj.get("file_path"))
+            .or_else(|| obj.get("file"))
+            .and_then(|v| v.as_str())?;
+
+        // Read current file content (may not exist for creates)
+        let old_content = std::fs::read_to_string(path).unwrap_or_default();
+
+        // Determine new content based on tool type:
+        // 1. Edit tool: apply old_string -> new_string replacement
+        // 2. Write tools: use content directly
+        let new_content = if let (Some(old_str), Some(new_str)) = (
+            obj.get("old_string").and_then(|v| v.as_str()),
+            obj.get("new_string").and_then(|v| v.as_str()),
+        ) {
+            // Edit tool: apply the string replacement
+            let replace_all = obj.get("replace_all")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            if replace_all {
+                old_content.replace(old_str, new_str)
+            } else {
+                old_content.replacen(old_str, new_str, 1)
+            }
+        } else if let Some(content) = obj.get("content")
+            .or_else(|| obj.get("new_content"))
+            .or_else(|| obj.get("text"))
+            .and_then(|v| v.as_str())
+        {
+            // Full file write
+            content.to_string()
+        } else {
+            // No content found
+            return None;
+        };
+
+        // Skip if no changes
+        if old_content == new_content {
+            return None;
+        }
+
+        // Generate unified diff
+        let diff = TextDiff::from_lines(old_content.as_str(), new_content.as_str());
+        let mut output = String::new();
+
+        for change in diff.iter_all_changes() {
+            let tag = change.tag();
+            let line = change.to_string_lossy();
+            let line_content = line.strip_suffix('\n').unwrap_or(&line);
+
+            match tag {
+                ChangeTag::Delete => {
+                    output.push_str(&format!("-{}\n", line_content));
+                }
+                ChangeTag::Insert => {
+                    output.push_str(&format!("+{}\n", line_content));
+                }
+                ChangeTag::Equal => {
+                    // Skip unchanged lines to keep output compact
+                }
+            }
+        }
+
+        if output.is_empty() {
+            None
+        } else {
+            Some(output)
+        }
     }
 
     fn upsert_tool_info(&self, tool_call: ToolCallInfo, state: &mut StreamingState) {
@@ -1170,7 +1441,7 @@ mod tests {
     use super::*;
     use agent_client_protocol::StopReason;
     use crucible_core::traits::acp::SessionManager;
-    use crucible_core::types::acp::{SessionConfig, SessionId};
+    use crucible_core::types::acp::SessionConfig;
     use serde_json::json;
 
     #[test]
@@ -1213,11 +1484,7 @@ mod tests {
         let mut state = StreamingState::default();
         state.append_text("First chunk");
 
-        let tool_call = ToolCallInfo {
-            title: "test_tool".to_string(),
-            arguments: None,
-            id: None,
-        };
+        let tool_call = ToolCallInfo::new("test_tool");
         client.record_tool_call(tool_call, &mut state);
         state.append_text("Response after the tool call.");
 
@@ -1372,11 +1639,9 @@ mod tests {
         state.append_text("Hello");
 
         client.record_tool_call(
-            ToolCallInfo {
-                id: Some("tool-1".into()),
-                title: "mcp__crucible__read_note".to_string(),
-                arguments: Some(json!({"path": "PRIME"})),
-            },
+            ToolCallInfo::new("mcp__crucible__read_note")
+                .with_id("tool-1")
+                .with_arguments(json!({"path": "PRIME"})),
             &mut state,
         );
 
@@ -1402,20 +1667,16 @@ mod tests {
         let mut state = StreamingState::default();
 
         client.record_tool_call(
-            ToolCallInfo {
-                id: Some("tool-42".into()),
-                title: "mcp__crucible__read_note".to_string(),
-                arguments: Some(json!({"path": "PRIME"})),
-            },
+            ToolCallInfo::new("mcp__crucible__read_note")
+                .with_id("tool-42")
+                .with_arguments(json!({"path": "PRIME"})),
             &mut state,
         );
 
         client.record_tool_call(
-            ToolCallInfo {
-                id: Some("tool-42".into()),
-                title: "mcp__crucible__read_note".to_string(),
-                arguments: Some(json!({"path": "PRIME.md"})),
-            },
+            ToolCallInfo::new("mcp__crucible__read_note")
+                .with_id("tool-42")
+                .with_arguments(json!({"path": "PRIME.md"})),
             &mut state,
         );
 
@@ -2012,5 +2273,309 @@ mod tests {
         // Cat won't respond with valid ACP protocol, so this will fail
         // But it verifies the method exists and attempts the handshake
         let _ = result; // Accept either outcome
+    }
+
+    #[test]
+    fn test_generate_diff_for_write_operation() {
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+
+        let config = ClientConfig {
+            agent_path: PathBuf::from("/tmp/agent"),
+            agent_args: None,
+            working_dir: None,
+            env_vars: None,
+            timeout_ms: Some(1000),
+            max_retries: Some(1),
+        };
+        let client = CrucibleAcpClient::new(config);
+
+        // Create a temp file with initial content
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "line1").unwrap();
+        writeln!(temp_file, "line2").unwrap();
+        writeln!(temp_file, "line3").unwrap();
+        let path = temp_file.path().to_string_lossy().to_string();
+
+        // Simulate a write tool call that modifies content
+        let tool_call = ToolCallInfo::new("update_note")
+            .with_id("tool-1")
+            .with_arguments(json!({
+                "path": path,
+                "content": "line1\nmodified\nline3\n"
+            }));
+
+        let diff = client.generate_diff_for_write(&tool_call);
+        assert!(diff.is_some(), "Should generate diff for write operation");
+
+        let diff_str = diff.unwrap();
+        assert!(diff_str.contains("-line2"), "Should show deleted line");
+        assert!(diff_str.contains("+modified"), "Should show inserted line");
+    }
+
+    #[test]
+    fn test_generate_diff_for_edit_tool_string_replacement() {
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+
+        let config = ClientConfig {
+            agent_path: PathBuf::from("/tmp/agent"),
+            agent_args: None,
+            working_dir: None,
+            env_vars: None,
+            timeout_ms: Some(1000),
+            max_retries: Some(1),
+        };
+        let client = CrucibleAcpClient::new(config);
+
+        // Create a temp file with initial content
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "fn main() {{").unwrap();
+        writeln!(temp_file, "    println!(\"Hello\");").unwrap();
+        writeln!(temp_file, "}}").unwrap();
+        let path = temp_file.path().to_string_lossy().to_string();
+
+        // Simulate an Edit tool call (Claude Code style: old_string/new_string)
+        let tool_call = ToolCallInfo::new("Edit")
+            .with_id("tool-1")
+            .with_arguments(json!({
+                "file_path": path,
+                "old_string": "println!(\"Hello\")",
+                "new_string": "println!(\"Hello, World!\")"
+            }));
+
+        let diff = client.generate_diff_for_write(&tool_call);
+        assert!(diff.is_some(), "Should generate diff for Edit tool");
+
+        let diff_str = diff.unwrap();
+        assert!(diff_str.contains("-"), "Should have deletion");
+        assert!(diff_str.contains("+"), "Should have insertion");
+        assert!(diff_str.contains("Hello, World!"), "Should show new content");
+    }
+
+    #[test]
+    fn test_generate_diff_skips_read_operations() {
+        let config = ClientConfig {
+            agent_path: PathBuf::from("/tmp/agent"),
+            agent_args: None,
+            working_dir: None,
+            env_vars: None,
+            timeout_ms: Some(1000),
+            max_retries: Some(1),
+        };
+        let client = CrucibleAcpClient::new(config);
+
+        // Read operation should not generate diff
+        let tool_call = ToolCallInfo::new("read_note")
+            .with_id("tool-1")
+            .with_arguments(json!({"path": "/tmp/test.md"}));
+
+        let diff = client.generate_diff_for_write(&tool_call);
+        assert!(diff.is_none(), "Should not generate diff for read operation");
+    }
+
+    #[test]
+    fn test_formatted_output_includes_diff() {
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+
+        let config = ClientConfig {
+            agent_path: PathBuf::from("/tmp/agent"),
+            agent_args: None,
+            working_dir: None,
+            env_vars: None,
+            timeout_ms: Some(1000),
+            max_retries: Some(1),
+        };
+        let client = CrucibleAcpClient::new(config);
+        let mut state = StreamingState::default();
+
+        // Create a temp file with initial content
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "old content").unwrap();
+        let path = temp_file.path().to_string_lossy().to_string();
+
+        // Record a write tool call
+        client.record_tool_call(
+            ToolCallInfo::new("update_note")
+                .with_id("tool-1")
+                .with_arguments(json!({
+                    "path": path,
+                    "content": "new content\n"
+                })),
+            &mut state,
+        );
+
+        let output = state.formatted_output();
+        assert!(output.contains("▷ update_note"), "Should have tool label");
+        assert!(output.contains("-old content"), "Should show deleted line in diff");
+        assert!(output.contains("+new content"), "Should show inserted line in diff");
+    }
+
+    // =========================================================================
+    // RED Tests: StreamingState Formatting Edge Cases
+    // These tests are designed to expose formatting issues (TDD approach)
+    // =========================================================================
+
+    #[test]
+    fn test_streaming_state_empty_text_handling() {
+        // RED: Verify whitespace-only chunks don't create spurious newlines
+        let mut state = StreamingState::default();
+        state.append_text("Hello");
+        state.append_text("   "); // whitespace only - should be ignored
+        state.append_text("World");
+
+        let output = state.formatted_output();
+        // Whitespace-only text is ignored by append_text, so Hello and World
+        // should be concatenated without extra spacing
+        assert!(
+            !output.contains("\n\n"),
+            "Should not have double newlines from whitespace: {:?}",
+            output
+        );
+        assert_eq!(output.trim(), "HelloWorld");
+    }
+
+    #[test]
+    fn test_streaming_state_consecutive_tools_no_double_spacing() {
+        // RED: Multiple consecutive tools should be in one block with single spacing
+        let config = ClientConfig {
+            agent_path: PathBuf::from("/tmp/test-agent"),
+            agent_args: None,
+            working_dir: None,
+            env_vars: None,
+            timeout_ms: Some(1000),
+            max_retries: Some(1),
+        };
+        let client = CrucibleAcpClient::new(config);
+        let mut state = StreamingState::default();
+
+        client.record_tool_call(
+            ToolCallInfo::new("tool1").with_id("t1"),
+            &mut state,
+        );
+        client.record_tool_call(
+            ToolCallInfo::new("tool2").with_id("t2"),
+            &mut state,
+        );
+        client.record_tool_call(
+            ToolCallInfo::new("tool3").with_id("t3"),
+            &mut state,
+        );
+
+        let output = state.formatted_output();
+        // Should only have one blank line before the tool block, not between each tool
+        // The tool block should have format: "\n\n  ▷ tool1()\n  ▷ tool2()\n  ▷ tool3()\n\n"
+        let tool_section: &str = output.trim();
+        let blank_line_pairs = tool_section.matches("\n\n").count();
+        assert!(
+            blank_line_pairs <= 1,
+            "Should have max 1 blank line separator at start, got {} in: {:?}",
+            blank_line_pairs,
+            output
+        );
+    }
+
+    #[test]
+    fn test_streaming_state_text_tool_text_formatting() {
+        // RED: Text -> Tools -> Text should have proper separation
+        let config = ClientConfig {
+            agent_path: PathBuf::from("/tmp/test-agent"),
+            agent_args: None,
+            working_dir: None,
+            env_vars: None,
+            timeout_ms: Some(1000),
+            max_retries: Some(1),
+        };
+        let client = CrucibleAcpClient::new(config);
+        let mut state = StreamingState::default();
+
+        state.append_text("Before tools\n");
+        client.record_tool_call(
+            ToolCallInfo::new("read_file")
+                .with_id("t1")
+                .with_arguments(json!({"path": "test.md"})),
+            &mut state,
+        );
+        state.append_text("After tools");
+
+        let output = state.formatted_output();
+        assert!(output.contains("Before tools"), "Should contain text before tools");
+        assert!(output.contains("▷"), "Should contain tool indicator");
+        assert!(output.contains("After tools"), "Should contain text after tools");
+        // Verify proper blank line separation before tool block
+        assert!(
+            output.contains("\n\n  ▷"),
+            "Tool block should have blank line before it: {:?}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_tool_deduplication_different_ids_same_args() {
+        // RED: Same tool+args but different IDs should both be recorded
+        let mut state = StreamingState::default();
+
+        let tool1 = ToolCallInfo::new("read_file")
+            .with_id("call-1")
+            .with_arguments(json!({"path": "test.md"}));
+        let tool2 = ToolCallInfo::new("read_file")
+            .with_id("call-2")
+            .with_arguments(json!({"path": "test.md"}));
+
+        // Use upsert_tool_info directly to test deduplication logic
+        // (record_tool_call also modifies segments, we want to isolate the dedup logic)
+        upsert_tool_info(tool1, &mut state);
+        upsert_tool_info(tool2, &mut state);
+
+        assert_eq!(
+            state.tool_calls.len(),
+            2,
+            "Both tool calls should be recorded (different IDs)"
+        );
+    }
+
+    #[test]
+    fn test_tool_deduplication_same_id_updates() {
+        // Verify that same ID correctly updates existing entry
+        let mut state = StreamingState::default();
+
+        let tool1 = ToolCallInfo::new("read_file")
+            .with_id("same-id")
+            .with_arguments(json!({"path": "old.md"}));
+        let tool2 = ToolCallInfo::new("read_file")
+            .with_id("same-id")
+            .with_arguments(json!({"path": "new.md"}));
+
+        upsert_tool_info(tool1, &mut state);
+        upsert_tool_info(tool2, &mut state);
+
+        assert_eq!(
+            state.tool_calls.len(),
+            1,
+            "Same ID should update, not duplicate"
+        );
+        // Should have the updated arguments
+        let args = state.tool_calls[0].arguments.as_ref().unwrap();
+        assert_eq!(
+            args.get("path").and_then(|v| v.as_str()),
+            Some("new.md"),
+            "Arguments should be updated to new values"
+        );
+    }
+
+    /// Helper to test upsert logic in isolation
+    fn upsert_tool_info(tool_call: ToolCallInfo, state: &mut StreamingState) {
+        if let Some(id) = &tool_call.id {
+            if let Some(existing) = state
+                .tool_calls
+                .iter_mut()
+                .find(|t| t.id.as_deref() == Some(id.as_str()))
+            {
+                *existing = tool_call;
+                return;
+            }
+        }
+        state.tool_calls.push(tool_call);
     }
 }

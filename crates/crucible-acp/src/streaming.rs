@@ -7,20 +7,12 @@
 //!
 //! - **Single Responsibility**: Focused on streaming and formatting responses
 //! - **Open/Closed**: Extensible for different output formats
-//! - **Dependency Inversion**: Uses ACP types but can adapt to different outputs
+//! - **Dependency Inversion**: Uses core types, protocol-agnostic
 
 use crate::Result;
 
-/// Information about a tool call for display purposes
-#[derive(Debug, Clone)]
-pub struct ToolCallInfo {
-    /// The tool call title (human-readable description)
-    pub title: String,
-    /// The tool parameters/arguments as JSON
-    pub arguments: Option<serde_json::Value>,
-    /// Optional identifier for deduplication/updates
-    pub id: Option<String>,
-}
+// Re-export ToolCallInfo from core for backwards compatibility
+pub use crucible_core::types::acp::ToolCallInfo;
 
 /// Convert a tool title into a human-readable name by removing MCP schema prefixes.
 pub fn humanize_tool_title(title: &str) -> String {

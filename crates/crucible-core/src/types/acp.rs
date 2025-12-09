@@ -402,6 +402,129 @@ impl ToolInvocation {
     }
 }
 
+/// Tool call information for streaming/display
+///
+/// Represents a tool call during agent execution. Used by streaming handlers
+/// and UI layers to display tool activity. This is a protocol-agnostic type
+/// that can be populated from ACP, MCP, or other agent protocols.
+///
+/// # Example
+///
+/// ```rust
+/// use crucible_core::types::acp::ToolCallInfo;
+///
+/// let tool = ToolCallInfo::new("semantic_search")
+///     .with_id("call-123")
+///     .with_arguments(serde_json::json!({"query": "rust async"}));
+/// ```
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ToolCallInfo {
+    /// Human-readable title/description of the tool call
+    pub title: String,
+
+    /// Tool parameters/arguments as JSON
+    pub arguments: Option<serde_json::Value>,
+
+    /// Unique identifier for deduplication/updates during streaming
+    pub id: Option<String>,
+
+    /// File diffs produced by this tool call (for write operations)
+    pub diffs: Vec<FileDiff>,
+}
+
+impl ToolCallInfo {
+    /// Create a new tool call info with a title
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            arguments: None,
+            id: None,
+            diffs: Vec::new(),
+        }
+    }
+
+    /// Set the tool call ID
+    pub fn with_id(mut self, id: impl Into<String>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
+
+    /// Set the tool arguments
+    pub fn with_arguments(mut self, args: serde_json::Value) -> Self {
+        self.arguments = Some(args);
+        self
+    }
+
+    /// Add a file diff
+    pub fn with_diff(mut self, diff: FileDiff) -> Self {
+        self.diffs.push(diff);
+        self
+    }
+
+    /// Add multiple file diffs
+    pub fn with_diffs(mut self, diffs: impl IntoIterator<Item = FileDiff>) -> Self {
+        self.diffs.extend(diffs);
+        self
+    }
+}
+
+/// File diff representing changes to a file
+///
+/// Protocol-agnostic representation of file modifications. Can be populated
+/// from ACP's `ToolCallContent::Diff`, generated from tool arguments, or
+/// computed by comparing file states.
+///
+/// # Example
+///
+/// ```rust
+/// use crucible_core::types::acp::FileDiff;
+///
+/// let diff = FileDiff::new("/path/to/file.rs")
+///     .with_old_content("fn old() {}")
+///     .with_new_content("fn new() {}");
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileDiff {
+    /// Path to the modified file
+    pub path: String,
+
+    /// Original content (None for new files)
+    pub old_content: Option<String>,
+
+    /// New content after modification
+    pub new_content: String,
+}
+
+impl FileDiff {
+    /// Create a new file diff
+    pub fn new(path: impl Into<String>, new_content: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            old_content: None,
+            new_content: new_content.into(),
+        }
+    }
+
+    /// Set the old content (before modification)
+    pub fn with_old_content(mut self, content: impl Into<String>) -> Self {
+        self.old_content = Some(content.into());
+        self
+    }
+
+    /// Create from old and new content
+    pub fn from_contents(
+        path: impl Into<String>,
+        old: Option<String>,
+        new: impl Into<String>,
+    ) -> Self {
+        Self {
+            path: path.into(),
+            old_content: old,
+            new_content: new.into(),
+        }
+    }
+}
+
 /// Tool execution output
 ///
 /// Result of tool execution, including the result value, execution time,

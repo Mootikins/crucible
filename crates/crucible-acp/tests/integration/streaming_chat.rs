@@ -6,39 +6,17 @@
 //! 3. Agent sends final PromptResponse with stopReason
 //! 4. Client accumulates chunks and returns complete response
 
-use crucible_acp::client::ClientConfig;
-use crucible_acp::CrucibleAcpClient;
-use std::path::PathBuf;
+use crate::support::{MockStdioAgentConfig, ThreadedMockAgent};
 
 /// Test that ChatSession properly handles streaming responses from agent
 ///
 /// Uses the OpenCode mock agent behavior for handshake testing.
-/// Note: Full streaming validation is in the ignored test below.
+/// Now uses ThreadedMockAgent for in-process testing (no subprocess needed).
 #[tokio::test]
 async fn test_streaming_chat_with_mock_agent() {
-    // Get workspace root and build path to mock agent
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    let workspace_root = PathBuf::from(&manifest_dir)
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
-    let mock_agent_path = workspace_root.join("target/debug/mock-acp-agent");
-
-    println!("Using mock agent at: {}", mock_agent_path.display());
-
-    // Configure client to use mock agent with OpenCode behavior (default)
-    let client_config = ClientConfig {
-        agent_path: mock_agent_path,
-        agent_args: None, // Use default OpenCode behavior
-        working_dir: None,
-        env_vars: None,
-        timeout_ms: Some(10000),
-        max_retries: Some(1),
-    };
-
-    let mut client = CrucibleAcpClient::new(client_config);
+    // Spawn threaded mock agent with OpenCode behavior
+    let config = MockStdioAgentConfig::opencode();
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
 
     // Connect and perform handshake
     let result = client.connect_with_handshake().await;
@@ -67,31 +45,16 @@ async fn test_streaming_chat_with_mock_agent() {
 /// 3. Final PromptResponse triggers completion
 /// 4. Result contains all accumulated content
 ///
-/// Note: This test is ignored because it requires the mock agent to implement
-/// proper streaming responses. The current mock agent handles handshake but
-/// doesn't fully simulate streaming message chunks.
+/// Note: This test is ignored because the mock agent doesn't implement
+/// proper streaming responses. It handles handshake but doesn't send
+/// the session/update notifications with AgentMessageChunk that the
+/// client expects for streaming.
 #[tokio::test]
 #[ignore] // Ignore until mock agent supports full streaming simulation
 async fn test_prompt_with_streaming_response() {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    let workspace_root = PathBuf::from(&manifest_dir)
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
-    let mock_agent_path = workspace_root.join("target/debug/mock-acp-agent");
-
-    let client_config = ClientConfig {
-        agent_path: mock_agent_path,
-        agent_args: None, // Use default OpenCode behavior
-        working_dir: None,
-        env_vars: None,
-        timeout_ms: Some(10000),
-        max_retries: Some(1),
-    };
-
-    let mut client = CrucibleAcpClient::new(client_config);
+    // Spawn threaded mock agent with OpenCode behavior
+    let config = MockStdioAgentConfig::opencode();
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
 
     // Connect and get session
     let session = client
