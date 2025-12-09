@@ -21,8 +21,8 @@ use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_just::JustTools;
 use crucible_rune::{
-    ContentBlock, EnrichedRecipe, EventHandler, EventHandlerConfig, EventPipeline, PluginLoader,
-    RuneDiscoveryConfig, RuneToolRegistry, ToolResultEvent,
+    event_bus::EventBus, ContentBlock, EnrichedRecipe, EventHandler, EventHandlerConfig,
+    EventPipeline, PluginLoader, RuneDiscoveryConfig, RuneToolRegistry, ToolResultEvent,
 };
 use rmcp::model::{CallToolResult, Content, Tool};
 use rmcp::service::RequestContext;
@@ -54,6 +54,8 @@ pub struct ExtendedMcpServer {
     event_pipeline: Option<EventPipeline>,
     /// Configuration for built-in output filtering
     filter_config: FilterConfig,
+    /// Unified event bus for all events
+    event_bus: Arc<RwLock<EventBus>>,
 }
 
 impl ExtendedMcpServer {
@@ -147,6 +149,7 @@ impl ExtendedMcpServer {
             event_handler,
             event_pipeline,
             filter_config: FilterConfig::default(),
+            event_bus: Arc::new(RwLock::new(EventBus::new())),
         })
     }
 
@@ -170,6 +173,7 @@ impl ExtendedMcpServer {
             event_handler: None,
             event_pipeline: None,
             filter_config: FilterConfig::default(),
+            event_bus: Arc::new(RwLock::new(EventBus::new())),
         }
     }
 
@@ -186,6 +190,11 @@ impl ExtendedMcpServer {
     /// Get reference to Rune registry
     pub fn rune_registry(&self) -> &RuneToolRegistry {
         &self.rune_registry
+    }
+
+    /// Get reference to the event bus
+    pub fn event_bus(&self) -> Arc<RwLock<EventBus>> {
+        Arc::clone(&self.event_bus)
     }
 
     /// List all available tools from all sources
@@ -703,5 +712,78 @@ mod tests {
         assert!(ExtendedMcpServer::is_rune_tool("rune_transform"));
         assert!(!ExtendedMcpServer::is_rune_tool("just_build"));
         assert!(!ExtendedMcpServer::is_rune_tool("read_note"));
+    }
+
+    #[test]
+    fn test_extended_server_has_event_bus() {
+        use crucible_rune::event_bus::EventType;
+
+        let temp = TempDir::new().unwrap();
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+        let server = ExtendedMcpServer::kiln_only(
+            temp.path().to_str().unwrap().to_string(),
+            knowledge_repo,
+            embedding_provider,
+        );
+
+        // Verify event_bus field exists and is accessible
+        let event_bus = server.event_bus();
+        assert!(Arc::strong_count(&event_bus) >= 2); // At least server + this reference
+
+        // Verify we can read the bus (it should be initially empty)
+        let bus = event_bus.blocking_read();
+        assert_eq!(bus.count_handlers(EventType::ToolBefore), 0);
+        assert_eq!(bus.count_handlers(EventType::ToolAfter), 0);
+    }
+
+    #[tokio::test]
+    async fn test_event_bus_can_register_handlers() {
+        use crucible_rune::event_bus::{Event, EventType, Handler};
+        use serde_json::json;
+
+        let temp = TempDir::new().unwrap();
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+        let server = ExtendedMcpServer::kiln_only(
+            temp.path().to_str().unwrap().to_string(),
+            knowledge_repo,
+            embedding_provider,
+        );
+
+        let event_bus = server.event_bus();
+
+        // Register a handler
+        {
+            let mut bus = event_bus.write().await;
+            bus.register(Handler::new(
+                "test_handler",
+                EventType::ToolAfter,
+                "just_*",
+                |_ctx, event| Ok(event),
+            ));
+        }
+
+        // Verify handler was registered
+        {
+            let bus = event_bus.read().await;
+            assert_eq!(bus.count_handlers(EventType::ToolAfter), 1);
+
+            let handler = bus.get_handler("test_handler");
+            assert!(handler.is_some());
+            assert_eq!(handler.unwrap().name, "test_handler");
+        }
+
+        // Verify we can emit events through the bus
+        {
+            let bus = event_bus.read().await;
+            let event = Event::tool_after("just_test", json!({"result": "success"}));
+            let (result, _ctx, errors) = bus.emit(event);
+
+            assert_eq!(result.identifier, "just_test");
+            assert!(errors.is_empty());
+        }
     }
 }
