@@ -21,7 +21,7 @@
 //! pattern = "*"
 //! ```
 
-use crate::event_bus::{Event, EventContext, Handler, HandlerError, HandlerResult, EventType};
+use crate::event_bus::{EventType, Handler};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use tracing::debug;
@@ -742,10 +742,10 @@ fn filter_go_test(output: &str) -> String {
         if line.starts_with("ok \t") || line.starts_with("ok  ") {
             summary_lines.push(line.to_string());
         }
-        if line.starts_with("FAIL\t") || line.starts_with("FAIL ") {
-            if !line.starts_with("FAIL:") {
-                summary_lines.push(line.to_string());
-            }
+        if (line.starts_with("FAIL\t") || line.starts_with("FAIL "))
+            && !line.starts_with("FAIL:")
+        {
+            summary_lines.push(line.to_string());
         }
 
         if line == "PASS" || line == "FAIL" {
@@ -810,7 +810,7 @@ fn filter_rspec_mix(output: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event_bus::EventBus;
+    use crate::event_bus::{Event, EventBus, EventContext};
 
     #[test]
     fn test_default_config() {

@@ -237,7 +237,7 @@ impl ToolEventEmitter {
         let modified_args = before_event.payload;
 
         // 2. Execute the tool
-        let duration_ms = start.elapsed().as_millis() as u64;
+        let _before_duration_ms = start.elapsed().as_millis() as u64;
 
         match executor(modified_args).await {
             Ok(result) => {
