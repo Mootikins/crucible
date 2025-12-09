@@ -14,6 +14,7 @@
 //! - Handlers can add category, tags, priority, and custom metadata
 //! - Enrichment is visible in tool descriptions and schema annotations
 
+use crate::output_filter::{filter_test_output, FilterConfig};
 use crate::toon_response::toon_success_smart;
 use crate::CrucibleMcpServer;
 use crucible_core::enrichment::EmbeddingProvider;
@@ -49,8 +50,10 @@ pub struct ExtendedMcpServer {
     rune_registry: Arc<RuneToolRegistry>,
     /// Event handler for recipe enrichment
     event_handler: Option<Arc<EventHandler>>,
-    /// Event pipeline for filtering tool output
+    /// Event pipeline for filtering tool output (Rune plugins)
     event_pipeline: Option<EventPipeline>,
+    /// Configuration for built-in output filtering
+    filter_config: FilterConfig,
 }
 
 impl ExtendedMcpServer {
@@ -143,6 +146,7 @@ impl ExtendedMcpServer {
             rune_registry,
             event_handler,
             event_pipeline,
+            filter_config: FilterConfig::default(),
         })
     }
 
@@ -165,6 +169,7 @@ impl ExtendedMcpServer {
             rune_registry,
             event_handler: None,
             event_pipeline: None,
+            filter_config: FilterConfig::default(),
         }
     }
 
@@ -337,9 +342,13 @@ impl ExtendedMcpServer {
 
     /// Execute a Just recipe and return TOON-formatted result
     ///
-    /// If an event pipeline is configured, the result is processed through
-    /// any matching hooks before being returned. Hooks can filter or transform
-    /// the output (e.g., extracting test summaries).
+    /// Output is filtered in two stages:
+    /// 1. **Built-in filter**: Automatically extracts test summaries from cargo test,
+    ///    pytest, jest, go test, etc. This is always applied for recognized test output.
+    /// 2. **Rune pipeline**: If configured, custom plugins can further transform output.
+    ///
+    /// This makes test output much more useful for LLMs by removing verbose per-test
+    /// lines and keeping only pass/fail summaries and error details.
     pub async fn call_just_tool(
         &self,
         name: &str,
@@ -361,28 +370,43 @@ impl ExtendedMcpServer {
                     output.push_str(&result.stderr);
                 }
 
-                // Process through event pipeline if available
+                // Stage 1: Apply built-in test output filter
+                let filtered_output = if self.filter_config.filter_test_output {
+                    if let Some(filtered) = filter_test_output(&output) {
+                        debug!(
+                            "Built-in filter reduced output from {} to {} chars",
+                            output.len(),
+                            filtered.len()
+                        );
+                        filtered
+                    } else {
+                        output.clone()
+                    }
+                } else {
+                    output.clone()
+                };
+
+                // Stage 2: Process through Rune event pipeline if available
                 let final_output = if let Some(pipeline) = &self.event_pipeline {
                     let event = ToolResultEvent {
                         tool_name: name.to_string(),
                         arguments: arguments.clone(),
                         is_error,
-                        content: vec![ContentBlock::Text { text: output.clone() }],
+                        content: vec![ContentBlock::Text {
+                            text: filtered_output.clone(),
+                        }],
                         duration_ms: 0, // TODO: track actual duration
                     };
 
                     match pipeline.process_tool_result(event).await {
-                        Ok(processed) => {
-                            // Extract text from processed event
-                            processed.text_content()
-                        }
+                        Ok(processed) => processed.text_content(),
                         Err(e) => {
-                            warn!("Event pipeline error: {}, using original output", e);
-                            output
+                            warn!("Event pipeline error: {}, using filtered output", e);
+                            filtered_output
                         }
                     }
                 } else {
-                    output
+                    filtered_output
                 };
 
                 let response = json!({
