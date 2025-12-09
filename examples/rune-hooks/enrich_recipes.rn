@@ -1,0 +1,179 @@
+/// Enrich Just recipe metadata with categories and tags
+///
+/// This hook processes tool:discovered events for Just recipes (just_*)
+/// and automatically adds:
+/// - category: Based on recipe name pattern (testing, build, quality, etc.)
+/// - tags: Relevant tags like "ci", "quick", "build"
+/// - priority: Suggested execution priority
+///
+/// This metadata can be used by:
+/// - MCP clients to organize and filter tools
+/// - Other hooks for selective processing
+/// - UI displays to categorize recipes
+#[hook(event = "tool:discovered", pattern = "just_*", priority = 5)]
+pub fn enrich_recipes(ctx, event) {
+    // Extract recipe name from tool name (strip just_ prefix)
+    let tool_name = event.identifier;
+    let recipe_name = tool_name
+        .replace("just_", "")
+        .replace("_", "-");  // Convert to hyphen-separated
+
+    // Categorize by name
+    let category = categorize_recipe(recipe_name);
+
+    // Determine tags based on category and name
+    let tags = determine_tags(recipe_name, category);
+
+    // Determine priority
+    let priority = determine_priority(recipe_name, category);
+
+    // Add enrichment to payload
+    event.payload.category = category;
+    event.payload.tags = tags;
+    event.payload.priority = priority;
+
+    // Store enrichment info in context for debugging
+    ctx.set(`enriched_${tool_name}`, #{
+        category: category,
+        tags: tags,
+        priority: priority,
+    });
+
+    event
+}
+
+// ============================================================================
+// Categorization Logic
+// ============================================================================
+
+fn categorize_recipe(name) {
+    // Testing recipes
+    if name.starts_with("test") || name.contains("-test") {
+        "testing"
+    }
+    // Build recipes
+    else if name.starts_with("build") || name.starts_with("release") {
+        "build"
+    }
+    // Quality/linting recipes
+    else if name.contains("fmt") || name.contains("clippy") || name.contains("check") || name.contains("lint") {
+        "quality"
+    }
+    // Documentation recipes
+    else if name.contains("doc") {
+        "documentation"
+    }
+    // CI recipes
+    else if name == "ci" || name.contains("-ci") {
+        "ci"
+    }
+    // MCP recipes
+    else if name.contains("mcp") {
+        "mcp"
+    }
+    // Web recipes
+    else if name.contains("web") || name.contains("vite") {
+        "web"
+    }
+    // Benchmark recipes
+    else if name.contains("bench") {
+        "benchmarks"
+    }
+    // Maintenance recipes
+    else if name.contains("clean") {
+        "maintenance"
+    }
+    // Default/help recipes
+    else if name == "default" || name.contains("help") {
+        "default"
+    }
+    // General recipes
+    else {
+        "general"
+    }
+}
+
+// ============================================================================
+// Tag Determination
+// ============================================================================
+
+fn determine_tags(name, category) {
+    let tags = [];
+
+    // Add category-specific tags
+    if category == "testing" {
+        tags.push("ci");
+        if name.contains("unit") || name.contains("quick") {
+            tags.push("quick");
+        }
+    } else if category == "quality" {
+        tags.push("ci");
+        tags.push("quick");
+    } else if category == "build" {
+        tags.push("build");
+        if name.contains("release") {
+            tags.push("release");
+        }
+    } else if category == "ci" {
+        tags.push("ci");
+    } else if category == "documentation" {
+        tags.push("doc");
+    } else if category == "mcp" {
+        tags.push("mcp");
+    } else if category == "web" {
+        tags.push("web");
+        if name.contains("vite") {
+            tags.push("dev");
+        }
+    }
+
+    // Add special tags based on name patterns
+    if name.contains("verbose") {
+        tags.push("verbose");
+    }
+
+    if name.contains("watch") || name.contains("dev") {
+        tags.push("dev");
+    }
+
+    if name.contains("crate") {
+        tags.push("isolated");
+    }
+
+    tags
+}
+
+// ============================================================================
+// Priority Determination
+// ============================================================================
+
+fn determine_priority(name, category) {
+    // Lower number = higher priority (runs earlier)
+    if category == "ci" {
+        5  // Very high priority
+    } else if category == "quality" {
+        15  // High priority for quality checks
+    } else if category == "testing" {
+        if name.contains("unit") || name.contains("quick") {
+            10  // High priority for quick tests
+        } else {
+            20  // Normal priority for other tests
+        }
+    } else if category == "build" {
+        if name.contains("release") {
+            40  // Lower priority for release builds (slow)
+        } else {
+            30  // Normal priority for dev builds
+        }
+    } else if category == "default" {
+        1  // Highest priority (help/list commands)
+    } else if category == "documentation" {
+        35
+    } else if category == "benchmarks" {
+        50  // Low priority (slow)
+    } else if category == "maintenance" {
+        45
+    } else {
+        50  // Default priority
+    }
+}

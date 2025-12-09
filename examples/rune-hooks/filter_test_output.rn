@@ -1,0 +1,224 @@
+/// Filter verbose test output for LLM consumption
+///
+/// This hook processes tool:after events from test execution tools (just_test*)
+/// and filters the output to show only:
+/// - Test summary (X passed, Y failed)
+/// - Failure details (if any)
+/// - Compilation errors (if any)
+///
+/// This reduces token usage and improves LLM comprehension by removing
+/// verbose test execution logs.
+#[hook(event = "tool:after", pattern = "just_test*", priority = 10)]
+pub fn filter_test_output(ctx, event) {
+    // Get the result from the payload
+    let result = event.payload.result;
+
+    // Check if we have content to filter
+    if let Some(content) = result.content {
+        // Process each content block
+        let filtered_content = [];
+
+        for block in content {
+            if block.type == "text" {
+                let text = block.text;
+
+                // Detect test framework and filter accordingly
+                let filtered_text = if is_cargo_test(text) {
+                    filter_cargo_test(text)
+                } else if is_pytest(text) {
+                    filter_pytest(text)
+                } else if is_jest(text) {
+                    filter_jest(text)
+                } else {
+                    // Not recognized as test output - pass through
+                    text
+                };
+
+                // Add filtered block
+                filtered_content.push(#{
+                    type: "text",
+                    text: filtered_text,
+                });
+            } else {
+                // Non-text blocks pass through unchanged
+                filtered_content.push(block);
+            }
+        }
+
+        // Update the result content
+        result.content = filtered_content;
+    }
+
+    event
+}
+
+// ============================================================================
+// Test Framework Detection
+// ============================================================================
+
+fn is_cargo_test(output) {
+    output.contains("test result:") ||
+    (output.contains("running ") && output.contains(" test"))
+}
+
+fn is_pytest(output) {
+    output.contains("passed in ") ||
+    output.contains("failed in ") ||
+    (output.contains("=====") && (output.contains("passed") || output.contains("failed")))
+}
+
+fn is_jest(output) {
+    output.contains("Test Suites:") ||
+    (output.contains("Tests:") && (output.contains("passed") || output.contains("failed")))
+}
+
+// ============================================================================
+// Cargo Test Filtering
+// ============================================================================
+
+fn filter_cargo_test(output) {
+    let lines = output.split("\n");
+    let summary_lines = [];
+    let failure_lines = [];
+    let in_failures = false;
+
+    for line in lines {
+        // Detect failures section
+        if line.contains("failures:") {
+            in_failures = true;
+            continue;
+        }
+
+        // Exit failures section on blank line
+        if in_failures && line.trim().is_empty() {
+            in_failures = false;
+        }
+
+        // Collect failure details
+        if in_failures && !line.trim().is_empty() && !line.contains("---- ") {
+            failure_lines.push(line);
+        }
+
+        // Keep summary lines
+        if line.starts_with("running ") && line.contains(" test") {
+            summary_lines.push(line);
+        }
+
+        if line.contains("test result:") {
+            summary_lines.push(line);
+        }
+
+        // Keep error lines
+        if line.starts_with("error[") || line.starts_with("error:") {
+            summary_lines.push(line);
+        }
+
+        // Keep warning summary
+        if line.contains("warning:") && line.contains("generated") {
+            summary_lines.push(line);
+        }
+    }
+
+    // Add failures if any (limit to 20 lines)
+    if !failure_lines.is_empty() {
+        summary_lines.push("\nFailures:");
+        let limit = if failure_lines.len() > 20 { 20 } else { failure_lines.len() };
+
+        for i in 0..limit {
+            summary_lines.push(`  ${failure_lines[i]}`);
+        }
+
+        if failure_lines.len() > 20 {
+            summary_lines.push(`  ... and ${failure_lines.len() - 20} more`);
+        }
+    }
+
+    summary_lines.join("\n")
+}
+
+// ============================================================================
+// Pytest Filtering
+// ============================================================================
+
+fn filter_pytest(output) {
+    let lines = output.split("\n");
+    let summary_lines = [];
+    let failure_lines = [];
+    let in_failures = false;
+
+    for line in lines {
+        // Detect failures/errors section
+        if line.contains("= FAILURES =") || line.contains("= ERRORS =") {
+            in_failures = true;
+            summary_lines.push(line);
+            continue;
+        }
+
+        // Exit failures section
+        if in_failures && line.starts_with("=") && !line.contains("FAILURES") && !line.contains("ERRORS") {
+            in_failures = false;
+        }
+
+        // Collect failures (limit to 30 lines)
+        if in_failures && failure_lines.len() < 30 {
+            failure_lines.push(line);
+        }
+
+        // Keep summary lines
+        if line.starts_with("=") && (line.contains("passed") || line.contains("failed") || line.contains("error")) {
+            summary_lines.push(line);
+        }
+
+        // Keep individual failures
+        if line.starts_with("FAILED ") || line.starts_with("ERROR ") {
+            summary_lines.push(line);
+        }
+    }
+
+    // Add failure details
+    summary_lines.extend(failure_lines);
+
+    summary_lines.join("\n")
+}
+
+// ============================================================================
+// Jest Filtering
+// ============================================================================
+
+fn filter_jest(output) {
+    let lines = output.split("\n");
+    let summary_lines = [];
+
+    for line in lines {
+        let trimmed = line.trim_start();
+
+        // Keep summary lines
+        if line.contains("Test Suites:") {
+            summary_lines.push(line);
+        }
+
+        if line.contains("Tests:") && (line.contains("passed") || line.contains("failed")) {
+            summary_lines.push(line);
+        }
+
+        if line.contains("Snapshots:") {
+            summary_lines.push(line);
+        }
+
+        if line.contains("Time:") {
+            summary_lines.push(line);
+        }
+
+        // Keep pass/fail indicators
+        if trimmed.starts_with("PASS ") || trimmed.starts_with("FAIL ") {
+            summary_lines.push(line);
+        }
+
+        // Keep failure markers
+        if line.contains("● ") {
+            summary_lines.push(line);
+        }
+    }
+
+    summary_lines.join("\n")
+}
