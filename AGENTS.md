@@ -70,14 +70,22 @@ Crucible is organized into orthogonal systems. See **[openspec/SYSTEMS.md](./ope
 ### Core Components
 - **Rust Core** (`crates/crucible-core/`): Business logic, parsing, storage traits
 - **CLI** (`crates/crucible-cli/`): Command-line interface (current primary interface)
+- **Web UI** (`crates/crucible-web/`): Browser-based chat interface using Svelte 5
 - **SurrealDB Layer** (`crates/crucible-surrealdb/`): Database integration with EPR schema
 - **Parser Implementation** (`crates/crucible-parser/`): Markdown parsing implementation
+- **MCP Server** (`crates/crucible-tools/`): Model Context Protocol server for AI agent integration
+- **Justfile MCP** (`crates/crucible-just/`): Exposes justfile recipes as MCP tools
+- **TOON Query** (`crates/tq/`): jq-like query language for structured data manipulation
 
 ### Key Technologies
 - **Rust**: Core performance-critical components
 - **SurrealDB**: Embedded database with RocksDB backend
+- **Svelte 5**: Frontend framework for web UI
+- **Axum**: Web server framework for HTTP API and SSE
+- **MCP**: Model Context Protocol for AI agent integration
+- **Justfile**: Task runner with automatic MCP tool exposure
 - **Tauri**: Desktop application framework (future)
-- **Rune**: Plugin scripting language (future)
+- **Rune**: Plugin scripting language with MCP tool support
 
 ## 📁 Project Structure & File Organization
 
@@ -87,8 +95,13 @@ crucible/
 ├── crates/                      # Rust workspace crates
 │   ├── crucible-core/           # Core business logic
 │   ├── crucible-cli/            # CLI application
+│   ├── crucible-web/            # Browser-based chat UI
 │   ├── crucible-surrealdb/      # Database layer
 │   ├── crucible-parser/         # Markdown parsing implementation
+│   ├── crucible-tools/          # MCP server and tools
+│   ├── crucible-rune/           # Rune scripting language
+│   ├── crucible-just/           # Justfile parser and MCP tool generator
+│   ├── tq/                      # TOON Query library
 │   └── ...                      # Other crates
 ├── openspec/                    # Change proposals & specs
 │   ├── SYSTEMS.md               # System boundaries and organization
@@ -101,6 +114,7 @@ crucible/
 ├── packages/                    # Other packages (web UI for desktop, MCP, etc.)
 ├── scripts/                     # Build and utility scripts
 ├── tests/                       # Integration tests
+├── justfile                     # Development recipes (run `just` to see all)
 ├── AGENTS.md                    # This file - AI agent guide
 ├── README.md                    # Project overview
 └── Cargo.toml                   # Rust workspace definition
@@ -146,6 +160,15 @@ The `docs/` folder is **empty and reserved for future use**. Don't create docume
 
 ## 🔧 Development Guidelines
 
+### Development Workflow
+- **Use `just`**: The project uses Just for common development recipes
+  - `just build` - Build all crates
+  - `just test` - Run all tests
+  - `just web` - Build and run web UI
+  - `just mcp` - Start MCP server
+  - All justfile recipes are automatically exposed as MCP tools (prefixed with `just_`)
+  - Run `just` to see all available commands
+
 ### Code Style
 - **Rust**: Use `snake_case` for functions/variables, `PascalCase` for types
 - **Error Handling**: Use `Result<T, E>` with proper error context
@@ -172,6 +195,8 @@ Before submitting changes:
 - **[STATUS.md](./STATUS.md)**: Current refactor status and next steps
 - **[README.md](./README.md)**: Project overview
 - **[OpenSpec AGENTS.md](./openspec/AGENTS.md)**: Change proposal workflow
+- **[crucible-web/AGENTS.md](./crates/crucible-web/AGENTS.md)**: Web UI development guide
+- **[justfile](./justfile)**: Development recipes (run `just` to see all)
 - **[Rust Documentation](https://doc.rust-lang.org/)**: Rust language reference
 
 ---
