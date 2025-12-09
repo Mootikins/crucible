@@ -27,6 +27,7 @@ const KNOWN_AGENTS: &[(&str, &str, &[&str])] = &[
     ("claude", "npx", &["@zed-industries/claude-code-acp"]),
     ("gemini", "gemini-cli", &[]),
     ("codex", "npx", &["@zed-industries/codex-acp"]),
+    ("cursor", "cursor-acp", &[]),
 ];
 
 /// Discover an available ACP agent using parallel probing
@@ -106,7 +107,7 @@ pub async fn discover_agent(preferred: Option<&str>) -> Result<AgentInfo> {
     // None found - provide helpful error message
     Err(anyhow!(
         "No compatible ACP agent found.\n\
-         Compatible agents: opencode, claude, gemini, codex\n\
+         Compatible agents: opencode, claude, gemini, codex, cursor\n\
          Install one with: npm install @zed-industries/claude-code-acp\n\
          Or specify a custom agent with: --agent <command>"
     ))
