@@ -30,3 +30,7 @@ Context: Designing MCP gateway - Just MCP is a good standalone tool
 ## 2025-12-09 - Workflow hierarchies as nested maps/todos
 Workflow events need more granularity than flat `workflow:step`. Consider `workflow:phase:step` hierarchy, or abstract to nested lists/maps for defining todos. Tools encode workflow, reducing state-space for agents - give them unambiguous tools that cover 90% of cases instead of full BASH. Agents become closer to stateless.
 Context: MCP bridge proposal - thinking about how workflows interact with events
+
+## 2025-12-09 - Rune as config language (Lua-style)
+Consider making Rune the config language like Lua for Neovim. `~/.crucible/config.rn` would define gateway servers, hooks, settings all in one place. Especially attractive if gradual typing PR gets merged. Would unify config and scripting into single language.
+Context: Discussing how Rune hooks should be registered - TOML+Rune hybrid feels awkward
