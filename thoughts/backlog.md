@@ -22,3 +22,11 @@ Context: Discussing recipe categorization, realized this is the 3rd time actor-l
 ## 2025-12-08 - Rune event system (not "integration points")
 Frame Rune script directories as event handlers, not integration hooks. Folder structure = event types. Scripts subscribe by existing in the folder. Eventually becomes full event system with typed event payloads. Naming: `~/.crucible/runes/events/recipe_discovered/`, `events/tool_executed/`, etc. This is the glue between actor/ECS systems and user-scriptable behavior.
 Context: Designing recipe categorization, realized it's really just event handling
+
+## 2025-12-09 - Break out Just MCP server to separate repo
+Create standalone just-mcp repo (in ~/just-mcp) with the Just recipe → MCP tool functionality. Iterate separately from Crucible. Crucible then connects to it as an upstream MCP via the bridge/gateway. Cleaner separation, reusable by others.
+Context: Designing MCP gateway - Just MCP is a good standalone tool
+
+## 2025-12-09 - Workflow hierarchies as nested maps/todos
+Workflow events need more granularity than flat `workflow:step`. Consider `workflow:phase:step` hierarchy, or abstract to nested lists/maps for defining todos. Tools encode workflow, reducing state-space for agents - give them unambiguous tools that cover 90% of cases instead of full BASH. Agents become closer to stateless.
+Context: MCP bridge proposal - thinking about how workflows interact with events

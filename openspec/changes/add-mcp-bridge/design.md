@@ -2,31 +2,35 @@
 
 Crucible currently exposes tools via MCP (Kiln operations, Just recipes, Rune scripts). To be useful as an agent infrastructure layer, it needs to:
 
-1. Connect to external MCP servers (GitHub, filesystem, databases, etc.)
-2. Transform tool outputs for LLM consumption (TOON, filtering, enrichment)
-3. Enable event-driven workflows triggered by tool results
+1. Act as MCP gateway - connect to external MCP servers and aggregate tools
+2. Provide unified event system where ALL tool calls emit events
+3. Enable Rune hooks to intercept/transform any event (tools, notes, etc.)
+4. Transform tool outputs for LLM consumption (TOON, filtering)
 
-This is a cross-cutting change affecting agents (tool registry) and plugins (interceptor system).
+This is a cross-cutting change affecting agents (tool registry) and plugins (event/hook system).
 
 **Stakeholders:**
 - LLM clients consuming Crucible's MCP interface
 - Workflow system consuming tool result events
-- Users writing custom Rune interceptors
+- Users writing custom Rune hooks
 
 ## Goals / Non-Goals
 
 **Goals:**
 - Connect to any MCP server (stdio or HTTP+SSE) using rmcp
-- Provide composable interceptor pipeline for request/response transformation
-- Support built-in interceptors: TOON, test filter, LLM enrichment, event emit
-- Support user-defined Rune interceptors with hot-reload
-- Maintain fail-open semantics (interceptor errors don't break tool calls)
+- Unified event system for tools, notes, and custom events
+- Hooks = event handlers (same system for everything)
+- Built-in hooks: TOON transform, test filter, event emit
+- User-defined Rune hooks with hot-reload
+- Fail-open semantics (hook errors don't break tool calls)
+- Configuration-driven upstream MCP server definitions
 
 **Non-Goals:**
-- Proxying (Crucible actively connects, doesn't passively forward)
+- Passive proxying (gateway actively connects and processes)
 - Authentication/authorization for upstream servers (handled by server itself)
 - Load balancing or failover between redundant servers
 - Protocol translation (MCP only, not HTTP REST or gRPC)
+- Workflow hierarchies (deferred - needs more design on nested structure)
 
 ## Decisions
 
@@ -151,43 +155,75 @@ impl InterceptorPipeline {
 ### Configuration Schema
 
 ```toml
-[bridge]
-# Global interceptor pipeline order
-interceptors = ["selector", "toon", "test_filter", "event_emit"]
+# =============================================================================
+# MCP Gateway Configuration
+# =============================================================================
 
-[[bridge.upstream]]
+[gateway]
+# Enable the MCP gateway (connects to upstream servers)
+enabled = true
+
+# =============================================================================
+# Upstream MCP Servers
+# =============================================================================
+
+[[gateway.servers]]
 name = "github"
 transport = "stdio"
 command = ["npx", "-y", "@modelcontextprotocol/server-github"]
 env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }
-prefix = "gh_"
+prefix = "gh_"  # Tools become gh_create_issue, gh_search_repos, etc.
 
-[[bridge.upstream]]
+[[gateway.servers]]
 name = "filesystem"
 transport = "stdio"
 command = ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/home/user"]
-allowed_tools = ["read_file", "list_directory"]
+allowed_tools = ["read_file", "list_directory"]  # Whitelist specific tools
 
-[[bridge.upstream]]
+[[gateway.servers]]
 name = "remote-db"
 transport = "sse"
 url = "https://db-mcp.example.com/sse"
-blocked_tools = ["drop_table", "truncate"]
+blocked_tools = ["drop_table", "truncate"]  # Blacklist dangerous tools
 
-[bridge.interceptors.toon]
+[[gateway.servers]]
+name = "just-recipes"
+transport = "stdio"
+command = ["just-mcp"]  # Future: standalone just-mcp binary
+prefix = "just_"
+
+# =============================================================================
+# Event Hooks
+# =============================================================================
+
+[hooks]
+# Discovery directory (in addition to KILN/.crucible/hooks/)
+discovery_paths = ["~/.crucible/hooks/"]
+
+# Built-in hook configuration
+[hooks.test_filter]
 enabled = true
-format = "toon"
+events = ["tool:after"]
+pattern = "just_test*"  # Only filter test-related tools
 
-[bridge.interceptors.llm_enrich]
-enabled = false
-provider = "ollama"
-model = "llama3"
-prompt = "Summarize this result concisely: {result}"
-triggers = ["gh_search_*", "gh_list_*"]
-
-[bridge.interceptors.event_emit]
+[hooks.toon_transform]
 enabled = true
-channel = "tool_results"
+events = ["tool:after"]
+pattern = "*"  # Transform all tool results
+
+[hooks.event_emit]
+enabled = true
+events = ["tool:after", "note:parsed"]
+channel = "crucible_events"  # Publish to named channel
+
+# Future: LLM enrichment (requires crucible-llm integration)
+# [hooks.llm_enrich]
+# enabled = false
+# events = ["tool:after"]
+# pattern = "gh_search_*"
+# provider = "ollama"
+# model = "llama3"
+# prompt = "Summarize: {result}"
 ```
 
 ## Risks / Trade-offs
