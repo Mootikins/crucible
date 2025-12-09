@@ -97,11 +97,11 @@ the handler. Blacklist takes precedence over whitelist.
 
 ## 10. Integration
 
-- [ ] 10.1 Wire EventBus into ExtendedMcpServer
-- [ ] 10.2 Replace existing event_pipeline with unified EventBus
-- [ ] 10.3 Replace existing EventHandler (recipe enrichment) with hook on `tool:discovered`
-- [ ] 10.4 Add `upstream_clients` to ExtendedMcpServer
-- [ ] 10.5 Aggregate tools from Kiln + Just + Rune + upstream MCPs
+- [x] 10.1 Wire EventBus into ExtendedMcpServer
+- [x] 10.2 Replace existing event_pipeline with unified EventBus
+- [x] 10.3 Replace existing EventHandler (recipe enrichment) with hook on `tool:discovered`
+- [x] 10.4 Add `upstream_clients` to ExtendedMcpServer
+- [x] 10.5 Aggregate tools from Kiln + Just + Rune + upstream MCPs
 
 ## 11. Configuration
 
