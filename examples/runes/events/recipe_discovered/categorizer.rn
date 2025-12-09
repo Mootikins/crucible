@@ -16,13 +16,24 @@ pub fn on_recipe_discovered(recipe) {
     let tags = [];
 
     // Add CI tag if recipe is likely used in CI
-    if name.starts_with("ci") || name.starts_with("test") || name.starts_with("check") {
+    // Using contains() for flexible matching anywhere in the name
+    if name.contains("ci") || name.contains("test") || name.contains("check") {
         tags.push("ci");
     }
 
     // Add "quick" tag for likely fast recipes
-    if name == "check" || name == "fmt" || name.starts_with("lint") {
+    if name.contains("fmt") || name.contains("lint") || name.contains("check") {
         tags.push("quick");
+    }
+
+    // Add "build" tag for build-related recipes
+    if name.contains("build") || name.contains("release") || name.contains("compile") {
+        tags.push("build");
+    }
+
+    // Add "doc" tag for documentation recipes
+    if name.contains("doc") {
+        tags.push("doc");
     }
 
     // Return enrichment object
