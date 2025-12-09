@@ -5,19 +5,11 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// Configuration for discovery paths
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DiscoveryPathsConfig {
     /// Per-type discovery configurations (e.g., "tools", "hooks", "events")
     #[serde(default)]
     pub type_configs: HashMap<String, TypeDiscoveryConfig>,
-}
-
-impl Default for DiscoveryPathsConfig {
-    fn default() -> Self {
-        Self {
-            type_configs: HashMap::new(),
-        }
-    }
 }
 
 /// Configuration for a specific resource type

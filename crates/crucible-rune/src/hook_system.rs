@@ -421,7 +421,7 @@ impl RuneHookHandler {
         let unit = self.unit.clone();
         let executor = self.executor.clone();
 
-        let event_type = crate::event_bus::EventType::from_str(&metadata.event_type)
+        let event_type = crate::event_bus::EventType::parse(&metadata.event_type)
             .unwrap_or(crate::event_bus::EventType::Custom);
 
         Handler::new(

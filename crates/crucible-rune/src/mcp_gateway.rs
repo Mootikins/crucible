@@ -51,7 +51,7 @@
 //! let result = client.call_tool("search_repositories", args).await?;
 //! ```
 
-use crate::event_bus::{Event, EventBus, EventContext, EventType, HandlerError};
+use crate::event_bus::{Event, EventBus, EventContext, HandlerError};
 use crate::tool_events::ToolSource;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
@@ -276,6 +276,7 @@ impl UpstreamMcpClient {
     }
 
     /// Apply prefix to a tool name
+    #[allow(dead_code)]
     fn apply_prefix(&self, name: &str) -> String {
         match &self.config.prefix {
             Some(prefix) => format!("{}{}", prefix, name),
@@ -310,6 +311,7 @@ impl UpstreamMcpClient {
     }
 
     /// Emit mcp:attached event
+    #[allow(dead_code)]
     async fn emit_attached(&self, server_info: &UpstreamServerInfo) {
         let payload = json!({
             "name": self.config.name,
@@ -375,7 +377,7 @@ impl UpstreamMcpClient {
             })
             .ok_or_else(|| GatewayError::ToolNotFound(tool_name.to_string()))?;
 
-        let source = ToolSource::Upstream;
+        let _source = ToolSource::Upstream;
 
         // 1. Emit tool:before
         let before_event = Event::tool_before(&tool.prefixed_name, arguments.clone())
