@@ -36,7 +36,7 @@
 
 use regex::Regex as RustRegex;
 use rune::alloc::Vec as RuneVec;
-use rune::runtime::{Ref, VmResult};
+use rune::runtime::VmResult;
 use rune::{Any, ContextError, Module};
 
 /// Create the regex module for Rune
@@ -99,15 +99,15 @@ impl RuneRegex {
 
     /// Check if the pattern matches anywhere in the text
     #[rune::function(path = Self::is_match)]
-    pub fn is_match(&self, text: &str) -> bool {
-        self.inner.is_match(text)
+    pub fn is_match(&self, text: String) -> bool {
+        self.inner.is_match(&text)
     }
 
     /// Find the first match in the text
     ///
     /// Returns `Some(matched_text)` or `None` if no match.
     #[rune::function(path = Self::find)]
-    pub fn find(&self, text: Ref<str>) -> Option<String> {
+    pub fn find(&self, text: String) -> Option<String> {
         self.inner.find(&text).map(|m| m.as_str().to_string())
     }
 
@@ -115,7 +115,7 @@ impl RuneRegex {
     ///
     /// Returns a vector of all matched strings.
     #[rune::function(path = Self::find_all)]
-    pub fn find_all(&self, text: Ref<str>) -> VmResult<RuneVec<String>> {
+    pub fn find_all(&self, text: String) -> VmResult<RuneVec<String>> {
         let matches: Vec<String> = self
             .inner
             .find_iter(&text)
@@ -128,23 +128,25 @@ impl RuneRegex {
     ///
     /// The replacement can use `$1`, `$2`, etc. for capture groups.
     #[rune::function(path = Self::replace)]
-    pub fn replace(&self, text: Ref<str>, replacement: &str) -> String {
-        self.inner.replace(&text, replacement).into_owned()
+    pub fn replace(&self, text: String, replacement: String) -> String {
+        self.inner.replace(&text, replacement.as_str()).into_owned()
     }
 
     /// Replace all matches with the replacement string
     ///
     /// The replacement can use `$1`, `$2`, etc. for capture groups.
     #[rune::function(path = Self::replace_all)]
-    pub fn replace_all(&self, text: Ref<str>, replacement: &str) -> String {
-        self.inner.replace_all(&text, replacement).into_owned()
+    pub fn replace_all(&self, text: String, replacement: String) -> String {
+        self.inner
+            .replace_all(&text, replacement.as_str())
+            .into_owned()
     }
 
     /// Split the text by the pattern
     ///
     /// Returns a vector of substrings.
     #[rune::function(path = Self::split)]
-    pub fn split(&self, text: Ref<str>) -> VmResult<RuneVec<String>> {
+    pub fn split(&self, text: String) -> VmResult<RuneVec<String>> {
         let parts: Vec<String> = self.inner.split(&text).map(|s| s.to_string()).collect();
         VmResult::Ok(RuneVec::try_from(parts).unwrap())
     }
@@ -155,7 +157,7 @@ impl RuneRegex {
     /// and subsequent indices are the capture groups.
     /// Returns `None` if no match.
     #[rune::function(path = Self::captures)]
-    pub fn captures(&self, text: Ref<str>) -> VmResult<Option<RuneVec<Option<String>>>> {
+    pub fn captures(&self, text: String) -> VmResult<Option<RuneVec<Option<String>>>> {
         match self.inner.captures(&text) {
             Some(caps) => {
                 let groups: Vec<Option<String>> = caps
@@ -176,28 +178,29 @@ impl RuneRegex {
 /// This is a convenience function that compiles the regex each time.
 /// For repeated use, create a `Regex` object instead.
 #[rune::function]
-fn is_match(pattern: &str, text: &str) -> VmResult<bool> {
-    match RustRegex::new(pattern) {
-        Ok(re) => VmResult::Ok(re.is_match(text)),
+fn is_match(pattern: String, text: String) -> VmResult<bool> {
+    match RustRegex::new(&pattern) {
+        Ok(re) => VmResult::Ok(re.is_match(&text)),
         Err(e) => VmResult::panic(format!("Invalid regex pattern '{}': {}", pattern, e)),
     }
 }
 
 /// Find the first match of a pattern in the text
 #[rune::function]
-fn find(pattern: &str, text: &str) -> VmResult<Option<String>> {
-    match RustRegex::new(pattern) {
-        Ok(re) => VmResult::Ok(re.find(text).map(|m| m.as_str().to_string())),
+fn find(pattern: String, text: String) -> VmResult<Option<String>> {
+    match RustRegex::new(&pattern) {
+        Ok(re) => VmResult::Ok(re.find(&text).map(|m| m.as_str().to_string())),
         Err(e) => VmResult::panic(format!("Invalid regex pattern '{}': {}", pattern, e)),
     }
 }
 
 /// Find all matches of a pattern in the text
 #[rune::function]
-fn find_all(pattern: &str, text: &str) -> VmResult<RuneVec<String>> {
-    match RustRegex::new(pattern) {
+fn find_all(pattern: String, text: String) -> VmResult<RuneVec<String>> {
+    match RustRegex::new(&pattern) {
         Ok(re) => {
-            let matches: Vec<String> = re.find_iter(text).map(|m| m.as_str().to_string()).collect();
+            let matches: Vec<String> =
+                re.find_iter(&text).map(|m| m.as_str().to_string()).collect();
             VmResult::Ok(RuneVec::try_from(matches).unwrap())
         }
         Err(e) => VmResult::panic(format!("Invalid regex pattern '{}': {}", pattern, e)),
@@ -206,18 +209,18 @@ fn find_all(pattern: &str, text: &str) -> VmResult<RuneVec<String>> {
 
 /// Replace the first match of a pattern
 #[rune::function]
-fn replace(pattern: &str, text: &str, replacement: &str) -> VmResult<String> {
-    match RustRegex::new(pattern) {
-        Ok(re) => VmResult::Ok(re.replace(text, replacement).into_owned()),
+fn replace(pattern: String, text: String, replacement: String) -> VmResult<String> {
+    match RustRegex::new(&pattern) {
+        Ok(re) => VmResult::Ok(re.replace(&text, replacement.as_str()).into_owned()),
         Err(e) => VmResult::panic(format!("Invalid regex pattern '{}': {}", pattern, e)),
     }
 }
 
 /// Replace all matches of a pattern
 #[rune::function]
-fn replace_all(pattern: &str, text: &str, replacement: &str) -> VmResult<String> {
-    match RustRegex::new(pattern) {
-        Ok(re) => VmResult::Ok(re.replace_all(text, replacement).into_owned()),
+fn replace_all(pattern: String, text: String, replacement: String) -> VmResult<String> {
+    match RustRegex::new(&pattern) {
+        Ok(re) => VmResult::Ok(re.replace_all(&text, replacement.as_str()).into_owned()),
         Err(e) => VmResult::panic(format!("Invalid regex pattern '{}': {}", pattern, e)),
     }
 }
