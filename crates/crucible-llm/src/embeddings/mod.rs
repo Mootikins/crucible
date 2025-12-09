@@ -22,6 +22,9 @@ pub mod openai;
 /// FastEmbed local provider implementation.
 pub mod fastembed;
 
+/// Burn ML framework provider implementation.
+pub mod burn;
+
 /// Provider trait and common functionality.
 pub mod provider;
 
@@ -35,6 +38,7 @@ pub use fastembed::FastEmbedProvider;
 pub use mock::MockEmbeddingProvider;
 pub use ollama::OllamaProvider;
 pub use openai::OpenAIProvider;
+pub use burn::BurnProvider;
 pub use provider::{EmbeddingProvider, EmbeddingResponse};
 
 use std::sync::Arc;
@@ -58,6 +62,17 @@ pub async fn create_provider(
         EmbeddingProviderType::FastEmbed => {
             let provider = fastembed::FastEmbedProvider::new(config)?;
             Ok(Arc::new(provider))
+        }
+        EmbeddingProviderType::Burn => {
+            // Extract Burn config from the embedding config
+            if let crucible_config::EmbeddingProviderConfig::Burn(burn_config) = config {
+                let provider = burn::BurnProvider::new(&burn_config)?;
+                Ok(Arc::new(provider))
+            } else {
+                Err(EmbeddingError::ConfigError(
+                    "Burn provider type requires Burn configuration".to_string()
+                ))
+            }
         }
         EmbeddingProviderType::Mock => {
             let dimensions = config.dimensions().unwrap_or(768) as usize;
