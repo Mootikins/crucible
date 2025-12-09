@@ -35,6 +35,7 @@ mod events;
 mod executor;
 mod hook_system;
 mod hook_types;
+pub mod note_events;
 mod plugin_loader;
 mod plugin_types;
 mod regex_module;
@@ -55,6 +56,11 @@ pub use event_handler::{EventHandler, EventHandlerConfig};
 pub use hook_system::{BuiltinHook, Hook, HookManager, HookRegistry, RuneHookHandler};
 pub use hook_types::RuneHook;
 pub use tool_events::{ContentBlock as ToolContentBlock, ToolEventEmitter, ToolSource};
+pub use note_events::{
+    BlockChange, BlockChangeOperation, BlockInfo, BlockType, InlineLinkInfo, NoteChangeType,
+    NoteCreatedPayload, NoteEventEmitter, NoteMetadata, NoteModifiedPayload, NotePayload,
+    WikilinkInfo,
+};
 pub use event_pipeline::EventPipeline;
 pub use events::{
     ContentBlock, CrucibleEvent, EnrichedRecipe, RecipeEnrichment, RecipeParameter,
