@@ -25,6 +25,7 @@
 //! ```
 
 mod attribute_discovery;
+mod builtin_hooks;
 mod discovery;
 mod discovery_paths;
 pub mod event_bus;
@@ -42,6 +43,10 @@ mod rune_types;
 mod types;
 
 pub use attribute_discovery::{attr_parsers, AttributeDiscovery, FromAttributes};
+pub use builtin_hooks::{
+    create_event_emit_hook, create_test_filter_hook, create_toon_transform_hook,
+    register_builtin_hooks, BuiltinHooksConfig, EventEmitConfig, HookToggle,
+};
 pub use discovery::ToolDiscovery;
 pub use discovery_paths::{DiscoveryConfig, DiscoveryPaths};
 pub use event_bus::{Event, EventBus, EventContext, EventType, Handler, HandlerError, HandlerResult};
