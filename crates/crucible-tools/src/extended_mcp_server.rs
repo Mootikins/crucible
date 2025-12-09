@@ -52,7 +52,8 @@ pub struct ExtendedMcpServer {
     just_tools: Arc<JustTools>,
     /// Rune script registry
     rune_registry: Arc<RuneToolRegistry>,
-    /// Event handler for recipe enrichment
+    /// Event handler for recipe enrichment (DEPRECATED: use event_bus with tool:discovered hook)
+    #[allow(dead_code)]
     event_handler: Option<Arc<EventHandler>>,
     /// Event pipeline for filtering tool output (Rune plugins)
     event_pipeline: Option<EventPipeline>,
@@ -150,11 +151,19 @@ impl ExtendedMcpServer {
         let event_bus = {
             let mut bus = EventBus::new();
 
-            // Register test filter hook (enabled by default)
+            // Register all built-in hooks
             let builtin_config = BuiltinHooksConfig::default();
+
             if builtin_config.test_filter.enabled {
                 bus.register(create_test_filter_hook(&builtin_config.test_filter));
                 info!("Registered builtin:test_filter hook");
+            }
+
+            if builtin_config.recipe_enrichment.enabled {
+                bus.register(crucible_rune::builtin_hooks::create_recipe_enrichment_hook(
+                    &builtin_config.recipe_enrichment,
+                ));
+                info!("Registered builtin:recipe_enrichment hook");
             }
 
             Arc::new(RwLock::new(bus))
@@ -217,16 +226,16 @@ impl ExtendedMcpServer {
 
     /// List all available tools from all sources
     ///
-    /// Just recipes are enriched via event handlers before being returned.
+    /// Just recipes are enriched via tool:discovered hooks before being returned.
     pub async fn list_all_tools(&self) -> Vec<Tool> {
         let mut tools = self.kiln_server.list_tools();
 
-        // Add Just tools (enriched via event handlers)
+        // Add Just tools (enriched via tool:discovered hooks)
         if let Ok(just_tools) = self.just_tools.list_tools().await {
-            // Enrich recipes via event handlers
-            let enriched_tools = self.enrich_just_tools(just_tools).await;
-            for jt in enriched_tools {
-                tools.push(self.mcp_tool_from_just(&jt));
+            for jt in just_tools {
+                // Emit tool:discovered event and apply enrichment from hooks
+                let enriched_tool = self.emit_tool_discovered(&jt).await;
+                tools.push(self.mcp_tool_from_just(&enriched_tool));
             }
         }
 
@@ -238,10 +247,62 @@ impl ExtendedMcpServer {
         tools
     }
 
-    /// Enrich Just tools via Rune event handlers
+    /// Emit tool:discovered event and apply enrichment from hooks
+    ///
+    /// This replaces the old EventHandler-based enrichment with the new unified event system.
+    async fn emit_tool_discovered(&self, tool: &crucible_just::McpTool) -> crucible_just::McpTool {
+        let bus = self.event_bus.read().await;
+
+        // Create tool metadata payload
+        let metadata = json!({
+            "name": tool.name,
+            "description": tool.description,
+            "category": tool.category,
+            "tags": tool.tags,
+            "priority": tool.priority,
+        });
+
+        // Emit tool:discovered event
+        let event = crucible_rune::event_bus::Event::tool_discovered(&tool.name, metadata)
+            .with_source(ToolSource::Just.as_str());
+
+        let (result_event, _ctx, errors) = bus.emit(event);
+
+        if !errors.is_empty() {
+            for e in &errors {
+                warn!("Hook error during tool:discovered: {}", e);
+            }
+        }
+
+        // Extract enrichment from the modified event payload
+        let mut enriched_tool = tool.clone();
+
+        if let Some(obj) = result_event.payload.as_object() {
+            if let Some(category) = obj.get("category").and_then(|v| v.as_str()) {
+                enriched_tool.category = Some(category.to_string());
+            }
+            if let Some(tags) = obj.get("tags").and_then(|v| v.as_array()) {
+                enriched_tool.tags = tags
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect();
+            }
+            if let Some(priority) = obj.get("priority").and_then(|v| v.as_i64()) {
+                enriched_tool.priority = Some(priority as i32);
+            }
+        }
+
+        enriched_tool
+    }
+
+    /// Enrich Just tools via Rune event handlers (DEPRECATED - kept for backward compatibility)
+    ///
+    /// This method is kept for backward compatibility with the old EventHandler system.
+    /// New code should use the tool:discovered hook via emit_tool_discovered().
     ///
     /// Converts McpTools to EnrichedRecipes, processes through handlers,
     /// then updates the McpTools with enrichment data.
+    #[allow(dead_code)]
     async fn enrich_just_tools(
         &self,
         mut tools: Vec<crucible_just::McpTool>,
@@ -1092,5 +1153,123 @@ mod tests {
             assert!(handler.is_some(), "builtin:test_filter hook should be registered");
             assert_eq!(handler.unwrap().event_type, EventType::ToolAfter);
         }
+    }
+
+    #[tokio::test]
+    async fn test_tool_discovered_event_emitted() {
+        use crucible_rune::event_bus::{EventType, Handler};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let temp = TempDir::new().unwrap();
+
+        // Create a justfile with a test recipe
+        let justfile_path = temp.path().join("justfile");
+        std::fs::write(&justfile_path, "test:\n\techo 'Running tests'\n").unwrap();
+
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+        let server = ExtendedMcpServer::new(
+            temp.path().to_str().unwrap().to_string(),
+            knowledge_repo,
+            embedding_provider,
+            temp.path(),
+            RuneDiscoveryConfig::default(),
+        )
+        .await
+        .unwrap();
+
+        let event_bus = server.event_bus();
+
+        // Track tool:discovered events
+        let discovered_count = Arc::new(AtomicUsize::new(0));
+        let discovered_count_clone = Arc::clone(&discovered_count);
+
+        {
+            let mut bus = event_bus.write().await;
+            bus.register(Handler::new(
+                "test_tool_discovered_counter",
+                EventType::ToolDiscovered,
+                "just_*",
+                move |_ctx, event| {
+                    discovered_count_clone.fetch_add(1, Ordering::SeqCst);
+                    Ok(event)
+                },
+            ));
+        }
+
+        // List tools - should emit tool:discovered events
+        let tools = server.list_all_tools().await;
+
+        // Should have at least one just tool
+        let just_tools: Vec<_> = tools.iter().filter(|t| t.name.as_ref().starts_with("just_")).collect();
+        assert!(!just_tools.is_empty(), "Should have at least one just tool");
+
+        // Should have emitted tool:discovered events for all just tools
+        assert_eq!(
+            discovered_count.load(Ordering::SeqCst),
+            just_tools.len(),
+            "Should emit tool:discovered event for each just tool"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_recipe_enrichment_via_hook() {
+        use crucible_rune::event_bus::{EventType, Handler};
+
+        let temp = TempDir::new().unwrap();
+
+        // Create a justfile with a test recipe
+        let justfile_path = temp.path().join("justfile");
+        std::fs::write(&justfile_path, "test:\n\techo 'Running tests'\n\nbuild:\n\techo 'Building'\n").unwrap();
+
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+        let server = ExtendedMcpServer::new(
+            temp.path().to_str().unwrap().to_string(),
+            knowledge_repo,
+            embedding_provider,
+            temp.path(),
+            RuneDiscoveryConfig::default(),
+        )
+        .await
+        .unwrap();
+
+        let event_bus = server.event_bus();
+
+        // Register a hook to enrich just_test with category and tags
+        {
+            let mut bus = event_bus.write().await;
+            bus.register(Handler::new(
+                "test_enrichment",
+                EventType::ToolDiscovered,
+                "just_test",
+                |_ctx, mut event| {
+                    // Add enrichment data to the payload
+                    if let Some(obj) = event.payload.as_object_mut() {
+                        obj.insert("category".to_string(), json!("testing"));
+                        obj.insert("tags".to_string(), json!(["ci", "quick"]));
+                        obj.insert("priority".to_string(), json!(10));
+                    }
+                    Ok(event)
+                },
+            ));
+        }
+
+        // List tools - should apply enrichment via hooks
+        let tools = server.list_all_tools().await;
+
+        // Find the just_test tool
+        let test_tool = tools.iter().find(|t| t.name.as_ref() == "just_test");
+        assert!(test_tool.is_some(), "Should have just_test tool");
+
+        let test_tool = test_tool.unwrap();
+
+        // Verify enrichment is in the description
+        let desc = test_tool.description.as_ref().unwrap().as_ref();
+        assert!(desc.contains("[testing]"), "Description should contain category: {}", desc);
+        assert!(desc.contains("#ci"), "Description should contain tags: {}", desc);
+        assert!(desc.contains("#quick"), "Description should contain tags: {}", desc);
     }
 }
