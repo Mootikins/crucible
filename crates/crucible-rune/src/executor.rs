@@ -106,8 +106,8 @@ impl RuneExecutor {
         }
     }
 
-    /// Compile a Rune script
-    fn compile(&self, name: &str, source: &str) -> Result<Arc<Unit>, RuneError> {
+    /// Compile a Rune script to a reusable Unit
+    pub fn compile(&self, name: &str, source: &str) -> Result<Arc<Unit>, RuneError> {
         let mut sources = Sources::new();
         sources
             .insert(Source::new(name, source).map_err(|e| RuneError::Compile(e.to_string()))?)
@@ -133,6 +133,45 @@ impl RuneExecutor {
         let unit = result.map_err(|e| RuneError::Compile(e.to_string()))?;
 
         Ok(Arc::new(unit))
+    }
+
+    /// Call a function on a compiled unit with the given arguments
+    ///
+    /// This allows calling arbitrary functions in Rune scripts, not just
+    /// tool entry points. Useful for plugin init() functions and event handlers.
+    ///
+    /// # Arguments
+    /// * `unit` - The compiled Rune unit
+    /// * `fn_name` - Name of the function to call
+    /// * `args` - Tuple of arguments (use () for no args, (val,) for one, (a, b) for two, etc.)
+    ///
+    /// # Returns
+    /// The function's return value as JSON. Option::None becomes JSON null.
+    pub async fn call_function<A>(
+        &self,
+        unit: &Arc<Unit>,
+        fn_name: &str,
+        args: A,
+    ) -> Result<JsonValue, RuneError>
+    where
+        A: rune::runtime::Args + rune::runtime::GuardedArgs,
+    {
+        let mut vm = Vm::new(self.runtime.clone(), unit.clone());
+
+        let hash = rune::Hash::type_hash([fn_name]);
+
+        let output = vm
+            .call(hash, args)
+            .map_err(|e| RuneError::Execution(format_vm_error(e)))?;
+
+        // Handle async functions - check if output is a generator/future
+        let output = match vm.async_complete().await {
+            Ok(val) => val,
+            Err(_) => output, // Not async, use original output
+        };
+
+        // Convert output to JSON
+        self.rune_to_json(output)
     }
 
     /// Run a compiled unit
@@ -232,7 +271,14 @@ impl RuneExecutor {
         }
     }
 
-    /// Convert a single JSON value to Rune
+    /// Convert a JSON value to a Rune Value
+    ///
+    /// This is exposed publicly so callers can prepare complex arguments for call_function.
+    pub fn json_to_rune_value(&self, value: JsonValue) -> Result<Value, RuneError> {
+        self.json_value_to_rune(value)
+    }
+
+    /// Convert a single JSON value to Rune (internal)
     fn json_value_to_rune(&self, value: JsonValue) -> Result<Value, RuneError> {
         match value {
             JsonValue::Null => Ok(Value::empty()),
@@ -322,6 +368,19 @@ impl RuneExecutor {
                 .map(|(k, v)| Ok((k, self.rune_to_json(v)?)))
                 .collect::<Result<_, RuneError>>()?;
             Ok(JsonValue::Object(obj))
+        } else if type_name.contains("Option") {
+            // Handle Option<T> - check if it's Some or None
+            // Try to convert as Option - if it's None, return null
+            // The value might be a variant, we need to check if it's the None variant
+            match rune::from_value::<Option<Value>>(value.clone()) {
+                Ok(Some(inner)) => self.rune_to_json(inner),
+                Ok(None) => Ok(JsonValue::Null),
+                Err(_) => {
+                    // Fallback: might be Some variant, try to extract inner value
+                    debug!("Option type but couldn't convert directly: {}", type_name);
+                    Ok(JsonValue::Null)
+                }
+            }
         } else {
             // Unknown type - fall back to debug representation
             debug!(
@@ -499,5 +558,102 @@ pub fn greet(name) {
             JsonValue::String("Hello, Claude! Welcome to Crucible.".to_string()),
             "Greet function should return proper greeting string"
         );
+    }
+
+    // =========================================================================
+    // TDD: Tests for call_function API
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_compile_returns_arc_unit() {
+        let executor = RuneExecutor::new().unwrap();
+        let source = "pub fn hello() { 42 }";
+        let unit = executor.compile("test", source);
+        assert!(unit.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_call_function_no_args() {
+        let executor = RuneExecutor::new().unwrap();
+        let source = "pub fn get_value() { 42 }";
+        let unit = executor.compile("test", source).unwrap();
+
+        let result = executor.call_function(&unit, "get_value", ()).await.unwrap();
+        assert_eq!(result, serde_json::json!(42));
+    }
+
+    #[tokio::test]
+    async fn test_call_function_single_arg() {
+        let executor = RuneExecutor::new().unwrap();
+        let source = r#"pub fn double(n) { n * 2 }"#;
+        let unit = executor.compile("test", source).unwrap();
+
+        let result = executor.call_function(&unit, "double", (21i64,)).await.unwrap();
+        assert_eq!(result, serde_json::json!(42));
+    }
+
+    #[tokio::test]
+    async fn test_call_function_two_args() {
+        let executor = RuneExecutor::new().unwrap();
+        let source = r#"pub fn add(a, b) { a + b }"#;
+        let unit = executor.compile("test", source).unwrap();
+
+        let result = executor.call_function(&unit, "add", (10i64, 32i64)).await.unwrap();
+        assert_eq!(result, serde_json::json!(42));
+    }
+
+    #[tokio::test]
+    async fn test_call_function_with_json_arg() {
+        let executor = RuneExecutor::new().unwrap();
+        let source = r#"
+pub fn process(event) {
+    event.value * 2
+}
+"#;
+        let unit = executor.compile("test", source).unwrap();
+
+        let event = serde_json::json!({"value": 21});
+        let rune_val = executor.json_to_rune_value(event).unwrap();
+        let result = executor.call_function(&unit, "process", (rune_val,)).await.unwrap();
+        assert_eq!(result, serde_json::json!(42));
+    }
+
+    #[tokio::test]
+    async fn test_call_function_returns_none() {
+        let executor = RuneExecutor::new().unwrap();
+        let source = r#"pub fn maybe_none() { None }"#;
+        let unit = executor.compile("test", source).unwrap();
+
+        let result = executor.call_function(&unit, "maybe_none", ()).await.unwrap();
+        assert!(result.is_null());
+    }
+
+    #[tokio::test]
+    async fn test_call_function_returns_some_object() {
+        let executor = RuneExecutor::new().unwrap();
+        let source = r#"
+pub fn get_config() {
+    Some(#{ name: "test", value: 42 })
+}
+"#;
+        let unit = executor.compile("test", source).unwrap();
+
+        let result = executor.call_function(&unit, "get_config", ()).await.unwrap();
+        assert_eq!(result["name"], "test");
+        assert_eq!(result["value"], 42);
+    }
+
+    #[tokio::test]
+    async fn test_call_async_function() {
+        let executor = RuneExecutor::new().unwrap();
+        let source = r#"
+pub async fn async_compute() {
+    42
+}
+"#;
+        let unit = executor.compile("test", source).unwrap();
+
+        let result = executor.call_function(&unit, "async_compute", ()).await.unwrap();
+        assert_eq!(result, serde_json::json!(42));
     }
 }

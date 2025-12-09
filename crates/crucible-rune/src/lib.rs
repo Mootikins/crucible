@@ -28,6 +28,7 @@ mod discovery;
 mod event_handler;
 mod events;
 mod executor;
+mod plugin_types;
 mod regex_module;
 mod registry;
 mod rune_types;
@@ -35,8 +36,12 @@ mod types;
 
 pub use discovery::ToolDiscovery;
 pub use event_handler::{EventHandler, EventHandlerConfig};
-pub use events::{CrucibleEvent, EnrichedRecipe, RecipeEnrichment, RecipeParameter};
+pub use events::{
+    ContentBlock, CrucibleEvent, EnrichedRecipe, RecipeEnrichment, RecipeParameter,
+    ToolResultEvent,
+};
 pub use executor::RuneExecutor;
+pub use plugin_types::{HookConfig, PluginManifest, RegisteredHook};
 pub use regex_module::regex_module;
 pub use registry::RuneToolRegistry;
 pub use rune_types::crucible_module;
