@@ -52,9 +52,9 @@ impl RuneExecutor {
 
     /// Create a module with no-op attribute macros for tool metadata
     ///
-    /// These macros (`#[tool(...)]` and `#[param(...)]`) are parsed by the discovery
-    /// system but need to be accepted by Rune's compiler. They simply pass through
-    /// the decorated item unchanged.
+    /// These macros (`#[tool(...)]`, `#[param(...)]`, `#[hook(...)]`) are parsed by the
+    /// discovery system but need to be accepted by Rune's compiler. They simply pass
+    /// through the decorated item unchanged.
     fn metadata_macros_module() -> Result<Module, compile::ContextError> {
         let mut module = Module::new();
 
@@ -71,6 +71,15 @@ impl RuneExecutor {
         // #[param(...)] - describes a parameter
         // No-op: just return the item unchanged
         module.attribute_macro(["param"], |cx, _input, item| {
+            let mut parser = Parser::from_token_stream(item, cx.macro_span());
+            let item_fn = parser.parse::<ast::Item>()?;
+            let output = rune::macros::quote!(#item_fn);
+            Ok(output.into_token_stream(cx)?)
+        })?;
+
+        // #[hook(...)] - marks a function as an event handler
+        // No-op: just return the item unchanged (metadata extracted by discovery regex)
+        module.attribute_macro(["hook"], |cx, _input, item| {
             let mut parser = Parser::from_token_stream(item, cx.macro_span());
             let item_fn = parser.parse::<ast::Item>()?;
             let output = rune::macros::quote!(#item_fn);
