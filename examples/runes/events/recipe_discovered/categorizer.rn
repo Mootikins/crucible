@@ -1,39 +1,45 @@
-/// Recipe categorizer - auto-categorizes recipes by name patterns
-///
-/// This script demonstrates the event system by categorizing
-/// recipes based on naming conventions.
+// Recipe categorizer - auto-categorizes recipes by name patterns
+//
+// This script demonstrates the event system by categorizing
+// recipes based on naming conventions using regex patterns.
 
 use crucible::categorize_by_name;
+use regex::is_match;
 
 /// Handle recipe_discovered event
 ///
 /// Receives a recipe object and returns enrichment data.
 pub fn on_recipe_discovered(recipe) {
-    let name = recipe["name"];
-    let category = categorize_by_name(name);
+    let name = recipe["name"].clone();
+    let category = categorize_by_name(name.clone());
 
     // Build enrichment with category and tags
     let tags = [];
 
     // Add CI tag if recipe is likely used in CI
-    // Using contains() for flexible matching anywhere in the name
-    if name.contains("ci") || name.contains("test") || name.contains("check") {
+    // Using regex for flexible pattern matching
+    if is_match("ci|test|check|spec", name.clone()) {
         tags.push("ci");
     }
 
     // Add "quick" tag for likely fast recipes
-    if name.contains("fmt") || name.contains("lint") || name.contains("check") {
+    if is_match("fmt|lint|check", name.clone()) {
         tags.push("quick");
     }
 
     // Add "build" tag for build-related recipes
-    if name.contains("build") || name.contains("release") || name.contains("compile") {
+    if is_match("build|release|compile", name.clone()) {
         tags.push("build");
     }
 
     // Add "doc" tag for documentation recipes
-    if name.contains("doc") {
+    if is_match("doc", name.clone()) {
         tags.push("doc");
+    }
+
+    // Detect version patterns like v1.0, v2.3.4
+    if is_match("v\\d+\\.\\d+", name.clone()) {
+        tags.push("versioned");
     }
 
     // Return enrichment object
