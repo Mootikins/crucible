@@ -134,7 +134,8 @@ impl MockStdioAgentConfig {
 /// This agent reads JSON-RPC messages from stdin and writes responses to stdout,
 /// simulating a real ACP agent for integration testing.
 pub struct MockStdioAgent {
-    config: MockStdioAgentConfig,
+    /// Agent configuration (public for threaded mock access)
+    pub config: MockStdioAgentConfig,
     pub session_id: Option<String>,
 }
 
