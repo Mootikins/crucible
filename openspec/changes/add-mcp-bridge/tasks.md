@@ -113,8 +113,8 @@ the handler. Blacklist takes precedence over whitelist.
 
 ## 12. Documentation
 
-- [ ] 12.1 Document event types and their payloads
-- [ ] 12.2 Document `#[hook(...)]` attribute format
-- [ ] 12.3 Document discovery path conventions
-- [ ] 12.4 Add example Rune hook scripts (filter, transform, emit)
-- [ ] 12.5 Document MCP gateway configuration
+- [x] 12.1 Document event types and their payloads
+- [x] 12.2 Document `#[hook(...)]` attribute format
+- [x] 12.3 Document discovery path conventions
+- [x] 12.4 Add example Rune hook scripts (filter, transform, emit)
+- [x] 12.5 Document MCP gateway configuration
