@@ -107,8 +107,17 @@ pub async fn discover_agent(preferred: Option<&str>) -> Result<AgentInfo> {
     // None found - provide helpful error message
     Err(anyhow!(
         "No compatible ACP agent found.\n\
-         Compatible agents: opencode, claude, gemini, codex, cursor\n\
-         Install one with: npm install @zed-industries/claude-code-acp\n\
+         \n\
+         Compatible agents:\n\
+         • opencode: Built into Crucible (no installation needed)\n\
+         • claude: npm install -g @zed-industries/claude-code-acp\n\
+         • gemini: npm install -g gemini-cli\n\
+         • codex: npm install -g @zed-industries/codex-acp\n\
+         • cursor: npm install -g cursor-acp\n\
+         \n\
+         After installation, use with:\n\
+         cru chat --agent <agent> \"your message\"\n\
+         \n\
          Or specify a custom agent with: --agent <command>"
     ))
 }
@@ -117,6 +126,42 @@ pub async fn discover_agent(preferred: Option<&str>) -> Result<AgentInfo> {
 #[allow(dead_code)]
 pub fn clear_agent_cache() {
     *AGENT_CACHE.lock().unwrap() = None;
+}
+
+/// Get help text about available ACP agents and installation instructions
+pub fn get_agent_help() -> String {
+    "Available ACP Agents:
+=================
+
+• opencode
+  Built into Crucible (no installation needed)
+  Open source ACP agent with basic functionality
+
+• claude
+  Installation: npm install -g @zed-industries/claude-code-acp
+  Claude Code agent with advanced code understanding
+
+• gemini
+  Installation: npm install -g gemini-cli
+  Google's Gemini AI agent
+
+• codex
+  Installation: npm install -g @zed-industries/codex-acp
+  OpenAI Codex agent for code generation
+
+• cursor
+  Installation: npm install -g cursor-acp
+  Cursor IDE's ACP agent
+
+Usage:
+  cru chat                    # Auto-detect first available agent
+  cru chat --agent <name>     # Use specific agent
+  cru chat --agent <cmd>      # Use custom command
+
+Examples:
+  cru chat --agent claude \"Refactor this function\"
+  cru chat --agent cursor \"Add error handling\"
+".to_string()
 }
 
 /// Check if an agent command is available (async, non-blocking)
