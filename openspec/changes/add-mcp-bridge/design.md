@@ -154,76 +154,110 @@ impl InterceptorPipeline {
 
 ### Configuration Schema
 
+**Design decision:** Rune scripts self-register via `#[hook(...)]` attributes (same pattern as `#[tool(...)]`). TOML only configures discovery paths and built-in settings.
+
 ```toml
 # =============================================================================
 # MCP Gateway Configuration
 # =============================================================================
 
 [gateway]
-# Enable the MCP gateway (connects to upstream servers)
 enabled = true
-
-# =============================================================================
-# Upstream MCP Servers
-# =============================================================================
 
 [[gateway.servers]]
 name = "github"
 transport = "stdio"
 command = ["npx", "-y", "@modelcontextprotocol/server-github"]
 env = { GITHUB_TOKEN = "${GITHUB_TOKEN}" }
-prefix = "gh_"  # Tools become gh_create_issue, gh_search_repos, etc.
+prefix = "gh_"
 
 [[gateway.servers]]
 name = "filesystem"
 transport = "stdio"
 command = ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/home/user"]
-allowed_tools = ["read_file", "list_directory"]  # Whitelist specific tools
+allowed_tools = ["read_file", "list_directory"]
 
 [[gateway.servers]]
 name = "remote-db"
 transport = "sse"
 url = "https://db-mcp.example.com/sse"
-blocked_tools = ["drop_table", "truncate"]  # Blacklist dangerous tools
-
-[[gateway.servers]]
-name = "just-recipes"
-transport = "stdio"
-command = ["just-mcp"]  # Future: standalone just-mcp binary
-prefix = "just_"
+blocked_tools = ["drop_table", "truncate"]
 
 # =============================================================================
-# Event Hooks
+# Hook Discovery (Rune scripts self-register via #[hook(...)])
 # =============================================================================
 
 [hooks]
-# Discovery directory (in addition to KILN/.crucible/hooks/)
-discovery_paths = ["~/.crucible/hooks/"]
+# Directories to scan for .rn files with #[hook(...)] attributes
+discovery_paths = [
+    "~/.crucible/hooks/",
+    "KILN/.crucible/hooks/",
+]
 
-# Built-in hook configuration
-[hooks.test_filter]
+# Built-in hook settings (these are Rust, not Rune)
+[hooks.builtin.test_filter]
 enabled = true
-events = ["tool:after"]
-pattern = "just_test*"  # Only filter test-related tools
+pattern = "just_test*"  # Override default pattern
 
-[hooks.toon_transform]
+[hooks.builtin.toon_transform]
 enabled = true
-events = ["tool:after"]
-pattern = "*"  # Transform all tool results
+pattern = "*"
 
-[hooks.event_emit]
+[hooks.builtin.event_emit]
 enabled = true
-events = ["tool:after", "note:parsed"]
-channel = "crucible_events"  # Publish to named channel
+```
 
-# Future: LLM enrichment (requires crucible-llm integration)
-# [hooks.llm_enrich]
-# enabled = false
-# events = ["tool:after"]
-# pattern = "gh_search_*"
-# provider = "ollama"
-# model = "llama3"
-# prompt = "Summarize: {result}"
+### Rune Hook Script Format
+
+Scripts self-register using `#[hook(...)]` attribute (same pattern as `#[tool(...)]` for tools):
+
+```rune
+// ~/.crucible/hooks/summarize_search.rn
+
+/// Summarize search results for LLM consumption
+#[hook(event = "tool:after", pattern = "gh_search_*", priority = 50)]
+pub fn summarize_search(ctx, event) {
+    // Transform event.result
+    let result = event.result;
+    // ... transformation logic ...
+    event.result = transformed;
+    event  // Return modified event
+}
+
+/// Log all tool calls
+#[hook(event = "tool:after", pattern = "*", priority = 100)]
+pub fn log_all_tools(ctx, event) {
+    ctx.emit("audit:tool_called", #{
+        tool: event.tool_name,
+        duration: event.duration_ms,
+    });
+    event  // Pass through unchanged
+}
+```
+
+### Attribute Parsing Refactor
+
+The `#[tool(...)]`, `#[param(...)]`, and `#[hook(...)]` attributes all follow the same pattern:
+1. Regex-based discovery parses attributes from source
+2. No-op macro registered so Rune compiler accepts them
+3. Metadata extracted at discovery time, not compile time
+
+This should be refactored into shared `AttributeDiscovery` infrastructure:
+
+```rust
+// crates/crucible-rune/src/attribute_discovery.rs
+pub trait FromAttributes: Sized {
+    fn attribute_name() -> &'static str;
+    fn from_attrs(attrs: &str, fn_name: &str, path: &Path) -> Result<Self, Error>;
+}
+
+impl FromAttributes for RuneTool { ... }
+impl FromAttributes for RuneHook { ... }
+
+pub struct AttributeDiscovery;
+impl AttributeDiscovery {
+    pub fn discover_all<T: FromAttributes>(paths: &[PathBuf]) -> Vec<T>;
+}
 ```
 
 ## Risks / Trade-offs
