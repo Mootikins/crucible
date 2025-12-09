@@ -82,7 +82,7 @@ pub enum EventType {
 
 impl EventType {
     /// Parse event type from string (e.g., "tool:after")
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "tool:before" => Some(Self::ToolBefore),
             "tool:after" => Some(Self::ToolAfter),
@@ -591,11 +591,11 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn test_event_type_from_str() {
-        assert_eq!(EventType::from_str("tool:before"), Some(EventType::ToolBefore));
-        assert_eq!(EventType::from_str("tool:after"), Some(EventType::ToolAfter));
-        assert_eq!(EventType::from_str("note:parsed"), Some(EventType::NoteParsed));
-        assert_eq!(EventType::from_str("invalid"), None);
+    fn test_event_type_parse() {
+        assert_eq!(EventType::parse("tool:before"), Some(EventType::ToolBefore));
+        assert_eq!(EventType::parse("tool:after"), Some(EventType::ToolAfter));
+        assert_eq!(EventType::parse("note:parsed"), Some(EventType::NoteParsed));
+        assert_eq!(EventType::parse("invalid"), None);
     }
 
     #[test]
