@@ -5,10 +5,16 @@
 pub mod acp;
 pub mod chat;
 pub mod cli;
+pub mod discovery;
 pub mod embedding;
+pub mod gateway;
+pub mod hooks;
 
 // Re-export essential component types
 pub use acp::*;
 pub use chat::*;
 pub use cli::*;
+pub use discovery::*;
 pub use embedding::*;
+pub use gateway::*;
+pub use hooks::*;
