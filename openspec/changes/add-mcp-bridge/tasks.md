@@ -60,11 +60,14 @@ Note: ToolEventEmitter provides the API, but ExtendedMcpServer integration is pe
 
 ## 7. Note Events
 
-- [ ] 7.1 Emit `note:parsed` event when note is parsed (include AST blocks)
-- [ ] 7.2 Emit `note:created` event when new note is created
-- [ ] 7.3 Emit `note:modified` event when note content changes
-- [ ] 7.4 Define note event payload with path, frontmatter, blocks
-- [ ] 7.5 Expose parsed AST structure in event context
+- [x] 7.1 Emit `note:parsed` event when note is parsed (include AST blocks)
+- [x] 7.2 Emit `note:created` event when new note is created
+- [x] 7.3 Emit `note:modified` event when note content changes
+- [x] 7.4 Define note event payload with path, frontmatter, blocks
+- [x] 7.5 Expose parsed AST structure in event context
+
+Note: NoteEventEmitter provides the API with NotePayload, BlockInfo, etc.
+Parser/watcher integration is pending (Section 10)
 
 ## 8. MCP Gateway Client
 
