@@ -23,6 +23,7 @@ use crucible_just::JustTools;
 use crucible_rune::{
     builtin_hooks::{create_test_filter_hook, BuiltinHooksConfig},
     event_bus::EventBus,
+    mcp_gateway::McpGatewayManager,
     tool_events::ToolSource,
     ContentBlock, EnrichedRecipe, EventHandler, EventHandlerConfig,
     EventPipeline, PluginLoader, RuneDiscoveryConfig, RuneToolRegistry, ToolResultEvent,
@@ -43,6 +44,7 @@ use tracing::{debug, info, warn};
 /// - **Kiln tools** (12): NoteTools, SearchTools, KilnTools via CrucibleMcpServer
 /// - **Just tools** (dynamic): Recipes from justfile prefixed with `just_`
 /// - **Rune tools** (dynamic): Scripts from runes/ directories prefixed with `rune_`
+/// - **Upstream MCP tools** (dynamic): Tools from external MCP servers via gateway
 ///
 /// Just recipes are automatically enriched via event handlers before being exposed.
 pub struct ExtendedMcpServer {
@@ -61,6 +63,8 @@ pub struct ExtendedMcpServer {
     filter_config: FilterConfig,
     /// Unified event bus for all events
     event_bus: Arc<RwLock<EventBus>>,
+    /// Upstream MCP server connections (None until explicitly configured)
+    upstream_clients: Option<Arc<McpGatewayManager>>,
 }
 
 impl ExtendedMcpServer {
@@ -177,6 +181,7 @@ impl ExtendedMcpServer {
             event_pipeline,
             filter_config: FilterConfig::default(),
             event_bus,
+            upstream_clients: None,
         })
     }
 
@@ -201,6 +206,7 @@ impl ExtendedMcpServer {
             event_pipeline: None,
             filter_config: FilterConfig::default(),
             event_bus: Arc::new(RwLock::new(EventBus::new())),
+            upstream_clients: None,
         }
     }
 
@@ -222,6 +228,20 @@ impl ExtendedMcpServer {
     /// Get reference to the event bus
     pub fn event_bus(&self) -> Arc<RwLock<EventBus>> {
         Arc::clone(&self.event_bus)
+    }
+
+    /// Get reference to upstream MCP clients
+    pub fn upstream_clients(&self) -> Option<Arc<McpGatewayManager>> {
+        self.upstream_clients.as_ref().map(Arc::clone)
+    }
+
+    /// Set upstream MCP clients (builder pattern)
+    ///
+    /// This allows adding upstream MCP server connections after creation.
+    /// The manager should be configured to use the same event bus as this server.
+    pub fn with_upstream_clients(mut self, clients: Arc<McpGatewayManager>) -> Self {
+        self.upstream_clients = Some(clients);
+        self
     }
 
     /// List all available tools from all sources
@@ -1271,5 +1291,49 @@ mod tests {
         assert!(desc.contains("[testing]"), "Description should contain category: {}", desc);
         assert!(desc.contains("#ci"), "Description should contain tags: {}", desc);
         assert!(desc.contains("#quick"), "Description should contain tags: {}", desc);
+    }
+
+    #[test]
+    fn test_upstream_clients_initially_none() {
+        let temp = TempDir::new().unwrap();
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+        let server = ExtendedMcpServer::kiln_only(
+            temp.path().to_str().unwrap().to_string(),
+            knowledge_repo,
+            embedding_provider,
+        );
+
+        assert!(server.upstream_clients().is_none(), "upstream_clients should be None initially");
+    }
+
+    #[test]
+    fn test_with_upstream_clients_sets_manager() {
+        use crucible_rune::mcp_gateway::McpGatewayManager;
+
+        let temp = TempDir::new().unwrap();
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+        let server = ExtendedMcpServer::kiln_only(
+            temp.path().to_str().unwrap().to_string(),
+            knowledge_repo,
+            embedding_provider,
+        );
+
+        // Create a manager with a new event bus
+        let bus = EventBus::new();
+        let manager = Arc::new(McpGatewayManager::new(bus));
+
+        // Use the builder method to set upstream clients
+        let server = server.with_upstream_clients(Arc::clone(&manager));
+
+        // Verify the manager is set
+        assert!(server.upstream_clients().is_some(), "upstream_clients should be set");
+
+        // Verify it's the same manager (Arc pointer equality)
+        let retrieved = server.upstream_clients().unwrap();
+        assert!(Arc::ptr_eq(&retrieved, &manager), "Should return the same Arc instance");
     }
 }
