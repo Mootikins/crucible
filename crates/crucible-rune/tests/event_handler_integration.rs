@@ -3,6 +3,13 @@
 use crucible_rune::{EnrichedRecipe, EventHandler, EventHandlerConfig};
 use tempfile::TempDir;
 
+fn init_test_logging() {
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_test_writer()
+        .try_init();
+}
+
 /// Test the full event processing flow with a real script
 #[tokio::test]
 async fn test_recipe_categorization_with_script() {
@@ -227,4 +234,124 @@ pub fn on_recipe_discovered(recipe) {
     // Should still complete with enrichment from working handler
     let enriched = handler.process_event(recipe).await.unwrap();
     assert_eq!(enriched.category, Some("from-working-handler".to_string()));
+}
+
+/// Test using regex module in Rune scripts
+#[tokio::test]
+async fn test_regex_in_script() {
+    init_test_logging();
+    let temp = TempDir::new().unwrap();
+    let event_dir = temp
+        .path()
+        .join("runes")
+        .join("events")
+        .join("recipe_discovered");
+    std::fs::create_dir_all(&event_dir).unwrap();
+
+    // Script that uses regex for categorization
+    // Note: Rune uses regular strings for patterns, not raw strings like Rust
+    // Note: Rune uses `let` for mutable variables (mut is not supported)
+    let script = r#"
+use regex::{Regex, is_match};
+
+pub fn on_recipe_discovered(recipe) {
+    let name = recipe["name"];
+    let tags = [];
+
+    // Use regex for flexible pattern matching
+    if is_match("test|spec|check", name) {
+        tags.push("testing");
+    }
+
+    if is_match("build|release|compile", name) {
+        tags.push("build");
+    }
+
+    // Use Regex object for more complex patterns
+    let version_re = Regex::new("v\\d+\\.\\d+");
+    if version_re.is_match(name) {
+        tags.push("versioned");
+    }
+
+    // Extract numbers using find_all
+    let num_re = Regex::new("\\d+");
+    let numbers = num_re.find_all(name);
+    if numbers.len() > 0 {
+        tags.push("has-numbers");
+    }
+
+    #{ tags: tags }
+}
+"#;
+    std::fs::write(event_dir.join("regex_categorizer.rn"), script).unwrap();
+
+    let config = EventHandlerConfig {
+        base_directories: vec![temp.path().to_path_buf()],
+    };
+    let handler = EventHandler::new(config).unwrap();
+
+    // Test various recipes
+    let test_cases = vec![
+        ("test-unit", vec!["testing"]),
+        ("build-release", vec!["build"]),
+        ("test-build", vec!["testing", "build"]),
+        ("deploy-v1.0", vec!["versioned", "has-numbers"]),
+        ("task123", vec!["has-numbers"]),
+        ("simple-task", vec![]),
+    ];
+
+    for (name, expected_tags) in test_cases {
+        let recipe = EnrichedRecipe::from_recipe(name.to_string(), None, vec![], false);
+        let enriched = handler.process_event(recipe).await.unwrap();
+        assert_eq!(
+            enriched.tags, expected_tags,
+            "Recipe '{}' should have tags {:?}, got {:?}",
+            name, expected_tags, enriched.tags
+        );
+    }
+}
+
+/// Test regex replace functionality
+#[tokio::test]
+async fn test_regex_replace_in_script() {
+    init_test_logging();
+    let temp = TempDir::new().unwrap();
+    let event_dir = temp
+        .path()
+        .join("runes")
+        .join("events")
+        .join("recipe_discovered");
+    std::fs::create_dir_all(&event_dir).unwrap();
+
+    // Script that normalizes recipe names using regex
+    // Note: Rune uses regular strings, need to escape backslashes
+    // Note: RecipeEnrichment uses #[serde(flatten)] for extra, so we set fields directly
+    let script = r#"
+use regex::{replace_all};
+
+pub fn on_recipe_discovered(recipe) {
+    let name = recipe["name"];
+
+    // Normalize separators to hyphens
+    let normalized = replace_all("[_\\s]+", name, "-");
+
+    // Store normalized name directly (flattened into enrichment)
+    #{ normalized_name: normalized }
+}
+"#;
+    std::fs::write(event_dir.join("normalizer.rn"), script).unwrap();
+
+    let config = EventHandlerConfig {
+        base_directories: vec![temp.path().to_path_buf()],
+    };
+    let handler = EventHandler::new(config).unwrap();
+
+    let recipe = EnrichedRecipe::from_recipe("my_test__task".to_string(), None, vec![], false);
+    let enriched = handler.process_event(recipe).await.unwrap();
+
+    // Due to flatten, the extra field gets the normalized_name directly
+    assert_eq!(
+        enriched.extra.get("normalized_name"),
+        Some(&serde_json::json!("my-test-task"))
+    );
 }
