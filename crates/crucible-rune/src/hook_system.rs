@@ -91,12 +91,8 @@ impl RuneHookHandler {
     /// Create a new handler from discovered metadata
     pub fn new(metadata: RuneHook, executor: Arc<RuneExecutor>) -> Result<Self, RuneError> {
         // Read and compile the script
-        let source = std::fs::read_to_string(&metadata.path).map_err(|e| {
-            RuneError::Io(format!(
-                "Failed to read hook script {:?}: {}",
-                metadata.path, e
-            ))
-        })?;
+        let source = std::fs::read_to_string(&metadata.path)
+            .map_err(|e| RuneError::Io(format!("Failed to read hook script {:?}: {}", metadata.path, e)))?;
 
         let unit = executor.compile(&metadata.name, &source)?;
 
@@ -146,30 +142,18 @@ impl Hook for RuneHookHandler {
 
     fn handle(&self, ctx: &mut EventContext, event: Event) -> HandlerResult {
         // Convert context metadata to JSON for Rune
-        let ctx_json =
-            serde_json::to_value(ctx.metadata()).unwrap_or(JsonValue::Object(Default::default()));
+        let ctx_json = serde_json::to_value(ctx.metadata())
+            .unwrap_or(JsonValue::Object(Default::default()));
 
         // Convert event to JSON
-        let event_json = serde_json::to_value(&event).map_err(|e| {
-            HandlerError::non_fatal(
-                &self.metadata.name,
-                format!("Failed to serialize event: {}", e),
-            )
-        })?;
+        let event_json = serde_json::to_value(&event)
+            .map_err(|e| HandlerError::non_fatal(&self.metadata.name, format!("Failed to serialize event: {}", e)))?;
 
         // Convert to Rune values
-        let ctx_val = self.executor.json_to_rune_value(ctx_json).map_err(|e| {
-            HandlerError::non_fatal(
-                &self.metadata.name,
-                format!("Failed to convert context: {}", e),
-            )
-        })?;
-        let event_val = self.executor.json_to_rune_value(event_json).map_err(|e| {
-            HandlerError::non_fatal(
-                &self.metadata.name,
-                format!("Failed to convert event: {}", e),
-            )
-        })?;
+        let ctx_val = self.executor.json_to_rune_value(ctx_json)
+            .map_err(|e| HandlerError::non_fatal(&self.metadata.name, format!("Failed to convert context: {}", e)))?;
+        let event_val = self.executor.json_to_rune_value(event_json)
+            .map_err(|e| HandlerError::non_fatal(&self.metadata.name, format!("Failed to convert event: {}", e)))?;
 
         // Call the handler function
         // We need to run this synchronously - wrap in a block_on for now
@@ -193,20 +177,16 @@ impl Hook for RuneHookHandler {
                     match serde_json::from_value::<Event>(result_json) {
                         Ok(modified_event) => Ok(modified_event),
                         Err(e) => {
-                            warn!(
-                                "Hook {} returned invalid event structure: {}",
-                                self.metadata.name, e
-                            );
+                            warn!("Hook {} returned invalid event structure: {}", self.metadata.name, e);
                             // Return original event on parse error (fail-open)
                             Ok(event)
                         }
                     }
                 }
             }
-            Err(e) => Err(HandlerError::non_fatal(
-                &self.metadata.name,
-                format!("Execution failed: {}", e),
-            )),
+            Err(e) => {
+                Err(HandlerError::non_fatal(&self.metadata.name, format!("Execution failed: {}", e)))
+            }
         }
     }
 }
@@ -346,16 +326,14 @@ impl HookRegistry {
 
             match RuneHookHandler::new(hook_meta, self.executor.clone()) {
                 Ok(handler) => {
-                    debug!(
-                        "Discovered hook: {} (event={}, pattern={}, priority={})",
-                        handler.name(),
-                        handler.event_type(),
-                        handler.pattern(),
-                        handler.priority()
-                    );
+                    debug!("Discovered hook: {} (event={}, pattern={}, priority={})",
+                           handler.name(), handler.event_type(), handler.pattern(), handler.priority());
 
                     self.rune_hooks.insert(name.clone(), handler);
-                    self.path_to_hooks.entry(path).or_default().push(name);
+                    self.path_to_hooks
+                        .entry(path)
+                        .or_default()
+                        .push(name);
                     count += 1;
                 }
                 Err(e) => {
@@ -364,11 +342,7 @@ impl HookRegistry {
             }
         }
 
-        info!(
-            "Discovered {} hooks from {} paths",
-            count,
-            self.paths.existing_paths().len()
-        );
+        info!("Discovered {} hooks from {} paths", count, self.paths.existing_paths().len());
         Ok(count)
     }
 
@@ -447,7 +421,7 @@ impl RuneHookHandler {
         let unit = self.unit.clone();
         let executor = self.executor.clone();
 
-        let event_type = crate::event_bus::EventType::parse(&metadata.event_type)
+        let event_type = crate::event_bus::EventType::from_str(&metadata.event_type)
             .unwrap_or(crate::event_bus::EventType::Custom);
 
         Handler::new(
@@ -462,32 +436,17 @@ impl RuneHookHandler {
                 // Convert event to JSON
                 let event_json = match serde_json::to_value(&event) {
                     Ok(j) => j,
-                    Err(e) => {
-                        return Err(HandlerError::non_fatal(
-                            &metadata.name,
-                            format!("Failed to serialize event: {}", e),
-                        ))
-                    }
+                    Err(e) => return Err(HandlerError::non_fatal(&metadata.name, format!("Failed to serialize event: {}", e))),
                 };
 
                 // Convert to Rune values
                 let ctx_val = match executor.json_to_rune_value(ctx_json) {
                     Ok(v) => v,
-                    Err(e) => {
-                        return Err(HandlerError::non_fatal(
-                            &metadata.name,
-                            format!("Failed to convert context: {}", e),
-                        ))
-                    }
+                    Err(e) => return Err(HandlerError::non_fatal(&metadata.name, format!("Failed to convert context: {}", e))),
                 };
                 let event_val = match executor.json_to_rune_value(event_json) {
                     Ok(v) => v,
-                    Err(e) => {
-                        return Err(HandlerError::non_fatal(
-                            &metadata.name,
-                            format!("Failed to convert event: {}", e),
-                        ))
-                    }
+                    Err(e) => return Err(HandlerError::non_fatal(&metadata.name, format!("Failed to convert event: {}", e))),
                 };
 
                 // Call the handler function
@@ -507,19 +466,15 @@ impl RuneHookHandler {
                             match serde_json::from_value::<Event>(result_json) {
                                 Ok(modified_event) => Ok(modified_event),
                                 Err(e) => {
-                                    warn!(
-                                        "Hook {} returned invalid event structure: {}",
-                                        metadata.name, e
-                                    );
+                                    warn!("Hook {} returned invalid event structure: {}", metadata.name, e);
                                     Ok(event)
                                 }
                             }
                         }
                     }
-                    Err(e) => Err(HandlerError::non_fatal(
-                        &metadata.name,
-                        format!("Execution failed: {}", e),
-                    )),
+                    Err(e) => {
+                        Err(HandlerError::non_fatal(&metadata.name, format!("Execution failed: {}", e)))
+                    }
                 }
             },
         )
@@ -584,7 +539,12 @@ mod tests {
 
     #[test]
     fn test_builtin_hook_creation() {
-        let hook = BuiltinHook::new("test_hook", "tool:after", "just_*", |_ctx, event| Ok(event));
+        let hook = BuiltinHook::new(
+            "test_hook",
+            "tool:after",
+            "just_*",
+            |_ctx, event| Ok(event),
+        );
 
         assert_eq!(hook.name(), "test_hook");
         assert_eq!(hook.event_type(), "tool:after");
@@ -595,28 +555,43 @@ mod tests {
 
     #[test]
     fn test_builtin_hook_priority() {
-        let hook =
-            BuiltinHook::new("test", "tool:after", "*", |_ctx, event| Ok(event)).with_priority(50);
+        let hook = BuiltinHook::new(
+            "test",
+            "tool:after",
+            "*",
+            |_ctx, event| Ok(event),
+        )
+        .with_priority(50);
 
         assert_eq!(hook.priority(), 50);
     }
 
     #[test]
     fn test_builtin_hook_disabled() {
-        let hook = BuiltinHook::new("test", "tool:after", "*", |_ctx, event| Ok(event))
-            .with_enabled(false);
+        let hook = BuiltinHook::new(
+            "test",
+            "tool:after",
+            "*",
+            |_ctx, event| Ok(event),
+        )
+        .with_enabled(false);
 
         assert!(!hook.enabled());
     }
 
     #[test]
     fn test_builtin_hook_execution() {
-        let hook = BuiltinHook::new("modifier", "tool:after", "*", |_ctx, mut event| {
-            if let Some(obj) = event.payload.as_object_mut() {
-                obj.insert("modified".to_string(), json!(true));
-            }
-            Ok(event)
-        });
+        let hook = BuiltinHook::new(
+            "modifier",
+            "tool:after",
+            "*",
+            |_ctx, mut event| {
+                if let Some(obj) = event.payload.as_object_mut() {
+                    obj.insert("modified".to_string(), json!(true));
+                }
+                Ok(event)
+            },
+        );
 
         let mut ctx = EventContext::new();
         let event = Event::tool_after("test", json!({"original": true}));
