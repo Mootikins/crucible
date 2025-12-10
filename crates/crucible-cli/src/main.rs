@@ -5,8 +5,9 @@ use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::prelude::*; // For SubscriberExt trait
 
 use crucible_cli::{
-    cli::{Cli, Commands},
-    commands, config,
+    cli::{Cli, ClusterActions, Commands},
+    commands::{self, cluster::ClusterAction},
+    config,
 };
 
 /// Process files using the integrated ChangeDetectionService
