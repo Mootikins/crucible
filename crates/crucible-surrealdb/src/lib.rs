@@ -121,6 +121,19 @@ pub mod kiln_integration;
 #[cfg(feature = "embeddings")]
 pub mod kiln;
 
+// Public clustering module for MoC detection and document clustering
+pub mod clustering;
+pub use clustering::{
+    detect_mocs, cluster_documents, DocumentCluster, DocumentInfo, MocCandidate,
+    ClusteringConfig, ClusteringAlgorithm, ClusteringError, AlgorithmType, AlgorithmMetadata,
+    ClusteringResult, ClusteringMetrics, AlgorithmParameters, MocDetectionConfig,
+    EmbeddingConfig, PerformanceConfig, SimpleClusteringService,
+    ClusteringRegistry, AlgorithmFactory,
+    ClusteringRequirements, QualityPreference,
+    HeuristicClusteringAlgorithm, HeuristicAlgorithmFactory,
+    KMeansClusteringAlgorithm, KMeansAlgorithmFactory,
+};
+
 // ============================================================================
 // PRIVATE infrastructure modules - use factory functions instead!
 // ============================================================================
