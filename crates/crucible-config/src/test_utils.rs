@@ -74,6 +74,7 @@ impl TestConfigBuilder {
                 timeout_seconds: 30,
                 retry_attempts: 3,
                 dimensions: 768,
+                batch_size: 50,
             }),
             pipeline: PipelineConfig::default(),
         })
@@ -92,6 +93,7 @@ impl TestConfigBuilder {
                 timeout_seconds: 30,
                 retry_attempts: 3,
                 dimensions: 768,
+                batch_size: 50,
             }),
             pipeline: PipelineConfig::default(),
         })
