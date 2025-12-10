@@ -229,6 +229,7 @@ impl EmbeddingConfig {
                         timeout_seconds: 30,
                         retry_attempts: 3,
                         dimensions: 0, // Use 0 to indicate default dimensions
+                        batch_size: 50, // Default batch size for ~7x speedup
                     },
                 )
             }
