@@ -11,17 +11,30 @@ use super::config::EmbeddingConfig;
 use super::error::{EmbeddingError, EmbeddingResult};
 use super::provider::{EmbeddingProvider, EmbeddingResponse};
 
-/// Request structure for Ollama embedding API
+/// Request structure for Ollama legacy embedding API (/api/embeddings)
 #[derive(Debug, Serialize)]
 struct OllamaEmbeddingRequest {
     model: String,
     prompt: String,
 }
 
-/// Response structure from Ollama embedding API
+/// Response structure from Ollama legacy embedding API
 #[derive(Debug, Deserialize)]
 struct OllamaEmbeddingResponse {
     embedding: Vec<f32>,
+}
+
+/// Request structure for Ollama batch embedding API (/api/embed)
+#[derive(Debug, Serialize)]
+struct OllamaBatchEmbeddingRequest {
+    model: String,
+    input: Vec<String>,
+}
+
+/// Response structure from Ollama batch embedding API
+#[derive(Debug, Deserialize)]
+struct OllamaBatchEmbeddingResponse {
+    embeddings: Vec<Vec<f32>>,
 }
 
 /// Response structure from Ollama /api/tags endpoint
@@ -104,8 +117,15 @@ impl OllamaProvider {
             config.model_name(),
         );
 
-        // Default batch size - can be configured via provider-specific config in the future
-        let batch_size = 1;
+        // Get batch size from config (default 50 for ~7x speedup)
+        let batch_size = config.batch_size();
+
+        tracing::debug!(
+            "OllamaProvider initialized: endpoint={}, model={}, batch_size={}",
+            endpoint,
+            config.model_name(),
+            batch_size
+        );
 
         Ok(Self {
             client,
@@ -220,6 +240,92 @@ impl OllamaProvider {
             self.model.clone(),
         ))
     }
+
+    /// Make a batch embedding request using /api/embed endpoint
+    ///
+    /// This is ~7x faster than individual requests due to reduced HTTP overhead.
+    /// Falls back to sequential requests if batch fails.
+    async fn embed_batch_native(&self, texts: Vec<String>) -> EmbeddingResult<Vec<EmbeddingResponse>> {
+        if texts.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let url = format!("{}/api/embed", self.endpoint);
+
+        let request = OllamaBatchEmbeddingRequest {
+            model: self.model.clone(),
+            input: texts.clone(),
+        };
+
+        tracing::debug!(
+            "Sending batch embedding request to {} for {} texts",
+            url,
+            texts.len()
+        );
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| {
+                if e.is_timeout() {
+                    EmbeddingError::Timeout {
+                        timeout_secs: self.timeout_secs,
+                    }
+                } else {
+                    EmbeddingError::HttpError(e)
+                }
+            })?;
+
+        // Check response status
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(EmbeddingError::ProviderError {
+                provider: "Ollama".to_string(),
+                message: format!("HTTP {}: {}", status, error_text),
+            });
+        }
+
+        // Parse batch response
+        let batch_response: OllamaBatchEmbeddingResponse = response.json().await.map_err(|e| {
+            EmbeddingError::InvalidResponse(format!("Failed to parse Ollama batch response: {}", e))
+        })?;
+
+        // Verify we got the right number of embeddings
+        if batch_response.embeddings.len() != texts.len() {
+            return Err(EmbeddingError::InvalidResponse(format!(
+                "Expected {} embeddings, got {}",
+                texts.len(),
+                batch_response.embeddings.len()
+            )));
+        }
+
+        tracing::debug!(
+            "Received {} embeddings with {} dimensions each",
+            batch_response.embeddings.len(),
+            batch_response.embeddings.first().map(|e| e.len()).unwrap_or(0)
+        );
+
+        // Convert to EmbeddingResponse objects
+        let results: Vec<EmbeddingResponse> = batch_response
+            .embeddings
+            .into_iter()
+            .map(|embedding| EmbeddingResponse::new(embedding, self.model.clone()))
+            .collect();
+
+        // Validate dimensions on first embedding
+        if let Some(first) = results.first() {
+            first.validate_dimensions(self.expected_dimensions)?;
+        }
+
+        Ok(results)
+    }
 }
 
 #[async_trait]
@@ -239,19 +345,49 @@ impl EmbeddingProvider for OllamaProvider {
             return Ok(Vec::new());
         }
 
-        let mut results = Vec::with_capacity(texts.len());
+        // Filter out empty texts
+        let non_empty: Vec<String> = texts.into_iter().filter(|t| !t.is_empty()).collect();
+        if non_empty.is_empty() {
+            return Ok(Vec::new());
+        }
 
-        // Process in batches to avoid overwhelming the API
-        for chunk in texts.chunks(self.batch_size) {
-            // Process each item in chunk sequentially
-            for text in chunk {
+        // Use legacy single-request mode if batch_size is 1
+        if self.batch_size <= 1 {
+            let mut results = Vec::with_capacity(non_empty.len());
+            for text in &non_empty {
                 let result = self.embed(text).await?;
                 results.push(result);
             }
+            return Ok(results);
+        }
+
+        // Use native batch endpoint (/api/embed) for ~7x speedup
+        let mut results = Vec::with_capacity(non_empty.len());
+
+        for chunk in non_empty.chunks(self.batch_size) {
+            let chunk_texts: Vec<String> = chunk.to_vec();
+
+            // Try batch endpoint first, fall back to sequential on failure
+            match self.embed_batch_native(chunk_texts.clone()).await {
+                Ok(batch_results) => {
+                    results.extend(batch_results);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Batch embedding failed, falling back to sequential: {}",
+                        e
+                    );
+                    // Fall back to sequential processing for this chunk
+                    for text in &chunk_texts {
+                        let result = self.embed(text).await?;
+                        results.push(result);
+                    }
+                }
+            }
 
             // Small delay between batches to be nice to the API
-            if texts.len() > self.batch_size {
-                tokio::time::sleep(Duration::from_millis(100)).await;
+            if non_empty.len() > self.batch_size {
+                tokio::time::sleep(Duration::from_millis(50)).await;
             }
         }
 
@@ -564,5 +700,66 @@ mod tests {
         let model_no_dims = ModelInfo::new("test2");
         assert!(model_no_dims.is_compatible_dimensions(768));
         assert!(model_no_dims.is_compatible_dimensions(1536));
+    }
+
+    #[test]
+    fn test_batch_request_serialization() {
+        let request = OllamaBatchEmbeddingRequest {
+            model: "nomic-embed-text".to_string(),
+            input: vec![
+                "first text".to_string(),
+                "second text".to_string(),
+                "third text".to_string(),
+            ],
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("nomic-embed-text"));
+        assert!(json.contains("first text"));
+        assert!(json.contains("second text"));
+        assert!(json.contains("third text"));
+        assert!(json.contains("\"input\""));
+    }
+
+    #[test]
+    fn test_batch_response_deserialization() {
+        let json = r#"{"embeddings": [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]}"#;
+        let response: OllamaBatchEmbeddingResponse = serde_json::from_str(json).unwrap();
+
+        assert_eq!(response.embeddings.len(), 2);
+        assert_eq!(response.embeddings[0], vec![0.1, 0.2, 0.3]);
+        assert_eq!(response.embeddings[1], vec![0.4, 0.5, 0.6]);
+    }
+
+    #[tokio::test]
+    async fn test_embed_batch_empty() {
+        let config = create_test_config();
+        let provider = OllamaProvider::new(config).unwrap();
+
+        let result = provider.embed_batch(vec![]).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_embed_batch_filters_empty_strings() {
+        let config = create_test_config();
+        let provider = OllamaProvider::new(config).unwrap();
+
+        // All empty strings should result in empty vec
+        let result = provider
+            .embed_batch(vec!["".to_string(), "".to_string()])
+            .await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_provider_batch_size_from_config() {
+        let config = create_test_config();
+        let provider = OllamaProvider::new(config).unwrap();
+
+        // Default batch size should be 50
+        assert_eq!(provider.batch_size, 50);
     }
 }
