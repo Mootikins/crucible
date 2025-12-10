@@ -61,6 +61,7 @@ pub mod protocol;
 pub mod session;
 pub mod streaming;
 pub mod tools;
+pub mod tracing_utils;
 
 // Mock agent for testing (only included in test builds)
 #[cfg(any(test, feature = "test-utils"))]
@@ -81,10 +82,13 @@ pub use streaming::{humanize_tool_title, StreamConfig, StreamHandler, ToolCallIn
 pub use tools::{
     discover_crucible_tools, get_crucible_system_prompt, ToolDescriptor, ToolExecutor, ToolRegistry,
 };
+pub use tracing_utils::{LogCapture, TraceContext};
 
 // Re-export test utilities when feature is enabled
 #[cfg(feature = "test-utils")]
 pub use mock_agent::MockAgent;
+#[cfg(any(test, feature = "test-utils"))]
+pub use tracing_utils::{create_test_subscriber, init_test_subscriber, CapturedLog};
 
 // Error types
 mod error;

@@ -303,10 +303,33 @@ impl ChatSession {
                         for note in &result.notes_found {
                             println!("  {} {}", "→".dimmed(), note.title.bright_white());
                         }
-                        println!();
-                    }
 
-                    result.prompt
+                        // Ask user if they want to include context
+                        print!(
+                            "{} ",
+                            "Include in context? [y/N]: ".bright_cyan()
+                        );
+                        flush_stdout();
+
+                        // Read single line response
+                        let mut response = String::new();
+                        if std::io::stdin().read_line(&mut response).is_ok() {
+                            let response = response.trim().to_lowercase();
+                            if response == "y" || response == "yes" {
+                                println!("{}", "✓ Context included".green().dimmed());
+                                result.prompt
+                            } else {
+                                println!("{}", "○ Skipped context".dimmed());
+                                input.to_string()
+                            }
+                        } else {
+                            // On read error, skip context
+                            input.to_string()
+                        }
+                    } else {
+                        // No notes found, just use original input
+                        input.to_string()
+                    }
                 }
                 Err(e) => {
                     debug!("Context enrichment failed: {}", e);
