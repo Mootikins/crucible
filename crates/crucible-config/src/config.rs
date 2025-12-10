@@ -1156,6 +1156,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "toml")]
     fn test_agent_directories_loads_from_toml() {
         let toml_content = r#"
 kiln_path = "/tmp/test-kiln"
@@ -1181,6 +1182,7 @@ provider = "fastembed"
     }
 
     #[test]
+    #[cfg(feature = "toml")]
     fn test_agent_directories_optional_when_missing() {
         let toml_content = r#"
 kiln_path = "/tmp/test-kiln"
