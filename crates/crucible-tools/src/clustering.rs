@@ -56,6 +56,7 @@ pub struct DocumentCluster {
 }
 
 /// Clustering tools for the MCP server
+#[derive(Clone)]
 pub struct ClusteringTools {
     /// Path to the knowledge base/vault
     kiln_path: PathBuf,
