@@ -25,6 +25,9 @@ thiserror = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
 
+# For clustering algorithms
+petgraph = "0.6"
+
 # SurrealDB with in-memory and RocksDB backends
 surrealdb = { version = "2", features = ["kv-mem", "kv-rocksdb"] }
 chrono = { workspace = true }
@@ -37,6 +40,9 @@ ndarray = { workspace = true }
 
 # Thread pool management
 num_cpus = "1.16"
+
+# For static data in algorithms
+once_cell = "1.19"
 futures = "0.3"
 rayon = { workspace = true }
 
@@ -62,6 +68,8 @@ tokio-test = "0.4"
 num_cpus = "1.16"
 tracing-test = "0.2"
 criterion = { version = "0.7", features = ["async_tokio"] }
+fake = { version = "2.9", features = ["derive"] }
+rand = "0.8"
 
 [[bench]]
 name = "graph_relations_bench"
