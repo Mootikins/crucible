@@ -1,5 +1,6 @@
 use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
+use async_trait::async_trait;
 use crucible_tools::ClusteringTools;
 use serde_json;
 use std::path::PathBuf;
@@ -40,6 +41,7 @@ impl Default for ClusterConfig {
 }
 
 /// Service abstraction for clustering operations
+#[async_trait]
 pub trait ClusteringService: Send + Sync {
     async fn detect_mocs(&self, config: &ClusterConfig) -> Result<serde_json::Value>;
     async fn cluster_documents(&self, config: &ClusterConfig) -> Result<serde_json::Value>;
@@ -59,6 +61,7 @@ impl DefaultClusteringService {
     }
 }
 
+#[async_trait]
 impl ClusteringService for DefaultClusteringService {
     async fn detect_mocs(&self, config: &ClusterConfig) -> Result<serde_json::Value> {
         let mocs = self.tools.detect_mocs(Some(config.min_moc_score)).await?;
@@ -127,13 +130,31 @@ pub async fn execute(
     // Execute action
     match action {
         ClusterAction::Mocs => {
-            execute_with_service(service, |s| s.detect_mocs(&cluster_config), &cluster_config).await
+            let result = service.detect_mocs(&cluster_config).await?;
+            format_output(&result, &cluster_config.output_format, None);
+            if let Some(output_path) = &cluster_config.output_file {
+                let json = serde_json::to_string_pretty(&result)?;
+                fs::write(output_path, json).await?;
+                println!("✅ Results saved to: {}", output_path.display());
+            }
         }
         ClusterAction::Documents => {
-            execute_with_service(service, |s| s.cluster_documents(&cluster_config), &cluster_config).await
+            let result = service.cluster_documents(&cluster_config).await?;
+            format_output(&result, &cluster_config.output_format, None);
+            if let Some(output_path) = &cluster_config.output_file {
+                let json = serde_json::to_string_pretty(&result)?;
+                fs::write(output_path, json).await?;
+                println!("✅ Results saved to: {}", output_path.display());
+            }
         }
         ClusterAction::Statistics => {
-            execute_with_service(service, |s| s.get_statistics(&cluster_config), &cluster_config).await
+            let result = service.get_statistics(&cluster_config).await?;
+            format_output(&result, &cluster_config.output_format, None);
+            if let Some(output_path) = &cluster_config.output_file {
+                let json = serde_json::to_string_pretty(&result)?;
+                fs::write(output_path, json).await?;
+                println!("✅ Results saved to: {}", output_path.display());
+            }
         }
         ClusterAction::All => {
             // Run all clustering operations
@@ -154,27 +175,6 @@ pub async fn execute(
     Ok(())
 }
 
-/// Execute with service dependency injection
-pub async fn execute_with_service<F, T>(
-    service: Arc<dyn ClusteringService>,
-    operation: F,
-    config: &ClusterConfig,
-) -> Result<()>
-where
-    F: FnOnce(&dyn ClusteringService) -> Result<T>,
-    T: serde::Serialize,
-{
-    let result = operation(&*service).await?;
-
-    // Save to file if specified
-    if let Some(output_path) = &config.output_file {
-        let json = serde_json::to_string_pretty(&result)?;
-        fs::write(output_path, json).await?;
-        println!("✅ Results saved to: {}", output_path.display());
-    }
-
-    Ok(())
-}
 
 /// Format output based on format type
 pub fn format_output(
