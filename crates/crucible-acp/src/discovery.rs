@@ -27,6 +27,7 @@ const KNOWN_AGENTS: &[(&str, &str, &[&str])] = &[
     ("claude", "npx", &["@zed-industries/claude-code-acp"]),
     ("gemini", "gemini-cli", &[]),
     ("codex", "npx", &["@zed-industries/codex-acp"]),
+    ("cursor", "cursor-acp", &[]),
 ];
 
 /// Discover an available ACP agent using parallel probing
@@ -106,8 +107,21 @@ pub async fn discover_agent(preferred: Option<&str>) -> Result<AgentInfo> {
     // None found - provide helpful error message
     Err(anyhow!(
         "No compatible ACP agent found.\n\
-         Compatible agents: opencode, claude, gemini, codex\n\
-         Install one with: npm install @zed-industries/claude-code-acp\n\
+         \n\
+         Compatible agents:\n\
+         \n\
+         Standalone agents:\n\
+         • opencode: go install github.com/grafana/opencode@latest\n\
+         • gemini: npm install -g gemini-cli\n\
+         \n\
+         Bridge agents (require base CLI):\n\
+         • claude: npm install -g @zed-industries/claude-code-acp\n\
+         • codex: npm install -g @zed-industries/codex-acp\n\
+         • cursor: npm install -g cursor-acp\n\
+         \n\
+         After installation, use with:\n\
+         cru chat --agent <agent> \"your message\"\n\
+         \n\
          Or specify a custom agent with: --agent <command>"
     ))
 }
@@ -116,6 +130,47 @@ pub async fn discover_agent(preferred: Option<&str>) -> Result<AgentInfo> {
 #[allow(dead_code)]
 pub fn clear_agent_cache() {
     *AGENT_CACHE.lock().unwrap() = None;
+}
+
+/// Get help text about available ACP agents and installation instructions
+pub fn get_agent_help() -> String {
+    "Available ACP Agents:
+=================
+
+• opencode
+  Installation: go install github.com/grafana/opencode@latest
+  Standalone ACP agent with basic functionality
+
+• claude
+  Requirements: Claude Code CLI installed
+  Bridge: npm install -g @zed-industries/claude-code-acp
+  Connects to Claude Code agent
+
+• gemini
+  Installation: npm install -g gemini-cli
+  Google's Gemini AI standalone agent
+
+• codex
+  Requirements: OpenAI Codex CLI installed
+  Bridge: npm install -g @zed-industries/codex-acp
+  Connects to OpenAI Codex agent
+
+• cursor
+  Requirements: Cursor CLI installed
+  Bridge: npm install -g cursor-acp
+  Connects to Cursor IDE's ACP agent
+
+Usage:
+  cru chat                    # Auto-detect first available agent
+  cru chat --agent <name>     # Use specific agent
+  cru chat --agent <cmd>      # Use custom command
+
+Examples:
+  cru chat --agent claude \"Refactor this function\"
+  cru chat --agent cursor \"Add error handling\"
+
+Note: Some agents require both the base CLI and a bridge package.
+".to_string()
 }
 
 /// Check if an agent command is available (async, non-blocking)
