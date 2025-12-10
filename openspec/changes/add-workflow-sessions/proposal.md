@@ -290,3 +290,60 @@ Sync happens on session write/update.
 3. **Auto-save frequency** - After each phase? Each tool call? Configurable threshold?
 
 4. **Subagent isolation** - Should subagents inherit parent's channel by default?
+
+---
+
+## Amendment: Session Daemon Integration
+
+*Added via add-session-daemon proposal*
+
+### Concurrent Session Support
+
+Sessions integrate with the session daemon for concurrent access:
+
+**Session Registry:**
+- Active sessions register with daemon on start
+- Registry tracks: session_id, worktree, agent_type, agent_name, status
+- Sessions deregister on close or timeout
+
+**Session Navigation:**
+- `/sessions` - List all active sessions in current kiln
+- `/goto <n>` - Switch to session by number
+- `/next`, `/prev` - Rotate through sessions
+
+### Inbox System (HITL)
+
+Sessions can send messages to human inbox:
+
+**New callout types:**
+- `[!decision_needed]` - Agent blocked, needs human choice
+- `[!approval_required]` - Agent wants to do something risky
+- `[!task_complete]` - Finished assigned work
+- `[!error]` - Something went wrong (existing, now indexed)
+
+**Agent API:**
+```rust
+ctx.notify("Task complete: implemented auth flow")?;
+ctx.request_decision("Which auth strategy?", &["JWT", "Session", "OAuth"])?;
+ctx.request_approval("About to delete 47 files")?;
+```
+
+**Inbox is a view:**
+- Messages written to session logs (existing callout format)
+- Inbox queries aggregate actionable items across sessions
+- Full history in logs, queryable/purgeable per-session
+
+### Status Bar
+
+Single-line display at bottom of chat:
+```
+[1] main/claude  [2] feat/auth/ollama  [3] test/gemini  |  2  /sessions
+```
+
+Shows: active sessions, unread inbox count, help hint.
+
+### V1 Scope
+
+- Single kiln concurrency (daemon per kiln)
+- Sessions scoped to kiln
+- Future: centralized session storage in personal kiln
