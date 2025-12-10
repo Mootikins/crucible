@@ -25,6 +25,9 @@ pub mod fastembed;
 /// Burn ML framework provider implementation.
 pub mod burn;
 
+/// GGUF model loading for embedding models.
+pub mod gguf_model;
+
 /// Provider trait and common functionality.
 pub mod provider;
 
