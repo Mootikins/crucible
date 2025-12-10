@@ -104,3 +104,43 @@
 2. Implement permission system with user approval flows
 3. Add comprehensive integration tests
 4. Performance profiling and optimization
+
+---
+
+## 11. Clustering Tools Integration ⏳ NEW (from feat/moc-clustering)
+
+### Event Emission for Clustering Tools
+- [ ] 11.1 Add `ToolSource::Clustering` variant to `crucible_rune::tool_events::ToolSource`
+- [ ] 11.2 Add `tool:before` event emission to `call_clustering_tool()` in `extended_mcp_server.rs:689-772`
+- [ ] 11.3 Add `tool:after` event emission with clustering results
+- [ ] 11.4 Add `tool:error` event emission on failures
+- [ ] 11.5 Pattern from `call_just_tool()` (lines 555-687) for reference
+
+**Why**: Clustering tools (`detect_mocs`, `cluster_documents`, `get_document_stats`) don't emit events, unlike Just and Rune tools. This breaks the unified event architecture.
+
+**Files to Modify**:
+- `crates/crucible-rune/src/tool_events.rs` - Add ToolSource variant
+- `crates/crucible-tools/src/extended_mcp_server.rs` - Add event emission
+
+### Output Schema for Clustering Tools
+- [ ] 11.6 Add JSON Schema output definitions for `detect_mocs` tool
+- [ ] 11.7 Add JSON Schema output definitions for `cluster_documents` tool
+- [ ] 11.8 Add JSON Schema output definitions for `get_document_stats` tool
+
+**Location**: `crates/crucible-tools/src/clustering.rs:330-413` - `list_tools()` function
+
+## 12. Parameter Schema Validation ⏳ ENHANCEMENT (from feat/moc-clustering)
+
+### Runtime Parameter Validation
+- [ ] 12.1 Implement `AlgorithmParameters::validate()` in `crucible-surrealdb/src/clustering/mod.rs:172-178`
+- [ ] 12.2 Add `jsonschema` dependency to `crates/crucible-surrealdb/Cargo.toml`
+- [ ] 12.3 Define parameter schemas for heuristic algorithm (link_weight, tag_weight, title_weight, min_similarity)
+- [ ] 12.4 Define parameter schemas for kmeans algorithm (k, max_iterations, tolerance, n_init)
+- [ ] 12.5 Return validation errors with field names and expected types
+
+**Why**: `AlgorithmParameters::validate()` is currently stubbed out, allowing invalid parameters to pass through silently.
+
+**Files to Modify**:
+- `crates/crucible-surrealdb/src/clustering/mod.rs` - Implement validate()
+- `crates/crucible-surrealdb/src/clustering/algorithms/heuristic.rs` - Add parameter_schema to metadata
+- `crates/crucible-surrealdb/src/clustering/algorithms/kmeans.rs` - Add parameter_schema to metadata
