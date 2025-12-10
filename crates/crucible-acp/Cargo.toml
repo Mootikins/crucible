@@ -59,12 +59,6 @@ rand = { workspace = true }
 # UUID generation (used for trace IDs and mock agent)
 uuid = { version = "1.11", features = ["v4"] }
 
-# Diff generation for write operations
-similar = "2"
-
-# Tracing subscriber for log capture in tests
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
-
 [dev-dependencies]
 tokio-test = { workspace = true }
 tempfile = { workspace = true }
