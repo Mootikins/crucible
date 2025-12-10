@@ -161,6 +161,12 @@ pub struct OllamaConfig {
     /// Expected embedding dimensions
     #[serde(default = "OllamaConfig::default_dimensions")]
     pub dimensions: u32,
+
+    /// Batch size for embedding requests (uses /api/embed endpoint)
+    /// Set to 1 for legacy single-request mode (/api/embeddings)
+    /// Higher values (50-100) dramatically improve throughput
+    #[serde(default = "OllamaConfig::default_batch_size")]
+    pub batch_size: u32,
 }
 
 impl OllamaConfig {
@@ -183,6 +189,10 @@ impl OllamaConfig {
     fn default_dimensions() -> u32 {
         768
     }
+
+    fn default_batch_size() -> u32 {
+        50 // Good balance of throughput vs memory; ~7x faster than single requests
+    }
 }
 
 impl Default for OllamaConfig {
@@ -193,6 +203,7 @@ impl Default for OllamaConfig {
             timeout_seconds: Self::default_timeout(),
             retry_attempts: Self::default_retries(),
             dimensions: Self::default_dimensions(),
+            batch_size: Self::default_batch_size(),
         }
     }
 }
@@ -696,6 +707,7 @@ impl EmbeddingProviderConfig {
             timeout_seconds: OllamaConfig::default_timeout(),
             retry_attempts: OllamaConfig::default_retries(),
             dimensions: OllamaConfig::default_dimensions(),
+            batch_size: OllamaConfig::default_batch_size(),
         })
     }
 
@@ -819,7 +831,7 @@ impl EmbeddingProviderConfig {
             Self::Cohere(c) => Some(&c.base_url),
             Self::VertexAI(c) => Some(&c.base_url),
             Self::Custom(c) => Some(&c.base_url),
-            _ => None,
+            Self::FastEmbed(_) | Self::Mock(_) | Self::Burn(_) => None,
         }
     }
 
@@ -862,6 +874,23 @@ impl EmbeddingProviderConfig {
                     Some(c.dimensions)
                 }
             }
+        }
+    }
+
+    /// Get the batch size for embedding requests
+    ///
+    /// Returns the configured batch size for providers that support batching.
+    /// For Ollama, batch_size > 1 uses the /api/embed endpoint for ~7x speedup.
+    pub fn batch_size(&self) -> usize {
+        match self {
+            Self::Ollama(c) => c.batch_size as usize,
+            Self::FastEmbed(c) => c.batch_size as usize,
+            Self::OpenAI(_) => 100, // OpenAI supports up to 2048 inputs
+            Self::Cohere(_) => 96,  // Cohere has a 96 text limit
+            Self::Custom(_) => 1,   // Conservative default for custom providers
+            Self::Mock(_) => 100,   // Mock can handle any batch size
+            Self::Burn(_) => 32,    // GPU batch processing
+            Self::VertexAI(_) => 5, // VertexAI has lower limits
         }
     }
 
