@@ -56,3 +56,14 @@
 - [ ] 7.3 Write tests for mode switching functionality
 - [ ] 7.4 Test visual improvements across different terminal sizes
 - [ ] 7.5 Performance testing for file search operations
+
+## 8. Session Navigation (from add-session-daemon)
+- [ ] 8.1 Implement persistent status bar with session list
+- [ ] 8.2 Add inbox badge (unread count) to status bar
+- [ ] 8.3 `/sessions` command - list sessions with inbox summary
+- [ ] 8.4 `/inbox` command - show full inbox
+- [ ] 8.5 `/goto <n>` command - switch to session by number
+- [ ] 8.6 `/next`, `/prev` commands - rotate sessions
+- [ ] 8.7 `/new` command - create session with worktree/agent flags
+- [ ] 8.8 Daemon socket integration for session commands
+- [ ] 8.9 Status bar updates via daemon notifications

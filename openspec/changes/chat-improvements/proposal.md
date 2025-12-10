@@ -60,8 +60,66 @@ These improvements build on the chat framework to enhance the user experience wi
 - **Better Understanding**: Session stats and visible tool calls provide transparency
 - **Modern Feel**: Matches expectations from other AI chat tools
 
-### Timeline
-- **Dependency**: Requires `chat-interface` to be implemented first
-- **Week 1**: Visual polish and file references
-- **Week 2**: Interactive features and statistics
-- **Estimated effort**: 1-2 weeks after framework is ready
+---
+
+## Amendment: Session Navigation & Status Bar
+
+*Added via add-session-daemon proposal*
+
+### Status Bar
+
+Persistent single-line display at bottom of chat interface:
+
+```
+[1] main/claude  [2] feat/auth/ollama  [3] test/gemini  |  2  /sessions
+```
+
+**Components:**
+- Session list: `[n] worktree/agent` for each active session
+- Current session highlighted
+- Inbox badge: unread message count
+- Help hint: `/sessions` command reference
+
+**Implementation:**
+- Uses crossterm for cursor positioning
+- Renders below prompt, above input
+- Updates on session/inbox changes
+
+### Session Navigation Commands
+
+| Command | Description |
+|---------|-------------|
+| `/sessions` | Show session list with inbox summary |
+| `/inbox` | Show full inbox (actionable items) |
+| `/goto <n>` | Switch to session by number |
+| `/next` or `/n` | Next session |
+| `/prev` or `/p` | Previous session |
+| `/new [--worktree <path>] [--agent <type>]` | Create new session |
+
+### Inbox Display
+
+`/inbox` output:
+```
+Inbox (2 unread)
+  1. [decision] feat/auth: "Which auth strategy?"
+  2. [complete] test: "Tests passing, ready for review"
+
+/goto <n> to switch to session
+```
+
+### Integration with Session Daemon
+
+- Commands proxy through daemon socket when available
+- Single-session mode (no daemon) shows only current session
+- Status bar updates via daemon notifications
+
+### Affected Tasks
+
+New tasks to add:
+- [ ] 1.9 Implement persistent status bar (crossterm + reedline)
+- [ ] 1.10 Session list rendering in status bar
+- [ ] 1.11 Inbox badge with unread count
+- [ ] 6.12 `/sessions` command
+- [ ] 6.13 `/inbox` command
+- [ ] 6.14 `/goto`, `/next`, `/prev` commands
+- [ ] 6.15 `/new` command for creating sessions

@@ -72,3 +72,73 @@ This change adds a complete internal agent system that:
 - `/subagent` command for child agents
 - `SummarizationStrategy` for context compaction
 - Kebab-case config migration
+
+---
+
+## Amendment: Context Stack Operations
+
+*Added via add-session-daemon proposal*
+
+### Context as Stack
+
+Context is modeled as a stack/deque for granular control. Each entry is a message (human, agent, tool call, tool result).
+
+```
+┌─────────────────────────────────┐
+│ Tool result: error              │ ← top (newest)
+├─────────────────────────────────┤
+│ Tool call: edit file X          │
+├─────────────────────────────────┤
+│ Agent: "I'll edit file X..."    │
+├─────────────────────────────────┤
+│ Human: "Fix the auth bug"       │
+├─────────────────────────────────┤
+│ System prompt                   │ ← bottom (never popped)
+└─────────────────────────────────┘
+```
+
+### Stack Operations
+
+| Operation | Description |
+|-----------|-------------|
+| `pop(n)` | Remove top N entries |
+| `checkpoint(name)` | Mark current position as named restore point |
+| `rollback(name)` | Pop until named checkpoint |
+| `replace_top(summary)` | Pop top entry, push LLM-generated summary |
+| `reset()` | Pop all except system prompt |
+| `summarize()` | LLM-generate summary of current context |
+
+### Failure Recovery Patterns
+
+| Failure Type | Action | Rationale |
+|--------------|--------|-----------|
+| Tool error | `pop(1)` + inject error msg | Bad execution, not bad thinking |
+| Wrong approach | `rollback(checkpoint)` | Keep problem understanding, discard bad path |
+| Confusion spiral | `reset()` + summary | Polluted context, fresh start |
+| Fundamental misunderstanding | `reset()` + human clarification | Need new information |
+
+### Slash Commands
+
+```
+/context                    Show context stack summary
+/context pop [n]            Remove last N entries (default 1)
+/context checkpoint <name>  Create named checkpoint
+/context rollback <name>    Rollback to checkpoint
+/context reset              Clear all except system prompt
+/context summarize          Replace context with LLM summary
+```
+
+### Philosophy
+
+LLMs are stateless. Long conversations accumulate:
+- Outdated assumptions
+- Conflicting instructions
+- Error spirals ("I apologize, let me try again...")
+
+The context stack embraces this - `reset` + concise summary often works better than continuing a polluted conversation. Checkpoint/rollback provides methodology for recovery, not just last-resort reset.
+
+### Integration
+
+- Context stack trait in `crucible-core/src/traits/context.rs`
+- Implemented by `CrucibleAgentHandle` for internal agents
+- ACP agents: context ops translate to session management (limited support)
