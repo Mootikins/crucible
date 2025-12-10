@@ -497,7 +497,11 @@ pub struct BurnEmbedConfig {
     #[serde(default)]
     pub backend: BurnBackendConfig,
 
-    /// Additional model search paths
+    /// Base directory for model discovery (default: ~/models)
+    #[serde(default = "BurnEmbedConfig::default_model_dir")]
+    pub model_dir: String,
+
+    /// Additional model search paths (appended to model_dir subdirectories)
     #[serde(default)]
     pub model_search_paths: Vec<String>,
 
@@ -511,25 +515,37 @@ impl BurnEmbedConfig {
         "nomic-embed-text".to_string()
     }
 
-    /// Get default model search paths
-    pub fn default_search_paths() -> Vec<String> {
+    pub fn default_model_dir() -> String {
+        dirs::home_dir()
+            .unwrap_or_default()
+            .join("models")
+            .to_string_lossy()
+            .to_string()
+    }
+
+    /// Get default model search paths based on model_dir
+    pub fn default_search_paths(model_dir: &str) -> Vec<String> {
+        use std::path::PathBuf;
+        let model_dir = PathBuf::from(model_dir);
         let home = dirs::home_dir().unwrap_or_default();
+        
         vec![
-            home.join("models").to_string_lossy().to_string(),
-            home.join("models/embeddings").to_string_lossy().to_string(),
-            home.join(".cache/huggingface/hub")
-                .to_string_lossy()
-                .to_string(),
+            model_dir.join("language").to_string_lossy().to_string(),
+            model_dir.to_string_lossy().to_string(),
+            model_dir.join("embeddings").to_string_lossy().to_string(),
+            model_dir.join("language/.hf-cache/hub").to_string_lossy().to_string(),
+            home.join(".cache/huggingface/hub").to_string_lossy().to_string(),
         ]
     }
 
-    /// Get all search paths (configured + defaults)
+    /// Get all search paths (model_dir subdirectories + configured paths)
     pub fn all_search_paths(&self) -> Vec<String> {
-        if self.model_search_paths.is_empty() {
-            Self::default_search_paths()
-        } else {
-            self.model_search_paths.clone()
-        }
+        let mut paths = Self::default_search_paths(&self.model_dir);
+        
+        // Add user-configured paths
+        paths.extend(self.model_search_paths.clone());
+        
+        paths
     }
 }
 
@@ -538,6 +554,7 @@ impl Default for BurnEmbedConfig {
         Self {
             model: Self::default_model(),
             backend: BurnBackendConfig::default(),
+            model_dir: Self::default_model_dir(),
             model_search_paths: Vec::new(),
             dimensions: 0, // Auto-detect
         }
@@ -1071,6 +1088,7 @@ impl EmbeddingProviderConfig {
         Self::Burn(BurnEmbedConfig {
             model: model.unwrap_or_else(BurnEmbedConfig::default_model),
             backend: backend.unwrap_or_default(),
+            model_dir: BurnEmbedConfig::default_model_dir(),
             model_search_paths: search_paths.unwrap_or_default(),
             dimensions: 0, // Auto-detect
         })
