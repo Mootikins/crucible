@@ -64,8 +64,9 @@ pub use crate::traits::change_detection::{ChangeSet, ChangeSummary};
 
 // Re-export ACP types
 pub use crate::types::acp::{
-    ChatMode, ChunkType, FileMetadata, SessionConfig, SessionId, StreamChunk, StreamMetadata,
-    ToolDescriptor, ToolExample as AcpToolExample, ToolInvocation, ToolOutput,
+    ChatMode, ChunkType, FileDiff, FileMetadata, SessionConfig, SessionId, StreamChunk,
+    StreamMetadata, ToolCallInfo, ToolDescriptor, ToolExample as AcpToolExample, ToolInvocation,
+    ToolOutput,
 };
 
 // Re-export trait types (these are associated with traits but used as data)
