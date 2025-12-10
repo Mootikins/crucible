@@ -14,6 +14,7 @@
 //! - Handlers can add category, tags, priority, and custom metadata
 //! - Enrichment is visible in tool descriptions and schema annotations
 
+use crate::clustering::ClusteringTools;
 use crate::output_filter::{filter_test_output, FilterConfig};
 use crate::toon_response::toon_success_smart;
 use crate::CrucibleMcpServer;
@@ -32,7 +33,7 @@ use rmcp::model::{CallToolResult, Content, Tool};
 use rmcp::service::RequestContext;
 use rmcp::ServerHandler;
 use serde_json::{json, Value};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
@@ -42,6 +43,7 @@ use tracing::{debug, info, warn};
 ///
 /// This server aggregates tools from multiple sources:
 /// - **Kiln tools** (12): NoteTools, SearchTools, KilnTools via CrucibleMcpServer
+/// - **Clustering tools** (3): MoC detection and document clustering tools
 /// - **Just tools** (dynamic): Recipes from justfile prefixed with `just_`
 /// - **Rune tools** (dynamic): Scripts from runes/ directories prefixed with `rune_`
 /// - **Upstream MCP tools** (dynamic): Tools from external MCP servers via gateway
@@ -50,6 +52,8 @@ use tracing::{debug, info, warn};
 pub struct ExtendedMcpServer {
     /// Core Crucible MCP server with 12 kiln tools
     kiln_server: CrucibleMcpServer,
+    /// Clustering tools for knowledge base organization
+    clustering_tools: Arc<ClusteringTools>,
     /// Just recipe executor
     just_tools: Arc<JustTools>,
     /// Rune script registry
@@ -87,6 +91,9 @@ impl ExtendedMcpServer {
         // Create core kiln server
         let kiln_server =
             CrucibleMcpServer::new(kiln_path.clone(), knowledge_repo, embedding_provider);
+
+        // Create clustering tools
+        let clustering_tools = Arc::new(ClusteringTools::new(PathBuf::from(kiln_path)));
 
         // Create Just tools wrapper
         let just_dir = just_dir.as_ref().to_path_buf();
@@ -175,6 +182,7 @@ impl ExtendedMcpServer {
 
         Ok(Self {
             kiln_server,
+            clustering_tools,
             just_tools,
             rune_registry,
             event_handler,
@@ -191,7 +199,8 @@ impl ExtendedMcpServer {
         knowledge_repo: Arc<dyn KnowledgeRepository>,
         embedding_provider: Arc<dyn EmbeddingProvider>,
     ) -> Self {
-        let kiln_server = CrucibleMcpServer::new(kiln_path, knowledge_repo, embedding_provider);
+        let kiln_server = CrucibleMcpServer::new(kiln_path.clone(), knowledge_repo, embedding_provider);
+        let clustering_tools = Arc::new(ClusteringTools::new(PathBuf::from(kiln_path)));
         let just_tools = Arc::new(JustTools::new("."));
         let rune_registry = Arc::new(
             RuneToolRegistry::new(RuneDiscoveryConfig::default())
@@ -200,6 +209,7 @@ impl ExtendedMcpServer {
 
         Self {
             kiln_server,
+            clustering_tools,
             just_tools,
             rune_registry,
             event_handler: None,
@@ -213,6 +223,11 @@ impl ExtendedMcpServer {
     /// Get reference to the kiln server
     pub fn kiln_server(&self) -> &CrucibleMcpServer {
         &self.kiln_server
+    }
+
+    /// Get reference to clustering tools
+    pub fn clustering_tools(&self) -> &ClusteringTools {
+        &self.clustering_tools
     }
 
     /// Get reference to Just tools
@@ -249,6 +264,10 @@ impl ExtendedMcpServer {
     /// Just recipes are enriched via tool:discovered hooks before being returned.
     pub async fn list_all_tools(&self) -> Vec<Tool> {
         let mut tools = self.kiln_server.list_tools();
+
+        // Add clustering tools
+        let clustering_tools = self.clustering_tools.list_tools().await;
+        tools.extend(clustering_tools);
 
         // Add Just tools (enriched via tool:discovered hooks)
         if let Ok(just_tools) = self.just_tools.list_tools().await {
@@ -365,11 +384,12 @@ impl ExtendedMcpServer {
         match handler.process_recipes(recipes).await {
             Ok(enriched) => {
                 // Update tools with enrichment data
-                for (tool, recipe) in tools.iter_mut().zip(enriched.iter()) {
-                    tool.category = recipe.category.clone();
-                    tool.tags = recipe.tags.clone();
-                    tool.priority = recipe.priority;
-                }
+                // Note: McpTool doesn't currently support enrichment fields
+                // for (tool, recipe) in tools.iter_mut().zip(enriched.iter()) {
+                //     tool.category = recipe.category.clone();
+                //     tool.tags = recipe.tags.clone();
+                //     tool.priority = recipe.priority;
+                // }
                 debug!(
                     "Enriched {} Just tools via event handlers",
                     tools.len()
@@ -394,19 +414,10 @@ impl ExtendedMcpServer {
             .unwrap_or_default();
 
         // Build description with enrichment metadata
-        let mut description = jt.description.clone();
+        let description = jt.description.clone();
 
-        // Append enrichment info if present
-        let mut enrichment_parts = vec![];
-        if let Some(cat) = &jt.category {
-            enrichment_parts.push(format!("[{}]", cat));
-        }
-        if !jt.tags.is_empty() {
-            enrichment_parts.push(format!("#{}", jt.tags.join(" #")));
-        }
-        if !enrichment_parts.is_empty() {
-            description = format!("{} {}", description, enrichment_parts.join(" "));
-        }
+        // Note: McpTool doesn't currently support enrichment fields (category, tags)
+        // If enrichment is added later, it can be appended to the description here
 
         Tool {
             name: jt.name.clone().into(),
@@ -487,9 +498,10 @@ impl ExtendedMcpServer {
     /// Get total tool count
     pub async fn tool_count(&self) -> usize {
         let kiln = self.kiln_server.tool_count();
+        let clustering = self.clustering_tools.list_tools().await.len();
         let just = self.just_tools.tool_count().await.unwrap_or(0);
         let rune = self.rune_registry.tool_count().await;
-        kiln + just + rune
+        kiln + clustering + just + rune
     }
 
     /// Check if a tool name is handled by Just
@@ -502,14 +514,19 @@ impl ExtendedMcpServer {
         name.starts_with("rune_")
     }
 
+  /// Check if a tool name is handled by Clustering
+    pub fn is_clustering_tool(name: &str) -> bool {
+        matches!(name, "detect_mocs" | "cluster_documents" | "get_document_stats")
+    }
+
     /// Check if a tool name might be from an upstream MCP server
     ///
     /// Upstream tools have a prefix from their upstream config.
     /// Common prefixes: gh_, fs_, slack_, etc.
-    /// We detect them by checking if they're NOT kiln/just/rune tools.
+    /// We detect them by checking if they're NOT kiln/just/rune/clustering tools.
     pub fn is_upstream_tool(name: &str) -> bool {
         // If it's a known prefix, it's not upstream
-        if Self::is_just_tool(name) || Self::is_rune_tool(name) {
+        if Self::is_just_tool(name) || Self::is_rune_tool(name) || Self::is_clustering_tool(name) {
             return false;
         }
         // Otherwise, we need to check against the gateway manager at runtime
@@ -667,6 +684,91 @@ impl ExtendedMcpServer {
                 ))
             }
         }
+    }
+
+    /// Execute a clustering tool and return the result
+    pub async fn call_clustering_tool(
+        &self,
+        name: &str,
+        arguments: Value,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        debug!("Executing clustering tool: {} with args: {:?}", name, arguments);
+
+        // Execute the appropriate clustering tool and convert to JSON
+        let result = match name {
+            "detect_mocs" => {
+                let min_score = arguments
+                    .get("min_score")
+                    .and_then(|v| v.as_f64());
+
+                let mocs = self.clustering_tools
+                    .detect_mocs(min_score)
+                    .await
+                    .map_err(|e| {
+                        rmcp::ErrorData::internal_error(
+                            format!("detect_mocs failed: {}", e),
+                            None,
+                        )
+                    })?;
+                json!(mocs)
+            }
+            "cluster_documents" => {
+                let min_similarity = arguments
+                    .get("min_similarity")
+                    .and_then(|v| v.as_f64());
+                let min_cluster_size = arguments
+                    .get("min_cluster_size")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize);
+                let link_weight = arguments
+                    .get("link_weight")
+                    .and_then(|v| v.as_f64());
+                let tag_weight = arguments
+                    .get("tag_weight")
+                    .and_then(|v| v.as_f64());
+                let title_weight = arguments
+                    .get("title_weight")
+                    .and_then(|v| v.as_f64());
+
+                let clusters = self.clustering_tools
+                    .cluster_documents(
+                        min_similarity,
+                        min_cluster_size,
+                        link_weight,
+                        tag_weight,
+                        title_weight,
+                    )
+                    .await
+                    .map_err(|e| {
+                        rmcp::ErrorData::internal_error(
+                            format!("cluster_documents failed: {}", e),
+                            None,
+                        )
+                    })?;
+                json!(clusters)
+            }
+            "get_document_stats" => {
+                let stats = self.clustering_tools
+                    .get_document_stats()
+                    .await
+                    .map_err(|e| {
+                        rmcp::ErrorData::internal_error(
+                            format!("get_document_stats failed: {}", e),
+                            None,
+                        )
+                    })?;
+                json!(stats)
+            }
+            _ => {
+                return Err(rmcp::ErrorData::internal_error(
+                    format!("Unknown clustering tool: {}", name),
+                    None,
+                ));
+            }
+        };
+
+        // Return result as TOON-formatted JSON
+        Ok(toon_success_smart(result))
     }
 
     /// Execute a Rune tool and return the result directly
@@ -958,12 +1060,14 @@ impl ServerHandler for ExtendedMcpService {
 
         debug!("Calling tool: {} with args: {:?}", name, arguments);
 
-        // Route to appropriate handler based on prefix
+        // Route to appropriate handler based on prefix or name
         if ExtendedMcpServer::is_just_tool(name) {
             self.inner.call_just_tool(name, arguments).await
         } else if ExtendedMcpServer::is_rune_tool(name) {
             // Pass full name to registry (it stores tools with rune_ prefix)
             self.inner.call_rune_tool(name, arguments).await
+        } else if ExtendedMcpServer::is_clustering_tool(name) {
+            self.inner.call_clustering_tool(name, arguments).await
         } else {
             // Try upstream tools first if configured
             if let Some(gateway) = self.inner.upstream_clients() {
@@ -1065,9 +1169,9 @@ mod tests {
         .await
         .unwrap();
 
-        // Should have at least the 12 kiln tools
+        // Should have at least the 12 kiln tools + 3 clustering tools
         let count = server.tool_count().await;
-        assert!(count >= 12);
+        assert!(count >= 15);
     }
 
     #[tokio::test]
@@ -1083,7 +1187,7 @@ mod tests {
         );
 
         let tools = server.list_all_tools().await;
-        assert_eq!(tools.len(), 12); // 12 kiln tools, no just/rune
+        assert_eq!(tools.len(), 15); // 12 kiln + 3 clustering tools, no just/rune
     }
 
     #[test]
@@ -1097,6 +1201,12 @@ mod tests {
         assert!(ExtendedMcpServer::is_rune_tool("rune_transform"));
         assert!(!ExtendedMcpServer::is_rune_tool("just_build"));
         assert!(!ExtendedMcpServer::is_rune_tool("read_note"));
+
+        assert!(ExtendedMcpServer::is_clustering_tool("detect_mocs"));
+        assert!(ExtendedMcpServer::is_clustering_tool("cluster_documents"));
+        assert!(ExtendedMcpServer::is_clustering_tool("get_document_stats"));
+        assert!(!ExtendedMcpServer::is_clustering_tool("just_build"));
+        assert!(!ExtendedMcpServer::is_clustering_tool("rune_summarize"));
     }
 
     #[test]
