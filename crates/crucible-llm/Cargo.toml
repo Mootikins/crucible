@@ -22,8 +22,23 @@ crucible-core = { path = "../crucible-core" }
 # Config
 crucible-config = { path = "../crucible-config", features = ["toml"] }
 
-# Optional Burn ML framework dependency
-burn = { version = "0.14", optional = true }
+# Burn ML framework dependency for GPU-accelerated embeddings
+burn = { version = "0.14", features = ["wgpu", "autodiff"], optional = true }
+burn-core = { version = "0.14", optional = true }
+burn-tensor = { version = "0.14", optional = true }
+burn-ndarray = { version = "0.14", optional = true }  # For CPU fallback
+
+# HuggingFace tokenizers for text tokenization
+tokenizers = "0.19"
+
+# SafeTensors for model loading
+safetensors = "0.4"
+
+# GGUF file format support
+gguf = "0.1"
+
+# For model file operations
+walkdir = "2.5"
 
 # Async
 tokio = { workspace = true, features = ["time"] }
@@ -54,6 +69,9 @@ fastembed = "5.2"
 
 # Path expansion (for tilde expansion)
 shellexpand = "3.1"
+
+# Directory utilities
+dirs = "5.0"
 
 [dev-dependencies]
 tokio-test = "0.4"
