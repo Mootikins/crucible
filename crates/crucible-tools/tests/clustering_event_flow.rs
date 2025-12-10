@@ -74,8 +74,8 @@ async fn test_batch_clustering_event_flow() {
     }
 
     // 3. Process events (in real implementation, this would be handled by event system)
-    for event in event_sequence {
-        let doc = event["document"];
+    for event in &event_sequence {
+        let doc = &event["document"];
         // Simulate processing
         assert!(doc["path"].is_string());
         assert!(doc["title"].is_string());
@@ -133,10 +133,12 @@ async fn test_clustering_completed_event_flow() {
     assert_eq!(event["results"]["num_clusters"], clusters.len());
 
     // 4. Verify cluster data structure
-    for cluster in event["results"]["clusters"] {
-        assert!(cluster.has("id"), "Cluster should have ID");
-        assert!(cluster.has("documents"), "Cluster should have documents");
-        assert!(cluster.has("confidence"), "Cluster should have confidence score");
+    if let Some(clusters_array) = event["results"]["clusters"].as_array() {
+        for cluster in clusters_array {
+            assert!(cluster.get("id").is_some(), "Cluster should have ID");
+            assert!(cluster.get("documents").is_some(), "Cluster should have documents");
+            assert!(cluster.get("confidence").is_some(), "Cluster should have confidence score");
+        }
     }
 }
 
@@ -284,8 +286,8 @@ async fn test_event_persistence() {
     // 3. Verify persistence event structure
     assert_eq!(persist_event["event"], "clustering_results_persisted");
     assert_eq!(persist_event["algorithm"], "heuristic");
-    assert!(persist_event.has("results"));
-    assert!(persist_event.has("metadata"));
+    assert!(persist_event.get("results").is_some());
+    assert!(persist_event.get("metadata").is_some());
     assert_eq!(persist_event["metadata"]["version"], "1.0");
 
     // 4. In a real implementation, verify data is persisted to storage
