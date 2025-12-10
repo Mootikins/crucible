@@ -247,6 +247,7 @@ impl EmbeddingConfig {
                         .clone()
                         .unwrap_or_else(|| "nomic-embed-text".to_string()),
                     backend: crate::enrichment::BurnBackendConfig::Auto,
+                    model_dir: crate::enrichment::BurnEmbedConfig::default_model_dir(),
                     model_search_paths: Vec::new(), // Will use defaults
                     dimensions: 0,                  // Auto-detect
                 })
