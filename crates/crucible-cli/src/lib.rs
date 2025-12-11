@@ -17,4 +17,5 @@ pub mod output;
 pub mod progress;
 pub mod sync;
 pub mod tui;
+pub mod chat_tui;
 // Streamlined for Phase 5: disabled agents, error_recovery, watcher (heavy dependencies)
