@@ -102,30 +102,52 @@ impl BurnProvider {
 
     /// Check if GPU backend is available
     async fn check_gpu_availability(&self) -> EmbeddingResult<bool> {
-        // TODO: Implement actual GPU detection
-        // For now, we'll simulate by checking environment variables
-
         match self.device_type.as_str() {
             "vulkan" => {
-                // Check if Vulkan is available
-                // This would involve checking for Vulkan drivers and compatible GPU
-                Ok(std::env::var("VULKAN_SDK").is_ok() || cfg!(test))
+                // Check for Vulkan availability via common indicators
+                Ok(Self::detect_vulkan())
             }
             "rocm" => {
                 // Check if ROCm is available
-                Ok(std::env::var("ROCM_HOME").is_ok() || cfg!(test))
+                Ok(Self::detect_rocm())
             }
             "cuda" => {
                 // Check if CUDA is available
-                Ok(std::env::var("CUDA_HOME").is_ok() || cfg!(test))
+                Ok(std::env::var("CUDA_HOME").is_ok()
+                    || std::path::Path::new("/usr/local/cuda").exists())
             }
             "cpu" => Ok(true),
             "auto" => {
                 // Try to detect any available backend
-                Ok(cfg!(test)) // Always true in tests
+                Ok(Self::detect_vulkan() || Self::detect_rocm())
             }
             _ => Ok(false),
         }
+    }
+
+    /// Detect Vulkan availability
+    fn detect_vulkan() -> bool {
+        // Check environment variable
+        if std::env::var("VULKAN_SDK").is_ok() {
+            return true;
+        }
+        // Check for Vulkan ICD loader library (Linux)
+        if std::path::Path::new("/usr/lib64/libvulkan.so.1").exists()
+            || std::path::Path::new("/usr/lib/x86_64-linux-gnu/libvulkan.so.1").exists()
+        {
+            return true;
+        }
+        // Check for AMD AMDVLK or RADV drivers
+        if std::path::Path::new("/usr/share/vulkan/icd.d").exists() {
+            return true;
+        }
+        false
+    }
+
+    /// Detect ROCm availability
+    fn detect_rocm() -> bool {
+        std::env::var("ROCM_HOME").is_ok()
+            || std::path::Path::new("/opt/rocm").exists()
     }
 }
 
