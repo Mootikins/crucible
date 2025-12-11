@@ -413,11 +413,19 @@ impl ExtendedMcpServer {
             .cloned()
             .unwrap_or_default();
 
-        // Build description with enrichment metadata
-        let description = jt.description.clone();
+        // Build description with enrichment metadata appended
+        let mut description = jt.description.clone();
 
-        // Note: McpTool doesn't currently support enrichment fields (category, tags)
-        // If enrichment is added later, it can be appended to the description here
+        // Append category if present
+        if let Some(ref category) = jt.category {
+            description = format!("{} [{}]", description, category);
+        }
+
+        // Append tags if present
+        if !jt.tags.is_empty() {
+            let tags_str = jt.tags.iter().map(|t| format!("#{}", t)).collect::<Vec<_>>().join(" ");
+            description = format!("{} {}", description, tags_str);
+        }
 
         Tool {
             name: jt.name.clone().into(),
