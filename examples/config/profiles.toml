@@ -1,0 +1,80 @@
+# Profile Configurations
+# Location: ~/.config/crucible/profiles.toml
+#
+# This file is included from config.toml via:
+#   [include]
+#   profiles = "profiles.toml"
+#
+# Profiles allow you to switch between different configurations
+# for different environments or use cases.
+
+# =============================================================================
+# Default Profile
+# =============================================================================
+# Used when no profile is specified
+
+[default]
+kiln_path = "~/Documents/vault"
+
+# Optional overrides
+# embedding_model = "nomic-embed-text"
+# embedding_provider = "ollama"
+
+# =============================================================================
+# Development Profile
+# =============================================================================
+# For local development and testing
+
+[development]
+kiln_path = "~/dev/test-vault"
+
+# Use local models
+# embedding_provider = "fastembed"
+# embedding_model = "BAAI/bge-small-en-v1.5"
+
+# Enable verbose logging
+# log_level = "debug"
+
+# =============================================================================
+# Work Profile
+# =============================================================================
+# Separate vault for work-related notes
+
+[work]
+kiln_path = "~/Documents/work-vault"
+
+# Work-specific agent directories
+# agent_directories = ["~/work/agents"]
+
+# =============================================================================
+# Personal Profile
+# =============================================================================
+# Personal knowledge base
+
+[personal]
+kiln_path = "~/Documents/personal-vault"
+
+# =============================================================================
+# Production Profile
+# =============================================================================
+# For production deployments
+
+# [production]
+# kiln_path = "/data/vault"
+# 
+# # Use cloud embedding provider
+# embedding_provider = "openai"
+# embedding_model = "text-embedding-3-small"
+# 
+# # Production logging
+# log_level = "warn"
+
+# =============================================================================
+# Custom Profiles
+# =============================================================================
+# Add your own profiles here...
+
+# [research]
+# kiln_path = "~/research/notes"
+# embedding_provider = "ollama"
+# embedding_model = "mxbai-embed-large"
