@@ -1,0 +1,103 @@
+# Hooks Configuration
+# Location: ~/.config/crucible/hooks.toml
+#
+# This file is included from config.toml via:
+#   [include]
+#   hooks = "hooks.toml"
+#
+# Configure built-in hooks that intercept and transform tool operations.
+
+# =============================================================================
+# Test Output Filter
+# =============================================================================
+# Filters verbose output from test tools (like `just_test`).
+# Keeps: test names, pass/fail status, error messages
+# Removes: compilation output, timing details, etc.
+
+[builtin.test_filter]
+enabled = true
+
+# Pattern matching tool names to filter (glob syntax)
+pattern = "just_test*"
+
+# Priority determines order when multiple hooks match (lower = first)
+priority = 10
+
+# =============================================================================
+# TOON Transform
+# =============================================================================
+# Transforms structured output (TOON format) for better readability.
+# Converts structured data to human-readable format.
+
+[builtin.toon_transform]
+enabled = false
+pattern = "*"  # Apply to all tools
+priority = 50
+
+# =============================================================================
+# Recipe Enrichment
+# =============================================================================
+# Enriches recipe/pattern discovery with additional metadata.
+# Adds context and suggestions to discovered patterns.
+
+[builtin.recipe_enrichment]
+enabled = false
+pattern = "recipe_*"
+priority = 20
+
+# =============================================================================
+# Tool Selector
+# =============================================================================
+# Whitelist/blacklist tools available to agents.
+# Useful for restricting capabilities in certain contexts.
+
+[builtin.tool_selector]
+enabled = false
+
+# Only allow these tools (glob patterns)
+allowed_tools = [
+    # Read-only operations
+    "read_*",
+    "search_*",
+    "list_*",
+    "get_*",
+    
+    # Safe Crucible tools
+    "semantic_search",
+    "text_search",
+    "read_note",
+    "read_metadata",
+    
+    # Allow all GitHub read tools
+    "gh_search_*",
+    "gh_get_*",
+    "gh_list_*",
+]
+
+# Block these tools even if in allowed list
+blocked_tools = [
+    "delete_*",
+    "drop_*",
+    "rm_*",
+]
+
+# Add suffix to tool names (for debugging/identification)
+# suffix = "_filtered"
+
+# =============================================================================
+# Custom Hooks
+# =============================================================================
+# You can add Rune-based custom hooks via the discovery system.
+# Place .rn files in ~/.crucible/hooks/ or paths specified in discovery.toml.
+#
+# Example hook (save as ~/.crucible/hooks/log_calls.rn):
+#
+# //! Log all tool calls
+# //! @hook tool:before
+#
+# pub fn on_tool_before(event) {
+#     let tool_name = event.name;
+#     let args = event.arguments;
+#     log::info("Tool called: {} with {:?}", tool_name, args);
+#     Ok(event)  // Return unmodified to continue
+# }
