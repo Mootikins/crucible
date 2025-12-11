@@ -133,6 +133,12 @@ impl ChatSession {
                 Arc::new(handlers::HelpHandler),
                 "Show available commands",
             )
+            .command_with_hint(
+                "commit",
+                Arc::new(handlers::CommitHandler),
+                "Smart git commit workflow (smart/quick/review/wip)",
+                Some("mode [message]".to_string()),
+            )
             .build();
 
         Self {
