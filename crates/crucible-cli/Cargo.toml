@@ -108,6 +108,7 @@ similar = "2.7"
 
 # TUI framework
 ratatui = { workspace = true }
+tui-textarea = { version = "0.7", default-features = false, features = ["crossterm"] }
 
 # UUID generation
 uuid = { workspace = true, features = ["v4", "serde"] }
