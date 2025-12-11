@@ -3,11 +3,10 @@
 //! These tests use the examples/test-kiln/ directory to validate clustering
 //! algorithms against realistic knowledge base structures.
 
-use std::path::{Path, PathBuf};
-use std::time::Instant;
-
 use super::*;
 use super::test_utils::*;
+use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 /// Integration test for MoC detection on the test-kiln data
 #[tokio::test]
@@ -407,7 +406,7 @@ async fn test_user_vault_clustering() {
     // Run with: CRUCIBLE_KILN_PATH=/path/to/your/vault cargo test -- --ignored test_user_vault_clustering
 
     let vault_path = match std::env::var("CRUCIBLE_KILN_PATH") {
-        Ok(path) => std::path::PathBuf::from(path),
+        Ok(path) => PathBuf::from(path),
         Err(_) => {
             println!("Skipping test - CRUCIBLE_KILN_PATH not set");
             return;
@@ -491,7 +490,7 @@ async fn test_user_vault_clustering() {
 #[ignore = "Requires CRUCIBLE_KILN_PATH environment variable"]
 async fn test_user_vault_algorithm_comparison() {
     let vault_path = match std::env::var("CRUCIBLE_KILN_PATH") {
-        Ok(path) => std::path::PathBuf::from(path),
+        Ok(path) => PathBuf::from(path),
         Err(_) => {
             println!("Skipping test - CRUCIBLE_KILN_PATH not set");
             return;
