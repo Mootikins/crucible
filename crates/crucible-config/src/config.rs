@@ -428,61 +428,10 @@ impl Config {
         Ok(())
     }
 
-    /// Validate discovery configuration (checks path format validity)
-    pub fn validate_discovery(&self) -> Result<(), ConfigValidationError> {
-        if let Some(discovery) = &self.discovery {
-            let mut errors = Vec::new();
-
-            // Validate all type configs
-            for (type_name, type_config) in &discovery.type_configs {
-                for (idx, path) in type_config.additional_paths.iter().enumerate() {
-                    let path_str = path.to_string_lossy();
-                    // Check for empty paths
-                    if path_str.trim().is_empty() {
-                        errors.push(format!(
-                            "Discovery '{}': additional_paths[{}] cannot be empty",
-                            type_name, idx
-                        ));
-                    }
-                }
-            }
-
-            // Validate flat format configs
-            let mut check_type_config = |type_name: &str, config: &crate::components::TypeDiscoveryConfig| {
-                for (idx, path) in config.additional_paths.iter().enumerate() {
-                    let path_str = path.to_string_lossy();
-                    if path_str.trim().is_empty() {
-                        errors.push(format!(
-                            "Discovery '{}': additional_paths[{}] cannot be empty",
-                            type_name, idx
-                        ));
-                    }
-                }
-            };
-
-            if let Some(hooks) = &discovery.hooks {
-                check_type_config("hooks", hooks);
-            }
-            if let Some(tools) = &discovery.tools {
-                check_type_config("tools", tools);
-            }
-            if let Some(events) = &discovery.events {
-                check_type_config("events", events);
-            }
-
-            if !errors.is_empty() {
-                return Err(ConfigValidationError::Multiple { errors });
-            }
-        }
-
-        Ok(())
-    }
-
     /// Validate all configuration sections
     pub fn validate(&self) -> Result<(), ConfigValidationError> {
         self.validate_gateway()?;
         self.validate_hooks()?;
-        self.validate_discovery()?;
         Ok(())
     }
 }
@@ -1156,7 +1105,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "toml")]
     fn test_agent_directories_loads_from_toml() {
         let toml_content = r#"
 kiln_path = "/tmp/test-kiln"
@@ -1182,7 +1130,6 @@ provider = "fastembed"
     }
 
     #[test]
-    #[cfg(feature = "toml")]
     fn test_agent_directories_optional_when_missing() {
         let toml_content = r#"
 kiln_path = "/tmp/test-kiln"
@@ -1378,58 +1325,6 @@ allowed_tools = ["search_*"]
         };
 
         let result = config.validate();
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_validate_discovery_empty_path() {
-        use std::collections::HashMap;
-        let mut type_configs = HashMap::new();
-        type_configs.insert(
-            "tools".to_string(),
-            crate::components::TypeDiscoveryConfig {
-                additional_paths: vec![std::path::PathBuf::from("")],
-                use_defaults: true,
-            },
-        );
-
-        let config = Config {
-            discovery: Some(crate::components::DiscoveryPathsConfig {
-                hooks: None,
-                tools: None,
-                events: None,
-                type_configs,
-            }),
-            ..Config::default()
-        };
-
-        let result = config.validate_discovery();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_validate_discovery_valid() {
-        use std::collections::HashMap;
-        let mut type_configs = HashMap::new();
-        type_configs.insert(
-            "tools".to_string(),
-            crate::components::TypeDiscoveryConfig {
-                additional_paths: vec![std::path::PathBuf::from("/valid/path")],
-                use_defaults: true,
-            },
-        );
-
-        let config = Config {
-            discovery: Some(crate::components::DiscoveryPathsConfig {
-                hooks: None,
-                tools: None,
-                events: None,
-                type_configs,
-            }),
-            ..Config::default()
-        };
-
-        let result = config.validate_discovery();
         assert!(result.is_ok());
     }
 
