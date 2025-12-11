@@ -133,16 +133,31 @@ pub async fn execute(
             println!("🔍 Detecting Maps of Content...\n");
             let mocs = service.detect_mocs(&cluster_config).await?;
             format_output(&mocs, &cluster_config.output_format, Some("Maps of Content"));
+            if let Some(output_path) = &cluster_config.output_file {
+                let json = serde_json::to_string_pretty(&mocs)?;
+                fs::write(output_path, json).await?;
+                println!("✅ Results saved to: {}", output_path.display());
+            }
         }
         ClusterAction::Documents => {
             println!("📊 Clustering documents...\n");
             let clusters = service.cluster_documents(&cluster_config).await?;
             format_output(&clusters, &cluster_config.output_format, Some("Document Clusters"));
+            if let Some(output_path) = &cluster_config.output_file {
+                let json = serde_json::to_string_pretty(&clusters)?;
+                fs::write(output_path, json).await?;
+                println!("✅ Results saved to: {}", output_path.display());
+            }
         }
         ClusterAction::Statistics => {
             println!("📈 Gathering statistics...\n");
             let stats = service.get_statistics(&cluster_config).await?;
             format_output(&stats, &cluster_config.output_format, Some("Knowledge Base Statistics"));
+            if let Some(output_path) = &cluster_config.output_file {
+                let json = serde_json::to_string_pretty(&stats)?;
+                fs::write(output_path, json).await?;
+                println!("✅ Results saved to: {}", output_path.display());
+            }
         }
         ClusterAction::All => {
             // Run all clustering operations
@@ -162,8 +177,6 @@ pub async fn execute(
 
     Ok(())
 }
-
-// Note: execute_with_service removed - use service methods directly
 
 /// Format output based on format type
 pub fn format_output(
