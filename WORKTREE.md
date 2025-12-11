@@ -1,166 +1,134 @@
-# Worktree: feat/mcp-bridge-completion
+# Worktree: feat/chat-ux-improvements
 
-**Goal**: Complete the MCP bridge event system (last 15%)
-**Status**: ~85% complete
+**Goal**: Replace reedline chat with ratatui inline viewport TUI
+**Status**: Implementation complete (all Waves done)
 
-## Current State
+## Architecture Decision
 
-Already implemented:
-- [x] Unified discovery paths (`DiscoveryPaths`)
-- [x] Attribute discovery (`#[hook]`, `#[tool]`)
-- [x] Core event system (EventBus, patterns, priorities)
-- [x] Hook system (Rune and built-in handlers)
-- [x] Tool events (before/after/error)
-- [x] Note events (parsed/created/modified)
-- [x] MCP Gateway client (stdio + SSE transports)
-- [x] Tool selector hook (whitelist/blacklist/prefix)
-- [x] Configuration schema
+**Approach:** Ratatui inline viewport (`Viewport::Inline(8)`) instead of alternate screen
+
+- Preserves terminal scrollback (user preference)
+- Agent responses pushed up via `terminal.insert_before()`
+- Fixed 8-line viewport at bottom for input + status + completion
+- Fuzzy completion menus for `/commands`, `@files`, `@agents`
+
+## Implementation Harness
+
+**All tasks follow:** `.claude/harness/tdd-implementation.md`
+
+- Write test first (red)
+- Implement to pass (green)
+- 3 retries max, then escalate to debugger agent
+
+## Progress (Topological Waves)
+
+### Wave 0: Setup [DONE]
+| Task | Status | Test |
+|------|--------|------|
+| T1: Add tui-textarea dependency | [x] | Build check |
+| T2: Create chat_tui module structure | [x] | Compiles |
+
+### Wave 1: Core Components [DONE]
+| Task | Status | Test |
+|------|--------|------|
+| T3: Inline viewport setup | [x] | `test_viewport_*` (12 tests) |
+| T4: ChatInput with tui-textarea | [x] | `test_input_*` (7 tests) |
+| T5: CompletionState with nucleo | [x] | `test_fuzzy_*` (15 tests) |
+
+### Wave 2: Behaviors [DONE]
+| Task | Status | Test |
+|------|--------|------|
+| T6: Submit behavior | [x] | `test_submit_message` |
+| T7: Completion triggers | [x] | `test_*_completion_trigger` |
+
+### Wave 3: Event Loop + Popup [DONE]
+| Task | Status | Test |
+|------|--------|------|
+| T8: Event loop | [x] | `test_event_loop_*` (7 tests) |
+| T9: Completion popup render | [x] | `test_popup_*` (10 tests) |
+
+### Wave 4: Widgets [DONE]
+| Task | Status | Test |
+|------|--------|------|
+| T10: Status bar widget | [x] | `test_status_*` (7 tests) |
+| T11: Completion navigation | [x] | `test_completion_nav_*` (13 tests) |
+
+### Wave 5: Multi-select [DONE]
+| Task | Status | Test |
+|------|--------|------|
+| T12: Multi-select checkboxes | [x] | `test_multi_select_*` (12 tests) |
+
+### Wave 6: Messages [DONE]
+| Task | Status | Test |
+|------|--------|------|
+| T13: insert_before for messages | [x] | `test_message_*` (18 tests) |
+
+### Wave 7: Data Sources [DONE]
+| Task | Status | Test |
+|------|--------|------|
+| T14: Command completion source | [x] | `test_command_source` |
+| T15: File completion source | [x] | `test_file_source_*` (8 tests) |
+| T16: Streaming indicator | [x] | `test_status_*` (streaming) |
+
+### Wave 8: Integration [DONE]
+| Task | Status | Test |
+|------|--------|------|
+| T17: Connect to AgentHandle | [x] | `test_agent_*`, `test_handle_key_with_agent_*` (9 tests) |
+
+### Wave 9: Commands [DONE]
+| Task | Status | Test |
+|------|--------|------|
+| T18: /clear command | [x] | `test_clear_*`, `test_exit_*`, `test_quit_*` (8 tests) |
 
 ## Key Files
 
-```
-crates/crucible-rune/src/
-├── event_bus.rs        # Core EventBus implementation
-├── tool_events.rs      # ToolEventEmitter, ToolSource
-├── note_events.rs      # NoteEventEmitter, NotePayload
-├── hooks/
-│   ├── mod.rs          # Hook trait and registry
-│   ├── rune_handler.rs # Rune script hook wrapper
-│   ├── builtin.rs      # Built-in hooks (filter, transform)
-│   └── tool_selector.rs # Whitelist/blacklist hook
-├── discovery/
-│   ├── paths.rs        # DiscoveryPaths struct
-│   └── attributes.rs   # FromAttributes trait
-└── mcp_gateway.rs      # Upstream MCP client
+**Created:**
+- `crates/crucible-cli/src/chat_tui/mod.rs` - Entry point, viewport setup
+- `crates/crucible-cli/src/chat_tui/app.rs` - ChatApp state, event handling
+- `crates/crucible-cli/src/chat_tui/input.rs` - tui-textarea wrapper
+- `crates/crucible-cli/src/chat_tui/completion.rs` - Fuzzy completion with nucleo
+- `crates/crucible-cli/src/chat_tui/render.rs` - Viewport rendering
+- `crates/crucible-cli/src/chat_tui/widgets/popup.rs` - Completion popup
+- `crates/crucible-cli/src/chat_tui/widgets/status.rs` - Status bar with streaming indicator
+- `crates/crucible-cli/src/chat_tui/sources.rs` - Completion data sources
 
-crates/crucible-tools/src/extended_mcp_server.rs  # Integration point
-crates/crucible-config/src/                        # Config structs
-```
+**Reuse patterns from:**
+- `crates/crucible-cli/src/tui/mod.rs` - Event loop
+- `crates/crucible-cli/src/tui/app.rs` - Dirty flags, state
+- `crates/crucible-cli/src/interactive.rs` - FuzzyPicker (nucleo)
 
-## Remaining Tasks
-
-### 1. TOML Config Schema (1.4)
-Add `[discovery.<type>]` section support:
-
-```toml
-[discovery.hooks]
-additional_paths = ["~/.config/crucible/hooks"]
-use_defaults = true
-
-[discovery.tools]
-additional_paths = ["/opt/crucible/tools"]
-use_defaults = true
-```
-
-Files to modify:
-- `crates/crucible-config/src/` - Add discovery config types
-- `crates/crucible-rune/src/discovery/paths.rs` - Read from config
-
-### 2. SurrealDB Attribute Caching (2.7) - DEFERRED
-Cache discovered `#[tool]` and `#[hook]` attributes in SurrealDB for fast reload.
-
-Currently re-scans files on startup. Caching would speed up cold starts.
-
-Status: Deferred - works without it, optimize later.
-
-### 3. Hook Hot-Reload (4.6) - DEFERRED
-Watch hook script files and reload on change.
-
-Requires file watcher integration (`crucible-watch`).
-
-Status: Deferred - restart works for now.
-
-### 4. Integration Test with Mock MCP (8.8)
-Test the gateway client with a mock MCP server:
-
-```rust
-#[tokio::test]
-async fn test_mcp_gateway_tool_discovery() {
-    // Start mock MCP server
-    let mock = MockMcpServer::new()
-        .with_tool("test_tool", json!({"type": "object"}))
-        .start();
-
-    // Connect gateway
-    let gateway = UpstreamMcpClient::connect(mock.address()).await?;
-
-    // Verify tool discovery
-    let tools = gateway.list_tools().await?;
-    assert!(tools.iter().any(|t| t.name == "test_tool"));
-}
-```
-
-Location: `crates/crucible-rune/tests/` or `crates/crucible-tools/tests/`
-
-## Implementation Notes
-
-### Discovery Config Types
-```rust
-// crates/crucible-config/src/discovery.rs
-#[derive(Debug, Clone, Deserialize)]
-pub struct DiscoveryConfig {
-    pub hooks: Option<DiscoveryTypeConfig>,
-    pub tools: Option<DiscoveryTypeConfig>,
-    pub events: Option<DiscoveryTypeConfig>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct DiscoveryTypeConfig {
-    pub additional_paths: Vec<String>,
-    #[serde(default = "default_true")]
-    pub use_defaults: bool,
-}
-```
-
-### Integrate with DiscoveryPaths
-```rust
-impl DiscoveryPaths {
-    pub fn from_config(type_name: &str, kiln_path: &Path, config: &DiscoveryConfig) -> Self {
-        let type_config = match type_name {
-            "hooks" => config.hooks.as_ref(),
-            "tools" => config.tools.as_ref(),
-            _ => None,
-        };
-
-        let mut paths = if type_config.map(|c| c.use_defaults).unwrap_or(true) {
-            Self::new(type_name, kiln_path)
-        } else {
-            Self::empty(type_name)
-        };
-
-        if let Some(tc) = type_config {
-            for p in &tc.additional_paths {
-                paths.add_path(shellexpand::tilde(p).into_owned());
-            }
-        }
-
-        paths
-    }
-}
-```
-
-## Testing
+## Test Summary (144 tests passing)
 
 ```bash
-# Unit tests
-cargo test -p crucible-rune
-
-# Integration tests
-cargo test -p crucible-tools extended_mcp
-
-# Manual: start MCP server and connect
-cargo run -p crucible-cli -- mcp serve
+cargo test -p crucible-cli chat_tui
 ```
 
-## Reference
+Tests cover:
+- Viewport configuration and bounds
+- Input editing, cursor movement, multi-line
+- Fuzzy filtering, ranking, performance
+- Completion triggers and wrap-around navigation
+- Submit behavior and mode switching
+- Event loop, quit handling, message sending
+- Popup rendering, positioning, checkboxes
+- Status bar rendering, modes, streaming
+- Ctrl+J/K navigation, Tab/Enter confirmation
+- Command completion source conversion
+- File completion source with extension filtering
+- Agent integration with channel-based communication
+- Local command handling (/clear, /exit, /quit)
 
-- Task spec: `openspec/changes/add-mcp-bridge/tasks.md`
-- rmcp docs: https://docs.rs/rmcp
-- Event system design: `openspec/changes/add-mcp-bridge/proposal.md`
+## References
+
+- Architecture: `thoughts/shared/research/chat-tui-architecture_2025-12-11-1600.md`
+- Implementation plan: `thoughts/shared/plans/chat-tui-implementation_2025-12-11.md`
+- TDD harness: `.claude/harness/tdd-implementation.md`
 
 ## Success Criteria
 
-- [ ] `[discovery.hooks]` config section works
-- [ ] `[discovery.tools]` config section works
-- [ ] Integration test passes with mock MCP server
-- [ ] Config validation at startup catches invalid paths
+- [x] Chat preserves terminal scrollback (uses Viewport::Inline)
+- [x] Inline viewport stays at bottom (Viewport::Inline(8))
+- [x] `/command` fuzzy completion works (unit tested)
+- [x] `@file` multi-select completion works (unit tested)
+- [x] Status bar shows mode + streaming
+- [x] `/clear` resets conversation context
