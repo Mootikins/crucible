@@ -4,6 +4,9 @@ use crate::{Config, ConfigError};
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
+#[cfg(feature = "toml")]
+use crate::includes::{merge_includes, process_file_references};
+
 /// Configuration loader supporting multiple file formats.
 #[derive(Debug)]
 pub struct ConfigLoader {
@@ -45,21 +48,27 @@ impl ConfigLoader {
     }
 
     /// Load configuration from a file.
+    ///
+    /// This method also processes `[include]` directives to load external
+    /// configuration files and merge them into the main config.
     pub async fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Config, ConfigError> {
         let path = path.as_ref();
         let content = fs::read_to_string(path).await?;
 
         let format = ConfigFormat::from_path(path)?;
-        Self::parse_from_string(&content, format)
+        Self::parse_from_string_with_includes(&content, format, path)
     }
 
     /// Load configuration from a file (synchronous).
+    ///
+    /// This method also processes `[include]` directives to load external
+    /// configuration files and merge them into the main config.
     pub fn load_from_file_sync<P: AsRef<Path>>(path: P) -> Result<Config, ConfigError> {
         let path = path.as_ref();
         let content = std::fs::read_to_string(path)?;
 
         let format = ConfigFormat::from_path(path)?;
-        Self::parse_from_string(&content, format)
+        Self::parse_from_string_with_includes(&content, format, path)
     }
 
     /// Load configuration from a string.
@@ -187,6 +196,50 @@ impl ConfigLoader {
                 )))
             }
         }
+    }
+
+    /// Parse configuration from a string with include processing.
+    ///
+    /// For TOML format, this processes:
+    /// 1. `{file:path}` references anywhere in the config
+    /// 2. `[include]` directives to merge external files into sections
+    fn parse_from_string_with_includes(
+        content: &str,
+        format: ConfigFormat,
+        config_path: &Path,
+    ) -> Result<Config, ConfigError> {
+        #[cfg(feature = "toml")]
+        if matches!(format, ConfigFormat::Toml | ConfigFormat::Auto) {
+            // Try TOML with includes first
+            if let Ok(mut toml_value) = toml::from_str::<toml::Value>(content) {
+                // Get the directory containing the config file
+                let base_dir = config_path.parent().unwrap_or(Path::new("."));
+
+                // Process {file:path} references first (can be anywhere)
+                if let Err(errors) = process_file_references(&mut toml_value, base_dir) {
+                    for error in errors {
+                        tracing::warn!("File reference error: {}", error);
+                    }
+                }
+
+                // Then process [include] section (legacy, merges into top-level)
+                if let Err(errors) = merge_includes(&mut toml_value, base_dir) {
+                    for error in errors {
+                        tracing::warn!("Include error: {}", error);
+                    }
+                }
+
+                // Now parse the merged config
+                let config: Config = toml_value.try_into().map_err(|e: toml::de::Error| {
+                    ConfigError::Toml(e)
+                })?;
+
+                return Ok(config);
+            }
+        }
+
+        // Fall back to standard parsing (no includes support for YAML/JSON)
+        Self::parse_from_string(content, format)
     }
 
     /// Apply environment variable overrides to configuration.
