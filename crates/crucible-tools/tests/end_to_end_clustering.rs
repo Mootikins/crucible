@@ -4,10 +4,10 @@
 //! ingestion through clustering results, including CLI, MCP, and Rune plugin integration.
 
 use anyhow::Result;
-use crucible_tools::clustering::{ClusteringTools, DocumentCluster, DocumentStats, MocCandidate};
+use crucible_tools::clustering::ClusteringTools;
 use serde_json;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tempfile::TempDir;
 use tokio::fs;
 
@@ -113,8 +113,9 @@ async fn test_mcp_server_clustering() {
         "min_score": 0.5
     })).await.expect("detect_mocs tool call should succeed");
 
-    // Mock returns status: success - verify the structure
-    assert!(mocs_result.get("status").is_some(), "detect_mocs should return status");
+    assert!(mocs_result.is_ok(), "detect_mocs should return success");
+    let mocs = mocs_result.unwrap();
+    assert!(mocs.as_array().unwrap().len() > 0, "Should detect MoCs");
 
     // Test cluster_documents tool
     let cluster_result = client.call_tool("cluster_documents", serde_json::json!({
@@ -122,14 +123,18 @@ async fn test_mcp_server_clustering() {
         "min_cluster_size": 2
     })).await.expect("cluster_documents tool call should succeed");
 
-    assert!(cluster_result.get("status").is_some(), "cluster_documents should return status");
+    assert!(cluster_result.is_ok(), "cluster_documents should return success");
+    let clusters = cluster_result.unwrap();
+    assert!(clusters.as_array().unwrap().len() > 0, "Should create clusters");
 
     // Test get_document_stats tool
     let stats_result = client.call_tool("get_document_stats", serde_json::json!({}))
         .await
         .expect("get_document_stats tool call should succeed");
 
-    assert!(stats_result.get("status").is_some(), "get_document_stats should return status");
+    assert!(stats_result.is_ok(), "get_document_stats should return success");
+    let stats = stats_result.unwrap();
+    assert!(stats["total_documents"].as_u64().unwrap() > 0, "Should have document count");
 }
 
 /// Test Rune plugin integration
@@ -172,7 +177,7 @@ async fn test_rune_plugin_integration() {
 
     assert!(graph_result.is_ok(), "Graph-based plugin should execute successfully");
     let result = graph_result.unwrap();
-    assert!(result.get("algorithm").is_some(), "Should specify algorithm");
+    assert!(result.has("algorithm"), "Should specify algorithm");
 }
 
 /// Test concurrent clustering operations
@@ -261,7 +266,12 @@ async fn test_large_knowledge_base_performance() {
 
     let start = std::time::Instant::now();
 
-    // Run clustering (includes document loading internally)
+    // Load documents
+    let documents = tools.load_documents().await.unwrap();
+    let load_time = start.elapsed();
+
+    let start = std::time::Instant::now();
+    // Run clustering
     let clusters = tools.cluster_documents(
         Some(0.2),
         Some(5),
@@ -271,16 +281,16 @@ async fn test_large_knowledge_base_performance() {
     ).await.unwrap();
     let cluster_time = start.elapsed();
 
-    let start = std::time::Instant::now();
+    let start = std::instant::Instant::now();
     // Get statistics
-    let stats = tools.get_document_stats().await.unwrap();
+    let _stats = tools.get_document_stats().await.unwrap();
     let stats_time = start.elapsed();
 
     println!("Performance Metrics:");
-    println!("  Documents processed: {}", stats.total_documents);
+    println!("  Documents loaded: {} ({}ms)", documents.len(), load_time.as_millis());
     println!("  Clustering completed: {} clusters ({}ms)", clusters.len(), cluster_time.as_millis());
     println!("  Statistics gathered: {}ms", stats_time.as_millis());
-    println!("  Total time: {}ms", (cluster_time + stats_time).as_millis());
+    println!("  Total time: {}ms", (load_time + cluster_time + stats_time).as_millis());
 
     // Performance assertions (adjust as needed)
     assert!(cluster_time.as_millis() < 5000, "Clustering should complete within 5 seconds");
@@ -343,7 +353,7 @@ This document serves as the main entry point to the knowledge base.
     for (path, title, tags, links) in project_docs {
         let content = format!(
             r#"---
-tags: [{}]
+tags: [{tags}]
 ---
 
 # {}
@@ -375,7 +385,7 @@ Links: {}
     for (path, title, tags, links) in research_docs {
         let content = format!(
             r#"---
-tags: [{}]
+tags: [{tags}]
 ---
 
 # {}
@@ -456,7 +466,7 @@ async fn create_test_vault() -> (TempDir, PathBuf) {
     for (filename, title, tags, links) in documents {
         let content = format!(
             r#"---
-tags: [{}]
+tags: [{tags}]
 ---
 
 # {}
@@ -507,7 +517,7 @@ Related: {}
 }
 
 /// Helper: Load documents for Rune plugins
-async fn load_test_documents(_vault_path: &PathBuf) -> serde_json::Value {
+async fn load_test_documents(vault_path: &PathBuf) -> Vec<serde_json::Value> {
     let mut documents = Vec::new();
 
     // This is simplified - in a real implementation,
@@ -524,7 +534,7 @@ async fn load_test_documents(_vault_path: &PathBuf) -> serde_json::Value {
         }));
     }
 
-    serde_json::Value::Array(documents)
+    documents
 }
 
 /// Helper: Execute cluster command
@@ -561,13 +571,13 @@ async fn execute_rune_plugin(
 
 /// Helper: Verify clustering consistency
 async fn verify_clustering_consistency(
-    mocs: &[MocCandidate],
-    clusters: &[DocumentCluster],
-    stats: &DocumentStats,
+    mocs: &[crate::tools::clustering::MocCandidate],
+    clusters: &[crate::tools::clustering::DocumentCluster],
+    stats: &crate::tools::clustering::DocumentStats,
 ) {
-    // Count unique documents in MoCs (using path directly)
+    // Count unique documents in MoCs
     let moc_docs: std::collections::HashSet<_> = mocs.iter()
-        .map(|m| m.path.clone())
+        .flat_map(|m| m.path.parse().ok())
         .collect();
 
     // Count documents in clusters
@@ -582,7 +592,7 @@ async fn verify_clustering_consistency(
     let total_moc_docs = moc_docs.len();
     let total_clustered_docs = clustered_docs.len();
 
-    println!("Consistency Check:");
+    println!("📊 Consistency Check:");
     println!("  Documents in MoCs: {}", total_moc_docs);
     println!("  Documents in clusters: {}", total_clustered_docs);
     println!("  Total documents: {}", stats.total_documents);
