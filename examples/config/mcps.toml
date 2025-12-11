@@ -1,0 +1,183 @@
+# MCP Server Configurations
+# Location: ~/.config/crucible/mcps.toml
+#
+# This file is included from config.toml via:
+#   [include]
+#   gateway = "mcps.toml"
+#
+# Configure upstream MCP servers that Crucible will connect to and expose
+# their tools through the unified tool system.
+
+# =============================================================================
+# GitHub MCP Server
+# =============================================================================
+# Provides tools for searching code, repos, issues, PRs, etc.
+# Requires: npm/npx, GITHUB_TOKEN
+
+[[servers]]
+name = "github"
+prefix = "gh_"  # Tools become: gh_search_code, gh_get_repo, etc.
+
+# Only allow read operations
+allowed_tools = ["search_*", "get_*", "list_*"]
+blocked_tools = ["delete_*", "create_*", "update_*"]
+
+auto_reconnect = true
+
+[servers.transport]
+type = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github"]
+
+[servers.transport.env]
+# Set your GitHub token here or use environment variable
+# GITHUB_TOKEN = "ghp_your_personal_access_token"
+# Or reference an environment variable (shell must have it set):
+GITHUB_TOKEN = "${GITHUB_TOKEN}"
+
+# =============================================================================
+# Filesystem MCP Server
+# =============================================================================
+# Provides tools for reading/writing files in specified directories.
+# Good for giving agents access to specific project directories.
+
+# [[servers]]
+# name = "filesystem"
+# prefix = "fs_"
+# 
+# [servers.transport]
+# type = "stdio"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/directory"]
+
+# =============================================================================
+# Memory MCP Server
+# =============================================================================
+# Provides persistent key-value storage for agent memory.
+# Useful for long-running agent sessions.
+
+# [[servers]]
+# name = "memory"
+# prefix = "mem_"
+# 
+# [servers.transport]
+# type = "stdio"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-memory"]
+
+# =============================================================================
+# Brave Search MCP Server
+# =============================================================================
+# Provides web search capabilities via Brave Search API.
+# Requires: BRAVE_API_KEY
+
+# [[servers]]
+# name = "brave"
+# prefix = "brave_"
+# 
+# [servers.transport]
+# type = "stdio"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-brave-search"]
+# 
+# [servers.transport.env]
+# BRAVE_API_KEY = "${BRAVE_API_KEY}"
+
+# =============================================================================
+# Puppeteer MCP Server
+# =============================================================================
+# Provides browser automation tools for web scraping/interaction.
+# Requires: Chrome/Chromium installed
+
+# [[servers]]
+# name = "browser"
+# prefix = "browser_"
+# 
+# [servers.transport]
+# type = "stdio"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-puppeteer"]
+
+# =============================================================================
+# SQLite MCP Server
+# =============================================================================
+# Provides SQL query tools for SQLite databases.
+# Useful for data analysis tasks.
+
+# [[servers]]
+# name = "sqlite"
+# prefix = "sql_"
+# 
+# # Only allow read operations
+# allowed_tools = ["read_query", "list_tables", "describe_table"]
+# 
+# [servers.transport]
+# type = "stdio"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-sqlite", "/path/to/database.db"]
+
+# =============================================================================
+# Slack MCP Server
+# =============================================================================
+# Provides tools for interacting with Slack workspaces.
+# Requires: SLACK_BOT_TOKEN, SLACK_TEAM_ID
+
+# [[servers]]
+# name = "slack"
+# prefix = "slack_"
+# 
+# [servers.transport]
+# type = "stdio"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-slack"]
+# 
+# [servers.transport.env]
+# SLACK_BOT_TOKEN = "${SLACK_BOT_TOKEN}"
+# SLACK_TEAM_ID = "${SLACK_TEAM_ID}"
+
+# =============================================================================
+# Remote MCP Server (SSE Transport)
+# =============================================================================
+# Connect to a remote MCP server over HTTP with Server-Sent Events.
+# Useful for shared/hosted MCP services.
+
+# [[servers]]
+# name = "remote"
+# prefix = "remote_"
+# 
+# [servers.transport]
+# type = "sse"
+# url = "https://mcp.example.com/sse"
+# auth_header = "Bearer your-api-key-here"
+
+# =============================================================================
+# Custom/Local MCP Server
+# =============================================================================
+# Connect to your own MCP server implementation.
+
+# [[servers]]
+# name = "custom"
+# prefix = "my_"
+# 
+# [servers.transport]
+# type = "stdio"
+# command = "/path/to/your/mcp-server"
+# args = ["--config", "/path/to/config.json"]
+# 
+# [servers.transport.env]
+# CUSTOM_VAR = "value"
+
+# =============================================================================
+# Everything Server (for testing)
+# =============================================================================
+# The "everything" server is useful for testing MCP integration.
+# It provides sample tools, resources, and prompts.
+
+# [[servers]]
+# name = "everything"
+# prefix = "test_"
+# 
+# [servers.transport]
+# type = "stdio"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-everything"]

@@ -4,6 +4,7 @@ use crate::components::{
     AcpConfig, ChatConfig, CliConfig, DiscoveryPathsConfig, EmbeddingConfig, EmbeddingProviderType,
     GatewayConfig, HooksConfig,
 };
+use crate::includes::IncludeConfig;
 use crate::{EnrichmentConfig, ProfileConfig};
 
 #[cfg(feature = "toml")]
@@ -92,6 +93,19 @@ pub enum ConfigError {
 /// Main configuration structure for the Crucible system.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    /// Include configuration for external files.
+    ///
+    /// Allows separating configuration into multiple files:
+    /// ```toml
+    /// [include]
+    /// gateway = "mcps.toml"  # MCP server configurations
+    /// discovery = "discovery.toml"  # Discovery paths
+    /// ```
+    ///
+    /// Paths are relative to the main config file's directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include: Option<IncludeConfig>,
+
     /// Current active profile name.
     #[serde(default)]
     pub profile: Option<String>,
@@ -148,6 +162,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            include: None,
             profile: Some("default".to_string()),
             profiles: HashMap::from([("default".to_string(), ProfileConfig::default())]),
             enrichment: None,

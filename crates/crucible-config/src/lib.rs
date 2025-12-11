@@ -30,6 +30,7 @@
 mod components;
 mod config;
 mod enrichment;
+mod includes;
 mod loader;
 mod profile;
 
@@ -43,6 +44,7 @@ pub use config::{
     DatabaseConfig, DatabaseType, LoggingConfig, ProcessingConfig, ServerConfig,
 };
 pub use enrichment::*;
+pub use includes::{IncludeConfig, IncludeError, process_file_references};
 pub use loader::*;
 pub use profile::*;
 

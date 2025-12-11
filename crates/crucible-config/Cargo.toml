@@ -24,7 +24,7 @@ sysinfo = "0.30"
 dirs = "5.0"
 
 [features]
-default = ["yaml"]
+default = ["yaml", "toml"]
 yaml = ["serde_yaml"]
 toml = ["dep:toml"]
 test-utils = ["tempfile"]
