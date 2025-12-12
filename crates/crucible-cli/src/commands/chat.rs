@@ -7,7 +7,7 @@ use anyhow::Result;
 use std::sync::Arc;
 use tracing::{debug, info, trace, warn};
 
-use crate::acp::{discover_agent, ContextEnricher, CrucibleAcpClient};
+use crate::acp::{ContextEnricher, CrucibleAcpClient};
 use crate::chat::{ChatMode, ChatModeDisplay};
 use crate::config::CliConfig;
 use crate::core_facade::KilnContext;
