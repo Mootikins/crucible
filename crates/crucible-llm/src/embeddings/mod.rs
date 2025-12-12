@@ -25,8 +25,19 @@ pub mod fastembed;
 /// Burn ML framework provider implementation.
 pub mod burn;
 
+/// Burn model loading and inference helpers.
+#[cfg(feature = "burn")]
+pub mod burn_model;
+
 /// GGUF model loading for embedding models.
 pub mod gguf_model;
+
+/// Inference backend abstraction for pluggable model execution.
+pub mod inference;
+
+/// llama.cpp backend for GGUF model inference.
+#[cfg(feature = "llama-cpp")]
+pub mod llama_cpp_backend;
 
 /// Provider trait and common functionality.
 pub mod provider;
@@ -43,6 +54,9 @@ pub use ollama::OllamaProvider;
 pub use openai::OpenAIProvider;
 pub use burn::BurnProvider;
 pub use provider::{EmbeddingProvider, EmbeddingResponse};
+
+#[cfg(feature = "llama-cpp")]
+pub use llama_cpp_backend::{AvailableDevice, LlamaCppBackend};
 
 use std::sync::Arc;
 
@@ -76,6 +90,52 @@ pub async fn create_provider(
                     "Burn provider type requires Burn configuration".to_string()
                 ))
             }
+        }
+        #[cfg(feature = "llama-cpp")]
+        EmbeddingProviderType::LlamaCpp => {
+            // Extract LlamaCpp config from the embedding config
+            if let crucible_config::EmbeddingProviderConfig::LlamaCpp(llama_config) = config {
+                use std::path::PathBuf;
+                use crate::embeddings::inference::{DeviceType, BackendConfig};
+
+                // Parse device type from config
+                let device = match llama_config.device.to_lowercase().as_str() {
+                    "cpu" => DeviceType::Cpu,
+                    "vulkan" => DeviceType::Vulkan,
+                    "cuda" => DeviceType::Cuda,
+                    "metal" => DeviceType::Metal,
+                    "rocm" => DeviceType::Rocm,
+                    _ => DeviceType::Auto, // "auto" or any other value
+                };
+
+                // Build backend config from llama config
+                let backend_config = BackendConfig {
+                    device: device.clone(),
+                    gpu_layers: llama_config.gpu_layers,
+                    threads: None, // Use default
+                    context_size: llama_config.context_size,
+                    batch_size: llama_config.batch_size,
+                    use_mmap: true,
+                };
+
+                let model_path = PathBuf::from(&llama_config.model_path);
+                let provider = llama_cpp_backend::LlamaCppBackend::new_with_model_and_config(
+                    model_path,
+                    device,
+                    backend_config,
+                )?;
+                Ok(Arc::new(provider))
+            } else {
+                Err(EmbeddingError::ConfigError(
+                    "LlamaCpp provider type requires LlamaCpp configuration".to_string()
+                ))
+            }
+        }
+        #[cfg(not(feature = "llama-cpp"))]
+        EmbeddingProviderType::LlamaCpp => {
+            Err(EmbeddingError::ConfigError(
+                "LlamaCpp provider requires the 'llama-cpp' feature to be enabled".to_string()
+            ))
         }
         EmbeddingProviderType::Mock => {
             let dimensions = config.dimensions().unwrap_or(768) as usize;
