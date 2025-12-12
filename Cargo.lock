@@ -3236,6 +3236,7 @@ name = "crucible-llm"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-stream",
  "async-trait",
  "burn",
  "burn-hip",

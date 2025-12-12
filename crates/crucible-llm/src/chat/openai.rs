@@ -3,8 +3,9 @@
 use async_trait::async_trait;
 use crucible_core::traits::{
     ChatCompletionChoice, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
-    CompletionChunk, CompletionRequest, CompletionResponse, LlmError, LlmMessage, LlmResult,
-    MessageRole, ProviderCapabilities, TextGenerationProvider, TextModelInfo, TokenUsage, ToolCall,
+    ChatMessageDelta, CompletionChunk, CompletionRequest, CompletionResponse, FunctionCallDelta,
+    LlmError, LlmMessage, LlmResult, MessageRole, ProviderCapabilities, TextGenerationProvider,
+    TextModelInfo, TokenUsage, ToolCall, ToolCallDelta,
 };
 use futures::stream::BoxStream;
 use serde::Deserialize;
@@ -207,9 +208,186 @@ impl TextGenerationProvider for OpenAIChatProvider {
 
     fn generate_chat_completion_stream<'a>(
         &'a self,
-        _request: ChatCompletionRequest,
+        request: ChatCompletionRequest,
     ) -> BoxStream<'a, LlmResult<ChatCompletionChunk>> {
-        todo!("OpenAI chat completion streaming not implemented")
+        use async_stream::stream;
+        use futures::StreamExt;
+
+        // Build OpenAI API request
+        let mut api_request = serde_json::json!({
+            "model": self.default_model,
+            "messages": request.messages.iter().map(|m| {
+                let mut msg = serde_json::json!({
+                    "role": match m.role {
+                        MessageRole::System => "system",
+                        MessageRole::User => "user",
+                        MessageRole::Assistant => "assistant",
+                        MessageRole::Function => "function",
+                        MessageRole::Tool => "tool",
+                    },
+                    "content": m.content.clone(),
+                });
+
+                // Add tool_call_id for tool messages
+                if m.role == MessageRole::Tool {
+                    if let Some(tool_call_id) = &m.tool_call_id {
+                        msg["tool_call_id"] = serde_json::json!(tool_call_id);
+                    }
+                }
+
+                // Add tool_calls for assistant messages
+                if let Some(tool_calls) = &m.tool_calls {
+                    let calls: Vec<serde_json::Value> = tool_calls.iter().map(|tc| {
+                        serde_json::json!({
+                            "id": tc.id,
+                            "type": tc.r#type,
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments.clone(),
+                            }
+                        })
+                    }).collect();
+                    msg["tool_calls"] = serde_json::json!(calls);
+                }
+
+                msg
+            }).collect::<Vec<_>>(),
+            "stream": true,
+        });
+
+        // Add optional parameters
+        if let Some(temp) = request.temperature {
+            api_request["temperature"] = serde_json::json!(temp);
+        }
+
+        if let Some(max_tokens) = request.max_tokens {
+            api_request["max_tokens"] = serde_json::json!(max_tokens);
+        }
+
+        // Add tool definitions if present
+        if let Some(tools) = &request.tools {
+            let openai_tools: Vec<serde_json::Value> = tools
+                .iter()
+                .map(|tool| {
+                    serde_json::json!({
+                        "type": tool.r#type,
+                        "function": {
+                            "name": tool.function.name,
+                            "description": tool.function.description,
+                            "parameters": tool.function.parameters.clone().unwrap_or(serde_json::json!({})),
+                        }
+                    })
+                })
+                .collect();
+            api_request["tools"] = serde_json::json!(openai_tools);
+        }
+
+        let url = format!("{}/chat/completions", self.base_url);
+        let client = self.client.clone();
+        let api_key = self.api_key.clone();
+        let timeout = self.timeout;
+
+        Box::pin(stream! {
+            let response = client
+                .post(&url)
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Content-Type", "application/json")
+                .json(&api_request)
+                .timeout(timeout)
+                .send()
+                .await;
+
+            match response {
+                Ok(res) if res.status().is_success() => {
+                    let mut stream = res.bytes_stream();
+                    let mut buffer = String::new();
+
+                    while let Some(chunk_result) = stream.next().await {
+                        match chunk_result {
+                            Ok(bytes) => {
+                                buffer.push_str(&String::from_utf8_lossy(&bytes));
+
+                                // Process complete lines (SSE format: "data: {...}")
+                                while let Some(line_end) = buffer.find('\n') {
+                                    let line = buffer[..line_end].trim().to_string();
+                                    buffer = buffer[line_end + 1..].to_string();
+
+                                    if line.is_empty() || !line.starts_with("data: ") {
+                                        continue;
+                                    }
+
+                                    let json_str = &line[6..]; // Skip "data: "
+                                    if json_str == "[DONE]" {
+                                        break;
+                                    }
+
+                                    match serde_json::from_str::<OpenAIStreamResponse>(json_str) {
+                                        Ok(stream_resp) => {
+                                            for choice in stream_resp.choices {
+                                                // Convert tool calls if present
+                                                let tool_calls = choice.delta.tool_calls.map(|calls| {
+                                                    calls
+                                                        .into_iter()
+                                                        .map(|tc| ToolCallDelta {
+                                                            index: tc.index,
+                                                            id: tc.id,
+                                                            function: tc.function.map(|f| FunctionCallDelta {
+                                                                name: f.name,
+                                                                arguments: f.arguments,
+                                                            }),
+                                                        })
+                                                        .collect()
+                                                });
+
+                                                let chunk = ChatCompletionChunk {
+                                                    index: choice.index,
+                                                    delta: ChatMessageDelta {
+                                                        role: choice.delta.role.map(|r| match r.as_str() {
+                                                            "assistant" => MessageRole::Assistant,
+                                                            "system" => MessageRole::System,
+                                                            "user" => MessageRole::User,
+                                                            "function" => MessageRole::Function,
+                                                            "tool" => MessageRole::Tool,
+                                                            _ => MessageRole::Assistant,
+                                                        }),
+                                                        content: choice.delta.content,
+                                                        function_call: None,
+                                                        tool_calls,
+                                                    },
+                                                    finish_reason: choice.finish_reason,
+                                                    logprobs: None,
+                                                };
+                                                yield Ok(chunk);
+                                            }
+                                        }
+                                        Err(e) => {
+                                            yield Err(LlmError::InvalidResponse(format!(
+                                                "Failed to parse stream: {}",
+                                                e
+                                            )));
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                yield Err(LlmError::HttpError(e.to_string()));
+                            }
+                        }
+                    }
+                }
+                Ok(res) => {
+                    let status = res.status();
+                    let error_text = res.text().await.unwrap_or_default();
+                    yield Err(LlmError::InvalidResponse(format!(
+                        "OpenAI API error ({}): {}",
+                        status, error_text
+                    )));
+                }
+                Err(e) => {
+                    yield Err(LlmError::HttpError(e.to_string()));
+                }
+            }
+        })
     }
 
     async fn list_models(&self) -> LlmResult<Vec<TextModelInfo>> {
@@ -242,7 +420,7 @@ impl TextGenerationProvider for OpenAIChatProvider {
         ProviderCapabilities {
             text_completion: false,
             chat_completion: true,
-            streaming: false, // Not implemented yet
+            streaming: true,
             function_calling: true,
             tool_use: true,
             vision: false,
@@ -292,6 +470,41 @@ struct OpenAIUsage {
     prompt_tokens: u32,
     completion_tokens: u32,
     total_tokens: u32,
+}
+
+// OpenAI streaming response types
+#[derive(Debug, Deserialize)]
+struct OpenAIStreamResponse {
+    choices: Vec<OpenAIStreamChoice>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAIStreamChoice {
+    index: u32,
+    delta: OpenAIDelta,
+    finish_reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAIDelta {
+    role: Option<String>,
+    content: Option<String>,
+    tool_calls: Option<Vec<OpenAIStreamToolCall>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAIStreamToolCall {
+    index: u32,
+    id: Option<String>,
+    #[serde(rename = "type")]
+    r#type: Option<String>,
+    function: Option<OpenAIStreamFunction>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAIStreamFunction {
+    name: Option<String>,
+    arguments: Option<String>,
 }
 
 #[cfg(test)]
