@@ -1,0 +1,72 @@
+# Example configuration showing named LLM provider instances
+#
+# This demonstrates the new LLM configuration system that allows:
+# - Multiple named provider instances
+# - Different providers (Ollama, OpenAI, Anthropic)
+# - Default provider selection
+# - Backwards compatibility with existing ChatConfig
+
+# LLM Provider Configuration
+[llm]
+# Default provider to use for chat
+default = "local"
+
+# Named provider: local Ollama instance
+[llm.providers.local]
+type = "ollama"
+endpoint = "http://localhost:11434"
+default_model = "llama3.2"
+temperature = 0.7
+timeout_secs = 120
+
+# Named provider: cloud OpenAI
+[llm.providers.cloud]
+type = "openai"
+api_key_env = "OPENAI_API_KEY"  # Environment variable containing API key
+endpoint = "https://api.openai.com/v1"  # Optional, uses default if not set
+default_model = "gpt-4o"
+temperature = 0.7
+max_tokens = 4096
+
+# Named provider: remote Ollama instance (e.g., on another machine)
+[llm.providers.krohnos]
+type = "ollama"
+endpoint = "https://llama.krohnos.io"
+default_model = "qwen-110b-q4"
+temperature = 0.8
+max_tokens = 8192
+timeout_secs = 300
+
+# Named provider: Anthropic Claude
+[llm.providers.anthropic]
+type = "anthropic"
+api_key_env = "ANTHROPIC_API_KEY"
+default_model = "claude-3-5-sonnet-20241022"
+temperature = 0.7
+max_tokens = 4096
+
+# Chat-specific settings (unchanged from previous version)
+[chat]
+enable_markdown = true
+
+# Backwards Compatibility Notes:
+#
+# If you don't configure [llm] section, the system will fall back
+# to the existing [chat] configuration:
+#
+# [chat]
+# model = "llama3.2"
+# provider = "ollama"
+# endpoint = "http://localhost:11434"
+# temperature = 0.7
+# max_tokens = 2048
+# timeout_secs = 120
+# enable_markdown = true
+#
+# This ensures existing configurations continue to work without changes.
+
+# Usage:
+# - The system will use the provider specified in llm.default
+# - You can switch providers by changing llm.default value
+# - Each provider can have different settings (model, temperature, etc.)
+# - API keys are read from environment variables for security
