@@ -52,7 +52,7 @@ pub use crate::database::{
 pub use crate::note::{NoteNode, ViewportState};
 
 // Re-export property types
-pub use crate::properties::{PropertyMap, AttributeValue};
+pub use crate::properties::{AttributeValue, PropertyMap};
 
 // Re-export hashing types
 pub use crate::types::hashing::{

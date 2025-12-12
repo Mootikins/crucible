@@ -275,12 +275,7 @@ mod tests {
     fn test_registry_get_descriptor() {
         let handler = Arc::new(MockHandler);
         let registry = SlashCommandRegistryBuilder::default()
-            .command_with_hint(
-                "search",
-                handler,
-                "Search KB",
-                Some("query".to_string()),
-            )
+            .command_with_hint("search", handler, "Search KB", Some("query".to_string()))
             .build();
 
         let desc = registry.get_descriptor("search").unwrap();

@@ -76,12 +76,12 @@ impl ClusteringTools {
             .into_iter()
             .filter_map(|e| e.ok())
             .filter(|e| {
-                e.file_type().is_file()
-                    && e.path().extension().map(|s| s == "md").unwrap_or(false)
+                e.file_type().is_file() && e.path().extension().map(|s| s == "md").unwrap_or(false)
             })
         {
             let path = entry.path();
-            let relative_path = path.strip_prefix(&self.kiln_path)
+            let relative_path = path
+                .strip_prefix(&self.kiln_path)
                 .with_context(|| "Failed to get relative path")?;
 
             // Read file content
@@ -175,7 +175,10 @@ impl ClusteringTools {
         let mut link_map: HashMap<String, Vec<String>> = HashMap::new();
         for doc in documents {
             for link in &doc.links {
-                link_map.entry(link.clone()).or_default().push(doc.path.clone());
+                link_map
+                    .entry(link.clone())
+                    .or_default()
+                    .push(doc.path.clone());
             }
         }
 
@@ -197,14 +200,12 @@ impl ClusteringTools {
     }
 }
 
-
 impl ClusteringTools {
     /// Detect Maps of Content in the knowledge base
-    pub async fn detect_mocs(
-        &self,
-        min_score: Option<f64>,
-    ) -> Result<Vec<MocCandidate>> {
-        let documents = self.load_documents().await
+    pub async fn detect_mocs(&self, min_score: Option<f64>) -> Result<Vec<MocCandidate>> {
+        let documents = self
+            .load_documents()
+            .await
             .context("Failed to load documents")?;
 
         if documents.is_empty() {
@@ -245,7 +246,9 @@ impl ClusteringTools {
         tag_weight: Option<f64>,
         title_weight: Option<f64>,
     ) -> Result<Vec<DocumentCluster>> {
-        let documents = self.load_documents().await
+        let documents = self
+            .load_documents()
+            .await
             .context("Failed to load documents")?;
 
         if documents.is_empty() {
@@ -257,14 +260,22 @@ impl ClusteringTools {
 
         // Create clustering configuration
         let mut params = HashMap::new();
-        params.insert("min_similarity".to_string(),
-            serde_json::json!(min_similarity.unwrap_or(0.2)));
-        params.insert("link_weight".to_string(),
-            serde_json::json!(link_weight.unwrap_or(0.6)));
-        params.insert("tag_weight".to_string(),
-            serde_json::json!(tag_weight.unwrap_or(0.3)));
-        params.insert("title_weight".to_string(),
-            serde_json::json!(title_weight.unwrap_or(0.1)));
+        params.insert(
+            "min_similarity".to_string(),
+            serde_json::json!(min_similarity.unwrap_or(0.2)),
+        );
+        params.insert(
+            "link_weight".to_string(),
+            serde_json::json!(link_weight.unwrap_or(0.6)),
+        );
+        params.insert(
+            "tag_weight".to_string(),
+            serde_json::json!(tag_weight.unwrap_or(0.3)),
+        );
+        params.insert(
+            "title_weight".to_string(),
+            serde_json::json!(title_weight.unwrap_or(0.1)),
+        );
 
         let config = crucible_surrealdb::clustering::ClusteringConfig {
             algorithm: "heuristic".to_string(),
@@ -279,7 +290,8 @@ impl ClusteringTools {
 
         // Run clustering
         let service = crucible_surrealdb::clustering::SimpleClusteringService::new();
-        let result = service.cluster_documents(doc_infos, config)
+        let result = service
+            .cluster_documents(doc_infos, config)
             .await
             .context("Failed to cluster documents")?;
 
@@ -299,7 +311,9 @@ impl ClusteringTools {
 
     /// Get document statistics
     pub async fn get_document_stats(&self) -> Result<DocumentStats> {
-        let documents = self.load_documents().await
+        let documents = self
+            .load_documents()
+            .await
             .context("Failed to load documents")?;
 
         let total_docs = documents.len();
@@ -320,9 +334,21 @@ impl ClusteringTools {
             total_links,
             total_tags,
             unique_tags: unique_tags.len(),
-            average_links_per_doc: if total_docs > 0 { total_links as f64 / total_docs as f64 } else { 0.0 },
-            average_tags_per_doc: if total_docs > 0 { total_tags as f64 / total_docs as f64 } else { 0.0 },
-            average_content_length: if total_docs > 0 { total_content as f64 / total_docs as f64 } else { 0.0 },
+            average_links_per_doc: if total_docs > 0 {
+                total_links as f64 / total_docs as f64
+            } else {
+                0.0
+            },
+            average_tags_per_doc: if total_docs > 0 {
+                total_tags as f64 / total_docs as f64
+            } else {
+                0.0
+            },
+            average_content_length: if total_docs > 0 {
+                total_content as f64 / total_docs as f64
+            } else {
+                0.0
+            },
         })
     }
 
@@ -333,7 +359,10 @@ impl ClusteringTools {
         let mut props = Map::new();
         let mut min_score = Map::new();
         min_score.insert("type".to_string(), "number".into());
-        min_score.insert("description".to_string(), "Minimum MoC score threshold (0.0-1.0)".into());
+        min_score.insert(
+            "description".to_string(),
+            "Minimum MoC score threshold (0.0-1.0)".into(),
+        );
         min_score.insert("minimum".to_string(), 0.0.into());
         min_score.insert("maximum".to_string(), 1.0.into());
         props.insert("min_score".to_string(), min_score.into());
@@ -343,7 +372,9 @@ impl ClusteringTools {
             Tool {
                 name: Cow::Borrowed("detect_mocs"),
                 title: None,
-                description: Some(Cow::Borrowed("Detect Maps of Content (MoCs) in the knowledge base using heuristic analysis")),
+                description: Some(Cow::Borrowed(
+                    "Detect Maps of Content (MoCs) in the knowledge base using heuristic analysis",
+                )),
                 input_schema: Arc::new(schema),
                 output_schema: None,
                 annotations: None,
@@ -357,11 +388,41 @@ impl ClusteringTools {
                 let mut props = Map::new();
 
                 let fields = vec![
-                    ("min_similarity", "number", "Minimum similarity threshold (0.0-1.0)", Some(0.0), Some(1.0)),
-                    ("min_cluster_size", "integer", "Minimum documents per cluster", Some(1.0), None),
-                    ("link_weight", "number", "Link weight in similarity calculation", Some(0.0), Some(1.0)),
-                    ("tag_weight", "number", "Tag weight in similarity calculation", Some(0.0), Some(1.0)),
-                    ("title_weight", "number", "Title weight in similarity calculation", Some(0.0), Some(1.0)),
+                    (
+                        "min_similarity",
+                        "number",
+                        "Minimum similarity threshold (0.0-1.0)",
+                        Some(0.0),
+                        Some(1.0),
+                    ),
+                    (
+                        "min_cluster_size",
+                        "integer",
+                        "Minimum documents per cluster",
+                        Some(1.0),
+                        None,
+                    ),
+                    (
+                        "link_weight",
+                        "number",
+                        "Link weight in similarity calculation",
+                        Some(0.0),
+                        Some(1.0),
+                    ),
+                    (
+                        "tag_weight",
+                        "number",
+                        "Tag weight in similarity calculation",
+                        Some(0.0),
+                        Some(1.0),
+                    ),
+                    (
+                        "title_weight",
+                        "number",
+                        "Title weight in similarity calculation",
+                        Some(0.0),
+                        Some(1.0),
+                    ),
                 ];
 
                 for (name, type_, desc, min, max) in fields {
@@ -382,7 +443,9 @@ impl ClusteringTools {
                 Tool {
                     name: Cow::Borrowed("cluster_documents"),
                     title: None,
-                    description: Some(Cow::Borrowed("Cluster documents in the knowledge base using heuristic similarity")),
+                    description: Some(Cow::Borrowed(
+                        "Cluster documents in the knowledge base using heuristic similarity",
+                    )),
                     input_schema: Arc::new(schema),
                     output_schema: None,
                     annotations: None,
@@ -400,7 +463,9 @@ impl ClusteringTools {
                 Tool {
                     name: Cow::Borrowed("get_document_stats"),
                     title: None,
-                    description: Some(Cow::Borrowed("Get statistics about documents in the knowledge base")),
+                    description: Some(Cow::Borrowed(
+                        "Get statistics about documents in the knowledge base",
+                    )),
                     input_schema: Arc::new(schema),
                     output_schema: None,
                     annotations: None,
@@ -529,15 +594,10 @@ Worked on [[project-alpha]] today.
         let (_temp, vault_path) = create_test_vault().await;
         let tools = ClusteringTools::new(vault_path);
 
-        let clusters = tools.cluster_documents(
-            Some(0.1),
-            Some(2),
-            Some(0.5),
-            Some(0.3),
-            Some(0.2),
-        )
-        .await
-        .unwrap();
+        let clusters = tools
+            .cluster_documents(Some(0.1), Some(2), Some(0.5), Some(0.3), Some(0.2))
+            .await
+            .unwrap();
 
         // Should create at least one cluster
         assert!(!clusters.is_empty());

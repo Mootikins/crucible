@@ -61,7 +61,10 @@ pub async fn semantic_search(
         );
         debug!("Executing KNN search with MTREE index");
 
-        match client.query(&knn_sql, &[json!({ "vector": query_embedding })]).await {
+        match client
+            .query(&knn_sql, &[json!({ "vector": query_embedding })])
+            .await
+        {
             Ok(result) => result,
             Err(e) => {
                 warn!("KNN search failed, falling back to ORDER BY: {}", e);
@@ -76,7 +79,9 @@ pub async fn semantic_search(
                     "#,
                     limit = limit
                 );
-                client.query(&fallback_sql, &[json!({ "vector": query_embedding })]).await
+                client
+                    .query(&fallback_sql, &[json!({ "vector": query_embedding })])
+                    .await
                     .map_err(|e| anyhow!("Semantic search query failed: {}", e))?
             }
         }
@@ -94,7 +99,9 @@ pub async fn semantic_search(
         );
         debug!("Executing semantic search with ORDER BY (no MTREE index)");
 
-        client.query(&sql, &[json!({ "vector": query_embedding })]).await
+        client
+            .query(&sql, &[json!({ "vector": query_embedding })])
+            .await
             .map_err(|e| anyhow!("Semantic search query failed: {}", e))?
     };
 

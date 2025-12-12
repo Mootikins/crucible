@@ -33,11 +33,9 @@ pub async fn from_chat_config(
             });
             create_text_provider(provider_config).await
         }
-        LlmProvider::Anthropic => {
-            Err(EmbeddingError::ConfigError(
-                "Anthropic provider not yet implemented".to_string(),
-            ))
-        }
+        LlmProvider::Anthropic => Err(EmbeddingError::ConfigError(
+            "Anthropic provider not yet implemented".to_string(),
+        )),
     }
 }
 

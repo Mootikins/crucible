@@ -103,7 +103,11 @@ async fn list(config: &CliConfig, tag: Option<String>, format: String) -> Result
     let cards: Vec<&AgentCard> = if let Some(ref tag_filter) = tag {
         registry.get_by_tag(tag_filter)
     } else {
-        registry.list().iter().filter_map(|name| registry.get(name)).collect()
+        registry
+            .list()
+            .iter()
+            .filter_map(|name| registry.get(name))
+            .collect()
     };
 
     if cards.is_empty() {
@@ -236,15 +240,21 @@ async fn validate(config: &CliConfig, verbose: bool) -> Result<()> {
                         // Check for warnings (recommended fields)
                         // Check if type: agent is present (we need to read raw frontmatter)
                         if let Ok(content) = std::fs::read_to_string(&path) {
-                            if !content.contains("type: agent") && !content.contains("type: \"agent\"") {
-                                warnings.push("Missing recommended 'type: agent' frontmatter field".to_string());
+                            if !content.contains("type: agent")
+                                && !content.contains("type: \"agent\"")
+                            {
+                                warnings.push(
+                                    "Missing recommended 'type: agent' frontmatter field"
+                                        .to_string(),
+                                );
                                 warning_count += 1;
                             }
                         }
 
                         // Check for empty tags
                         if card.tags.is_empty() {
-                            warnings.push("No tags defined (recommended for discovery)".to_string());
+                            warnings
+                                .push("No tags defined (recommended for discovery)".to_string());
                             warning_count += 1;
                         }
 
@@ -319,10 +329,10 @@ async fn validate(config: &CliConfig, verbose: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_config::{AcpConfig, ChatConfig, EmbeddingConfig, ProcessingConfig};
     use crucible_config::CliConfig as CliAppConfig;
-    use tempfile::TempDir;
+    use crucible_config::{AcpConfig, ChatConfig, EmbeddingConfig, ProcessingConfig};
     use std::fs;
+    use tempfile::TempDir;
 
     fn test_config(kiln_path: PathBuf) -> CliConfig {
         CliConfig {
@@ -355,7 +365,10 @@ You are a test agent.
 "#,
             name = name
         );
-        fs::write(dir.join(format!("{}.md", name.to_lowercase().replace(" ", "-"))), content)
+        fs::write(
+            dir.join(format!("{}.md", name.to_lowercase().replace(" ", "-"))),
+            content,
+        )
     }
 
     #[test]

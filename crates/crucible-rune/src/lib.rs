@@ -53,31 +53,32 @@ pub use builtin_hooks::{
 };
 pub use discovery::ToolDiscovery;
 pub use discovery_paths::{DiscoveryConfig, DiscoveryPaths};
-pub use event_bus::{Event, EventBus, EventContext, EventType, Handler, HandlerError, HandlerResult};
+pub use event_bus::{
+    Event, EventBus, EventContext, EventType, Handler, HandlerError, HandlerResult,
+};
 pub use event_handler::{EventHandler, EventHandlerConfig};
+pub use event_pipeline::EventPipeline;
+pub use events::{
+    ContentBlock, CrucibleEvent, EnrichedRecipe, RecipeEnrichment, RecipeParameter, ToolResultEvent,
+};
+pub use executor::RuneExecutor;
 pub use hook_system::{BuiltinHook, Hook, HookManager, HookRegistry, RuneHookHandler};
 pub use hook_types::RuneHook;
-pub use tool_events::{ContentBlock as ToolContentBlock, ToolEventEmitter, ToolSource};
+pub use mcp_gateway::{
+    ContentBlock as GatewayContentBlock, GatewayError, McpGatewayManager, ToolCallResult,
+    TransportConfig, UpstreamConfig, UpstreamMcpClient, UpstreamServerInfo, UpstreamTool,
+};
 pub use note_events::{
     BlockChange, BlockChangeOperation, BlockInfo, BlockType, InlineLinkInfo, NoteChangeType,
     NoteCreatedPayload, NoteEventEmitter, NoteMetadata, NoteModifiedPayload, NotePayload,
     WikilinkInfo,
 };
-pub use mcp_gateway::{
-    ContentBlock as GatewayContentBlock, GatewayError, McpGatewayManager, ToolCallResult,
-    TransportConfig, UpstreamConfig, UpstreamMcpClient, UpstreamServerInfo, UpstreamTool,
-};
-pub use event_pipeline::EventPipeline;
-pub use events::{
-    ContentBlock, CrucibleEvent, EnrichedRecipe, RecipeEnrichment, RecipeParameter,
-    ToolResultEvent,
-};
-pub use executor::RuneExecutor;
 pub use plugin_loader::PluginLoader;
 pub use plugin_types::{HookConfig, PluginManifest, RegisteredHook};
 pub use regex_module::regex_module;
 pub use registry::RuneToolRegistry;
 pub use rune_types::crucible_module;
+pub use tool_events::{ContentBlock as ToolContentBlock, ToolEventEmitter, ToolSource};
 pub use types::{RuneDiscoveryConfig, RuneExecutionResult, RuneTool};
 
 use thiserror::Error;

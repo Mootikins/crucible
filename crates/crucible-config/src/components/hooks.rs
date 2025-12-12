@@ -213,7 +213,10 @@ prefix = "ext_"
             config.builtin.tool_selector.blocked_tools,
             Some(vec!["delete_*".to_string()])
         );
-        assert_eq!(config.builtin.tool_selector.prefix, Some("ext_".to_string()));
+        assert_eq!(
+            config.builtin.tool_selector.prefix,
+            Some("ext_".to_string())
+        );
     }
 
     #[test]

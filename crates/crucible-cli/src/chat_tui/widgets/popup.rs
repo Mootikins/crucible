@@ -112,9 +112,21 @@ mod tests {
 
     fn test_items() -> Vec<CompletionItem> {
         vec![
-            CompletionItem::new("search", Some("Search notes".into()), CompletionType::Command),
-            CompletionItem::new("session", Some("Session management".into()), CompletionType::Command),
-            CompletionItem::new("clear", Some("Clear context".into()), CompletionType::Command),
+            CompletionItem::new(
+                "search",
+                Some("Search notes".into()),
+                CompletionType::Command,
+            ),
+            CompletionItem::new(
+                "session",
+                Some("Session management".into()),
+                CompletionType::Command,
+            ),
+            CompletionItem::new(
+                "clear",
+                Some("Clear context".into()),
+                CompletionType::Command,
+            ),
         ]
     }
 
@@ -140,11 +152,17 @@ mod tests {
 
         // Popup height should be items + 2 for borders
         let expected_height = 3 + 2; // 3 items + 2 borders
-        assert_eq!(popup_area.height, expected_height, "Popup height should include borders");
+        assert_eq!(
+            popup_area.height, expected_height,
+            "Popup height should include borders"
+        );
 
         // Popup width should be constrained by remaining space
         assert!(popup_area.width <= area.width - state.trigger_column);
-        assert_eq!(popup_area.width, POPUP_WIDTH, "Popup width should be default when space available");
+        assert_eq!(
+            popup_area.width, POPUP_WIDTH,
+            "Popup width should be default when space available"
+        );
     }
 
     #[test]
@@ -166,7 +184,10 @@ mod tests {
         let popup_area = calculate_popup_area(&state, area);
 
         // Popup height should be capped at MAX_POPUP_HEIGHT
-        assert_eq!(popup_area.height, MAX_POPUP_HEIGHT, "Popup height should be capped at maximum");
+        assert_eq!(
+            popup_area.height, MAX_POPUP_HEIGHT,
+            "Popup height should be capped at maximum"
+        );
     }
 
     #[test]
@@ -185,8 +206,14 @@ mod tests {
 
         // Popup width should be constrained by available space
         let max_available_width = area.width - state.trigger_column;
-        assert_eq!(popup_area.width, max_available_width, "Popup width should be constrained");
-        assert!(popup_area.width < POPUP_WIDTH, "Popup should be narrower than default");
+        assert_eq!(
+            popup_area.width, max_available_width,
+            "Popup width should be constrained"
+        );
+        assert!(
+            popup_area.width < POPUP_WIDTH,
+            "Popup should be narrower than default"
+        );
     }
 
     #[test]
@@ -203,7 +230,11 @@ mod tests {
         let popup_area = calculate_popup_area(&state, area);
 
         // Empty state should return zero-sized rect
-        assert_eq!(popup_area, Rect::default(), "Empty state should return default rect");
+        assert_eq!(
+            popup_area,
+            Rect::default(),
+            "Empty state should return default rect"
+        );
 
         // Render should not panic with empty state
         let backend = TestBackend::new(80, 24);
@@ -273,8 +304,14 @@ mod tests {
             }
         }
 
-        assert!(found_checked, "Should find checked checkbox [x] in multi-select mode");
-        assert!(found_unchecked, "Should find unchecked checkbox [ ] in multi-select mode");
+        assert!(
+            found_checked,
+            "Should find checked checkbox [x] in multi-select mode"
+        );
+        assert!(
+            found_unchecked,
+            "Should find unchecked checkbox [ ] in multi-select mode"
+        );
     }
 
     #[test]
@@ -307,8 +344,14 @@ mod tests {
                 .map(|x| buffer.get(x, y).symbol())
                 .collect();
 
-            assert!(!line.contains("[x]"), "Should not find checkboxes in single-select mode");
-            assert!(!line.contains("[ ]"), "Should not find checkboxes in single-select mode");
+            assert!(
+                !line.contains("[x]"),
+                "Should not find checkboxes in single-select mode"
+            );
+            assert!(
+                !line.contains("[ ]"),
+                "Should not find checkboxes in single-select mode"
+            );
         }
     }
 
@@ -354,8 +397,14 @@ mod tests {
             }
         }
 
-        assert!(found_highlight, "Should find selection highlight '>' indicator");
-        assert_eq!(highlight_count, 1, "Should have exactly one highlighted item");
+        assert!(
+            found_highlight,
+            "Should find selection highlight '>' indicator"
+        );
+        assert_eq!(
+            highlight_count, 1,
+            "Should have exactly one highlighted item"
+        );
 
         // Verify that the highlighted item has the correct style (DarkGray background)
         // Note: TestBackend doesn't provide easy style inspection, so we verify the indicator instead
@@ -396,7 +445,10 @@ mod tests {
             .map(|x| buffer.get(x, popup_area.y).symbol())
             .collect();
 
-        assert!(title_line.contains("test"), "Title should contain query text");
+        assert!(
+            title_line.contains("test"),
+            "Title should contain query text"
+        );
     }
 
     #[test]
@@ -432,9 +484,18 @@ mod tests {
         }
 
         // Verify that item text appears in the popup
-        assert!(popup_text.contains("search"), "Popup should contain 'search' item");
-        assert!(popup_text.contains("session"), "Popup should contain 'session' item");
-        assert!(popup_text.contains("clear"), "Popup should contain 'clear' item");
+        assert!(
+            popup_text.contains("search"),
+            "Popup should contain 'search' item"
+        );
+        assert!(
+            popup_text.contains("session"),
+            "Popup should contain 'session' item"
+        );
+        assert!(
+            popup_text.contains("clear"),
+            "Popup should contain 'clear' item"
+        );
     }
 
     #[test]
@@ -607,7 +668,10 @@ mod tests {
                 found_items = true;
             }
         }
-        assert!(found_items, "Items should still be rendered in single-select mode");
+        assert!(
+            found_items,
+            "Items should still be rendered in single-select mode"
+        );
     }
 
     #[test]
@@ -668,7 +732,10 @@ mod tests {
         );
 
         // The checked line should NOT have ">" (it's the first item, not highlighted)
-        assert!(checked_line.contains("[x]"), "Should find checked line with '[x]'");
+        assert!(
+            checked_line.contains("[x]"),
+            "Should find checked line with '[x]'"
+        );
         assert!(
             !checked_line.contains("> "),
             "Checked line should not have '>' (first item not highlighted)"

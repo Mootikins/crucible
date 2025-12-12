@@ -72,16 +72,16 @@ pub use embeddings::{
 pub use reranking::{FastEmbedReranker, RerankResult, Reranker, RerankerModelInfo};
 
 pub use text_generation::{
-    create_text_provider,  // Factory function
-    from_app_config,       // Create provider from app config
-    from_chat_config,      // Create provider from chat config
+    create_text_provider, // Factory function
+    from_app_config,      // Create provider from app config
+    from_chat_config,     // Create provider from chat config
     ChatCompletionChunk,
     ChatCompletionRequest,
     ChatCompletionResponse,
-    LlmMessage,
     CompletionChunk,
     CompletionRequest,
     CompletionResponse,
+    LlmMessage,
     OllamaConfig,
     OpenAIConfig,
     TextGenerationProvider, // Trait (abstraction)
@@ -94,7 +94,9 @@ pub use text_generation::{
 pub use agent_runtime::AgentRuntime;
 
 // Re-export chat providers and factory functions
-pub use chat::{create_chat_provider, create_from_app_config, OllamaChatProvider, OpenAIChatProvider};
+pub use chat::{
+    create_chat_provider, create_from_app_config, OllamaChatProvider, OpenAIChatProvider,
+};
 
 // Re-export mock implementations for testing
 #[cfg(any(test, feature = "test-utils"))]

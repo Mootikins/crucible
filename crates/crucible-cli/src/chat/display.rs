@@ -2,11 +2,11 @@
 //!
 //! Provides colorized, formatted output for chat messages, commands, and agent responses.
 
+use crate::chat::diff::DiffRenderer;
+use crate::chat::mode_ext::ChatModeDisplay;
+use crate::formatting::render_markdown;
 use colored::Colorize;
 use crucible_core::traits::chat::ChatMode;
-use crate::chat::mode_ext::ChatModeDisplay;
-use crate::chat::diff::DiffRenderer;
-use crate::formatting::render_markdown;
 use std::path::Path;
 
 /// Display utilities for chat interface
@@ -28,10 +28,7 @@ impl Display {
         println!("  {} - Switch to act mode (write-enabled)", "/act".green());
         println!("  {} - Switch to auto-approve mode", "/auto".green());
         println!("  {} - Cycle modes (or Shift+Tab)", "/mode".green());
-        println!(
-            "  {} - Search knowledge base",
-            "/search <query>".green()
-        );
+        println!("  {} - Search knowledge base", "/search <query>".green());
         println!();
         println!(
             "{} | {}",
@@ -57,19 +54,12 @@ impl Display {
 
     /// Display search usage hint
     pub fn search_usage() {
-        println!(
-            "{} Usage: /search <query>",
-            "!".yellow()
-        );
+        println!("{} Usage: /search <query>", "!".yellow());
     }
 
     /// Display search results header
     pub fn search_results_header(_query: &str, count: usize) {
-        println!(
-            "{} Found {} results:\n",
-            "●".bright_blue(),
-            count
-        );
+        println!("{} Found {} results:\n", "●".bright_blue(), count);
     }
 
     /// Display a single search result
@@ -82,10 +72,7 @@ impl Display {
         );
         // Show snippet preview (first non-empty line)
         if !snippet.is_empty() {
-            let preview = snippet
-                .lines()
-                .find(|l| !l.trim().is_empty())
-                .unwrap_or("");
+            let preview = snippet.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
             if !preview.is_empty() {
                 let truncated = if preview.len() > 80 {
                     format!("{}...", truncate_at_char_boundary(preview, 77))
@@ -99,11 +86,7 @@ impl Display {
 
     /// Display no results message
     pub fn no_results(query: &str) {
-        println!(
-            "{} No results found for: {}",
-            "○".dimmed(),
-            query.italic()
-        );
+        println!("{} No results found for: {}", "○".dimmed(), query.italic());
     }
 
     /// Display search error
@@ -134,18 +117,11 @@ impl Display {
         }
 
         // Show tool calls that are missing from the inline stream (fallback)
-        if !tool_calls.is_empty()
-            && (response.trim().is_empty() || !has_inline_tools)
-        {
+        if !tool_calls.is_empty() && (response.trim().is_empty() || !has_inline_tools) {
             for tool in tool_calls {
                 let args_str = format_tool_args(&tool.arguments);
                 let display_title = humanize_tool_title(&tool.title);
-                println!(
-                    "  {} {}({})",
-                    "▷".cyan(),
-                    display_title,
-                    args_str.dimmed()
-                );
+                println!("  {} {}({})", "▷".cyan(), display_title, args_str.dimmed());
 
                 // Try to display diff for write operations
                 Self::maybe_display_diff(tool);
@@ -159,14 +135,21 @@ impl Display {
         // Identify write operations by common tool names
         // Check both original title (e.g., "mcp__crucible__update_note") and humanized
         let write_tools = [
-            "Edit", "edit", "WriteFile", "write_file", "write_text_file",
-            "update_note", "create_note", "Write", "write",
+            "Edit",
+            "edit",
+            "WriteFile",
+            "write_file",
+            "write_text_file",
+            "update_note",
+            "create_note",
+            "Write",
+            "write",
         ];
 
         let humanized = humanize_tool_title(&tool.title);
-        let is_write = write_tools.iter().any(|w| {
-            tool.title.contains(w) || humanized.contains(w)
-        });
+        let is_write = write_tools
+            .iter()
+            .any(|w| tool.title.contains(w) || humanized.contains(w));
         if !is_write {
             return;
         }
@@ -181,13 +164,15 @@ impl Display {
         };
 
         // Try common parameter names for file path
-        let path = obj.get("path")
+        let path = obj
+            .get("path")
             .or_else(|| obj.get("file_path"))
             .or_else(|| obj.get("file"))
             .and_then(|v| v.as_str());
 
         // Try common parameter names for content
-        let new_content = obj.get("content")
+        let new_content = obj
+            .get("content")
             .or_else(|| obj.get("new_content"))
             .or_else(|| obj.get("text"))
             .and_then(|v| v.as_str());
@@ -384,7 +369,10 @@ mod tests {
 
     #[test]
     fn test_humanize_tool_title_multiple_words() {
-        assert_eq!(humanize_tool_title("search_knowledge_base"), "Search knowledge base");
+        assert_eq!(
+            humanize_tool_title("search_knowledge_base"),
+            "Search knowledge base"
+        );
     }
 
     #[test]
@@ -572,7 +560,10 @@ mod tests {
         let response = "";
         let has_inline_tools = response.contains('▷');
 
-        assert!(!has_inline_tools, "Empty response should not have inline tools");
+        assert!(
+            !has_inline_tools,
+            "Empty response should not have inline tools"
+        );
         assert!(response.trim().is_empty(), "Response should be empty");
 
         // Under these conditions: !tool_calls.is_empty() && (response.trim().is_empty() || !has_inline_tools)
@@ -589,6 +580,9 @@ mod tests {
 
         // We can't directly test Display::search_result (prints to stdout),
         // but this documents the issue exists at line 90-91
-        assert!(snippet.len() > 80, "Test snippet should be long enough to trigger truncation");
+        assert!(
+            snippet.len() > 80,
+            "Test snippet should be long enough to trigger truncation"
+        );
     }
 }

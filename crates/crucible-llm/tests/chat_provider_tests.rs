@@ -4,8 +4,7 @@
 //! Following TDD: Write tests first, then implement to make them pass.
 
 use crucible_core::traits::{
-    LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmToolDefinition, MessageRole,
-    ToolCall,
+    LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmToolDefinition, MessageRole, ToolCall,
 };
 use serde_json::json;
 
@@ -104,8 +103,8 @@ async fn test_chat_with_tool_calling() {
         }),
     )];
 
-    let request = LlmRequest::new(vec![LlmMessage::user("Find notes about Rust")])
-        .with_tools(tools);
+    let request =
+        LlmRequest::new(vec![LlmMessage::user("Find notes about Rust")]).with_tools(tools);
 
     // When: We request a chat completion
     let response = provider.complete(request).await.unwrap();
@@ -217,7 +216,10 @@ async fn test_request_builder() {
 #[tokio::test]
 async fn test_tool_result_message() {
     // Given: A tool result message
-    let tool_result = LlmMessage::tool("call_123", json!({"results": ["note1", "note2"]}).to_string());
+    let tool_result = LlmMessage::tool(
+        "call_123",
+        json!({"results": ["note1", "note2"]}).to_string(),
+    );
 
     // Then: It has the correct structure
     assert_eq!(tool_result.role, MessageRole::Tool);

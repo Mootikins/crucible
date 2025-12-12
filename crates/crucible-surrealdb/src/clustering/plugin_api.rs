@@ -2,7 +2,6 @@
 ///
 /// This module provides the interface between Rust clustering functions
 /// and Rune scripts, allowing users to write custom algorithms in Rune.
-
 use super::{ClusteringAlgorithm, DocumentCluster, DocumentInfo};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -64,16 +63,25 @@ pub fn documents_to_rune_format(docs: &[DocumentInfo]) -> serde_json::Value {
     for (i, doc) in docs.iter().enumerate() {
         let mut doc_map = serde_json::Map::new();
         doc_map.insert("index".to_string(), serde_json::Value::Number(i.into()));
-        doc_map.insert("path".to_string(), serde_json::Value::String(doc.file_path.clone()));
+        doc_map.insert(
+            "path".to_string(),
+            serde_json::Value::String(doc.file_path.clone()),
+        );
 
         if let Some(title) = &doc.title {
-            doc_map.insert("title".to_string(), serde_json::Value::String(title.clone()));
+            doc_map.insert(
+                "title".to_string(),
+                serde_json::Value::String(title.clone()),
+            );
         }
 
         doc_map.insert(
             "tags".to_string(),
             serde_json::Value::Array(
-                doc.tags.iter().map(|t| serde_json::Value::String(t.clone())).collect()
+                doc.tags
+                    .iter()
+                    .map(|t| serde_json::Value::String(t.clone()))
+                    .collect(),
             ),
         );
 

@@ -333,9 +333,7 @@ impl BlockInfo {
     pub fn code_block(language: Option<&str>, code: impl Into<String>) -> Self {
         let mut block = Self::new(BlockType::CodeBlock, code);
         if let Some(lang) = language {
-            block
-                .attributes
-                .insert("language".to_string(), json!(lang));
+            block.attributes.insert("language".to_string(), json!(lang));
         }
         block
     }
@@ -688,19 +686,17 @@ mod tests {
         let mut emitter = NoteEventEmitter::new();
 
         // Register a hook that adds processed flag
-        emitter.bus_mut().register(
-            Handler::new(
-                "enrich_note",
-                EventType::NoteParsed,
-                "*",
-                |_ctx, mut event| {
-                    if let Some(obj) = event.payload.as_object_mut() {
-                        obj.insert("enriched".to_string(), json!(true));
-                    }
-                    Ok(event)
-                },
-            ),
-        );
+        emitter.bus_mut().register(Handler::new(
+            "enrich_note",
+            EventType::NoteParsed,
+            "*",
+            |_ctx, mut event| {
+                if let Some(obj) = event.payload.as_object_mut() {
+                    obj.insert("enriched".to_string(), json!(true));
+                }
+                Ok(event)
+            },
+        ));
 
         let payload = NotePayload::new("test.md", "Test");
         let (event, _ctx, _) = emitter.emit_parsed("test.md", payload);
@@ -713,19 +709,17 @@ mod tests {
         let mut emitter = NoteEventEmitter::new();
 
         // Register a hook that only matches notes in "daily/" folder
-        emitter.bus_mut().register(
-            Handler::new(
-                "daily_processor",
-                EventType::NoteParsed,
-                "daily/*",
-                |_ctx, mut event| {
-                    if let Some(obj) = event.payload.as_object_mut() {
-                        obj.insert("is_daily".to_string(), json!(true));
-                    }
-                    Ok(event)
-                },
-            ),
-        );
+        emitter.bus_mut().register(Handler::new(
+            "daily_processor",
+            EventType::NoteParsed,
+            "daily/*",
+            |_ctx, mut event| {
+                if let Some(obj) = event.payload.as_object_mut() {
+                    obj.insert("is_daily".to_string(), json!(true));
+                }
+                Ok(event)
+            },
+        ));
 
         // Daily note should be processed
         let payload = NotePayload::new("daily/2024-01-15.md", "Daily");
@@ -833,28 +827,42 @@ mod tests {
         let mut emitter = NoteEventEmitter::new();
 
         // Register a hook that extracts and stores data in context
-        emitter.bus_mut().register(
-            Handler::new(
-                "data_extractor",
-                EventType::NoteParsed,
-                "*",
-                |ctx, event| {
-                    // Store extracted data in context
-                    if let Some(wikilinks) = event.payload.get("wikilinks") {
-                        ctx.set("wikilink_count", json!(wikilinks.as_array().map(|a| a.len()).unwrap_or(0)));
-                    }
-                    if let Some(blocks) = event.payload.get("blocks") {
-                        ctx.set("block_count", json!(blocks.as_array().map(|a| a.len()).unwrap_or(0)));
-                    }
-                    Ok(event)
-                },
-            ),
-        );
+        emitter.bus_mut().register(Handler::new(
+            "data_extractor",
+            EventType::NoteParsed,
+            "*",
+            |ctx, event| {
+                // Store extracted data in context
+                if let Some(wikilinks) = event.payload.get("wikilinks") {
+                    ctx.set(
+                        "wikilink_count",
+                        json!(wikilinks.as_array().map(|a| a.len()).unwrap_or(0)),
+                    );
+                }
+                if let Some(blocks) = event.payload.get("blocks") {
+                    ctx.set(
+                        "block_count",
+                        json!(blocks.as_array().map(|a| a.len()).unwrap_or(0)),
+                    );
+                }
+                Ok(event)
+            },
+        ));
 
         let payload = NotePayload::new("test.md", "Test")
             .with_wikilinks(vec![
-                WikilinkInfo { target: "a".to_string(), display: None, section: None, line: 1 },
-                WikilinkInfo { target: "b".to_string(), display: None, section: None, line: 2 },
+                WikilinkInfo {
+                    target: "a".to_string(),
+                    display: None,
+                    section: None,
+                    line: 1,
+                },
+                WikilinkInfo {
+                    target: "b".to_string(),
+                    display: None,
+                    section: None,
+                    line: 2,
+                },
             ])
             .with_blocks(vec![
                 BlockInfo::heading(1, "Title"),

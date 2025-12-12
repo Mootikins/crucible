@@ -25,7 +25,8 @@ pub async fn detect_mocs(documents: &[DocumentInfo]) -> Result<Vec<MocCandidate>
             if tag_lower.contains("moc")
                 || tag_lower.contains("map-of-content")
                 || tag_lower.contains("index")
-                || tag_lower.contains("hub") {
+                || tag_lower.contains("hub")
+            {
                 reasons.push(format!("Has tag: {}", tag));
             }
         }
@@ -36,7 +37,8 @@ pub async fn detect_mocs(documents: &[DocumentInfo]) -> Result<Vec<MocCandidate>
             if title_lower.contains("map of content")
                 || title_lower.contains("table of contents")
                 || title_lower.contains("index")
-                || title_lower.contains("overview") {
+                || title_lower.contains("overview")
+            {
                 reasons.push(format!("Title suggests MoC: {}", title));
             }
         }

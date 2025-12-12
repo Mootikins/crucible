@@ -7,17 +7,17 @@
 use anyhow::Result;
 use colored::Colorize;
 use reedline::{
-    default_emacs_keybindings, DefaultPrompt, EditCommand, Emacs, KeyCode, KeyModifiers,
-    Reedline, ReedlineEvent, Signal,
+    default_emacs_keybindings, DefaultPrompt, EditCommand, Emacs, KeyCode, KeyModifiers, Reedline,
+    ReedlineEvent, Signal,
 };
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, error};
 
 use crate::acp::ContextEnricher;
-use crate::chat::{AgentHandle, ChatMode, ChatModeDisplay, Display, ToolCallDisplay};
 use crate::chat::handlers;
 use crate::chat::slash_registry::{SlashCommandRegistry, SlashCommandRegistryBuilder};
+use crate::chat::{AgentHandle, ChatMode, ChatModeDisplay, Display, ToolCallDisplay};
 use crate::core_facade::KilnContext;
 use crucible_core::traits::registry::RegistryBuilder;
 
@@ -67,7 +67,11 @@ impl SessionConfig {
                 anyhow::bail!("context_size must be greater than 0");
             }
             if size > MAX_CONTEXT_SIZE {
-                anyhow::bail!("context_size must be <= {} (got {})", MAX_CONTEXT_SIZE, size);
+                anyhow::bail!(
+                    "context_size must be <= {} (got {})",
+                    MAX_CONTEXT_SIZE,
+                    size
+                );
             }
         }
         Ok(())
@@ -276,10 +280,8 @@ impl ChatSession {
         Ok(())
     }
 
-
     /// Handle a regular message (not a command)
     async fn handle_message<A: AgentHandle>(&self, input: &str, agent: &mut A) -> Result<()> {
-
         // Prepare the message (with or without context enrichment)
         let message = if !self.config.context_enabled {
             input.to_string()
@@ -311,10 +313,7 @@ impl ChatSession {
                         }
 
                         // Ask user if they want to include context
-                        print!(
-                            "{} ",
-                            "Include in context? [y/N]: ".bright_cyan()
-                        );
+                        print!("{} ", "Include in context? [y/N]: ".bright_cyan());
                         flush_stdout();
 
                         // Read single line response
@@ -442,8 +441,10 @@ mod tests {
     // TDD Test 1: Exit handler should signal exit via shared flag when executed through trait
     #[tokio::test]
     async fn test_exit_handler_via_trait() {
-        use crucible_core::traits::chat::{ChatContext, ChatMode as CoreMode, ChatResult, SearchResult, CommandHandler};
         use async_trait::async_trait;
+        use crucible_core::traits::chat::{
+            ChatContext, ChatMode as CoreMode, ChatResult, CommandHandler, SearchResult,
+        };
 
         // Simple mock context that doesn't need an agent
         struct SimpleMockContext;
@@ -455,13 +456,19 @@ mod tests {
             }
 
             fn request_exit(&mut self) {}
-            fn exit_requested(&self) -> bool { false }
+            fn exit_requested(&self) -> bool {
+                false
+            }
 
             async fn set_mode(&mut self, _mode: CoreMode) -> ChatResult<()> {
                 Ok(())
             }
 
-            async fn semantic_search(&self, _query: &str, _limit: usize) -> ChatResult<Vec<SearchResult>> {
+            async fn semantic_search(
+                &self,
+                _query: &str,
+                _limit: usize,
+            ) -> ChatResult<Vec<SearchResult>> {
                 Ok(vec![])
             }
 
@@ -485,15 +492,18 @@ mod tests {
 
         // Assert: Should succeed and set the exit flag
         assert!(result.is_ok(), "Handler should execute successfully");
-        assert!(exit_flag.load(std::sync::atomic::Ordering::SeqCst), "Exit flag should be set");
+        assert!(
+            exit_flag.load(std::sync::atomic::Ordering::SeqCst),
+            "Exit flag should be set"
+        );
     }
 
     // TDD Test 2: ModeHandler should work via trait with CliChatContext
     #[tokio::test]
     async fn test_mode_handler_via_cli_context() {
-        use crucible_core::traits::chat::CommandHandler;
         use crate::chat::CliChatContext;
         use crate::core_facade::KilnContext;
+        use crucible_core::traits::chat::CommandHandler;
 
         // For this test, we need a KilnContext
         // Since we can't easily mock it, let's skip this for now
@@ -503,7 +513,10 @@ mod tests {
         // Now we just need to update session.rs to use handler.execute() instead of inline match
 
         // Mark test as passing since we've proven the concept
-        assert!(true, "Test 1 already proves the handler trait works. Now update session.rs.");
+        assert!(
+            true,
+            "Test 1 already proves the handler trait works. Now update session.rs."
+        );
     }
 
     // SessionConfig tests
@@ -563,7 +576,10 @@ mod tests {
         let config = SessionConfig::new(ChatMode::Plan, true, Some(0));
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must be greater than 0"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must be greater than 0"));
     }
 
     #[test]

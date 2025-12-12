@@ -18,9 +18,7 @@ use colored::Colorize;
 use std::process::Command;
 use std::sync::Arc;
 
-use crucible_core::traits::chat::{
-    ChatContext, ChatError, ChatMode, ChatResult, CommandHandler,
-};
+use crucible_core::traits::chat::{ChatContext, ChatError, ChatMode, ChatResult, CommandHandler};
 
 /// Exit handler - terminates the chat session
 ///
@@ -131,8 +129,7 @@ impl SearchHandler {
                 "\n{}. {} {}\n",
                 i + 1,
                 result.title.bright_white().bold(),
-                format!("(similarity: {:.2})", result.similarity)
-                    .dimmed()
+                format!("(similarity: {:.2})", result.similarity).dimmed()
             ));
             output.push_str(&format!("   {}\n", result.snippet.dimmed()));
         }
@@ -208,12 +205,30 @@ impl CommandHandler for HelpHandler {
             "/mode <plan|act|auto> - Switch to a specific mode".dimmed()
         );
         println!("  {}", "/cycle - Cycle to the next mode".dimmed());
-        println!("  {}", "/search <query> - Search the knowledge base".dimmed());
-        println!("  {}", "/commit [mode] [message] - Smart git commit workflow".dimmed());
-        println!("    {}", "  smart (default) - Analyze staged changes and suggest message".dimmed());
-        println!("    {}", "  quick <message> - Fast commit with message".dimmed());
-        println!("    {}", "  review - Show changes summary and suggestions".dimmed());
-        println!("    {}", "  wip - Work in progress commit with auto-staging".dimmed());
+        println!(
+            "  {}",
+            "/search <query> - Search the knowledge base".dimmed()
+        );
+        println!(
+            "  {}",
+            "/commit [mode] [message] - Smart git commit workflow".dimmed()
+        );
+        println!(
+            "    {}",
+            "  smart (default) - Analyze staged changes and suggest message".dimmed()
+        );
+        println!(
+            "    {}",
+            "  quick <message> - Fast commit with message".dimmed()
+        );
+        println!(
+            "    {}",
+            "  review - Show changes summary and suggestions".dimmed()
+        );
+        println!(
+            "    {}",
+            "  wip - Work in progress commit with auto-staging".dimmed()
+        );
         println!("  {}", "/help - Show this help message".dimmed());
 
         Ok(())
@@ -284,10 +299,12 @@ impl CommitHandler {
 
         // Analyze file patterns
         let _has_rust = files.iter().any(|f| f.ends_with(".rs"));
-        let has_tests = files.iter().any(|f| f.contains("test") || f.contains("spec"));
-        let has_docs = files.iter().any(|f| {
-            f.ends_with(".md") || f.ends_with(".txt") || f.contains("doc")
-        });
+        let has_tests = files
+            .iter()
+            .any(|f| f.contains("test") || f.contains("spec"));
+        let has_docs = files
+            .iter()
+            .any(|f| f.ends_with(".md") || f.ends_with(".txt") || f.contains("doc"));
         let has_config = files.iter().any(|f| {
             f.contains("Cargo.toml")
                 || f.contains("justfile")
@@ -297,9 +314,15 @@ impl CommitHandler {
 
         // Analyze diff content
         let diff_lower = diff.to_lowercase();
-        let has_fix = diff_lower.contains("fix") || diff_lower.contains("bug") || diff_lower.contains("error");
-        let has_feat = diff_lower.contains("add") || diff_lower.contains("implement") || diff_lower.contains("new");
-        let has_refactor = diff_lower.contains("refactor") || diff_lower.contains("cleanup") || diff_lower.contains("simplify");
+        let has_fix = diff_lower.contains("fix")
+            || diff_lower.contains("bug")
+            || diff_lower.contains("error");
+        let has_feat = diff_lower.contains("add")
+            || diff_lower.contains("implement")
+            || diff_lower.contains("new");
+        let has_refactor = diff_lower.contains("refactor")
+            || diff_lower.contains("cleanup")
+            || diff_lower.contains("simplify");
 
         // Determine commit type
         if has_fix {
@@ -342,7 +365,10 @@ impl CommitHandler {
         if files.iter().any(|f| f.contains("test")) {
             suggestions.push(format!("test: add tests for {}", description));
         }
-        if files.iter().any(|f| f.ends_with(".rs") && !f.contains("test")) {
+        if files
+            .iter()
+            .any(|f| f.ends_with(".rs") && !f.contains("test"))
+        {
             suggestions.push(format!("{}: improve {}", commit_type, description));
         }
 
@@ -365,9 +391,7 @@ impl CommitHandler {
             Self::run_git_command(&["add", "-u"])?;
             let staged_files = Self::get_staged_files()?;
             if staged_files.is_empty() {
-                return Err(ChatError::InvalidInput(
-                    "No changes to commit".to_string(),
-                ));
+                return Err(ChatError::InvalidInput("No changes to commit".to_string()));
             }
         }
 
@@ -415,7 +439,10 @@ impl CommitHandler {
         // Check for staged changes
         let staged_files = Self::get_staged_files()?;
         if staged_files.is_empty() {
-            println!("{}", "No staged changes. Staging all modified files...".bright_cyan());
+            println!(
+                "{}",
+                "No staged changes. Staging all modified files...".bright_cyan()
+            );
             Self::run_git_command(&["add", "-u"])?;
         }
 
@@ -453,7 +480,10 @@ impl CommitHandler {
         let staged_files = Self::get_staged_files()?;
         if staged_files.is_empty() {
             println!("\n{}", "No staged changes.".bright_yellow());
-            println!("{}", "Use 'git add' to stage files, or run '/commit wip' to auto-stage.".dimmed());
+            println!(
+                "{}",
+                "Use 'git add' to stage files, or run '/commit wip' to auto-stage.".dimmed()
+            );
             return Ok(());
         }
 
@@ -470,8 +500,14 @@ impl CommitHandler {
             println!("  {}. {}", i + 1, suggestion.bright_white());
         }
 
-        println!("\n{}", "Run '/commit quick \"message\"' to commit with a specific message.".dimmed());
-        println!("{}", "Or run '/commit' to use the first suggestion.".dimmed());
+        println!(
+            "\n{}",
+            "Run '/commit quick \"message\"' to commit with a specific message.".dimmed()
+        );
+        println!(
+            "{}",
+            "Or run '/commit' to use the first suggestion.".dimmed()
+        );
 
         Ok(())
     }
@@ -490,14 +526,18 @@ impl CommitHandler {
 
         let staged_files = Self::get_staged_files()?;
         if staged_files.is_empty() {
-            return Err(ChatError::InvalidInput(
-                "No changes to commit".to_string(),
-            ));
+            return Err(ChatError::InvalidInput("No changes to commit".to_string()));
         }
 
         // Create brief summary
         let summary = if staged_files.len() == 1 {
-            format!("wip: {}", staged_files[0].split('/').last().unwrap_or(&staged_files[0]))
+            format!(
+                "wip: {}",
+                staged_files[0]
+                    .split('/')
+                    .last()
+                    .unwrap_or(&staged_files[0])
+            )
         } else {
             format!("wip: {} files", staged_files.len())
         };
@@ -581,8 +621,12 @@ mod tests {
         }
 
         fn request_exit(&mut self) {}
-        fn exit_requested(&self) -> bool { false }
-        async fn set_mode(&mut self, _mode: ChatMode) -> ChatResult<()> { Ok(()) }
+        fn exit_requested(&self) -> bool {
+            false
+        }
+        async fn set_mode(&mut self, _mode: ChatMode) -> ChatResult<()> {
+            Ok(())
+        }
         fn display_search_results(&self, _query: &str, _results: &[SearchResult]) {}
         fn display_help(&self) {}
         fn display_error(&self, _message: &str) {}

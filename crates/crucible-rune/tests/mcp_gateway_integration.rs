@@ -79,7 +79,9 @@ async fn test_tool_discovery_and_storage() {
     let tool2 = create_test_tool("tool2", "test_server", None);
 
     // Update tools
-    client.update_tools(vec![tool1.clone(), tool2.clone()]).await;
+    client
+        .update_tools(vec![tool1.clone(), tool2.clone()])
+        .await;
 
     // Verify tools are stored
     let tools = client.tools().await;

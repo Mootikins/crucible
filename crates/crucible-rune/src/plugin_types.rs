@@ -4,11 +4,11 @@
 //! and the registered hooks parsed from that data.
 
 use glob::Pattern;
+use rune::Unit;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::path::PathBuf;
 use std::sync::Arc;
-use rune::Unit;
 
 /// Configuration for a single hook as parsed from plugin init()
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -221,7 +221,9 @@ mod tests {
             handler: "filter".to_string(),
         };
 
-        let hook = config.to_registered_hook(PathBuf::from("/plugin.rn"), None).unwrap();
+        let hook = config
+            .to_registered_hook(PathBuf::from("/plugin.rn"), None)
+            .unwrap();
         assert!(hook.matches("tool_result", "just_test"));
         assert!(hook.matches("tool_result", "just_build"));
     }

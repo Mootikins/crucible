@@ -104,7 +104,9 @@ pub fn format_tool_response(value: &serde_json::Value) -> String {
 /// Falls back to plain TOON or JSON on error.
 pub fn format_tool_response_smart(value: &serde_json::Value) -> String {
     let formatter = ContentFormatter::new().with_default_threshold(200);
-    formatter.format(value).unwrap_or_else(|_| format_tool_response(value))
+    formatter
+        .format(value)
+        .unwrap_or_else(|_| format_tool_response(value))
 }
 
 /// Format a tool response with a specific formatter type
@@ -115,7 +117,9 @@ pub fn format_tool_response_with(value: &serde_json::Value, tool_type: ToolType)
         ToolType::Command => command_formatter(),
         ToolType::Generic => ContentFormatter::new().with_default_threshold(200),
     };
-    formatter.format(value).unwrap_or_else(|_| format_tool_response(value))
+    formatter
+        .format(value)
+        .unwrap_or_else(|_| format_tool_response(value))
 }
 
 /// Tool types for smart formatting
@@ -140,13 +144,22 @@ impl ToolType {
         let name_lower = name.to_lowercase();
 
         // Check search FIRST - "search_notes" should be Search, not ReadFile
-        if name_lower.contains("search") || name_lower.contains("find") || name_lower.contains("grep") {
+        if name_lower.contains("search")
+            || name_lower.contains("find")
+            || name_lower.contains("grep")
+        {
             ToolType::Search
-        } else if name_lower.contains("exec") || name_lower.contains("run") || name_lower.contains("shell") || name_lower.contains("command") {
+        } else if name_lower.contains("exec")
+            || name_lower.contains("run")
+            || name_lower.contains("shell")
+            || name_lower.contains("command")
+        {
             ToolType::Command
-        } else if name_lower.contains("read") || name_lower.contains("file")
+        } else if name_lower.contains("read")
+            || name_lower.contains("file")
             || (name_lower.contains("note") && name_lower.contains("get"))
-            || (name_lower.contains("note") && name_lower.contains("content")) {
+            || (name_lower.contains("note") && name_lower.contains("content"))
+        {
             // Only match "note" when it's clearly about reading (get_note, note_content)
             // "create_note" should be Generic, not ReadFile
             ToolType::ReadFile

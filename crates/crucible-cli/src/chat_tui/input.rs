@@ -32,10 +32,8 @@ impl ChatInput {
 
         // Configure for chat input - minimal styling
         textarea.set_cursor_line_style(ratatui::style::Style::default());
-        textarea.set_block(
-            ratatui::widgets::Block::default()
-                .borders(ratatui::widgets::Borders::NONE)
-        );
+        textarea
+            .set_block(ratatui::widgets::Block::default().borders(ratatui::widgets::Borders::NONE));
 
         Self { textarea }
     }
@@ -89,11 +87,10 @@ impl ChatInput {
     /// Clear the input
     pub fn clear(&mut self) {
         self.textarea = TextArea::default();
-        self.textarea.set_cursor_line_style(ratatui::style::Style::default());
-        self.textarea.set_block(
-            ratatui::widgets::Block::default()
-                .borders(ratatui::widgets::Borders::NONE)
-        );
+        self.textarea
+            .set_cursor_line_style(ratatui::style::Style::default());
+        self.textarea
+            .set_block(ratatui::widgets::Block::default().borders(ratatui::widgets::Borders::NONE));
     }
 
     /// Calculate the height needed for the input

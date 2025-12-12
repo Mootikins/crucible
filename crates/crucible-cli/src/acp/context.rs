@@ -170,7 +170,6 @@ impl ContextEnricher {
 
 #[cfg(test)]
 mod tests {
-    
 
     // Note: Real tests would require a test database setup
     // These are placeholder tests for the structure

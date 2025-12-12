@@ -126,7 +126,6 @@ mod agent_tests {
 
 #[cfg(test)]
 mod context_tests {
-    
 
     // Note: Full context enrichment tests would require a test database
     // These are structural tests

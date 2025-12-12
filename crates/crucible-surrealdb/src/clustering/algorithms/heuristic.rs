@@ -1,9 +1,9 @@
 //! Heuristic clustering algorithm implementation
 
 use crate::clustering::*;
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
-use async_trait::async_trait;
 
 /// Heuristic clustering based on link structure and metadata
 #[derive(Debug)]
@@ -24,7 +24,9 @@ impl HeuristicClusteringAlgorithm {
                 id: "heuristic".to_string(),
                 name: "Heuristic Clustering".to_string(),
                 algorithm_type: AlgorithmType::Heuristic,
-                description: "Clusters documents based on link structure, tags, and title similarities".to_string(),
+                description:
+                    "Clusters documents based on link structure, tags, and title similarities"
+                        .to_string(),
                 requires_embeddings: false,
                 supports_async: true,
                 embedding_dimensions: None,
@@ -34,7 +36,12 @@ impl HeuristicClusteringAlgorithm {
         }
     }
 
-    fn calculate_similarity(&self, doc1: &DocumentInfo, doc2: &DocumentInfo, params: &AlgorithmParameters) -> f64 {
+    fn calculate_similarity(
+        &self,
+        doc1: &DocumentInfo,
+        doc2: &DocumentInfo,
+        params: &AlgorithmParameters,
+    ) -> f64 {
         let link_weight: f64 = params.get_or("link_weight", 0.6);
         let tag_weight: f64 = params.get_or("tag_weight", 0.3);
         let title_weight: f64 = params.get_or("title_weight", 0.1);
@@ -48,7 +55,9 @@ impl HeuristicClusteringAlgorithm {
         // Title similarity
         let title_similarity = self.calculate_title_similarity(doc1, doc2);
 
-        link_similarity * link_weight + tag_similarity * tag_weight + title_similarity * title_weight
+        link_similarity * link_weight
+            + tag_similarity * tag_weight
+            + title_similarity * title_weight
     }
 
     fn calculate_link_similarity(&self, doc1: &DocumentInfo, doc2: &DocumentInfo) -> f64 {
@@ -58,7 +67,11 @@ impl HeuristicClusteringAlgorithm {
         let intersection = set1.intersection(&set2).count();
         let union = set1.union(&set2).count();
 
-        if union == 0 { 0.0 } else { intersection as f64 / union as f64 }
+        if union == 0 {
+            0.0
+        } else {
+            intersection as f64 / union as f64
+        }
     }
 
     fn calculate_tag_similarity(&self, doc1: &DocumentInfo, doc2: &DocumentInfo) -> f64 {
@@ -68,7 +81,11 @@ impl HeuristicClusteringAlgorithm {
         let intersection = set1.intersection(&set2).count();
         let union = set1.union(&set2).count();
 
-        if union == 0 { 0.0 } else { intersection as f64 / union as f64 }
+        if union == 0 {
+            0.0
+        } else {
+            intersection as f64 / union as f64
+        }
     }
 
     fn calculate_title_similarity(&self, doc1: &DocumentInfo, doc2: &DocumentInfo) -> f64 {
@@ -85,7 +102,11 @@ impl HeuristicClusteringAlgorithm {
         let intersection = words1.intersection(&words2).count();
         let union = words1.union(&words2).count();
 
-        if union == 0 { 0.0 } else { intersection as f64 / union as f64 }
+        if union == 0 {
+            0.0
+        } else {
+            intersection as f64 / union as f64
+        }
     }
 }
 
@@ -107,7 +128,8 @@ impl ClusteringAlgorithm for HeuristicClusteringAlgorithm {
 
         for i in 0..n {
             for j in (i + 1)..n {
-                let similarity = self.calculate_similarity(&documents[i], &documents[j], &config.parameters);
+                let similarity =
+                    self.calculate_similarity(&documents[i], &documents[j], &config.parameters);
                 similarities[i][j] = similarity;
                 similarities[j][i] = similarity;
             }
@@ -176,14 +198,20 @@ impl ClusteringAlgorithm for HeuristicClusteringAlgorithm {
         &self.metadata
     }
 
-    fn validate_parameters(&self, parameters: &HashMap<String, serde_json::Value>) -> Result<(), ClusteringError> {
+    fn validate_parameters(
+        &self,
+        parameters: &HashMap<String, serde_json::Value>,
+    ) -> Result<(), ClusteringError> {
         // Validate parameter types and ranges
         if let Some(min_sim) = parameters.get("min_similarity") {
-            let min_sim: f64 = serde_json::from_value(min_sim.clone())
-                .map_err(|_| ClusteringError::Config("min_similarity must be a number".to_string()))?;
+            let min_sim: f64 = serde_json::from_value(min_sim.clone()).map_err(|_| {
+                ClusteringError::Config("min_similarity must be a number".to_string())
+            })?;
 
             if min_sim < 0.0 || min_sim > 1.0 {
-                return Err(ClusteringError::Config("min_similarity must be between 0.0 and 1.0".to_string()));
+                return Err(ClusteringError::Config(
+                    "min_similarity must be between 0.0 and 1.0".to_string(),
+                ));
             }
         }
 
@@ -203,7 +231,9 @@ impl ClusteringAlgorithm for HeuristicClusteringAlgorithm {
 
         let total = link_weight + tag_weight + title_weight;
         if (total - 1.0).abs() > 0.01 {
-            return Err(ClusteringError::Config("Weights must sum to 1.0".to_string()));
+            return Err(ClusteringError::Config(
+                "Weights must sum to 1.0".to_string(),
+            ));
         }
 
         Ok(())
@@ -221,17 +251,22 @@ impl HeuristicAlgorithmFactory {
 }
 
 impl AlgorithmFactory for HeuristicAlgorithmFactory {
-    fn create(&self, _config: &ClusteringConfig) -> Result<Arc<dyn ClusteringAlgorithm>, ClusteringError> {
+    fn create(
+        &self,
+        _config: &ClusteringConfig,
+    ) -> Result<Arc<dyn ClusteringAlgorithm>, ClusteringError> {
         Ok(Arc::new(HeuristicClusteringAlgorithm::new()))
     }
 
     fn metadata(&self) -> &AlgorithmMetadata {
-        static METADATA: once_cell::sync::Lazy<AlgorithmMetadata> = once_cell::sync::Lazy::new(|| {
-            AlgorithmMetadata {
+        static METADATA: once_cell::sync::Lazy<AlgorithmMetadata> =
+            once_cell::sync::Lazy::new(|| AlgorithmMetadata {
                 id: "heuristic".to_string(),
                 name: "Heuristic Clustering".to_string(),
                 algorithm_type: AlgorithmType::Heuristic,
-                description: "Clusters documents based on link structure, tags, and title similarities".to_string(),
+                description:
+                    "Clusters documents based on link structure, tags, and title similarities"
+                        .to_string(),
                 requires_embeddings: false,
                 supports_async: true,
                 embedding_dimensions: None,
@@ -244,8 +279,7 @@ impl AlgorithmFactory for HeuristicAlgorithmFactory {
                     params
                 },
                 parameter_schema: None,
-            }
-        });
+            });
         &METADATA
     }
 }
@@ -258,7 +292,10 @@ mod tests {
     fn test_heuristic_algorithm_creation() {
         let algorithm = HeuristicClusteringAlgorithm::new();
         assert_eq!(algorithm.metadata().id, "heuristic");
-        assert_eq!(algorithm.metadata().algorithm_type, AlgorithmType::Heuristic);
+        assert_eq!(
+            algorithm.metadata().algorithm_type,
+            AlgorithmType::Heuristic
+        );
         assert!(!algorithm.metadata().requires_embeddings);
     }
 

@@ -49,7 +49,11 @@ impl fmt::Display for ToonError {
                 expected,
                 got,
             } => {
-                write!(f, "Wrong type for '{}': expected {}, got {}", field, expected, got)
+                write!(
+                    f,
+                    "Wrong type for '{}': expected {}, got {}",
+                    field, expected, got
+                )
             }
             ToonError::WrongArrayLength { expected, got } => {
                 write!(f, "Wrong array length: expected {}, got {}", expected, got)
@@ -59,7 +63,11 @@ impl fmt::Display for ToonError {
                 expected,
                 got,
             } => {
-                write!(f, "Value mismatch at '{}': expected {}, got {}", path, expected, got)
+                write!(
+                    f,
+                    "Value mismatch at '{}': expected {}, got {}",
+                    path, expected, got
+                )
             }
             ToonError::EmptyResponse => write!(f, "Empty response"),
             ToonError::ContainsNonToon(sample) => {
@@ -210,10 +218,7 @@ pub fn extract_json(response: &str) -> Result<String, ToonError> {
 }
 
 /// Validate TOON output against expected JSON
-pub fn validate_toon_output(
-    llm_response: &str,
-    expected_json: &Value,
-) -> ValidationResult {
+pub fn validate_toon_output(llm_response: &str, expected_json: &Value) -> ValidationResult {
     // Extract TOON from response
     let toon = match extract_toon(llm_response) {
         Ok(t) => t,
@@ -242,10 +247,7 @@ pub fn validate_toon_output(
 }
 
 /// Validate JSON output against expected JSON
-pub fn validate_json_output(
-    llm_response: &str,
-    expected_json: &Value,
-) -> ValidationResult {
+pub fn validate_json_output(llm_response: &str, expected_json: &Value) -> ValidationResult {
     // Extract JSON from response
     let json_str = match extract_json(llm_response) {
         Ok(j) => j,
@@ -453,6 +455,8 @@ mod tests {
         let expected = json!({"user": {"name": "Ada"}});
         let errors = compare_json_values(&got, &expected, "");
         assert_eq!(errors.len(), 1);
-        assert!(matches!(errors[0], ToonError::ValueMismatch { ref path, .. } if path == "user.name"));
+        assert!(
+            matches!(errors[0], ToonError::ValueMismatch { ref path, .. } if path == "user.name")
+        );
     }
 }

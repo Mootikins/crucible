@@ -178,7 +178,9 @@ mod tests {
             tool_name: tool_name.to_string(),
             arguments: serde_json::json!({}),
             is_error: false,
-            content: vec![ContentBlock::Text { text: text.to_string() }],
+            content: vec![ContentBlock::Text {
+                text: text.to_string(),
+            }],
             duration_ms: 100,
         }
     }
@@ -197,7 +199,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_pipeline_hook_modifies_event() {
-        let (pipeline, _temp) = setup_pipeline_with_plugin(r#"
+        let (pipeline, _temp) = setup_pipeline_with_plugin(
+            r#"
 pub fn init() {
     #{ hooks: [#{ event: "tool_result", pattern: "*", handler: "modify" }] }
 }
@@ -206,7 +209,9 @@ pub fn modify(ctx, event) {
     event.content = [#{ type: "text", text: "modified!" }];
     event
 }
-"#).await;
+"#,
+        )
+        .await;
 
         let event = make_event("any_tool", "original");
         let result = pipeline.process_tool_result(event).await.unwrap();
@@ -216,7 +221,8 @@ pub fn modify(ctx, event) {
 
     #[tokio::test]
     async fn test_pipeline_hook_none_passthrough() {
-        let (pipeline, _temp) = setup_pipeline_with_plugin(r#"
+        let (pipeline, _temp) = setup_pipeline_with_plugin(
+            r#"
 pub fn init() {
     #{ hooks: [#{ event: "tool_result", pattern: "*", handler: "passthrough" }] }
 }
@@ -225,7 +231,9 @@ pub fn passthrough(ctx, event) {
     // Return None/null to pass through unchanged
     ()
 }
-"#).await;
+"#,
+        )
+        .await;
 
         let event = make_event("tool", "keep me");
         let result = pipeline.process_tool_result(event).await.unwrap();
@@ -238,7 +246,9 @@ pub fn passthrough(ctx, event) {
         let temp = TempDir::new().unwrap();
 
         // First plugin adds prefix
-        std::fs::write(temp.path().join("plugin1.rn"), r#"
+        std::fs::write(
+            temp.path().join("plugin1.rn"),
+            r#"
 pub fn init() {
     #{ hooks: [#{ event: "tool_result", pattern: "*", handler: "add_prefix" }] }
 }
@@ -248,10 +258,14 @@ pub fn add_prefix(ctx, event) {
     event.content = [#{ type: "text", text: `PREFIX:${text}` }];
     event
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         // Second plugin adds suffix
-        std::fs::write(temp.path().join("plugin2.rn"), r#"
+        std::fs::write(
+            temp.path().join("plugin2.rn"),
+            r#"
 pub fn init() {
     #{ hooks: [#{ event: "tool_result", pattern: "*", handler: "add_suffix" }] }
 }
@@ -261,7 +275,9 @@ pub fn add_suffix(ctx, event) {
     event.content = [#{ type: "text", text: `${text}:SUFFIX` }];
     event
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let mut loader = PluginLoader::new(temp.path()).unwrap();
         loader.load_plugins().await.unwrap();
@@ -278,7 +294,8 @@ pub fn add_suffix(ctx, event) {
 
     #[tokio::test]
     async fn test_pipeline_hook_error_handling() {
-        let (pipeline, _temp) = setup_pipeline_with_plugin(r#"
+        let (pipeline, _temp) = setup_pipeline_with_plugin(
+            r#"
 pub fn init() {
     #{ hooks: [#{ event: "tool_result", pattern: "*", handler: "bad_handler" }] }
 }
@@ -288,7 +305,9 @@ pub fn bad_handler(ctx, event) {
     let x = event.nonexistent.field;
     event
 }
-"#).await;
+"#,
+        )
+        .await;
 
         let event = make_event("tool", "original");
         // Pipeline should handle error gracefully and return original event
@@ -299,7 +318,8 @@ pub fn bad_handler(ctx, event) {
 
     #[tokio::test]
     async fn test_pipeline_pattern_filtering() {
-        let (pipeline, _temp) = setup_pipeline_with_plugin(r#"
+        let (pipeline, _temp) = setup_pipeline_with_plugin(
+            r#"
 pub fn init() {
     #{ hooks: [#{ event: "tool_result", pattern: "just_test*", handler: "filter" }] }
 }
@@ -308,7 +328,9 @@ pub fn filter(ctx, event) {
     event.content = [#{ type: "text", text: "filtered!" }];
     event
 }
-"#).await;
+"#,
+        )
+        .await;
 
         // Matching pattern
         let event1 = make_event("just_test_verbose", "original");

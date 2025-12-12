@@ -72,9 +72,8 @@ impl ChatView {
     /// Clear all messages from the chat
     fn clear_chat(&mut self, cx: &mut Context<Self>) {
         self.messages.clear();
-        self.messages.push(Message::assistant(
-            "Chat cleared. How can I help you?",
-        ));
+        self.messages
+            .push(Message::assistant("Chat cleared. How can I help you?"));
         cx.notify();
     }
 
@@ -222,11 +221,7 @@ impl ChatView {
             .border_t_1()
             .border_color(rgb(0x313244))
             .bg(rgb(0x181825))
-            .child(
-                div()
-                    .flex_1()
-                    .child(Input::new(&input_state).h(px(48.0))),
-            )
+            .child(div().flex_1().child(Input::new(&input_state).h(px(48.0))))
             .child(
                 div()
                     .id("send-button")
@@ -240,9 +235,12 @@ impl ChatView {
                     .text_color(rgb(0x1e1e2e))
                     .font_weight(FontWeight::SEMIBOLD)
                     .cursor_pointer()
-                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
-                        this.send_message(window, cx);
-                    }))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, window, cx| {
+                            this.send_message(window, cx);
+                        }),
+                    )
                     .child("Send"),
             )
     }

@@ -352,8 +352,9 @@ impl MerklePersistence {
             .records
             .iter()
             .map(|record| {
-                let value = serde_json::to_value(&record.data)
-                    .map_err(|e| DbError::Query(format!("Failed to serialize section data: {}", e)))?;
+                let value = serde_json::to_value(&record.data).map_err(|e| {
+                    DbError::Query(format!("Failed to serialize section data: {}", e))
+                })?;
                 serde_json::from_value(value)
                     .map_err(|e| DbError::Query(format!("Failed to parse section: {}", e)))
             })
@@ -400,11 +401,12 @@ impl MerklePersistence {
                 .records
                 .iter()
                 .map(|record| {
-                    let value = serde_json::to_value(&record.data)
-                        .map_err(|e| DbError::Query(format!("Failed to serialize virtual section data: {}", e)))?;
-                    serde_json::from_value(value).map_err(
-                        |e| DbError::Query(format!("Failed to parse virtual section: {}", e)),
-                    )
+                    let value = serde_json::to_value(&record.data).map_err(|e| {
+                        DbError::Query(format!("Failed to serialize virtual section data: {}", e))
+                    })?;
+                    serde_json::from_value(value).map_err(|e| {
+                        DbError::Query(format!("Failed to parse virtual section: {}", e))
+                    })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
 

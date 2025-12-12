@@ -123,12 +123,18 @@ async fn test_kiln_tool_schemas() {
     let tools = server.list_all_tools().await;
 
     // Check create_note has required schema
-    let create_note = tools.iter().find(|t| t.name.as_ref() == "create_note").unwrap();
+    let create_note = tools
+        .iter()
+        .find(|t| t.name.as_ref() == "create_note")
+        .unwrap();
     assert!(create_note.description.is_some());
     assert!(!create_note.input_schema.is_empty());
 
     // Check semantic_search has query parameter
-    let semantic = tools.iter().find(|t| t.name.as_ref() == "semantic_search").unwrap();
+    let semantic = tools
+        .iter()
+        .find(|t| t.name.as_ref() == "semantic_search")
+        .unwrap();
     assert!(semantic.description.is_some());
 }
 
@@ -555,11 +561,7 @@ async fn test_recursive_rune_discovery() {
     fs::create_dir_all(runes_dir.join("notes")).unwrap();
     fs::create_dir_all(runes_dir.join("utils")).unwrap();
 
-    fs::write(
-        runes_dir.join("root.rn"),
-        "//! Root tool\npub fn main() {}",
-    )
-    .unwrap();
+    fs::write(runes_dir.join("root.rn"), "//! Root tool\npub fn main() {}").unwrap();
     fs::write(
         runes_dir.join("notes").join("note_tool.rn"),
         "//! Notes tool\npub fn main() {}",

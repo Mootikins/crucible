@@ -335,7 +335,8 @@ pub mod test_subscriber {
             if field.name() == "message" {
                 self.message = value.to_string();
             } else {
-                self.fields.insert(field.name().to_string(), value.to_string());
+                self.fields
+                    .insert(field.name().to_string(), value.to_string());
             }
         }
     }
@@ -507,8 +508,14 @@ mod tests {
         let _ = tool_span.id();
 
         // Verify the spans have the expected names via metadata
-        assert_eq!(session_span.metadata().map(|m| m.name()), Some("acp_session"));
-        assert_eq!(request_span.metadata().map(|m| m.name()), Some("acp_request"));
+        assert_eq!(
+            session_span.metadata().map(|m| m.name()),
+            Some("acp_session")
+        );
+        assert_eq!(
+            request_span.metadata().map(|m| m.name()),
+            Some("acp_request")
+        );
         assert_eq!(tool_span.metadata().map(|m| m.name()), Some("tool_call"));
     }
 

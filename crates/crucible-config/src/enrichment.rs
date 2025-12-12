@@ -30,8 +30,6 @@ pub struct EnrichmentConfig {
     pub pipeline: PipelineConfig,
 }
 
-
-
 /// Embedding provider configuration
 ///
 /// Each variant contains provider-specific configuration. This makes it
@@ -531,23 +529,28 @@ impl BurnEmbedConfig {
         use std::path::PathBuf;
         let model_dir = PathBuf::from(model_dir);
         let home = dirs::home_dir().unwrap_or_default();
-        
+
         vec![
             model_dir.join("language").to_string_lossy().to_string(),
             model_dir.to_string_lossy().to_string(),
             model_dir.join("embeddings").to_string_lossy().to_string(),
-            model_dir.join("language/.hf-cache/hub").to_string_lossy().to_string(),
-            home.join(".cache/huggingface/hub").to_string_lossy().to_string(),
+            model_dir
+                .join("language/.hf-cache/hub")
+                .to_string_lossy()
+                .to_string(),
+            home.join(".cache/huggingface/hub")
+                .to_string_lossy()
+                .to_string(),
         ]
     }
 
     /// Get all search paths (model_dir subdirectories + configured paths)
     pub fn all_search_paths(&self) -> Vec<String> {
         let mut paths = Self::default_search_paths(&self.model_dir);
-        
+
         // Add user-configured paths
         paths.extend(self.model_search_paths.clone());
-        
+
         paths
     }
 }
@@ -883,7 +886,7 @@ impl EmbeddingProviderConfig {
             Self::VertexAI(c) => c.retry_attempts,
             Self::Custom(c) => c.retry_attempts,
             Self::Mock(_) => 0,
-            Self::Burn(_) => 0, // Local GPU processing doesn't need retries
+            Self::Burn(_) => 0,     // Local GPU processing doesn't need retries
             Self::LlamaCpp(_) => 0, // Local GPU processing doesn't need retries
         }
     }
@@ -1174,10 +1177,7 @@ impl EmbeddingProviderConfig {
                 if !valid_devices.contains(&c.device.as_str()) {
                     return Err(ConfigValidationError::InvalidValue {
                         field: "device".to_string(),
-                        reason: format!(
-                            "must be one of: {}",
-                            valid_devices.join(", ")
-                        ),
+                        reason: format!("must be one of: {}", valid_devices.join(", ")),
                     });
                 }
                 // Validate batch_size

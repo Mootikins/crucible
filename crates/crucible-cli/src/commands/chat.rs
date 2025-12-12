@@ -46,8 +46,6 @@ pub async fn execute(
         ChatMode::Act
     };
 
-    
-
     info!("Starting chat command");
     info!("Initial mode: {}", initial_mode.display_name());
 
@@ -86,15 +84,14 @@ pub async fn execute(
 
         if sync_status.needs_processing() {
             let pending = sync_status.pending_count();
-            status.update(&format!("Starting background indexing ({} files)...", pending));
+            status.update(&format!(
+                "Starting background indexing ({} files)...",
+                pending
+            ));
 
             // Create pipeline for background processing
-            let pipeline = factories::create_pipeline(
-                storage_client.clone(),
-                &config,
-                false,
-            )
-            .await?;
+            let pipeline =
+                factories::create_pipeline(storage_client.clone(), &config, false).await?;
 
             let files_to_process = sync_status.files_to_process();
             let bg_pipeline = Arc::new(pipeline);
@@ -108,7 +105,11 @@ pub async fn execute(
                     match bg_pipeline_clone.process(&file).await {
                         Ok(_) => progress_clone.inc_completed(),
                         Err(e) => {
-                            tracing::warn!("Background process failed for {}: {}", file.display(), e);
+                            tracing::warn!(
+                                "Background process failed for {}: {}",
+                                file.display(),
+                                e
+                            );
                             progress_clone.inc_failed();
                         }
                     }
@@ -129,12 +130,8 @@ pub async fn execute(
             Some(progress)
         } else {
             // All files up to date, still spawn watch
-            let pipeline = factories::create_pipeline(
-                storage_client.clone(),
-                &config,
-                false,
-            )
-            .await?;
+            let pipeline =
+                factories::create_pipeline(storage_client.clone(), &config, false).await?;
             let watch_config = config.clone();
             let watch_pipeline = Arc::new(pipeline);
             tokio::spawn(async move {
@@ -150,10 +147,7 @@ pub async fn execute(
 
     // Initialize core facade
     status.update("Initializing core...");
-    let core = Arc::new(KilnContext::from_storage(
-        storage_client.clone(),
-        config,
-    ));
+    let core = Arc::new(KilnContext::from_storage(storage_client.clone(), config));
 
     // Get cached embedding provider
     status.update("Initializing embedding provider...");
@@ -210,7 +204,15 @@ pub async fn execute(
             run_tui_session(client).await?;
         } else {
             // Use reedline-based session
-            run_interactive_session(core, &mut client, initial_mode, no_context, context_size, live_progress).await?;
+            run_interactive_session(
+                core,
+                &mut client,
+                initial_mode,
+                no_context,
+                context_size,
+                live_progress,
+            )
+            .await?;
             // Cleanup
             client.shutdown().await?;
         }
@@ -233,7 +235,7 @@ async fn run_interactive_session(
     // Create session configuration
     let session_config = SessionConfig::new(
         initial_mode,
-        !no_context,  // context_enabled = !no_context
+        !no_context, // context_enabled = !no_context
         context_size,
     );
 

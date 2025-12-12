@@ -1,3 +1,4 @@
+pub mod algorithms;
 /// Clustering algorithms and MoC (Map of Content) detection for Crucible knowledge bases
 ///
 /// This module provides:
@@ -5,16 +6,13 @@
 /// - Extensible clustering algorithms
 /// - Plugin interface for custom algorithms via Rune
 /// - Integration with SurrealDB storage layer
-
 pub mod heuristics;
 pub mod plugin_api;
 pub mod registry;
-pub mod algorithms;
 
 // Re-export registry items for convenience
 pub use registry::{
-    ClusteringRegistry, AlgorithmFactory,
-    ClusteringRequirements, QualityPreference,
+    AlgorithmFactory, ClusteringRegistry, ClusteringRequirements, QualityPreference,
 };
 
 #[cfg(test)]
@@ -58,7 +56,6 @@ pub struct DocumentCluster {
     /// Cluster confidence score
     pub confidence: f64,
 }
-
 
 /// Algorithm types supported by the clustering system
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -141,7 +138,10 @@ pub struct AlgorithmParameters {
 impl AlgorithmParameters {
     /// Create new parameters
     pub fn new(values: HashMap<String, serde_json::Value>) -> Self {
-        Self { values, schema: None }
+        Self {
+            values,
+            schema: None,
+        }
     }
 
     /// Get a parameter value
@@ -149,7 +149,8 @@ impl AlgorithmParameters {
     where
         T: for<'de> Deserialize<'de>,
     {
-        let value = self.values
+        let value = self
+            .values
             .get(key)
             .ok_or_else(|| ClusteringError::Config(format!("Missing parameter: {}", key)))?;
         T::deserialize(value)
@@ -246,8 +247,16 @@ impl Default for MocDetectionConfig {
         Self {
             min_outbound_links: 5,
             score_threshold: 0.5,
-            moc_tags: vec!["moc".to_string(), "map-of-content".to_string(), "index".to_string()],
-            title_patterns: vec!["Index".to_string(), "Table of Contents".to_string(), "Contents".to_string()],
+            moc_tags: vec![
+                "moc".to_string(),
+                "map-of-content".to_string(),
+                "index".to_string(),
+            ],
+            title_patterns: vec![
+                "Index".to_string(),
+                "Table of Contents".to_string(),
+                "Contents".to_string(),
+            ],
         }
     }
 }
@@ -290,7 +299,10 @@ pub trait ClusteringAlgorithm: Send + Sync + std::fmt::Debug {
     fn metadata(&self) -> &AlgorithmMetadata;
 
     /// Validate algorithm-specific parameters
-    fn validate_parameters(&self, parameters: &HashMap<String, serde_json::Value>) -> Result<(), ClusteringError>;
+    fn validate_parameters(
+        &self,
+        parameters: &HashMap<String, serde_json::Value>,
+    ) -> Result<(), ClusteringError>;
 
     /// Check if the algorithm can process the given documents
     fn can_process(&self, documents: &[DocumentInfo]) -> Result<bool, ClusteringError> {
@@ -388,8 +400,8 @@ impl Default for SimpleClusteringService {
 
 // Re-export algorithm factories for convenience
 pub use algorithms::{
-    HeuristicClusteringAlgorithm, HeuristicAlgorithmFactory,
-    KMeansClusteringAlgorithm, KMeansAlgorithmFactory,
+    HeuristicAlgorithmFactory, HeuristicClusteringAlgorithm, KMeansAlgorithmFactory,
+    KMeansClusteringAlgorithm,
 };
 
 /// Information about a document for clustering
@@ -421,9 +433,7 @@ pub enum ClusteringError {
 }
 
 /// Detect potential Maps of Content using heuristic rules
-pub async fn detect_mocs(
-    documents: &[DocumentInfo],
-) -> Result<Vec<MocCandidate>, ClusteringError> {
+pub async fn detect_mocs(documents: &[DocumentInfo]) -> Result<Vec<MocCandidate>, ClusteringError> {
     heuristics::detect_mocs(documents).await
 }
 

@@ -371,8 +371,7 @@ impl UpstreamMcpClient {
             .or_else(|| {
                 // Try without prefix
                 tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current()
-                        .block_on(self.get_tool(tool_name))
+                    tokio::runtime::Handle::current().block_on(self.get_tool(tool_name))
                 })
             })
             .ok_or_else(|| GatewayError::ToolNotFound(tool_name.to_string()))?;
@@ -550,9 +549,8 @@ impl McpGatewayManager {
     /// Add an upstream client
     pub fn add_client(&mut self, config: UpstreamConfig) -> Arc<UpstreamMcpClient> {
         let name = config.name.clone();
-        let client = Arc::new(
-            UpstreamMcpClient::new(config).with_event_bus(Arc::clone(&self.event_bus)),
-        );
+        let client =
+            Arc::new(UpstreamMcpClient::new(config).with_event_bus(Arc::clone(&self.event_bus)));
         self.clients.insert(name, Arc::clone(&client));
         client
     }
@@ -577,9 +575,16 @@ impl McpGatewayManager {
     }
 
     /// Find client that owns a tool by prefixed name
-    pub async fn find_client_for_tool(&self, prefixed_name: &str) -> Option<Arc<UpstreamMcpClient>> {
+    pub async fn find_client_for_tool(
+        &self,
+        prefixed_name: &str,
+    ) -> Option<Arc<UpstreamMcpClient>> {
         for client in self.clients.values() {
-            if client.get_tool_by_prefixed_name(prefixed_name).await.is_some() {
+            if client
+                .get_tool_by_prefixed_name(prefixed_name)
+                .await
+                .is_some()
+            {
                 return Some(Arc::clone(client));
             }
         }

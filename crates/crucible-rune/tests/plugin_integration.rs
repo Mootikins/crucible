@@ -35,7 +35,8 @@ async fn setup_pipeline(plugin_content: &str) -> (EventPipeline, TempDir) {
 
 #[tokio::test]
 async fn test_cargo_test_output_filtered() {
-    let cargo_output = "running 5 tests\ntest one ... ok\ntest two ... ok\ntest result: ok. 5 passed";
+    let cargo_output =
+        "running 5 tests\ntest one ... ok\ntest two ... ok\ntest result: ok. 5 passed";
 
     let (pipeline, _temp) = setup_pipeline(
         r#"

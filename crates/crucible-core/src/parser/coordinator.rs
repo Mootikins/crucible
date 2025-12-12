@@ -14,9 +14,7 @@
 //! - **Transaction Support**: Atomic operations across parser and storage
 
 use crate::parser::error::ParserResult;
-use crate::parser::storage_bridge::{
-    StorageAwareMarkdownParser, StorageAwareParseResult,
-};
+use crate::parser::storage_bridge::{StorageAwareMarkdownParser, StorageAwareParseResult};
 use crate::storage::{ContentAddressedStorage, EnhancedTreeChange, MerkleTree, StorageResult};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};

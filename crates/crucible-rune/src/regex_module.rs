@@ -199,8 +199,10 @@ fn find(pattern: String, text: String) -> VmResult<Option<String>> {
 fn find_all(pattern: String, text: String) -> VmResult<RuneVec<String>> {
     match RustRegex::new(&pattern) {
         Ok(re) => {
-            let matches: Vec<String> =
-                re.find_iter(&text).map(|m| m.as_str().to_string()).collect();
+            let matches: Vec<String> = re
+                .find_iter(&text)
+                .map(|m| m.as_str().to_string())
+                .collect();
             VmResult::Ok(RuneVec::try_from(matches).unwrap())
         }
         Err(e) => VmResult::panic(format!("Invalid regex pattern '{}': {}", pattern, e)),

@@ -4,7 +4,7 @@
 //! and ToolExecutor, enabling autonomous agent behavior.
 
 use crucible_core::traits::{
-    LlmMessage, LlmProvider, LlmRequest, LlmResponse, ExecutionContext, LlmError, LlmResult,
+    ExecutionContext, LlmError, LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmResult,
     LlmToolDefinition, MessageRole, ToolExecutor,
 };
 use tracing::{debug, info, warn};
@@ -117,7 +117,10 @@ impl AgentRuntime {
 
                 // Execute each tool call
                 for tool_call in tool_calls {
-                    debug!("Executing tool: {} with params: {:?}", tool_call.name, tool_call.parameters);
+                    debug!(
+                        "Executing tool: {} with params: {:?}",
+                        tool_call.name, tool_call.parameters
+                    );
 
                     match self
                         .executor
@@ -134,10 +137,8 @@ impl AgentRuntime {
                         Err(e) => {
                             warn!("Tool {} failed: {}", tool_call.name, e);
                             // Add error as tool result
-                            let error_message = LlmMessage::tool(
-                                tool_call.id.clone(),
-                                format!("Error: {}", e),
-                            );
+                            let error_message =
+                                LlmMessage::tool(tool_call.id.clone(), format!("Error: {}", e));
                             self.conversation.push(error_message);
                         }
                     }
@@ -165,16 +166,13 @@ impl AgentRuntime {
 
     /// Send a single message and get a response (convenience method)
     pub async fn send_message(&mut self, message: String) -> LlmResult<LlmResponse> {
-        self.run_conversation(vec![LlmMessage::user(message)])
-            .await
+        self.run_conversation(vec![LlmMessage::user(message)]).await
     }
 
     /// Add a system message to set agent behavior
     pub fn set_system_prompt(&mut self, prompt: String) {
         // Insert at beginning or replace existing system message
-        if !self.conversation.is_empty()
-            && self.conversation[0].role == MessageRole::System
-        {
+        if !self.conversation.is_empty() && self.conversation[0].role == MessageRole::System {
             self.conversation[0] = LlmMessage::system(prompt);
         } else {
             self.conversation.insert(0, LlmMessage::system(prompt));
@@ -186,7 +184,7 @@ impl AgentRuntime {
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use crucible_core::traits::{ToolResult, TokenUsage};
+    use crucible_core::traits::{TokenUsage, ToolResult};
 
     struct MockProvider;
 

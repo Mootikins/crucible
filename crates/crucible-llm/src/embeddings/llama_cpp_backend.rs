@@ -19,15 +19,17 @@ use std::sync::{Arc, RwLock};
 use std::thread::JoinHandle;
 
 use llama_cpp_2::context::params::{LlamaContextParams, LlamaPoolingType};
+use llama_cpp_2::list_llama_ggml_backend_devices;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::{AddBos, LlamaModel};
-use llama_cpp_2::list_llama_ggml_backend_devices;
 
 use super::error::{EmbeddingError, EmbeddingResult};
 use super::inference::{BackendConfig, DeviceType, InferenceBackend, LoadedModelInfo, ModelFormat};
-use super::provider::{EmbeddingProvider, EmbeddingResponse, ModelFamily, ModelInfo, ParameterSize};
+use super::provider::{
+    EmbeddingProvider, EmbeddingResponse, ModelFamily, ModelInfo, ParameterSize,
+};
 
 /// Default context size for embeddings
 const DEFAULT_CONTEXT_SIZE: u32 = 512;
@@ -197,11 +199,15 @@ impl LlamaCppBackend {
         );
 
         // Initialize llama.cpp backend
-        let backend = LlamaBackend::init()
-            .map_err(|e| format!("Failed to initialize llama.cpp: {}", e))?;
+        let backend =
+            LlamaBackend::init().map_err(|e| format!("Failed to initialize llama.cpp: {}", e))?;
 
         // Build model params
-        let gpu_layers = if config.gpu_layers < 0 { 999 } else { config.gpu_layers as u32 };
+        let gpu_layers = if config.gpu_layers < 0 {
+            999
+        } else {
+            config.gpu_layers as u32
+        };
         let model_params = LlamaModelParams::default().with_n_gpu_layers(gpu_layers);
 
         // Load the model
@@ -268,9 +274,10 @@ impl LlamaCppBackend {
     fn ensure_loaded(&self) -> EmbeddingResult<()> {
         // First check if already ready (fast path)
         {
-            let state = self.state.read().map_err(|e| {
-                EmbeddingError::InferenceFailed(format!("Lock poisoned: {}", e))
-            })?;
+            let state = self
+                .state
+                .read()
+                .map_err(|e| EmbeddingError::InferenceFailed(format!("Lock poisoned: {}", e)))?;
 
             match &*state {
                 LoadState::Ready(_) => return Ok(()),
@@ -278,7 +285,9 @@ impl LlamaCppBackend {
                     return Err(EmbeddingError::InferenceFailed(e.clone()));
                 }
                 LoadState::Empty => {
-                    return Err(EmbeddingError::InferenceFailed("No model loaded".to_string()));
+                    return Err(EmbeddingError::InferenceFailed(
+                        "No model loaded".to_string(),
+                    ));
                 }
                 LoadState::Loading(_) => {
                     // Need to wait - drop read lock and acquire write lock
@@ -287,9 +296,10 @@ impl LlamaCppBackend {
         }
 
         // Acquire write lock to wait for loading
-        let mut state = self.state.write().map_err(|e| {
-            EmbeddingError::InferenceFailed(format!("Lock poisoned: {}", e))
-        })?;
+        let mut state = self
+            .state
+            .write()
+            .map_err(|e| EmbeddingError::InferenceFailed(format!("Lock poisoned: {}", e)))?;
 
         // Check again after acquiring write lock (another thread may have completed)
         match &*state {
@@ -298,7 +308,9 @@ impl LlamaCppBackend {
                 return Err(EmbeddingError::InferenceFailed(e.clone()));
             }
             LoadState::Empty => {
-                return Err(EmbeddingError::InferenceFailed("No model loaded".to_string()));
+                return Err(EmbeddingError::InferenceFailed(
+                    "No model loaded".to_string(),
+                ));
             }
             LoadState::Loading(_) => {
                 // We need to take ownership of the handle to join it
@@ -326,7 +338,9 @@ impl LlamaCppBackend {
         } else {
             // Shouldn't happen, but handle gracefully
             *state = old_state;
-            Err(EmbeddingError::InferenceFailed("Unexpected state".to_string()))
+            Err(EmbeddingError::InferenceFailed(
+                "Unexpected state".to_string(),
+            ))
         }
     }
 
@@ -337,13 +351,16 @@ impl LlamaCppBackend {
     {
         self.ensure_loaded()?;
 
-        let state = self.state.read().map_err(|e| {
-            EmbeddingError::InferenceFailed(format!("Lock poisoned: {}", e))
-        })?;
+        let state = self
+            .state
+            .read()
+            .map_err(|e| EmbeddingError::InferenceFailed(format!("Lock poisoned: {}", e)))?;
 
         match &*state {
             LoadState::Ready(loaded) => f(loaded),
-            _ => Err(EmbeddingError::InferenceFailed("Model not ready".to_string())),
+            _ => Err(EmbeddingError::InferenceFailed(
+                "Model not ready".to_string(),
+            )),
         }
     }
 
@@ -401,7 +418,11 @@ impl LlamaCppBackend {
         for dev in &runtime_devices {
             let backend_lower = dev.backend.to_lowercase();
             if backend_lower.contains("vulkan") {
-                tracing::info!("Auto-detected Vulkan GPU: {} ({})", dev.name, dev.description);
+                tracing::info!(
+                    "Auto-detected Vulkan GPU: {} ({})",
+                    dev.name,
+                    dev.description
+                );
                 return DeviceType::Vulkan;
             }
         }
@@ -417,7 +438,11 @@ impl LlamaCppBackend {
         for dev in &runtime_devices {
             let backend_lower = dev.backend.to_lowercase();
             if backend_lower.contains("metal") {
-                tracing::info!("Auto-detected Metal GPU: {} ({})", dev.name, dev.description);
+                tracing::info!(
+                    "Auto-detected Metal GPU: {} ({})",
+                    dev.name,
+                    dev.description
+                );
                 return DeviceType::Metal;
             }
         }
@@ -447,7 +472,8 @@ impl LlamaCppBackend {
         }
 
         // Tokenize all texts first
-        let mut token_batches: Vec<Vec<llama_cpp_2::token::LlamaToken>> = Vec::with_capacity(texts.len());
+        let mut token_batches: Vec<Vec<llama_cpp_2::token::LlamaToken>> =
+            Vec::with_capacity(texts.len());
         let mut total_tokens = 0;
 
         for text in texts.iter() {
@@ -479,9 +505,8 @@ impl LlamaCppBackend {
         }
 
         // Process all sequences in one decode call
-        ctx.decode(&mut batch).map_err(|e| {
-            EmbeddingError::InferenceFailed(format!("Decode failed: {}", e))
-        })?;
+        ctx.decode(&mut batch)
+            .map_err(|e| EmbeddingError::InferenceFailed(format!("Decode failed: {}", e)))?;
 
         // Extract embeddings for each sequence
         let mut embeddings = Vec::with_capacity(texts.len());
@@ -584,19 +609,17 @@ impl InferenceBackend for LlamaCppBackend {
         }
 
         // Load synchronously (this is the legacy API)
-        let loaded = Self::load_model_sync(
-            model_path,
-            config,
-            &self.preferred_device,
-            self.n_threads,
-        ).map_err(EmbeddingError::InferenceFailed)?;
+        let loaded =
+            Self::load_model_sync(model_path, config, &self.preferred_device, self.n_threads)
+                .map_err(EmbeddingError::InferenceFailed)?;
 
         let info = loaded.model_info.clone();
 
         // Update state
-        let mut state = self.state.write().map_err(|e| {
-            EmbeddingError::InferenceFailed(format!("Lock poisoned: {}", e))
-        })?;
+        let mut state = self
+            .state
+            .write()
+            .map_err(|e| EmbeddingError::InferenceFailed(format!("Lock poisoned: {}", e)))?;
         *state = LoadState::Ready(loaded);
         self.model_path = model_path.to_path_buf();
         self.config = config.clone();
@@ -669,9 +692,10 @@ impl EmbeddingProvider for LlamaCppBackend {
 
         let embeddings = self.embed_texts(&[text])?;
 
-        let embedding = embeddings.into_iter().next().ok_or_else(|| {
-            EmbeddingError::InferenceFailed("No embedding returned".to_string())
-        })?;
+        let embedding = embeddings
+            .into_iter()
+            .next()
+            .ok_or_else(|| EmbeddingError::InferenceFailed("No embedding returned".to_string()))?;
 
         let model_name = self.with_loaded(|loaded| Ok(loaded.model_name.clone()))?;
 

@@ -2,8 +2,8 @@
 
 use async_trait::async_trait;
 use crucible_core::traits::{
-    LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmError, LlmResult,
-    MessageRole, ToolCall, TokenUsage,
+    LlmError, LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmResult, MessageRole, TokenUsage,
+    ToolCall,
 };
 use serde::Deserialize;
 use std::time::Duration;

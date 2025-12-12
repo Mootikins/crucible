@@ -47,7 +47,7 @@ pub use chat::{
 pub use knowledge::{KnowledgeRepository, NoteInfo};
 pub use llm::{
     LlmError, LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmResult, LlmToolDefinition,
-    MessageRole, ToolCall, TokenUsage,
+    MessageRole, TokenUsage, ToolCall,
 };
 pub use parser::MarkdownParser;
 pub use registry::{Registry, RegistryBuilder};

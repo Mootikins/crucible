@@ -105,7 +105,10 @@ mod tests {
         // Array
         map.set(
             "array".to_string(),
-            AttributeValue::Array(vec![AttributeValue::Number(1.0), AttributeValue::Number(2.0)]),
+            AttributeValue::Array(vec![
+                AttributeValue::Number(1.0),
+                AttributeValue::Number(2.0),
+            ]),
         );
 
         // Object

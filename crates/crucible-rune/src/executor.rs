@@ -23,8 +23,8 @@ pub struct RuneExecutor {
 impl RuneExecutor {
     /// Create a new executor with default context
     pub fn new() -> Result<Self, RuneError> {
-        let mut context = Context::with_default_modules()
-            .map_err(|e| RuneError::Context(e.to_string()))?;
+        let mut context =
+            Context::with_default_modules().map_err(|e| RuneError::Context(e.to_string()))?;
 
         // Add rune-modules for extra functionality
         // The bool argument indicates whether to use stdio (false = use strings)
@@ -42,7 +42,11 @@ impl RuneExecutor {
             .install(Self::metadata_macros_module()?)
             .map_err(|e| RuneError::Context(e.to_string()))?;
 
-        let runtime = Arc::new(context.runtime().map_err(|e| RuneError::Context(e.to_string()))?);
+        let runtime = Arc::new(
+            context
+                .runtime()
+                .map_err(|e| RuneError::Context(e.to_string()))?,
+        );
 
         Ok(Self {
             context: Arc::new(context),
@@ -98,8 +102,8 @@ impl RuneExecutor {
         let start = Instant::now();
 
         // Read the script
-        let source_code = std::fs::read_to_string(&tool.path)
-            .map_err(|e| RuneError::Io(e.to_string()))?;
+        let source_code =
+            std::fs::read_to_string(&tool.path).map_err(|e| RuneError::Io(e.to_string()))?;
 
         // Compile the script
         let unit = self.compile(&tool.name, &source_code)?;
@@ -111,7 +115,11 @@ impl RuneExecutor {
 
         match result {
             Ok(value) => Ok(RuneExecutionResult::success(&tool.name, value, duration)),
-            Err(e) => Ok(RuneExecutionResult::failure(&tool.name, e.to_string(), duration)),
+            Err(e) => Ok(RuneExecutionResult::failure(
+                &tool.name,
+                e.to_string(),
+                duration,
+            )),
         }
     }
 
@@ -188,7 +196,8 @@ impl RuneExecutor {
 
         let output = if type_name.contains("Generator") || type_name.contains("Future") {
             // This is an async function, complete it
-            vm.async_complete().await
+            vm.async_complete()
+                .await
                 .map_err(|e| RuneError::Execution(format_vm_error(e)))?
         } else {
             // Synchronous function, use the output directly
@@ -263,10 +272,7 @@ impl RuneExecutor {
             _ => {
                 // More than 4 arguments - pass as array (function must accept array)
                 // This is a limitation; most tools have ≤4 params
-                debug!(
-                    "Function has {} args, passing as array",
-                    rune_args.len()
-                );
+                debug!("Function has {} args, passing as array", rune_args.len());
                 vm.call(hash, (rune_args,))
                     .map_err(|e| RuneError::Execution(format_vm_error(e)))?
             }
@@ -307,32 +313,39 @@ impl RuneExecutor {
     fn json_value_to_rune(&self, value: JsonValue) -> Result<Value, RuneError> {
         match value {
             JsonValue::Null => Ok(Value::empty()),
-            JsonValue::Bool(b) => b.to_value().map_err(|e| RuneError::Conversion(e.to_string())),
+            JsonValue::Bool(b) => b
+                .to_value()
+                .map_err(|e| RuneError::Conversion(e.to_string())),
             JsonValue::Number(n) => {
                 if let Some(i) = n.as_i64() {
-                    i.to_value().map_err(|e| RuneError::Conversion(e.to_string()))
+                    i.to_value()
+                        .map_err(|e| RuneError::Conversion(e.to_string()))
                 } else if let Some(f) = n.as_f64() {
-                    f.to_value().map_err(|e| RuneError::Conversion(e.to_string()))
+                    f.to_value()
+                        .map_err(|e| RuneError::Conversion(e.to_string()))
                 } else {
                     Err(RuneError::Conversion("Invalid number".to_string()))
                 }
             }
-            JsonValue::String(s) => {
-                s.to_value().map_err(|e| RuneError::Conversion(e.to_string()))
-            }
+            JsonValue::String(s) => s
+                .to_value()
+                .map_err(|e| RuneError::Conversion(e.to_string())),
             JsonValue::Array(arr) => {
                 let values: Vec<Value> = arr
                     .into_iter()
                     .map(|v| self.json_value_to_rune(v))
                     .collect::<Result<Vec<_>, _>>()?;
-                values.to_value().map_err(|e| RuneError::Conversion(e.to_string()))
+                values
+                    .to_value()
+                    .map_err(|e| RuneError::Conversion(e.to_string()))
             }
             JsonValue::Object(map) => {
                 let obj: std::collections::HashMap<String, Value> = map
                     .into_iter()
                     .map(|(k, v)| Ok((k, self.json_value_to_rune(v)?)))
                     .collect::<Result<_, RuneError>>()?;
-                obj.to_value().map_err(|e| RuneError::Conversion(e.to_string()))
+                obj.to_value()
+                    .map_err(|e| RuneError::Conversion(e.to_string()))
             }
         }
     }
@@ -355,39 +368,40 @@ impl RuneExecutor {
         // Match on the type name
         // Common patterns: "::std::string::String", "::std::i64", "::std::f64", "::std::bool", etc.
         if type_name.contains("String") {
-            let s: String = rune::from_value(value)
-                .map_err(|e| RuneError::Conversion(e.to_string()))?;
+            let s: String =
+                rune::from_value(value).map_err(|e| RuneError::Conversion(e.to_string()))?;
             Ok(JsonValue::String(s))
         } else if type_name == "i64" || type_name == "::std::i64" || type_name.ends_with("::i64") {
-            let i: i64 = rune::from_value(value)
-                .map_err(|e| RuneError::Conversion(e.to_string()))?;
+            let i: i64 =
+                rune::from_value(value).map_err(|e| RuneError::Conversion(e.to_string()))?;
             Ok(JsonValue::Number(i.into()))
         } else if type_name == "f64" || type_name == "::std::f64" || type_name.ends_with("::f64") {
-            let f: f64 = rune::from_value(value)
-                .map_err(|e| RuneError::Conversion(e.to_string()))?;
+            let f: f64 =
+                rune::from_value(value).map_err(|e| RuneError::Conversion(e.to_string()))?;
             if let Some(n) = serde_json::Number::from_f64(f) {
                 Ok(JsonValue::Number(n))
             } else {
                 // NaN or infinity - return as null
                 Ok(JsonValue::Null)
             }
-        } else if type_name == "bool" || type_name == "::std::bool" || type_name.ends_with("::bool") {
-            let b: bool = rune::from_value(value)
-                .map_err(|e| RuneError::Conversion(e.to_string()))?;
+        } else if type_name == "bool" || type_name == "::std::bool" || type_name.ends_with("::bool")
+        {
+            let b: bool =
+                rune::from_value(value).map_err(|e| RuneError::Conversion(e.to_string()))?;
             Ok(JsonValue::Bool(b))
         } else if type_name == "unit" || type_name == "()" || type_name.contains("Unit") {
             Ok(JsonValue::Null)
         } else if type_name.contains("Vec") {
-            let vec: Vec<Value> = rune::from_value(value)
-                .map_err(|e| RuneError::Conversion(e.to_string()))?;
+            let vec: Vec<Value> =
+                rune::from_value(value).map_err(|e| RuneError::Conversion(e.to_string()))?;
             let arr: Vec<JsonValue> = vec
                 .into_iter()
                 .map(|v| self.rune_to_json(v))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(JsonValue::Array(arr))
         } else if type_name.contains("Object") || type_name.contains("HashMap") {
-            let map: std::collections::HashMap<String, Value> = rune::from_value(value)
-                .map_err(|e| RuneError::Conversion(e.to_string()))?;
+            let map: std::collections::HashMap<String, Value> =
+                rune::from_value(value).map_err(|e| RuneError::Conversion(e.to_string()))?;
             let obj: serde_json::Map<String, JsonValue> = map
                 .into_iter()
                 .map(|(k, v)| Ok((k, self.rune_to_json(v)?)))
@@ -462,11 +476,7 @@ mod tests {
     async fn test_string_return_value_converts_to_json_string() {
         let temp = TempDir::new().unwrap();
         let script_path = temp.path().join("string_test.rn");
-        std::fs::write(
-            &script_path,
-            r#"pub fn main() { "Hello, World!" }"#,
-        )
-        .unwrap();
+        std::fs::write(&script_path, r#"pub fn main() { "Hello, World!" }"#).unwrap();
 
         let executor = RuneExecutor::new().unwrap();
         let tool = RuneTool::new("string_test", script_path);
@@ -603,7 +613,10 @@ pub fn greet(name) {
         let source = "pub fn get_value() { 42 }";
         let unit = executor.compile("test", source).unwrap();
 
-        let result = executor.call_function(&unit, "get_value", ()).await.unwrap();
+        let result = executor
+            .call_function(&unit, "get_value", ())
+            .await
+            .unwrap();
         assert_eq!(result, serde_json::json!(42));
     }
 
@@ -613,7 +626,10 @@ pub fn greet(name) {
         let source = r#"pub fn double(n) { n * 2 }"#;
         let unit = executor.compile("test", source).unwrap();
 
-        let result = executor.call_function(&unit, "double", (21i64,)).await.unwrap();
+        let result = executor
+            .call_function(&unit, "double", (21i64,))
+            .await
+            .unwrap();
         assert_eq!(result, serde_json::json!(42));
     }
 
@@ -623,7 +639,10 @@ pub fn greet(name) {
         let source = r#"pub fn add(a, b) { a + b }"#;
         let unit = executor.compile("test", source).unwrap();
 
-        let result = executor.call_function(&unit, "add", (10i64, 32i64)).await.unwrap();
+        let result = executor
+            .call_function(&unit, "add", (10i64, 32i64))
+            .await
+            .unwrap();
         assert_eq!(result, serde_json::json!(42));
     }
 
@@ -639,7 +658,10 @@ pub fn process(event) {
 
         let event = serde_json::json!({"value": 21});
         let rune_val = executor.json_to_rune_value(event).unwrap();
-        let result = executor.call_function(&unit, "process", (rune_val,)).await.unwrap();
+        let result = executor
+            .call_function(&unit, "process", (rune_val,))
+            .await
+            .unwrap();
         assert_eq!(result, serde_json::json!(42));
     }
 
@@ -649,7 +671,10 @@ pub fn process(event) {
         let source = r#"pub fn maybe_none() { None }"#;
         let unit = executor.compile("test", source).unwrap();
 
-        let result = executor.call_function(&unit, "maybe_none", ()).await.unwrap();
+        let result = executor
+            .call_function(&unit, "maybe_none", ())
+            .await
+            .unwrap();
         assert!(result.is_null());
     }
 
@@ -663,7 +688,10 @@ pub fn get_config() {
 "#;
         let unit = executor.compile("test", source).unwrap();
 
-        let result = executor.call_function(&unit, "get_config", ()).await.unwrap();
+        let result = executor
+            .call_function(&unit, "get_config", ())
+            .await
+            .unwrap();
         assert_eq!(result["name"], "test");
         assert_eq!(result["value"], 42);
     }
@@ -678,7 +706,10 @@ pub async fn async_compute() {
 "#;
         let unit = executor.compile("test", source).unwrap();
 
-        let result = executor.call_function(&unit, "async_compute", ()).await.unwrap();
+        let result = executor
+            .call_function(&unit, "async_compute", ())
+            .await
+            .unwrap();
         assert_eq!(result, serde_json::json!(42));
     }
 
@@ -696,7 +727,10 @@ pub fn maybe_value(x) {
 "#;
         let unit = executor.compile("test", source).unwrap();
 
-        let result = executor.call_function(&unit, "maybe_value", (5i64,)).await.unwrap();
+        let result = executor
+            .call_function(&unit, "maybe_value", (5i64,))
+            .await
+            .unwrap();
         assert_eq!(result, serde_json::json!(10));
     }
 
@@ -710,7 +744,10 @@ pub fn maybe_value(x) {
 "#;
         let unit = executor.compile("test", source).unwrap();
 
-        let result = executor.call_function(&unit, "maybe_value", (0i64,)).await.unwrap();
+        let result = executor
+            .call_function(&unit, "maybe_value", (0i64,))
+            .await
+            .unwrap();
         assert!(result.is_null());
     }
 
@@ -724,8 +761,13 @@ pub fn double_all(nums) {
 "#;
         let unit = executor.compile("test", source).unwrap();
 
-        let nums = executor.json_to_rune_value(serde_json::json!([1, 2, 3])).unwrap();
-        let result = executor.call_function(&unit, "double_all", (nums,)).await.unwrap();
+        let nums = executor
+            .json_to_rune_value(serde_json::json!([1, 2, 3]))
+            .unwrap();
+        let result = executor
+            .call_function(&unit, "double_all", (nums,))
+            .await
+            .unwrap();
         assert_eq!(result, serde_json::json!([2, 4, 6]));
     }
 
@@ -740,8 +782,13 @@ pub fn filter_positive(nums) {
 "#;
         let unit = executor.compile("test", source).unwrap();
 
-        let nums = executor.json_to_rune_value(serde_json::json!([-1, 2, -3, 4])).unwrap();
-        let result = executor.call_function(&unit, "filter_positive", (nums,)).await.unwrap();
+        let nums = executor
+            .json_to_rune_value(serde_json::json!([-1, 2, -3, 4]))
+            .unwrap();
+        let result = executor
+            .call_function(&unit, "filter_positive", (nums,))
+            .await
+            .unwrap();
         assert_eq!(result, serde_json::json!([2, 4]));
     }
 
@@ -762,8 +809,13 @@ pub fn count_words(text) {
 "#;
         let unit = executor.compile("test", source).expect("compile failed");
 
-        let text = executor.json_to_rune_value(serde_json::json!("hello world foo")).unwrap();
-        let result = executor.call_function(&unit, "count_words", (text,)).await.unwrap();
+        let text = executor
+            .json_to_rune_value(serde_json::json!("hello world foo"))
+            .unwrap();
+        let result = executor
+            .call_function(&unit, "count_words", (text,))
+            .await
+            .unwrap();
         assert_eq!(result, serde_json::json!(3));
     }
 
@@ -788,8 +840,13 @@ pub fn join_words(text) {
 "#;
         let unit = executor.compile("test", source).expect("compile failed");
 
-        let text = executor.json_to_rune_value(serde_json::json!("hello world")).unwrap();
-        let result = executor.call_function(&unit, "join_words", (text,)).await.unwrap();
+        let text = executor
+            .json_to_rune_value(serde_json::json!("hello world"))
+            .unwrap();
+        let result = executor
+            .call_function(&unit, "join_words", (text,))
+            .await
+            .unwrap();
         assert_eq!(result, serde_json::json!("hello-world"));
     }
 
@@ -816,8 +873,13 @@ pub fn double_to_strings(nums) {
 "#;
         let unit = executor.compile("test", source).expect("compile failed");
 
-        let nums = executor.json_to_rune_value(serde_json::json!([1, 2, 3])).unwrap();
-        let result = executor.call_function(&unit, "double_to_strings", (nums,)).await.unwrap();
+        let nums = executor
+            .json_to_rune_value(serde_json::json!([1, 2, 3]))
+            .unwrap();
+        let result = executor
+            .call_function(&unit, "double_to_strings", (nums,))
+            .await
+            .unwrap();
         assert_eq!(result, serde_json::json!("2, 4, 6"));
     }
 }

@@ -465,9 +465,8 @@ mod tests {
         .await
         .unwrap();
 
-        let mock_provider = Arc::new(
-            crucible_llm::embeddings::mock::MockEmbeddingProvider::with_dimensions(768),
-        );
+        let mock_provider =
+            Arc::new(crucible_llm::embeddings::mock::MockEmbeddingProvider::with_dimensions(768));
 
         let results = semantic_search(&client, "Rust programming", 5, mock_provider)
             .await
@@ -522,9 +521,8 @@ mod tests {
         .await
         .unwrap();
 
-        let mock_provider_384 = Arc::new(
-            crucible_llm::embeddings::mock::MockEmbeddingProvider::with_dimensions(384),
-        );
+        let mock_provider_384 =
+            Arc::new(crucible_llm::embeddings::mock::MockEmbeddingProvider::with_dimensions(384));
         let results = semantic_search(&client, "dimension test", 5, mock_provider_384)
             .await
             .expect("Should find results with 384-dim index");
@@ -558,9 +556,8 @@ mod tests {
         .await
         .unwrap();
 
-        let mock_provider_768 = Arc::new(
-            crucible_llm::embeddings::mock::MockEmbeddingProvider::with_dimensions(768),
-        );
+        let mock_provider_768 =
+            Arc::new(crucible_llm::embeddings::mock::MockEmbeddingProvider::with_dimensions(768));
         let results = semantic_search(&client, "dimension test", 5, mock_provider_768)
             .await
             .expect("Should find results with 768-dim index");

@@ -11,6 +11,6 @@ pub mod context;
 mod tests;
 
 // Re-export agent discovery from crucible-acp
-pub use crucible_acp::{discover_agent, is_agent_available, AgentInfo};
 pub use client::CrucibleAcpClient;
 pub use context::{ContextEnricher, EnrichmentResult};
+pub use crucible_acp::{discover_agent, is_agent_available, AgentInfo};

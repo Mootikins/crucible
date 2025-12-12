@@ -197,15 +197,11 @@ async fn fetch_all_file_states(
                 .and_then(|v| v.as_str())
                 .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                 .map(|dt| {
-                    SystemTime::UNIX_EPOCH
-                        + std::time::Duration::from_secs(dt.timestamp() as u64)
+                    SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(dt.timestamp() as u64)
                 })
                 .unwrap_or(SystemTime::UNIX_EPOCH);
 
-            let file_size = obj
-                .get("file_size")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0) as u64;
+            let file_size = obj.get("file_size").and_then(|v| v.as_i64()).unwrap_or(0) as u64;
 
             if !relative_path.is_empty() {
                 states.insert(

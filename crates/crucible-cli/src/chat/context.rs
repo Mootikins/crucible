@@ -10,9 +10,9 @@ use crucible_core::traits::chat::{
     AgentHandle, ChatContext, ChatError, ChatMode, ChatResult, SearchResult,
 };
 
-use crate::core_facade::KilnContext;
 use crate::chat::display::Display;
 use crate::chat::slash_registry::SlashCommandRegistry;
+use crate::core_facade::KilnContext;
 
 /// CLI implementation of ChatContext
 ///
@@ -92,11 +92,7 @@ impl<'a> ChatContext for CliChatContext<'a> {
         Ok(())
     }
 
-    async fn semantic_search(
-        &self,
-        query: &str,
-        limit: usize,
-    ) -> ChatResult<Vec<SearchResult>> {
+    async fn semantic_search(&self, query: &str, limit: usize) -> ChatResult<Vec<SearchResult>> {
         // Delegate to kiln context
         let results = self
             .kiln
@@ -151,12 +147,7 @@ impl<'a> ChatContext for CliChatContext<'a> {
         } else {
             Display::search_results_header(query, results.len());
             for (index, result) in results.iter().enumerate() {
-                Display::search_result(
-                    index,
-                    &result.title,
-                    result.similarity,
-                    &result.snippet,
-                );
+                Display::search_result(index, &result.title, result.similarity, &result.snippet);
             }
         }
     }

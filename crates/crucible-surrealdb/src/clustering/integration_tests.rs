@@ -3,8 +3,8 @@
 //! These tests use the examples/test-kiln/ directory to validate clustering
 //! algorithms against realistic knowledge base structures.
 
-use super::*;
 use super::test_utils::*;
+use super::*;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -21,31 +21,45 @@ async fn test_moc_detection_on_test_kiln() {
         .join("test-kiln");
 
     if !test_kiln_path.exists() {
-        println!("Skipping test - test-kiln not found at {:?}", test_kiln_path);
+        println!(
+            "Skipping test - test-kiln not found at {:?}",
+            test_kiln_path
+        );
         return;
     }
 
-    let documents = load_documents_from_path(&test_kiln_path).await
+    let documents = load_documents_from_path(&test_kiln_path)
+        .await
         .expect("Failed to load documents from test-kiln");
 
-    assert!(!documents.is_empty(), "Should load documents from test-kiln");
+    assert!(
+        !documents.is_empty(),
+        "Should load documents from test-kiln"
+    );
 
     // Run MoC detection
-    let mocs = detect_mocs(&documents).await
+    let mocs = detect_mocs(&documents)
+        .await
         .expect("MoC detection should succeed");
 
     // Verify Knowledge Management Hub is detected as MoC
-    let hub_moc = mocs.iter()
+    let hub_moc = mocs
+        .iter()
         .find(|m| m.file_path.contains("Knowledge Management Hub"))
         .expect("Knowledge Management Hub should be detected as MoC");
 
     assert!(hub_moc.score > 0.5, "Hub should have high MoC score");
-    assert!(hub_moc.outbound_links > 10, "Hub should have many outbound links");
+    assert!(
+        hub_moc.outbound_links > 10,
+        "Hub should have many outbound links"
+    );
 
     // Check reasons include expected indicators
     let reasons_str = hub_moc.reasons.join(" ");
-    assert!(reasons_str.contains("outbound") || reasons_str.contains("links"),
-            "Should mention link count in reasons");
+    assert!(
+        reasons_str.contains("outbound") || reasons_str.contains("links"),
+        "Should mention link count in reasons"
+    );
 }
 
 /// Integration test for heuristic clustering on test-kiln data
@@ -62,7 +76,8 @@ async fn test_heuristic_clustering_on_test_kiln() {
         return;
     }
 
-    let documents = load_documents_from_path(&test_kiln_path).await
+    let documents = load_documents_from_path(&test_kiln_path)
+        .await
         .expect("Failed to load documents");
 
     // Create clustering service
@@ -89,37 +104,64 @@ async fn test_heuristic_clustering_on_test_kiln() {
 
     // Run clustering
     let start_time = Instant::now();
-    let result = service.cluster_documents(documents, config).await
+    let result = service
+        .cluster_documents(documents, config)
+        .await
         .expect("Clustering should succeed");
     let duration = start_time.elapsed();
 
     // Verify results
-    assert!(!result.clusters.is_empty(), "Should generate at least one cluster");
+    assert!(
+        !result.clusters.is_empty(),
+        "Should generate at least one cluster"
+    );
 
     // Performance check - should be fast for small dataset
-    assert!(duration.as_millis() < 100, "Heuristic clustering should complete quickly");
+    assert!(
+        duration.as_millis() < 100,
+        "Heuristic clustering should complete quickly"
+    );
 
     // Check metrics
-    assert_eq!(result.metrics.documents_processed, 12, "Should process all test-kiln documents");
-    assert!(result.metrics.avg_cluster_size > 0.0, "Should have non-zero average cluster size");
+    assert_eq!(
+        result.metrics.documents_processed, 12,
+        "Should process all test-kiln documents"
+    );
+    assert!(
+        result.metrics.avg_cluster_size > 0.0,
+        "Should have non-zero average cluster size"
+    );
 
     // Verify Knowledge Management Hub is in its own cluster or with related docs
-    let hub_cluster = result.clusters.iter()
-        .find(|c| c.documents.iter().any(|d| d.contains("Knowledge Management Hub")));
+    let hub_cluster = result.clusters.iter().find(|c| {
+        c.documents
+            .iter()
+            .any(|d| d.contains("Knowledge Management Hub"))
+    });
 
     if let Some(cluster) = hub_cluster {
-        assert!(cluster.documents.len() >= 1, "Hub cluster should not be empty");
-        assert!(cluster.confidence > 0.5, "Hub cluster should have good confidence");
+        assert!(
+            cluster.documents.len() >= 1,
+            "Hub cluster should not be empty"
+        );
+        assert!(
+            cluster.confidence > 0.5,
+            "Hub cluster should have good confidence"
+        );
     }
 
-    println!("Generated {} clusters in {}ms",
-             result.clusters.len(),
-             duration.as_millis());
+    println!(
+        "Generated {} clusters in {}ms",
+        result.clusters.len(),
+        duration.as_millis()
+    );
     for cluster in &result.clusters {
-        println!("  Cluster {}: {} documents, confidence={:.2}",
-                 cluster.id,
-                 cluster.documents.len(),
-                 cluster.confidence);
+        println!(
+            "  Cluster {}: {} documents, confidence={:.2}",
+            cluster.id,
+            cluster.documents.len(),
+            cluster.confidence
+        );
     }
 }
 
@@ -137,28 +179,40 @@ async fn test_algorithm_auto_selection() {
         return;
     }
 
-    let documents = load_documents_from_path(&test_kiln_path).await
+    let documents = load_documents_from_path(&test_kiln_path)
+        .await
         .expect("Failed to load documents");
 
     let service = SimpleClusteringService::new();
 
     // Test auto-selection
-    let selected = service.auto_select_algorithm(&documents)
+    let selected = service
+        .auto_select_algorithm(&documents)
         .expect("Should auto-select an algorithm");
 
     // Should select heuristic for this small dataset without embeddings
-    assert_eq!(selected, "heuristic", "Should select heuristic for documents without embeddings");
+    assert_eq!(
+        selected, "heuristic",
+        "Should select heuristic for documents without embeddings"
+    );
 
     // List all available algorithms
     let algorithms = service.list_algorithms();
-    assert!(algorithms.len() >= 2, "Should have at least heuristic and kmeans");
+    assert!(
+        algorithms.len() >= 2,
+        "Should have at least heuristic and kmeans"
+    );
 
     // Verify heuristic algorithm is available
-    let heuristic_meta = algorithms.iter()
+    let heuristic_meta = algorithms
+        .iter()
         .find(|a| a.id == "heuristic")
         .expect("Heuristic algorithm should be available");
 
-    assert!(!heuristic_meta.requires_embeddings, "Heuristic should not require embeddings");
+    assert!(
+        !heuristic_meta.requires_embeddings,
+        "Heuristic should not require embeddings"
+    );
 }
 
 /// Integration test for MoC detection configuration
@@ -175,14 +229,19 @@ async fn test_moc_detection_configuration() {
         return;
     }
 
-    let documents = load_documents_from_path(&test_kiln_path).await
+    let documents = load_documents_from_path(&test_kiln_path)
+        .await
         .expect("Failed to load documents");
 
     // Test custom MoC detection config
     let moc_config = MocDetectionConfig {
         min_outbound_links: 8, // Lower threshold
         score_threshold: 0.3,  // Lower threshold
-        moc_tags: vec!["hub".to_string(), "index".to_string(), "navigation".to_string()],
+        moc_tags: vec![
+            "hub".to_string(),
+            "index".to_string(),
+            "navigation".to_string(),
+        ],
         title_patterns: vec![
             "Hub".to_string(),
             "Management".to_string(),
@@ -203,7 +262,9 @@ async fn test_moc_detection_configuration() {
 
     // Run clustering with MoC detection
     let service = SimpleClusteringService::new();
-    let result = service.cluster_documents(documents, config).await
+    let result = service
+        .cluster_documents(documents, config)
+        .await
         .expect("Clustering should succeed");
 
     // Should detect more MoCs with lower thresholds
@@ -229,7 +290,8 @@ async fn test_clustering_quality_metrics() {
         return;
     }
 
-    let documents = load_documents_from_path(&test_kiln_path).await
+    let documents = load_documents_from_path(&test_kiln_path)
+        .await
         .expect("Failed to load documents");
 
     // Create test documents with known cluster structure
@@ -253,46 +315,111 @@ async fn test_clustering_quality_metrics() {
     };
 
     let service = SimpleClusteringService::new();
-    let result = service.cluster_documents(test_docs, config).await
+    let result = service
+        .cluster_documents(test_docs, config)
+        .await
         .expect("Clustering should succeed");
 
     // Verify quality metrics
-    assert!(result.metrics.execution_time_ms > 0, "Should record execution time");
-    assert_eq!(result.metrics.documents_processed, 8, "Should process all test documents");
-    assert!(result.metrics.clusters_generated > 0, "Should generate clusters");
-    assert!(result.metrics.avg_cluster_size > 0.0, "Should calculate average cluster size");
+    assert!(
+        result.metrics.execution_time_ms > 0,
+        "Should record execution time"
+    );
+    assert_eq!(
+        result.metrics.documents_processed, 8,
+        "Should process all test documents"
+    );
+    assert!(
+        result.metrics.clusters_generated > 0,
+        "Should generate clusters"
+    );
+    assert!(
+        result.metrics.avg_cluster_size > 0.0,
+        "Should calculate average cluster size"
+    );
 
     // Check for reasonable cluster distribution
     let total_docs: usize = result.clusters.iter().map(|c| c.documents.len()).sum();
-    assert_eq!(total_docs, 8, "All documents should be assigned to clusters");
+    assert_eq!(
+        total_docs, 8,
+        "All documents should be assigned to clusters"
+    );
 
     // Verify clusters meet minimum size requirement
     for cluster in &result.clusters {
-        assert!(cluster.documents.len() >= 2, "All clusters should meet min size");
-        assert!(cluster.confidence > 0.0, "All clusters should have confidence scores");
+        assert!(
+            cluster.documents.len() >= 2,
+            "All clusters should meet min size"
+        );
+        assert!(
+            cluster.confidence > 0.0,
+            "All clusters should have confidence scores"
+        );
     }
 }
 
 /// Load documents from a directory path
-async fn load_documents_from_path(path: &Path) -> Result<Vec<DocumentInfo>, Box<dyn std::error::Error>> {
+async fn load_documents_from_path(
+    path: &Path,
+) -> Result<Vec<DocumentInfo>, Box<dyn std::error::Error>> {
     let mut documents = Vec::new();
 
     // For this test, we'll create mock documents based on the actual test-kiln structure
     // In a real implementation, this would parse the markdown files
 
     let test_files = vec![
-        ("Knowledge Management Hub.md", "hub", vec!["knowledge-management", "navigation"], 15),
-        ("Project Management.md", "project", vec!["project-management", "tasks"], 12),
-        ("Research Methods.md", "research", vec!["research", "methodology"], 10),
-        ("Technical Documentation.md", "technical", vec!["api", "documentation"], 13),
-        ("Contact Management.md", "contacts", vec!["contacts", "networking"], 8),
+        (
+            "Knowledge Management Hub.md",
+            "hub",
+            vec!["knowledge-management", "navigation"],
+            15,
+        ),
+        (
+            "Project Management.md",
+            "project",
+            vec!["project-management", "tasks"],
+            12,
+        ),
+        (
+            "Research Methods.md",
+            "research",
+            vec!["research", "methodology"],
+            10,
+        ),
+        (
+            "Technical Documentation.md",
+            "technical",
+            vec!["api", "documentation"],
+            13,
+        ),
+        (
+            "Contact Management.md",
+            "contacts",
+            vec!["contacts", "networking"],
+            8,
+        ),
         ("Meeting Notes.md", "meeting", vec!["meetings", "notes"], 6),
         ("Reading List.md", "reading", vec!["learning", "books"], 9),
-        ("Ideas & Brainstorming.md", "ideas", vec!["ideas", "innovation"], 7),
+        (
+            "Ideas & Brainstorming.md",
+            "ideas",
+            vec!["ideas", "innovation"],
+            7,
+        ),
         ("API Documentation.md", "api", vec!["api", "technical"], 11),
         ("Book Review.md", "review", vec!["review", "learning"], 5),
-        ("Comprehensive-Feature-Test.md", "test", vec!["test", "integration"], 4),
-        ("README - Test Kiln Structure.md", "docs", vec!["documentation"], 3),
+        (
+            "Comprehensive-Feature-Test.md",
+            "test",
+            vec!["test", "integration"],
+            4,
+        ),
+        (
+            "README - Test Kiln Structure.md",
+            "docs",
+            vec!["documentation"],
+            3,
+        ),
     ];
 
     for (filename, doc_type, tags, outbound_links) in test_files {
@@ -414,14 +541,18 @@ async fn test_user_vault_clustering() {
     };
 
     if !vault_path.exists() {
-        println!("Skipping test - vault path does not exist: {:?}", vault_path);
+        println!(
+            "Skipping test - vault path does not exist: {:?}",
+            vault_path
+        );
         return;
     }
 
     println!("Testing with vault at: {:?}", vault_path);
 
     // Load documents from user vault
-    let documents = load_documents_from_path(&vault_path).await
+    let documents = load_documents_from_path(&vault_path)
+        .await
         .expect("Failed to load documents from user vault");
 
     if documents.is_empty() {
@@ -432,7 +563,8 @@ async fn test_user_vault_clustering() {
     println!("Loaded {} documents from vault", documents.len());
 
     // Run MoC detection
-    let mocs = detect_mocs(&documents).await
+    let mocs = detect_mocs(&documents)
+        .await
         .expect("MoC detection should succeed");
 
     println!("\n=== Detected Maps of Content ===");
@@ -463,12 +595,18 @@ async fn test_user_vault_clustering() {
         performance: PerformanceConfig::default(),
     };
 
-    let result = service.cluster_documents(documents, config).await
+    let result = service
+        .cluster_documents(documents, config)
+        .await
         .expect("Clustering should succeed");
 
     println!("\n=== Generated Clusters ===");
     for (i, cluster) in result.clusters.iter().enumerate() {
-        println!("📁 Cluster {} (confidence: {:.2})", i + 1, cluster.confidence);
+        println!(
+            "📁 Cluster {} (confidence: {:.2})",
+            i + 1,
+            cluster.confidence
+        );
         for doc in &cluster.documents {
             println!("   - {}", doc);
         }
@@ -476,13 +614,25 @@ async fn test_user_vault_clustering() {
 
     println!("\n=== Clustering Metrics ===");
     println!("Execution time: {}ms", result.metrics.execution_time_ms);
-    println!("Documents processed: {}", result.metrics.documents_processed);
+    println!(
+        "Documents processed: {}",
+        result.metrics.documents_processed
+    );
     println!("Clusters generated: {}", result.metrics.clusters_generated);
-    println!("Average cluster size: {:.2}", result.metrics.avg_cluster_size);
+    println!(
+        "Average cluster size: {:.2}",
+        result.metrics.avg_cluster_size
+    );
 
     // Basic assertions
-    assert!(!result.clusters.is_empty(), "Should generate at least one cluster");
-    assert!(result.metrics.execution_time_ms > 0, "Should record execution time");
+    assert!(
+        !result.clusters.is_empty(),
+        "Should generate at least one cluster"
+    );
+    assert!(
+        result.metrics.execution_time_ms > 0,
+        "Should record execution time"
+    );
 }
 
 /// Integration test for user vault with different algorithms
@@ -502,7 +652,8 @@ async fn test_user_vault_algorithm_comparison() {
     }
 
     // Load a subset of documents for faster testing
-    let documents = load_documents_from_path(&vault_path).await
+    let documents = load_documents_from_path(&vault_path)
+        .await
         .expect("Failed to load documents");
 
     // Limit to first 50 documents for faster testing
@@ -514,30 +665,39 @@ async fn test_user_vault_algorithm_comparison() {
 
     // Test different configurations
     let configs = vec![
-        ("link_heavy", AlgorithmParameters::new({
-            let mut p = HashMap::new();
-            p.insert("link_weight".to_string(), serde_json::json!(0.8));
-            p.insert("tag_weight".to_string(), serde_json::json!(0.1));
-            p.insert("title_weight".to_string(), serde_json::json!(0.1));
-            p.insert("min_similarity".to_string(), serde_json::json!(0.1));
-            p
-        })),
-        ("tag_heavy", AlgorithmParameters::new({
-            let mut p = HashMap::new();
-            p.insert("link_weight".to_string(), serde_json::json!(0.2));
-            p.insert("tag_weight".to_string(), serde_json::json!(0.7));
-            p.insert("title_weight".to_string(), serde_json::json!(0.1));
-            p.insert("min_similarity".to_string(), serde_json::json!(0.15));
-            p
-        })),
-        ("balanced", AlgorithmParameters::new({
-            let mut p = HashMap::new();
-            p.insert("link_weight".to_string(), serde_json::json!(0.4));
-            p.insert("tag_weight".to_string(), serde_json::json!(0.3));
-            p.insert("title_weight".to_string(), serde_json::json!(0.3));
-            p.insert("min_similarity".to_string(), serde_json::json!(0.2));
-            p
-        })),
+        (
+            "link_heavy",
+            AlgorithmParameters::new({
+                let mut p = HashMap::new();
+                p.insert("link_weight".to_string(), serde_json::json!(0.8));
+                p.insert("tag_weight".to_string(), serde_json::json!(0.1));
+                p.insert("title_weight".to_string(), serde_json::json!(0.1));
+                p.insert("min_similarity".to_string(), serde_json::json!(0.1));
+                p
+            }),
+        ),
+        (
+            "tag_heavy",
+            AlgorithmParameters::new({
+                let mut p = HashMap::new();
+                p.insert("link_weight".to_string(), serde_json::json!(0.2));
+                p.insert("tag_weight".to_string(), serde_json::json!(0.7));
+                p.insert("title_weight".to_string(), serde_json::json!(0.1));
+                p.insert("min_similarity".to_string(), serde_json::json!(0.15));
+                p
+            }),
+        ),
+        (
+            "balanced",
+            AlgorithmParameters::new({
+                let mut p = HashMap::new();
+                p.insert("link_weight".to_string(), serde_json::json!(0.4));
+                p.insert("tag_weight".to_string(), serde_json::json!(0.3));
+                p.insert("title_weight".to_string(), serde_json::json!(0.3));
+                p.insert("min_similarity".to_string(), serde_json::json!(0.2));
+                p
+            }),
+        ),
     ];
 
     println!("\n=== Algorithm Comparison ===");
@@ -553,7 +713,9 @@ async fn test_user_vault_algorithm_comparison() {
             performance: PerformanceConfig::default(),
         };
 
-        let result = service.cluster_documents(documents.clone(), config).await
+        let result = service
+            .cluster_documents(documents.clone(), config)
+            .await
             .expect("Clustering should succeed");
 
         println!(

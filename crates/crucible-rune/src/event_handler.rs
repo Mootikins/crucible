@@ -100,8 +100,9 @@ impl EventHandler {
             for event_name in event_names {
                 let event_dir = base.join(event_name);
                 if !event_dir.exists() {
-                    std::fs::create_dir_all(&event_dir)
-                        .map_err(|e| RuneError::Io(format!("Failed to create {:?}: {}", event_dir, e)))?;
+                    std::fs::create_dir_all(&event_dir).map_err(|e| {
+                        RuneError::Io(format!("Failed to create {:?}: {}", event_dir, e))
+                    })?;
                     debug!("Created event directory: {:?}", event_dir);
                 }
             }
@@ -144,19 +145,12 @@ impl EventHandler {
             return Ok(event);
         }
 
-        debug!(
-            "Found {} handlers for event: {}",
-            handlers.len(),
-            E::NAME
-        );
+        debug!("Found {} handlers for event: {}", handlers.len(), E::NAME);
 
         for handler_path in handlers {
             debug!("Running handler: {:?}", handler_path);
 
-            match self
-                .run_handler::<E>(&handler_path, &event)
-                .await
-            {
+            match self.run_handler::<E>(&handler_path, &event).await {
                 Ok(Some(enrichment)) => {
                     event.apply_enrichment(enrichment);
                     debug!("Applied enrichment from {:?}", handler_path);
@@ -220,7 +214,9 @@ impl EventHandler {
         let mut vm = Vm::new(self.runtime.clone(), unit);
 
         // Convert event to JSON for passing to script
-        let event_json = event.to_json().map_err(|e| RuneError::Conversion(e.to_string()))?;
+        let event_json = event
+            .to_json()
+            .map_err(|e| RuneError::Conversion(e.to_string()))?;
 
         // Look for handler function: on_<event_name>
         let handler_name = format!("on_{}", E::NAME);
@@ -268,7 +264,9 @@ fn json_to_rune_value(value: JsonValue) -> Result<rune::Value, RuneError> {
 
     match value {
         JsonValue::Null => Ok(rune::Value::empty()),
-        JsonValue::Bool(b) => b.to_value().map_err(|e| RuneError::Conversion(e.to_string())),
+        JsonValue::Bool(b) => b
+            .to_value()
+            .map_err(|e| RuneError::Conversion(e.to_string())),
         JsonValue::Number(n) => {
             if let Some(i) = n.as_i64() {
                 i.to_value()
@@ -280,7 +278,9 @@ fn json_to_rune_value(value: JsonValue) -> Result<rune::Value, RuneError> {
                 Err(RuneError::Conversion("Invalid number".to_string()))
             }
         }
-        JsonValue::String(s) => s.to_value().map_err(|e| RuneError::Conversion(e.to_string())),
+        JsonValue::String(s) => s
+            .to_value()
+            .map_err(|e| RuneError::Conversion(e.to_string())),
         JsonValue::Array(arr) => {
             let values: Vec<rune::Value> = arr
                 .into_iter()
@@ -422,8 +422,7 @@ pub fn on_recipe_discovered(recipe) {
 "#;
         std::fs::write(event_dir.join("categorizer.rn"), script).unwrap();
 
-        let paths = DiscoveryPaths::empty("events")
-            .with_path(temp.path().to_path_buf());
+        let paths = DiscoveryPaths::empty("events").with_path(temp.path().to_path_buf());
         let config = EventHandlerConfig::from_discovery_paths(paths);
         let handler = EventHandler::new(config).unwrap();
 

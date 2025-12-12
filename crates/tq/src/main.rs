@@ -138,7 +138,14 @@ fn run() -> Result<(), TqError> {
         // Process with null input
         let results = run_filter(&filter, serde_json::Value::Null)?;
         for value in results {
-            output_value(&mut out, &value, output_format, &formatter, cli.raw, cli.compact)?;
+            output_value(
+                &mut out,
+                &value,
+                output_format,
+                &formatter,
+                cli.raw,
+                cli.compact,
+            )?;
         }
     } else if cli.files.is_empty() {
         // Read from stdin

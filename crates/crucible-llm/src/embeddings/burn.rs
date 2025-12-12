@@ -2,7 +2,6 @@
 ///
 /// This provider uses the Burn framework to generate embeddings with GPU acceleration
 /// via Vulkan, ROCm, CUDA, or CPU backends.
-
 use super::{EmbeddingProvider, EmbeddingResponse, EmbeddingResult};
 use async_trait::async_trait;
 use crucible_config::{BurnBackendConfig, BurnEmbedConfig};
@@ -13,9 +12,9 @@ use uuid;
 use walkdir::WalkDir;
 
 #[cfg(feature = "burn")]
-use super::burn_model::{ModelWeights, ModelConfig, find_model_files};
+use super::burn_model::{find_model_files, ModelConfig, ModelWeights};
 
-use super::gguf_model::{is_gguf_file, find_gguf_models, GGUFModelInfo};
+use super::gguf_model::{find_gguf_models, is_gguf_file, GGUFModelInfo};
 
 /// Burn-based embedding provider with GPU acceleration
 pub struct BurnProvider {
@@ -112,19 +111,21 @@ impl BurnProvider {
 
                 // In tests, allow GPU backends even if not detected (they'll be mocked)
                 // Check if we're running in a test by checking the binary name or test env
-                let is_test = cfg!(test) 
+                let is_test = cfg!(test)
                     || std::env::var("TEST_MODE").is_ok()
                     || std::env::args().any(|arg| arg.contains("test"));
 
                 let allow_gpu = has_gpu || is_test;
 
                 if !allow_gpu && self.device_type != "cpu" && self.device_type != "auto" {
-                    *state = BurnState::Error(
-                        format!("GPU backend '{}' not available", self.device_type)
-                    );
-                    return Err(super::error::EmbeddingError::InferenceFailed(
-                        format!("GPU backend '{}' not available", self.device_type)
+                    *state = BurnState::Error(format!(
+                        "GPU backend '{}' not available",
+                        self.device_type
                     ));
+                    return Err(super::error::EmbeddingError::InferenceFailed(format!(
+                        "GPU backend '{}' not available",
+                        self.device_type
+                    )));
                 }
 
                 // Load tokenizer
@@ -133,13 +134,17 @@ impl BurnProvider {
                 // Try to find and load model
                 let model_path = self.find_model().await?;
                 let model_loaded = model_path.is_some();
-                
+
                 // Check if it's a GGUF file
                 let gguf_model = if let Some(ref path) = model_path {
                     if is_gguf_file(path) {
                         match GGUFModelInfo::from_file(path) {
                             Ok(info) => {
-                                tracing::info!("Found GGUF model: {} ({} dims)", path.display(), info.embedding_dim());
+                                tracing::info!(
+                                    "Found GGUF model: {} ({} dims)",
+                                    path.display(),
+                                    info.embedding_dim()
+                                );
                                 Some(info)
                             }
                             Err(e) => {
@@ -153,15 +158,15 @@ impl BurnProvider {
                 } else {
                     None
                 };
-                
+
                 // Try to load actual model weights if available (for SafeTensors)
                 #[cfg(feature = "burn")]
-                let model_weights: Option<super::burn_model::ModelWeights> = if let Some(ref path) = model_path {
-                    // Only try SafeTensors if it's not a GGUF file
-                    if !is_gguf_file(path) {
-                        // Find config.json in the same directory
-                        let config_path = path.parent()
-                            .and_then(|p| {
+                let model_weights: Option<super::burn_model::ModelWeights> =
+                    if let Some(ref path) = model_path {
+                        // Only try SafeTensors if it's not a GGUF file
+                        if !is_gguf_file(path) {
+                            // Find config.json in the same directory
+                            let config_path = path.parent().and_then(|p| {
                                 let config = p.join("config.json");
                                 if config.exists() {
                                     Some(config)
@@ -169,23 +174,29 @@ impl BurnProvider {
                                     None
                                 }
                             });
-                        
-                        match ModelWeights::from_file(path, config_path.as_deref()) {
-                            Ok(weights) => {
-                                tracing::info!("Loaded SafeTensors model weights from {}", path.display());
-                                Some(weights)
+
+                            match ModelWeights::from_file(path, config_path.as_deref()) {
+                                Ok(weights) => {
+                                    tracing::info!(
+                                        "Loaded SafeTensors model weights from {}",
+                                        path.display()
+                                    );
+                                    Some(weights)
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "Failed to load model weights: {}, will use fallback",
+                                        e
+                                    );
+                                    None
+                                }
                             }
-                            Err(e) => {
-                                tracing::warn!("Failed to load model weights: {}, will use fallback", e);
-                                None
-                            }
+                        } else {
+                            None // GGUF files handled separately
                         }
                     } else {
-                        None // GGUF files handled separately
-                    }
-                } else {
-                    None
-                };
+                        None
+                    };
 
                 *state = BurnState::Initialized {
                     tokenizer,
@@ -211,15 +222,21 @@ impl BurnProvider {
         if let Some(path) = tokenizer_path {
             // Load from local path
             return tokio::task::spawn_blocking(move || {
-                tokenizers::Tokenizer::from_file(&path)
-                    .map_err(|e| super::error::EmbeddingError::InferenceFailed(
-                        format!("Failed to load tokenizer from {}: {}", path.display(), e)
+                tokenizers::Tokenizer::from_file(&path).map_err(|e| {
+                    super::error::EmbeddingError::InferenceFailed(format!(
+                        "Failed to load tokenizer from {}: {}",
+                        path.display(),
+                        e
                     ))
+                })
             })
             .await
-            .map_err(|e| super::error::EmbeddingError::InferenceFailed(
-                format!("Failed to spawn tokenizer loading task: {}", e)
-            ))?;
+            .map_err(|e| {
+                super::error::EmbeddingError::InferenceFailed(format!(
+                    "Failed to spawn tokenizer loading task: {}",
+                    e
+                ))
+            })?;
         }
 
         // Try to load from HuggingFace model name
@@ -242,19 +259,27 @@ impl BurnProvider {
             .join("huggingface")
             .join("hub");
 
-        let tokenizer_path = self.find_tokenizer_in_cache(&cache_dir, &hf_model_name).await?;
+        let tokenizer_path = self
+            .find_tokenizer_in_cache(&cache_dir, &hf_model_name)
+            .await?;
 
         if let Some(path) = tokenizer_path {
             return tokio::task::spawn_blocking(move || {
-                tokenizers::Tokenizer::from_file(&path)
-                    .map_err(|e| super::error::EmbeddingError::InferenceFailed(
-                        format!("Failed to load tokenizer from {}: {}", path.display(), e)
+                tokenizers::Tokenizer::from_file(&path).map_err(|e| {
+                    super::error::EmbeddingError::InferenceFailed(format!(
+                        "Failed to load tokenizer from {}: {}",
+                        path.display(),
+                        e
                     ))
+                })
             })
             .await
-            .map_err(|e| super::error::EmbeddingError::InferenceFailed(
-                format!("Failed to spawn tokenizer loading task: {}", e)
-            ))?;
+            .map_err(|e| {
+                super::error::EmbeddingError::InferenceFailed(format!(
+                    "Failed to spawn tokenizer loading task: {}",
+                    e
+                ))
+            })?;
         }
 
         // Fallback: create a simple tokenizer
@@ -297,7 +322,8 @@ impl BurnProvider {
                     if entry.file_name() == "tokenizer.json" {
                         // Check if it's for the right model
                         let parent = entry.path().parent().unwrap();
-                        if parent.file_name()
+                        if parent
+                            .file_name()
                             .and_then(|n| n.to_str())
                             .map(|n| n.contains(&model_name) || model_name.contains(n))
                             .unwrap_or(false)
@@ -310,9 +336,12 @@ impl BurnProvider {
             }
         })
         .await
-        .map_err(|e| super::error::EmbeddingError::InferenceFailed(
-            format!("Failed to search for tokenizer: {}", e)
-        ))?
+        .map_err(|e| {
+            super::error::EmbeddingError::InferenceFailed(format!(
+                "Failed to search for tokenizer: {}",
+                e
+            ))
+        })?
     }
 
     /// Find tokenizer in HuggingFace cache
@@ -344,9 +373,12 @@ impl BurnProvider {
             }
         })
         .await
-        .map_err(|e| super::error::EmbeddingError::InferenceFailed(
-            format!("Failed to search HuggingFace cache: {}", e)
-        ))?
+        .map_err(|e| {
+            super::error::EmbeddingError::InferenceFailed(format!(
+                "Failed to search HuggingFace cache: {}",
+                e
+            ))
+        })?
     }
 
     /// Create a fallback tokenizer when the real one can't be found
@@ -357,20 +389,16 @@ impl BurnProvider {
         use tokenizers::processors::bert::BertProcessing;
         use tokenizers::Tokenizer;
 
-        let mut tokenizer = Tokenizer::new(
-            BPE::default()
-        );
+        let mut tokenizer = Tokenizer::new(BPE::default());
 
         // Add basic pre-tokenizer
         tokenizer.with_pre_tokenizer(Whitespace::default());
 
         // Add BERT-style post-processor
-        tokenizer.with_post_processor(
-            BertProcessing::new(
-                (String::from("[CLS]"), 101),
-                (String::from("[SEP]"), 102),
-            )
-        );
+        tokenizer.with_post_processor(BertProcessing::new(
+            (String::from("[CLS]"), 101),
+            (String::from("[SEP]"), 102),
+        ));
 
         Ok(tokenizer)
     }
@@ -420,15 +448,16 @@ impl BurnProvider {
                     let file_name = entry.file_name().to_string_lossy();
                     if file_name.ends_with(".safetensors") {
                         let parent = entry.path().parent().unwrap();
-                        let matches = parent.file_name()
+                        let matches = parent
+                            .file_name()
                             .and_then(|n| n.to_str())
                             .map(|n| {
-                                n.contains(&model_name) 
+                                n.contains(&model_name)
                                     || model_name.contains(n)
                                     || n.replace("-", "_").contains(&model_name.replace("-", "_"))
                             })
                             .unwrap_or(false);
-                        
+
                         if matches {
                             return Ok(Some(entry.path().to_path_buf()));
                         }
@@ -438,12 +467,12 @@ impl BurnProvider {
                 // Then try GGUF files (for embedding models)
                 if let Ok(gguf_models) = find_gguf_models(&base_path, &model_name) {
                     // Prefer model files with "embed" in the name
-                    if let Some(model) = gguf_models.iter()
-                        .find(|p| p.file_name()
+                    if let Some(model) = gguf_models.iter().find(|p| {
+                        p.file_name()
                             .and_then(|n| n.to_str())
                             .map(|n| n.to_lowercase().contains("embed"))
-                            .unwrap_or(false))
-                    {
+                            .unwrap_or(false)
+                    }) {
                         return Ok(Some(model.clone()));
                     }
                     // Otherwise return the first match
@@ -456,9 +485,12 @@ impl BurnProvider {
             }
         })
         .await
-        .map_err(|e| super::error::EmbeddingError::InferenceFailed(
-            format!("Failed to search for model: {}", e)
-        ))?
+        .map_err(|e| {
+            super::error::EmbeddingError::InferenceFailed(format!(
+                "Failed to search for model: {}",
+                e
+            ))
+        })?
     }
 
     /// Check if GPU backend is available
@@ -512,8 +544,7 @@ impl BurnProvider {
 
     /// Detect ROCm availability
     fn detect_rocm() -> bool {
-        std::env::var("ROCM_HOME").is_ok()
-            || std::path::Path::new("/opt/rocm").exists()
+        std::env::var("ROCM_HOME").is_ok() || std::path::Path::new("/opt/rocm").exists()
     }
 }
 
@@ -528,9 +559,11 @@ impl EmbeddingProvider for BurnProvider {
             let state = self.state.read().await;
             match &*state {
                 BurnState::Initialized { tokenizer, .. } => tokenizer.clone(),
-                _ => return Err(super::error::EmbeddingError::InferenceFailed(
-                    "Provider not initialized".to_string()
-                )),
+                _ => {
+                    return Err(super::error::EmbeddingError::InferenceFailed(
+                        "Provider not initialized".to_string(),
+                    ))
+                }
             }
         };
 
@@ -538,16 +571,21 @@ impl EmbeddingProvider for BurnProvider {
         let encoding = tokio::task::spawn_blocking({
             let text = text.to_string();
             move || {
-                tokenizer.encode(text, true)
-                    .map_err(|e| super::error::EmbeddingError::InferenceFailed(
-                        format!("Tokenization failed: {}", e)
+                tokenizer.encode(text, true).map_err(|e| {
+                    super::error::EmbeddingError::InferenceFailed(format!(
+                        "Tokenization failed: {}",
+                        e
                     ))
+                })
             }
         })
         .await
-        .map_err(|e| super::error::EmbeddingError::InferenceFailed(
-            format!("Failed to spawn tokenization task: {}", e)
-        ))??;
+        .map_err(|e| {
+            super::error::EmbeddingError::InferenceFailed(format!(
+                "Failed to spawn tokenization task: {}",
+                e
+            ))
+        })??;
 
         let token_count = encoding.get_ids().len();
         let token_ids = encoding.get_ids().to_vec();
@@ -555,10 +593,11 @@ impl EmbeddingProvider for BurnProvider {
         // Generate embedding from tokens
         // TODO: Replace with actual model inference using Burn
         // For now, we'll use a deterministic embedding based on tokens and text
-        let embedding = self.generate_embedding_from_tokens(&token_ids, text).await?;
+        let embedding = self
+            .generate_embedding_from_tokens(&token_ids, text)
+            .await?;
 
-        Ok(EmbeddingResponse::new(embedding, self.model_name.clone())
-            .with_tokens(token_count))
+        Ok(EmbeddingResponse::new(embedding, self.model_name.clone()).with_tokens(token_count))
     }
 
     /// Generate embeddings for multiple text inputs
@@ -574,9 +613,11 @@ impl EmbeddingProvider for BurnProvider {
             let state = self.state.read().await;
             match &*state {
                 BurnState::Initialized { tokenizer, .. } => tokenizer.clone(),
-                _ => return Err(super::error::EmbeddingError::InferenceFailed(
-                    "Provider not initialized".to_string()
-                )),
+                _ => {
+                    return Err(super::error::EmbeddingError::InferenceFailed(
+                        "Provider not initialized".to_string(),
+                    ))
+                }
             }
         };
 
@@ -584,20 +625,26 @@ impl EmbeddingProvider for BurnProvider {
         let encodings = tokio::task::spawn_blocking({
             let texts = texts.clone();
             move || {
-                texts.iter()
+                texts
+                    .iter()
                     .map(|text| {
-                        tokenizer.encode(text.clone(), true)
-                            .map_err(|e| super::error::EmbeddingError::InferenceFailed(
-                                format!("Tokenization failed: {}", e)
+                        tokenizer.encode(text.clone(), true).map_err(|e| {
+                            super::error::EmbeddingError::InferenceFailed(format!(
+                                "Tokenization failed: {}",
+                                e
                             ))
+                        })
                     })
                     .collect::<Result<Vec<_>, _>>()
             }
         })
         .await
-        .map_err(|e| super::error::EmbeddingError::InferenceFailed(
-            format!("Failed to spawn batch tokenization task: {}", e)
-        ))??;
+        .map_err(|e| {
+            super::error::EmbeddingError::InferenceFailed(format!(
+                "Failed to spawn batch tokenization task: {}",
+                e
+            ))
+        })??;
 
         // Generate embeddings for all texts
         // TODO: Use actual batch processing with Burn tensors for GPU parallelism
@@ -605,11 +652,12 @@ impl EmbeddingProvider for BurnProvider {
         for (encoding, text) in encodings.into_iter().zip(texts.iter()) {
             let token_ids = encoding.get_ids().to_vec();
             let token_count = token_ids.len();
-            let embedding = self.generate_embedding_from_tokens(&token_ids, text).await?;
-            
+            let embedding = self
+                .generate_embedding_from_tokens(&token_ids, text)
+                .await?;
+
             results.push(
-                EmbeddingResponse::new(embedding, self.model_name.clone())
-                    .with_tokens(token_count)
+                EmbeddingResponse::new(embedding, self.model_name.clone()).with_tokens(token_count),
             );
         }
 
@@ -637,25 +685,31 @@ impl EmbeddingProvider for BurnProvider {
 
         // TODO: When Burn is integrated, discover actual models
         // For now, return a hardcoded model
-        Ok(vec![
-            ModelInfo::builder()
-                .name(&self.model_name)
-                .dimensions(self.dimensions)
-                .family(ModelFamily::Bert)
-                .recommended(true)
-                .build(),
-        ])
+        Ok(vec![ModelInfo::builder()
+            .name(&self.model_name)
+            .dimensions(self.dimensions)
+            .family(ModelFamily::Bert)
+            .recommended(true)
+            .build()])
     }
 }
 
 impl BurnProvider {
     /// Generate embedding from token IDs and text
     /// Uses actual model inference if model weights are loaded, otherwise falls back to deterministic embedding
-    async fn generate_embedding_from_tokens(&self, token_ids: &[u32], text: &str) -> EmbeddingResult<Vec<f32>> {
+    async fn generate_embedding_from_tokens(
+        &self,
+        token_ids: &[u32],
+        text: &str,
+    ) -> EmbeddingResult<Vec<f32>> {
         let state = self.state.read().await;
-        
+
         // Check for GGUF model first
-        if let BurnState::Initialized { gguf_model: Some(ref gguf_info), .. } = *state {
+        if let BurnState::Initialized {
+            gguf_model: Some(ref gguf_info),
+            ..
+        } = *state
+        {
             // TODO: Implement full GGUF inference
             // For now, use fallback but note that we found a GGUF model
             tracing::warn!(
@@ -665,11 +719,15 @@ impl BurnProvider {
             drop(state);
             return self.generate_fallback_embedding(token_ids, text).await;
         }
-        
+
         // Try to use actual model inference if available (SafeTensors)
         #[cfg(feature = "burn")]
         {
-            if let BurnState::Initialized { model_weights: Some(ref weights), .. } = *state {
+            if let BurnState::Initialized {
+                model_weights: Some(ref weights),
+                ..
+            } = *state
+            {
                 // Extract the embedding synchronously while we hold the lock
                 let embedding_result = self.generate_embedding_with_model_sync(weights, token_ids);
                 drop(state);
@@ -693,10 +751,11 @@ impl BurnProvider {
     ) -> EmbeddingResult<Vec<f32>> {
         // TODO: Implement full BERT forward pass using Burn tensors
         // For now, we'll extract embeddings from the embedding layer weights
-        
+
         // Get the embedding layer weights
         // BERT models typically have "embeddings.word_embeddings.weight" or similar
-        let embedding_weights = weights.get_tensor("embeddings.word_embeddings.weight")
+        let embedding_weights = weights
+            .get_tensor("embeddings.word_embeddings.weight")
             .or_else(|| weights.get_tensor("embeddings.token_embeddings.weight"))
             .or_else(|| weights.get_tensor("model.embed_tokens.weight"));
 
@@ -708,9 +767,10 @@ impl BurnProvider {
 
             // Sum embeddings for all tokens (mean pooling would be better, but this is simpler)
             for &token_id in token_ids {
-                let token_idx = (token_id as usize).min(weights.config.vocab_size.unwrap_or(30522) - 1);
+                let token_idx =
+                    (token_id as usize).min(weights.config.vocab_size.unwrap_or(30522) - 1);
                 let offset = token_idx * hidden_size * 4; // f32 is 4 bytes
-                
+
                 if offset + hidden_size * 4 <= emb_data.len() {
                     for i in 0..hidden_size {
                         let byte_offset = offset + i * 4;
@@ -787,11 +847,15 @@ impl BurnProvider {
     }
 
     /// Generate fallback embedding when model weights are not available
-    async fn generate_fallback_embedding(&self, token_ids: &[u32], text: &str) -> EmbeddingResult<Vec<f32>> {
+    async fn generate_fallback_embedding(
+        &self,
+        token_ids: &[u32],
+        text: &str,
+    ) -> EmbeddingResult<Vec<f32>> {
         // Create a hash from the text content to ensure different texts produce different embeddings
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         text.hash(&mut hasher);
         let text_hash = hasher.finish();
@@ -892,7 +956,7 @@ mod tests {
         assert_eq!(response.embedding.len(), 384);
         assert_eq!(response.model, "test-model");
         assert_eq!(response.dimensions, 384);
-        
+
         // Verify embedding values are finite (not NaN or Inf)
         for &value in &response.embedding {
             assert!(value.is_finite(), "Embedding values should be finite");
@@ -972,9 +1036,7 @@ mod tests {
         let provider = BurnProvider::new(&config).unwrap();
 
         // Test with a larger batch (simulating 300 files scenario)
-        let texts: Vec<String> = (0..50)
-            .map(|i| format!("Text number {}", i))
-            .collect();
+        let texts: Vec<String> = (0..50).map(|i| format!("Text number {}", i)).collect();
 
         let responses = provider.embed_batch(texts).await.unwrap();
         assert_eq!(responses.len(), 50);
@@ -1064,7 +1126,7 @@ mod tests {
 
         let provider = BurnProvider::new(&config).unwrap();
         let response = provider.embed("Hello world, this is a test").await.unwrap();
-        
+
         // Should have token count
         assert!(response.tokens.is_some());
         assert!(response.tokens.unwrap() > 0);

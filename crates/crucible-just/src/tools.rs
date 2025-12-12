@@ -3,7 +3,7 @@
 //! Provides a high-level interface for discovering and executing just recipes
 //! as MCP tools.
 
-use crate::{execute_recipe, load_justfile, ExecutionResult, Justfile, JustError, McpTool, Result};
+use crate::{execute_recipe, load_justfile, ExecutionResult, JustError, Justfile, McpTool, Result};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
@@ -47,9 +47,10 @@ impl JustTools {
     /// Call this when the justfile may have changed.
     pub async fn refresh(&self) -> Result<()> {
         let jf = load_justfile(&self.justfile_dir).await?;
-        let mut cache = self.justfile.write().map_err(|_| {
-            JustError::CommandError("Failed to acquire justfile lock".to_string())
-        })?;
+        let mut cache = self
+            .justfile
+            .write()
+            .map_err(|_| JustError::CommandError("Failed to acquire justfile lock".to_string()))?;
         *cache = Some(jf);
         Ok(())
     }
@@ -69,9 +70,10 @@ impl JustTools {
         // Load and cache
         self.refresh().await?;
 
-        let cache = self.justfile.read().map_err(|_| {
-            JustError::CommandError("Failed to acquire justfile lock".to_string())
-        })?;
+        let cache = self
+            .justfile
+            .read()
+            .map_err(|_| JustError::CommandError("Failed to acquire justfile lock".to_string()))?;
         cache
             .clone()
             .ok_or_else(|| JustError::CommandError("Justfile not loaded".to_string()))
@@ -112,10 +114,9 @@ impl JustTools {
         let jf = self.get_justfile().await?;
 
         // Find the recipe
-        let recipe = jf
-            .recipes
-            .get(recipe_name)
-            .ok_or_else(|| JustError::CommandError(format!("Recipe '{}' not found", recipe_name)))?;
+        let recipe = jf.recipes.get(recipe_name).ok_or_else(|| {
+            JustError::CommandError(format!("Recipe '{}' not found", recipe_name))
+        })?;
 
         // Build argument list from JSON object
         let mut arg_list = Vec::new();
@@ -154,10 +155,9 @@ impl JustTools {
         use crate::execute_recipe_with_timeout;
 
         let jf = self.get_justfile().await?;
-        let recipe = jf
-            .recipes
-            .get(recipe_name)
-            .ok_or_else(|| JustError::CommandError(format!("Recipe '{}' not found", recipe_name)))?;
+        let recipe = jf.recipes.get(recipe_name).ok_or_else(|| {
+            JustError::CommandError(format!("Recipe '{}' not found", recipe_name))
+        })?;
 
         let mut arg_list = Vec::new();
         if let Value::Object(obj) = args {
@@ -195,7 +195,14 @@ mod tests {
 
     fn repo_root() -> PathBuf {
         env::var("CARGO_MANIFEST_DIR")
-            .map(|p| PathBuf::from(p).parent().unwrap().parent().unwrap().to_path_buf())
+            .map(|p| {
+                PathBuf::from(p)
+                    .parent()
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .to_path_buf()
+            })
             .unwrap()
     }
 

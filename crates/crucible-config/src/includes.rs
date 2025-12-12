@@ -289,7 +289,11 @@ fn process_file_refs_recursive(
         toml::Value::String(s) => {
             if let Some(file_path) = extract_file_path(s) {
                 let resolved = resolve_include_path(file_path, base_dir);
-                debug!("Processing file reference: {} -> {}", file_path, resolved.display());
+                debug!(
+                    "Processing file reference: {} -> {}",
+                    file_path,
+                    resolved.display()
+                );
 
                 match read_file_as_value(&resolved) {
                     Ok(file_value) => {
@@ -351,7 +355,11 @@ pub fn merge_includes(
     // Process each include
     for (section, include_path) in includes.all_includes() {
         let resolved_path = resolve_include_path(include_path, base_dir);
-        debug!("Processing include: {} -> {}", section, resolved_path.display());
+        debug!(
+            "Processing include: {} -> {}",
+            section,
+            resolved_path.display()
+        );
 
         match read_include_file(&resolved_path) {
             Ok(included_value) => {
@@ -499,7 +507,10 @@ custom_section = "custom.toml"
     fn test_resolve_include_path_relative() {
         let base = PathBuf::from("/home/user/.config/crucible");
         let resolved = resolve_include_path("mcps.toml", &base);
-        assert_eq!(resolved, PathBuf::from("/home/user/.config/crucible/mcps.toml"));
+        assert_eq!(
+            resolved,
+            PathBuf::from("/home/user/.config/crucible/mcps.toml")
+        );
     }
 
     #[test]
@@ -554,7 +565,9 @@ verbose = true
         assert!(result.is_ok(), "Merge should succeed");
 
         // Verify the gateway section was added
-        let gateway = main_config.get("gateway").expect("gateway section should exist");
+        let gateway = main_config
+            .get("gateway")
+            .expect("gateway section should exist");
         let servers = gateway.get("servers").expect("servers array should exist");
         assert!(servers.is_array());
 
@@ -562,7 +575,10 @@ verbose = true
         assert_eq!(servers_array.len(), 1);
 
         let first_server = &servers_array[0];
-        assert_eq!(first_server.get("name").and_then(|v| v.as_str()), Some("github"));
+        assert_eq!(
+            first_server.get("name").and_then(|v| v.as_str()),
+            Some("github")
+        );
 
         // Verify include section was removed
         assert!(main_config.get("include").is_none());

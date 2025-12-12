@@ -238,7 +238,8 @@ mod tests {
         // Verify color is applied (mode name should have Cyan color)
         let mode_cell = buffer.get(1, 0); // Position of 'p' in '[plan]'
         assert_eq!(
-            mode_cell.fg, Color::Cyan,
+            mode_cell.fg,
+            Color::Cyan,
             "Plan mode should have Cyan foreground color"
         );
 
@@ -269,7 +270,8 @@ mod tests {
         // Verify color is applied
         let mode_cell = buffer.get(1, 0); // Position of 'a' in '[act]'
         assert_eq!(
-            mode_cell.fg, Color::Green,
+            mode_cell.fg,
+            Color::Green,
             "Act mode should have Green foreground color"
         );
 
@@ -300,7 +302,8 @@ mod tests {
         // Verify color is applied
         let mode_cell = buffer.get(1, 0); // Position of 'a' in '[auto]'
         assert_eq!(
-            mode_cell.fg, Color::Yellow,
+            mode_cell.fg,
+            Color::Yellow,
             "Auto mode should have Yellow foreground color"
         );
     }

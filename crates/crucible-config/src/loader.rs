@@ -230,9 +230,9 @@ impl ConfigLoader {
                 }
 
                 // Now parse the merged config
-                let config: Config = toml_value.try_into().map_err(|e: toml::de::Error| {
-                    ConfigError::Toml(e)
-                })?;
+                let config: Config = toml_value
+                    .try_into()
+                    .map_err(|e: toml::de::Error| ConfigError::Toml(e))?;
 
                 return Ok(config);
             }
