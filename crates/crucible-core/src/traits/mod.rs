@@ -29,6 +29,7 @@
 pub mod acp;
 pub mod change_detection;
 pub mod chat;
+pub mod input;
 pub mod knowledge;
 pub mod llm;
 pub mod parser;
@@ -52,3 +53,5 @@ pub use parser::MarkdownParser;
 pub use registry::{Registry, RegistryBuilder};
 pub use storage::Storage;
 pub use tools::{ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult};
+// Input abstractions for cross-platform UI
+pub use input::{ChatEvent, InputMode, KeyAction, KeyCode, KeyPattern, Modifiers, SessionAction};
