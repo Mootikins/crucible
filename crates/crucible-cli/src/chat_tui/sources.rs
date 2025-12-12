@@ -12,8 +12,8 @@
 
 use std::path::PathBuf;
 
-use crate::chat::slash_registry::SlashCommandRegistry;
 use super::completion::{CompletionItem, CompletionType};
+use crate::chat::slash_registry::SlashCommandRegistry;
 
 /// Trait for completion data sources
 ///
@@ -245,10 +245,8 @@ mod tests {
         assert_eq!(items[1].text, "note2.md");
 
         // Filter .rs and .txt files
-        let source = FileSource::with_extensions(
-            dir_path,
-            vec!["rs".to_string(), "txt".to_string()],
-        );
+        let source =
+            FileSource::with_extensions(dir_path, vec!["rs".to_string(), "txt".to_string()]);
         let items = source.get_items();
 
         assert_eq!(items.len(), 2, "Should find .rs and .txt files");
@@ -269,7 +267,10 @@ mod tests {
         let items = source.get_items();
 
         assert_eq!(items.len(), 1);
-        assert_eq!(items[0].text, "test.md", "Should return just the filename, not full path");
+        assert_eq!(
+            items[0].text, "test.md",
+            "Should return just the filename, not full path"
+        );
 
         // Verify it's not an absolute path
         assert!(!items[0].text.starts_with('/'));
@@ -301,7 +302,10 @@ mod tests {
         let source = FileSource::new("/this/path/does/not/exist");
         let items = source.get_items();
 
-        assert!(items.is_empty(), "Nonexistent directory should return empty vec");
+        assert!(
+            items.is_empty(),
+            "Nonexistent directory should return empty vec"
+        );
     }
 
     #[test]

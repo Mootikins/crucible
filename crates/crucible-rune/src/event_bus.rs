@@ -616,8 +616,7 @@ mod tests {
 
     #[test]
     fn test_event_with_source() {
-        let event = Event::tool_after("gh_search", json!({}))
-            .with_source("upstream:github");
+        let event = Event::tool_after("gh_search", json!({})).with_source("upstream:github");
         assert_eq!(event.source, Some("upstream:github".to_string()));
     }
 
@@ -684,12 +683,9 @@ mod tests {
 
     #[test]
     fn test_handler_disabled() {
-        let handler = Handler::new(
-            "test_handler",
-            EventType::ToolAfter,
-            "*",
-            |_ctx, event| Ok(event),
-        )
+        let handler = Handler::new("test_handler", EventType::ToolAfter, "*", |_ctx, event| {
+            Ok(event)
+        })
         .with_enabled(false);
 
         let event = Event::tool_after("anything", json!({}));
@@ -698,13 +694,8 @@ mod tests {
 
     #[test]
     fn test_handler_priority() {
-        let handler = Handler::new(
-            "test",
-            EventType::ToolAfter,
-            "*",
-            |_ctx, event| Ok(event),
-        )
-        .with_priority(50);
+        let handler = Handler::new("test", EventType::ToolAfter, "*", |_ctx, event| Ok(event))
+            .with_priority(50);
 
         assert_eq!(handler.priority, 50);
     }
@@ -787,10 +778,15 @@ mod tests {
 
         // Second handler should still run
         bus.register(
-            Handler::new("succeeding", EventType::ToolAfter, "*", |_ctx, mut event| {
-                event.payload = json!("success");
-                Ok(event)
-            })
+            Handler::new(
+                "succeeding",
+                EventType::ToolAfter,
+                "*",
+                |_ctx, mut event| {
+                    event.payload = json!("success");
+                    Ok(event)
+                },
+            )
             .with_priority(200),
         );
 
@@ -816,10 +812,15 @@ mod tests {
         );
 
         bus.register(
-            Handler::new("never_runs", EventType::ToolAfter, "*", |_ctx, mut event| {
-                event.payload = json!("should not see this");
-                Ok(event)
-            })
+            Handler::new(
+                "never_runs",
+                EventType::ToolAfter,
+                "*",
+                |_ctx, mut event| {
+                    event.payload = json!("should not see this");
+                    Ok(event)
+                },
+            )
             .with_priority(200),
         );
 
@@ -837,18 +838,28 @@ mod tests {
         let mut bus = EventBus::new();
 
         bus.register(
-            Handler::new("canceller", EventType::ToolBefore, "*", |_ctx, mut event| {
-                event.cancel();
-                Ok(event)
-            })
+            Handler::new(
+                "canceller",
+                EventType::ToolBefore,
+                "*",
+                |_ctx, mut event| {
+                    event.cancel();
+                    Ok(event)
+                },
+            )
             .with_priority(100),
         );
 
         bus.register(
-            Handler::new("never_runs", EventType::ToolBefore, "*", |_ctx, mut event| {
-                event.payload = json!("should not see this");
-                Ok(event)
-            })
+            Handler::new(
+                "never_runs",
+                EventType::ToolBefore,
+                "*",
+                |_ctx, mut event| {
+                    event.payload = json!("should not see this");
+                    Ok(event)
+                },
+            )
             .with_priority(200),
         );
 
@@ -863,7 +874,12 @@ mod tests {
     fn test_event_bus_unregister() {
         let mut bus = EventBus::new();
 
-        bus.register(Handler::new("test", EventType::ToolAfter, "*", |_ctx, e| Ok(e)));
+        bus.register(Handler::new(
+            "test",
+            EventType::ToolAfter,
+            "*",
+            |_ctx, e| Ok(e),
+        ));
 
         assert_eq!(bus.count_handlers(EventType::ToolAfter), 1);
 
@@ -964,8 +980,7 @@ mod tests {
 
     #[test]
     fn test_event_serialization() {
-        let event = Event::tool_after("test", json!({"key": "value"}))
-            .with_source("kiln");
+        let event = Event::tool_after("test", json!({"key": "value"})).with_source("kiln");
 
         let json = serde_json::to_string(&event).unwrap();
         let parsed: Event = serde_json::from_str(&json).unwrap();

@@ -42,7 +42,6 @@
 //! }
 //! ```
 
-
 // ============================================================================
 // SOLID ARCHITECTURE: Phase 5 - Private Infrastructure Types
 // ============================================================================
@@ -124,14 +123,12 @@ pub mod kiln;
 // Public clustering module for MoC detection and document clustering
 pub mod clustering;
 pub use clustering::{
-    detect_mocs, cluster_documents, DocumentCluster, DocumentInfo, MocCandidate,
-    ClusteringConfig, ClusteringAlgorithm, ClusteringError, AlgorithmType, AlgorithmMetadata,
-    ClusteringResult, ClusteringMetrics, AlgorithmParameters, MocDetectionConfig,
-    EmbeddingConfig, PerformanceConfig, SimpleClusteringService,
-    ClusteringRegistry, AlgorithmFactory,
-    ClusteringRequirements, QualityPreference,
-    HeuristicClusteringAlgorithm, HeuristicAlgorithmFactory,
-    KMeansClusteringAlgorithm, KMeansAlgorithmFactory,
+    cluster_documents, detect_mocs, AlgorithmFactory, AlgorithmMetadata, AlgorithmParameters,
+    AlgorithmType, ClusteringAlgorithm, ClusteringConfig, ClusteringError, ClusteringMetrics,
+    ClusteringRegistry, ClusteringRequirements, ClusteringResult, DocumentCluster, DocumentInfo,
+    EmbeddingConfig, HeuristicAlgorithmFactory, HeuristicClusteringAlgorithm,
+    KMeansAlgorithmFactory, KMeansClusteringAlgorithm, MocCandidate, MocDetectionConfig,
+    PerformanceConfig, QualityPreference, SimpleClusteringService,
 };
 
 // ============================================================================

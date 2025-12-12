@@ -48,38 +48,37 @@ pub fn filter_test_output(output: &str) -> Option<String> {
 
 /// Check if output looks like cargo test
 fn is_cargo_test(output: &str) -> bool {
-    output.contains("test result:") ||
-    (output.contains("running ") && output.contains(" test"))
+    output.contains("test result:") || (output.contains("running ") && output.contains(" test"))
 }
 
 /// Check if output looks like pytest
 fn is_pytest(output: &str) -> bool {
-    output.contains("passed in ") ||
-    output.contains("failed in ") ||
-    (output.contains("=====") && (output.contains("passed") || output.contains("failed")))
+    output.contains("passed in ")
+        || output.contains("failed in ")
+        || (output.contains("=====") && (output.contains("passed") || output.contains("failed")))
 }
 
 /// Check if output looks like Jest
 fn is_jest(output: &str) -> bool {
-    output.contains("Test Suites:") ||
-    (output.contains("Tests:") && (output.contains("passed") || output.contains("failed")))
+    output.contains("Test Suites:")
+        || (output.contains("Tests:") && (output.contains("passed") || output.contains("failed")))
 }
 
 /// Check if output looks like go test
 fn is_go_test(output: &str) -> bool {
-    output.starts_with("PASS") ||
-    output.starts_with("FAIL") ||
-    output.contains("\nPASS\n") ||
-    output.contains("\nFAIL\n") ||
-    output.contains("\nok \t") ||
-    output.contains("\nFAIL\t")
+    output.starts_with("PASS")
+        || output.starts_with("FAIL")
+        || output.contains("\nPASS\n")
+        || output.contains("\nFAIL\n")
+        || output.contains("\nok \t")
+        || output.contains("\nFAIL\t")
 }
 
 /// Check if output looks like RSpec or Mix test
 fn is_rspec_or_mix(output: &str) -> bool {
-    (output.contains(" examples,") && output.contains(" failure")) ||
-    (output.contains(" tests,") && output.contains(" failure")) ||
-    output.contains("Finished in ")
+    (output.contains(" examples,") && output.contains(" failure"))
+        || (output.contains(" tests,") && output.contains(" failure"))
+        || output.contains("Finished in ")
 }
 
 /// Filter cargo test output
@@ -127,7 +126,8 @@ fn filter_cargo_test(output: &str) -> String {
     // Add failures section if any
     if !failure_lines.is_empty() {
         summary_lines.push("\nFailures:".to_string());
-        for line in failure_lines.iter().take(20) { // Limit failure output
+        for line in failure_lines.iter().take(20) {
+            // Limit failure output
             summary_lines.push(format!("  {}", line));
         }
         if failure_lines.len() > 20 {
@@ -135,8 +135,11 @@ fn filter_cargo_test(output: &str) -> String {
         }
     }
 
-    debug!("Filtered cargo test output: {} lines -> {} lines",
-           output.lines().count(), summary_lines.len());
+    debug!(
+        "Filtered cargo test output: {} lines -> {} lines",
+        output.lines().count(),
+        summary_lines.len()
+    );
 
     summary_lines.join("\n")
 }
@@ -156,7 +159,11 @@ fn filter_pytest(output: &str) -> String {
         }
 
         // End of failures section (next === line that's not FAILURES)
-        if in_failures && line.starts_with("=") && !line.contains("FAILURES") && !line.contains("ERRORS") {
+        if in_failures
+            && line.starts_with("=")
+            && !line.contains("FAILURES")
+            && !line.contains("ERRORS")
+        {
             in_failures = false;
         }
 
@@ -169,7 +176,9 @@ fn filter_pytest(output: &str) -> String {
         }
 
         // Summary line with pass/fail counts
-        if line.starts_with("=") && (line.contains("passed") || line.contains("failed") || line.contains("error")) {
+        if line.starts_with("=")
+            && (line.contains("passed") || line.contains("failed") || line.contains("error"))
+        {
             summary_lines.push(line.to_string());
         }
 
@@ -184,8 +193,11 @@ fn filter_pytest(output: &str) -> String {
         summary_lines.extend(failure_lines.into_iter().take(30));
     }
 
-    debug!("Filtered pytest output: {} lines -> {} lines",
-           output.lines().count(), summary_lines.len());
+    debug!(
+        "Filtered pytest output: {} lines -> {} lines",
+        output.lines().count(),
+        summary_lines.len()
+    );
 
     summary_lines.join("\n")
 }
@@ -228,8 +240,11 @@ fn filter_jest(output: &str) -> String {
         }
     }
 
-    debug!("Filtered Jest output: {} lines -> {} lines",
-           output.lines().count(), summary_lines.len());
+    debug!(
+        "Filtered Jest output: {} lines -> {} lines",
+        output.lines().count(),
+        summary_lines.len()
+    );
 
     summary_lines.join("\n")
 }
@@ -266,8 +281,11 @@ fn filter_go_test(output: &str) -> String {
         }
     }
 
-    debug!("Filtered go test output: {} lines -> {} lines",
-           output.lines().count(), summary_lines.len());
+    debug!(
+        "Filtered go test output: {} lines -> {} lines",
+        output.lines().count(),
+        summary_lines.len()
+    );
 
     summary_lines.join("\n")
 }
@@ -320,8 +338,11 @@ fn filter_rspec_mix(output: &str) -> String {
         summary_lines.extend(failure_lines.into_iter().take(30));
     }
 
-    debug!("Filtered RSpec/Mix output: {} lines -> {} lines",
-           output.lines().count(), summary_lines.len());
+    debug!(
+        "Filtered RSpec/Mix output: {} lines -> {} lines",
+        output.lines().count(),
+        summary_lines.len()
+    );
 
     summary_lines.join("\n")
 }
@@ -451,8 +472,10 @@ Time:        2.34 s
         assert!(filtered.contains("Test Suites: 1 failed, 2 passed"));
         assert!(filtered.contains("Tests:       1 failed, 15 passed"));
         // Note: Jest output has leading space, our filter trims it
-        assert!(filtered.contains("FAIL  src/components/Form.test.js") ||
-                filtered.contains("FAIL src/components/Form.test.js"));
+        assert!(
+            filtered.contains("FAIL  src/components/Form.test.js")
+                || filtered.contains("FAIL src/components/Form.test.js")
+        );
         assert!(filtered.contains("● Form › should submit data"));
     }
 
@@ -475,8 +498,11 @@ FAIL    github.com/user/project    0.123s
 
         assert!(filtered.contains("--- FAIL: TestBaz"));
         // Go output can have tabs or spaces between FAIL and package name
-        assert!(filtered.contains("FAIL") && filtered.contains("github.com/user/project"),
-                "Should contain FAIL and package name. Got: {}", filtered);
+        assert!(
+            filtered.contains("FAIL") && filtered.contains("github.com/user/project"),
+            "Should contain FAIL and package name. Got: {}",
+            filtered
+        );
         assert!(!filtered.contains("=== RUN   TestFoo"));
     }
 

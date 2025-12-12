@@ -10,7 +10,7 @@
 //! 3. **No Nesting**: Complex objects serialized to JSON (following Obsidian conventions)
 //! 4. **Timestamps**: All properties get created_at/updated_at metadata
 
-use crate::storage::{Property, PropertyNamespace, AttributeValue};
+use crate::storage::{AttributeValue, Property, PropertyNamespace};
 use chrono::{NaiveDate, Utc};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -138,7 +138,10 @@ mod tests {
         let title_prop = properties.iter().find(|p| p.key == "title").unwrap();
         assert_eq!(title_prop.entity_id, "note:test");
         assert_eq!(title_prop.namespace, PropertyNamespace::frontmatter());
-        assert_eq!(title_prop.value, AttributeValue::Text("My Note".to_string()));
+        assert_eq!(
+            title_prop.value,
+            AttributeValue::Text("My Note".to_string())
+        );
 
         let author_prop = properties.iter().find(|p| p.key == "author").unwrap();
         assert_eq!(

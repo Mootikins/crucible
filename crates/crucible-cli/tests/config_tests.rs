@@ -304,10 +304,7 @@ fn test_default_config_values() {
     assert!(config.streaming());
     assert_eq!(config.system_prompt(), "You are a helpful assistant.");
     // Default endpoint should be standard localhost for Ollama
-    assert_eq!(
-        config.ollama_endpoint(),
-        "http://localhost:11434"
-    );
+    assert_eq!(config.ollama_endpoint(), "http://localhost:11434");
     assert_eq!(config.timeout(), 30);
 
     // New embedding defaults

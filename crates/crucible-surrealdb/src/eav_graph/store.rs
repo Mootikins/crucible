@@ -3,12 +3,12 @@ use serde_json::{json, Value};
 
 use crate::{QueryResult, SurrealClient};
 
+#[cfg(test)]
+use super::types::EmbeddingVector;
 use super::types::{
     BlockNode, Entity, EntityRecord, EntityTag as SurrealEntityTag, Property, PropertyRecord,
     RecordId, Relation as SurrealRelation, RelationRecord, Tag as SurrealTag, TagRecord,
 };
-#[cfg(test)]
-use super::types::EmbeddingVector;
 use surrealdb::sql::Thing;
 
 /// High-level helper for writing entities, properties, and blocks into the EAV+Graph schema.
@@ -1793,7 +1793,7 @@ impl CoreTagStorage for EAVGraphStore {
 mod tests {
     use super::*;
     use crate::eav_graph::apply_eav_graph_schema;
-    use crate::eav_graph::types::{EntityType, AttributeValue};
+    use crate::eav_graph::types::{AttributeValue, EntityType};
     use crate::SurrealClient;
 
     fn entity_id() -> RecordId<EntityRecord> {

@@ -463,17 +463,18 @@ impl Config {
             }
 
             // Validate flat format configs
-            let mut check_type_config = |type_name: &str, config: &crate::components::TypeDiscoveryConfig| {
-                for (idx, path) in config.additional_paths.iter().enumerate() {
-                    let path_str = path.to_string_lossy();
-                    if path_str.trim().is_empty() {
-                        errors.push(format!(
-                            "Discovery '{}': additional_paths[{}] cannot be empty",
-                            type_name, idx
-                        ));
+            let mut check_type_config =
+                |type_name: &str, config: &crate::components::TypeDiscoveryConfig| {
+                    for (idx, path) in config.additional_paths.iter().enumerate() {
+                        let path_str = path.to_string_lossy();
+                        if path_str.trim().is_empty() {
+                            errors.push(format!(
+                                "Discovery '{}': additional_paths[{}] cannot be empty",
+                                type_name, idx
+                            ));
+                        }
                     }
-                }
-            };
+                };
 
             if let Some(hooks) = &discovery.hooks {
                 check_type_config("hooks", hooks);

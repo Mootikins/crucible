@@ -155,7 +155,11 @@ pub trait InferenceBackend: Send + Sync {
     ///
     /// # Returns
     /// Information about the loaded model
-    fn load_model(&mut self, model_path: &Path, config: &BackendConfig) -> EmbeddingResult<LoadedModelInfo>;
+    fn load_model(
+        &mut self,
+        model_path: &Path,
+        config: &BackendConfig,
+    ) -> EmbeddingResult<LoadedModelInfo>;
 
     /// Generate embeddings for a batch of token sequences
     ///
@@ -199,14 +203,19 @@ pub struct BackendFactory;
 
 impl BackendFactory {
     /// Detect the best backend for a given model file
-    pub fn detect_backend(model_path: &Path, preferred_device: DeviceType) -> EmbeddingResult<Box<dyn InferenceBackend>> {
+    pub fn detect_backend(
+        model_path: &Path,
+        preferred_device: DeviceType,
+    ) -> EmbeddingResult<Box<dyn InferenceBackend>> {
         let format = ModelFormat::from_path(model_path);
 
         match format {
             ModelFormat::Gguf => {
                 #[cfg(feature = "llama-cpp")]
                 {
-                    return Ok(Box::new(super::llama_cpp_backend::LlamaCppBackend::new(preferred_device)?));
+                    return Ok(Box::new(super::llama_cpp_backend::LlamaCppBackend::new(
+                        preferred_device,
+                    )?));
                 }
 
                 #[cfg(not(feature = "llama-cpp"))]
@@ -219,7 +228,9 @@ impl BackendFactory {
             ModelFormat::SafeTensors => {
                 #[cfg(feature = "burn")]
                 {
-                    return Ok(Box::new(super::burn_backend::BurnBackend::new(preferred_device)?));
+                    return Ok(Box::new(super::burn_backend::BurnBackend::new(
+                        preferred_device,
+                    )?));
                 }
 
                 #[cfg(not(feature = "burn"))]
@@ -262,7 +273,11 @@ impl MockBackend {
 
 #[cfg(any(test, feature = "test-utils"))]
 impl InferenceBackend for MockBackend {
-    fn load_model(&mut self, _model_path: &Path, _config: &BackendConfig) -> EmbeddingResult<LoadedModelInfo> {
+    fn load_model(
+        &mut self,
+        _model_path: &Path,
+        _config: &BackendConfig,
+    ) -> EmbeddingResult<LoadedModelInfo> {
         self.loaded = true;
         Ok(LoadedModelInfo {
             path: std::path::PathBuf::from("mock_model.gguf"),

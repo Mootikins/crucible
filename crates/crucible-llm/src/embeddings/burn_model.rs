@@ -5,8 +5,8 @@
 
 use super::error::EmbeddingResult;
 use safetensors::SafeTensors;
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 /// Model configuration loaded from config.json
@@ -31,15 +31,19 @@ pub struct ModelConfig {
 impl ModelConfig {
     /// Load model config from a JSON file
     pub fn from_file(path: &Path) -> EmbeddingResult<Self> {
-        let content = fs::read_to_string(path)
-            .map_err(|e| super::error::EmbeddingError::InferenceFailed(
-                format!("Failed to read config.json: {}", e)
-            ))?;
-
-        serde_json::from_str(&content)
-            .map_err(|e| super::error::EmbeddingError::InferenceFailed(
-                format!("Failed to parse config.json: {}", e)
+        let content = fs::read_to_string(path).map_err(|e| {
+            super::error::EmbeddingError::InferenceFailed(format!(
+                "Failed to read config.json: {}",
+                e
             ))
+        })?;
+
+        serde_json::from_str(&content).map_err(|e| {
+            super::error::EmbeddingError::InferenceFailed(format!(
+                "Failed to parse config.json: {}",
+                e
+            ))
+        })
     }
 
     /// Get the embedding dimension (hidden_size)
@@ -66,15 +70,14 @@ impl ModelWeights {
             ModelConfig::from_file(config_path)?
         } else {
             // Try to find config.json in the same directory
-            let default_config = model_path.parent()
-                .and_then(|p| {
-                    let config_path = p.join("config.json");
-                    if config_path.exists() {
-                        Some(config_path)
-                    } else {
-                        None
-                    }
-                });
+            let default_config = model_path.parent().and_then(|p| {
+                let config_path = p.join("config.json");
+                if config_path.exists() {
+                    Some(config_path)
+                } else {
+                    None
+                }
+            });
 
             if let Some(config_path) = default_config {
                 ModelConfig::from_file(&config_path)?
@@ -93,21 +96,23 @@ impl ModelWeights {
         };
 
         // Load SafeTensors file data
-        let data = fs::read(model_path)
-            .map_err(|e| super::error::EmbeddingError::InferenceFailed(
-                format!("Failed to read model file {}: {}", model_path.display(), e)
-            ))?;
+        let data = fs::read(model_path).map_err(|e| {
+            super::error::EmbeddingError::InferenceFailed(format!(
+                "Failed to read model file {}: {}",
+                model_path.display(),
+                e
+            ))
+        })?;
 
         // Validate that it's a valid SafeTensors file
-        SafeTensors::deserialize(&data)
-            .map_err(|e| super::error::EmbeddingError::InferenceFailed(
-                format!("Failed to parse SafeTensors file: {}", e)
-            ))?;
+        SafeTensors::deserialize(&data).map_err(|e| {
+            super::error::EmbeddingError::InferenceFailed(format!(
+                "Failed to parse SafeTensors file: {}",
+                e
+            ))
+        })?;
 
-        Ok(Self {
-            data,
-            config,
-        })
+        Ok(Self { data, config })
     }
 
     /// Get a tensor by name (returns raw bytes)
@@ -127,7 +132,10 @@ impl ModelWeights {
 }
 
 /// Find model files (config.json and model.safetensors) in a directory
-pub fn find_model_files(base_path: &Path, model_name: &str) -> EmbeddingResult<Option<(PathBuf, Option<PathBuf>)>> {
+pub fn find_model_files(
+    base_path: &Path,
+    model_name: &str,
+) -> EmbeddingResult<Option<(PathBuf, Option<PathBuf>)>> {
     // Normalize model name for matching (handle variations)
     let normalized_model = model_name
         .to_lowercase()
@@ -137,12 +145,17 @@ pub fn find_model_files(base_path: &Path, model_name: &str) -> EmbeddingResult<O
 
     let mut candidates: Vec<(PathBuf, Option<PathBuf>)> = Vec::new();
 
-    for entry in WalkDir::new(base_path).max_depth(4).into_iter().filter_map(|e| e.ok()) {
+    for entry in WalkDir::new(base_path)
+        .max_depth(4)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
         let file_name = entry.file_name().to_string_lossy().to_lowercase();
 
         if file_name.ends_with(".safetensors") {
             let parent = entry.path().parent().unwrap();
-            let parent_name = parent.file_name()
+            let parent_name = parent
+                .file_name()
                 .and_then(|n| n.to_str())
                 .map(|n| n.to_lowercase().replace('-', "_"))
                 .unwrap_or_default();
@@ -151,7 +164,11 @@ pub fn find_model_files(base_path: &Path, model_name: &str) -> EmbeddingResult<O
             let matches = parent_name.contains(&normalized_model)
                 || normalized_model.contains(&parent_name)
                 || parent_name.contains("embed")
-                || entry.path().to_string_lossy().to_lowercase().contains(&normalized_model);
+                || entry
+                    .path()
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .contains(&normalized_model);
 
             if matches {
                 // Look for config.json in the same directory
@@ -168,9 +185,10 @@ pub fn find_model_files(base_path: &Path, model_name: &str) -> EmbeddingResult<O
     }
 
     // Prefer model.safetensors over other .safetensors files
-    if let Some(candidate) = candidates.iter().find(|(p, _)| {
-        p.file_name().and_then(|n| n.to_str()) == Some("model.safetensors")
-    }) {
+    if let Some(candidate) = candidates
+        .iter()
+        .find(|(p, _)| p.file_name().and_then(|n| n.to_str()) == Some("model.safetensors"))
+    {
         return Ok(Some(candidate.clone()));
     }
 

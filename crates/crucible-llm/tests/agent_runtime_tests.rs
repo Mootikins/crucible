@@ -5,8 +5,8 @@
 
 use async_trait::async_trait;
 use crucible_core::traits::{
-    LlmMessage, LlmProvider, LlmRequest, LlmResponse, ExecutionContext, LlmError, LlmResult,
-    ToolCall, ToolDefinition, ToolError, ToolExecutor, ToolResult, TokenUsage,
+    ExecutionContext, LlmError, LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmResult,
+    TokenUsage, ToolCall, ToolDefinition, ToolError, ToolExecutor, ToolResult,
 };
 use serde_json::json;
 
@@ -54,22 +54,24 @@ impl MockToolExecutor {
     fn new() -> Self {
         Self {
             tools: vec![
-                ToolDefinition::new("search_notes", "Search through notes")
-                    .with_parameters(json!({
+                ToolDefinition::new("search_notes", "Search through notes").with_parameters(
+                    json!({
                         "type": "object",
                         "properties": {
                             "query": {"type": "string"}
                         },
                         "required": ["query"]
-                    })),
-                ToolDefinition::new("get_weather", "Get weather for a location")
-                    .with_parameters(json!({
+                    }),
+                ),
+                ToolDefinition::new("get_weather", "Get weather for a location").with_parameters(
+                    json!({
                         "type": "object",
                         "properties": {
                             "location": {"type": "string"}
                         },
                         "required": ["location"]
-                    })),
+                    }),
+                ),
             ],
         }
     }
@@ -121,7 +123,8 @@ impl LlmProvider for MockChatProviderWithTools {
         let last_message = request.messages.last().unwrap();
         if last_message.role == crucible_core::traits::MessageRole::Tool {
             let message = LlmMessage::assistant(
-                "Based on the search results, I found information about Rust programming.".to_string(),
+                "Based on the search results, I found information about Rust programming."
+                    .to_string(),
             );
 
             return Ok(LlmResponse {
@@ -268,11 +271,7 @@ async fn test_tool_executor_execute() {
 
     // When: We execute a tool
     let result = executor
-        .execute_tool(
-            "search_notes",
-            json!({"query": "rust"}),
-            &context,
-        )
+        .execute_tool("search_notes", json!({"query": "rust"}), &context)
         .await
         .unwrap();
 

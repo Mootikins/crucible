@@ -100,19 +100,19 @@ impl FromAttributes for RuneHook {
 
     fn from_attrs(attrs: &str, fn_name: &str, path: &Path, docs: &str) -> Result<Self, RuneError> {
         // Event type is required
-        let event_type = attr_parsers::extract_string(attrs, "event")
-            .ok_or_else(|| RuneError::Discovery(format!(
+        let event_type = attr_parsers::extract_string(attrs, "event").ok_or_else(|| {
+            RuneError::Discovery(format!(
                 "Hook '{}' missing required 'event' attribute",
                 fn_name
-            )))?;
+            ))
+        })?;
 
         // Pattern defaults to "*" (all)
-        let pattern = attr_parsers::extract_string(attrs, "pattern")
-            .unwrap_or_else(|| "*".to_string());
+        let pattern =
+            attr_parsers::extract_string(attrs, "pattern").unwrap_or_else(|| "*".to_string());
 
         // Priority defaults to 100
-        let priority = attr_parsers::extract_int(attrs, "priority")
-            .unwrap_or(100);
+        let priority = attr_parsers::extract_int(attrs, "priority").unwrap_or(100);
 
         // Description from attr or doc comment
         let description = attr_parsers::extract_string(attrs, "desc")
@@ -121,8 +121,7 @@ impl FromAttributes for RuneHook {
             .unwrap_or_else(|| format!("Rune hook: {}", fn_name));
 
         // Enabled defaults to true
-        let enabled = attr_parsers::extract_bool(attrs, "enabled")
-            .unwrap_or(true);
+        let enabled = attr_parsers::extract_bool(attrs, "enabled").unwrap_or(true);
 
         Ok(RuneHook {
             name: fn_name.to_string(),
@@ -290,7 +289,10 @@ pub fn log_tools(ctx, event) {
         assert_eq!(hooks[0].event_type, "tool:after");
         assert_eq!(hooks[0].pattern, "just_test*");
         assert_eq!(hooks[0].priority, 10);
-        assert_eq!(hooks[0].description, "Filter test output for LLM consumption");
+        assert_eq!(
+            hooks[0].description,
+            "Filter test output for LLM consumption"
+        );
 
         assert_eq!(hooks[1].name, "log_tools");
         assert_eq!(hooks[1].pattern, "*"); // default

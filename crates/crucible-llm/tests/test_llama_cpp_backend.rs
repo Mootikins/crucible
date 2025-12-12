@@ -39,7 +39,10 @@ mod tests {
         println!("Supported devices: {:?}", devices);
 
         #[cfg(feature = "llama-cpp-vulkan")]
-        assert!(devices.contains(&DeviceType::Vulkan), "Vulkan should be supported with llama-cpp-vulkan feature");
+        assert!(
+            devices.contains(&DeviceType::Vulkan),
+            "Vulkan should be supported with llama-cpp-vulkan feature"
+        );
     }
 
     #[test]
@@ -105,7 +108,10 @@ mod tests {
                 assert!(info.dimensions > 0);
             }
             Err(e) => {
-                eprintln!("v1.5 model failed to load (expected - needs RoPE config): {}", e);
+                eprintln!(
+                    "v1.5 model failed to load (expected - needs RoPE config): {}",
+                    e
+                );
                 // This is expected for v1.5 without proper RoPE settings
             }
         }
@@ -132,14 +138,21 @@ mod tests {
         assert_eq!(embeddings[0].len(), backend.dimensions());
 
         println!("Embedding dimensions: {}", embeddings[0].len());
-        println!("First 10 values: {:?}", &embeddings[0][..10.min(embeddings[0].len())]);
+        println!(
+            "First 10 values: {:?}",
+            &embeddings[0][..10.min(embeddings[0].len())]
+        );
 
         // Check that embeddings are normalized (L2 norm ≈ 1)
         let norm: f32 = embeddings[0].iter().map(|x| x * x).sum::<f32>().sqrt();
         println!("L2 norm: {}", norm);
 
         // nomic-embed-text should produce normalized embeddings
-        assert!(norm > 0.9 && norm < 1.1, "Expected normalized embeddings, got norm={}", norm);
+        assert!(
+            norm > 0.9 && norm < 1.1,
+            "Expected normalized embeddings, got norm={}",
+            norm
+        );
     }
 
     #[test]
@@ -176,14 +189,18 @@ mod tests {
         }
 
         // Check that different texts produce different embeddings
-        let dot_product: f32 = embeddings[0].iter()
+        let dot_product: f32 = embeddings[0]
+            .iter()
             .zip(embeddings[1].iter())
             .map(|(a, b)| a * b)
             .sum();
         println!("Dot product between texts 0 and 1: {:.4}", dot_product);
 
         // Similar texts should have positive dot product but not be identical
-        assert!(dot_product < 0.99, "Embeddings should be different for different texts");
+        assert!(
+            dot_product < 0.99,
+            "Embeddings should be different for different texts"
+        );
     }
 
     #[test]
@@ -210,17 +227,35 @@ mod tests {
         let embeddings = backend.embed_texts(texts).unwrap();
 
         // Calculate cosine similarities
-        let sim_01: f32 = embeddings[0].iter().zip(embeddings[1].iter()).map(|(a, b)| a * b).sum();
-        let sim_02: f32 = embeddings[0].iter().zip(embeddings[2].iter()).map(|(a, b)| a * b).sum();
-        let sim_12: f32 = embeddings[1].iter().zip(embeddings[2].iter()).map(|(a, b)| a * b).sum();
+        let sim_01: f32 = embeddings[0]
+            .iter()
+            .zip(embeddings[1].iter())
+            .map(|(a, b)| a * b)
+            .sum();
+        let sim_02: f32 = embeddings[0]
+            .iter()
+            .zip(embeddings[2].iter())
+            .map(|(a, b)| a * b)
+            .sum();
+        let sim_12: f32 = embeddings[1]
+            .iter()
+            .zip(embeddings[2].iter())
+            .map(|(a, b)| a * b)
+            .sum();
 
         println!("Similarity (cat/cat): {:.4}", sim_01);
         println!("Similarity (cat/stock): {:.4}", sim_02);
         println!("Similarity (cat2/stock): {:.4}", sim_12);
 
         // Similar sentences should have higher similarity than dissimilar ones
-        assert!(sim_01 > sim_02, "Similar texts should have higher similarity");
-        assert!(sim_01 > sim_12, "Similar texts should have higher similarity");
+        assert!(
+            sim_01 > sim_02,
+            "Similar texts should have higher similarity"
+        );
+        assert!(
+            sim_01 > sim_12,
+            "Similar texts should have higher similarity"
+        );
     }
 
     #[test]

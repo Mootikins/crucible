@@ -394,7 +394,11 @@ mod tests {
             .map(|x| buffer.cell((x, 0)).map(|c| c.symbol()).unwrap_or(" "))
             .collect();
 
-        assert!(first_line.starts_with("You: "), "Expected 'You: ' prefix, got: '{}'", first_line.trim());
+        assert!(
+            first_line.starts_with("You: "),
+            "Expected 'You: ' prefix, got: '{}'",
+            first_line.trim()
+        );
     }
 
     #[test]
@@ -430,13 +434,17 @@ mod tests {
             .map(|x| buffer.cell((x, 0)).map(|c| c.symbol()).unwrap_or(" "))
             .collect();
 
-        assert!(first_line.starts_with("Assistant: "), "Expected 'Assistant: ' prefix");
+        assert!(
+            first_line.starts_with("Assistant: "),
+            "Expected 'Assistant: ' prefix"
+        );
     }
 
     #[test]
     fn test_render_message_wrapping() {
         // Message that should wrap
-        let msg = ChatMessageDisplay::user("This is a long message that should wrap to multiple lines");
+        let msg =
+            ChatMessageDisplay::user("This is a long message that should wrap to multiple lines");
         let backend = TestBackend::new(20, 10); // Narrow width
         let mut terminal = Terminal::new(backend).unwrap();
 

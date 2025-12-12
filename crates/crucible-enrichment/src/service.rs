@@ -689,7 +689,7 @@ mod tests {
 
     /// Helper to create a ParsedNote with content for testing embeddings
     fn create_test_parsed_note_with_content() -> ParsedNote {
-        use crucible_core::parser::{ParsedNoteBuilder, Paragraph};
+        use crucible_core::parser::{Paragraph, ParsedNoteBuilder};
 
         let mut note = ParsedNoteBuilder::new(PathBuf::from("/test/note.md")).build();
 
@@ -717,13 +717,14 @@ mod tests {
         let parsed = create_test_parsed_note_with_content();
 
         // Empty changed_blocks should embed ALL blocks
-        let embeddings = service
-            .generate_embeddings(&parsed, &[])
-            .await
-            .unwrap();
+        let embeddings = service.generate_embeddings(&parsed, &[]).await.unwrap();
 
         // Should have embeddings for both paragraphs
-        assert_eq!(embeddings.len(), 2, "Expected 2 embeddings for 2 paragraphs");
+        assert_eq!(
+            embeddings.len(),
+            2,
+            "Expected 2 embeddings for 2 paragraphs"
+        );
         assert_eq!(embeddings[0].block_id, "paragraph_0");
         assert_eq!(embeddings[1].block_id, "paragraph_1");
     }

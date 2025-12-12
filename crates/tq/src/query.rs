@@ -36,8 +36,7 @@ pub fn run_filter(filter: &CompiledFilter, input: Value) -> Result<Vec<Value>, T
     let mut results = Vec::new();
 
     // Create context for filter execution
-    let ctx =
-        Ctx::<jaq_core::data::JustLut<jaq_json::Val>>::new(&filter.filter.lut, Vars::new([]));
+    let ctx = Ctx::<jaq_core::data::JustLut<jaq_json::Val>>::new(&filter.filter.lut, Vars::new([]));
 
     // Run the filter
     for output in filter.filter.id.run((ctx.clone(), input)) {

@@ -316,7 +316,11 @@ impl ChatApp {
         } else {
             // Fallback to hardcoded items if no source configured
             vec![
-                CompletionItem::new("clear", Some("Clear conversation".into()), CompletionType::Command),
+                CompletionItem::new(
+                    "clear",
+                    Some("Clear conversation".into()),
+                    CompletionType::Command,
+                ),
                 CompletionItem::new("help", Some("Show help".into()), CompletionType::Command),
                 CompletionItem::new("mode", Some("Change mode".into()), CompletionType::Command),
                 CompletionItem::new("exit", Some("Exit chat".into()), CompletionType::Command),
@@ -627,7 +631,10 @@ mod tests {
         app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
 
         let completion = app.completion.as_ref().unwrap();
-        assert_eq!(completion.selected_index, 0, "Down at last item should wrap to first");
+        assert_eq!(
+            completion.selected_index, 0,
+            "Down at last item should wrap to first"
+        );
     }
 
     #[test]
@@ -646,7 +653,11 @@ mod tests {
         app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
 
         let completion = app.completion.as_ref().unwrap();
-        assert_eq!(completion.selected_index, item_count - 1, "Up at first item should wrap to last");
+        assert_eq!(
+            completion.selected_index,
+            item_count - 1,
+            "Up at first item should wrap to last"
+        );
     }
 
     #[test]
@@ -666,7 +677,10 @@ mod tests {
         // Ctrl+J again
         app.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL));
         let completion = app.completion.as_ref().unwrap();
-        assert_eq!(completion.selected_index, 2, "Ctrl+J should move down again");
+        assert_eq!(
+            completion.selected_index, 2,
+            "Ctrl+J should move down again"
+        );
 
         // Ctrl+K moves up
         app.handle_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL));
@@ -694,11 +708,19 @@ mod tests {
         app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
         // Completion should be closed
-        assert!(app.completion.is_none(), "Completion should close after Enter");
+        assert!(
+            app.completion.is_none(),
+            "Completion should close after Enter"
+        );
 
         // Input should contain the selected item
         let input = app.input.content();
-        assert!(input.contains(&selected_text), "Input should contain selected item: '{}' in '{}'", selected_text, input);
+        assert!(
+            input.contains(&selected_text),
+            "Input should contain selected item: '{}' in '{}'",
+            selected_text,
+            input
+        );
     }
 
     #[test]
@@ -714,11 +736,19 @@ mod tests {
         app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
 
         // Completion should be closed
-        assert!(app.completion.is_none(), "Completion should close after Tab");
+        assert!(
+            app.completion.is_none(),
+            "Completion should close after Tab"
+        );
 
         // Input should contain the selected item
         let input = app.input.content();
-        assert!(input.contains(&selected_text), "Input should contain selected item: '{}' in '{}'", selected_text, input);
+        assert!(
+            input.contains(&selected_text),
+            "Input should contain selected item: '{}' in '{}'",
+            selected_text,
+            input
+        );
     }
 
     #[test]
@@ -731,14 +761,20 @@ mod tests {
         app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
 
         let completion = app.completion.as_ref().unwrap();
-        assert_eq!(completion.selected_index, 2, "Should be at index 2 before filtering");
+        assert_eq!(
+            completion.selected_index, 2,
+            "Should be at index 2 before filtering"
+        );
 
         // Type a filter character
         app.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE));
 
         // Selection should reset to 0 after filtering
         let completion = app.completion.as_ref().unwrap();
-        assert_eq!(completion.selected_index, 0, "Filtering should reset selection to 0");
+        assert_eq!(
+            completion.selected_index, 0,
+            "Filtering should reset selection to 0"
+        );
         assert_eq!(completion.query, "c", "Query should be updated");
     }
 
@@ -768,10 +804,17 @@ mod tests {
 
         // Check that input contains the completed command with trigger
         let input = app.input.content();
-        assert!(input.contains("/help"), "Input should contain '/help' after completion: '{}'", input);
+        assert!(
+            input.contains("/help"),
+            "Input should contain '/help' after completion: '{}'",
+            input
+        );
 
         // Check that completion is closed
-        assert!(app.completion.is_none(), "Completion should be closed after confirmation");
+        assert!(
+            app.completion.is_none(),
+            "Completion should be closed after confirmation"
+        );
     }
 
     #[test]
@@ -791,7 +834,10 @@ mod tests {
             app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
 
             // Should still have completion state
-            assert!(app.completion.is_some(), "Completion should remain active even with empty list");
+            assert!(
+                app.completion.is_some(),
+                "Completion should remain active even with empty list"
+            );
         }
     }
 
@@ -810,11 +856,17 @@ mod tests {
             // Navigation on single item should keep selection at 0
             app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
             let completion = app.completion.as_ref().unwrap();
-            assert_eq!(completion.selected_index, 0, "Single item: down should wrap to 0");
+            assert_eq!(
+                completion.selected_index, 0,
+                "Single item: down should wrap to 0"
+            );
 
             app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
             let completion = app.completion.as_ref().unwrap();
-            assert_eq!(completion.selected_index, 0, "Single item: up should wrap to 0");
+            assert_eq!(
+                completion.selected_index, 0,
+                "Single item: up should wrap to 0"
+            );
         }
     }
 
@@ -829,22 +881,34 @@ mod tests {
 
         assert!(app.completion.is_some());
         let completion = app.completion.as_ref().unwrap();
-        assert!(completion.multi_select, "File completion should be multi-select");
+        assert!(
+            completion.multi_select,
+            "File completion should be multi-select"
+        );
 
         // Initially nothing selected
-        assert!(!completion.is_selected(0), "First item should not be selected initially");
+        assert!(
+            !completion.is_selected(0),
+            "First item should not be selected initially"
+        );
 
         // Press Space to toggle selection
         app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
 
         let completion = app.completion.as_ref().unwrap();
-        assert!(completion.is_selected(0), "First item should be selected after Space");
+        assert!(
+            completion.is_selected(0),
+            "First item should be selected after Space"
+        );
 
         // Press Space again to toggle off
         app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
 
         let completion = app.completion.as_ref().unwrap();
-        assert!(!completion.is_selected(0), "First item should be deselected after second Space");
+        assert!(
+            !completion.is_selected(0),
+            "First item should be deselected after second Space"
+        );
     }
 
     #[test]
@@ -855,9 +919,15 @@ mod tests {
         app.handle_key(KeyEvent::new(KeyCode::Char('@'), KeyModifiers::NONE));
 
         let completion = app.completion.as_ref().unwrap();
-        assert!(completion.multi_select, "File completion should be multi-select");
+        assert!(
+            completion.multi_select,
+            "File completion should be multi-select"
+        );
         let item_count = completion.filtered_items.len();
-        assert!(item_count >= 2, "Need at least 2 items to test multi-select");
+        assert!(
+            item_count >= 2,
+            "Need at least 2 items to test multi-select"
+        );
 
         // Select first item
         app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
@@ -882,7 +952,10 @@ mod tests {
         app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
         // Completion should be closed
-        assert!(app.completion.is_none(), "Completion should close after Enter");
+        assert!(
+            app.completion.is_none(),
+            "Completion should close after Enter"
+        );
 
         // Input should contain both selected files
         let input = app.input.content();
@@ -905,7 +978,10 @@ mod tests {
 
         assert!(app.completion.is_some());
         let completion = app.completion.as_ref().unwrap();
-        assert!(!completion.multi_select, "Command completion should NOT be multi-select");
+        assert!(
+            !completion.multi_select,
+            "Command completion should NOT be multi-select"
+        );
         assert_eq!(completion.completion_type, CompletionType::Command);
 
         // Space should not toggle selection in single-select mode
@@ -935,7 +1011,10 @@ mod tests {
 
         assert!(app.completion.is_some());
         let completion = app.completion.as_ref().unwrap();
-        assert!(completion.multi_select, "File completion should have multi_select = true");
+        assert!(
+            completion.multi_select,
+            "File completion should have multi_select = true"
+        );
         assert_eq!(completion.completion_type, CompletionType::File);
     }
 
@@ -961,7 +1040,10 @@ mod tests {
 
         // Both should still be selected
         let completion = app.completion.as_ref().unwrap();
-        assert!(completion.is_selected(0), "First item should remain selected");
+        assert!(
+            completion.is_selected(0),
+            "First item should remain selected"
+        );
         assert!(completion.is_selected(1), "Second item should be selected");
 
         // Move back to first and deselect
@@ -969,8 +1051,14 @@ mod tests {
         app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
 
         let completion = app.completion.as_ref().unwrap();
-        assert!(!completion.is_selected(0), "First item should be deselected");
-        assert!(completion.is_selected(1), "Second item should still be selected");
+        assert!(
+            !completion.is_selected(0),
+            "First item should be deselected"
+        );
+        assert!(
+            completion.is_selected(1),
+            "Second item should still be selected"
+        );
     }
 
     #[test]
@@ -1095,7 +1183,10 @@ mod tests {
         assert!(app.completion.is_some());
         let completion = app.completion.as_ref().unwrap();
         assert_eq!(completion.filtered_items.len(), 2);
-        assert!(completion.multi_select, "File source should enable multi-select");
+        assert!(
+            completion.multi_select,
+            "File source should enable multi-select"
+        );
     }
 
     #[test]

@@ -104,8 +104,7 @@ impl ToolDiscovery {
 
     /// Parse tools from a Rune file (supports both single-tool and multi-tool formats)
     fn parse_tools_from_file(&self, path: &Path) -> Result<Vec<RuneTool>, RuneError> {
-        let content =
-            std::fs::read_to_string(path).map_err(|e| RuneError::Io(e.to_string()))?;
+        let content = std::fs::read_to_string(path).map_err(|e| RuneError::Io(e.to_string()))?;
 
         // Check if file uses multi-tool format (has #[tool(...)] attributes)
         if content.contains("#[tool(") {
@@ -118,7 +117,11 @@ impl ToolDiscovery {
     }
 
     /// Parse a file with multiple `#[tool(...)]` annotated functions
-    fn parse_multi_tool_file(&self, content: &str, path: &Path) -> Result<Vec<RuneTool>, RuneError> {
+    fn parse_multi_tool_file(
+        &self,
+        content: &str,
+        path: &Path,
+    ) -> Result<Vec<RuneTool>, RuneError> {
         let mut tools = Vec::new();
 
         // Regex to find #[tool(...)] blocks followed by function definitions
@@ -186,7 +189,8 @@ impl ToolDiscovery {
         let mut meta = ToolMetadata::default();
 
         // Parse desc/description
-        if let Some(desc) = self.extract_string_attr(attrs, "desc")
+        if let Some(desc) = self
+            .extract_string_attr(attrs, "desc")
             .or_else(|| self.extract_string_attr(attrs, "description"))
         {
             meta.description = Some(desc);
@@ -221,12 +225,18 @@ impl ToolDiscovery {
             if let Some(attrs) = cap.get(1) {
                 let attrs_str = attrs.as_str();
 
-                let name = self.extract_string_attr(attrs_str, "name").unwrap_or_default();
-                let type_hint = self.extract_string_attr(attrs_str, "type")
+                let name = self
+                    .extract_string_attr(attrs_str, "name")
+                    .unwrap_or_default();
+                let type_hint = self
+                    .extract_string_attr(attrs_str, "type")
                     .or_else(|| self.extract_string_attr(attrs_str, "ty"));
-                let description = self.extract_string_attr(attrs_str, "desc")
+                let description = self
+                    .extract_string_attr(attrs_str, "desc")
                     .or_else(|| self.extract_string_attr(attrs_str, "description"));
-                let required = self.extract_bool_attr(attrs_str, "required").unwrap_or(true);
+                let required = self
+                    .extract_bool_attr(attrs_str, "required")
+                    .unwrap_or(true);
 
                 if !name.is_empty() {
                     params.push(ParamInfo {
@@ -246,7 +256,9 @@ impl ToolDiscovery {
     fn extract_string_attr(&self, attrs: &str, key: &str) -> Option<String> {
         let pattern = format!(r#"{}[\s]*=[\s]*"([^"]*)""#, key);
         let re = Regex::new(&pattern).ok()?;
-        re.captures(attrs).and_then(|c| c.get(1)).map(|m| m.as_str().to_string())
+        re.captures(attrs)
+            .and_then(|c| c.get(1))
+            .map(|m| m.as_str().to_string())
     }
 
     /// Extract a boolean attribute like `key = true` or just `key`
@@ -315,7 +327,9 @@ impl ToolDiscovery {
             // Map type hint to JSON Schema type
             let json_type = match param.type_hint.as_deref() {
                 Some("string") | Some("str") | Some("String") => "string",
-                Some("number") | Some("int") | Some("integer") | Some("i32") | Some("i64") => "integer",
+                Some("number") | Some("int") | Some("integer") | Some("i32") | Some("i64") => {
+                    "integer"
+                }
                 Some("float") | Some("f32") | Some("f64") => "number",
                 Some("bool") | Some("boolean") => "boolean",
                 Some("array") | Some("list") | Some("Vec") => "array",
@@ -390,7 +404,9 @@ impl ToolDiscovery {
                 let comment = line.trim_start_matches("//!").trim();
 
                 // First non-directive doc comment is the description
-                if !comment.starts_with('@') && metadata.description.is_none() && !comment.is_empty()
+                if !comment.starts_with('@')
+                    && metadata.description.is_none()
+                    && !comment.is_empty()
                 {
                     metadata.description = Some(comment.to_string());
                 } else if let Some(rest) = comment.strip_prefix("@entry ") {
@@ -628,7 +644,10 @@ pub async fn async_tool() {}
         let discovery = ToolDiscovery::new(RuneDiscoveryConfig::default());
 
         let tags = discovery.extract_array_attr(r#"tags = ["a", "b", "c"]"#, "tags");
-        assert_eq!(tags, Some(vec!["a".to_string(), "b".to_string(), "c".to_string()]));
+        assert_eq!(
+            tags,
+            Some(vec!["a".to_string(), "b".to_string(), "c".to_string()])
+        );
 
         let empty = discovery.extract_array_attr(r#"tags = []"#, "tags");
         assert_eq!(empty, Some(vec![]));

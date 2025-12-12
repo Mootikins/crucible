@@ -90,9 +90,7 @@ impl DiscoveryPathsConfig {
 
     /// Get configuration for a specific type, with default if not found
     pub fn get_type_config_or_default(&self, type_name: &str) -> TypeDiscoveryConfig {
-        self.get_type_config(type_name)
-            .cloned()
-            .unwrap_or_default()
+        self.get_type_config(type_name).cloned().unwrap_or_default()
     }
 }
 
@@ -236,15 +234,24 @@ use_defaults = true
         assert!(config.hooks.is_some());
         let hooks = config.hooks.as_ref().unwrap();
         assert_eq!(hooks.additional_paths.len(), 2);
-        assert_eq!(hooks.additional_paths[0], PathBuf::from("~/.config/crucible/hooks"));
-        assert_eq!(hooks.additional_paths[1], PathBuf::from("/opt/crucible/hooks"));
+        assert_eq!(
+            hooks.additional_paths[0],
+            PathBuf::from("~/.config/crucible/hooks")
+        );
+        assert_eq!(
+            hooks.additional_paths[1],
+            PathBuf::from("/opt/crucible/hooks")
+        );
         assert!(hooks.use_defaults);
 
         // Check tools config
         assert!(config.tools.is_some());
         let tools = config.tools.as_ref().unwrap();
         assert_eq!(tools.additional_paths.len(), 1);
-        assert_eq!(tools.additional_paths[0], PathBuf::from("/opt/crucible/tools"));
+        assert_eq!(
+            tools.additional_paths[0],
+            PathBuf::from("/opt/crucible/tools")
+        );
         assert!(!tools.use_defaults);
 
         // Check events config

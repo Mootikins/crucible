@@ -4,6 +4,7 @@
 //! Uses the markdown-it crate for parsing and crossterm for styling.
 
 use crossterm::style::{Attribute, Color, Stylize};
+use markdown_it::parser::inline::Text;
 use markdown_it::plugins::cmark::block::blockquote::Blockquote;
 use markdown_it::plugins::cmark::block::code::CodeBlock as MdCodeBlock;
 use markdown_it::plugins::cmark::block::fence::CodeFence;
@@ -16,7 +17,6 @@ use markdown_it::plugins::cmark::inline::emphasis::{Em, Strong};
 use markdown_it::plugins::cmark::inline::link::Link;
 use markdown_it::plugins::cmark::inline::newline::{Hardbreak, Softbreak};
 use markdown_it::plugins::extra::tables::{Table, TableBody, TableCell, TableHead, TableRow};
-use markdown_it::parser::inline::Text;
 use markdown_it::{MarkdownIt, Node};
 
 /// Render markdown text to ANSI-styled terminal output
@@ -105,10 +105,7 @@ fn render_node(node: &Node, ctx: &RenderContext) -> String {
         let lang_display = if fence.info.is_empty() {
             String::new()
         } else {
-            format!(
-                " [{}]",
-                fence.info.split_whitespace().next().unwrap_or("")
-            )
+            format!(" [{}]", fence.info.split_whitespace().next().unwrap_or(""))
         };
         if !lang_display.is_empty() {
             output.push_str(&format!("\n{}\n", lang_display.with(Color::DarkGrey)));
@@ -169,10 +166,7 @@ fn render_node(node: &Node, ctx: &RenderContext) -> String {
         }
     } else if node.cast::<ThematicBreak>().is_some() {
         // Horizontal rule
-        output.push_str(&format!(
-            "\n{}\n",
-            "─".repeat(40).with(Color::DarkGrey)
-        ));
+        output.push_str(&format!("\n{}\n", "─".repeat(40).with(Color::DarkGrey)));
     } else if node.cast::<Table>().is_some() {
         // GFM Table - render as formatted table
         output.push_str(&render_table(node));
@@ -479,14 +473,23 @@ mod tests {
 | Bob | 25 |"#;
         let result = render_markdown(input);
         // Table should contain headers and data
-        assert!(result.contains("Name"), "Table should contain 'Name' header");
+        assert!(
+            result.contains("Name"),
+            "Table should contain 'Name' header"
+        );
         assert!(result.contains("Age"), "Table should contain 'Age' header");
-        assert!(result.contains("Alice"), "Table should contain 'Alice' data");
+        assert!(
+            result.contains("Alice"),
+            "Table should contain 'Alice' data"
+        );
         assert!(result.contains("Bob"), "Table should contain 'Bob' data");
         assert!(result.contains("30"), "Table should contain '30' data");
         assert!(result.contains("25"), "Table should contain '25' data");
         // Should have separator line with box-drawing chars
-        assert!(result.contains("─"), "Table should have horizontal separator");
+        assert!(
+            result.contains("─"),
+            "Table should have horizontal separator"
+        );
         assert!(result.contains("│"), "Table should have vertical separator");
     }
 

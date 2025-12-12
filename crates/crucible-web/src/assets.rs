@@ -39,8 +39,10 @@ pub fn static_routes(web_dir: Option<&str>) -> Router {
 
 fn serve_from_dir(dir: &str) -> Router {
     Router::new().fallback_service(
-        get_service(ServeDir::new(dir).fallback(ServeDir::new(dir).append_index_html_on_directories(true)))
-            .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
+        get_service(
+            ServeDir::new(dir).fallback(ServeDir::new(dir).append_index_html_on_directories(true)),
+        )
+        .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
     )
 }
 

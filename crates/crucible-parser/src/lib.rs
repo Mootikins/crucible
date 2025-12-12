@@ -24,7 +24,6 @@ pub mod block_hasher;
 pub mod blockquotes;
 
 // Test utilities - always available for use in other crates' tests
-pub mod test_utils;
 pub mod callouts;
 pub mod enhanced_tags;
 pub mod error;
@@ -34,6 +33,7 @@ pub mod frontmatter_extractor;
 pub mod implementation;
 pub mod inline_links;
 pub mod latex;
+pub mod test_utils;
 pub mod traits;
 pub mod types;
 pub mod wikilinks;

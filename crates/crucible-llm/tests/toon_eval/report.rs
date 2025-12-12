@@ -81,7 +81,10 @@ impl EvalReport {
                 entry.failed += 1;
                 for error in &result.validation.errors {
                     let error_type = error_type_name(error);
-                    *entry.errors_by_type.entry(error_type.to_string()).or_default() += 1;
+                    *entry
+                        .errors_by_type
+                        .entry(error_type.to_string())
+                        .or_default() += 1;
                 }
             }
         }
@@ -95,9 +98,15 @@ impl EvalReport {
 
         // Header
         md.push_str("# TOON LLM Evaluation Report\n\n");
-        md.push_str(&format!("**Generated:** {}\n\n", Utc::now().format("%Y-%m-%d %H:%M:%S UTC")));
+        md.push_str(&format!(
+            "**Generated:** {}\n\n",
+            Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+        ));
         md.push_str(&format!("**Model:** {}\n\n", self.model));
-        md.push_str(&format!("**Endpoint:** {}\n\n", sanitize_endpoint(&self.endpoint)));
+        md.push_str(&format!(
+            "**Endpoint:** {}\n\n",
+            sanitize_endpoint(&self.endpoint)
+        ));
 
         // Summary table
         md.push_str("## Summary\n\n");
@@ -106,11 +115,7 @@ impl EvalReport {
 
         let aggregated = self.aggregate();
         let mut keys: Vec<_> = aggregated.keys().collect();
-        keys.sort_by(|a, b| {
-            a.0.to_string()
-                .cmp(&b.0.to_string())
-                .then(a.1.cmp(&b.1))
-        });
+        keys.sort_by(|a, b| a.0.to_string().cmp(&b.0.to_string()).then(a.1.cmp(&b.1)));
 
         for key in keys {
             let stats = &aggregated[key];
@@ -152,7 +157,10 @@ impl EvalReport {
         }
 
         // Detailed results by direction
-        for direction in [ConversionDirection::JsonToToon, ConversionDirection::ToonToJson] {
+        for direction in [
+            ConversionDirection::JsonToToon,
+            ConversionDirection::ToonToJson,
+        ] {
             let dir_results: Vec<_> = self
                 .results
                 .iter()
@@ -201,7 +209,11 @@ impl EvalReport {
         }
 
         // Failure details
-        let failures: Vec<_> = self.results.iter().filter(|r| !r.validation.success).collect();
+        let failures: Vec<_> = self
+            .results
+            .iter()
+            .filter(|r| !r.validation.success)
+            .collect();
 
         if !failures.is_empty() {
             md.push_str("## Failure Details\n\n");
@@ -265,20 +277,14 @@ fn error_type_name(error: &ToonError) -> &'static str {
 /// Sanitize endpoint URL for display (hide credentials, internal hostnames)
 fn sanitize_endpoint(endpoint: &str) -> String {
     // Replace any credentials
-    let sanitized = endpoint
-        .replace(|c: char| c == '@', "[at]")
-        .to_string();
+    let sanitized = endpoint.replace(|c: char| c == '@', "[at]").to_string();
 
     // Just show the host pattern
     if let Some(host_start) = sanitized.find("://") {
         let after_scheme = &sanitized[host_start + 3..];
         if let Some(path_start) = after_scheme.find('/') {
             let host = &after_scheme[..path_start];
-            return format!(
-                "{}://{}/*",
-                &sanitized[..host_start],
-                host
-            );
+            return format!("{}://{}/*", &sanitized[..host_start], host);
         }
     }
 
@@ -301,7 +307,10 @@ mod tests {
 
     #[test]
     fn test_report_generation() {
-        let mut report = EvalReport::new("test-model".to_string(), "http://localhost:11434".to_string());
+        let mut report = EvalReport::new(
+            "test-model".to_string(),
+            "http://localhost:11434".to_string(),
+        );
 
         report.add_result(TestResult {
             fixture_id: "test1".to_string(),

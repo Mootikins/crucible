@@ -19,7 +19,6 @@ pub struct NoteInfo {
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-
 /// Abstract interface for accessing knowledge in the kiln
 ///
 /// This trait decouples the tool system from the specific storage backend (SurrealDB),

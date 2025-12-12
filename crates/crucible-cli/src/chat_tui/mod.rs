@@ -146,7 +146,10 @@ mod tests {
         };
 
         let terminal = Terminal::with_options(backend, options);
-        assert!(terminal.is_ok(), "Terminal creation with inline viewport should succeed");
+        assert!(
+            terminal.is_ok(),
+            "Terminal creation with inline viewport should succeed"
+        );
 
         // TestBackend returns full backend height, not viewport height
         // Real terminal with CrosstermBackend would respect Viewport::Inline
@@ -167,7 +170,11 @@ mod tests {
             };
 
             let terminal = Terminal::with_options(backend, options);
-            assert!(terminal.is_ok(), "Terminal creation should succeed for inline height {}", height);
+            assert!(
+                terminal.is_ok(),
+                "Terminal creation should succeed for inline height {}",
+                height
+            );
             // Real inline viewport behavior requires actual terminal, not TestBackend
         }
     }
@@ -201,16 +208,31 @@ mod tests {
 
         // TestBackend reports full backend size, not viewport size
         assert_eq!(size.width, 80, "Width should match backend width");
-        assert_eq!(size.height, 24, "TestBackend reports full height (inline viewport requires real terminal)");
+        assert_eq!(
+            size.height, 24,
+            "TestBackend reports full height (inline viewport requires real terminal)"
+        );
     }
 
     #[test]
     fn test_viewport_height_bounds() {
         // Test that height bounds are sensible
-        assert!(MIN_VIEWPORT_HEIGHT >= 3, "Minimum height should allow input + status bar");
-        assert!(MAX_VIEWPORT_HEIGHT >= VIEWPORT_HEIGHT, "Max height should be at least default");
-        assert!(VIEWPORT_HEIGHT >= MIN_VIEWPORT_HEIGHT, "Default height should be within bounds");
-        assert!(VIEWPORT_HEIGHT <= MAX_VIEWPORT_HEIGHT, "Default height should be within bounds");
+        assert!(
+            MIN_VIEWPORT_HEIGHT >= 3,
+            "Minimum height should allow input + status bar"
+        );
+        assert!(
+            MAX_VIEWPORT_HEIGHT >= VIEWPORT_HEIGHT,
+            "Max height should be at least default"
+        );
+        assert!(
+            VIEWPORT_HEIGHT >= MIN_VIEWPORT_HEIGHT,
+            "Default height should be within bounds"
+        );
+        assert!(
+            VIEWPORT_HEIGHT <= MAX_VIEWPORT_HEIGHT,
+            "Default height should be within bounds"
+        );
     }
 
     #[test]
@@ -224,7 +246,10 @@ mod tests {
             viewport: Viewport::Inline(MIN_VIEWPORT_HEIGHT),
         };
         let terminal = Terminal::with_options(backend, options);
-        assert!(terminal.is_ok(), "Minimum viewport height should be accepted");
+        assert!(
+            terminal.is_ok(),
+            "Minimum viewport height should be accepted"
+        );
 
         // Test maximum height configuration
         let backend = TestBackend::new(80, 60);
@@ -232,7 +257,10 @@ mod tests {
             viewport: Viewport::Inline(MAX_VIEWPORT_HEIGHT),
         };
         let terminal = Terminal::with_options(backend, options);
-        assert!(terminal.is_ok(), "Maximum viewport height should be accepted");
+        assert!(
+            terminal.is_ok(),
+            "Maximum viewport height should be accepted"
+        );
     }
 
     /// Note: We cannot easily test raw mode enable/disable in unit tests
@@ -287,7 +315,11 @@ mod tests {
         // Test below minimum
         for height in [0, 1, 2] {
             let result = validate_viewport_height(height);
-            assert!(result.is_err(), "Height {} should be invalid (too small)", height);
+            assert!(
+                result.is_err(),
+                "Height {} should be invalid (too small)",
+                height
+            );
             let err_msg = result.unwrap_err().to_string();
             assert!(
                 err_msg.contains("at least"),
@@ -302,7 +334,11 @@ mod tests {
         // Test above maximum
         for height in [51, 60, 100, 1000] {
             let result = validate_viewport_height(height);
-            assert!(result.is_err(), "Height {} should be invalid (too large)", height);
+            assert!(
+                result.is_err(),
+                "Height {} should be invalid (too large)",
+                height
+            );
             let err_msg = result.unwrap_err().to_string();
             assert!(
                 err_msg.contains("at most"),

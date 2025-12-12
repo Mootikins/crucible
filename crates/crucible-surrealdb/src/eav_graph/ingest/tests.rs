@@ -1,9 +1,7 @@
 use super::*;
 use crate::eav_graph::apply_eav_graph_schema;
 use crate::SurrealClient;
-use crucible_core::parser::{
-    Frontmatter, FrontmatterFormat, Heading, NoteContent, Paragraph, Tag,
-};
+use crucible_core::parser::{Frontmatter, FrontmatterFormat, Heading, NoteContent, Paragraph, Tag};
 use crucible_core::storage::{RelationStorage, TagStorage};
 use serde_json::json;
 use std::path::PathBuf;
@@ -1734,9 +1732,7 @@ async fn test_embed_complexity_scoring() {
     // Check complexity scores
     let simple_wikilink = relations
         .iter()
-        .find(|r| {
-            r.metadata.get("variant_type").and_then(|v| v.as_str()) == Some("internal_link")
-        })
+        .find(|r| r.metadata.get("variant_type").and_then(|v| v.as_str()) == Some("internal_link"))
         .unwrap();
     assert_eq!(
         simple_wikilink
@@ -1775,9 +1771,7 @@ async fn test_embed_complexity_scoring() {
 
     let very_complex_embed = relations
         .iter()
-        .find(|r| {
-            r.metadata.get("variant_type").and_then(|v| v.as_str()) == Some("external_embed")
-        })
+        .find(|r| r.metadata.get("variant_type").and_then(|v| v.as_str()) == Some("external_embed"))
         .unwrap();
     assert_eq!(
         very_complex_embed
@@ -2115,7 +2109,7 @@ async fn test_embed_type_classification_comprehensive() {
         ("audio.webm", "audio", "webm"),
         // Note types
         ("note.pdf", "pdf", "pdf"),
-        ("note.doc", "external", "doc"), // Not specifically handled
+        ("note.doc", "external", "doc"),   // Not specifically handled
         ("note.docx", "external", "docx"), // Not specifically handled
         // Code files
         ("code.js", "note", "js"),
@@ -2648,9 +2642,10 @@ async fn test_embed_content_specific_processing_comprehensive() {
 
         // Check expected metadata
         for (key, expected_value) in expected_metadata {
-            let json_value = relation.metadata.get(key).unwrap_or_else(|| {
-                panic!("Missing metadata key '{}' for target {}", key, target)
-            });
+            let json_value = relation
+                .metadata
+                .get(key)
+                .unwrap_or_else(|| panic!("Missing metadata key '{}' for target {}", key, target));
 
             // Handle different JSON value types properly
             let actual_value = match json_value {
@@ -3518,9 +3513,9 @@ async fn test_embed_interaction_with_tags_and_blocks() {
 
     // Should have both the local image and external video embeds
     assert!(
-        embed_targets.iter().any(|(target, embed_type)| {
-            *target == "test-image.jpg" && *embed_type == "image"
-        }),
+        embed_targets
+            .iter()
+            .any(|(target, embed_type)| { *target == "test-image.jpg" && *embed_type == "image" }),
         "Should have local image embed"
     );
 
@@ -4159,8 +4154,7 @@ mod timestamp_extraction_tests {
     #[test]
     fn test_extract_timestamps_priority_created_over_created_at() {
         // 'created' should take priority over 'created_at'
-        let doc =
-            doc_with_frontmatter("created: 2024-11-05\ncreated_at: \"2024-11-10T00:00:00Z\"");
+        let doc = doc_with_frontmatter("created: 2024-11-05\ncreated_at: \"2024-11-10T00:00:00Z\"");
         let (created_at, _updated_at) = extract_timestamps(&doc);
 
         assert_eq!(

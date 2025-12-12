@@ -1,7 +1,7 @@
 use super::*;
+use rand::SeedableRng;
 use std::collections::{HashMap, HashSet};
 use tempfile::TempDir;
-use rand::SeedableRng;
 
 /// Create a test directory with sample documents
 pub fn create_test_kiln() -> TempDir {
@@ -25,7 +25,8 @@ pub fn create_test_kiln() -> TempDir {
 - [[Weekly Sync]]
 - [[Project Retrospective]]
 "#,
-    ).unwrap();
+    )
+    .unwrap();
 
     // Create linked documents
     std::fs::write(
@@ -40,7 +41,8 @@ Started on 2024-01-01.
 
 Related: [[Project Beta]], [[AI Research]]
 "#,
-    ).unwrap();
+    )
+    .unwrap();
 
     std::fs::write(
         path.join("AI Research.md"),
@@ -54,7 +56,8 @@ Notes on artificial intelligence.
 
 See also: [[Machine Learning Basics]]
 "#,
-    ).unwrap();
+    )
+    .unwrap();
 
     // Create a regular note (not a MoC)
     std::fs::write(
@@ -69,7 +72,8 @@ Worked on Project Alpha today. Made good progress on the implementation.
 
 Also reviewed [[AI Research]] notes.
 "#,
-    ).unwrap();
+    )
+    .unwrap();
 
     temp_dir
 }
@@ -146,7 +150,8 @@ pub fn create_complex_test_kiln() -> TempDir {
 - [[2024-01-01]]
 - [[2024-01-02]]
 "#,
-    ).unwrap();
+    )
+    .unwrap();
 
     // Area MoCs
     std::fs::write(
@@ -164,7 +169,8 @@ tags: [moc, projects]
 ## Completed
 - [[Project Legacy]]
 "#,
-    ).unwrap();
+    )
+    .unwrap();
 
     std::fs::write(
         path.join("Research.md"),
@@ -182,7 +188,8 @@ tags: [moc, research]
 - [[SurrealDB Notes]]
 - [[Query Optimization]]
 "#,
-    ).unwrap();
+    )
+    .unwrap();
 
     std::fs::write(
         path.join("Learning.md"),
@@ -200,17 +207,48 @@ tags: [moc, learning]
 - [[ML Course]]
 - [[Rust Mastery]]
 "#,
-    ).unwrap();
+    )
+    .unwrap();
 
     // Content documents
     let content_docs = vec![
-        ("Project Alpha.md", "project", "active", vec!["Project Beta.md", "2024-01-01.md"]),
-        ("Project Beta.md", "project", "active", vec!["Project Alpha.md"]),
-        ("Project Legacy.md", "project", "completed", vec!["README.md"]),
-        ("ML Basics.md", "ml", "learning", vec!["Neural Networks.md", "ML Course.md"]),
+        (
+            "Project Alpha.md",
+            "project",
+            "active",
+            vec!["Project Beta.md", "2024-01-01.md"],
+        ),
+        (
+            "Project Beta.md",
+            "project",
+            "active",
+            vec!["Project Alpha.md"],
+        ),
+        (
+            "Project Legacy.md",
+            "project",
+            "completed",
+            vec!["README.md"],
+        ),
+        (
+            "ML Basics.md",
+            "ml",
+            "learning",
+            vec!["Neural Networks.md", "ML Course.md"],
+        ),
         ("Neural Networks.md", "ml", "advanced", vec!["ML Basics.md"]),
-        ("SurrealDB Notes.md", "database", "notes", vec!["Query Optimization.md"]),
-        ("Query Optimization.md", "database", "optimization", vec!["SurrealDB Notes.md"]),
+        (
+            "SurrealDB Notes.md",
+            "database",
+            "notes",
+            vec!["Query Optimization.md"],
+        ),
+        (
+            "Query Optimization.md",
+            "database",
+            "optimization",
+            vec!["SurrealDB Notes.md"],
+        ),
         ("2024-01-01.md", "daily", "note", vec!["Project Alpha.md"]),
         ("2024-01-02.md", "daily", "note", vec!["README.md"]),
     ];
@@ -230,11 +268,19 @@ This is a {} document with status: {}.
 "#,
             category,
             status,
-            if links.len() > 2 { "linked" } else { "isolated" },
+            if links.len() > 2 {
+                "linked"
+            } else {
+                "isolated"
+            },
             filename.replace(".md", ""),
             category,
             status,
-            links.iter().map(|l| format!("- [[{}]]", l)).collect::<Vec<_>>().join("\n")
+            links
+                .iter()
+                .map(|l| format!("- [[{}]]", l))
+                .collect::<Vec<_>>()
+                .join("\n")
         );
         std::fs::write(path.join(filename), content).unwrap();
     }
@@ -275,7 +321,10 @@ pub fn create_mock_documents() -> Vec<DocumentInfo> {
             title: Some("AI Research".to_string()),
             tags: vec!["research".to_string(), "ai".to_string()],
             outbound_links: vec!["Machine Learning Basics.md".to_string()],
-            inbound_links: vec!["Knowledge Hub.md".to_string(), "Project Alpha.md".to_string()],
+            inbound_links: vec![
+                "Knowledge Hub.md".to_string(),
+                "Project Alpha.md".to_string(),
+            ],
             embedding: None,
             content_length: 2000,
         },
@@ -292,10 +341,7 @@ pub fn create_mock_documents() -> Vec<DocumentInfo> {
 }
 
 /// Generate a set of documents with known link structure
-pub fn generate_test_document_set(
-    num_docs: usize,
-    links_per_doc: usize,
-) -> Vec<DocumentInfo> {
+pub fn generate_test_document_set(num_docs: usize, links_per_doc: usize) -> Vec<DocumentInfo> {
     let mut docs = Vec::new();
     let mut all_paths = HashSet::new();
 
@@ -320,7 +366,11 @@ pub fn generate_test_document_set(
         docs.push(DocumentInfo {
             file_path: path.clone(),
             title: Some(format!("Document {}", i)),
-            tags: if i == 0 { vec!["moc".to_string()] } else { vec![] },
+            tags: if i == 0 {
+                vec!["moc".to_string()]
+            } else {
+                vec![]
+            },
             outbound_links,
             inbound_links: vec![],
             embedding: None,
@@ -355,12 +405,27 @@ pub fn generate_realistic_test_kiln(num_docs: usize) -> Vec<DocumentInfo> {
 
     // Define content domains
     let domains = vec![
-        ("project-management", vec!["project", "tasks", "timeline", "milestone"]),
-        ("research", vec!["research", "methodology", "literature", "analysis"]),
-        ("technical", vec!["api", "documentation", "code", "architecture"]),
+        (
+            "project-management",
+            vec!["project", "tasks", "timeline", "milestone"],
+        ),
+        (
+            "research",
+            vec!["research", "methodology", "literature", "analysis"],
+        ),
+        (
+            "technical",
+            vec!["api", "documentation", "code", "architecture"],
+        ),
         ("learning", vec!["learning", "notes", "books", "courses"]),
-        ("meetings", vec!["meeting", "notes", "action-items", "decisions"]),
-        ("contacts", vec!["contact", "network", "profile", "collaboration"]),
+        (
+            "meetings",
+            vec!["meeting", "notes", "action-items", "decisions"],
+        ),
+        (
+            "contacts",
+            vec!["contact", "network", "profile", "collaboration"],
+        ),
     ];
 
     // Generate central hub document
@@ -370,7 +435,11 @@ pub fn generate_realistic_test_kiln(num_docs: usize) -> Vec<DocumentInfo> {
     let hub = DocumentInfo {
         file_path: hub_path.clone(),
         title: Some("Knowledge Management Hub".to_string()),
-        tags: vec!["hub".to_string(), "navigation".to_string(), "index".to_string()],
+        tags: vec![
+            "hub".to_string(),
+            "navigation".to_string(),
+            "index".to_string(),
+        ],
         outbound_links: (0..num_docs.min(6))
             .map(|i| format!("doc_{}.md", i + 1))
             .collect(),
@@ -405,7 +474,11 @@ pub fn generate_realistic_test_kiln(num_docs: usize) -> Vec<DocumentInfo> {
 
         let doc = DocumentInfo {
             file_path: doc_path,
-            title: Some(format!("Document {} ({})", i, domain_name.replace("-", " "))),
+            title: Some(format!(
+                "Document {} ({})",
+                i,
+                domain_name.replace("-", " ")
+            )),
             tags: domain_tags.iter().take(2).map(|t| t.to_string()).collect(),
             outbound_links,
             inbound_links,
@@ -595,9 +668,9 @@ pub struct QualityMetrics {
 
 /// Generate embeddings for documents (for testing semantic clustering)
 pub fn generate_embeddings(documents: &mut [DocumentInfo], dimensions: usize) {
+    use rand::Rng;
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
-    use rand::Rng;
 
     for doc in documents.iter_mut() {
         // Generate deterministic embeddings based on content
@@ -627,7 +700,10 @@ pub fn create_clustering_scenario() -> (Vec<DocumentInfo>, HashMap<String, Strin
             "project-overview.md",
             Some("Project Overview".to_string()),
             vec!["project".to_string(), "management".to_string()],
-            vec!["project-tasks.md".to_string(), "project-timeline.md".to_string()],
+            vec![
+                "project-tasks.md".to_string(),
+                "project-timeline.md".to_string(),
+            ],
             1500,
         ),
         create_realistic_document(
@@ -690,7 +766,10 @@ pub fn create_clustering_scenario() -> (Vec<DocumentInfo>, HashMap<String, Strin
 
     // Technical cluster
     ground_truth.insert("api-spec.md".to_string(), "cluster_3".to_string());
-    ground_truth.insert("implementation-guide.md".to_string(), "cluster_3".to_string());
+    ground_truth.insert(
+        "implementation-guide.md".to_string(),
+        "cluster_3".to_string(),
+    );
 
     (documents, ground_truth)
 }
@@ -794,7 +873,10 @@ mod tests {
         assert_eq!(documents.len(), 8);
 
         // Main index should be MoC
-        let main_index = documents.iter().find(|d| d.file_path == "index.md").unwrap();
+        let main_index = documents
+            .iter()
+            .find(|d| d.file_path == "index.md")
+            .unwrap();
         assert!(main_index.tags.contains(&"moc".to_string()));
         assert_eq!(main_index.outbound_links.len(), 3);
     }
@@ -901,7 +983,10 @@ mod tests {
         assert_eq!(hub.outbound_links.len(), 6);
 
         // Check inbound links are calculated
-        let ai_research = documents.iter().find(|d| d.file_path == "AI Research.md").unwrap();
+        let ai_research = documents
+            .iter()
+            .find(|d| d.file_path == "AI Research.md")
+            .unwrap();
         assert_eq!(ai_research.inbound_links.len(), 2);
     }
 

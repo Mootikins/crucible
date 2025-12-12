@@ -29,7 +29,10 @@ pub async fn apply_eav_graph_schema(client: &SurrealClient) -> Result<()> {
 
     // Check if schema version exists in database
     if check_schema_version(client).await? {
-        debug!("Schema version {} already present, skipping initialization", SCHEMA_VERSION);
+        debug!(
+            "Schema version {} already present, skipping initialization",
+            SCHEMA_VERSION
+        );
         SCHEMA_APPLIED.store(true, Ordering::Relaxed);
         return Ok(());
     }
@@ -126,11 +129,17 @@ async fn apply_schema_batched(client: &SurrealClient) -> Result<()> {
                     e
                 ));
             }
-            trace!("Schema element already exists (ignoring): {}...", &statement[..statement.len().min(30)]);
+            trace!(
+                "Schema element already exists (ignoring): {}...",
+                &statement[..statement.len().min(30)]
+            );
         }
     }
 
-    debug!("Schema applied via individual statements in {:?}", start.elapsed());
+    debug!(
+        "Schema applied via individual statements in {:?}",
+        start.elapsed()
+    );
     Ok(())
 }
 

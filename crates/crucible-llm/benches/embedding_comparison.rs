@@ -8,8 +8,10 @@
 //! improvements from GPU acceleration.
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use crucible_config::{
+    BurnBackendConfig, BurnEmbedConfig, EmbeddingProviderConfig, FastEmbedConfig,
+};
 use crucible_llm::embeddings::create_provider;
-use crucible_config::{EmbeddingProviderConfig, FastEmbedConfig, BurnEmbedConfig, BurnBackendConfig};
 use std::time::Instant;
 
 /// Generate test texts for embedding
@@ -97,7 +99,8 @@ fn bench_single_vs_batch(c: &mut Criterion) {
 
         b.iter(|| {
             let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(provider.embed_batch(vec!["single text".to_string()])).unwrap();
+            rt.block_on(provider.embed_batch(vec!["single text".to_string()]))
+                .unwrap();
         });
     });
 

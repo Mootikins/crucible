@@ -51,11 +51,13 @@ use std::path::Path;
 ///     assert_eq!(parsed.wikilinks.len(), 1);
 /// }
 /// ```
-pub async fn parse_note(content: &str, path: &str) -> Result<ParsedNote, Box<dyn std::error::Error>> {
+pub async fn parse_note(
+    content: &str,
+    path: &str,
+) -> Result<ParsedNote, Box<dyn std::error::Error>> {
     let parser = CrucibleParser::with_default_extensions();
     Ok(parser.parse_content(content, Path::new(path)).await?)
 }
-
 
 #[cfg(test)]
 mod tests {

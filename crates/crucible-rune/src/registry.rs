@@ -90,9 +90,10 @@ impl RuneToolRegistry {
         tool_name: &str,
         args: Value,
     ) -> Result<RuneExecutionResult, RuneError> {
-        let tool = self.get_tool(tool_name).await.ok_or_else(|| {
-            RuneError::NotFound(format!("Tool '{}' not found", tool_name))
-        })?;
+        let tool = self
+            .get_tool(tool_name)
+            .await
+            .ok_or_else(|| RuneError::NotFound(format!("Tool '{}' not found", tool_name)))?;
 
         self.executor.execute(&tool, args).await
     }
@@ -146,7 +147,11 @@ mod tests {
     #[tokio::test]
     async fn test_registry_discover_tool() {
         let temp = TempDir::new().unwrap();
-        std::fs::write(temp.path().join("hello.rn"), "//! Say hello\npub fn main() {}").unwrap();
+        std::fs::write(
+            temp.path().join("hello.rn"),
+            "//! Say hello\npub fn main() {}",
+        )
+        .unwrap();
 
         let config = RuneDiscoveryConfig {
             tool_directories: vec![temp.path().to_path_buf()],

@@ -59,7 +59,6 @@ fn entity_id_body_from_path(relative_path: &str) -> String {
     }
 }
 
-
 /// Batch hash lookup configuration
 #[derive(Debug, Clone)]
 pub struct BatchLookupConfig {

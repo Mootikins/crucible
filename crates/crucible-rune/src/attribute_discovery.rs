@@ -78,7 +78,10 @@ impl AttributeDiscovery {
     }
 
     /// Discover all items of type T from the given discovery paths
-    pub fn discover_all<T: FromAttributes>(&self, paths: &DiscoveryPaths) -> Result<Vec<T>, RuneError> {
+    pub fn discover_all<T: FromAttributes>(
+        &self,
+        paths: &DiscoveryPaths,
+    ) -> Result<Vec<T>, RuneError> {
         let mut items = Vec::new();
 
         for dir in paths.existing_paths() {
@@ -96,7 +99,10 @@ impl AttributeDiscovery {
     }
 
     /// Discover items in a single directory
-    pub fn discover_in_directory<T: FromAttributes>(&self, dir: &Path) -> Result<Vec<T>, RuneError> {
+    pub fn discover_in_directory<T: FromAttributes>(
+        &self,
+        dir: &Path,
+    ) -> Result<Vec<T>, RuneError> {
         let mut items = Vec::new();
 
         for ext in &self.extensions {
@@ -109,14 +115,28 @@ impl AttributeDiscovery {
             for entry in glob(&pattern).map_err(|e| RuneError::Discovery(e.to_string()))? {
                 match entry {
                     Ok(path) => {
-                        debug!("Scanning {} for #{} attributes", path.display(), T::attribute_name());
+                        debug!(
+                            "Scanning {} for #{} attributes",
+                            path.display(),
+                            T::attribute_name()
+                        );
                         match self.parse_from_file::<T>(&path) {
                             Ok(file_items) => {
-                                debug!("Found {} {} in {}", file_items.len(), T::attribute_name(), path.display());
+                                debug!(
+                                    "Found {} {} in {}",
+                                    file_items.len(),
+                                    T::attribute_name(),
+                                    path.display()
+                                );
                                 items.extend(file_items);
                             }
                             Err(e) => {
-                                warn!("Failed to parse {} from {}: {}", T::attribute_name(), path.display(), e);
+                                warn!(
+                                    "Failed to parse {} from {}: {}",
+                                    T::attribute_name(),
+                                    path.display(),
+                                    e
+                                );
                             }
                         }
                     }
@@ -137,7 +157,11 @@ impl AttributeDiscovery {
     }
 
     /// Parse items from source code
-    pub fn parse_from_source<T: FromAttributes>(&self, content: &str, path: &Path) -> Result<Vec<T>, RuneError> {
+    pub fn parse_from_source<T: FromAttributes>(
+        &self,
+        content: &str,
+        path: &Path,
+    ) -> Result<Vec<T>, RuneError> {
         let attr_name = T::attribute_name();
         let mut items = Vec::new();
 
@@ -148,7 +172,8 @@ impl AttributeDiscovery {
             regex::escape(attr_name)
         );
 
-        let re = Regex::new(&pattern).map_err(|e| RuneError::Discovery(format!("Invalid regex: {}", e)))?;
+        let re = Regex::new(&pattern)
+            .map_err(|e| RuneError::Discovery(format!("Invalid regex: {}", e)))?;
 
         for cap in re.captures_iter(content) {
             let fn_name = cap.name("fn_name").map(|m| m.as_str()).unwrap_or("main");
@@ -158,8 +183,13 @@ impl AttributeDiscovery {
             match T::from_attrs(attrs, fn_name, path, docs) {
                 Ok(item) => items.push(item),
                 Err(e) => {
-                    warn!("Failed to parse #{} for function '{}' in {}: {}",
-                          attr_name, fn_name, path.display(), e);
+                    warn!(
+                        "Failed to parse #{} for function '{}' in {}: {}",
+                        attr_name,
+                        fn_name,
+                        path.display(),
+                        e
+                    );
                 }
             }
         }
@@ -176,7 +206,9 @@ pub mod attr_parsers {
     pub fn extract_string(attrs: &str, key: &str) -> Option<String> {
         let pattern = format!(r#"{}[\s]*=[\s]*"([^"]*)""#, key);
         let re = Regex::new(&pattern).ok()?;
-        re.captures(attrs).and_then(|c| c.get(1)).map(|m| m.as_str().to_string())
+        re.captures(attrs)
+            .and_then(|c| c.get(1))
+            .map(|m| m.as_str().to_string())
     }
 
     /// Extract a boolean attribute like `key = true` or bare `key`
@@ -194,7 +226,10 @@ pub mod attr_parsers {
         // Check for bare `key` (implies true)
         let bare_pattern = format!(r"\b{}\b", key);
         if let Ok(re) = Regex::new(&bare_pattern) {
-            if re.is_match(attrs) && !attrs.contains(&format!("{} =", key)) && !attrs.contains(&format!("{}=", key)) {
+            if re.is_match(attrs)
+                && !attrs.contains(&format!("{} =", key))
+                && !attrs.contains(&format!("{}=", key))
+            {
                 return Some(true);
             }
         }
@@ -246,8 +281,8 @@ pub mod attr_parsers {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::attr_parsers::*;
+    use super::*;
     use std::fs;
     use std::path::PathBuf;
     use tempfile::TempDir;
@@ -267,7 +302,12 @@ mod tests {
             "test_item"
         }
 
-        fn from_attrs(attrs: &str, fn_name: &str, path: &Path, docs: &str) -> Result<Self, RuneError> {
+        fn from_attrs(
+            attrs: &str,
+            fn_name: &str,
+            path: &Path,
+            docs: &str,
+        ) -> Result<Self, RuneError> {
             let description = extract_string(attrs, "desc")
                 .or_else(|| extract_doc_description(docs))
                 .unwrap_or_else(|| format!("Test item: {}", fn_name));
@@ -287,8 +327,14 @@ mod tests {
 
     #[test]
     fn test_extract_string() {
-        assert_eq!(extract_string(r#"desc = "hello world""#, "desc"), Some("hello world".to_string()));
-        assert_eq!(extract_string(r#"desc="no spaces""#, "desc"), Some("no spaces".to_string()));
+        assert_eq!(
+            extract_string(r#"desc = "hello world""#, "desc"),
+            Some("hello world".to_string())
+        );
+        assert_eq!(
+            extract_string(r#"desc="no spaces""#, "desc"),
+            Some("no spaces".to_string())
+        );
         assert_eq!(extract_string(r#"other = "value""#, "desc"), None);
     }
 
@@ -310,7 +356,10 @@ mod tests {
     #[test]
     fn test_extract_string_array() {
         let tags = extract_string_array(r#"tags = ["a", "b", "c"]"#, "tags");
-        assert_eq!(tags, Some(vec!["a".to_string(), "b".to_string(), "c".to_string()]));
+        assert_eq!(
+            tags,
+            Some(vec!["a".to_string(), "b".to_string(), "c".to_string()])
+        );
 
         let empty = extract_string_array(r#"tags = []"#, "tags");
         assert_eq!(empty, Some(vec![]));
@@ -319,7 +368,10 @@ mod tests {
     #[test]
     fn test_extract_doc_description() {
         let docs = "/// This is a description\n/// with multiple lines";
-        assert_eq!(extract_doc_description(docs), Some("This is a description with multiple lines".to_string()));
+        assert_eq!(
+            extract_doc_description(docs),
+            Some("This is a description with multiple lines".to_string())
+        );
 
         assert_eq!(extract_doc_description(""), None);
     }

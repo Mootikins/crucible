@@ -51,7 +51,10 @@ async fn test_detect_mocs_identifies_hub_document() {
     assert!(moc.score > 0.5); // Should have high confidence
     assert!(moc.outbound_links > 5); // Should have many outbound links
     assert!(moc.reasons.iter().any(|r| r.contains("outbound links")));
-    assert!(moc.reasons.iter().any(|r| r.contains("hub") || r.contains("index")));
+    assert!(moc
+        .reasons
+        .iter()
+        .any(|r| r.contains("hub") || r.contains("index")));
 }
 
 #[tokio::test]
@@ -93,7 +96,14 @@ async fn test_detect_mocs_prioritizes_by_score() {
             file_path: "Best MoC.md".to_string(),
             title: Some("Map of Content: Best".to_string()),
             tags: vec!["moc".to_string(), "hub".to_string()],
-            outbound_links: vec!["Doc1.md".to_string(), "Doc2.md".to_string(), "Doc3.md".to_string(), "Doc4.md".to_string(), "Doc5.md".to_string(), "Doc6.md".to_string()],
+            outbound_links: vec![
+                "Doc1.md".to_string(),
+                "Doc2.md".to_string(),
+                "Doc3.md".to_string(),
+                "Doc4.md".to_string(),
+                "Doc5.md".to_string(),
+                "Doc6.md".to_string(),
+            ],
             inbound_links: vec!["Doc1.md".to_string()],
             embedding: None,
             content_length: 400,
@@ -102,7 +112,12 @@ async fn test_detect_mocs_prioritizes_by_score() {
             file_path: "Weak MoC.md".to_string(),
             title: Some("Some Index".to_string()),
             tags: vec!["index".to_string()],
-            outbound_links: vec!["Doc1.md".to_string(), "Doc2.md".to_string(), "Doc3.md".to_string(), "Doc4.md".to_string()],
+            outbound_links: vec![
+                "Doc1.md".to_string(),
+                "Doc2.md".to_string(),
+                "Doc3.md".to_string(),
+                "Doc4.md".to_string(),
+            ],
             inbound_links: vec![],
             embedding: None,
             content_length: 500,
@@ -121,17 +136,26 @@ async fn test_detect_mocs_prioritizes_by_score() {
 #[tokio::test]
 async fn test_detect_mocs_multiple_reasons() {
     // Arrange: Document with multiple MoC indicators
-    let documents = vec![
-        DocumentInfo {
-            file_path: "Table of Contents.md".to_string(),
-            title: Some("Table of Contents".to_string()),
-            tags: vec!["moc".to_string(), "overview".to_string()],
-            outbound_links: vec!["Chapter1.md".to_string(), "Chapter2.md".to_string(), "Chapter3.md".to_string(), "Chapter4.md".to_string(), "Chapter5.md".to_string()],
-            inbound_links: vec!["Chapter1.md".to_string(), "Chapter2.md".to_string(), "Chapter3.md".to_string(), "Chapter4.md".to_string()],
-            embedding: None,
-            content_length: 800,
-        },
-    ];
+    let documents = vec![DocumentInfo {
+        file_path: "Table of Contents.md".to_string(),
+        title: Some("Table of Contents".to_string()),
+        tags: vec!["moc".to_string(), "overview".to_string()],
+        outbound_links: vec![
+            "Chapter1.md".to_string(),
+            "Chapter2.md".to_string(),
+            "Chapter3.md".to_string(),
+            "Chapter4.md".to_string(),
+            "Chapter5.md".to_string(),
+        ],
+        inbound_links: vec![
+            "Chapter1.md".to_string(),
+            "Chapter2.md".to_string(),
+            "Chapter3.md".to_string(),
+            "Chapter4.md".to_string(),
+        ],
+        embedding: None,
+        content_length: 800,
+    }];
 
     // Act: Run MoC detection
     let mocs = detect_mocs(&documents).await.unwrap();

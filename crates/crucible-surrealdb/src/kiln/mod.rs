@@ -46,16 +46,8 @@ pub use relations::*;
 pub use search::*;
 pub use stats::*;
 pub use utils::{
-    chunk_namespace,
-    chunk_record_body,
-    escape_record_id,
-    generate_document_id,
-    is_retryable_error,
-    normalize_document_id,
-    record_body,
-    resolve_relative_path,
-    INITIAL_BACKOFF_MS,
-    MAX_RETRIES,
+    chunk_namespace, chunk_record_body, escape_record_id, generate_document_id, is_retryable_error,
+    normalize_document_id, record_body, resolve_relative_path, INITIAL_BACKOFF_MS, MAX_RETRIES,
 };
 
 // Re-export initialize_kiln_schema from kiln_integration
