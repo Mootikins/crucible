@@ -2,7 +2,7 @@
 
 use crate::components::{
     AcpConfig, ChatConfig, CliConfig, DiscoveryPathsConfig, EmbeddingConfig, EmbeddingProviderType,
-    GatewayConfig, HooksConfig,
+    GatewayConfig, HooksConfig, LlmConfig, LlmProvider, LlmProviderType,
 };
 use crate::includes::IncludeConfig;
 use crate::{EnrichmentConfig, ProfileConfig};
@@ -41,6 +41,27 @@ pub enum ConfigValidationError {
         /// List of validation errors
         errors: Vec<String>,
     },
+}
+
+/// Resolved LLM provider configuration
+#[derive(Debug, Clone)]
+pub struct EffectiveLlmConfig {
+    /// Provider key (e.g., "local", "cloud", or "default" for fallback)
+    pub key: String,
+    /// Provider type
+    pub provider_type: LlmProviderType,
+    /// API endpoint
+    pub endpoint: String,
+    /// Model name
+    pub model: String,
+    /// Temperature
+    pub temperature: f32,
+    /// Maximum tokens
+    pub max_tokens: u32,
+    /// Timeout in seconds
+    pub timeout_secs: u64,
+    /// API key (if applicable)
+    pub api_key: Option<String>,
 }
 
 /// Errors that can occur during configuration operations.
@@ -136,6 +157,10 @@ pub struct Config {
     #[serde(default)]
     pub chat: Option<ChatConfig>,
 
+    /// LLM provider configuration with named instances.
+    #[serde(default)]
+    pub llm: Option<LlmConfig>,
+
     /// Server configuration.
     pub server: Option<ServerConfig>,
 
@@ -171,6 +196,7 @@ impl Default for Config {
             embedding: Some(EmbeddingConfig::default()),
             acp: Some(AcpConfig::default()),
             chat: Some(ChatConfig::default()),
+            llm: None,
             server: None,
             logging: None,
             discovery: None,
@@ -353,6 +379,52 @@ impl Config {
     /// Get the effective hooks configuration.
     pub fn hooks_config(&self) -> Option<&HooksConfig> {
         self.hooks.as_ref()
+    }
+
+    /// Get the effective LLM configuration.
+    pub fn llm_config(&self) -> Option<&LlmConfig> {
+        self.llm.as_ref()
+    }
+
+    /// Get the effective LLM provider for chat.
+    /// Prefers llm.providers if configured, falls back to chat.provider.
+    pub fn effective_llm_provider(&self) -> Result<EffectiveLlmConfig, ConfigError> {
+        // Check LlmConfig first
+        if let Some(llm) = &self.llm {
+            if let Some((key, provider)) = llm.default_provider() {
+                return Ok(EffectiveLlmConfig {
+                    key: key.clone(),
+                    provider_type: provider.provider_type.clone(),
+                    endpoint: provider.endpoint(),
+                    model: provider.model(),
+                    temperature: provider.temperature(),
+                    max_tokens: provider.max_tokens(),
+                    timeout_secs: provider.timeout_secs(),
+                    api_key: provider.api_key(),
+                });
+            }
+        }
+
+        // Fall back to ChatConfig
+        let chat = self.chat_config()?;
+        Ok(EffectiveLlmConfig {
+            key: "default".to_string(),
+            provider_type: match chat.provider {
+                LlmProvider::Ollama => LlmProviderType::Ollama,
+                LlmProvider::OpenAI => LlmProviderType::OpenAI,
+                LlmProvider::Anthropic => LlmProviderType::Anthropic,
+            },
+            endpoint: chat.llm_endpoint(),
+            model: chat.chat_model(),
+            temperature: chat.temperature(),
+            max_tokens: chat.max_tokens(),
+            timeout_secs: chat.timeout_secs(),
+            api_key: match chat.provider {
+                LlmProvider::OpenAI => std::env::var("OPENAI_API_KEY").ok(),
+                LlmProvider::Anthropic => std::env::var("ANTHROPIC_API_KEY").ok(),
+                _ => None,
+            },
+        })
     }
 
     /// Validate gateway configuration
@@ -540,6 +612,10 @@ pub struct CliAppConfig {
     #[serde(default)]
     pub chat: ChatConfig,
 
+    /// LLM provider configuration with named instances
+    #[serde(default)]
+    pub llm: LlmConfig,
+
     /// CLI-specific configuration
     #[serde(default)]
     pub cli: CliConfig,
@@ -565,6 +641,7 @@ impl Default for CliAppConfig {
             embedding: EmbeddingConfig::default(),
             acp: AcpConfig::default(),
             chat: ChatConfig::default(),
+            llm: LlmConfig::default(),
             cli: CliConfig::default(),
             logging: None,
             processing: ProcessingConfig::default(),
@@ -908,6 +985,44 @@ verbose = false
     /// When None, the CLI should use a default (e.g., num_cpus / 2).
     pub fn parallel_workers(&self) -> Option<usize> {
         self.processing.parallel_workers
+    }
+
+    /// Get the effective LLM provider for chat.
+    /// Prefers llm.providers if configured, falls back to chat.provider.
+    pub fn effective_llm_provider(&self) -> Result<EffectiveLlmConfig, ConfigError> {
+        // Check LlmConfig first
+        if let Some((key, provider)) = self.llm.default_provider() {
+            return Ok(EffectiveLlmConfig {
+                key: key.clone(),
+                provider_type: provider.provider_type.clone(),
+                endpoint: provider.endpoint(),
+                model: provider.model(),
+                temperature: provider.temperature(),
+                max_tokens: provider.max_tokens(),
+                timeout_secs: provider.timeout_secs(),
+                api_key: provider.api_key(),
+            });
+        }
+
+        // Fall back to ChatConfig
+        Ok(EffectiveLlmConfig {
+            key: "default".to_string(),
+            provider_type: match self.chat.provider {
+                LlmProvider::Ollama => LlmProviderType::Ollama,
+                LlmProvider::OpenAI => LlmProviderType::OpenAI,
+                LlmProvider::Anthropic => LlmProviderType::Anthropic,
+            },
+            endpoint: self.chat.llm_endpoint(),
+            model: self.chat.chat_model(),
+            temperature: self.chat.temperature(),
+            max_tokens: self.chat.max_tokens(),
+            timeout_secs: self.chat.timeout_secs(),
+            api_key: match self.chat.provider {
+                LlmProvider::OpenAI => std::env::var("OPENAI_API_KEY").ok(),
+                LlmProvider::Anthropic => std::env::var("ANTHROPIC_API_KEY").ok(),
+                _ => None,
+            },
+        })
     }
 }
 
@@ -1469,5 +1584,151 @@ allowed_tools = ["search_*"]
         assert!(config.discovery_config().is_some());
         assert!(config.gateway_config().is_some());
         assert!(config.hooks_config().is_some());
+    }
+
+    #[test]
+    fn test_effective_llm_provider_from_llm_config() {
+        use std::collections::HashMap;
+        let mut providers = HashMap::new();
+        providers.insert(
+            "local".to_string(),
+            crate::components::LlmProviderConfig {
+                provider_type: crate::components::LlmProviderType::Ollama,
+                endpoint: Some("http://192.168.1.100:11434".to_string()),
+                default_model: Some("llama3.1:70b".to_string()),
+                temperature: Some(0.9),
+                max_tokens: Some(8192),
+                timeout_secs: Some(300),
+                api_key_env: None,
+            },
+        );
+
+        let config = Config {
+            llm: Some(crate::components::LlmConfig {
+                default: Some("local".to_string()),
+                providers,
+            }),
+            ..Config::default()
+        };
+
+        let effective = config.effective_llm_provider().unwrap();
+        assert_eq!(effective.key, "local");
+        assert_eq!(effective.endpoint, "http://192.168.1.100:11434");
+        assert_eq!(effective.model, "llama3.1:70b");
+        assert_eq!(effective.temperature, 0.9);
+        assert_eq!(effective.max_tokens, 8192);
+        assert_eq!(effective.timeout_secs, 300);
+    }
+
+    #[test]
+    fn test_effective_llm_provider_fallback_to_chat() {
+        let config = Config {
+            llm: None,
+            chat: Some(ChatConfig {
+                model: Some("gpt-4o".to_string()),
+                enable_markdown: true,
+                provider: crate::components::LlmProvider::OpenAI,
+                endpoint: Some("https://api.openai.com/v1".to_string()),
+                temperature: Some(0.8),
+                max_tokens: Some(4096),
+                timeout_secs: Some(60),
+            }),
+            ..Config::default()
+        };
+
+        let effective = config.effective_llm_provider().unwrap();
+        assert_eq!(effective.key, "default");
+        assert_eq!(effective.endpoint, "https://api.openai.com/v1");
+        assert_eq!(effective.model, "gpt-4o");
+        assert_eq!(effective.temperature, 0.8);
+        assert_eq!(effective.max_tokens, 4096);
+        assert_eq!(effective.timeout_secs, 60);
+    }
+
+    #[test]
+    fn test_config_with_llm_section_from_toml() {
+        let toml_content = r#"
+[llm]
+default = "local"
+
+[llm.providers.local]
+type = "ollama"
+endpoint = "http://localhost:11434"
+default_model = "llama3.2"
+temperature = 0.7
+timeout_secs = 120
+
+[llm.providers.cloud]
+type = "openai"
+api_key_env = "OPENAI_API_KEY"
+default_model = "gpt-4o"
+temperature = 0.7
+max_tokens = 4096
+"#;
+
+        let config: Config = toml::from_str(toml_content).unwrap();
+
+        assert!(config.llm.is_some());
+        let llm = config.llm.as_ref().unwrap();
+        assert_eq!(llm.default, Some("local".to_string()));
+        assert_eq!(llm.providers.len(), 2);
+
+        let local = llm.get_provider("local").unwrap();
+        assert_eq!(
+            local.provider_type,
+            crate::components::LlmProviderType::Ollama
+        );
+        assert_eq!(local.model(), "llama3.2");
+
+        let cloud = llm.get_provider("cloud").unwrap();
+        assert_eq!(
+            cloud.provider_type,
+            crate::components::LlmProviderType::OpenAI
+        );
+        assert_eq!(cloud.model(), "gpt-4o");
+        assert_eq!(cloud.api_key_env, Some("OPENAI_API_KEY".to_string()));
+    }
+
+    #[test]
+    fn test_cli_app_config_effective_llm_provider() {
+        use std::collections::HashMap;
+        let mut providers = HashMap::new();
+        providers.insert(
+            "local".to_string(),
+            crate::components::LlmProviderConfig {
+                provider_type: crate::components::LlmProviderType::Ollama,
+                endpoint: Some("http://localhost:11434".to_string()),
+                default_model: Some("llama3.2".to_string()),
+                temperature: Some(0.7),
+                max_tokens: None,
+                timeout_secs: None,
+                api_key_env: None,
+            },
+        );
+
+        let mut config = CliAppConfig::default();
+        config.llm = crate::components::LlmConfig {
+            default: Some("local".to_string()),
+            providers,
+        };
+
+        let effective = config.effective_llm_provider().unwrap();
+        assert_eq!(effective.key, "local");
+        assert_eq!(effective.model, "llama3.2");
+        assert_eq!(effective.temperature, 0.7);
+    }
+
+    #[test]
+    fn test_cli_app_config_effective_llm_provider_fallback() {
+        let config = CliAppConfig::default();
+
+        // Should fall back to ChatConfig defaults
+        let effective = config.effective_llm_provider().unwrap();
+        assert_eq!(effective.key, "default");
+        assert_eq!(
+            effective.provider_type,
+            crate::components::LlmProviderType::Ollama
+        );
+        assert_eq!(effective.endpoint, "http://localhost:11434");
     }
 }
