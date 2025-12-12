@@ -5,8 +5,9 @@
 
 use super::error::EmbeddingResult;
 use safetensors::SafeTensors;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::fs;
+use walkdir::WalkDir;
 
 /// Model configuration loaded from config.json
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -34,7 +35,7 @@ impl ModelConfig {
             .map_err(|e| super::error::EmbeddingError::InferenceFailed(
                 format!("Failed to read config.json: {}", e)
             ))?;
-        
+
         serde_json::from_str(&content)
             .map_err(|e| super::error::EmbeddingError::InferenceFailed(
                 format!("Failed to parse config.json: {}", e)
@@ -48,8 +49,12 @@ impl ModelConfig {
 }
 
 /// Loaded model weights from SafeTensors
+///
+/// We store the raw bytes and deserialize on demand to avoid lifetime issues.
 pub struct ModelWeights {
-    pub tensors: SafeTensors<'static>,
+    /// Raw model file data (owned)
+    data: Vec<u8>,
+    /// Model configuration
     pub config: ModelConfig,
 }
 
@@ -70,7 +75,7 @@ impl ModelWeights {
                         None
                     }
                 });
-            
+
             if let Some(config_path) = default_config {
                 ModelConfig::from_file(&config_path)?
             } else {
@@ -87,58 +92,61 @@ impl ModelWeights {
             }
         };
 
-        // Load SafeTensors file
+        // Load SafeTensors file data
         let data = fs::read(model_path)
             .map_err(|e| super::error::EmbeddingError::InferenceFailed(
                 format!("Failed to read model file {}: {}", model_path.display(), e)
             ))?;
 
-        let tensors = SafeTensors::deserialize(&data)
+        // Validate that it's a valid SafeTensors file
+        SafeTensors::deserialize(&data)
             .map_err(|e| super::error::EmbeddingError::InferenceFailed(
                 format!("Failed to parse SafeTensors file: {}", e)
             ))?;
 
         Ok(Self {
-            tensors,
+            data,
             config,
         })
     }
 
-    /// Get a tensor by name
-    pub fn get_tensor(&self, name: &str) -> Option<&[u8]> {
-        self.tensors.tensor(name).ok().map(|t| t.data())
+    /// Get a tensor by name (returns raw bytes)
+    pub fn get_tensor(&self, name: &str) -> Option<Vec<u8>> {
+        let tensors = SafeTensors::deserialize(&self.data).ok()?;
+        tensors.tensor(name).ok().map(|t| t.data().to_vec())
     }
 
     /// List all tensor names
     pub fn tensor_names(&self) -> Vec<String> {
-        self.tensors.names().collect()
+        if let Ok(tensors) = SafeTensors::deserialize(&self.data) {
+            tensors.names().into_iter().map(|s| s.to_string()).collect()
+        } else {
+            Vec::new()
+        }
     }
 }
 
 /// Find model files (config.json and model.safetensors) in a directory
 pub fn find_model_files(base_path: &Path, model_name: &str) -> EmbeddingResult<Option<(PathBuf, Option<PathBuf>)>> {
-    use std::path::PathBuf;
-    use walkdir::WalkDir;
-
     // Normalize model name for matching (handle variations)
     let normalized_model = model_name
         .to_lowercase()
         .replace("nomic-ai/", "")
         .replace("nomic_ai_", "")
-        .replace("-", "_");
+        .replace('-', "_");
 
     let mut candidates: Vec<(PathBuf, Option<PathBuf>)> = Vec::new();
 
     for entry in WalkDir::new(base_path).max_depth(4).into_iter().filter_map(|e| e.ok()) {
         let file_name = entry.file_name().to_string_lossy().to_lowercase();
-        
+
         if file_name.ends_with(".safetensors") {
             let parent = entry.path().parent().unwrap();
             let parent_name = parent.file_name()
                 .and_then(|n| n.to_str())
-                .map(|n| n.to_lowercase().replace("-", "_"))
+                .map(|n| n.to_lowercase().replace('-', "_"))
                 .unwrap_or_default();
-            
+
             // Check if parent directory name matches model name
             let matches = parent_name.contains(&normalized_model)
                 || normalized_model.contains(&parent_name)
@@ -153,7 +161,7 @@ pub fn find_model_files(base_path: &Path, model_name: &str) -> EmbeddingResult<O
                 } else {
                     None
                 };
-                
+
                 candidates.push((entry.path().to_path_buf(), config));
             }
         }
@@ -167,19 +175,5 @@ pub fn find_model_files(base_path: &Path, model_name: &str) -> EmbeddingResult<O
     }
 
     // Otherwise return the first match
-    candidates.into_iter().next().map(Some).unwrap_or(None).pipe(Ok)
+    Ok(candidates.into_iter().next())
 }
-
-// Helper trait for pipe operator
-trait Pipe: Sized {
-    fn pipe<F, R>(self, f: F) -> R
-    where
-        F: FnOnce(Self) -> R,
-    {
-        f(self)
-    }
-}
-
-impl<T> Pipe for T {}
-
-use std::path::PathBuf;
