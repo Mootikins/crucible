@@ -44,14 +44,20 @@ impl TextGenerationProvider for OpenAIChatProvider {
         &self,
         _request: CompletionRequest,
     ) -> LlmResult<CompletionResponse> {
-        todo!("OpenAI text completion not implemented")
+        Err(LlmError::Unsupported(
+            "OpenAI provider only supports chat completions, not legacy text completions".to_string(),
+        ))
     }
 
     fn generate_completion_stream<'a>(
         &'a self,
         _request: CompletionRequest,
     ) -> BoxStream<'a, LlmResult<CompletionChunk>> {
-        todo!("OpenAI text completion streaming not implemented")
+        Box::pin(futures::stream::once(async {
+            Err(LlmError::Unsupported(
+                "OpenAI provider only supports chat completions, not legacy text completions".to_string(),
+            ))
+        }))
     }
 
     async fn generate_chat_completion(
@@ -391,7 +397,55 @@ impl TextGenerationProvider for OpenAIChatProvider {
     }
 
     async fn list_models(&self) -> LlmResult<Vec<TextModelInfo>> {
-        todo!("OpenAI model listing not implemented")
+        // OpenAI provides a /models endpoint
+        let url = format!("{}/models", self.base_url);
+        let response = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .timeout(self.timeout)
+            .send()
+            .await
+            .map_err(|e| LlmError::HttpError(e.to_string()))?;
+
+        if !response.status().is_success() {
+            return Err(LlmError::HttpError(format!(
+                "Failed to list models: {}",
+                response.status()
+            )));
+        }
+
+        #[derive(Deserialize)]
+        struct ModelsResponse {
+            data: Vec<OpenAIModelInfo>,
+        }
+
+        #[derive(Deserialize)]
+        struct OpenAIModelInfo {
+            id: String,
+        }
+
+        let models: ModelsResponse = response
+            .json()
+            .await
+            .map_err(|e| LlmError::InvalidResponse(format!("Failed to parse models: {}", e)))?;
+
+        Ok(models
+            .data
+            .into_iter()
+            .map(|m| TextModelInfo {
+                id: m.id.clone(),
+                name: m.id,
+                owner: Some("openai".to_string()),
+                capabilities: vec![],
+                max_context_length: None,
+                max_output_tokens: None,
+                input_price: None,
+                output_price: None,
+                created: None,
+                status: crucible_core::traits::ModelStatus::Available,
+            })
+            .collect())
     }
 
     async fn health_check(&self) -> LlmResult<bool> {

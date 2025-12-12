@@ -43,14 +43,20 @@ impl TextGenerationProvider for OllamaChatProvider {
         &self,
         _request: CompletionRequest,
     ) -> LlmResult<CompletionResponse> {
-        todo!("Ollama text completion not implemented")
+        Err(LlmError::Unsupported(
+            "Ollama provider only supports chat completions, not text completions".to_string(),
+        ))
     }
 
     fn generate_completion_stream<'a>(
         &'a self,
         _request: CompletionRequest,
     ) -> BoxStream<'a, LlmResult<CompletionChunk>> {
-        todo!("Ollama text completion streaming not implemented")
+        Box::pin(futures::stream::once(async {
+            Err(LlmError::Unsupported(
+                "Ollama provider only supports chat completions, not text completions".to_string(),
+            ))
+        }))
     }
 
     async fn generate_chat_completion(
@@ -362,7 +368,56 @@ impl TextGenerationProvider for OllamaChatProvider {
     }
 
     async fn list_models(&self) -> LlmResult<Vec<TextModelInfo>> {
-        todo!("Ollama model listing not implemented")
+        // Ollama provides a /api/tags endpoint for listing models
+        let url = format!("{}/api/tags", self.base_url);
+        let response = self
+            .client
+            .get(&url)
+            .timeout(self.timeout)
+            .send()
+            .await
+            .map_err(|e| LlmError::HttpError(e.to_string()))?;
+
+        if !response.status().is_success() {
+            return Err(LlmError::HttpError(format!(
+                "Failed to list models: {}",
+                response.status()
+            )));
+        }
+
+        #[derive(Deserialize)]
+        struct TagsResponse {
+            models: Vec<OllamaModelInfo>,
+        }
+
+        #[derive(Deserialize)]
+        struct OllamaModelInfo {
+            name: String,
+            #[serde(default)]
+            size: u64,
+        }
+
+        let tags: TagsResponse = response
+            .json()
+            .await
+            .map_err(|e| LlmError::InvalidResponse(format!("Failed to parse models: {}", e)))?;
+
+        Ok(tags
+            .models
+            .into_iter()
+            .map(|m| TextModelInfo {
+                id: m.name.clone(),
+                name: m.name,
+                owner: Some("local".to_string()),
+                capabilities: vec![],
+                max_context_length: None,
+                max_output_tokens: None,
+                input_price: None,
+                output_price: None,
+                created: None,
+                status: crucible_core::traits::ModelStatus::Available,
+            })
+            .collect())
     }
 
     async fn health_check(&self) -> LlmResult<bool> {
