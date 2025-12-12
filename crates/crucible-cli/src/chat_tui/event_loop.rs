@@ -39,30 +39,6 @@ pub enum EventResult {
     CommandHandled,
 }
 
-/// Run the main event loop for the chat TUI
-///
-/// This function:
-/// - Sets up the terminal with inline viewport
-/// - Polls for events with 10ms timeout
-/// - Handles key events
-/// - Re-renders when dirty
-/// - Cleans up on exit
-///
-/// Returns messages to send via the provided channel
-pub async fn run_event_loop(message_tx: mpsc::UnboundedSender<ChatMessage>) -> Result<()> {
-    let mut terminal =
-        setup_inline_terminal(VIEWPORT_HEIGHT).context("failed to setup inline terminal")?;
-
-    let mut app = ChatApp::new();
-
-    let result = event_loop_inner(&mut terminal, &mut app, &message_tx).await;
-
-    // Always cleanup, even on error
-    cleanup_terminal().context("failed to cleanup terminal")?;
-
-    result
-}
-
 /// Response from the agent communication task
 #[derive(Debug)]
 pub enum AgentResponse {
@@ -278,84 +254,6 @@ fn handle_clear_command<B: ratatui::backend::Backend>(
     Ok(())
 }
 
-/// Inner event loop logic, separated for testability
-async fn event_loop_inner(
-    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    app: &mut ChatApp,
-    message_tx: &mpsc::UnboundedSender<ChatMessage>,
-) -> Result<()> {
-    loop {
-        // Render if dirty
-        if app.needs_render() {
-            terminal
-                .draw(|frame| {
-                    render_chat_viewport(app, frame);
-                })
-                .context("failed to draw terminal")?;
-            app.render_state.clear();
-        }
-
-        // Poll for events with timeout
-        if event::poll(Duration::from_millis(10)).context("failed to poll events")? {
-            match event::read().context("failed to read event")? {
-                Event::Key(key) => {
-                    // Only handle key press events, ignore release
-                    if key.kind == KeyEventKind::Press {
-                        match handle_key_event(app, key, message_tx)? {
-                            EventResult::Quit => break,
-                            EventResult::SendMessage(content) => {
-                                message_tx
-                                    .send(ChatMessage { content })
-                                    .context("failed to send message")?;
-                            }
-                            EventResult::CommandHandled => {
-                                // Local command was processed (not used in this simpler loop)
-                            }
-                            EventResult::Continue => {}
-                        }
-                    }
-                }
-                Event::Resize(_, _) => {
-                    // Terminal resized, force re-render
-                    app.render_state.mark_dirty();
-                }
-                _ => {
-                    // Ignore other events (mouse, etc.)
-                }
-            }
-        }
-
-        // Check if app wants to exit
-        if app.should_exit {
-            break;
-        }
-
-        // Yield to tokio runtime
-        tokio::task::yield_now().await;
-    }
-
-    Ok(())
-}
-
-/// Handle a key event
-fn handle_key_event(
-    app: &mut ChatApp,
-    key: KeyEvent,
-    _message_tx: &mpsc::UnboundedSender<ChatMessage>,
-) -> Result<EventResult> {
-    // Global quit shortcuts that bypass normal handling
-    if key.code == KeyCode::Char('d') && key.modifiers.contains(KeyModifiers::CONTROL) {
-        return Ok(EventResult::Quit);
-    }
-
-    // Delegate to ChatApp.handle_key() which returns Option<String> for messages
-    if let Some(message) = app.handle_key(key) {
-        return Ok(EventResult::SendMessage(message));
-    }
-
-    Ok(EventResult::Continue)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,10 +286,12 @@ mod tests {
     #[test]
     fn test_handle_key_ctrl_d_quits() {
         let mut app = ChatApp::new();
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, _rx) = mpsc::unbounded_channel::<String>();
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
 
         let key = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL);
-        let result = handle_key_event(&mut app, key, &tx).unwrap();
+        let result = handle_key_with_agent(&mut app, key, &tx, &mut terminal).unwrap();
 
         assert!(matches!(result, EventResult::Quit));
     }
@@ -399,10 +299,12 @@ mod tests {
     #[test]
     fn test_handle_key_normal_char() {
         let mut app = ChatApp::new();
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, _rx) = mpsc::unbounded_channel::<String>();
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
 
         let key = KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE);
-        let result = handle_key_event(&mut app, key, &tx).unwrap();
+        let result = handle_key_with_agent(&mut app, key, &tx, &mut terminal).unwrap();
 
         assert!(matches!(result, EventResult::Continue));
         assert_eq!(app.input.content(), "h");
@@ -411,17 +313,19 @@ mod tests {
     #[test]
     fn test_handle_key_enter_sends_message() {
         let mut app = ChatApp::new();
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, _rx) = mpsc::unbounded_channel::<String>();
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
 
         // Type some content
         for ch in "hello".chars() {
             let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
-            handle_key_event(&mut app, key, &tx).unwrap();
+            handle_key_with_agent(&mut app, key, &tx, &mut terminal).unwrap();
         }
 
         // Press Enter
         let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
-        let result = handle_key_event(&mut app, key, &tx).unwrap();
+        let result = handle_key_with_agent(&mut app, key, &tx, &mut terminal).unwrap();
 
         match result {
             EventResult::SendMessage(content) => assert_eq!(content, "hello"),
@@ -435,10 +339,12 @@ mod tests {
     #[test]
     fn test_handle_key_ctrl_c_in_normal_mode_exits() {
         let mut app = ChatApp::new();
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, _rx) = mpsc::unbounded_channel::<String>();
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
 
         let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
-        handle_key_event(&mut app, key, &tx).unwrap();
+        handle_key_with_agent(&mut app, key, &tx, &mut terminal).unwrap();
 
         assert!(app.should_exit);
     }
@@ -446,7 +352,9 @@ mod tests {
     #[test]
     fn test_handle_key_ctrl_c_with_completion_cancels() {
         let mut app = ChatApp::new();
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, _rx) = mpsc::unbounded_channel::<String>();
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
 
         // Show completion
         app.show_command_completion();
@@ -454,7 +362,7 @@ mod tests {
 
         // Press Ctrl+C
         let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
-        handle_key_event(&mut app, key, &tx).unwrap();
+        handle_key_with_agent(&mut app, key, &tx, &mut terminal).unwrap();
 
         // Completion should be cancelled, not exit
         assert!(app.completion.is_none());
