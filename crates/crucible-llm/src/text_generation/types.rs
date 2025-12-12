@@ -167,10 +167,9 @@ impl TextGenerationProvider for OpenAITextProvider {
             )));
         }
 
-        let api_response: ChatCompletionResponse = response
-            .json()
-            .await
-            .map_err(|e| LlmError::InvalidResponse(format!("Failed to parse JSON response: {}", e)))?;
+        let api_response: ChatCompletionResponse = response.json().await.map_err(|e| {
+            LlmError::InvalidResponse(format!("Failed to parse JSON response: {}", e))
+        })?;
 
         Ok(api_response)
     }
@@ -356,10 +355,9 @@ impl TextGenerationProvider for OllamaTextProvider {
             )));
         }
 
-        let ollama_response: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| LlmError::InvalidResponse(format!("Failed to parse JSON response: {}", e)))?;
+        let ollama_response: serde_json::Value = response.json().await.map_err(|e| {
+            LlmError::InvalidResponse(format!("Failed to parse JSON response: {}", e))
+        })?;
 
         // Parse response
         let message_content = ollama_response["message"]["content"]
@@ -381,8 +379,7 @@ impl TextGenerationProvider for OllamaTextProvider {
                         r#type: "function".to_string(),
                         function: FunctionCall {
                             name: function_name.to_string(),
-                            arguments: serde_json::to_string(&function_args)
-                                .unwrap_or_default(),
+                            arguments: serde_json::to_string(&function_args).unwrap_or_default(),
                         },
                     })
                 })

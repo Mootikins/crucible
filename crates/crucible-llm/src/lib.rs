@@ -72,9 +72,13 @@ pub use embeddings::{
 pub use reranking::{FastEmbedReranker, RerankResult, Reranker, RerankerModelInfo};
 
 pub use text_generation::{
-    create_text_provider, // Factory function
-    from_app_config,      // Create provider from app config
-    from_chat_config,     // Create provider from chat config
+    create_text_provider,  // Factory function
+    from_app_config,       // Create provider from app config
+    from_chat_config,      // Create provider from chat config
+    from_config,           // Create provider from config (new named provider system)
+    from_config_by_name,   // Create provider by name from config
+    from_effective_config, // Create provider from effective config
+    from_provider_config,  // Create provider from named provider config
     ChatCompletionChunk,
     ChatCompletionRequest,
     ChatCompletionResponse,
