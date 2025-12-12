@@ -14,7 +14,6 @@
 
 use serial_test::serial;
 
-
 /// Test texts for semantic similarity comparison
 const TEST_TEXTS: &[&str] = &[
     // Similar pairs (cat theme)
@@ -63,7 +62,10 @@ mod fastembed_tests {
         let response = provider.embed("Hello, world!").await.unwrap();
 
         println!("FastEmbed dimensions: {}", response.embedding.len());
-        println!("First 5 values: {:?}", &response.embedding[..5.min(response.embedding.len())]);
+        println!(
+            "First 5 values: {:?}",
+            &response.embedding[..5.min(response.embedding.len())]
+        );
 
         assert!(!response.embedding.is_empty());
         assert!(response.embedding.len() > 100); // Should be high-dimensional
@@ -83,7 +85,10 @@ mod fastembed_tests {
 
         // Calculate similarity matrix
         println!("\nFastEmbed Similarity Matrix:");
-        println!("    {:>6} {:>6} {:>6} {:>6} {:>6} {:>6}", "T0", "T1", "T2", "T3", "T4", "T5");
+        println!(
+            "    {:>6} {:>6} {:>6} {:>6} {:>6} {:>6}",
+            "T0", "T1", "T2", "T3", "T4", "T5"
+        );
         for i in 0..embeddings.len() {
             print!("T{}: ", i);
             for j in 0..embeddings.len() {
@@ -106,8 +111,14 @@ mod fastembed_tests {
         println!("  Rust vs Pie: {:.3}", rust_pie);
 
         // Similar texts should have higher similarity than dissimilar
-        assert!(cat_sim > cat_stock, "Similar cat texts should be more similar than cat vs stock");
-        assert!(rust_sim > rust_pie, "Similar Rust texts should be more similar than Rust vs pie");
+        assert!(
+            cat_sim > cat_stock,
+            "Similar cat texts should be more similar than cat vs stock"
+        );
+        assert!(
+            rust_sim > rust_pie,
+            "Similar Rust texts should be more similar than Rust vs pie"
+        );
     }
 
     #[tokio::test]
@@ -120,8 +131,15 @@ mod fastembed_tests {
         let responses = provider.embed_batch(texts).await.unwrap();
         let elapsed = start.elapsed();
 
-        println!("FastEmbed batch of {} texts took {:?}", responses.len(), elapsed);
-        println!("Throughput: {:.1} embeddings/sec", responses.len() as f64 / elapsed.as_secs_f64());
+        println!(
+            "FastEmbed batch of {} texts took {:?}",
+            responses.len(),
+            elapsed
+        );
+        println!(
+            "Throughput: {:.1} embeddings/sec",
+            responses.len() as f64 / elapsed.as_secs_f64()
+        );
 
         assert_eq!(responses.len(), TEST_TEXTS.len());
     }
@@ -130,10 +148,10 @@ mod fastembed_tests {
 #[cfg(feature = "llama-cpp")]
 mod llama_cpp_tests {
     use super::*;
-    use std::path::{Path, PathBuf};
     use crucible_llm::embeddings::inference::DeviceType;
     use crucible_llm::embeddings::llama_cpp_backend::LlamaCppBackend;
     use crucible_llm::embeddings::EmbeddingProvider;
+    use std::path::{Path, PathBuf};
 
     const NOMIC_V15_MODEL: &str = "/home/moot/models/language/nomic-ai/nomic-embed-text-v1.5-GGUF/nomic-embed-text-v1.5.Q8_0.gguf";
     const NOMIC_V2_MODEL: &str = "/home/moot/models/language/nomic-ai/nomic-embed-text-v2-moe-GGUF/nomic-embed-text-v2-moe.Q4_K_M.gguf";
@@ -159,14 +177,19 @@ mod llama_cpp_tests {
             println!("  Name: {}", dev.name);
             println!("  Description: {}", dev.description);
             println!("  Backend: {}", dev.backend);
-            println!("  Memory: {:.2} GB total, {:.2} GB free",
-                     dev.memory_total as f64 / 1e9,
-                     dev.memory_free as f64 / 1e9);
+            println!(
+                "  Memory: {:.2} GB total, {:.2} GB free",
+                dev.memory_total as f64 / 1e9,
+                dev.memory_free as f64 / 1e9
+            );
             println!("  Type: {:?}", dev.device_type);
         }
 
         // Should at least have CPU
-        assert!(!devices.is_empty(), "Should detect at least one device (CPU)");
+        assert!(
+            !devices.is_empty(),
+            "Should detect at least one device (CPU)"
+        );
     }
 
     #[tokio::test]
@@ -182,15 +205,16 @@ mod llama_cpp_tests {
         };
 
         // Use EmbeddingProvider interface with background loading
-        let provider = LlamaCppBackend::new_with_model(
-            PathBuf::from(model_path),
-            DeviceType::Auto,
-        ).unwrap();
+        let provider =
+            LlamaCppBackend::new_with_model(PathBuf::from(model_path), DeviceType::Auto).unwrap();
 
         let response = provider.embed("Hello, world!").await.unwrap();
 
         println!("LlamaCpp dimensions: {}", response.embedding.len());
-        println!("First 5 values: {:?}", &response.embedding[..5.min(response.embedding.len())]);
+        println!(
+            "First 5 values: {:?}",
+            &response.embedding[..5.min(response.embedding.len())]
+        );
         println!("Model: {}", provider.model_name());
         println!("Provider: {}", provider.provider_name());
 
@@ -210,10 +234,8 @@ mod llama_cpp_tests {
             }
         };
 
-        let provider = LlamaCppBackend::new_with_model(
-            PathBuf::from(model_path),
-            DeviceType::Auto,
-        ).unwrap();
+        let provider =
+            LlamaCppBackend::new_with_model(PathBuf::from(model_path), DeviceType::Auto).unwrap();
 
         // Get embeddings for all test texts using EmbeddingProvider trait
         let mut embeddings = Vec::new();
@@ -224,7 +246,10 @@ mod llama_cpp_tests {
 
         // Calculate similarity matrix
         println!("\nLlamaCpp Similarity Matrix:");
-        println!("    {:>6} {:>6} {:>6} {:>6} {:>6} {:>6}", "T0", "T1", "T2", "T3", "T4", "T5");
+        println!(
+            "    {:>6} {:>6} {:>6} {:>6} {:>6} {:>6}",
+            "T0", "T1", "T2", "T3", "T4", "T5"
+        );
         for i in 0..embeddings.len() {
             print!("T{}: ", i);
             for j in 0..embeddings.len() {
@@ -247,8 +272,14 @@ mod llama_cpp_tests {
         println!("  Rust vs Pie: {:.3}", rust_pie);
 
         // Similar texts should have higher similarity than dissimilar
-        assert!(cat_sim > cat_stock, "Similar cat texts should be more similar than cat vs stock");
-        assert!(rust_sim > rust_pie, "Similar Rust texts should be more similar than Rust vs pie");
+        assert!(
+            cat_sim > cat_stock,
+            "Similar cat texts should be more similar than cat vs stock"
+        );
+        assert!(
+            rust_sim > rust_pie,
+            "Similar Rust texts should be more similar than Rust vs pie"
+        );
     }
 
     #[tokio::test]
@@ -263,10 +294,8 @@ mod llama_cpp_tests {
             }
         };
 
-        let provider = LlamaCppBackend::new_with_model(
-            PathBuf::from(model_path),
-            DeviceType::Auto,
-        ).unwrap();
+        let provider =
+            LlamaCppBackend::new_with_model(PathBuf::from(model_path), DeviceType::Auto).unwrap();
 
         // Warm up
         let _ = provider.embed("warmup").await.unwrap();
@@ -300,18 +329,23 @@ mod llama_cpp_tests {
             }
         };
 
-        let provider = LlamaCppBackend::new_with_model(
-            PathBuf::from(model_path),
-            DeviceType::Auto,
-        ).unwrap();
+        let provider =
+            LlamaCppBackend::new_with_model(PathBuf::from(model_path), DeviceType::Auto).unwrap();
 
         let texts: Vec<String> = TEST_TEXTS.iter().map(|s| s.to_string()).collect();
         let start = std::time::Instant::now();
         let responses = provider.embed_batch(texts.clone()).await.unwrap();
         let elapsed = start.elapsed();
 
-        println!("LlamaCpp batch of {} texts took {:?}", responses.len(), elapsed);
-        println!("Throughput: {:.1} embeddings/sec", responses.len() as f64 / elapsed.as_secs_f64());
+        println!(
+            "LlamaCpp batch of {} texts took {:?}",
+            responses.len(),
+            elapsed
+        );
+        println!(
+            "Throughput: {:.1} embeddings/sec",
+            responses.len() as f64 / elapsed.as_secs_f64()
+        );
 
         assert_eq!(responses.len(), TEST_TEXTS.len());
         for response in &responses {
@@ -340,7 +374,10 @@ mod ollama_tests {
         let response = provider.embed("Hello, world!").await.unwrap();
 
         println!("Ollama dimensions: {}", response.embedding.len());
-        println!("First 5 values: {:?}", &response.embedding[..5.min(response.embedding.len())]);
+        println!(
+            "First 5 values: {:?}",
+            &response.embedding[..5.min(response.embedding.len())]
+        );
 
         assert!(!response.embedding.is_empty());
         assert_eq!(response.embedding.len(), 768); // nomic-embed-text has 768 dims
@@ -364,7 +401,10 @@ mod ollama_tests {
 
         // Calculate similarity matrix
         println!("\nOllama Similarity Matrix:");
-        println!("    {:>6} {:>6} {:>6} {:>6} {:>6} {:>6}", "T0", "T1", "T2", "T3", "T4", "T5");
+        println!(
+            "    {:>6} {:>6} {:>6} {:>6} {:>6} {:>6}",
+            "T0", "T1", "T2", "T3", "T4", "T5"
+        );
         for i in 0..embeddings.len() {
             print!("T{}: ", i);
             for j in 0..embeddings.len() {
@@ -387,8 +427,14 @@ mod ollama_tests {
         println!("  Rust vs Pie: {:.3}", rust_pie);
 
         // Similar texts should have higher similarity than dissimilar
-        assert!(cat_sim > cat_stock, "Similar cat texts should be more similar than cat vs stock");
-        assert!(rust_sim > rust_pie, "Similar Rust texts should be more similar than Rust vs pie");
+        assert!(
+            cat_sim > cat_stock,
+            "Similar cat texts should be more similar than cat vs stock"
+        );
+        assert!(
+            rust_sim > rust_pie,
+            "Similar Rust texts should be more similar than Rust vs pie"
+        );
     }
 
     #[tokio::test]
@@ -401,7 +447,12 @@ mod ollama_tests {
         let provider = create_provider(config).await.unwrap();
 
         let texts: Vec<String> = (0..50)
-            .map(|i| format!("This is test sentence number {} for throughput benchmarking.", i))
+            .map(|i| {
+                format!(
+                    "This is test sentence number {} for throughput benchmarking.",
+                    i
+                )
+            })
             .collect();
 
         // Warm up
@@ -411,8 +462,15 @@ mod ollama_tests {
         let responses = provider.embed_batch(texts.clone()).await.unwrap();
         let elapsed = start.elapsed();
 
-        println!("Ollama batch of {} texts took {:?}", responses.len(), elapsed);
-        println!("Throughput: {:.1} embeddings/sec", responses.len() as f64 / elapsed.as_secs_f64());
+        println!(
+            "Ollama batch of {} texts took {:?}",
+            responses.len(),
+            elapsed
+        );
+        println!(
+            "Throughput: {:.1} embeddings/sec",
+            responses.len() as f64 / elapsed.as_secs_f64()
+        );
 
         assert_eq!(responses.len(), texts.len());
     }
@@ -422,10 +480,10 @@ mod ollama_tests {
 #[cfg(feature = "llama-cpp")]
 mod comparison_tests {
     use super::*;
-    use std::path::{Path, PathBuf};
-    use crucible_llm::embeddings::{create_provider, EmbeddingConfig, EmbeddingProvider};
     use crucible_llm::embeddings::inference::DeviceType;
     use crucible_llm::embeddings::llama_cpp_backend::LlamaCppBackend;
+    use crucible_llm::embeddings::{create_provider, EmbeddingConfig, EmbeddingProvider};
+    use std::path::{Path, PathBuf};
 
     const NOMIC_V15_MODEL: &str = "/home/moot/models/language/nomic-ai/nomic-embed-text-v1.5-GGUF/nomic-embed-text-v1.5.Q8_0.gguf";
     const OLLAMA_ENDPOINT: &str = "https://llama.krohnos.io";
@@ -448,10 +506,9 @@ mod comparison_tests {
         let fastembed = create_provider(fastembed_config).await.unwrap();
 
         // LlamaCpp setup using EmbeddingProvider interface
-        let llama_cpp = LlamaCppBackend::new_with_model(
-            PathBuf::from(NOMIC_V15_MODEL),
-            DeviceType::Auto,
-        ).unwrap();
+        let llama_cpp =
+            LlamaCppBackend::new_with_model(PathBuf::from(NOMIC_V15_MODEL), DeviceType::Auto)
+                .unwrap();
 
         // Test texts
         let texts = vec![
@@ -476,7 +533,11 @@ mod comparison_tests {
         }
         let fe_elapsed = fe_start.elapsed();
         println!("Dimensions: {}", fastembed_embeddings[0].len());
-        println!("Time: {:?} ({:.1} emb/sec)", fe_elapsed, texts.len() as f64 / fe_elapsed.as_secs_f64());
+        println!(
+            "Time: {:?} ({:.1} emb/sec)",
+            fe_elapsed,
+            texts.len() as f64 / fe_elapsed.as_secs_f64()
+        );
 
         println!("\n--- LlamaCpp (GPU) ---");
         let mut llama_embeddings = Vec::new();
@@ -487,7 +548,11 @@ mod comparison_tests {
         }
         let llama_elapsed = llama_start.elapsed();
         println!("Dimensions: {}", llama_embeddings[0].len());
-        println!("Time: {:?} ({:.1} emb/sec)", llama_elapsed, texts.len() as f64 / llama_elapsed.as_secs_f64());
+        println!(
+            "Time: {:?} ({:.1} emb/sec)",
+            llama_elapsed,
+            texts.len() as f64 / llama_elapsed.as_secs_f64()
+        );
 
         // Compare similarity matrices
         println!("\n--- Similarity Comparison ---");
@@ -508,14 +573,28 @@ mod comparison_tests {
         let fe_dissimilar = cosine_similarity(&fastembed_embeddings[0], &fastembed_embeddings[3]);
         let llama_dissimilar = cosine_similarity(&llama_embeddings[0], &llama_embeddings[3]);
 
-        println!("FastEmbed:  similar={:.3}, dissimilar={:.3}, delta={:.3}",
-                 fe_similar, fe_dissimilar, fe_similar - fe_dissimilar);
-        println!("LlamaCpp:   similar={:.3}, dissimilar={:.3}, delta={:.3}",
-                 llama_similar, llama_dissimilar, llama_similar - llama_dissimilar);
+        println!(
+            "FastEmbed:  similar={:.3}, dissimilar={:.3}, delta={:.3}",
+            fe_similar,
+            fe_dissimilar,
+            fe_similar - fe_dissimilar
+        );
+        println!(
+            "LlamaCpp:   similar={:.3}, dissimilar={:.3}, delta={:.3}",
+            llama_similar,
+            llama_dissimilar,
+            llama_similar - llama_dissimilar
+        );
 
         // Both should show semantic understanding
-        assert!(fe_similar > fe_dissimilar, "FastEmbed should rank similar texts higher");
-        assert!(llama_similar > llama_dissimilar, "LlamaCpp should rank similar texts higher");
+        assert!(
+            fe_similar > fe_dissimilar,
+            "FastEmbed should rank similar texts higher"
+        );
+        assert!(
+            llama_similar > llama_dissimilar,
+            "LlamaCpp should rank similar texts higher"
+        );
 
         println!("\n=== Both backends show proper semantic understanding ===");
     }
@@ -552,14 +631,18 @@ mod comparison_tests {
         let fastembed_config = EmbeddingConfig::fastembed(None, None, None);
         let fastembed = create_provider(fastembed_config).await.unwrap();
 
-        let llama_cpp = LlamaCppBackend::new_with_model(
-            PathBuf::from(NOMIC_V15_MODEL),
-            DeviceType::Auto,
-        ).unwrap();
+        let llama_cpp =
+            LlamaCppBackend::new_with_model(PathBuf::from(NOMIC_V15_MODEL), DeviceType::Auto)
+                .unwrap();
 
         let test_count = 50;
         let texts: Vec<String> = (0..test_count)
-            .map(|i| format!("This is test sentence number {} for throughput benchmarking.", i))
+            .map(|i| {
+                format!(
+                    "This is test sentence number {} for throughput benchmarking.",
+                    i
+                )
+            })
             .collect();
 
         // Warm up
@@ -578,10 +661,14 @@ mod comparison_tests {
         let llama_elapsed = llama_start.elapsed();
         let llama_throughput = test_count as f64 / llama_elapsed.as_secs_f64();
 
-        println!("FastEmbed:  {} embeddings in {:?} ({:.1} emb/sec)",
-                 test_count, fe_elapsed, fe_throughput);
-        println!("LlamaCpp:   {} embeddings in {:?} ({:.1} emb/sec)",
-                 test_count, llama_elapsed, llama_throughput);
+        println!(
+            "FastEmbed:  {} embeddings in {:?} ({:.1} emb/sec)",
+            test_count, fe_elapsed, fe_throughput
+        );
+        println!(
+            "LlamaCpp:   {} embeddings in {:?} ({:.1} emb/sec)",
+            test_count, llama_elapsed, llama_throughput
+        );
 
         let speedup = if llama_throughput > fe_throughput {
             format!("LlamaCpp {:.1}x faster", llama_throughput / fe_throughput)
@@ -610,7 +697,12 @@ mod comparison_tests {
 
         let test_count = 50;
         let texts: Vec<String> = (0..test_count)
-            .map(|i| format!("This is test sentence number {} for throughput benchmarking.", i))
+            .map(|i| {
+                format!(
+                    "This is test sentence number {} for throughput benchmarking.",
+                    i
+                )
+            })
             .collect();
 
         // FastEmbed setup and benchmark
@@ -623,21 +715,26 @@ mod comparison_tests {
         let _ = fastembed.embed_batch(texts.clone()).await.unwrap();
         let fe_elapsed = fe_start.elapsed();
         let fe_throughput = test_count as f64 / fe_elapsed.as_secs_f64();
-        println!("  {} embeddings in {:?} ({:.1} emb/sec)", test_count, fe_elapsed, fe_throughput);
+        println!(
+            "  {} embeddings in {:?} ({:.1} emb/sec)",
+            test_count, fe_elapsed, fe_throughput
+        );
 
         // LlamaCpp setup and benchmark using EmbeddingProvider
         println!("\n--- LlamaCpp (Vulkan, Local GPU) ---");
-        let llama_cpp = LlamaCppBackend::new_with_model(
-            PathBuf::from(NOMIC_V15_MODEL),
-            DeviceType::Auto,
-        ).unwrap();
+        let llama_cpp =
+            LlamaCppBackend::new_with_model(PathBuf::from(NOMIC_V15_MODEL), DeviceType::Auto)
+                .unwrap();
         let _ = llama_cpp.embed("warmup").await;
 
         let llama_start = std::time::Instant::now();
         let _ = llama_cpp.embed_batch(texts.clone()).await.unwrap();
         let llama_elapsed = llama_start.elapsed();
         let llama_throughput = test_count as f64 / llama_elapsed.as_secs_f64();
-        println!("  {} embeddings in {:?} ({:.1} emb/sec)", test_count, llama_elapsed, llama_throughput);
+        println!(
+            "  {} embeddings in {:?} ({:.1} emb/sec)",
+            test_count, llama_elapsed, llama_throughput
+        );
 
         // Ollama setup and benchmark
         println!("\n--- Ollama (Remote GPU via HTTPS) ---");
@@ -653,22 +750,34 @@ mod comparison_tests {
                 let _ = ollama.embed_batch(texts.clone()).await.unwrap();
                 let ollama_elapsed = ollama_start.elapsed();
                 let ollama_throughput = test_count as f64 / ollama_elapsed.as_secs_f64();
-                println!("  {} embeddings in {:?} ({:.1} emb/sec)", test_count, ollama_elapsed, ollama_throughput);
+                println!(
+                    "  {} embeddings in {:?} ({:.1} emb/sec)",
+                    test_count, ollama_elapsed, ollama_throughput
+                );
 
                 // Summary
                 println!("\n=== Summary ===");
                 println!("  FastEmbed: {:.1} emb/sec (baseline)", fe_throughput);
-                println!("  LlamaCpp:  {:.1} emb/sec ({:.1}x vs FastEmbed)",
-                         llama_throughput, llama_throughput / fe_throughput);
-                println!("  Ollama:    {:.1} emb/sec ({:.1}x vs FastEmbed)",
-                         ollama_throughput, ollama_throughput / fe_throughput);
+                println!(
+                    "  LlamaCpp:  {:.1} emb/sec ({:.1}x vs FastEmbed)",
+                    llama_throughput,
+                    llama_throughput / fe_throughput
+                );
+                println!(
+                    "  Ollama:    {:.1} emb/sec ({:.1}x vs FastEmbed)",
+                    ollama_throughput,
+                    ollama_throughput / fe_throughput
+                );
             }
             Err(e) => {
                 println!("  Ollama not available: {}", e);
                 println!("\n=== Summary (without Ollama) ===");
                 println!("  FastEmbed: {:.1} emb/sec", fe_throughput);
-                println!("  LlamaCpp:  {:.1} emb/sec ({:.1}x)",
-                         llama_throughput, llama_throughput / fe_throughput);
+                println!(
+                    "  LlamaCpp:  {:.1} emb/sec ({:.1}x)",
+                    llama_throughput,
+                    llama_throughput / fe_throughput
+                );
             }
         }
     }

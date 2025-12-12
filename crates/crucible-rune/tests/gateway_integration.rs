@@ -477,7 +477,10 @@ fn test_transport_config_roundtrip() {
         TransportConfig::Stdio { command, args, env } => {
             assert_eq!(command, "node");
             assert_eq!(args, vec!["server.js"]);
-            assert_eq!(env, vec![("NODE_ENV".to_string(), "production".to_string())]);
+            assert_eq!(
+                env,
+                vec![("NODE_ENV".to_string(), "production".to_string())]
+            );
         }
         _ => panic!("Expected Stdio transport"),
     }
@@ -534,4 +537,3 @@ fn test_tool_call_result_error() {
 
     assert!(result.is_error);
 }
-

@@ -76,8 +76,7 @@ pub fn record_body(reference: &str) -> &str {
 
 /// Check if an error is a retryable transaction conflict
 pub fn is_retryable_error(error_msg: &str) -> bool {
-    error_msg.contains("read or write conflict")
-        || error_msg.contains("transaction can be retried")
+    error_msg.contains("read or write conflict") || error_msg.contains("transaction can be retried")
 }
 
 /// Generate a document ID from a path

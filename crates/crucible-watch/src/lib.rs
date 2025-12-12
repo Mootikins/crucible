@@ -96,13 +96,7 @@ pub mod prelude {
             generate_document_id, EmbeddingEvent, EmbeddingEventMetadata, EmbeddingEventPriority,
             EmbeddingEventResult, EventDrivenEmbeddingConfig,
         },
-        Error,
-        EventHandler,
-        FileEvent,
-        FileEventKind,
-        FileWatcher,
-        Result,
-        WatchBackend,
+        Error, EventHandler, FileEvent, FileEventKind, FileWatcher, Result, WatchBackend,
         WatchManager,
     };
     // Re-export both WatchConfig types with clear names

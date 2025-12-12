@@ -34,7 +34,7 @@ pub use crucible_core::traits::chat::{
 // Re-export CLI implementations
 pub use context::CliChatContext;
 pub use diff::DiffRenderer;
-pub use display::{Display, ToolCallDisplay, format_tool_args};
+pub use display::{format_tool_args, Display, ToolCallDisplay};
 pub use handlers::{ExitHandler, HelpHandler, ModeCycleHandler, ModeHandler, SearchHandler};
 pub use mode_ext::ChatModeDisplay;
 pub use session::{ChatSession, SessionConfig};

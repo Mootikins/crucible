@@ -90,9 +90,15 @@ pub struct HookToggle {
     pub priority: i64,
 }
 
-fn default_true() -> bool { true }
-fn default_pattern() -> String { "*".to_string() }
-fn default_priority() -> i64 { 100 }
+fn default_true() -> bool {
+    true
+}
+fn default_pattern() -> String {
+    "*".to_string()
+}
+fn default_priority() -> i64 {
+    100
+}
 
 impl Default for HookToggle {
     fn default() -> Self {
@@ -172,7 +178,9 @@ pub struct ToolSelectorConfig {
     pub suffix: Option<String>,
 }
 
-fn default_selector_priority() -> i64 { 5 } // Run very early
+fn default_selector_priority() -> i64 {
+    5
+} // Run very early
 
 impl Default for ToolSelectorConfig {
     fn default() -> Self {
@@ -279,12 +287,15 @@ pub fn create_event_emit_hook(config: &EventEmitConfig) -> Handler {
         pattern,
         move |ctx, event| {
             // Emit a custom event for external consumption
-            ctx.emit_custom("audit:tool_executed", json!({
-                "tool_name": event.identifier,
-                "event_type": event.event_type.as_str(),
-                "timestamp_ms": event.timestamp_ms,
-                "source": event.source,
-            }));
+            ctx.emit_custom(
+                "audit:tool_executed",
+                json!({
+                    "tool_name": event.identifier,
+                    "event_type": event.event_type.as_str(),
+                    "timestamp_ms": event.timestamp_ms,
+                    "source": event.source,
+                }),
+            );
 
             // If webhook URL is configured, note it in context for later processing
             if let Some(ref url) = webhook_url {
@@ -525,9 +536,9 @@ fn determine_priority(name: &str, category: &str) -> i32 {
                 30 // Normal priority for dev builds
             }
         }
-        "ci" => 5,            // Very high priority
-        "default" => 1,       // Highest priority (usually help/list)
-        _ => 50,              // Default priority
+        "ci" => 5,      // Very high priority
+        "default" => 1, // Highest priority (usually help/list)
+        _ => 50,        // Default priority
     }
 }
 
@@ -584,34 +595,33 @@ fn filter_test_output_native(output: &str) -> Option<String> {
 }
 
 fn is_cargo_test(output: &str) -> bool {
-    output.contains("test result:") ||
-    (output.contains("running ") && output.contains(" test"))
+    output.contains("test result:") || (output.contains("running ") && output.contains(" test"))
 }
 
 fn is_pytest(output: &str) -> bool {
-    output.contains("passed in ") ||
-    output.contains("failed in ") ||
-    (output.contains("=====") && (output.contains("passed") || output.contains("failed")))
+    output.contains("passed in ")
+        || output.contains("failed in ")
+        || (output.contains("=====") && (output.contains("passed") || output.contains("failed")))
 }
 
 fn is_jest(output: &str) -> bool {
-    output.contains("Test Suites:") ||
-    (output.contains("Tests:") && (output.contains("passed") || output.contains("failed")))
+    output.contains("Test Suites:")
+        || (output.contains("Tests:") && (output.contains("passed") || output.contains("failed")))
 }
 
 fn is_go_test(output: &str) -> bool {
-    output.starts_with("PASS") ||
-    output.starts_with("FAIL") ||
-    output.contains("\nPASS\n") ||
-    output.contains("\nFAIL\n") ||
-    output.contains("\nok \t") ||
-    output.contains("\nFAIL\t")
+    output.starts_with("PASS")
+        || output.starts_with("FAIL")
+        || output.contains("\nPASS\n")
+        || output.contains("\nFAIL\n")
+        || output.contains("\nok \t")
+        || output.contains("\nFAIL\t")
 }
 
 fn is_rspec_or_mix(output: &str) -> bool {
-    (output.contains(" examples,") && output.contains(" failure")) ||
-    (output.contains(" tests,") && output.contains(" failure")) ||
-    output.contains("Finished in ")
+    (output.contains(" examples,") && output.contains(" failure"))
+        || (output.contains(" tests,") && output.contains(" failure"))
+        || output.contains("Finished in ")
 }
 
 fn filter_cargo_test(output: &str) -> String {
@@ -674,7 +684,11 @@ fn filter_pytest(output: &str) -> String {
             continue;
         }
 
-        if in_failures && line.starts_with("=") && !line.contains("FAILURES") && !line.contains("ERRORS") {
+        if in_failures
+            && line.starts_with("=")
+            && !line.contains("FAILURES")
+            && !line.contains("ERRORS")
+        {
             in_failures = false;
         }
 
@@ -685,7 +699,9 @@ fn filter_pytest(output: &str) -> String {
             }
         }
 
-        if line.starts_with("=") && (line.contains("passed") || line.contains("failed") || line.contains("error")) {
+        if line.starts_with("=")
+            && (line.contains("passed") || line.contains("failed") || line.contains("error"))
+        {
             summary_lines.push(line.to_string());
         }
 
@@ -742,9 +758,7 @@ fn filter_go_test(output: &str) -> String {
         if line.starts_with("ok \t") || line.starts_with("ok  ") {
             summary_lines.push(line.to_string());
         }
-        if (line.starts_with("FAIL\t") || line.starts_with("FAIL "))
-            && !line.starts_with("FAIL:")
-        {
+        if (line.starts_with("FAIL\t") || line.starts_with("FAIL ")) && !line.starts_with("FAIL:") {
             summary_lines.push(line.to_string());
         }
 
@@ -847,12 +861,15 @@ test foo::test_one ... ok
 test foo::test_two ... ok
 test result: ok. 5 passed; 0 failed"#;
 
-        let event = Event::tool_after("just_test", json!({
-            "content": [{
-                "type": "text",
-                "text": cargo_output
-            }]
-        }));
+        let event = Event::tool_after(
+            "just_test",
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": cargo_output
+                }]
+            }),
+        );
 
         let result = hook.handle(&mut ctx, event).unwrap();
 
@@ -878,12 +895,15 @@ test result: ok. 5 passed; 0 failed"#;
 
         let regular_output = "Hello, this is not test output.";
 
-        let event = Event::tool_after("some_tool", json!({
-            "content": [{
-                "type": "text",
-                "text": regular_output
-            }]
-        }));
+        let event = Event::tool_after(
+            "some_tool",
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": regular_output
+                }]
+            }),
+        );
 
         let result = hook.handle(&mut ctx, event).unwrap();
 
@@ -915,7 +935,10 @@ test result: ok. 5 passed; 0 failed"#;
         assert_eq!(emitted[0].identifier, "audit:tool_executed");
 
         // Should have set webhook URL in context
-        assert_eq!(ctx.get("webhook_url"), Some(&json!("https://example.com/webhook")));
+        assert_eq!(
+            ctx.get("webhook_url"),
+            Some(&json!("https://example.com/webhook"))
+        );
     }
 
     #[test]
@@ -1196,7 +1219,10 @@ test result: ok. 42 passed; 0 failed"#;
 
         assert!(!result.is_cancelled());
         assert_eq!(result.payload["category"], json!("testing"));
-        assert!(result.payload["tags"].as_array().unwrap().contains(&json!("ci")));
+        assert!(result.payload["tags"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("ci")));
         assert_eq!(result.payload["priority"], json!(20)); // Default test priority
     }
 
@@ -1215,7 +1241,10 @@ test result: ok. 42 passed; 0 failed"#;
         let result = hook.handle(&mut ctx, event).unwrap();
 
         assert_eq!(result.payload["category"], json!("build"));
-        assert!(result.payload["tags"].as_array().unwrap().contains(&json!("build")));
+        assert!(result.payload["tags"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("build")));
         assert_eq!(result.payload["priority"], json!(30));
     }
 
@@ -1298,7 +1327,10 @@ test result: ok. 42 passed; 0 failed"#;
 
         // Should have registered recipe enrichment hook
         let handler = bus.get_handler("builtin:recipe_enrichment");
-        assert!(handler.is_some(), "builtin:recipe_enrichment hook should be registered");
+        assert!(
+            handler.is_some(),
+            "builtin:recipe_enrichment hook should be registered"
+        );
         assert_eq!(handler.unwrap().event_type, EventType::ToolDiscovered);
     }
 }

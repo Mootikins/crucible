@@ -172,7 +172,7 @@ impl EmbeddingConfig {
         self.max_concurrent.unwrap_or_else(|| {
             match self.provider {
                 EmbeddingProviderType::Ollama => 1,
-                EmbeddingProviderType::Burn => 1,     // GPU-bound, sequential
+                EmbeddingProviderType::Burn => 1, // GPU-bound, sequential
                 EmbeddingProviderType::LlamaCpp => 1, // GPU-bound, sequential
                 EmbeddingProviderType::FastEmbed => {
                     // CPU-bound: use half of available cores, minimum 1
@@ -237,7 +237,7 @@ impl EmbeddingConfig {
                             .to_string(),
                         timeout_seconds: 30,
                         retry_attempts: 3,
-                        dimensions: 0, // Use 0 to indicate default dimensions
+                        dimensions: 0,  // Use 0 to indicate default dimensions
                         batch_size: 50, // Default batch size for ~7x speedup
                     },
                 )
@@ -250,16 +250,18 @@ impl EmbeddingConfig {
                 })
             }
             EmbeddingProviderType::Burn => {
-                crate::enrichment::EmbeddingProviderConfig::Burn(crate::enrichment::BurnEmbedConfig {
-                    model: self
-                        .model
-                        .clone()
-                        .unwrap_or_else(|| "nomic-embed-text".to_string()),
-                    backend: crate::enrichment::BurnBackendConfig::Auto,
-                    model_dir: crate::enrichment::BurnEmbedConfig::default_model_dir(),
-                    model_search_paths: Vec::new(), // Will use defaults
-                    dimensions: 0,                  // Auto-detect
-                })
+                crate::enrichment::EmbeddingProviderConfig::Burn(
+                    crate::enrichment::BurnEmbedConfig {
+                        model: self
+                            .model
+                            .clone()
+                            .unwrap_or_else(|| "nomic-embed-text".to_string()),
+                        backend: crate::enrichment::BurnBackendConfig::Auto,
+                        model_dir: crate::enrichment::BurnEmbedConfig::default_model_dir(),
+                        model_search_paths: Vec::new(), // Will use defaults
+                        dimensions: 0,                  // Auto-detect
+                    },
+                )
             }
             EmbeddingProviderType::LlamaCpp => {
                 crate::enrichment::EmbeddingProviderConfig::LlamaCpp(

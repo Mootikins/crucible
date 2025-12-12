@@ -35,7 +35,10 @@ mod integration_tests {
                 // Test that we can find the orchestrator
                 let orchestrator_cards = registry.get_by_tag("orchestration");
                 if !orchestrator_cards.is_empty() {
-                    println!("Found {} orchestrator agent cards", orchestrator_cards.len());
+                    println!(
+                        "Found {} orchestrator agent cards",
+                        orchestrator_cards.len()
+                    );
                 }
             }
         }

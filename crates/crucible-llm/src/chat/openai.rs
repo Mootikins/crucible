@@ -2,8 +2,8 @@
 
 use async_trait::async_trait;
 use crucible_core::traits::{
-    LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmError, LlmResult,
-    MessageRole, ToolCall, TokenUsage,
+    LlmError, LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmResult, MessageRole, TokenUsage,
+    ToolCall,
 };
 use serde::Deserialize;
 use std::time::Duration;
@@ -242,12 +242,8 @@ mod tests {
 
     #[test]
     fn test_openai_provider_creation() {
-        let provider = OpenAIChatProvider::new(
-            "sk-test-key".to_string(),
-            None,
-            "gpt-4".to_string(),
-            60,
-        );
+        let provider =
+            OpenAIChatProvider::new("sk-test-key".to_string(), None, "gpt-4".to_string(), 60);
 
         assert_eq!(provider.provider_name(), "OpenAI");
         assert_eq!(provider.default_model(), "gpt-4");

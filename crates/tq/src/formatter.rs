@@ -237,7 +237,11 @@ fn truncate_content(s: &str, max: usize) -> String {
         // Try to truncate at a line boundary
         let truncated: String = s.chars().take(max - 20).collect();
         if let Some(last_newline) = truncated.rfind('\n') {
-            format!("{}\n... ({} more characters)", &truncated[..last_newline], s.len() - last_newline)
+            format!(
+                "{}\n... ({} more characters)",
+                &truncated[..last_newline],
+                s.len() - last_newline
+            )
         } else {
             format!("{}... ({} more characters)", truncated, s.len() - max + 20)
         }
@@ -311,14 +315,8 @@ pub fn read_note_formatter() -> ContentFormatter {
 pub fn search_formatter() -> ContentFormatter {
     ContentFormatter::new()
         .with_default_threshold(300)
-        .with_field(
-            "snippet",
-            FieldFormat::new("match").with_threshold(200),
-        )
-        .with_field(
-            "context",
-            FieldFormat::new("context").with_threshold(200),
-        )
+        .with_field("snippet", FieldFormat::new("match").with_threshold(200))
+        .with_field("context", FieldFormat::new("context").with_threshold(200))
 }
 
 /// Create a formatter configured for command/shell output
@@ -404,13 +402,12 @@ mod tests {
 
     #[test]
     fn test_truncation() {
-        let formatter = ContentFormatter::new()
-            .with_field(
-                "content",
-                FieldFormat::new("content")
-                    .with_threshold(10)
-                    .with_max_length(50),
-            );
+        let formatter = ContentFormatter::new().with_field(
+            "content",
+            FieldFormat::new("content")
+                .with_threshold(10)
+                .with_max_length(50),
+        );
         let long_content = "a".repeat(200);
         let value = json!({
             "path": "test.txt",

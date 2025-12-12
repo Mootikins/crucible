@@ -26,8 +26,8 @@ use crucible_rune::{
     event_bus::EventBus,
     mcp_gateway::McpGatewayManager,
     tool_events::ToolSource,
-    ContentBlock, EnrichedRecipe, EventHandler, EventHandlerConfig,
-    EventPipeline, PluginLoader, RuneDiscoveryConfig, RuneToolRegistry, ToolResultEvent,
+    ContentBlock, EnrichedRecipe, EventHandler, EventHandlerConfig, EventPipeline, PluginLoader,
+    RuneDiscoveryConfig, RuneToolRegistry, ToolResultEvent,
 };
 use rmcp::model::{CallToolResult, Content, Tool};
 use rmcp::service::RequestContext;
@@ -114,22 +114,21 @@ impl ExtendedMcpServer {
 
         // Create event handler for recipe enrichment
         // Looks in ~/.crucible/runes/events/ and {just_dir}/runes/events/
-        let event_handler = match EventHandler::new(EventHandlerConfig::with_defaults(Some(
-            &just_dir,
-        ))) {
-            Ok(handler) => {
-                // Ensure event directories exist
-                if let Err(e) = handler.ensure_event_directories(&["recipe_discovered"]) {
-                    warn!("Failed to ensure event directories: {}", e);
+        let event_handler =
+            match EventHandler::new(EventHandlerConfig::with_defaults(Some(&just_dir))) {
+                Ok(handler) => {
+                    // Ensure event directories exist
+                    if let Err(e) = handler.ensure_event_directories(&["recipe_discovered"]) {
+                        warn!("Failed to ensure event directories: {}", e);
+                    }
+                    info!("Recipe event handler initialized");
+                    Some(Arc::new(handler))
                 }
-                info!("Recipe event handler initialized");
-                Some(Arc::new(handler))
-            }
-            Err(e) => {
-                warn!("Failed to create event handler: {}", e);
-                None
-            }
-        };
+                Err(e) => {
+                    warn!("Failed to create event handler: {}", e);
+                    None
+                }
+            };
 
         // Create event pipeline for filtering tool output
         // Looks for plugins in {just_dir}/runes/plugins/
@@ -143,7 +142,11 @@ impl ExtendedMcpServer {
                         }
                         let hook_count = loader.hooks().len();
                         if hook_count > 0 {
-                            info!("Loaded {} plugin hooks from {}", hook_count, plugin_dir.display());
+                            info!(
+                                "Loaded {} plugin hooks from {}",
+                                hook_count,
+                                plugin_dir.display()
+                            );
                         }
                         Some(EventPipeline::new(Arc::new(RwLock::new(loader))))
                     }
@@ -199,7 +202,8 @@ impl ExtendedMcpServer {
         knowledge_repo: Arc<dyn KnowledgeRepository>,
         embedding_provider: Arc<dyn EmbeddingProvider>,
     ) -> Self {
-        let kiln_server = CrucibleMcpServer::new(kiln_path.clone(), knowledge_repo, embedding_provider);
+        let kiln_server =
+            CrucibleMcpServer::new(kiln_path.clone(), knowledge_repo, embedding_provider);
         let clustering_tools = Arc::new(ClusteringTools::new(PathBuf::from(kiln_path)));
         let just_tools = Arc::new(JustTools::new("."));
         let rune_registry = Arc::new(
@@ -390,10 +394,7 @@ impl ExtendedMcpServer {
                 //     tool.tags = recipe.tags.clone();
                 //     tool.priority = recipe.priority;
                 // }
-                debug!(
-                    "Enriched {} Just tools via event handlers",
-                    tools.len()
-                );
+                debug!("Enriched {} Just tools via event handlers", tools.len());
             }
             Err(e) => {
                 warn!("Failed to enrich recipes: {}", e);
@@ -407,11 +408,7 @@ impl ExtendedMcpServer {
     ///
     /// If enrichment data is present (category, tags), it's appended to the description.
     fn mcp_tool_from_just(&self, jt: &crucible_just::McpTool) -> Tool {
-        let schema = jt
-            .input_schema
-            .as_object()
-            .cloned()
-            .unwrap_or_default();
+        let schema = jt.input_schema.as_object().cloned().unwrap_or_default();
 
         // Build description with enrichment metadata appended
         let mut description = jt.description.clone();
@@ -423,7 +420,12 @@ impl ExtendedMcpServer {
 
         // Append tags if present
         if !jt.tags.is_empty() {
-            let tags_str = jt.tags.iter().map(|t| format!("#{}", t)).collect::<Vec<_>>().join(" ");
+            let tags_str = jt
+                .tags
+                .iter()
+                .map(|t| format!("#{}", t))
+                .collect::<Vec<_>>()
+                .join(" ");
             description = format!("{} {}", description, tags_str);
         }
 
@@ -441,11 +443,7 @@ impl ExtendedMcpServer {
 
     /// Convert crucible_rune::RuneTool to rmcp::model::Tool
     fn mcp_tool_from_rune(&self, rt: &crucible_rune::RuneTool) -> Tool {
-        let schema = rt
-            .input_schema
-            .as_object()
-            .cloned()
-            .unwrap_or_default();
+        let schema = rt.input_schema.as_object().cloned().unwrap_or_default();
         Tool {
             name: format!("rune_{}", rt.name).into(),
             title: None,
@@ -460,11 +458,7 @@ impl ExtendedMcpServer {
 
     /// Convert crucible_rune::mcp_gateway::UpstreamTool to rmcp::model::Tool
     fn mcp_tool_from_upstream(&self, ut: &crucible_rune::mcp_gateway::UpstreamTool) -> Tool {
-        let schema = ut
-            .input_schema
-            .as_object()
-            .cloned()
-            .unwrap_or_default();
+        let schema = ut.input_schema.as_object().cloned().unwrap_or_default();
         Tool {
             name: ut.prefixed_name.clone().into(),
             title: None,
@@ -522,9 +516,12 @@ impl ExtendedMcpServer {
         name.starts_with("rune_")
     }
 
-  /// Check if a tool name is handled by Clustering
+    /// Check if a tool name is handled by Clustering
     pub fn is_clustering_tool(name: &str) -> bool {
-        matches!(name, "detect_mocs" | "cluster_documents" | "get_document_stats")
+        matches!(
+            name,
+            "detect_mocs" | "cluster_documents" | "get_document_stats"
+        )
     }
 
     /// Check if a tool name might be from an upstream MCP server
@@ -558,7 +555,10 @@ impl ExtendedMcpServer {
         let recipe_name = name.strip_prefix("just_").unwrap_or(name);
         let start = Instant::now();
 
-        debug!("Executing Just recipe: {} with args: {:?}", recipe_name, arguments);
+        debug!(
+            "Executing Just recipe: {} with args: {:?}",
+            recipe_name, arguments
+        );
 
         // Emit tool:before event
         {
@@ -582,7 +582,11 @@ impl ExtendedMcpServer {
             }
         }
 
-        match self.just_tools.execute(recipe_name, arguments.clone()).await {
+        match self
+            .just_tools
+            .execute(recipe_name, arguments.clone())
+            .await
+        {
             Ok(result) => {
                 let duration_ms = start.elapsed().as_millis() as u64;
                 let is_error = result.exit_code != Some(0);
@@ -655,8 +659,9 @@ impl ExtendedMcpServer {
                             }],
                             "is_error": is_error,
                             "duration_ms": duration_ms,
-                        })
-                    ).with_source(ToolSource::Just.as_str());
+                        }),
+                    )
+                    .with_source(ToolSource::Just.as_str());
 
                     let (_result_event, _ctx, errors) = bus.emit(event);
 
@@ -680,8 +685,9 @@ impl ExtendedMcpServer {
                         json!({
                             "error": e.to_string(),
                             "duration_ms": duration_ms,
-                        })
-                    ).with_source(ToolSource::Just.as_str());
+                        }),
+                    )
+                    .with_source(ToolSource::Just.as_str());
 
                     let (_result_event, _ctx, _errors) = bus.emit(event);
                 }
@@ -700,45 +706,37 @@ impl ExtendedMcpServer {
         name: &str,
         arguments: Value,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        debug!("Executing clustering tool: {} with args: {:?}", name, arguments);
+        debug!(
+            "Executing clustering tool: {} with args: {:?}",
+            name, arguments
+        );
 
         // Execute the appropriate clustering tool and convert to JSON
         let result = match name {
             "detect_mocs" => {
-                let min_score = arguments
-                    .get("min_score")
-                    .and_then(|v| v.as_f64());
+                let min_score = arguments.get("min_score").and_then(|v| v.as_f64());
 
-                let mocs = self.clustering_tools
+                let mocs = self
+                    .clustering_tools
                     .detect_mocs(min_score)
                     .await
                     .map_err(|e| {
-                        rmcp::ErrorData::internal_error(
-                            format!("detect_mocs failed: {}", e),
-                            None,
-                        )
+                        rmcp::ErrorData::internal_error(format!("detect_mocs failed: {}", e), None)
                     })?;
                 json!(mocs)
             }
             "cluster_documents" => {
-                let min_similarity = arguments
-                    .get("min_similarity")
-                    .and_then(|v| v.as_f64());
+                let min_similarity = arguments.get("min_similarity").and_then(|v| v.as_f64());
                 let min_cluster_size = arguments
                     .get("min_cluster_size")
                     .and_then(|v| v.as_u64())
                     .map(|v| v as usize);
-                let link_weight = arguments
-                    .get("link_weight")
-                    .and_then(|v| v.as_f64());
-                let tag_weight = arguments
-                    .get("tag_weight")
-                    .and_then(|v| v.as_f64());
-                let title_weight = arguments
-                    .get("title_weight")
-                    .and_then(|v| v.as_f64());
+                let link_weight = arguments.get("link_weight").and_then(|v| v.as_f64());
+                let tag_weight = arguments.get("tag_weight").and_then(|v| v.as_f64());
+                let title_weight = arguments.get("title_weight").and_then(|v| v.as_f64());
 
-                let clusters = self.clustering_tools
+                let clusters = self
+                    .clustering_tools
                     .cluster_documents(
                         min_similarity,
                         min_cluster_size,
@@ -756,7 +754,8 @@ impl ExtendedMcpServer {
                 json!(clusters)
             }
             "get_document_stats" => {
-                let stats = self.clustering_tools
+                let stats = self
+                    .clustering_tools
                     .get_document_stats()
                     .await
                     .map_err(|e| {
@@ -836,8 +835,9 @@ impl ExtendedMcpServer {
                                 }],
                                 "is_error": false,
                                 "duration_ms": duration_ms,
-                            })
-                        ).with_source(ToolSource::Rune.as_str());
+                            }),
+                        )
+                        .with_source(ToolSource::Rune.as_str());
 
                         let (_result_event, _ctx, errors) = bus.emit(event);
 
@@ -883,8 +883,9 @@ impl ExtendedMcpServer {
                             json!({
                                 "error": &error_msg,
                                 "duration_ms": duration_ms,
-                            })
-                        ).with_source(ToolSource::Rune.as_str());
+                            }),
+                        )
+                        .with_source(ToolSource::Rune.as_str());
 
                         let (_result_event, _ctx, _errors) = bus.emit(event);
                     }
@@ -907,8 +908,9 @@ impl ExtendedMcpServer {
                         json!({
                             "error": e.to_string(),
                             "duration_ms": duration_ms,
-                        })
-                    ).with_source(ToolSource::Rune.as_str());
+                        }),
+                    )
+                    .with_source(ToolSource::Rune.as_str());
 
                     let (_result_event, _ctx, _errors) = bus.emit(event);
                 }
@@ -938,10 +940,7 @@ impl ExtendedMcpServer {
         arguments: Value,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let gateway = self.upstream_clients.as_ref().ok_or_else(|| {
-            rmcp::ErrorData::internal_error(
-                "No upstream MCP clients configured".to_string(),
-                None,
-            )
+            rmcp::ErrorData::internal_error("No upstream MCP clients configured".to_string(), None)
         })?;
 
         match gateway.call_tool(name, arguments).await {
@@ -1021,9 +1020,7 @@ impl ServerHandler for ExtendedMcpService {
         rmcp::model::ServerInfo {
             protocol_version: rmcp::model::ProtocolVersion::default(),
             capabilities: rmcp::model::ServerCapabilities {
-                tools: Some(rmcp::model::ToolsCapability {
-                    list_changed: None,
-                }),
+                tools: Some(rmcp::model::ToolsCapability { list_changed: None }),
                 ..Default::default()
             },
             server_info: rmcp::model::Implementation {
@@ -1086,10 +1083,7 @@ impl ServerHandler for ExtendedMcpService {
             }
 
             // Delegate to kiln server for core tools
-            self.inner
-                .kiln_server
-                .call_tool(request, context)
-                .await
+            self.inner.kiln_server.call_tool(request, context).await
         }
     }
 }
@@ -1098,8 +1092,8 @@ impl ServerHandler for ExtendedMcpService {
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use tempfile::TempDir;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use tempfile::TempDir;
 
     struct MockKnowledgeRepository;
     struct MockEmbeddingProvider;
@@ -1388,8 +1382,16 @@ mod tests {
         let _ = server.call_just_tool("just_hello", json!({})).await;
 
         // Verify events were emitted
-        assert_eq!(before_count.load(Ordering::SeqCst), 1, "tool:before event should be emitted");
-        assert_eq!(after_count.load(Ordering::SeqCst), 1, "tool:after event should be emitted");
+        assert_eq!(
+            before_count.load(Ordering::SeqCst),
+            1,
+            "tool:before event should be emitted"
+        );
+        assert_eq!(
+            after_count.load(Ordering::SeqCst),
+            1,
+            "tool:after event should be emitted"
+        );
     }
 
     #[tokio::test]
@@ -1416,7 +1418,10 @@ mod tests {
         {
             let bus = event_bus.read().await;
             let handler = bus.get_handler("builtin:test_filter");
-            assert!(handler.is_some(), "builtin:test_filter hook should be registered");
+            assert!(
+                handler.is_some(),
+                "builtin:test_filter hook should be registered"
+            );
             assert_eq!(handler.unwrap().event_type, EventType::ToolAfter);
         }
     }
@@ -1468,7 +1473,10 @@ mod tests {
         let tools = server.list_all_tools().await;
 
         // Should have at least one just tool
-        let just_tools: Vec<_> = tools.iter().filter(|t| t.name.as_ref().starts_with("just_")).collect();
+        let just_tools: Vec<_> = tools
+            .iter()
+            .filter(|t| t.name.as_ref().starts_with("just_"))
+            .collect();
         assert!(!just_tools.is_empty(), "Should have at least one just tool");
 
         // Should have emitted tool:discovered events for all just tools
@@ -1487,7 +1495,11 @@ mod tests {
 
         // Create a justfile with a test recipe
         let justfile_path = temp.path().join("justfile");
-        std::fs::write(&justfile_path, "test:\n\techo 'Running tests'\n\nbuild:\n\techo 'Building'\n").unwrap();
+        std::fs::write(
+            &justfile_path,
+            "test:\n\techo 'Running tests'\n\nbuild:\n\techo 'Building'\n",
+        )
+        .unwrap();
 
         let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
         let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
@@ -1534,9 +1546,21 @@ mod tests {
 
         // Verify enrichment is in the description
         let desc = test_tool.description.as_ref().unwrap().as_ref();
-        assert!(desc.contains("[testing]"), "Description should contain category: {}", desc);
-        assert!(desc.contains("#ci"), "Description should contain tags: {}", desc);
-        assert!(desc.contains("#quick"), "Description should contain tags: {}", desc);
+        assert!(
+            desc.contains("[testing]"),
+            "Description should contain category: {}",
+            desc
+        );
+        assert!(
+            desc.contains("#ci"),
+            "Description should contain tags: {}",
+            desc
+        );
+        assert!(
+            desc.contains("#quick"),
+            "Description should contain tags: {}",
+            desc
+        );
     }
 
     #[test]
@@ -1551,7 +1575,10 @@ mod tests {
             embedding_provider,
         );
 
-        assert!(server.upstream_clients().is_none(), "upstream_clients should be None initially");
+        assert!(
+            server.upstream_clients().is_none(),
+            "upstream_clients should be None initially"
+        );
     }
 
     #[test]
@@ -1576,16 +1603,24 @@ mod tests {
         let server = server.with_upstream_clients(Arc::clone(&manager));
 
         // Verify the manager is set
-        assert!(server.upstream_clients().is_some(), "upstream_clients should be set");
+        assert!(
+            server.upstream_clients().is_some(),
+            "upstream_clients should be set"
+        );
 
         // Verify it's the same manager (Arc pointer equality)
         let retrieved = server.upstream_clients().unwrap();
-        assert!(Arc::ptr_eq(&retrieved, &manager), "Should return the same Arc instance");
+        assert!(
+            Arc::ptr_eq(&retrieved, &manager),
+            "Should return the same Arc instance"
+        );
     }
 
     #[tokio::test]
     async fn test_list_all_tools_includes_upstream() {
-        use crucible_rune::mcp_gateway::{McpGatewayManager, UpstreamConfig, UpstreamTool, TransportConfig};
+        use crucible_rune::mcp_gateway::{
+            McpGatewayManager, TransportConfig, UpstreamConfig, UpstreamTool,
+        };
         use serde_json::json;
 
         let temp = TempDir::new().unwrap();
@@ -1641,14 +1676,19 @@ mod tests {
         let tools = server.list_all_tools().await;
 
         // Should have kiln tools + upstream tools
-        let upstream_tools: Vec<_> = tools.iter().filter(|t| t.name.as_ref().starts_with("upstream_")).collect();
+        let upstream_tools: Vec<_> = tools
+            .iter()
+            .filter(|t| t.name.as_ref().starts_with("upstream_"))
+            .collect();
         assert_eq!(upstream_tools.len(), 1, "Should have 1 upstream tool");
         assert_eq!(upstream_tools[0].name.as_ref(), "upstream_test_tool");
     }
 
     #[tokio::test]
     async fn test_upstream_tool_routing() {
-        use crucible_rune::mcp_gateway::{McpGatewayManager, UpstreamConfig, UpstreamTool, TransportConfig};
+        use crucible_rune::mcp_gateway::{
+            McpGatewayManager, TransportConfig, UpstreamConfig, UpstreamTool,
+        };
         use serde_json::json;
 
         let temp = TempDir::new().unwrap();
@@ -1704,9 +1744,18 @@ mod tests {
         assert!(gh_tool.is_some(), "Should find gh_search_repos tool");
 
         // Verify is_upstream_tool detection
-        assert!(!ExtendedMcpServer::is_upstream_tool("just_build"), "just_ tools are not upstream");
-        assert!(!ExtendedMcpServer::is_upstream_tool("rune_test"), "rune_ tools are not upstream");
-        assert!(ExtendedMcpServer::is_upstream_tool("gh_search_repos"), "gh_ tools could be upstream");
+        assert!(
+            !ExtendedMcpServer::is_upstream_tool("just_build"),
+            "just_ tools are not upstream"
+        );
+        assert!(
+            !ExtendedMcpServer::is_upstream_tool("rune_test"),
+            "rune_ tools are not upstream"
+        );
+        assert!(
+            ExtendedMcpServer::is_upstream_tool("gh_search_repos"),
+            "gh_ tools could be upstream"
+        );
 
         // Note: We can't actually test tool execution here without implementing
         // the full rmcp transport, but we've verified the tool is discoverable

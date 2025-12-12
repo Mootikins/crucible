@@ -36,7 +36,7 @@ pub struct SearchTools {
 #[derive(Deserialize, JsonSchema)]
 pub struct SemanticSearchParams {
     query: String,
-      #[serde(default = "default_limit")]
+    #[serde(default = "default_limit")]
     limit: usize,
 }
 

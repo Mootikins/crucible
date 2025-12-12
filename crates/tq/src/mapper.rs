@@ -152,12 +152,17 @@ impl Mapper for TruncateMapper {
 fn truncate_strings(value: Value, max_length: usize, suffix: &str) -> Value {
     match value {
         Value::String(s) if s.len() > max_length => {
-            let truncated = s.chars().take(max_length - suffix.len()).collect::<String>();
+            let truncated = s
+                .chars()
+                .take(max_length - suffix.len())
+                .collect::<String>();
             Value::String(format!("{}{}", truncated, suffix))
         }
-        Value::Array(arr) => {
-            Value::Array(arr.into_iter().map(|v| truncate_strings(v, max_length, suffix)).collect())
-        }
+        Value::Array(arr) => Value::Array(
+            arr.into_iter()
+                .map(|v| truncate_strings(v, max_length, suffix))
+                .collect(),
+        ),
         Value::Object(map) => Value::Object(
             map.into_iter()
                 .map(|(k, v)| (k, truncate_strings(v, max_length, suffix)))
@@ -214,7 +219,9 @@ pub struct ChainMapper {
 
 impl ChainMapper {
     pub fn new() -> Self {
-        Self { mappers: Vec::new() }
+        Self {
+            mappers: Vec::new(),
+        }
     }
 
     pub fn then<M: Mapper + 'static>(mut self, mapper: M) -> Self {
@@ -324,22 +331,14 @@ pub fn default_registry() -> Result<MapperRegistry, TqError> {
     // File listings - simplify to name and size
     registry.register(
         "list_*",
-        JqMapper::new(
-            r#"if type == "array" then [.[] | {name, size, type}] else . end"#,
-        )?,
+        JqMapper::new(r#"if type == "array" then [.[] | {name, size, type}] else . end"#)?,
     );
 
     // Read file - truncate content
-    registry.register(
-        "read_*",
-        ChainMapper::new().then(TruncateMapper::new(2000)),
-    );
+    registry.register("read_*", ChainMapper::new().then(TruncateMapper::new(2000)));
 
     // API responses - limit arrays
-    registry.register(
-        "api_*",
-        ChainMapper::new().then(LimitMapper::new(10)),
-    );
+    registry.register("api_*", ChainMapper::new().then(LimitMapper::new(10)));
 
     Ok(registry)
 }

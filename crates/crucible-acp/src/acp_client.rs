@@ -539,7 +539,9 @@ mod tests {
         let existing_file = temp.path().join("existing.txt");
 
         // Create file with initial content
-        tokio::fs::write(&existing_file, "original content").await.unwrap();
+        tokio::fs::write(&existing_file, "original content")
+            .await
+            .unwrap();
 
         // Write new content
         let _ = client

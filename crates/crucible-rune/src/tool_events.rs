@@ -117,10 +117,13 @@ impl ToolEventEmitter {
         arguments: JsonValue,
         source: ToolSource,
     ) -> (Event, EventContext, Vec<HandlerError>) {
-        let event = Event::tool_before(tool_name, arguments)
-            .with_source(source.as_str());
+        let event = Event::tool_before(tool_name, arguments).with_source(source.as_str());
 
-        debug!("Emitting tool:before for {} (source: {})", tool_name, source.as_str());
+        debug!(
+            "Emitting tool:before for {} (source: {})",
+            tool_name,
+            source.as_str()
+        );
         self.bus.emit(event)
     }
 
@@ -145,10 +148,12 @@ impl ToolEventEmitter {
             "duration_ms": duration_ms,
         });
 
-        let event = Event::tool_after(tool_name, payload)
-            .with_source(source.as_str());
+        let event = Event::tool_after(tool_name, payload).with_source(source.as_str());
 
-        debug!("Emitting tool:after for {} (duration: {}ms)", tool_name, duration_ms);
+        debug!(
+            "Emitting tool:after for {} (duration: {}ms)",
+            tool_name, duration_ms
+        );
         self.bus.emit(event)
     }
 
@@ -169,11 +174,12 @@ impl ToolEventEmitter {
             "duration_ms": duration_ms,
         });
 
-        let event = Event::tool_after(tool_name, payload)
-            .with_source(source.as_str());
+        let event = Event::tool_after(tool_name, payload).with_source(source.as_str());
 
-        debug!("Emitting tool:after for {} (is_error: {}, duration: {}ms)",
-               tool_name, is_error, duration_ms);
+        debug!(
+            "Emitting tool:after for {} (is_error: {}, duration: {}ms)",
+            tool_name, is_error, duration_ms
+        );
         self.bus.emit(event)
     }
 
@@ -190,8 +196,7 @@ impl ToolEventEmitter {
             "duration_ms": duration_ms,
         });
 
-        let event = Event::tool_error(tool_name, payload)
-            .with_source(source.as_str());
+        let event = Event::tool_error(tool_name, payload).with_source(source.as_str());
 
         debug!("Emitting tool:error for {}: {}", tool_name, error);
         self.bus.emit(event)
@@ -245,12 +250,8 @@ impl ToolEventEmitter {
                 let duration_ms = start.elapsed().as_millis() as u64;
 
                 // 3. Emit tool:after
-                let (after_event, _ctx, errors) = self.emit_after(
-                    tool_name,
-                    result_json,
-                    source,
-                    duration_ms,
-                );
+                let (after_event, _ctx, errors) =
+                    self.emit_after(tool_name, result_json, source, duration_ms);
 
                 if !errors.is_empty() {
                     for e in &errors {
@@ -259,19 +260,19 @@ impl ToolEventEmitter {
                 }
 
                 // Extract result from event (hooks may have transformed it)
-                Ok(after_event.payload.get("result").cloned().unwrap_or(JsonValue::Null))
+                Ok(after_event
+                    .payload
+                    .get("result")
+                    .cloned()
+                    .unwrap_or(JsonValue::Null))
             }
             Err(e) => {
                 let error_msg = e.to_string();
                 let duration_ms = start.elapsed().as_millis() as u64;
 
                 // 3. Emit tool:error
-                let (_error_event, _ctx, _errors) = self.emit_error(
-                    tool_name,
-                    &error_msg,
-                    source,
-                    duration_ms,
-                );
+                let (_error_event, _ctx, _errors) =
+                    self.emit_error(tool_name, &error_msg, source, duration_ms);
 
                 Err(error_msg)
             }
@@ -347,11 +348,8 @@ mod tests {
     fn test_emit_before() {
         let emitter = ToolEventEmitter::new();
 
-        let (event, _ctx, errors) = emitter.emit_before(
-            "test_tool",
-            json!({"arg": "value"}),
-            ToolSource::Just,
-        );
+        let (event, _ctx, errors) =
+            emitter.emit_before("test_tool", json!({"arg": "value"}), ToolSource::Just);
 
         assert!(errors.is_empty());
         assert_eq!(event.event_type, EventType::ToolBefore);
@@ -381,12 +379,8 @@ mod tests {
     fn test_emit_error() {
         let emitter = ToolEventEmitter::new();
 
-        let (event, _ctx, errors) = emitter.emit_error(
-            "test_tool",
-            "Something went wrong",
-            ToolSource::Kiln,
-            50,
-        );
+        let (event, _ctx, errors) =
+            emitter.emit_error("test_tool", "Something went wrong", ToolSource::Kiln, 50);
 
         assert!(errors.is_empty());
         assert_eq!(event.event_type, EventType::ToolError);
@@ -398,17 +392,15 @@ mod tests {
         let mut emitter = ToolEventEmitter::new();
 
         // Register a hook that cancels just_* tools
-        emitter.bus_mut().register(
-            Handler::new(
-                "canceller",
-                EventType::ToolBefore,
-                "just_*",
-                |_ctx, mut event| {
-                    event.cancel();
-                    Ok(event)
-                },
-            ),
-        );
+        emitter.bus_mut().register(Handler::new(
+            "canceller",
+            EventType::ToolBefore,
+            "just_*",
+            |_ctx, mut event| {
+                event.cancel();
+                Ok(event)
+            },
+        ));
 
         // just_test should be cancelled
         let (event, _ctx, _) = emitter.emit_before("just_test", json!({}), ToolSource::Just);
@@ -424,21 +416,20 @@ mod tests {
         let mut emitter = ToolEventEmitter::new();
 
         // Register a hook that adds a default value
-        emitter.bus_mut().register(
-            Handler::new(
-                "arg_modifier",
-                EventType::ToolBefore,
-                "*",
-                |_ctx, mut event| {
-                    if let Some(obj) = event.payload.as_object_mut() {
-                        obj.insert("added_by_hook".to_string(), json!(true));
-                    }
-                    Ok(event)
-                },
-            ),
-        );
+        emitter.bus_mut().register(Handler::new(
+            "arg_modifier",
+            EventType::ToolBefore,
+            "*",
+            |_ctx, mut event| {
+                if let Some(obj) = event.payload.as_object_mut() {
+                    obj.insert("added_by_hook".to_string(), json!(true));
+                }
+                Ok(event)
+            },
+        ));
 
-        let (event, _ctx, _) = emitter.emit_before("test", json!({"original": true}), ToolSource::Just);
+        let (event, _ctx, _) =
+            emitter.emit_before("test", json!({"original": true}), ToolSource::Just);
 
         assert_eq!(event.payload["original"], json!(true));
         assert_eq!(event.payload["added_by_hook"], json!(true));
@@ -449,21 +440,20 @@ mod tests {
         let mut emitter = ToolEventEmitter::new();
 
         // Register a hook that adds processing info
-        emitter.bus_mut().register(
-            Handler::new(
-                "result_transformer",
-                EventType::ToolAfter,
-                "*",
-                |_ctx, mut event| {
-                    if let Some(obj) = event.payload.as_object_mut() {
-                        obj.insert("processed_by_hook".to_string(), json!(true));
-                    }
-                    Ok(event)
-                },
-            ),
-        );
+        emitter.bus_mut().register(Handler::new(
+            "result_transformer",
+            EventType::ToolAfter,
+            "*",
+            |_ctx, mut event| {
+                if let Some(obj) = event.payload.as_object_mut() {
+                    obj.insert("processed_by_hook".to_string(), json!(true));
+                }
+                Ok(event)
+            },
+        ));
 
-        let (event, _ctx, _) = emitter.emit_after("test", json!({"data": 42}), ToolSource::Just, 100);
+        let (event, _ctx, _) =
+            emitter.emit_after("test", json!({"data": 42}), ToolSource::Just, 100);
 
         assert_eq!(event.payload["processed_by_hook"], json!(true));
     }
@@ -484,15 +474,17 @@ mod tests {
     async fn test_execute_with_events() {
         let emitter = ToolEventEmitter::new();
 
-        let result = emitter.execute_with_events(
-            "test_tool",
-            json!({"input": 21}),
-            ToolSource::Just,
-            |args| async move {
-                let input = args["input"].as_i64().unwrap_or(0);
-                Ok::<_, String>(json!({"output": input * 2}))
-            },
-        ).await;
+        let result = emitter
+            .execute_with_events(
+                "test_tool",
+                json!({"input": 21}),
+                ToolSource::Just,
+                |args| async move {
+                    let input = args["input"].as_i64().unwrap_or(0);
+                    Ok::<_, String>(json!({"output": input * 2}))
+                },
+            )
+            .await;
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap()["output"], json!(42));
@@ -503,24 +495,21 @@ mod tests {
         let mut emitter = ToolEventEmitter::new();
 
         // Register a cancelling hook
-        emitter.bus_mut().register(
-            Handler::new(
-                "canceller",
-                EventType::ToolBefore,
-                "*",
-                |_ctx, mut event| {
-                    event.cancel();
-                    Ok(event)
-                },
-            ),
-        );
+        emitter.bus_mut().register(Handler::new(
+            "canceller",
+            EventType::ToolBefore,
+            "*",
+            |_ctx, mut event| {
+                event.cancel();
+                Ok(event)
+            },
+        ));
 
-        let result = emitter.execute_with_events(
-            "test_tool",
-            json!({}),
-            ToolSource::Just,
-            |_args| async { Ok::<_, String>(json!({})) },
-        ).await;
+        let result = emitter
+            .execute_with_events("test_tool", json!({}), ToolSource::Just, |_args| async {
+                Ok::<_, String>(json!({}))
+            })
+            .await;
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("cancelled"));

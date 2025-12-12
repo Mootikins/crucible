@@ -189,11 +189,14 @@ mod tests {
 
     #[test]
     fn test_toon_success_for_read_tool() {
-        let result = toon_success_for_tool("read_note", json!({
-            "path": "notes/test.md",
-            "content": "# Test\nSome content here",
-            "modified": "2024-01-01"
-        }));
+        let result = toon_success_for_tool(
+            "read_note",
+            json!({
+                "path": "notes/test.md",
+                "content": "# Test\nSome content here",
+                "modified": "2024-01-01"
+            }),
+        );
         assert!(!result.content.is_empty());
         let text = result.content[0].as_text().unwrap();
         assert!(text.text.contains("path:"));
@@ -201,14 +204,17 @@ mod tests {
 
     #[test]
     fn test_toon_success_for_search_tool() {
-        let result = toon_success_for_tool("semantic_search", json!({
-            "query": "rust programming",
-            "results": [
-                {"path": "a.md", "score": 0.95},
-                {"path": "b.md", "score": 0.87}
-            ],
-            "total": 2
-        }));
+        let result = toon_success_for_tool(
+            "semantic_search",
+            json!({
+                "query": "rust programming",
+                "results": [
+                    {"path": "a.md", "score": 0.95},
+                    {"path": "b.md", "score": 0.87}
+                ],
+                "total": 2
+            }),
+        );
         assert!(!result.content.is_empty());
         let text = result.content[0].as_text().unwrap();
         assert!(text.text.contains("total: 2"));
@@ -216,11 +222,14 @@ mod tests {
 
     #[test]
     fn test_toon_success_for_command_tool() {
-        let result = toon_success_for_tool("run_command", json!({
-            "command": "ls -la",
-            "stdout": "file1.txt\nfile2.txt",
-            "exit_code": 0
-        }));
+        let result = toon_success_for_tool(
+            "run_command",
+            json!({
+                "command": "ls -la",
+                "stdout": "file1.txt\nfile2.txt",
+                "exit_code": 0
+            }),
+        );
         assert!(!result.content.is_empty());
         let text = result.content[0].as_text().unwrap();
         assert!(text.text.contains("exit_code: 0"));

@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, info};
 
+use crate::chat::{AgentHandle, ChatError, ChatMode, ChatResponse, ChatResult};
 use crucible_acp::{
     AgentInfo, ChatConfig, ChatSession, ContextConfig, CrucibleAcpClient as AcpClient,
     HistoryConfig, InProcessMcpHost, StreamConfig,
@@ -14,7 +15,6 @@ use crucible_acp::{
 use crucible_config::AcpConfig;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
-use crate::chat::{AgentHandle, ChatError, ChatMode, ChatResponse, ChatResult};
 
 /// ACP Client wrapper for CLI
 ///
@@ -370,7 +370,7 @@ impl AgentHandle for CrucibleAcpClient {
             .map(|t| crate::chat::ChatToolCall {
                 name: t.title,
                 arguments: t.arguments, // Already Option<serde_json::Value>
-                id: t.id,                // Already Option<String>
+                id: t.id,               // Already Option<String>
             })
             .collect();
 

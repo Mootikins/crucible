@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 // Re-export common database types from existing modules
 pub use crate::note::NoteNode;
-pub use crate::properties::{PropertyMap, AttributeValue};
+pub use crate::properties::{AttributeValue, PropertyMap};
 
 /// Common result type for database operations
 pub type DbResult<T> = Result<T, DbError>;
