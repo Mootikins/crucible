@@ -29,6 +29,7 @@
 pub mod acp;
 pub mod change_detection;
 pub mod chat;
+pub mod context;
 pub mod input;
 pub mod knowledge;
 pub mod llm;
@@ -44,6 +45,7 @@ pub use chat::{
     AgentHandle, ChatContext, ChatError, ChatMode, ChatResponse, ChatResult, CommandDescriptor,
     CommandHandler, SearchResult, ToolCall as ChatToolCall,
 };
+pub use context::ContextManager;
 pub use knowledge::{KnowledgeRepository, NoteInfo};
 pub use llm::{
     ChatCompletionChoice, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
