@@ -2772,6 +2772,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "bitflags 2.10.0",
  "blake3",
  "chrono",
  "crucible-config",

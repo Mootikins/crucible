@@ -107,6 +107,10 @@ pub enum Commands {
         /// Can be toggled during session with /plan and /act commands
         #[arg(long)]
         act: bool,
+
+        /// Use ratatui TUI instead of reedline (experimental)
+        #[arg(long)]
+        tui: bool,
     },
 
     /// Start MCP server exposing Crucible tools
