@@ -1,10 +1,10 @@
 //! Agent Runtime - Coordinates LLM chat with tool execution
 //!
-//! The AgentRuntime manages the conversation loop between a LlmProvider
+//! The AgentRuntime manages the conversation loop between a TextGenerationProvider
 //! and ToolExecutor, enabling autonomous agent behavior.
 
 use crucible_core::traits::{
-    ExecutionContext, LlmError, LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmResult,
+    ExecutionContext, LlmError, LlmMessage, TextGenerationProvider, ChatCompletionRequest, ChatCompletionResponse, LlmResult,
     LlmToolDefinition, MessageRole, ToolExecutor,
 };
 use tracing::{debug, info, warn};
@@ -12,7 +12,7 @@ use tracing::{debug, info, warn};
 /// Agent runtime that coordinates chat and tool execution
 pub struct AgentRuntime {
     /// Chat provider for LLM interactions
-    provider: Box<dyn LlmProvider>,
+    provider: Box<dyn TextGenerationProvider>,
     /// Tool executor for running tools
     executor: Box<dyn ToolExecutor>,
     /// Conversation history
@@ -25,7 +25,7 @@ pub struct AgentRuntime {
 
 impl AgentRuntime {
     /// Create a new agent runtime
-    pub fn new(provider: Box<dyn LlmProvider>, executor: Box<dyn ToolExecutor>) -> Self {
+    pub fn new(provider: Box<dyn TextGenerationProvider>, executor: Box<dyn ToolExecutor>) -> Self {
         Self {
             provider,
             executor,
@@ -67,7 +67,7 @@ impl AgentRuntime {
     pub async fn run_conversation(
         &mut self,
         initial_messages: Vec<LlmMessage>,
-    ) -> LlmResult<LlmResponse> {
+    ) -> LlmResult<ChatCompletionResponse> {
         // Add initial messages to conversation
         self.conversation.extend(initial_messages);
 
@@ -103,39 +103,47 @@ impl AgentRuntime {
             debug!("Agent iteration {}/{}", iteration, self.max_iterations);
 
             // Build request with conversation history and tools
-            let request = LlmRequest::new(self.conversation.clone()).with_tools(llm_tools.clone());
+            let request = ChatCompletionRequest::new("default".to_string(), self.conversation.clone())
+                .with_tools(llm_tools.clone());
 
             // Get response from LLM
-            let response = self.provider.complete(request).await?;
+            let response = self.provider.generate_chat_completion(request).await?;
 
-            // Add assistant message to conversation
-            self.conversation.push(response.message.clone());
+            // Add assistant message to conversation (from first choice)
+            if let Some(choice) = response.choices.first() {
+                self.conversation.push(choice.message.clone());
+            }
 
             // Check if there are tool calls
-            if let Some(tool_calls) = &response.message.tool_calls {
+            let tool_calls = response.choices.first().and_then(|c| c.message.tool_calls.as_ref());
+            if let Some(tool_calls) = tool_calls {
                 info!("LLM requested {} tool calls", tool_calls.len());
 
                 // Execute each tool call
                 for tool_call in tool_calls {
                     debug!(
                         "Executing tool: {} with params: {:?}",
-                        tool_call.name, tool_call.parameters
+                        tool_call.function.name, tool_call.function.arguments
                     );
+
+                    // Parse arguments from JSON string
+                    let args = serde_json::from_str(&tool_call.function.arguments)
+                        .unwrap_or(serde_json::json!({}));
 
                     match self
                         .executor
-                        .execute_tool(&tool_call.name, tool_call.parameters.clone(), &self.context)
+                        .execute_tool(&tool_call.function.name, args, &self.context)
                         .await
                     {
                         Ok(result) => {
-                            info!("Tool {} executed successfully", tool_call.name);
+                            info!("Tool {} executed successfully", tool_call.function.name);
                             // Add tool result to conversation
                             let tool_message =
                                 LlmMessage::tool(tool_call.id.clone(), result.to_string());
                             self.conversation.push(tool_message);
                         }
                         Err(e) => {
-                            warn!("Tool {} failed: {}", tool_call.name, e);
+                            warn!("Tool {} failed: {}", tool_call.function.name, e);
                             // Add error as tool result
                             let error_message =
                                 LlmMessage::tool(tool_call.id.clone(), format!("Error: {}", e));
@@ -165,7 +173,7 @@ impl AgentRuntime {
     }
 
     /// Send a single message and get a response (convenience method)
-    pub async fn send_message(&mut self, message: String) -> LlmResult<LlmResponse> {
+    pub async fn send_message(&mut self, message: String) -> LlmResult<ChatCompletionResponse> {
         self.run_conversation(vec![LlmMessage::user(message)]).await
     }
 
@@ -189,9 +197,9 @@ mod tests {
     struct MockProvider;
 
     #[async_trait]
-    impl LlmProvider for MockProvider {
-        async fn complete(&self, _request: LlmRequest) -> LlmResult<LlmResponse> {
-            Ok(LlmResponse {
+    impl TextGenerationProvider for MockProvider {
+        async fn complete(&self, _request: ChatCompletionRequest) -> LlmResult<ChatCompletionResponse> {
+            Ok(ChatCompletionResponse {
                 message: LlmMessage::assistant("Test response"),
                 usage: TokenUsage {
                     prompt_tokens: 10,

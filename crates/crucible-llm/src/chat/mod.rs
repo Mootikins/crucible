@@ -9,10 +9,10 @@ pub use openai::OpenAIChatProvider;
 
 // Factory function to create providers from config
 use crucible_config::{ChatConfig, LlmProvider as ConfigLlmProvider};
-use crucible_core::traits::{LlmError, LlmProvider, LlmResult};
+use crucible_core::traits::{LlmError, LlmResult, TextGenerationProvider};
 
 /// Create a chat provider from configuration
-pub async fn create_chat_provider(config: &ChatConfig) -> LlmResult<Box<dyn LlmProvider>> {
+pub async fn create_chat_provider(config: &ChatConfig) -> LlmResult<Box<dyn TextGenerationProvider>> {
     match config.provider {
         ConfigLlmProvider::Ollama => {
             let provider = OllamaChatProvider::new(
@@ -43,7 +43,7 @@ pub async fn create_chat_provider(config: &ChatConfig) -> LlmResult<Box<dyn LlmP
 /// Create a chat provider from app config
 pub async fn create_from_app_config(
     config: &crucible_config::Config,
-) -> LlmResult<Box<dyn LlmProvider>> {
+) -> LlmResult<Box<dyn TextGenerationProvider>> {
     let default_chat = ChatConfig::default();
     let chat_config = config.chat.as_ref().unwrap_or(&default_chat);
     create_chat_provider(chat_config).await

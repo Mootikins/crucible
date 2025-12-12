@@ -6,7 +6,7 @@ use crate::embeddings::error::{EmbeddingError, EmbeddingResult};
 /// Create a text generation provider from chat configuration
 pub async fn from_chat_config(
     config: &crucible_config::ChatConfig,
-) -> EmbeddingResult<Box<dyn TextGenerationProvider<Config = TextProviderConfig>>> {
+) -> EmbeddingResult<Box<dyn TextGenerationProvider>> {
     use crucible_config::LlmProvider;
 
     match config.provider {
@@ -42,7 +42,7 @@ pub async fn from_chat_config(
 /// Create a text generation provider from app config
 pub async fn from_app_config(
     config: &crucible_config::Config,
-) -> EmbeddingResult<Box<dyn TextGenerationProvider<Config = TextProviderConfig>>> {
+) -> EmbeddingResult<Box<dyn TextGenerationProvider>> {
     let default_chat = crucible_config::ChatConfig::default();
     let chat_config = config.chat.as_ref().unwrap_or(&default_chat);
     from_chat_config(chat_config).await

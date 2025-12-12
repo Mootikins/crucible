@@ -3229,6 +3229,7 @@ dependencies = [
  "crucible-core",
  "dirs 5.0.1",
  "fastembed",
+ "futures",
  "gguf",
  "llama-cpp-2",
  "mockito",
