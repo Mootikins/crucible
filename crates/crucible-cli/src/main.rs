@@ -189,6 +189,9 @@ async fn main() -> Result<()> {
         Some(Commands::Chat {
             query,
             agent,
+            internal,
+            provider,
+            max_context,
             no_context,
             context_size,
             act,
@@ -202,7 +205,10 @@ async fn main() -> Result<()> {
                 no_context,
                 cli.no_process, // Pass the global --no-process flag
                 Some(context_size),
-                tui, // Use new ratatui TUI
+                tui,
+                internal,
+                provider,
+                max_context,
             )
             .await?
         }
@@ -316,6 +322,9 @@ async fn main() -> Result<()> {
                 cli.no_process, // Pass the global --no-process flag
                 Some(5),        // default context_size = 5
                 false,          // Use reedline (not TUI) by default
+                false,          // internal = false (use ACP agent by default)
+                None,           // No provider specified
+                16384,          // default max_context = 16384
             )
             .await?
         }
