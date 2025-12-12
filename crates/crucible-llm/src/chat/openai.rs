@@ -3,9 +3,8 @@
 use async_trait::async_trait;
 use crucible_core::traits::{
     ChatCompletionChoice, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
-    CompletionChunk, CompletionRequest, CompletionResponse, LlmError, LlmMessage,
-    LlmResult, MessageRole, ProviderCapabilities, TextGenerationProvider,
-    TextModelInfo, TokenUsage, ToolCall,
+    CompletionChunk, CompletionRequest, CompletionResponse, LlmError, LlmMessage, LlmResult,
+    MessageRole, ProviderCapabilities, TextGenerationProvider, TextModelInfo, TokenUsage, ToolCall,
 };
 use futures::stream::BoxStream;
 use serde::Deserialize;
@@ -171,7 +170,11 @@ impl TextGenerationProvider for OpenAIChatProvider {
                 .iter()
                 .map(|tc| {
                     // arguments is already a string
-                    ToolCall::new(tc.id.clone(), tc.function.name.clone(), tc.function.arguments.clone())
+                    ToolCall::new(
+                        tc.id.clone(),
+                        tc.function.name.clone(),
+                        tc.function.arguments.clone(),
+                    )
                 })
                 .collect()
         });
