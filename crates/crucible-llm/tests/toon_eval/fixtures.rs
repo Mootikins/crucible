@@ -241,7 +241,9 @@ fn tabular_array_fixtures() -> Vec<Fixture> {
                     {"id": 3, "name": "Carol", "role": "user"}
                 ]
             }),
-            expected_toon: Some("users[3]{id,name,role}:\n  1,Alice,admin\n  2,Bob,user\n  3,Carol,user"),
+            expected_toon: Some(
+                "users[3]{id,name,role}:\n  1,Alice,admin\n  2,Bob,user\n  3,Carol,user",
+            ),
         },
         Fixture {
             id: "tab_products",

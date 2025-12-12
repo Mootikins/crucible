@@ -56,13 +56,11 @@ async fn chat_handler(
 
     // Convert broadcast receiver to SSE stream
     let stream = BroadcastStream::new(rx)
-        .filter_map(|result| {
-            match result {
-                Ok(event) => Some(event),
-                Err(e) => {
-                    tracing::warn!("Broadcast receive error: {}", e);
-                    None
-                }
+        .filter_map(|result| match result {
+            Ok(event) => Some(event),
+            Err(e) => {
+                tracing::warn!("Broadcast receive error: {}", e);
+                None
             }
         })
         .map(|event: ChatEvent| {

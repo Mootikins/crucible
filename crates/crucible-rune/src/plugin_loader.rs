@@ -73,7 +73,10 @@ impl PluginLoader {
         let source = std::fs::read_to_string(path)
             .map_err(|e| RuneError::Io(format!("Failed to read {}: {}", path.display(), e)))?;
 
-        let unit = match self.executor.compile(path.to_string_lossy().as_ref(), &source) {
+        let unit = match self
+            .executor
+            .compile(path.to_string_lossy().as_ref(), &source)
+        {
             Ok(u) => u,
             Err(e) => {
                 debug!("Failed to compile {}: {}", path.display(), e);
@@ -95,8 +98,7 @@ impl PluginLoader {
         };
 
         // Parse the manifest
-        let manifest =
-            PluginManifest::from_json(&init_result).map_err(RuneError::Conversion)?;
+        let manifest = PluginManifest::from_json(&init_result).map_err(RuneError::Conversion)?;
 
         // Register hooks
         for hook_config in manifest.hooks {

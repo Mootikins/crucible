@@ -357,7 +357,10 @@ mod tests {
 
         let subdirs = paths.subdir("recipe_discovered");
         assert_eq!(subdirs.len(), 2);
-        assert_eq!(subdirs[0], PathBuf::from("/home/user/.crucible/events/recipe_discovered"));
+        assert_eq!(
+            subdirs[0],
+            PathBuf::from("/home/user/.crucible/events/recipe_discovered")
+        );
         assert_eq!(subdirs[1], PathBuf::from("/kiln/events/recipe_discovered"));
     }
 
@@ -389,14 +392,15 @@ mod tests {
         let paths = DiscoveryPaths::new("tools", None).with_config(&config);
 
         assert!(!paths.uses_defaults());
-        assert!(paths.additional_paths().contains(&PathBuf::from("/extra/path")));
+        assert!(paths
+            .additional_paths()
+            .contains(&PathBuf::from("/extra/path")));
     }
 
     #[test]
     fn test_priority_order() {
         let kiln = PathBuf::from("/kiln");
-        let paths = DiscoveryPaths::new("tools", Some(&kiln))
-            .with_path("/priority/first".into());
+        let paths = DiscoveryPaths::new("tools", Some(&kiln)).with_path("/priority/first".into());
 
         let all = paths.all_paths();
         // Additional paths should come first
@@ -415,7 +419,9 @@ mod tests {
 
         assert_eq!(paths.type_name(), "tools");
         assert!(paths.uses_defaults());
-        assert!(paths.additional_paths().contains(&PathBuf::from("/custom/path")));
+        assert!(paths
+            .additional_paths()
+            .contains(&PathBuf::from("/custom/path")));
         // Should also have default paths
         assert!(!paths.default_paths().is_empty());
     }
@@ -459,18 +465,20 @@ mod tests {
     #[test]
     fn test_from_config_multiple_paths() {
         let config = DiscoveryConfig {
-            additional_paths: vec![
-                "/path1".into(),
-                "~/.config/path2".into(),
-                "/path3".into(),
-            ],
+            additional_paths: vec!["/path1".into(), "~/.config/path2".into(), "/path3".into()],
             use_defaults: true,
         };
 
         let paths = DiscoveryPaths::from_config("events", None, &config);
 
         assert_eq!(paths.additional_paths().len(), 3);
-        assert!(paths.additional_paths().iter().any(|p| p.ends_with("path1")));
-        assert!(paths.additional_paths().iter().any(|p| p.ends_with("path3")));
+        assert!(paths
+            .additional_paths()
+            .iter()
+            .any(|p| p.ends_with("path1")));
+        assert!(paths
+            .additional_paths()
+            .iter()
+            .any(|p| p.ends_with("path3")));
     }
 }

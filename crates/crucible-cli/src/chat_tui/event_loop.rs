@@ -216,8 +216,7 @@ fn handle_key_with_agent<B: ratatui::backend::Backend>(
 
         // Display the user message in scrollback
         let user_msg = ChatMessageDisplay::user(&content);
-        ChatApp::insert_message(terminal, &user_msg)
-            .context("failed to insert user message")?;
+        ChatApp::insert_message(terminal, &user_msg).context("failed to insert user message")?;
 
         // Send to agent
         message_tx
@@ -244,8 +243,7 @@ fn handle_clear_command<B: ratatui::backend::Backend>(
 ) -> Result<()> {
     // Display a separator message
     let separator = ChatMessageDisplay::system("─── Session cleared ───");
-    ChatApp::insert_message(terminal, &separator)
-        .context("failed to insert clear separator")?;
+    ChatApp::insert_message(terminal, &separator).context("failed to insert clear separator")?;
 
     // Clear input and mark dirty
     app.input.clear();

@@ -82,7 +82,10 @@ impl BackgroundProgress {
         if completed + failed >= total {
             // All done
             if failed > 0 {
-                Some(format!("indexed {}/{} ({} failed)", completed, total, failed))
+                Some(format!(
+                    "indexed {}/{} ({} failed)",
+                    completed, total, failed
+                ))
             } else {
                 None // Fully complete, no need to show
             }
@@ -105,8 +108,8 @@ impl StatusLine {
 
     /// Update the status line (overwrites previous content)
     pub fn update(&mut self, message: &str) {
-        use std::io::{self, Write};
         use colored::Colorize;
+        use std::io::{self, Write};
 
         // Clear previous line
         print!("\r{}\r", " ".repeat(self.last_len));
@@ -121,8 +124,8 @@ impl StatusLine {
 
     /// Complete with a success message
     pub fn success(&mut self, message: &str) {
-        use std::io::{self, Write};
         use colored::Colorize;
+        use std::io::{self, Write};
 
         // Clear previous line
         print!("\r{}\r", " ".repeat(self.last_len));
@@ -137,8 +140,8 @@ impl StatusLine {
     /// Complete with an error message
     #[allow(dead_code)]
     pub fn error(&mut self, message: &str) {
-        use std::io::{self, Write};
         use colored::Colorize;
+        use std::io::{self, Write};
 
         // Clear previous line
         print!("\r{}\r", " ".repeat(self.last_len));
@@ -278,7 +281,13 @@ impl LiveProgress {
             let failed = self.progress.failed();
             let total = self.progress.total();
             if failed > 0 {
-                print!("{} Indexed {}/{} ({} failed)", "✓".green(), completed, total, failed);
+                print!(
+                    "{} Indexed {}/{} ({} failed)",
+                    "✓".green(),
+                    completed,
+                    total,
+                    failed
+                );
             } else {
                 print!("{} Indexed {}/{}", "✓".green(), completed, total);
             }

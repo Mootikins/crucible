@@ -28,16 +28,22 @@ async fn test_document_indexed_event_flow() {
 
     // 2. Detect MoCs after document indexing - index.md qualifies as MoC
     let mocs = tools.detect_mocs(Some(0.3)).await.unwrap();
-    assert!(!mocs.is_empty(), "Should detect MoCs (index.md) in test vault");
+    assert!(
+        !mocs.is_empty(),
+        "Should detect MoCs (index.md) in test vault"
+    );
 
     // 3. Cluster documents - verify clustering runs without error
-    let clusters = tools.cluster_documents(
-        Some(0.1),  // Lower similarity threshold for test data
-        Some(2),
-        Some(0.6),
-        Some(0.3),
-        Some(0.1)
-    ).await.unwrap();
+    let clusters = tools
+        .cluster_documents(
+            Some(0.1), // Lower similarity threshold for test data
+            Some(2),
+            Some(0.6),
+            Some(0.3),
+            Some(0.1),
+        )
+        .await
+        .unwrap();
 
     // Verify stats show documents were loaded
     let stats = tools.get_document_stats().await.unwrap();
@@ -59,10 +65,25 @@ async fn test_batch_clustering_event_flow() {
     // 1. Demonstrate batch document indexing event structure
     let indexed_docs = vec![
         ("doc1.md", "Document 1", vec!["ai", "ml"], vec!["doc2"]),
-        ("doc2.md", "Document 2", vec!["ml", "nlp"], vec!["doc1", "doc3"]),
+        (
+            "doc2.md",
+            "Document 2",
+            vec!["ml", "nlp"],
+            vec!["doc1", "doc3"],
+        ),
         ("doc3.md", "Document 3", vec!["nlp", "ai"], vec!["doc2"]),
-        ("doc4.md", "Document 4", vec!["web", "frontend"], vec!["doc5"]),
-        ("doc5.md", "Document 5", vec!["frontend", "css"], vec!["doc4"]),
+        (
+            "doc4.md",
+            "Document 4",
+            vec!["web", "frontend"],
+            vec!["doc5"],
+        ),
+        (
+            "doc5.md",
+            "Document 5",
+            vec!["frontend", "css"],
+            vec!["doc4"],
+        ),
     ];
 
     // 2. Create event sequence
@@ -92,13 +113,16 @@ async fn test_batch_clustering_event_flow() {
     }
 
     // 4. Run clustering after batch processing
-    let clusters = tools.cluster_documents(
-        Some(0.1),  // Lower threshold for test data
-        Some(2),
-        Some(0.7),
-        Some(0.2),
-        Some(0.1)
-    ).await.unwrap();
+    let clusters = tools
+        .cluster_documents(
+            Some(0.1), // Lower threshold for test data
+            Some(2),
+            Some(0.7),
+            Some(0.2),
+            Some(0.1),
+        )
+        .await
+        .unwrap();
 
     // 5. Get final statistics - verify documents were loaded
     let stats = tools.get_document_stats().await.unwrap();
@@ -120,13 +144,10 @@ async fn test_clustering_completed_event_flow() {
     let tools = ClusteringTools::new(vault_path);
 
     // 1. Run clustering
-    let clusters = tools.cluster_documents(
-        Some(0.2),
-        Some(2),
-        Some(0.6),
-        Some(0.3),
-        Some(0.1)
-    ).await.unwrap();
+    let clusters = tools
+        .cluster_documents(Some(0.2), Some(2), Some(0.6), Some(0.3), Some(0.1))
+        .await
+        .unwrap();
 
     // 2. Simulate clustering completed event
     let event = serde_json::json!({
@@ -148,8 +169,14 @@ async fn test_clustering_completed_event_flow() {
     if let Some(clusters_array) = event["results"]["clusters"].as_array() {
         for cluster in clusters_array {
             assert!(cluster.get("id").is_some(), "Cluster should have ID");
-            assert!(cluster.get("documents").is_some(), "Cluster should have documents");
-            assert!(cluster.get("confidence").is_some(), "Cluster should have confidence score");
+            assert!(
+                cluster.get("documents").is_some(),
+                "Cluster should have documents"
+            );
+            assert!(
+                cluster.get("confidence").is_some(),
+                "Cluster should have confidence score"
+            );
         }
     }
 }
@@ -194,13 +221,10 @@ async fn test_event_flow_error_handling() {
     let tools = ClusteringTools::new(vault_path);
 
     // 1. Try clustering with empty vault
-    let clusters = tools.cluster_documents(
-        Some(0.2),
-        Some(2),
-        Some(0.6),
-        Some(0.3),
-        Some(0.1)
-    ).await.unwrap();
+    let clusters = tools
+        .cluster_documents(Some(0.2), Some(2), Some(0.6), Some(0.3), Some(0.1))
+        .await
+        .unwrap();
 
     assert_eq!(clusters.len(), 0, "Empty vault should produce no clusters");
 
@@ -236,13 +260,9 @@ async fn test_concurrent_event_processing() {
 
     let cluster_task = tokio::spawn(async move {
         let tools = ClusteringTools::new(vault_path2);
-        tools.cluster_documents(
-            Some(0.2),
-            Some(2),
-            Some(0.6),
-            Some(0.3),
-            Some(0.1)
-        ).await
+        tools
+            .cluster_documents(Some(0.2), Some(2), Some(0.6), Some(0.3), Some(0.1))
+            .await
     });
 
     let stats_task = tokio::spawn(async move {
@@ -251,15 +271,18 @@ async fn test_concurrent_event_processing() {
     });
 
     // 2. Wait for all to complete
-    let (mocs_result, clusters_result, stats_result) = tokio::try_join!(
-        detect_task,
-        cluster_task,
-        stats_task
-    ).unwrap();
+    let (mocs_result, clusters_result, stats_result) =
+        tokio::try_join!(detect_task, cluster_task, stats_task).unwrap();
 
     // 3. Verify all operations succeeded
-    assert!(mocs_result.is_ok(), "Concurrent MoC detection should succeed");
-    assert!(clusters_result.is_ok(), "Concurrent clustering should succeed");
+    assert!(
+        mocs_result.is_ok(),
+        "Concurrent MoC detection should succeed"
+    );
+    assert!(
+        clusters_result.is_ok(),
+        "Concurrent clustering should succeed"
+    );
     assert!(stats_result.is_ok(), "Concurrent stats should succeed");
 }
 
@@ -270,13 +293,10 @@ async fn test_event_persistence() {
     let tools = ClusteringTools::new(vault_path);
 
     // 1. Run clustering and get results
-    let initial_clusters = tools.cluster_documents(
-        Some(0.2),
-        Some(2),
-        Some(0.6),
-        Some(0.3),
-        Some(0.1)
-    ).await.unwrap();
+    let initial_clusters = tools
+        .cluster_documents(Some(0.2), Some(2), Some(0.6), Some(0.3), Some(0.1))
+        .await
+        .unwrap();
 
     // 2. Create persistence event
     let persist_event = serde_json::json!({
@@ -431,10 +451,7 @@ Content for {}.
 ## Related
 {}
 "#,
-            tags,
-            title,
-            title,
-            wikilinks
+            tags, title, title, wikilinks
         );
 
         fs::write(vault_path.join(filename), content).await.unwrap();

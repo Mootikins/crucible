@@ -11,7 +11,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tracing::{debug, info, warn};
 
 use super::types::{CachedEmbedding, EmbeddingData, EmbeddingIndexMetadata};
-use super::utils::{chunk_namespace, chunk_record_body, escape_record_id, normalize_document_id, record_body};
+use super::utils::{
+    chunk_namespace, chunk_record_body, escape_record_id, normalize_document_id, record_body,
+};
 
 /// Track whether the MTREE index has been ensured in this session
 pub(crate) static MTREE_INDEX_ENSURED: AtomicBool = AtomicBool::new(false);
@@ -24,8 +26,7 @@ const INITIAL_BACKOFF_MS: u64 = 10;
 
 /// Check if an error is a retryable transaction conflict
 fn is_retryable_error(error_msg: &str) -> bool {
-    error_msg.contains("read or write conflict")
-        || error_msg.contains("transaction can be retried")
+    error_msg.contains("read or write conflict") || error_msg.contains("transaction can be retried")
 }
 
 /// Upsert embedding record with retry logic
@@ -443,7 +444,10 @@ pub async fn store_embeddings_batch(
 
                     if !MTREE_INDEX_ENSURED.load(Ordering::Relaxed) || current_dims != dims {
                         if let Err(e) = ensure_embedding_index(client, dims).await {
-                            warn!("Failed to create MTREE index (search will use fallback): {}", e);
+                            warn!(
+                                "Failed to create MTREE index (search will use fallback): {}",
+                                e
+                            );
                         } else {
                             MTREE_INDEX_ENSURED.store(true, Ordering::Relaxed);
                             MTREE_INDEX_DIMENSIONS.store(dims, Ordering::Relaxed);

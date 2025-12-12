@@ -11,11 +11,11 @@
 use crate::config::CliConfig;
 use anyhow::Result;
 use crucible_core::enrichment::EnrichedNoteStore;
+use crucible_core::hashing::Blake3Hasher;
 use crucible_core::storage::{
     BlockSize, ContentAddressedStorage, ContentAddressedStorageBuilder, HasherConfig,
     StorageBackendType, StorageResult,
 };
-use crucible_core::hashing::Blake3Hasher;
 use crucible_surrealdb::{adapters, SurrealDbConfig};
 use once_cell::sync::Lazy;
 use std::collections::{hash_map::Entry, HashMap};

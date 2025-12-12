@@ -44,7 +44,7 @@ pub use config::{
     DatabaseConfig, DatabaseType, LoggingConfig, ProcessingConfig, ServerConfig,
 };
 pub use enrichment::*;
-pub use includes::{IncludeConfig, IncludeError, process_file_references};
+pub use includes::{process_file_references, IncludeConfig, IncludeError};
 pub use loader::*;
 pub use profile::*;
 

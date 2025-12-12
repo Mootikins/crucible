@@ -123,7 +123,11 @@ fn test_fixtures_are_valid_json() {
     for fixture in fixtures {
         // Just ensure the JSON is valid (it's constructed with json! macro)
         let json_str = serde_json::to_string(&fixture.json).unwrap();
-        assert!(!json_str.is_empty(), "Fixture {} should serialize", fixture.id);
+        assert!(
+            !json_str.is_empty(),
+            "Fixture {} should serialize",
+            fixture.id
+        );
     }
 }
 
@@ -176,7 +180,10 @@ async fn run_conversion_test(
                 direction,
                 config: config.clone(),
                 validation: toon_eval::ValidationResult::failure(
-                    vec![toon_eval::ToonError::InvalidSyntax(format!("API error: {}", e))],
+                    vec![toon_eval::ToonError::InvalidSyntax(format!(
+                        "API error: {}",
+                        e
+                    ))],
                     format!("Error: {}", e),
                 ),
             };
@@ -226,7 +233,11 @@ async fn test_full_toon_evaluation() {
             )
             .await;
 
-            let status = if result.validation.success { "✓" } else { "✗" };
+            let status = if result.validation.success {
+                "✓"
+            } else {
+                "✗"
+            };
             println!("    {} {}", status, fixture.id);
 
             report.add_result(result);
@@ -248,7 +259,11 @@ async fn test_full_toon_evaluation() {
             )
             .await;
 
-            let status = if result.validation.success { "✓" } else { "✗" };
+            let status = if result.validation.success {
+                "✓"
+            } else {
+                "✗"
+            };
             println!("    {} {}", status, fixture.id);
 
             report.add_result(result);
@@ -260,8 +275,9 @@ async fn test_full_toon_evaluation() {
     println!("Completed {}/{} tests", completed, total_tests);
 
     // Save report
-    let report_path = PathBuf::from(env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string()))
-        .join("toon_eval_report.md");
+    let report_path =
+        PathBuf::from(env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string()))
+            .join("toon_eval_report.md");
 
     if let Err(e) = report.save(&report_path) {
         eprintln!("Failed to save report: {}", e);
@@ -285,7 +301,11 @@ async fn test_full_toon_evaluation() {
         let stats = &aggregated[key];
         println!(
             "| {} | {} | {} | {} | {:.1}% |",
-            key.0, key.1, stats.passed, stats.failed, stats.pass_rate()
+            key.0,
+            key.1,
+            stats.passed,
+            stats.failed,
+            stats.pass_rate()
         );
     }
 }
@@ -310,11 +330,18 @@ async fn test_toon_primitives_only() {
 
         for fixture in &fixtures {
             // Test both directions
-            for direction in [ConversionDirection::JsonToToon, ConversionDirection::ToonToJson] {
+            for direction in [
+                ConversionDirection::JsonToToon,
+                ConversionDirection::ToonToJson,
+            ] {
                 let result =
                     run_conversion_test(fixture.id, &fixture.json, direction, config).await;
 
-                let status = if result.validation.success { "✓" } else { "✗" };
+                let status = if result.validation.success {
+                    "✓"
+                } else {
+                    "✗"
+                };
                 println!("  {} {} ({})", status, fixture.id, direction);
 
                 report.add_result(result);
@@ -362,11 +389,20 @@ async fn test_toon_tabular_arrays() {
             )
             .await;
 
-            let status = if result.validation.success { "✓" } else { "✗" };
+            let status = if result.validation.success {
+                "✓"
+            } else {
+                "✗"
+            };
             print!("  {} {}", status, fixture.id);
 
             if !result.validation.success {
-                let errors: Vec<_> = result.validation.errors.iter().map(|e| e.to_string()).collect();
+                let errors: Vec<_> = result
+                    .validation
+                    .errors
+                    .iter()
+                    .map(|e| e.to_string())
+                    .collect();
                 print!(" - {}", errors.join(", "));
             }
             println!();
@@ -424,7 +460,12 @@ async fn test_toon_reading_only() {
         }
     }
 
-    println!("\nResults: {}/{} passed ({:.1}%)", passed, passed + failed, (passed as f64 / (passed + failed) as f64) * 100.0);
+    println!(
+        "\nResults: {}/{} passed ({:.1}%)",
+        passed,
+        passed + failed,
+        (passed as f64 / (passed + failed) as f64) * 100.0
+    );
 
     // We expect high success rate for reading
     assert!(
@@ -474,8 +515,9 @@ async fn test_toon_reading_example_variations() {
     }
 
     // Save report
-    let report_path = PathBuf::from(env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string()))
-        .join("toon_reading_variations_report.md");
+    let report_path =
+        PathBuf::from(env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string()))
+            .join("toon_reading_variations_report.md");
 
     if let Err(e) = report.save(&report_path) {
         eprintln!("Failed to save report: {}", e);
@@ -495,7 +537,10 @@ async fn test_toon_reading_example_variations() {
         let stats = &aggregated[key];
         println!(
             "| {} | {} | {} | {:.1}% |",
-            key.1, stats.passed, stats.failed, stats.pass_rate()
+            key.1,
+            stats.passed,
+            stats.failed,
+            stats.pass_rate()
         );
     }
 }
@@ -551,7 +596,10 @@ async fn test_toon_writing_example_variations() {
         let stats = &aggregated[key];
         println!(
             "| {} | {} | {} | {:.1}% |",
-            key.1, stats.passed, stats.failed, stats.pass_rate()
+            key.1,
+            stats.passed,
+            stats.failed,
+            stats.pass_rate()
         );
     }
 }
@@ -564,9 +612,13 @@ async fn test_toon_writing_example_variations() {
 fn check_query_answer(response: &str, expected: &[&str], match_all: bool) -> bool {
     let response_lower = response.to_lowercase();
     if match_all {
-        expected.iter().all(|e| response_lower.contains(&e.to_lowercase()))
+        expected
+            .iter()
+            .all(|e| response_lower.contains(&e.to_lowercase()))
     } else {
-        expected.iter().any(|e| response_lower.contains(&e.to_lowercase()))
+        expected
+            .iter()
+            .any(|e| response_lower.contains(&e.to_lowercase()))
     }
 }
 

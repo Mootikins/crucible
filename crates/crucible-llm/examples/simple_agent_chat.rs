@@ -19,7 +19,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use crucible_core::traits::{
-    LlmMessage, ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult,
+    ExecutionContext, LlmMessage, ToolDefinition, ToolError, ToolExecutor, ToolResult,
 };
 use crucible_llm::{create_chat_provider, AgentRuntime};
 use std::io::{self, Write};
@@ -44,9 +44,9 @@ impl ToolExecutor for DemoToolExecutor {
                 }))
             }
             "calculate" => {
-                let expression = params["expression"]
-                    .as_str()
-                    .ok_or_else(|| ToolError::InvalidParameters("Missing expression".to_string()))?;
+                let expression = params["expression"].as_str().ok_or_else(|| {
+                    ToolError::InvalidParameters("Missing expression".to_string())
+                })?;
 
                 // Simple calculator (just for demo - would use a proper parser in production)
                 match expression {
@@ -85,14 +85,12 @@ impl ToolExecutor for DemoToolExecutor {
 
     async fn list_tools(&self) -> ToolResult<Vec<ToolDefinition>> {
         Ok(vec![
-            ToolDefinition::new(
-                "get_current_time",
-                "Get the current time in UTC",
-            )
-            .with_parameters(serde_json::json!({
-                "type": "object",
-                "properties": {}
-            })),
+            ToolDefinition::new("get_current_time", "Get the current time in UTC").with_parameters(
+                serde_json::json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+            ),
             ToolDefinition::new(
                 "calculate",
                 "Calculate a simple math expression (addition only)",
@@ -107,17 +105,16 @@ impl ToolExecutor for DemoToolExecutor {
                 },
                 "required": ["expression"]
             })),
-            ToolDefinition::new("echo", "Echo back a message")
-                .with_parameters(serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "message": {
-                            "type": "string",
-                            "description": "Message to echo"
-                        }
-                    },
-                    "required": ["message"]
-                })),
+            ToolDefinition::new("echo", "Echo back a message").with_parameters(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Message to echo"
+                    }
+                },
+                "required": ["message"]
+            })),
         ])
     }
 }
@@ -146,8 +143,7 @@ async fn main() -> Result<()> {
     let executor = Box::new(DemoToolExecutor);
 
     // Create agent runtime
-    let mut runtime = AgentRuntime::new(provider, executor)
-        .with_max_iterations(5);
+    let mut runtime = AgentRuntime::new(provider, executor).with_max_iterations(5);
 
     // Set system prompt
     runtime.set_system_prompt(
