@@ -50,6 +50,7 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
         true,                             // no_context (skip semantic search)
         true,                             // no_process (skip pipeline - this is key!)
         Some(3),                          // context_size
+        false,                            // use_tui
     )
     .await;
 
@@ -124,10 +125,11 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
         config,
         None, // No agent name - will try to discover
         Some("test query".to_string()),
-        true, // read_only
-        true, // no_context
-        true, // no_process
-        None, // context_size
+        true,  // read_only
+        true,  // no_context
+        true,  // no_process
+        None,  // context_size
+        false, // use_tui
     )
     .await;
 

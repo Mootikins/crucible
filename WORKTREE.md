@@ -97,7 +97,7 @@
 - `crates/crucible-cli/src/tui/app.rs` - Dirty flags, state
 - `crates/crucible-cli/src/interactive.rs` - FuzzyPicker (nucleo)
 
-## Test Summary (144 tests passing)
+## Test Summary (179 tests passing)
 
 ```bash
 cargo test -p crucible-cli chat_tui
@@ -117,6 +117,9 @@ Tests cover:
 - File completion source with extension filtering
 - Agent integration with channel-based communication
 - Local command handling (/clear, /exit, /quit)
+- **KeyBindings**: resolution, layering, defaults (15 tests)
+- **Convert**: crossterm to KeyPattern (14 tests)
+- **CompletionSource**: injection, hot-reload (6 tests)
 
 ## References
 
