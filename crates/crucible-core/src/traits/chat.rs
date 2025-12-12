@@ -21,6 +21,7 @@
 //! **Protocol Independence**: Abstracts over ACP, internal agents, direct LLM APIs
 
 use async_trait::async_trait;
+use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
 
 /// Result type for chat operations
@@ -100,6 +101,23 @@ impl ChatMode {
     }
 }
 
+/// Chunk from streaming response
+///
+/// Represents an incremental piece of content from a streaming chat response.
+/// Chunks are emitted as the agent generates its response, allowing for
+/// real-time display and processing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatChunk {
+    /// Incremental text content
+    pub delta: String,
+
+    /// True when this is the final chunk
+    pub done: bool,
+
+    /// Tool calls (populated in final chunk if any)
+    pub tool_calls: Option<Vec<ToolCall>>,
+}
+
 /// Runtime handle to an active agent
 ///
 /// This trait defines the interface for any chat backend:
@@ -113,9 +131,38 @@ impl ChatMode {
 /// ## Thread Safety
 ///
 /// Implementations must be Send + Sync for concurrent usage across async boundaries.
+///
+/// ## Streaming vs Non-streaming
+///
+/// The trait now defaults to streaming via `send_message_stream`. The convenience
+/// method `send_message` provides a default implementation that collects the stream.
+/// Implementations should override `send_message_stream` as the primary method.
 #[async_trait]
 pub trait AgentHandle: Send + Sync {
+    /// Stream response chunks (primary method for streaming)
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - User message to send to agent
+    ///
+    /// # Returns
+    ///
+    /// Returns a stream of `ChatChunk` values. The stream yields incremental
+    /// content deltas and completes with a chunk where `done = true`.
+    ///
+    /// # Errors
+    ///
+    /// - `ChatError::Communication` - Failed to send/receive message
+    /// - `ChatError::AgentUnavailable` - Agent not connected
+    fn send_message_stream<'a>(
+        &'a mut self,
+        message: &'a str,
+    ) -> BoxStream<'a, ChatResult<ChatChunk>>;
+
     /// Send a message to the agent and receive a response
+    ///
+    /// Convenience wrapper that collects the entire stream into a single response.
+    /// Default implementation collects `send_message_stream`.
     ///
     /// # Arguments
     ///
@@ -129,7 +176,26 @@ pub trait AgentHandle: Send + Sync {
     ///
     /// - `ChatError::Communication` - Failed to send/receive message
     /// - `ChatError::AgentUnavailable` - Agent not connected
-    async fn send_message(&mut self, message: &str) -> ChatResult<ChatResponse>;
+    async fn send_message(&mut self, message: &str) -> ChatResult<ChatResponse> {
+        use futures::StreamExt;
+
+        let mut content = String::new();
+        let mut tool_calls = Vec::new();
+        let mut stream = self.send_message_stream(message);
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            content.push_str(&chunk.delta);
+            if let Some(calls) = chunk.tool_calls {
+                tool_calls.extend(calls);
+            }
+        }
+
+        Ok(ChatResponse {
+            content,
+            tool_calls,
+        })
+    }
 
     /// Change the agent's operating mode
     ///
@@ -156,7 +222,7 @@ pub trait AgentHandle: Send + Sync {
 
     /// Check if the agent supports streaming responses
     fn supports_streaming(&self) -> bool {
-        false
+        true // Now default true since stream is the primary method
     }
 
     /// Handle command updates from agent (optional)
@@ -340,6 +406,7 @@ pub struct SearchResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::stream::StreamExt;
 
     #[test]
     fn test_chat_mode_cycle() {
@@ -388,5 +455,168 @@ mod tests {
         let json = serde_json::to_string(&err).unwrap();
         let deserialized: ChatError = serde_json::from_str(&json).unwrap();
         assert_eq!(format!("{}", err), format!("{}", deserialized));
+    }
+
+    #[test]
+    fn test_chat_chunk_creation() {
+        let chunk = ChatChunk {
+            delta: "test content".to_string(),
+            done: false,
+            tool_calls: None,
+        };
+        assert_eq!(chunk.delta, "test content");
+        assert!(!chunk.done);
+        assert!(chunk.tool_calls.is_none());
+    }
+
+    #[test]
+    fn test_chat_chunk_with_tool_calls() {
+        let tool_call = ToolCall {
+            name: "test_tool".to_string(),
+            arguments: Some(serde_json::json!({"key": "value"})),
+            id: Some("call-123".to_string()),
+        };
+
+        let chunk = ChatChunk {
+            delta: "final content".to_string(),
+            done: true,
+            tool_calls: Some(vec![tool_call.clone()]),
+        };
+
+        assert_eq!(chunk.delta, "final content");
+        assert!(chunk.done);
+        assert!(chunk.tool_calls.is_some());
+        assert_eq!(chunk.tool_calls.as_ref().unwrap().len(), 1);
+        assert_eq!(chunk.tool_calls.as_ref().unwrap()[0].name, "test_tool");
+    }
+
+    #[test]
+    fn test_chat_chunk_serialize_deserialize() {
+        let chunk = ChatChunk {
+            delta: "test".to_string(),
+            done: true,
+            tool_calls: None,
+        };
+
+        let json = serde_json::to_string(&chunk).unwrap();
+        let deserialized: ChatChunk = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(chunk.delta, deserialized.delta);
+        assert_eq!(chunk.done, deserialized.done);
+    }
+
+    // Test implementation of AgentHandle for testing streaming
+    struct TestStreamingAgent {
+        chunks: Vec<String>,
+    }
+
+    #[async_trait]
+    impl AgentHandle for TestStreamingAgent {
+        fn send_message_stream<'a>(
+            &'a mut self,
+            _message: &'a str,
+        ) -> BoxStream<'a, ChatResult<ChatChunk>> {
+            let chunks = self.chunks.clone();
+            let total = chunks.len();
+            Box::pin(futures::stream::iter(
+                chunks
+                    .into_iter()
+                    .enumerate()
+                    .map(move |(i, delta)| {
+                        Ok(ChatChunk {
+                            delta,
+                            done: i == total - 1,
+                            tool_calls: None,
+                        })
+                    }),
+            ))
+        }
+
+        async fn set_mode(&mut self, _mode: ChatMode) -> ChatResult<()> {
+            Ok(())
+        }
+
+        fn is_connected(&self) -> bool {
+            true
+        }
+    }
+
+    #[tokio::test]
+    async fn test_agent_handle_streaming() {
+        let mut agent = TestStreamingAgent {
+            chunks: vec!["Hello, ".to_string(), "world!".to_string()],
+        };
+
+        let mut stream = agent.send_message_stream("test");
+        let mut all_chunks = Vec::new();
+
+        while let Some(result) = stream.next().await {
+            all_chunks.push(result.unwrap());
+        }
+
+        assert_eq!(all_chunks.len(), 2);
+        assert_eq!(all_chunks[0].delta, "Hello, ");
+        assert!(!all_chunks[0].done);
+        assert_eq!(all_chunks[1].delta, "world!");
+        assert!(all_chunks[1].done);
+    }
+
+    #[tokio::test]
+    async fn test_agent_handle_send_message_default() {
+        let mut agent = TestStreamingAgent {
+            chunks: vec!["Hello, ".to_string(), "world!".to_string()],
+        };
+
+        let response = agent.send_message("test").await.unwrap();
+
+        assert_eq!(response.content, "Hello, world!");
+        assert!(response.tool_calls.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_agent_handle_send_message_with_tool_calls() {
+        struct TestAgentWithTools;
+
+        #[async_trait]
+        impl AgentHandle for TestAgentWithTools {
+            fn send_message_stream<'a>(
+                &'a mut self,
+                _message: &'a str,
+            ) -> BoxStream<'a, ChatResult<ChatChunk>> {
+                let tool_call = ToolCall {
+                    name: "search".to_string(),
+                    arguments: Some(serde_json::json!({"query": "test"})),
+                    id: Some("call-1".to_string()),
+                };
+
+                Box::pin(futures::stream::iter(vec![
+                    Ok(ChatChunk {
+                        delta: "Searching...".to_string(),
+                        done: false,
+                        tool_calls: None,
+                    }),
+                    Ok(ChatChunk {
+                        delta: " Done!".to_string(),
+                        done: true,
+                        tool_calls: Some(vec![tool_call]),
+                    }),
+                ]))
+            }
+
+            async fn set_mode(&mut self, _mode: ChatMode) -> ChatResult<()> {
+                Ok(())
+            }
+
+            fn is_connected(&self) -> bool {
+                true
+            }
+        }
+
+        let mut agent = TestAgentWithTools;
+        let response = agent.send_message("search for something").await.unwrap();
+
+        assert_eq!(response.content, "Searching... Done!");
+        assert_eq!(response.tool_calls.len(), 1);
+        assert_eq!(response.tool_calls[0].name, "search");
     }
 }
