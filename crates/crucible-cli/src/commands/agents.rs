@@ -330,7 +330,7 @@ async fn validate(config: &CliConfig, verbose: bool) -> Result<()> {
 mod tests {
     use super::*;
     use crucible_config::CliConfig as CliAppConfig;
-    use crucible_config::{AcpConfig, ChatConfig, EmbeddingConfig, ProcessingConfig};
+    use crucible_config::{AcpConfig, ChatConfig, EmbeddingConfig, LlmConfig, ProcessingConfig};
     use std::fs;
     use tempfile::TempDir;
 
@@ -341,6 +341,7 @@ mod tests {
             embedding: EmbeddingConfig::default(),
             acp: AcpConfig::default(),
             chat: ChatConfig::default(),
+            llm: LlmConfig::default(),
             cli: CliAppConfig::default(),
             logging: None,
             processing: ProcessingConfig::default(),
