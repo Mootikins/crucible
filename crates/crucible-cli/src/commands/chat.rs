@@ -293,19 +293,22 @@ pub async fn execute(
                 info!("Interactive chat mode (internal agent)");
 
                 if use_tui {
-                    warn!("TUI mode not yet supported for internal agents, using reedline");
+                    // Use ratatui TUI (generic over AgentHandle)
+                    info!("Using ratatui TUI (internal agent)");
+                    use crate::chat_tui::run_with_agent;
+                    run_with_agent(handle).await?;
+                } else {
+                    // Use reedline-based session
+                    run_interactive_session_internal(
+                        core,
+                        &mut handle,
+                        initial_mode,
+                        no_context,
+                        context_size,
+                        live_progress,
+                    )
+                    .await?;
                 }
-
-                // Use reedline-based session
-                run_interactive_session_internal(
-                    core,
-                    &mut handle,
-                    initial_mode,
-                    no_context,
-                    context_size,
-                    live_progress,
-                )
-                .await?;
             }
         }
     }

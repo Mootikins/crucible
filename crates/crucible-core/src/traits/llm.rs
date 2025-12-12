@@ -62,6 +62,9 @@ pub enum LlmError {
 
     #[error("Internal error: {0}")]
     Internal(String),
+
+    #[error("Unsupported operation: {0}")]
+    Unsupported(String),
 }
 
 /// Message role in a conversation
