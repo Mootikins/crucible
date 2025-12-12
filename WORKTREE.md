@@ -1,7 +1,7 @@
 # Worktree: feat/chat-ux-improvements
 
 **Goal**: Replace reedline chat with ratatui inline viewport TUI
-**Status**: Implementation complete (all Waves done)
+**Status**: Implementation complete (all Waves done), integrated with `--tui` flag
 
 ## Architecture Decision
 
@@ -135,3 +135,14 @@ Tests cover:
 - [x] `@file` multi-select completion works (unit tested)
 - [x] Status bar shows mode + streaming
 - [x] `/clear` resets conversation context
+- [x] Integration with `chat` command via `--tui` flag
+
+## Usage
+
+```bash
+# Use new ratatui TUI
+crucible chat --tui
+
+# Use original reedline interface (default)
+crucible chat
+```
