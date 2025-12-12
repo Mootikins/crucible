@@ -24,8 +24,10 @@
 
 mod app;
 mod completion;
+mod convert;
 mod event_loop;
 mod input;
+mod keybindings;
 mod messages;
 mod render;
 mod sources;
@@ -35,6 +37,7 @@ pub use app::{ChatApp, ChatMode, RenderState};
 pub use completion::{CompletionItem, CompletionState, CompletionType};
 pub use event_loop::{run_event_loop, run_with_agent, AgentResponse, ChatMessage, EventResult};
 pub use input::{ChatAction, ChatInput};
+pub use keybindings::KeyBindings;
 pub use messages::{calculate_message_height, render_message, ChatMessageDisplay, MessageRole};
 pub use render::render_chat_viewport;
 pub use sources::{command_source, FileSource};
