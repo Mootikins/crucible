@@ -192,6 +192,7 @@ async fn main() -> Result<()> {
             no_context,
             context_size,
             act,
+            tui,
         }) => {
             commands::chat::execute(
                 config,
@@ -201,6 +202,7 @@ async fn main() -> Result<()> {
                 no_context,
                 cli.no_process, // Pass the global --no-process flag
                 Some(context_size),
+                tui, // Use new ratatui TUI
             )
             .await?
         }
@@ -313,6 +315,7 @@ async fn main() -> Result<()> {
                 false,          // no_context = false
                 cli.no_process, // Pass the global --no-process flag
                 Some(5),        // default context_size = 5
+                false,          // Use reedline (not TUI) by default
             )
             .await?
         }

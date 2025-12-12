@@ -28,6 +28,7 @@ use tokio::sync::mpsc;
 /// * `no_context` - If true, skip context enrichment
 /// * `no_process` - If true, skip auto-processing of files before context enrichment
 /// * `context_size` - Number of context results to include
+/// * `use_tui` - If true, use ratatui TUI instead of reedline
 pub async fn execute(
     config: CliConfig,
     agent_name: Option<String>,
@@ -36,6 +37,7 @@ pub async fn execute(
     no_context: bool,
     no_process: bool,
     context_size: Option<usize>,
+    use_tui: bool,
 ) -> Result<()> {
     // Determine initial mode
     let initial_mode = if read_only {
@@ -201,10 +203,17 @@ pub async fn execute(
     } else {
         // Interactive mode
         info!("Interactive chat mode");
-        run_interactive_session(core, &mut client, initial_mode, no_context, context_size, live_progress).await?;
 
-        // Cleanup
-        client.shutdown().await?;
+        if use_tui {
+            // Use new ratatui TUI
+            info!("Using ratatui TUI");
+            run_tui_session(client).await?;
+        } else {
+            // Use reedline-based session
+            run_interactive_session(core, &mut client, initial_mode, no_context, context_size, live_progress).await?;
+            // Cleanup
+            client.shutdown().await?;
+        }
     }
 
     Ok(())
@@ -233,6 +242,19 @@ async fn run_interactive_session(
 
     // Run interactive session
     session.run(client).await
+}
+
+/// Run an interactive chat session using the new ratatui TUI
+///
+/// This uses the chat_tui module which provides:
+/// - Inline viewport that preserves terminal scrollback
+/// - Fuzzy completion for /commands and @files
+/// - Status bar with mode indicator and streaming state
+async fn run_tui_session(client: CrucibleAcpClient) -> Result<()> {
+    use crate::chat_tui::run_with_agent;
+
+    // The TUI handles its own cleanup via run_with_agent
+    run_with_agent(client).await
 }
 
 /// Spawn background watch task for chat mode

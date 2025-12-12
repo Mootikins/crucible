@@ -269,13 +269,13 @@ Event loop handles ChatEvent (send message, exit, etc.)
 
 ## Success Criteria
 
-- [ ] All SOLID principles adhered to
-- [ ] Keybindings configurable via KeyBindings struct
-- [ ] No hardcoded completion items
-- [ ] No hardcoded keybindings in app.rs/input.rs/event_loop.rs
-- [ ] All 144 existing tests pass
-- [ ] New tests for keybinding resolution
-- [ ] Platform-agnostic types in crucible-core
+- [x] All SOLID principles adhered to (SRP: ChatApp slimmed, OCP: CompletionSource trait, DIP: KeyBindings injection)
+- [x] Keybindings configurable via KeyBindings struct (keybindings.rs)
+- [x] No hardcoded completion items (CompletionSource trait with hot-reload support)
+- [x] No hardcoded keybindings in app.rs/input.rs/event_loop.rs (all in keybindings.rs)
+- [x] All 144 existing tests pass (now 179 tests with new additions)
+- [x] New tests for keybinding resolution (15 tests in keybindings.rs)
+- [x] Platform-agnostic types in crucible-core (input.rs with 23 tests)
 
 ## References
 
