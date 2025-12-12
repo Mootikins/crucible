@@ -32,7 +32,8 @@ pub struct Message {
 pub trait AgentHandle {
     type Error: std::error::Error + Send + Sync + 'static;
 
-    async fn send_message(&mut self, message: Message) -> std::result::Result<Message, Self::Error>;
+    async fn send_message(&mut self, message: Message)
+        -> std::result::Result<Message, Self::Error>;
     async fn get_conversation_history(&self) -> std::result::Result<Vec<Message>, Self::Error>;
     fn agent_id(&self) -> &str;
 }
@@ -118,7 +119,10 @@ impl InternalAgentHandle {
 impl AgentHandle for InternalAgentHandle {
     type Error = InternalAgentError;
 
-    async fn send_message(&mut self, _message: Message) -> std::result::Result<Message, Self::Error> {
+    async fn send_message(
+        &mut self,
+        _message: Message,
+    ) -> std::result::Result<Message, Self::Error> {
         todo!("Implement InternalAgentHandle::send_message")
     }
 
