@@ -3068,6 +3068,7 @@ dependencies = [
  "comfy-table",
  "crossterm 0.29.0",
  "crucible-acp",
+ "crucible-agents",
  "crucible-config",
  "crucible-core",
  "crucible-enrichment",
