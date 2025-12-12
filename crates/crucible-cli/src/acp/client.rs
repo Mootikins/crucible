@@ -357,27 +357,40 @@ impl Drop for CrucibleAcpClient {
 // Implement AgentHandle trait for backend-agnostic chat interface
 #[async_trait::async_trait]
 impl AgentHandle for CrucibleAcpClient {
-    async fn send_message(&mut self, message: &str) -> ChatResult<ChatResponse> {
-        // Call the ACP-specific send_message method
-        let (content, acp_tool_calls) = self
-            .send_message_acp(message)
-            .await
-            .map_err(|e| ChatError::Communication(e.to_string()))?;
+    fn send_message_stream<'a>(
+        &'a mut self,
+        message: &'a str,
+    ) -> futures::stream::BoxStream<'a, ChatResult<crate::chat::ChatChunk>> {
+        use futures::stream::StreamExt;
 
-        // Convert ACP ToolCallInfo to generic ToolCall
-        let tool_calls = acp_tool_calls
-            .into_iter()
-            .map(|t| crate::chat::ChatToolCall {
-                name: t.title,
-                arguments: t.arguments, // Already Option<serde_json::Value>
-                id: t.id,               // Already Option<String>
+        // For now, wrap the non-streaming send_message_acp in a stream
+        // TODO: When crucible-acp supports streaming, update this to use real streaming
+        Box::pin(futures::stream::once(async move {
+            let (content, acp_tool_calls) = self
+                .send_message_acp(message)
+                .await
+                .map_err(|e| ChatError::Communication(e.to_string()))?;
+
+            // Convert ACP ToolCallInfo to generic ToolCall
+            let tool_calls: Vec<crate::chat::ChatToolCall> = acp_tool_calls
+                .into_iter()
+                .map(|t| crate::chat::ChatToolCall {
+                    name: t.title,
+                    arguments: t.arguments,
+                    id: t.id,
+                })
+                .collect();
+
+            Ok(crate::chat::ChatChunk {
+                delta: content,
+                done: true,
+                tool_calls: if tool_calls.is_empty() {
+                    None
+                } else {
+                    Some(tool_calls)
+                },
             })
-            .collect();
-
-        Ok(ChatResponse {
-            content,
-            tool_calls,
-        })
+        }))
     }
 
     async fn set_mode(&mut self, mode: ChatMode) -> ChatResult<()> {

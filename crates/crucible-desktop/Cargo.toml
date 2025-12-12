@@ -22,6 +22,7 @@ crucible-llm = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true }
+futures = { workspace = true }
 
 # Error handling
 anyhow = { workspace = true }

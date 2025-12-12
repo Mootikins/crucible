@@ -4,7 +4,7 @@
 
 use async_trait::async_trait;
 
-use crate::{AgentHandle, ChatMode, ChatResponse, ChatResult, CommandDescriptor};
+use crate::{AgentHandle, ChatMode, ChatResult, CommandDescriptor};
 
 /// Mock agent that provides canned responses
 ///
@@ -40,14 +40,22 @@ impl Default for MockAgent {
 
 #[async_trait]
 impl AgentHandle for MockAgent {
-    async fn send_message(&mut self, message: &str) -> ChatResult<ChatResponse> {
-        // Generate a mock response based on the input
+    fn send_message_stream<'a>(
+        &'a mut self,
+        message: &'a str,
+    ) -> futures::stream::BoxStream<'a, ChatResult<crate::ChatChunk>> {
+        use futures::stream::StreamExt;
+
+        // Mock agent doesn't support streaming - return single chunk
         let content = generate_mock_response(message);
 
-        Ok(ChatResponse {
-            content,
-            tool_calls: Vec::new(),
-        })
+        Box::pin(futures::stream::once(async move {
+            Ok(crate::ChatChunk {
+                delta: content,
+                done: true,
+                tool_calls: None,
+            })
+        }))
     }
 
     async fn set_mode(&mut self, mode: ChatMode) -> ChatResult<()> {
