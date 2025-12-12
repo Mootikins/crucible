@@ -1,12 +1,88 @@
 //! Completion sources for the chat TUI
 //!
-//! This module provides functions to convert various data sources
-//! into completion items for fuzzy completion.
+//! This module provides the `CompletionSource` trait and implementations
+//! to convert various data sources into completion items for fuzzy completion.
+//!
+//! ## Architecture
+//!
+//! The `CompletionSource` trait enables:
+//! - **Dependency Inversion**: ChatApp depends on the trait, not concrete implementations
+//! - **Open/Closed**: New sources can be added without modifying ChatApp
+//! - **Hot-reload**: Sources can be swapped at runtime (e.g., when ACP publishes commands)
 
 use std::path::PathBuf;
 
 use crate::chat::slash_registry::SlashCommandRegistry;
 use super::completion::{CompletionItem, CompletionType};
+
+/// Trait for completion data sources
+///
+/// Implement this to provide completion items from various sources
+/// (slash commands, files, agents, etc.)
+///
+/// ## Example
+///
+/// ```ignore
+/// struct MySource { items: Vec<CompletionItem> }
+///
+/// impl CompletionSource for MySource {
+///     fn get_items(&self) -> Vec<CompletionItem> {
+///         self.items.clone()
+///     }
+/// }
+/// ```
+pub trait CompletionSource: Send + Sync {
+    /// Get all completion items from this source
+    fn get_items(&self) -> Vec<CompletionItem>;
+
+    /// Whether this source supports multi-select
+    fn supports_multi_select(&self) -> bool {
+        false
+    }
+}
+
+/// Command source wrapper that implements CompletionSource
+///
+/// Provides completion items from a list of commands.
+/// Single-select only (commands are executed one at a time).
+pub struct CommandSource {
+    items: Vec<CompletionItem>,
+}
+
+impl CommandSource {
+    /// Create from a slash command registry
+    pub fn from_registry(registry: &SlashCommandRegistry) -> Self {
+        Self {
+            items: command_source(registry),
+        }
+    }
+
+    /// Create from a list of items
+    pub fn new(items: Vec<CompletionItem>) -> Self {
+        Self { items }
+    }
+}
+
+impl CompletionSource for CommandSource {
+    fn get_items(&self) -> Vec<CompletionItem> {
+        self.items.clone()
+    }
+
+    fn supports_multi_select(&self) -> bool {
+        false // Commands are single-select
+    }
+}
+
+impl CompletionSource for FileSource {
+    fn get_items(&self) -> Vec<CompletionItem> {
+        // Use existing method
+        FileSource::get_items(self)
+    }
+
+    fn supports_multi_select(&self) -> bool {
+        true // Files support multi-select
+    }
+}
 
 /// Convert slash commands from the registry into completion items
 ///
