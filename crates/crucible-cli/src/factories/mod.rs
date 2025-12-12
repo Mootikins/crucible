@@ -4,12 +4,16 @@
 //! and returned as trait objects. This enforces dependency inversion at
 //! the architectural level.
 
+pub mod agent;
 pub mod enrichment;
 pub mod merkle;
 pub mod pipeline;
 pub mod storage;
 pub mod watch;
 
+pub use agent::{
+    create_agent, create_internal_agent, AgentInitParams, AgentType, InitializedAgent,
+};
 pub use enrichment::{create_default_enrichment_service, get_or_create_embedding_provider};
 pub use merkle::create_surrealdb_merkle_store;
 pub use pipeline::create_pipeline;
