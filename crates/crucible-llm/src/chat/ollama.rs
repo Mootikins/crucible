@@ -2,8 +2,9 @@
 
 use async_trait::async_trait;
 use crucible_core::traits::{
-    ChatCompletionRequest, ChatCompletionResponse, LlmError, LlmMessage, LlmResult, MessageRole,
-    TextGenerationProvider, TokenUsage, ToolCall,
+    ChatCompletionRequest, ChatCompletionResponse, ChatMessageDelta, FunctionCallDelta, LlmError,
+    LlmMessage, LlmResult, MessageRole, TextGenerationProvider, TokenUsage, ToolCall,
+    ToolCallDelta,
 };
 use futures::stream::BoxStream;
 use serde::Deserialize;
@@ -194,9 +195,170 @@ impl TextGenerationProvider for OllamaChatProvider {
 
     fn generate_chat_completion_stream<'a>(
         &'a self,
-        _request: ChatCompletionRequest,
+        request: ChatCompletionRequest,
     ) -> BoxStream<'a, LlmResult<ChatCompletionChunk>> {
-        todo!("Ollama chat completion streaming not implemented")
+        use async_stream::stream;
+        use futures::StreamExt;
+
+        let url = format!("{}/api/chat", self.base_url);
+
+        // Build Ollama API request
+        let mut api_request = serde_json::json!({
+            "model": self.default_model,
+            "messages": request.messages.iter().map(|m| {
+                serde_json::json!({
+                    "role": match m.role {
+                        MessageRole::System => "system",
+                        MessageRole::User => "user",
+                        MessageRole::Assistant => "assistant",
+                        MessageRole::Function => "assistant", // Map to assistant
+                        MessageRole::Tool => "tool",
+                    },
+                    "content": m.content.clone(),
+                })
+            }).collect::<Vec<_>>(),
+            "stream": true,
+        });
+
+        // Add optional parameters
+        if let Some(temp) = request.temperature {
+            api_request["options"] = serde_json::json!({
+                "temperature": temp,
+            });
+        }
+
+        if let Some(max_tokens) = request.max_tokens {
+            if let Some(options) = api_request.get_mut("options") {
+                options["num_predict"] = serde_json::json!(max_tokens);
+            } else {
+                api_request["options"] = serde_json::json!({
+                    "num_predict": max_tokens,
+                });
+            }
+        }
+
+        // Add tool definitions if present
+        if let Some(tools) = &request.tools {
+            let ollama_tools: Vec<serde_json::Value> = tools
+                .iter()
+                .map(|tool| {
+                    serde_json::json!({
+                        "type": "function",
+                        "function": {
+                            "name": tool.function.name,
+                            "description": tool.function.description,
+                            "parameters": tool.function.parameters.clone().unwrap_or(serde_json::json!({})),
+                        }
+                    })
+                })
+                .collect();
+            api_request["tools"] = serde_json::json!(ollama_tools);
+        }
+
+        let client = self.client.clone();
+        let timeout = self.timeout;
+
+        Box::pin(stream! {
+            let response = client
+                .post(&url)
+                .json(&api_request)
+                .timeout(timeout)
+                .send()
+                .await;
+
+            match response {
+                Ok(res) if res.status().is_success() => {
+                    let mut stream = res.bytes_stream();
+                    let mut buffer = String::new();
+                    let mut index = 0u32;
+
+                    while let Some(chunk_result) = stream.next().await {
+                        match chunk_result {
+                            Ok(bytes) => {
+                                buffer.push_str(&String::from_utf8_lossy(&bytes));
+
+                                // Process complete lines (NDJSON format)
+                                while let Some(line_end) = buffer.find('\n') {
+                                    let line = buffer[..line_end].trim().to_string();
+                                    buffer = buffer[line_end + 1..].to_string();
+
+                                    if line.is_empty() {
+                                        continue;
+                                    }
+
+                                    match serde_json::from_str::<OllamaStreamResponse>(&line) {
+                                        Ok(stream_resp) => {
+                                            // Convert tool calls if present
+                                            let tool_calls = stream_resp.message.tool_calls.map(|calls| {
+                                                calls
+                                                    .into_iter()
+                                                    .enumerate()
+                                                    .map(|(idx, tc)| ToolCallDelta {
+                                                        index: idx as u32,
+                                                        id: tc.id,
+                                                        function: Some(FunctionCallDelta {
+                                                            name: Some(tc.function.name),
+                                                            arguments: Some(serde_json::to_string(&tc.function.arguments).unwrap_or_default()),
+                                                        }),
+                                                    })
+                                                    .collect()
+                                            });
+
+                                            let chunk = ChatCompletionChunk {
+                                                index,
+                                                delta: ChatMessageDelta {
+                                                    role: stream_resp.message.role.map(|r| match r.as_str() {
+                                                        "assistant" => MessageRole::Assistant,
+                                                        "system" => MessageRole::System,
+                                                        "user" => MessageRole::User,
+                                                        _ => MessageRole::Assistant,
+                                                    }),
+                                                    content: if stream_resp.message.content.is_empty() {
+                                                        None
+                                                    } else {
+                                                        Some(stream_resp.message.content)
+                                                    },
+                                                    function_call: None,
+                                                    tool_calls,
+                                                },
+                                                finish_reason: if stream_resp.done {
+                                                    stream_resp.done_reason.or(Some("stop".to_string()))
+                                                } else {
+                                                    None
+                                                },
+                                                logprobs: None,
+                                            };
+                                            index += 1;
+                                            yield Ok(chunk);
+                                        }
+                                        Err(e) => {
+                                            yield Err(LlmError::InvalidResponse(format!(
+                                                "Failed to parse stream: {}",
+                                                e
+                                            )));
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                yield Err(LlmError::HttpError(e.to_string()));
+                            }
+                        }
+                    }
+                }
+                Ok(res) => {
+                    let status = res.status();
+                    let error_text = res.text().await.unwrap_or_default();
+                    yield Err(LlmError::InvalidResponse(format!(
+                        "Ollama API error ({}): {}",
+                        status, error_text
+                    )));
+                }
+                Err(e) => {
+                    yield Err(LlmError::HttpError(e.to_string()));
+                }
+            }
+        })
     }
 
     async fn list_models(&self) -> LlmResult<Vec<TextModelInfo>> {
@@ -215,7 +377,7 @@ impl TextGenerationProvider for OllamaChatProvider {
         ProviderCapabilities {
             text_completion: false,
             chat_completion: true,
-            streaming: false, // Not implemented yet
+            streaming: true,
             function_calling: true,
             tool_use: true,
             vision: false,
@@ -255,6 +417,24 @@ struct OllamaToolCall {
 struct OllamaFunction {
     name: String,
     arguments: serde_json::Value,
+}
+
+// Ollama streaming response types
+#[derive(Debug, Deserialize)]
+struct OllamaStreamResponse {
+    model: String,
+    message: OllamaStreamMessage,
+    done: bool,
+    #[serde(default)]
+    done_reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OllamaStreamMessage {
+    role: Option<String>,
+    content: String,
+    #[serde(default)]
+    tool_calls: Option<Vec<OllamaToolCall>>,
 }
 
 #[cfg(test)]
