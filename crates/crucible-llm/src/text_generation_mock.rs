@@ -302,7 +302,10 @@ impl TextGenerationProvider for MockTextProvider {
         let response_text = self.get_chat_response(&request.messages);
 
         // Split response into word chunks
-        let words: Vec<String> = response_text.split_whitespace().map(|s| s.to_string()).collect();
+        let words: Vec<String> = response_text
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
         let mut chunks = Vec::new();
 
         // Send role first

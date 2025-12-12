@@ -41,7 +41,8 @@ mod test_utils;
 pub use components::*;
 pub use config::{
     CacheConfig, CacheType, CliAppConfig, Config, ConfigError, ConfigValidationError,
-    DatabaseConfig, DatabaseType, LoggingConfig, ProcessingConfig, ServerConfig,
+    DatabaseConfig, DatabaseType, EffectiveLlmConfig, LoggingConfig, ProcessingConfig,
+    ServerConfig,
 };
 pub use enrichment::*;
 pub use includes::{process_file_references, IncludeConfig, IncludeError};

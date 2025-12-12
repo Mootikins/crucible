@@ -4,8 +4,8 @@
 //! and ToolExecutor, enabling autonomous agent behavior.
 
 use crucible_core::traits::{
-    ExecutionContext, LlmError, LlmMessage, TextGenerationProvider, ChatCompletionRequest, ChatCompletionResponse, LlmResult,
-    LlmToolDefinition, MessageRole, ToolExecutor,
+    ChatCompletionRequest, ChatCompletionResponse, ExecutionContext, LlmError, LlmMessage,
+    LlmResult, LlmToolDefinition, MessageRole, TextGenerationProvider, ToolExecutor,
 };
 use tracing::{debug, info, warn};
 
@@ -103,8 +103,9 @@ impl AgentRuntime {
             debug!("Agent iteration {}/{}", iteration, self.max_iterations);
 
             // Build request with conversation history and tools
-            let request = ChatCompletionRequest::new("default".to_string(), self.conversation.clone())
-                .with_tools(llm_tools.clone());
+            let request =
+                ChatCompletionRequest::new("default".to_string(), self.conversation.clone())
+                    .with_tools(llm_tools.clone());
 
             // Get response from LLM
             let response = self.provider.generate_chat_completion(request).await?;
@@ -115,7 +116,10 @@ impl AgentRuntime {
             }
 
             // Check if there are tool calls
-            let tool_calls = response.choices.first().and_then(|c| c.message.tool_calls.as_ref());
+            let tool_calls = response
+                .choices
+                .first()
+                .and_then(|c| c.message.tool_calls.as_ref());
             if let Some(tool_calls) = tool_calls {
                 info!("LLM requested {} tool calls", tool_calls.len());
 
@@ -192,22 +196,70 @@ impl AgentRuntime {
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use crucible_core::traits::{TokenUsage, ToolResult};
+    use crucible_core::traits::{
+        ChatCompletionChoice, ChatCompletionChunk, ChatMessageDelta, CompletionChunk,
+        CompletionRequest, CompletionResponse, ProviderCapabilities, TextModelInfo, TokenUsage,
+        ToolResult,
+    };
+    use futures::stream::{self, BoxStream};
 
     struct MockProvider;
 
     #[async_trait]
     impl TextGenerationProvider for MockProvider {
-        async fn complete(&self, _request: ChatCompletionRequest) -> LlmResult<ChatCompletionResponse> {
+        async fn generate_completion(
+            &self,
+            _request: CompletionRequest,
+        ) -> LlmResult<CompletionResponse> {
+            unimplemented!("Mock provider does not support text completion")
+        }
+
+        fn generate_completion_stream<'a>(
+            &'a self,
+            _request: CompletionRequest,
+        ) -> BoxStream<'a, LlmResult<CompletionChunk>> {
+            Box::pin(stream::empty())
+        }
+
+        async fn generate_chat_completion(
+            &self,
+            _request: ChatCompletionRequest,
+        ) -> LlmResult<ChatCompletionResponse> {
             Ok(ChatCompletionResponse {
-                message: LlmMessage::assistant("Test response"),
+                choices: vec![ChatCompletionChoice {
+                    index: 0,
+                    message: LlmMessage::assistant("Test response"),
+                    finish_reason: Some("stop".to_string()),
+                    logprobs: None,
+                }],
+                model: "test".to_string(),
                 usage: TokenUsage {
                     prompt_tokens: 10,
                     completion_tokens: 20,
                     total_tokens: 30,
                 },
-                model: "test".to_string(),
+                id: "test-id".to_string(),
+                object: "chat.completion".to_string(),
+                created: chrono::Utc::now(),
+                system_fingerprint: None,
             })
+        }
+
+        fn generate_chat_completion_stream<'a>(
+            &'a self,
+            _request: ChatCompletionRequest,
+        ) -> BoxStream<'a, LlmResult<ChatCompletionChunk>> {
+            Box::pin(stream::iter(vec![Ok(ChatCompletionChunk {
+                index: 0,
+                delta: ChatMessageDelta {
+                    role: Some(MessageRole::Assistant),
+                    content: Some("Test response".to_string()),
+                    function_call: None,
+                    tool_calls: None,
+                },
+                finish_reason: Some("stop".to_string()),
+                logprobs: None,
+            })]))
         }
 
         fn provider_name(&self) -> &str {
@@ -218,8 +270,27 @@ mod tests {
             "mock"
         }
 
+        async fn list_models(&self) -> LlmResult<Vec<TextModelInfo>> {
+            Ok(vec![])
+        }
+
         async fn health_check(&self) -> LlmResult<bool> {
             Ok(true)
+        }
+
+        fn capabilities(&self) -> ProviderCapabilities {
+            ProviderCapabilities {
+                text_completion: false,
+                chat_completion: true,
+                streaming: true,
+                function_calling: false,
+                tool_use: false,
+                vision: false,
+                audio: false,
+                max_batch_size: None,
+                input_formats: vec!["text".to_string()],
+                output_formats: vec!["text".to_string()],
+            }
         }
     }
 

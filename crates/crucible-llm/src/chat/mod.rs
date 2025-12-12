@@ -12,7 +12,9 @@ use crucible_config::{ChatConfig, LlmProvider as ConfigLlmProvider};
 use crucible_core::traits::{LlmError, LlmResult, TextGenerationProvider};
 
 /// Create a chat provider from configuration
-pub async fn create_chat_provider(config: &ChatConfig) -> LlmResult<Box<dyn TextGenerationProvider>> {
+pub async fn create_chat_provider(
+    config: &ChatConfig,
+) -> LlmResult<Box<dyn TextGenerationProvider>> {
     match config.provider {
         ConfigLlmProvider::Ollama => {
             let provider = OllamaChatProvider::new(
