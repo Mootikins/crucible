@@ -15,6 +15,25 @@ path = "src/lib.rs"
 # Enable test utilities (MockEmbeddingProvider) for integration tests in other crates
 test-utils = []
 
+# Burn embedding provider with different backend options
+burn = ["dep:burn", "dep:burn-tensor", "dep:burn-import"]
+burn-cpu = ["burn", "dep:burn-ndarray"]
+burn-vulkan = ["burn", "dep:burn-wgpu"]
+burn-rocm = ["burn", "dep:burn-hip"]
+# Default burn feature enables CPU fallback
+burn-gpu = ["burn-vulkan"]  # Alias for most common GPU backend
+
+# llama.cpp backend for GGUF models with different GPU backends
+# Using llama-cpp-2 crate which has much newer llama.cpp bindings (supports nomic-embed v2 etc.)
+llama-cpp = ["dep:llama-cpp-2"]
+llama-cpp-vulkan = ["llama-cpp", "llama-cpp-2/vulkan"]
+llama-cpp-cuda = ["llama-cpp", "llama-cpp-2/cuda"]
+llama-cpp-metal = ["llama-cpp", "llama-cpp-2/metal"]
+# Default GPU backend alias - Vulkan works on AMD, Intel, and NVIDIA
+llama-cpp-gpu = ["llama-cpp-vulkan"]
+# Note: llama-cpp-2 doesn't have hipblas feature - use vulkan for AMD GPUs
+# llama-cpp-rocm = ["llama-cpp", "llama-cpp-2/hipblas"]
+
 [dependencies]
 # Core types and traits
 crucible-core = { path = "../crucible-core" }
@@ -23,10 +42,17 @@ crucible-core = { path = "../crucible-core" }
 crucible-config = { path = "../crucible-config", features = ["toml"] }
 
 # Burn ML framework dependency for GPU-accelerated embeddings
-burn = { version = "0.14", features = ["wgpu", "autodiff"], optional = true }
-burn-core = { version = "0.14", optional = true }
-burn-tensor = { version = "0.14", optional = true }
-burn-ndarray = { version = "0.14", optional = true }  # For CPU fallback
+# Main burn crate with optional features
+burn = { version = "0.19", optional = true }
+burn-tensor = { version = "0.19", optional = true }
+burn-ndarray = { version = "0.19", optional = true }  # For CPU fallback
+
+# GPU backends (each optional, selected via features)
+burn-wgpu = { version = "0.19", optional = true }   # Vulkan/Metal/WebGPU via wgpu
+burn-hip = { version = "0.16", optional = true }    # AMD ROCm/HIP backend (0.16 is latest stable)
+
+# Import safetensors directly into Burn models
+burn-import = { version = "0.19", optional = true }
 
 # HuggingFace tokenizers for text tokenization
 tokenizers = "0.19"
@@ -36,6 +62,10 @@ safetensors = "0.4"
 
 # GGUF file format support
 gguf = "0.1"
+
+# llama.cpp bindings for GGUF model inference (optional, feature-gated)
+# Use llama-cpp-2 which has much newer llama.cpp (from utilityai/llama-cpp-rs)
+llama-cpp-2 = { version = "0.1", optional = true }
 
 # For model file operations
 walkdir = "2.5"
@@ -73,6 +103,9 @@ shellexpand = "3.1"
 # Directory utilities
 dirs = "5.0"
 
+# CPU detection for thread count
+num_cpus = "1.16"
+
 [dev-dependencies]
 tokio-test = "0.4"
 mockito = "1.0"
@@ -80,6 +113,7 @@ tempfile = { workspace = true }
 tracing-subscriber = { workspace = true }
 toon-format = "0.2"
 criterion = { workspace = true, features = ["html_reports"] }
+serial_test = "3.1"
 
 # Example dependencies
 [[example]]
