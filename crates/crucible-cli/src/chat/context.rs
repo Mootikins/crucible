@@ -192,11 +192,23 @@ mod tests {
 
     #[async_trait]
     impl AgentHandle for MockAgent {
-        async fn send_message(&mut self, _message: &str) -> ChatResult<ChatResponse> {
-            Ok(ChatResponse {
-                content: "Mock response".to_string(),
-                tool_calls: Vec::new(),
-            })
+        fn send_message_stream<'a>(
+            &'a mut self,
+            _message: &'a str,
+        ) -> futures::stream::BoxStream<'a, ChatResult<crucible_core::traits::chat::ChatChunk>> {
+            use futures::stream;
+            Box::pin(stream::iter(vec![
+                Ok(crucible_core::traits::chat::ChatChunk {
+                    delta: "Mock response".to_string(),
+                    done: false,
+                    tool_calls: None,
+                }),
+                Ok(crucible_core::traits::chat::ChatChunk {
+                    delta: String::new(),
+                    done: true,
+                    tool_calls: None,
+                }),
+            ]))
         }
 
         async fn set_mode(&mut self, mode: ChatMode) -> ChatResult<()> {

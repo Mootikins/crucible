@@ -414,14 +414,28 @@ mod tests {
 
     #[async_trait]
     impl AgentHandle for MockAgent {
-        async fn send_message(&mut self, _message: &str) -> ChatResult<ChatResponse> {
+        fn send_message_stream<'a>(
+            &'a mut self,
+            _message: &'a str,
+        ) -> futures::stream::BoxStream<'a, ChatResult<crucible_core::traits::chat::ChatChunk>> {
+            use futures::stream;
             if self.should_error {
-                Err(ChatError::Communication("Mock error".to_string()))
+                Box::pin(stream::iter(vec![
+                    Err(ChatError::Communication("Mock error".to_string()))
+                ]))
             } else {
-                Ok(ChatResponse {
-                    content: self.response.clone(),
-                    tool_calls: Vec::new(),
-                })
+                Box::pin(stream::iter(vec![
+                    Ok(crucible_core::traits::chat::ChatChunk {
+                        delta: self.response.clone(),
+                        done: false,
+                        tool_calls: None,
+                    }),
+                    Ok(crucible_core::traits::chat::ChatChunk {
+                        delta: String::new(),
+                        done: true,
+                        tool_calls: None,
+                    }),
+                ]))
             }
         }
 

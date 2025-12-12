@@ -22,13 +22,16 @@ use tokio::sync::mpsc;
 ///
 /// # Arguments
 /// * `config` - CLI configuration
-/// * `agent_name` - Optional preferred agent name
+/// * `agent_name` - Optional preferred ACP agent name
 /// * `query` - Optional one-shot query (if None, starts interactive mode)
 /// * `read_only` - Initial mode: if true, starts in plan mode; if false, starts in act mode
 /// * `no_context` - If true, skip context enrichment
 /// * `no_process` - If true, skip auto-processing of files before context enrichment
 /// * `context_size` - Number of context results to include
 /// * `use_tui` - If true, use ratatui TUI instead of reedline
+/// * `use_internal` - If true, use internal LLM agent instead of ACP agent
+/// * `provider_key` - Optional LLM provider for internal agent
+/// * `max_context_tokens` - Maximum context window tokens for internal agent
 pub async fn execute(
     config: CliConfig,
     agent_name: Option<String>,
@@ -38,6 +41,9 @@ pub async fn execute(
     no_process: bool,
     context_size: Option<usize>,
     use_tui: bool,
+    use_internal: bool,
+    provider_key: Option<String>,
+    max_context_tokens: usize,
 ) -> Result<()> {
     // Determine initial mode
     let initial_mode = if read_only {
@@ -55,11 +61,31 @@ pub async fn execute(
     // Get default agent from config before moving config
     let default_agent_from_config = config.acp.default_agent.clone();
 
-    // PARALLEL INITIALIZATION: Run storage init and agent discovery concurrently
-    status.update("Initializing storage and discovering agent...");
+    // Determine agent type
+    let agent_type = if use_internal {
+        factories::AgentType::Internal
+    } else {
+        factories::AgentType::Acp
+    };
 
-    let preferred_agent = agent_name.or(default_agent_from_config);
+    // Create agent initialization params
+    let agent_params = factories::AgentInitParams::new()
+        .with_type(agent_type)
+        .with_agent_name_opt(agent_name.clone().or(default_agent_from_config))
+        .with_provider_opt(provider_key)
+        .with_read_only(initial_mode.is_read_only())
+        .with_max_context_tokens(max_context_tokens);
+
+    // PARALLEL INITIALIZATION: Run storage init and agent creation concurrently
+    let init_msg = if use_internal {
+        "Initializing storage and LLM provider..."
+    } else {
+        "Initializing storage and discovering agent..."
+    };
+    status.update(init_msg);
+
     let config_for_storage = config.clone();
+    let config_for_agent = config.clone();
 
     let (storage_result, agent_result) = tokio::join!(
         async {
@@ -67,11 +93,11 @@ pub async fn execute(
             factories::initialize_surrealdb_schema(&client).await?;
             Ok::<_, anyhow::Error>(client)
         },
-        discover_agent(preferred_agent.as_deref())
+        factories::create_agent(&config_for_agent, agent_params)
     );
 
     let storage_client = storage_result?;
-    let agent = agent_result?;
+    let initialized_agent = agent_result?;
 
     // Quick sync check + background processing (unless --no-process or --no-context)
     let bg_progress: Option<BackgroundProgress> = if !no_process && !no_context {
@@ -156,72 +182,138 @@ pub async fn execute(
     // Get knowledge repository from storage
     let knowledge_repo = core.storage().as_knowledge_repository();
 
-    // Create ACP client with kiln path and MCP dependencies for in-process tool execution
-    let kiln_path = core.config().kiln_path.clone();
-    let acp_config = core.config().acp.clone();
-    let mut client =
-        CrucibleAcpClient::with_acp_config(agent, initial_mode.is_read_only(), acp_config)
-            .with_kiln_path(kiln_path)
-            .with_mcp_dependencies(knowledge_repo, embedding_provider);
+    // Handle agent type specific setup and session execution
+    match initialized_agent {
+        factories::InitializedAgent::Acp(client) => {
+            // Configure ACP client with MCP dependencies for in-process tool execution
+            let kiln_path = core.config().kiln_path.clone();
+            let mut client = client
+                .with_kiln_path(kiln_path)
+                .with_mcp_dependencies(knowledge_repo, embedding_provider);
 
-    // Spawn agent (tools will be initialized via in-process SSE MCP server)
-    status.update("Connecting to agent...");
-    client.spawn().await?;
+            // Spawn agent (tools will be initialized via in-process SSE MCP server)
+            status.update("Connecting to agent...");
+            client.spawn().await?;
 
-    // Finalize startup status
-    status.success("Ready");
+            // Finalize startup status
+            status.success("Ready");
 
-    // Start live progress display if we have background processing
-    let live_progress = bg_progress.map(LiveProgress::start);
+            // Start live progress display if we have background processing
+            let live_progress = bg_progress.map(LiveProgress::start);
 
-    // Handle query
-    if let Some(query_text) = query {
-        // One-shot mode
-        info!("One-shot query mode");
+            // Handle query
+            if let Some(query_text) = query {
+                // One-shot mode
+                info!("One-shot query mode");
 
-        let prompt = if no_context {
-            info!("Context enrichment disabled");
-            query_text
-        } else {
-            // Enrich with context
-            info!("Enriching query with context...");
-            let enricher = ContextEnricher::new(core.clone(), context_size);
-            enricher.enrich(&query_text).await?
-        };
+                let prompt = if no_context {
+                    info!("Context enrichment disabled");
+                    query_text
+                } else {
+                    // Enrich with context
+                    info!("Enriching query with context...");
+                    let enricher = ContextEnricher::new(core.clone(), context_size);
+                    enricher.enrich(&query_text).await?
+                };
 
-        // Start chat with enriched prompt
-        client.start_chat(&prompt).await?;
+                // Start chat with enriched prompt
+                client.start_chat(&prompt).await?;
 
-        // Cleanup
-        client.shutdown().await?;
-    } else {
-        // Interactive mode
-        info!("Interactive chat mode");
+                // Cleanup
+                client.shutdown().await?;
+            } else {
+                // Interactive mode
+                info!("Interactive chat mode");
 
-        if use_tui {
-            // Use new ratatui TUI
-            info!("Using ratatui TUI");
-            run_tui_session(client).await?;
-        } else {
-            // Use reedline-based session
-            run_interactive_session(
-                core,
-                &mut client,
-                initial_mode,
-                no_context,
-                context_size,
-                live_progress,
-            )
-            .await?;
-            // Cleanup
-            client.shutdown().await?;
+                if use_tui {
+                    // Use new ratatui TUI
+                    info!("Using ratatui TUI");
+                    run_tui_session(client).await?;
+                } else {
+                    // Use reedline-based session
+                    run_interactive_session(
+                        core,
+                        &mut client,
+                        initial_mode,
+                        no_context,
+                        context_size,
+                        live_progress,
+                    )
+                    .await?;
+                    // Cleanup
+                    client.shutdown().await?;
+                }
+            }
+        }
+        factories::InitializedAgent::Internal(mut handle) => {
+            // Internal agent is ready immediately
+            status.success("Ready");
+
+            // Start live progress display if we have background processing
+            let live_progress = bg_progress.map(LiveProgress::start);
+
+            // Handle query
+            if let Some(query_text) = query {
+                // One-shot mode
+                info!("One-shot query mode (internal agent)");
+
+                let prompt = if no_context {
+                    info!("Context enrichment disabled");
+                    query_text
+                } else {
+                    // Enrich with context
+                    info!("Enriching query with context...");
+                    let enricher = ContextEnricher::new(core.clone(), context_size);
+                    enricher.enrich(&query_text).await?
+                };
+
+                // Send message and stream response to stdout
+                use crucible_core::traits::chat::AgentHandle;
+                use futures::StreamExt;
+
+                let mut stream = handle.send_message_stream(&prompt);
+                while let Some(result) = stream.next().await {
+                    match result {
+                        Ok(chunk) => {
+                            if !chunk.done {
+                                print!("{}", chunk.delta);
+                                use std::io::Write;
+                                std::io::stdout().flush()?;
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("\nError: {}", e);
+                            return Err(e.into());
+                        }
+                    }
+                }
+                println!(); // Final newline
+            } else {
+                // Interactive mode
+                info!("Interactive chat mode (internal agent)");
+
+                if use_tui {
+                    warn!("TUI mode not yet supported for internal agents, using reedline");
+                }
+
+                // Use reedline-based session
+                run_interactive_session_internal(
+                    core,
+                    &mut handle,
+                    initial_mode,
+                    no_context,
+                    context_size,
+                    live_progress,
+                )
+                .await?;
+            }
         }
     }
 
     Ok(())
 }
 
-/// Run an interactive chat session with mode toggling support
+/// Run an interactive chat session with mode toggling support (ACP agent)
 async fn run_interactive_session(
     core: Arc<KilnContext>,
     client: &mut CrucibleAcpClient,
@@ -244,6 +336,31 @@ async fn run_interactive_session(
 
     // Run interactive session
     session.run(client).await
+}
+
+/// Run an interactive chat session with mode toggling support (internal agent)
+async fn run_interactive_session_internal(
+    core: Arc<KilnContext>,
+    handle: &mut crucible_agents::InternalAgentHandle,
+    initial_mode: ChatMode,
+    no_context: bool,
+    context_size: Option<usize>,
+    _live_progress: Option<LiveProgress>,
+) -> Result<()> {
+    use crate::chat::{ChatSession, SessionConfig};
+
+    // Create session configuration
+    let session_config = SessionConfig::new(
+        initial_mode,
+        !no_context, // context_enabled = !no_context
+        context_size,
+    );
+
+    // Create session orchestrator
+    let mut session = ChatSession::new(session_config, core);
+
+    // Run interactive session with internal agent
+    session.run(handle).await
 }
 
 /// Run an interactive chat session using the new ratatui TUI
