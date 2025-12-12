@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use crucible_core::traits::{
     ChatCompletionChoice, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
     CompletionChunk, CompletionRequest, CompletionResponse, LlmError, LlmMessage,
-    LlmResult, LlmToolDefinition, MessageRole, ProviderCapabilities, TextGenerationProvider,
+    LlmResult, MessageRole, ProviderCapabilities, TextGenerationProvider,
     TextModelInfo, TokenUsage, ToolCall,
 };
 use futures::stream::BoxStream;
