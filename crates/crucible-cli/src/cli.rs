@@ -91,9 +91,23 @@ pub enum Commands {
         /// Optional one-shot query (if omitted, starts interactive mode)
         query: Option<String>,
 
-        /// Preferred agent to use (claude-code, gemini-cli, codex)
+        /// Preferred ACP agent to use (claude-code, gemini-cli, codex)
         #[arg(short = 'a', long)]
         agent: Option<String>,
+
+        /// Use internal LLM agent instead of external ACP agent
+        /// Connects directly to configured LLM provider (Ollama, OpenAI, etc.)
+        #[arg(long)]
+        internal: bool,
+
+        /// LLM provider to use for internal agent (from config [llm.providers])
+        /// Requires --internal flag
+        #[arg(long, requires = "internal")]
+        provider: Option<String>,
+
+        /// Maximum context window tokens for internal agent (default: 16384)
+        #[arg(long, default_value = "16384")]
+        max_context: usize,
 
         /// Skip context enrichment (faster, but agent has no knowledge base access)
         #[arg(long)]

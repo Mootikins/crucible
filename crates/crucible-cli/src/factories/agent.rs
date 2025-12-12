@@ -89,6 +89,18 @@ impl AgentInitParams {
         self.tool_executor = Some(executor);
         self
     }
+
+    /// Set agent name from Option (convenient for CLI flags)
+    pub fn with_agent_name_opt(mut self, name: Option<String>) -> Self {
+        self.agent_name = name;
+        self
+    }
+
+    /// Set provider from Option (convenient for CLI flags)
+    pub fn with_provider_opt(mut self, key: Option<String>) -> Self {
+        self.provider_key = key;
+        self
+    }
 }
 
 impl Default for AgentInitParams {
