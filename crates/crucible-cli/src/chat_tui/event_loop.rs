@@ -66,7 +66,7 @@ pub enum AgentResponse {
 /// ```no_run
 /// use crucible_cli::chat_tui::run_with_agent;
 ///
-/// async fn example<A: crucible_core::traits::chat::AgentHandle>(agent: A) {
+/// async fn example<A: crucible_core::traits::chat::AgentHandle + 'static>(agent: A) {
 ///     run_with_agent(agent).await.unwrap();
 /// }
 /// ```
