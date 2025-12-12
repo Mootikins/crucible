@@ -1,9 +1,9 @@
 //! K-Means clustering algorithm implementation (placeholder)
 
 use crate::clustering::*;
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
-use async_trait::async_trait;
 
 /// K-Means clustering for semantic embeddings
 #[derive(Debug)]
@@ -24,7 +24,8 @@ impl KMeansClusteringAlgorithm {
                 id: "kmeans".to_string(),
                 name: "K-Means Semantic Clustering".to_string(),
                 algorithm_type: AlgorithmType::Semantic,
-                description: "Clusters documents using K-Means on their semantic embeddings".to_string(),
+                description: "Clusters documents using K-Means on their semantic embeddings"
+                    .to_string(),
                 requires_embeddings: true,
                 supports_async: true,
                 embedding_dimensions: None, // Can work with any dimension
@@ -51,15 +52,22 @@ impl ClusteringAlgorithm for KMeansClusteringAlgorithm {
         let embeddings: Result<Vec<_>, _> = documents
             .iter()
             .map(|d| {
-                d.embedding.as_ref()
-                    .ok_or_else(|| ClusteringError::Algorithm("All documents must have embeddings for K-Means".to_string()))
+                d.embedding
+                    .as_ref()
+                    .ok_or_else(|| {
+                        ClusteringError::Algorithm(
+                            "All documents must have embeddings for K-Means".to_string(),
+                        )
+                    })
                     .cloned()
             })
             .collect();
         let embeddings = embeddings?;
 
         if embeddings.is_empty() {
-            return Err(ClusteringError::Algorithm("No embeddings provided".to_string()));
+            return Err(ClusteringError::Algorithm(
+                "No embeddings provided".to_string(),
+            ));
         }
 
         let n = documents.len();
@@ -105,24 +113,32 @@ impl ClusteringAlgorithm for KMeansClusteringAlgorithm {
         &self.metadata
     }
 
-    fn validate_parameters(&self, parameters: &HashMap<String, serde_json::Value>) -> Result<(), ClusteringError> {
+    fn validate_parameters(
+        &self,
+        parameters: &HashMap<String, serde_json::Value>,
+    ) -> Result<(), ClusteringError> {
         // Validate k is positive
         if let Some(k) = parameters.get("k") {
             let k: usize = serde_json::from_value(k.clone())
                 .map_err(|_| ClusteringError::Config("k must be a positive integer".to_string()))?;
 
             if k == 0 {
-                return Err(ClusteringError::Config("k must be greater than 0".to_string()));
+                return Err(ClusteringError::Config(
+                    "k must be greater than 0".to_string(),
+                ));
             }
         }
 
         // Validate max_iterations
         if let Some(max_iter) = parameters.get("max_iterations") {
-            let max_iter: usize = serde_json::from_value(max_iter.clone())
-                .map_err(|_| ClusteringError::Config("max_iterations must be a positive integer".to_string()))?;
+            let max_iter: usize = serde_json::from_value(max_iter.clone()).map_err(|_| {
+                ClusteringError::Config("max_iterations must be a positive integer".to_string())
+            })?;
 
             if max_iter == 0 {
-                return Err(ClusteringError::Config("max_iterations must be greater than 0".to_string()));
+                return Err(ClusteringError::Config(
+                    "max_iterations must be greater than 0".to_string(),
+                ));
             }
         }
 
@@ -145,17 +161,21 @@ impl KMeansAlgorithmFactory {
 }
 
 impl AlgorithmFactory for KMeansAlgorithmFactory {
-    fn create(&self, _config: &ClusteringConfig) -> Result<Arc<dyn ClusteringAlgorithm>, ClusteringError> {
+    fn create(
+        &self,
+        _config: &ClusteringConfig,
+    ) -> Result<Arc<dyn ClusteringAlgorithm>, ClusteringError> {
         Ok(Arc::new(KMeansClusteringAlgorithm::new()))
     }
 
     fn metadata(&self) -> &AlgorithmMetadata {
-        static METADATA: once_cell::sync::Lazy<AlgorithmMetadata> = once_cell::sync::Lazy::new(|| {
-            AlgorithmMetadata {
+        static METADATA: once_cell::sync::Lazy<AlgorithmMetadata> =
+            once_cell::sync::Lazy::new(|| AlgorithmMetadata {
                 id: "kmeans".to_string(),
                 name: "K-Means Semantic Clustering".to_string(),
                 algorithm_type: AlgorithmType::Semantic,
-                description: "Clusters documents using K-Means on their semantic embeddings".to_string(),
+                description: "Clusters documents using K-Means on their semantic embeddings"
+                    .to_string(),
                 requires_embeddings: true,
                 supports_async: true,
                 embedding_dimensions: None,
@@ -168,8 +188,7 @@ impl AlgorithmFactory for KMeansAlgorithmFactory {
                     params
                 },
                 parameter_schema: None,
-            }
-        });
+            });
         &METADATA
     }
 }
@@ -191,31 +210,27 @@ mod tests {
         let algorithm = KMeansClusteringAlgorithm::new();
 
         // Documents without embeddings
-        let docs_no_embeddings = vec![
-            DocumentInfo {
-                file_path: "doc1.md".to_string(),
-                title: None,
-                tags: vec![],
-                outbound_links: vec![],
-                inbound_links: vec![],
-                embedding: None,
-                content_length: 1000,
-            },
-        ];
+        let docs_no_embeddings = vec![DocumentInfo {
+            file_path: "doc1.md".to_string(),
+            title: None,
+            tags: vec![],
+            outbound_links: vec![],
+            inbound_links: vec![],
+            embedding: None,
+            content_length: 1000,
+        }];
         assert!(!algorithm.can_process(&docs_no_embeddings).unwrap());
 
         // Documents with embeddings
-        let docs_with_embeddings = vec![
-            DocumentInfo {
-                file_path: "doc1.md".to_string(),
-                title: None,
-                tags: vec![],
-                outbound_links: vec![],
-                inbound_links: vec![],
-                embedding: Some(vec![0.1; 384]),
-                content_length: 1000,
-            },
-        ];
+        let docs_with_embeddings = vec![DocumentInfo {
+            file_path: "doc1.md".to_string(),
+            title: None,
+            tags: vec![],
+            outbound_links: vec![],
+            inbound_links: vec![],
+            embedding: Some(vec![0.1; 384]),
+            content_length: 1000,
+        }];
         assert!(algorithm.can_process(&docs_with_embeddings).unwrap());
     }
 }

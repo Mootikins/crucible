@@ -26,6 +26,6 @@ mod assets;
 mod error;
 mod events;
 
-pub use error::{WebError, Result};
+pub use error::{Result, WebError};
 pub use events::ChatEvent;
-pub use server::{WebConfig, start_server};
+pub use server::{start_server, WebConfig};

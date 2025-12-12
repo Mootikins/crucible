@@ -215,10 +215,7 @@ Inline math: $x^2 + y^2 = z^2$
     let (_temp_dir, file_path) = create_test_file(content).unwrap();
     let result = pipeline.process(&file_path).await;
 
-    assert!(
-        result.is_ok(),
-        "Default parser should process successfully"
-    );
+    assert!(result.is_ok(), "Default parser should process successfully");
 
     let notes = storage.get_stored_notes();
     assert_eq!(notes.len(), 1, "Should have stored one note");
@@ -266,8 +263,7 @@ Heading ref: [[Note#Heading]].
 "#;
 
     // Test with Default parser
-    let (pipeline_pulldown, storage_pulldown) =
-        create_pipeline_with_parser(ParserBackend::Default);
+    let (pipeline_pulldown, storage_pulldown) = create_pipeline_with_parser(ParserBackend::Default);
     let (_temp1, path1) = create_test_file(test_content).unwrap();
     pipeline_pulldown.process(&path1).await.unwrap();
     let notes_pulldown = storage_pulldown.get_stored_notes();
@@ -329,8 +325,7 @@ Nested tag: #work/review/urgent
 "#;
 
     // Test with Default parser
-    let (pipeline_pulldown, storage_pulldown) =
-        create_pipeline_with_parser(ParserBackend::Default);
+    let (pipeline_pulldown, storage_pulldown) = create_pipeline_with_parser(ParserBackend::Default);
     let (_temp1, path1) = create_test_file(test_content).unwrap();
     pipeline_pulldown.process(&path1).await.unwrap();
     let notes_pulldown = storage_pulldown.get_stored_notes();
@@ -387,8 +382,7 @@ Another text section.
 "#;
 
     // Test with Default parser
-    let (pipeline_pulldown, storage_pulldown) =
-        create_pipeline_with_parser(ParserBackend::Default);
+    let (pipeline_pulldown, storage_pulldown) = create_pipeline_with_parser(ParserBackend::Default);
     let (_temp1, path1) = create_test_file(test_content).unwrap();
     pipeline_pulldown.process(&path1).await.unwrap();
     let notes_pulldown = storage_pulldown.get_stored_notes();
@@ -453,8 +447,7 @@ More inline: $\alpha + \beta = \gamma$
 "#;
 
     // Test with Default parser
-    let (pipeline_pulldown, storage_pulldown) =
-        create_pipeline_with_parser(ParserBackend::Default);
+    let (pipeline_pulldown, storage_pulldown) = create_pipeline_with_parser(ParserBackend::Default);
     let (_temp1, path1) = create_test_file(test_content).unwrap();
     pipeline_pulldown.process(&path1).await.unwrap();
     let notes_pulldown = storage_pulldown.get_stored_notes();
@@ -561,8 +554,7 @@ Regular text with [[actual link]] and #actual-tag.
 "#;
 
     // Test with Default parser
-    let (pipeline_pulldown, storage_pulldown) =
-        create_pipeline_with_parser(ParserBackend::Default);
+    let (pipeline_pulldown, storage_pulldown) = create_pipeline_with_parser(ParserBackend::Default);
     let (_temp1, path1) = create_test_file(test_content).unwrap();
     pipeline_pulldown.process(&path1).await.unwrap();
     let notes_pulldown = storage_pulldown.get_stored_notes();

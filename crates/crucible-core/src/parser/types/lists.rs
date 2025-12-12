@@ -120,13 +120,10 @@ impl ListBlock {
 
     /// Get statistics about the list structure
     pub fn stats(&self) -> ListStats {
-        let level_counts = self
-            .items
-            .iter()
-            .fold(HashMap::new(), |mut counts, item| {
-                *counts.entry(item.level).or_insert(0) += 1;
-                counts
-            });
+        let level_counts = self.items.iter().fold(HashMap::new(), |mut counts, item| {
+            *counts.entry(item.level).or_insert(0) += 1;
+            counts
+        });
 
         ListStats {
             total_items: self.item_count,

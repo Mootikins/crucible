@@ -8,7 +8,10 @@ use super::*;
 /// Factory for creating clustering algorithm instances
 pub trait AlgorithmFactory: Send + Sync {
     /// Create a new instance of the algorithm
-    fn create(&self, config: &ClusteringConfig) -> Result<Arc<dyn ClusteringAlgorithm>, ClusteringError>;
+    fn create(
+        &self,
+        config: &ClusteringConfig,
+    ) -> Result<Arc<dyn ClusteringAlgorithm>, ClusteringError>;
 
     /// Get metadata without creating an instance
     fn metadata(&self) -> &AlgorithmMetadata;
@@ -54,19 +57,16 @@ impl ClusteringRegistry {
         config: &ClusteringConfig,
     ) -> Result<Arc<dyn ClusteringAlgorithm>, ClusteringError> {
         let factories = self.factories.read().unwrap();
-        let factory = factories
-            .get(algorithm_id)
-            .ok_or_else(|| ClusteringError::Algorithm(format!("Algorithm '{}' not found", algorithm_id)))?;
+        let factory = factories.get(algorithm_id).ok_or_else(|| {
+            ClusteringError::Algorithm(format!("Algorithm '{}' not found", algorithm_id))
+        })?;
         factory.create(config)
     }
 
     /// List all available algorithms
     pub fn list_algorithms(&self) -> Vec<AlgorithmMetadata> {
         let factories = self.factories.read().unwrap();
-        factories
-            .values()
-            .map(|f| f.metadata().clone())
-            .collect()
+        factories.values().map(|f| f.metadata().clone()).collect()
     }
 
     /// Get algorithms by type
@@ -119,7 +119,10 @@ impl ClusteringRegistry {
                 if let Some(max_size) = requirements.max_dataset_size {
                     if documents.len() > max_size {
                         // Only allow algorithms that can handle large datasets
-                        matches!(alg.algorithm_type, AlgorithmType::Semantic | AlgorithmType::Graph)
+                        matches!(
+                            alg.algorithm_type,
+                            AlgorithmType::Semantic | AlgorithmType::Graph
+                        )
                     } else {
                         true
                     }
@@ -133,7 +136,9 @@ impl ClusteringRegistry {
         candidates.sort_by(|a, b| {
             let score_a = self.calculate_suitability_score(a, documents, requirements);
             let score_b = self.calculate_suitability_score(b, documents, requirements);
-            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         candidates
@@ -153,7 +158,9 @@ impl ClusteringRegistry {
 
         // Base score for algorithm type
         match metadata.algorithm_type {
-            AlgorithmType::Semantic if documents.iter().any(|d| d.embedding.is_some()) => score += 3.0,
+            AlgorithmType::Semantic if documents.iter().any(|d| d.embedding.is_some()) => {
+                score += 3.0
+            }
             AlgorithmType::Heuristic if documents.len() < 200 => score += 2.0,
             AlgorithmType::Graph if documents.len() > 50 => score += 2.5,
             AlgorithmType::Hybrid => score += 2.0,
@@ -168,7 +175,10 @@ impl ClusteringRegistry {
                 }
             }
             QualityPreference::Accuracy => {
-                if matches!(metadata.algorithm_type, AlgorithmType::Semantic | AlgorithmType::Hybrid) {
+                if matches!(
+                    metadata.algorithm_type,
+                    AlgorithmType::Semantic | AlgorithmType::Hybrid
+                ) {
                     score += 1.5;
                 }
             }
@@ -231,6 +241,9 @@ mod tests {
     fn test_requirements_default() {
         let req = ClusteringRequirements::default();
         assert_eq!(req.max_dataset_size, Some(500));
-        assert!(matches!(req.quality_preference, QualityPreference::Balanced));
+        assert!(matches!(
+            req.quality_preference,
+            QualityPreference::Balanced
+        ));
     }
 }

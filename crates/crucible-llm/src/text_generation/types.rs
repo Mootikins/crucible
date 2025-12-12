@@ -739,8 +739,8 @@ impl TextGenerationProvider for OpenAITextProvider {
 
         // Add tool_choice if present
         if let Some(tool_choice) = &request.tool_choice {
-            api_request["tool_choice"] = serde_json::to_value(tool_choice)
-                .unwrap_or(serde_json::json!("auto"));
+            api_request["tool_choice"] =
+                serde_json::to_value(tool_choice).unwrap_or(serde_json::json!("auto"));
         }
 
         // Make request
@@ -758,17 +758,19 @@ impl TextGenerationProvider for OpenAITextProvider {
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(EmbeddingError::InvalidResponse(format!(
                 "OpenAI API error ({}): {}",
                 status, error_text
             )));
         }
 
-        let api_response: ChatCompletionResponse = response
-            .json()
-            .await
-            .map_err(|e| EmbeddingError::InvalidResponse(format!("Failed to parse JSON response: {}", e)))?;
+        let api_response: ChatCompletionResponse = response.json().await.map_err(|e| {
+            EmbeddingError::InvalidResponse(format!("Failed to parse JSON response: {}", e))
+        })?;
 
         Ok(api_response)
     }
@@ -952,17 +954,19 @@ impl TextGenerationProvider for OllamaTextProvider {
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(EmbeddingError::InvalidResponse(format!(
                 "Ollama API error ({}): {}",
                 status, error_text
             )));
         }
 
-        let ollama_response: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| EmbeddingError::InvalidResponse(format!("Failed to parse JSON response: {}", e)))?;
+        let ollama_response: serde_json::Value = response.json().await.map_err(|e| {
+            EmbeddingError::InvalidResponse(format!("Failed to parse JSON response: {}", e))
+        })?;
 
         // Parse response
         let message_content = ollama_response["message"]["content"]
@@ -1012,7 +1016,12 @@ impl TextGenerationProvider for OllamaTextProvider {
             choices: vec![ChatCompletionChoice {
                 index: 0,
                 message,
-                finish_reason: Some(ollama_response["done_reason"].as_str().unwrap_or("stop").to_string()),
+                finish_reason: Some(
+                    ollama_response["done_reason"]
+                        .as_str()
+                        .unwrap_or("stop")
+                        .to_string(),
+                ),
                 logprobs: None,
             }],
             model: request.model,

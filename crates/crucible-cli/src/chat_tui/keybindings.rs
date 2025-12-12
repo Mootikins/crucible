@@ -199,11 +199,7 @@ mod tests {
 
         // Bind same key globally and for mode
         bindings.bind_global(KeyPattern::ctrl('c'), KeyAction::Quit);
-        bindings.bind_mode(
-            InputMode::Normal,
-            KeyPattern::ctrl('c'),
-            KeyAction::Cancel,
-        );
+        bindings.bind_mode(InputMode::Normal, KeyPattern::ctrl('c'), KeyAction::Cancel);
 
         // Global should win
         assert_eq!(

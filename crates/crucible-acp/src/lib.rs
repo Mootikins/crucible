@@ -72,7 +72,9 @@ pub use acp_client::{CrucibleClient, WriteInfo};
 pub use chat::{ChatConfig, ChatSession, ConversationState, SessionMetadata};
 pub use client::CrucibleAcpClient; // Legacy, will be removed
 pub use context::{ContextConfig, PromptEnricher};
-pub use discovery::{clear_agent_cache, discover_agent, get_agent_help, is_agent_available, AgentInfo};
+pub use discovery::{
+    clear_agent_cache, discover_agent, get_agent_help, is_agent_available, AgentInfo,
+};
 pub use filesystem::FileSystemHandler;
 pub use history::{ConversationHistory, HistoryConfig, HistoryMessage, MessageRole};
 pub use mcp_host::InProcessMcpHost;

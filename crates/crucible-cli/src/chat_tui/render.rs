@@ -43,8 +43,8 @@ pub fn render_chat_viewport(app: &mut ChatApp, frame: &mut Frame) {
 
 /// Render the separator line
 fn render_separator(frame: &mut Frame, area: Rect) {
-    let sep = Paragraph::new("─".repeat(area.width as usize))
-        .style(Style::default().fg(Color::DarkGray));
+    let sep =
+        Paragraph::new("─".repeat(area.width as usize)).style(Style::default().fg(Color::DarkGray));
     frame.render_widget(sep, area);
 }
 

@@ -44,8 +44,8 @@ pub use processing::{
 
 // Re-export core traits (abstractions for Dependency Inversion)
 pub use traits::{
-    ChangeDetector, ContentHasher, FilesystemHandler, HashLookupStorage, MarkdownParser,
-    Registry, RegistryBuilder, SessionManager, Storage, StreamHandler, ToolBridge, ToolExecutor,
+    ChangeDetector, ContentHasher, FilesystemHandler, HashLookupStorage, MarkdownParser, Registry,
+    RegistryBuilder, SessionManager, Storage, StreamHandler, ToolBridge, ToolExecutor,
 };
 
 // Re-export key types used across module boundaries
@@ -170,7 +170,7 @@ pub use parser::{
     Wikilink,
     // Note: MarkdownParser trait is exported from traits:: module above
 };
-pub use properties::{PropertyMap, AttributeValue};
+pub use properties::{AttributeValue, PropertyMap};
 pub use sink::{
     CircuitBreaker, CircuitBreakerConfig, CircuitState, OutputSink, SinkError, SinkHealth,
     SinkResult,
