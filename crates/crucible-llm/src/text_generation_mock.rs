@@ -4,13 +4,13 @@
 //! for use in unit and integration tests. It allows testing LLM-dependent code
 //! without requiring real API keys or network calls.
 
-use crate::embeddings::error::EmbeddingResult;
 use crate::text_generation::*;
 use async_trait::async_trait;
 use chrono::Utc;
+use crucible_core::traits::llm::{LlmError, LlmResult};
+use futures::stream::{self, BoxStream};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
 
 /// Mock text generation provider for testing
 ///
@@ -165,12 +165,10 @@ impl Default for MockTextProvider {
 
 #[async_trait]
 impl TextGenerationProvider for MockTextProvider {
-    type Config = TextProviderConfig;
-
     async fn generate_completion(
         &self,
         request: CompletionRequest,
-    ) -> EmbeddingResult<CompletionResponse> {
+    ) -> LlmResult<CompletionResponse> {
         self.record_call(
             MockCallType::Completion,
             request.prompt.clone(),
@@ -199,10 +197,10 @@ impl TextGenerationProvider for MockTextProvider {
         })
     }
 
-    async fn generate_completion_stream(
-        &self,
+    fn generate_completion_stream<'a>(
+        &'a self,
         request: CompletionRequest,
-    ) -> EmbeddingResult<mpsc::UnboundedReceiver<CompletionChunk>> {
+    ) -> BoxStream<'a, LlmResult<CompletionChunk>> {
         self.record_call(
             MockCallType::CompletionStream,
             request.prompt.clone(),
@@ -210,45 +208,35 @@ impl TextGenerationProvider for MockTextProvider {
         );
 
         let text = self.get_completion_response(&request.prompt);
-        let (tx, rx) = mpsc::unbounded_channel();
 
         // Split response into chunks
-        let words: Vec<&str> = text.split_whitespace().collect();
-        let mut current_text = String::new();
+        let words: Vec<String> = text.split_whitespace().map(|s| s.to_string()).collect();
+        let mut chunks = Vec::new();
 
-        for (i, word) in words.iter().enumerate() {
-            if i > 0 {
-                current_text.push(' ');
-            }
-            current_text.push_str(word);
-
-            let chunk = CompletionChunk {
+        for word in words {
+            chunks.push(Ok(CompletionChunk {
                 text: format!("{} ", word),
                 index: 0,
                 finish_reason: None,
                 logprobs: None,
-            };
-
-            if tx.send(chunk).is_err() {
-                break;
-            }
+            }));
         }
 
-        // Send final chunk with finish_reason
-        let _ = tx.send(CompletionChunk {
+        // Add final chunk with finish_reason
+        chunks.push(Ok(CompletionChunk {
             text: String::new(),
             index: 0,
             finish_reason: Some("stop".to_string()),
             logprobs: None,
-        });
+        }));
 
-        Ok(rx)
+        Box::pin(stream::iter(chunks))
     }
 
     async fn generate_chat_completion(
         &self,
         request: ChatCompletionRequest,
-    ) -> EmbeddingResult<ChatCompletionResponse> {
+    ) -> LlmResult<ChatCompletionResponse> {
         let last_user_msg = request
             .messages
             .iter()
@@ -293,10 +281,10 @@ impl TextGenerationProvider for MockTextProvider {
         })
     }
 
-    async fn generate_chat_completion_stream(
-        &self,
+    fn generate_chat_completion_stream<'a>(
+        &'a self,
         request: ChatCompletionRequest,
-    ) -> EmbeddingResult<mpsc::UnboundedReceiver<ChatCompletionChunk>> {
+    ) -> BoxStream<'a, LlmResult<ChatCompletionChunk>> {
         let last_user_msg = request
             .messages
             .iter()
@@ -312,13 +300,13 @@ impl TextGenerationProvider for MockTextProvider {
         );
 
         let response_text = self.get_chat_response(&request.messages);
-        let (tx, rx) = mpsc::unbounded_channel();
 
         // Split response into word chunks
-        let words: Vec<&str> = response_text.split_whitespace().collect();
+        let words: Vec<String> = response_text.split_whitespace().map(|s| s.to_string()).collect();
+        let mut chunks = Vec::new();
 
         // Send role first
-        let _ = tx.send(ChatCompletionChunk {
+        chunks.push(Ok(ChatCompletionChunk {
             index: 0,
             delta: ChatMessageDelta {
                 role: Some(MessageRole::Assistant),
@@ -328,11 +316,11 @@ impl TextGenerationProvider for MockTextProvider {
             },
             finish_reason: None,
             logprobs: None,
-        });
+        }));
 
         // Send content chunks
         for word in words {
-            let chunk = ChatCompletionChunk {
+            chunks.push(Ok(ChatCompletionChunk {
                 index: 0,
                 delta: ChatMessageDelta {
                     role: None,
@@ -342,15 +330,11 @@ impl TextGenerationProvider for MockTextProvider {
                 },
                 finish_reason: None,
                 logprobs: None,
-            };
-
-            if tx.send(chunk).is_err() {
-                break;
-            }
+            }));
         }
 
         // Send final chunk
-        let _ = tx.send(ChatCompletionChunk {
+        chunks.push(Ok(ChatCompletionChunk {
             index: 0,
             delta: ChatMessageDelta {
                 role: None,
@@ -360,9 +344,9 @@ impl TextGenerationProvider for MockTextProvider {
             },
             finish_reason: Some("stop".to_string()),
             logprobs: None,
-        });
+        }));
 
-        Ok(rx)
+        Box::pin(stream::iter(chunks))
     }
 
     fn provider_name(&self) -> &str {
@@ -373,7 +357,7 @@ impl TextGenerationProvider for MockTextProvider {
         &self.model_name
     }
 
-    async fn list_models(&self) -> EmbeddingResult<Vec<TextModelInfo>> {
+    async fn list_models(&self) -> LlmResult<Vec<TextModelInfo>> {
         Ok(vec![
             TextModelInfo {
                 id: "mock-llm".to_string(),
@@ -411,7 +395,7 @@ impl TextGenerationProvider for MockTextProvider {
         ])
     }
 
-    async fn health_check(&self) -> EmbeddingResult<bool> {
+    async fn health_check(&self) -> LlmResult<bool> {
         // Mock provider is always healthy
         Ok(true)
     }
@@ -506,15 +490,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_completion_stream() {
+        use futures::StreamExt;
+
         let provider = MockTextProvider::new();
         provider.set_completion_response("Stream test", "Hello world from stream");
 
         let request = CompletionRequest::new("model".to_string(), "Stream test".to_string());
-        let mut rx = provider.generate_completion_stream(request).await.unwrap();
+        let mut stream = provider.generate_completion_stream(request);
 
         let mut chunks = Vec::new();
-        while let Some(chunk) = rx.recv().await {
-            chunks.push(chunk);
+        while let Some(result) = stream.next().await {
+            chunks.push(result.unwrap());
         }
 
         assert!(!chunks.is_empty());
