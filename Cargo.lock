@@ -3162,6 +3162,7 @@ dependencies = [
  "async-trait",
  "crucible-core",
  "crucible-llm",
+ "futures",
  "gpui",
  "gpui-component",
  "mockall",

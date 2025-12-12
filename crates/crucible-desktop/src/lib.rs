@@ -18,7 +18,8 @@ pub mod theme;
 
 // Re-export core traits we consume
 pub use crucible_core::traits::chat::{
-    AgentHandle, ChatContext, ChatMode, ChatResponse, ChatResult, CommandDescriptor, ToolCall,
+    AgentHandle, ChatChunk, ChatContext, ChatMode, ChatResponse, ChatResult, CommandDescriptor,
+    ToolCall,
 };
 
 // Re-export backend types
