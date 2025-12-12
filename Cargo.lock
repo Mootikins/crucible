@@ -3037,6 +3037,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "crucible-agents"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "crucible-core",
+ "futures",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "crucible-cli"
 version = "0.1.0"
 dependencies = [
