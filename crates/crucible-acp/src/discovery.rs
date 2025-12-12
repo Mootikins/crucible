@@ -10,6 +10,9 @@ use std::sync::Mutex;
 use tokio::process::Command;
 use tracing::{debug, info, trace, warn};
 
+/// Timeout for agent availability checks (ms)
+const PROBE_TIMEOUT_MS: u64 = 2000;
+
 /// Cache for discovered agent to avoid repeated probing on subsequent calls
 static AGENT_CACHE: Lazy<Mutex<Option<AgentInfo>>> = Lazy::new(|| Mutex::new(None));
 
@@ -170,28 +173,62 @@ Examples:
   cru chat --agent cursor \"Add error handling\"
 
 Note: Some agents require both the base CLI and a bridge package.
-".to_string()
+"
+    .to_string()
 }
 
 /// Check if an agent command is available (async, non-blocking)
 ///
-/// Uses tokio::process::Command for async execution, allowing parallel probing.
+/// Uses a two-phase approach for speed:
+/// 1. Fast check with `which` to see if command exists in PATH
+/// 2. Only if found, verify with `--version` (with timeout)
+///
+/// For `npx` commands, we skip the slow --version check since npx itself
+/// handles package resolution.
 pub async fn is_agent_available(command: &str) -> bool {
-    // Try to run the command with --version to check if it exists
-    let result = Command::new(command).arg("--version").output().await;
+    // Phase 1: Fast PATH lookup using `which`
+    // This is ~1ms vs ~300ms+ for spawning the actual command
+    let which_result = Command::new("which").arg(command).output().await;
 
-    match result {
-        Ok(output) => {
-            if output.status.success() {
-                debug!("Agent '{}' is available", command);
-                true
-            } else {
-                debug!("Agent '{}' exists but --version failed", command);
-                false
+    match which_result {
+        Ok(output) if output.status.success() => {
+            debug!("Agent '{}' found in PATH", command);
+
+            // For npx, we trust the PATH check - npx --version is slow
+            // and we'll verify the actual package when spawning
+            if command == "npx" {
+                return true;
+            }
+
+            // Phase 2: Verify command works with timeout
+            // Some commands exist but may not work (broken installs)
+            let version_check = tokio::time::timeout(
+                std::time::Duration::from_millis(PROBE_TIMEOUT_MS),
+                Command::new(command).arg("--version").output(),
+            )
+            .await;
+
+            match version_check {
+                Ok(Ok(output)) if output.status.success() => {
+                    debug!("Agent '{}' is available and working", command);
+                    true
+                }
+                Ok(Ok(_)) => {
+                    debug!("Agent '{}' exists but --version failed", command);
+                    false
+                }
+                Ok(Err(e)) => {
+                    debug!("Agent '{}' execution error: {}", command, e);
+                    false
+                }
+                Err(_) => {
+                    debug!("Agent '{}' timed out during version check", command);
+                    false
+                }
             }
         }
-        Err(e) => {
-            debug!("Agent '{}' not available: {}", command, e);
+        _ => {
+            debug!("Agent '{}' not found in PATH", command);
             false
         }
     }
@@ -202,41 +239,115 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_is_agent_available_common_command() {
-        // Test with a commonly available command (like 'ls' on Unix)
-        // Don't assert on the result value since it depends on system state
-        let _result = is_agent_available("ls").await;
-        // Just verify it doesn't panic
-    }
-
-    #[tokio::test]
-    async fn test_is_agent_available_rejects_nonexistent() {
-        // This command should not exist
+    async fn test_is_agent_available_fast_path_rejection() {
+        // Non-existent command should fail fast via `which` (no slow --version)
+        let start = std::time::Instant::now();
         let result = is_agent_available("definitely-not-a-real-command-12345").await;
+        let elapsed = start.elapsed();
+
         assert!(!result);
+        // Should complete in <100ms since we only call `which`
+        assert!(
+            elapsed.as_millis() < 100,
+            "Fast path rejection took too long: {:?}",
+            elapsed
+        );
     }
 
     #[tokio::test]
-    async fn test_agent_cache_is_populated() {
+    async fn test_is_agent_available_common_command() {
+        // Test with `true` - a simple command that exists and succeeds
+        let result = is_agent_available("true").await;
+        assert!(result, "Command 'true' should be available on Unix");
+    }
+
+    #[tokio::test]
+    async fn test_agent_cache_operations() {
         // Clear cache first
         clear_agent_cache();
+        assert!(AGENT_CACHE.lock().unwrap().is_none());
 
-        // Cache should be empty initially
+        // Manually populate cache
+        *AGENT_CACHE.lock().unwrap() = Some(AgentInfo {
+            name: "test".to_string(),
+            command: "test-cmd".to_string(),
+            args: vec!["arg1".to_string()],
+        });
+
+        // Cache should now have the agent
+        let cached = AGENT_CACHE.lock().unwrap().clone();
+        assert!(cached.is_some());
+        assert_eq!(cached.unwrap().name, "test");
+
+        // Clear and verify
+        clear_agent_cache();
         assert!(AGENT_CACHE.lock().unwrap().is_none());
     }
 
     #[tokio::test]
-    async fn test_discover_agent_parallel_probe() {
-        // Clear cache to force a fresh probe
+    async fn test_discover_agent_uses_cache() {
+        // Pre-populate cache with a fake agent
+        *AGENT_CACHE.lock().unwrap() = Some(AgentInfo {
+            name: "cached-agent".to_string(),
+            command: "cached-cmd".to_string(),
+            args: vec![],
+        });
+
+        // Discovery should return cached agent without probing
+        let start = std::time::Instant::now();
+        let result = discover_agent(None).await;
+        let elapsed = start.elapsed();
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().name, "cached-agent");
+        // Should be instant since we're using cache
+        assert!(
+            elapsed.as_millis() < 10,
+            "Cache lookup took too long: {:?}",
+            elapsed
+        );
+
+        // Clean up
+        clear_agent_cache();
+    }
+
+    #[tokio::test]
+    async fn test_discover_agent_parallel_probe_is_fast() {
+        // Clear cache to force fresh probe
         clear_agent_cache();
 
-        // This will probe all agents in parallel
-        // We can't assert on the result since it depends on what's installed
-        let result = discover_agent(None).await;
+        // Parallel probe should complete quickly even with multiple agents
+        // because non-existent commands fail fast via `which`
+        let start = std::time::Instant::now();
+        let _result = discover_agent(None).await;
+        let elapsed = start.elapsed();
 
-        // If any agent is available, it should be cached
-        if result.is_ok() {
-            assert!(AGENT_CACHE.lock().unwrap().is_some());
+        // Should complete within timeout + some margin
+        // Even in worst case (all agents timeout), should be < PROBE_TIMEOUT_MS + overhead
+        // since probes run in parallel
+        assert!(
+            elapsed.as_millis() < (PROBE_TIMEOUT_MS as u128) + 500,
+            "Parallel probe took too long: {:?}",
+            elapsed
+        );
+
+        // Clean up
+        clear_agent_cache();
+    }
+
+    #[tokio::test]
+    async fn test_known_agents_list() {
+        // Verify KNOWN_AGENTS structure is valid
+        assert!(!KNOWN_AGENTS.is_empty(), "Should have known agents");
+
+        for (name, cmd, _args) in KNOWN_AGENTS {
+            assert!(!name.is_empty(), "Agent name should not be empty");
+            assert!(!cmd.is_empty(), "Agent command should not be empty");
         }
+
+        // Verify expected agents are present
+        let names: Vec<_> = KNOWN_AGENTS.iter().map(|(n, _, _)| *n).collect();
+        assert!(names.contains(&"opencode"));
+        assert!(names.contains(&"claude"));
     }
 }
