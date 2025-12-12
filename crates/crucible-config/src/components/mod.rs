@@ -9,6 +9,7 @@ pub mod discovery;
 pub mod embedding;
 pub mod gateway;
 pub mod hooks;
+pub mod llm;
 
 // Re-export essential component types
 pub use acp::*;
@@ -18,3 +19,4 @@ pub use discovery::*;
 pub use embedding::*;
 pub use gateway::*;
 pub use hooks::*;
+pub use llm::*;
