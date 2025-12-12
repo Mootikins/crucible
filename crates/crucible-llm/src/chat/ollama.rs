@@ -2,12 +2,19 @@
 
 use async_trait::async_trait;
 use crucible_core::traits::{
-    LlmError, LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmResult, MessageRole, TokenUsage,
-    ToolCall,
+    ChatCompletionRequest, ChatCompletionResponse, LlmError, LlmMessage, LlmResult, MessageRole,
+    TextGenerationProvider, TokenUsage, ToolCall,
 };
+use futures::stream::BoxStream;
 use serde::Deserialize;
 use std::time::Duration;
 use uuid::Uuid;
+
+// Re-export for convenience
+use crucible_core::traits::{
+    ChatCompletionChoice, ChatCompletionChunk, CompletionChunk, CompletionRequest,
+    CompletionResponse, ProviderCapabilities, TextModelInfo,
+};
 
 /// Ollama chat provider
 pub struct OllamaChatProvider {
@@ -30,8 +37,25 @@ impl OllamaChatProvider {
 }
 
 #[async_trait]
-impl LlmProvider for OllamaChatProvider {
-    async fn complete(&self, request: LlmRequest) -> LlmResult<LlmResponse> {
+impl TextGenerationProvider for OllamaChatProvider {
+    async fn generate_completion(
+        &self,
+        _request: CompletionRequest,
+    ) -> LlmResult<CompletionResponse> {
+        todo!("Ollama text completion not implemented")
+    }
+
+    fn generate_completion_stream<'a>(
+        &'a self,
+        _request: CompletionRequest,
+    ) -> BoxStream<'a, LlmResult<CompletionChunk>> {
+        todo!("Ollama text completion streaming not implemented")
+    }
+
+    async fn generate_chat_completion(
+        &self,
+        request: ChatCompletionRequest,
+    ) -> LlmResult<ChatCompletionResponse> {
         // Build Ollama API request
         let mut api_request = serde_json::json!({
             "model": self.default_model,
@@ -41,6 +65,7 @@ impl LlmProvider for OllamaChatProvider {
                         MessageRole::System => "system",
                         MessageRole::User => "user",
                         MessageRole::Assistant => "assistant",
+                        MessageRole::Function => "assistant", // Map to assistant
                         MessageRole::Tool => "tool",
                     },
                     "content": m.content.clone(),
@@ -74,9 +99,9 @@ impl LlmProvider for OllamaChatProvider {
                     serde_json::json!({
                         "type": "function",
                         "function": {
-                            "name": tool.name,
-                            "description": tool.description,
-                            "parameters": tool.parameters,
+                            "name": tool.function.name,
+                            "description": tool.function.description,
+                            "parameters": tool.function.parameters.clone().unwrap_or(serde_json::json!({})),
                         }
                     })
                 })
@@ -123,7 +148,7 @@ impl LlmProvider for OllamaChatProvider {
                     ToolCall::new(
                         tc.id.unwrap_or_else(|| Uuid::new_v4().to_string()),
                         tc.function.name,
-                        tc.function.arguments,
+                        serde_json::to_string(&tc.function.arguments).unwrap_or_default(),
                     )
                 })
                 .collect()
@@ -139,14 +164,23 @@ impl LlmProvider for OllamaChatProvider {
         let prompt_tokens = ollama_response.prompt_eval_count.unwrap_or(0);
         let completion_tokens = ollama_response.eval_count.unwrap_or(0);
 
-        Ok(LlmResponse {
-            message,
+        Ok(ChatCompletionResponse {
+            choices: vec![ChatCompletionChoice {
+                index: 0,
+                message,
+                finish_reason: ollama_response.done_reason,
+                logprobs: None,
+            }],
+            model: ollama_response.model,
             usage: TokenUsage {
                 prompt_tokens,
                 completion_tokens,
                 total_tokens: prompt_tokens + completion_tokens,
             },
-            model: ollama_response.model,
+            id: format!("chatcmpl-{}", Uuid::new_v4()),
+            object: "chat.completion".to_string(),
+            created: chrono::Utc::now(),
+            system_fingerprint: None,
         })
     }
 
@@ -158,11 +192,37 @@ impl LlmProvider for OllamaChatProvider {
         &self.default_model
     }
 
+    fn generate_chat_completion_stream<'a>(
+        &'a self,
+        _request: ChatCompletionRequest,
+    ) -> BoxStream<'a, LlmResult<ChatCompletionChunk>> {
+        todo!("Ollama chat completion streaming not implemented")
+    }
+
+    async fn list_models(&self) -> LlmResult<Vec<TextModelInfo>> {
+        todo!("Ollama model listing not implemented")
+    }
+
     async fn health_check(&self) -> LlmResult<bool> {
         let url = format!("{}/api/tags", self.base_url);
         match self.client.get(&url).send().await {
             Ok(response) => Ok(response.status().is_success()),
             Err(_) => Ok(false),
+        }
+    }
+
+    fn capabilities(&self) -> ProviderCapabilities {
+        ProviderCapabilities {
+            text_completion: false,
+            chat_completion: true,
+            streaming: false, // Not implemented yet
+            function_calling: true,
+            tool_use: true,
+            vision: false,
+            audio: false,
+            max_batch_size: Some(1),
+            input_formats: vec!["text".to_string()],
+            output_formats: vec!["text".to_string()],
         }
     }
 }
@@ -176,6 +236,7 @@ struct OllamaResponse {
     prompt_eval_count: Option<u32>,
     #[serde(rename = "eval_count")]
     eval_count: Option<u32>,
+    done_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -2,9 +2,12 @@
 
 use async_trait::async_trait;
 use crucible_core::traits::{
-    LlmError, LlmMessage, LlmProvider, LlmRequest, LlmResponse, LlmResult, MessageRole, TokenUsage,
-    ToolCall,
+    ChatCompletionChoice, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
+    CompletionChunk, CompletionRequest, CompletionResponse, LlmError, LlmMessage,
+    LlmResult, LlmToolDefinition, MessageRole, ProviderCapabilities, TextGenerationProvider,
+    TextModelInfo, TokenUsage, ToolCall,
 };
+use futures::stream::BoxStream;
 use serde::Deserialize;
 use std::time::Duration;
 
@@ -36,8 +39,25 @@ impl OpenAIChatProvider {
 }
 
 #[async_trait]
-impl LlmProvider for OpenAIChatProvider {
-    async fn complete(&self, request: LlmRequest) -> LlmResult<LlmResponse> {
+impl TextGenerationProvider for OpenAIChatProvider {
+    async fn generate_completion(
+        &self,
+        _request: CompletionRequest,
+    ) -> LlmResult<CompletionResponse> {
+        todo!("OpenAI text completion not implemented")
+    }
+
+    fn generate_completion_stream<'a>(
+        &'a self,
+        _request: CompletionRequest,
+    ) -> BoxStream<'a, LlmResult<CompletionChunk>> {
+        todo!("OpenAI text completion streaming not implemented")
+    }
+
+    async fn generate_chat_completion(
+        &self,
+        request: ChatCompletionRequest,
+    ) -> LlmResult<ChatCompletionResponse> {
         // Build OpenAI API request
         let mut api_request = serde_json::json!({
             "model": self.default_model,
@@ -47,6 +67,7 @@ impl LlmProvider for OpenAIChatProvider {
                         MessageRole::System => "system",
                         MessageRole::User => "user",
                         MessageRole::Assistant => "assistant",
+                        MessageRole::Function => "function",
                         MessageRole::Tool => "tool",
                     },
                     "content": m.content.clone(),
@@ -64,10 +85,10 @@ impl LlmProvider for OpenAIChatProvider {
                     let calls: Vec<serde_json::Value> = tool_calls.iter().map(|tc| {
                         serde_json::json!({
                             "id": tc.id,
-                            "type": "function",
+                            "type": tc.r#type,
                             "function": {
-                                "name": tc.name,
-                                "arguments": serde_json::to_string(&tc.parameters).unwrap_or_default(),
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments.clone(),
                             }
                         })
                     }).collect();
@@ -93,11 +114,11 @@ impl LlmProvider for OpenAIChatProvider {
                 .iter()
                 .map(|tool| {
                     serde_json::json!({
-                        "type": "function",
+                        "type": tool.r#type,
                         "function": {
-                            "name": tool.name,
-                            "description": tool.description,
-                            "parameters": tool.parameters,
+                            "name": tool.function.name,
+                            "description": tool.function.description,
+                            "parameters": tool.function.parameters.clone().unwrap_or(serde_json::json!({})),
                         }
                     })
                 })
@@ -135,25 +156,22 @@ impl LlmProvider for OpenAIChatProvider {
             .await
             .map_err(|e| LlmError::InvalidResponse(format!("Failed to parse response: {}", e)))?;
 
-        // Parse response into our LlmResponse
+        // Parse response into our ChatCompletionResponse
         let choice = openai_response
             .choices
-            .into_iter()
-            .next()
+            .first()
             .ok_or_else(|| LlmError::InvalidResponse("No choices in response".to_string()))?;
 
-        let message_content = choice.message.content.unwrap_or_default();
+        let message_content = choice.message.content.clone().unwrap_or_default();
+        let finish_reason = choice.finish_reason.clone();
 
         // Check for tool calls
-        let tool_calls = choice.message.tool_calls.map(|calls| {
+        let tool_calls = choice.message.tool_calls.as_ref().map(|calls| {
             calls
-                .into_iter()
+                .iter()
                 .map(|tc| {
-                    // Parse arguments from string to JSON
-                    let params = serde_json::from_str(&tc.function.arguments)
-                        .unwrap_or(serde_json::json!({}));
-
-                    ToolCall::new(tc.id, tc.function.name, params)
+                    // arguments is already a string
+                    ToolCall::new(tc.id.clone(), tc.function.name.clone(), tc.function.arguments.clone())
                 })
                 .collect()
         });
@@ -164,23 +182,35 @@ impl LlmProvider for OpenAIChatProvider {
             LlmMessage::assistant(message_content)
         };
 
-        Ok(LlmResponse {
-            message,
+        Ok(ChatCompletionResponse {
+            choices: vec![ChatCompletionChoice {
+                index: 0,
+                message,
+                finish_reason,
+                logprobs: None,
+            }],
+            model: openai_response.model,
             usage: TokenUsage {
                 prompt_tokens: openai_response.usage.prompt_tokens,
                 completion_tokens: openai_response.usage.completion_tokens,
                 total_tokens: openai_response.usage.total_tokens,
             },
-            model: openai_response.model,
+            id: openai_response.id,
+            object: "chat.completion".to_string(),
+            created: chrono::Utc::now(),
+            system_fingerprint: None,
         })
     }
 
-    fn provider_name(&self) -> &str {
-        "OpenAI"
+    fn generate_chat_completion_stream<'a>(
+        &'a self,
+        _request: ChatCompletionRequest,
+    ) -> BoxStream<'a, LlmResult<ChatCompletionChunk>> {
+        todo!("OpenAI chat completion streaming not implemented")
     }
 
-    fn default_model(&self) -> &str {
-        &self.default_model
+    async fn list_models(&self) -> LlmResult<Vec<TextModelInfo>> {
+        todo!("OpenAI model listing not implemented")
     }
 
     async fn health_check(&self) -> LlmResult<bool> {
@@ -196,11 +226,35 @@ impl LlmProvider for OpenAIChatProvider {
             Err(_) => Ok(false),
         }
     }
+
+    fn provider_name(&self) -> &str {
+        "OpenAI"
+    }
+
+    fn default_model(&self) -> &str {
+        &self.default_model
+    }
+
+    fn capabilities(&self) -> ProviderCapabilities {
+        ProviderCapabilities {
+            text_completion: false,
+            chat_completion: true,
+            streaming: false, // Not implemented yet
+            function_calling: true,
+            tool_use: true,
+            vision: false,
+            audio: false,
+            max_batch_size: None,
+            input_formats: vec!["text".to_string()],
+            output_formats: vec!["text".to_string()],
+        }
+    }
 }
 
 // OpenAI API response types
 #[derive(Debug, Deserialize)]
 struct OpenAIResponse {
+    id: String,
     model: String,
     choices: Vec<OpenAIChoice>,
     usage: OpenAIUsage,
@@ -209,6 +263,7 @@ struct OpenAIResponse {
 #[derive(Debug, Deserialize)]
 struct OpenAIChoice {
     message: OpenAIMessage,
+    finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
