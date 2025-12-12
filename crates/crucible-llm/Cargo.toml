@@ -74,6 +74,7 @@ walkdir = "2.5"
 tokio = { workspace = true, features = ["time"] }
 async-trait = { workspace = true }
 futures = "0.3"
+async-stream = "0.3"
 
 # Error handling
 anyhow = { workspace = true }
