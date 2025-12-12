@@ -1,0 +1,379 @@
+//! LLM provider configuration with support for named instances
+
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+/// LLM provider type
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum LlmProviderType {
+    /// Ollama provider
+    Ollama,
+    /// OpenAI provider
+    OpenAI,
+    /// Anthropic provider
+    Anthropic,
+}
+
+/// Named LLM provider instance configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmProviderConfig {
+    /// Provider type
+    #[serde(rename = "type")]
+    pub provider_type: LlmProviderType,
+
+    /// API endpoint (uses provider default if not set)
+    pub endpoint: Option<String>,
+
+    /// Default model for this provider
+    pub default_model: Option<String>,
+
+    /// Temperature for generation (0.0-2.0)
+    pub temperature: Option<f32>,
+
+    /// Maximum tokens to generate
+    pub max_tokens: Option<u32>,
+
+    /// API timeout in seconds
+    pub timeout_secs: Option<u64>,
+
+    /// Environment variable name containing API key (for OpenAI, Anthropic)
+    pub api_key_env: Option<String>,
+}
+
+impl LlmProviderConfig {
+    /// Get the API endpoint, using provider-specific default if not set
+    pub fn endpoint(&self) -> String {
+        self.endpoint
+            .clone()
+            .unwrap_or_else(|| match self.provider_type {
+                LlmProviderType::Ollama => "http://localhost:11434".to_string(),
+                LlmProviderType::OpenAI => "https://api.openai.com/v1".to_string(),
+                LlmProviderType::Anthropic => "https://api.anthropic.com/v1".to_string(),
+            })
+    }
+
+    /// Get the default model, using provider-specific default if not set
+    pub fn model(&self) -> String {
+        self.default_model
+            .clone()
+            .unwrap_or_else(|| match self.provider_type {
+                LlmProviderType::Ollama => "llama3.2".to_string(),
+                LlmProviderType::OpenAI => "gpt-4o".to_string(),
+                LlmProviderType::Anthropic => "claude-3-5-sonnet-20241022".to_string(),
+            })
+    }
+
+    /// Get temperature (default 0.7)
+    pub fn temperature(&self) -> f32 {
+        self.temperature.unwrap_or(0.7)
+    }
+
+    /// Get max tokens (default 4096)
+    pub fn max_tokens(&self) -> u32 {
+        self.max_tokens.unwrap_or(4096)
+    }
+
+    /// Get timeout in seconds (default 120)
+    pub fn timeout_secs(&self) -> u64 {
+        self.timeout_secs.unwrap_or(120)
+    }
+
+    /// Get the API key from environment variable
+    pub fn api_key(&self) -> Option<String> {
+        self.api_key_env
+            .as_ref()
+            .and_then(|env_var| std::env::var(env_var).ok())
+    }
+}
+
+/// Main LLM configuration with named provider instances
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LlmConfig {
+    /// Default provider key for chat
+    pub default: Option<String>,
+
+    /// Named provider instances
+    #[serde(default)]
+    pub providers: HashMap<String, LlmProviderConfig>,
+}
+
+impl LlmConfig {
+    /// Get the default provider configuration
+    pub fn default_provider(&self) -> Option<(&String, &LlmProviderConfig)> {
+        let default_key = self.default.as_ref()?;
+        let config = self.providers.get(default_key)?;
+        Some((default_key, config))
+    }
+
+    /// Get a provider by key
+    pub fn get_provider(&self, key: &str) -> Option<&LlmProviderConfig> {
+        self.providers.get(key)
+    }
+
+    /// List all provider keys
+    pub fn provider_keys(&self) -> Vec<&String> {
+        self.providers.keys().collect()
+    }
+
+    /// Check if any providers are configured
+    pub fn has_providers(&self) -> bool {
+        !self.providers.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_defaults() {
+        let ollama = LlmProviderConfig {
+            provider_type: LlmProviderType::Ollama,
+            endpoint: None,
+            default_model: None,
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key_env: None,
+        };
+
+        assert_eq!(ollama.endpoint(), "http://localhost:11434");
+        assert_eq!(ollama.model(), "llama3.2");
+        assert_eq!(ollama.temperature(), 0.7);
+        assert_eq!(ollama.max_tokens(), 4096);
+        assert_eq!(ollama.timeout_secs(), 120);
+
+        let openai = LlmProviderConfig {
+            provider_type: LlmProviderType::OpenAI,
+            endpoint: None,
+            default_model: None,
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key_env: None,
+        };
+
+        assert_eq!(openai.endpoint(), "https://api.openai.com/v1");
+        assert_eq!(openai.model(), "gpt-4o");
+
+        let anthropic = LlmProviderConfig {
+            provider_type: LlmProviderType::Anthropic,
+            endpoint: None,
+            default_model: None,
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key_env: None,
+        };
+
+        assert_eq!(anthropic.endpoint(), "https://api.anthropic.com/v1");
+        assert_eq!(anthropic.model(), "claude-3-5-sonnet-20241022");
+    }
+
+    #[test]
+    fn test_provider_custom_values() {
+        let config = LlmProviderConfig {
+            provider_type: LlmProviderType::Ollama,
+            endpoint: Some("http://192.168.1.100:11434".to_string()),
+            default_model: Some("llama3.1:70b".to_string()),
+            temperature: Some(0.9),
+            max_tokens: Some(8192),
+            timeout_secs: Some(300),
+            api_key_env: None,
+        };
+
+        assert_eq!(config.endpoint(), "http://192.168.1.100:11434");
+        assert_eq!(config.model(), "llama3.1:70b");
+        assert_eq!(config.temperature(), 0.9);
+        assert_eq!(config.max_tokens(), 8192);
+        assert_eq!(config.timeout_secs(), 300);
+    }
+
+    #[test]
+    fn test_api_key_from_env() {
+        std::env::set_var("TEST_API_KEY", "test-key-123");
+
+        let config = LlmProviderConfig {
+            provider_type: LlmProviderType::OpenAI,
+            endpoint: None,
+            default_model: None,
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key_env: Some("TEST_API_KEY".to_string()),
+        };
+
+        assert_eq!(config.api_key(), Some("test-key-123".to_string()));
+
+        std::env::remove_var("TEST_API_KEY");
+    }
+
+    #[test]
+    fn test_llm_config_default_provider() {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "local".to_string(),
+            LlmProviderConfig {
+                provider_type: LlmProviderType::Ollama,
+                endpoint: Some("http://localhost:11434".to_string()),
+                default_model: Some("llama3.2".to_string()),
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key_env: None,
+            },
+        );
+        providers.insert(
+            "cloud".to_string(),
+            LlmProviderConfig {
+                provider_type: LlmProviderType::OpenAI,
+                endpoint: None,
+                default_model: Some("gpt-4o".to_string()),
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key_env: Some("OPENAI_API_KEY".to_string()),
+            },
+        );
+
+        let config = LlmConfig {
+            default: Some("local".to_string()),
+            providers,
+        };
+
+        let (key, provider) = config.default_provider().unwrap();
+        assert_eq!(key, "local");
+        assert_eq!(provider.provider_type, LlmProviderType::Ollama);
+        assert_eq!(provider.model(), "llama3.2");
+    }
+
+    #[test]
+    fn test_llm_config_get_provider() {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "local".to_string(),
+            LlmProviderConfig {
+                provider_type: LlmProviderType::Ollama,
+                endpoint: Some("http://localhost:11434".to_string()),
+                default_model: Some("llama3.2".to_string()),
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key_env: None,
+            },
+        );
+
+        let config = LlmConfig {
+            default: Some("local".to_string()),
+            providers,
+        };
+
+        let provider = config.get_provider("local").unwrap();
+        assert_eq!(provider.provider_type, LlmProviderType::Ollama);
+
+        assert!(config.get_provider("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_llm_config_provider_keys() {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "local".to_string(),
+            LlmProviderConfig {
+                provider_type: LlmProviderType::Ollama,
+                endpoint: None,
+                default_model: None,
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key_env: None,
+            },
+        );
+        providers.insert(
+            "cloud".to_string(),
+            LlmProviderConfig {
+                provider_type: LlmProviderType::OpenAI,
+                endpoint: None,
+                default_model: None,
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key_env: None,
+            },
+        );
+
+        let config = LlmConfig {
+            default: None,
+            providers,
+        };
+
+        let keys = config.provider_keys();
+        assert_eq!(keys.len(), 2);
+        assert!(keys.contains(&&"local".to_string()));
+        assert!(keys.contains(&&"cloud".to_string()));
+    }
+
+    #[test]
+    fn test_llm_config_has_providers() {
+        let config = LlmConfig {
+            default: None,
+            providers: HashMap::new(),
+        };
+        assert!(!config.has_providers());
+
+        let mut providers = HashMap::new();
+        providers.insert(
+            "local".to_string(),
+            LlmProviderConfig {
+                provider_type: LlmProviderType::Ollama,
+                endpoint: None,
+                default_model: None,
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key_env: None,
+            },
+        );
+
+        let config = LlmConfig {
+            default: Some("local".to_string()),
+            providers,
+        };
+        assert!(config.has_providers());
+    }
+
+    #[test]
+    fn test_llm_config_no_default_provider() {
+        let config = LlmConfig {
+            default: None,
+            providers: HashMap::new(),
+        };
+
+        assert!(config.default_provider().is_none());
+    }
+
+    #[test]
+    fn test_llm_config_invalid_default_provider() {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "local".to_string(),
+            LlmProviderConfig {
+                provider_type: LlmProviderType::Ollama,
+                endpoint: None,
+                default_model: None,
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key_env: None,
+            },
+        );
+
+        let config = LlmConfig {
+            default: Some("nonexistent".to_string()),
+            providers,
+        };
+
+        assert!(config.default_provider().is_none());
+    }
+}
