@@ -283,4 +283,121 @@ mod tests {
         assert_eq!(example.description, "Query AI notes");
         assert!(example.result.is_some());
     }
+
+    // Mock executor for testing
+    struct MockExecutor {
+        tools: Vec<ToolDefinition>,
+    }
+
+    #[async_trait]
+    impl ToolExecutor for MockExecutor {
+        async fn execute_tool(
+            &self,
+            name: &str,
+            params: serde_json::Value,
+            _context: &ExecutionContext,
+        ) -> ToolResult<serde_json::Value> {
+            match name {
+                "echo" => Ok(params),
+                "uppercase" => {
+                    let text = params
+                        .get("text")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| ToolError::InvalidParameters("Missing 'text' field".into()))?;
+                    Ok(serde_json::json!({ "result": text.to_uppercase() }))
+                }
+                "fail" => Err(ToolError::ExecutionFailed("Intentional failure".into())),
+                _ => Err(ToolError::NotFound(name.to_string())),
+            }
+        }
+
+        async fn list_tools(&self) -> ToolResult<Vec<ToolDefinition>> {
+            Ok(self.tools.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_mock_executor_echo() {
+        let executor = MockExecutor {
+            tools: vec![ToolDefinition::new("echo", "Echo input parameters")],
+        };
+        let ctx = ExecutionContext::new();
+
+        let result = executor
+            .execute_tool("echo", serde_json::json!({"hello": "world"}), &ctx)
+            .await
+            .unwrap();
+
+        assert_eq!(result, serde_json::json!({"hello": "world"}));
+    }
+
+    #[tokio::test]
+    async fn test_mock_executor_uppercase() {
+        let executor = MockExecutor {
+            tools: vec![ToolDefinition::new("uppercase", "Convert text to uppercase")],
+        };
+        let ctx = ExecutionContext::new();
+
+        let result = executor
+            .execute_tool(
+                "uppercase",
+                serde_json::json!({"text": "hello world"}),
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result, serde_json::json!({"result": "HELLO WORLD"}));
+    }
+
+    #[tokio::test]
+    async fn test_mock_executor_not_found() {
+        let executor = MockExecutor { tools: vec![] };
+        let ctx = ExecutionContext::new();
+
+        let result = executor
+            .execute_tool("nonexistent", serde_json::json!({}), &ctx)
+            .await;
+
+        assert!(matches!(result, Err(ToolError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_mock_executor_invalid_params() {
+        let executor = MockExecutor { tools: vec![] };
+        let ctx = ExecutionContext::new();
+
+        let result = executor
+            .execute_tool("uppercase", serde_json::json!({}), &ctx)
+            .await;
+
+        assert!(matches!(result, Err(ToolError::InvalidParameters(_))));
+    }
+
+    #[tokio::test]
+    async fn test_mock_executor_execution_failed() {
+        let executor = MockExecutor { tools: vec![] };
+        let ctx = ExecutionContext::new();
+
+        let result = executor.execute_tool("fail", serde_json::json!({}), &ctx).await;
+
+        assert!(matches!(result, Err(ToolError::ExecutionFailed(_))));
+    }
+
+    #[tokio::test]
+    async fn test_list_tools() {
+        let tools = vec![
+            ToolDefinition::new("echo", "Echo input"),
+            ToolDefinition::new("uppercase", "Uppercase text"),
+        ];
+        let executor = MockExecutor {
+            tools: tools.clone(),
+        };
+
+        let listed = executor.list_tools().await.unwrap();
+
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed[0].name, "echo");
+        assert_eq!(listed[1].name, "uppercase");
+    }
 }
