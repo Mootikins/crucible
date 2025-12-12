@@ -245,7 +245,10 @@ impl OllamaProvider {
     ///
     /// This is ~7x faster than individual requests due to reduced HTTP overhead.
     /// Falls back to sequential requests if batch fails.
-    async fn embed_batch_native(&self, texts: Vec<String>) -> EmbeddingResult<Vec<EmbeddingResponse>> {
+    async fn embed_batch_native(
+        &self,
+        texts: Vec<String>,
+    ) -> EmbeddingResult<Vec<EmbeddingResponse>> {
         if texts.is_empty() {
             return Ok(Vec::new());
         }
@@ -309,7 +312,11 @@ impl OllamaProvider {
         tracing::debug!(
             "Received {} embeddings with {} dimensions each",
             batch_response.embeddings.len(),
-            batch_response.embeddings.first().map(|e| e.len()).unwrap_or(0)
+            batch_response
+                .embeddings
+                .first()
+                .map(|e| e.len())
+                .unwrap_or(0)
         );
 
         // Convert to EmbeddingResponse objects
@@ -371,10 +378,7 @@ impl EmbeddingProvider for OllamaProvider {
             match self.embed_batch_native(non_empty.clone()).await {
                 Ok(batch_results) => return Ok(batch_results),
                 Err(e) => {
-                    tracing::warn!(
-                        "Batch embedding failed, falling back to chunked: {}",
-                        e
-                    );
+                    tracing::warn!("Batch embedding failed, falling back to chunked: {}", e);
                     // Fall through to chunked processing
                 }
             }
@@ -392,10 +396,7 @@ impl EmbeddingProvider for OllamaProvider {
                     results.extend(batch_results);
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        "Batch embedding failed, falling back to sequential: {}",
-                        e
-                    );
+                    tracing::warn!("Batch embedding failed, falling back to sequential: {}", e);
                     // Fall back to sequential processing for this chunk
                     for text in &chunk_texts {
                         let result = self.embed(text).await?;

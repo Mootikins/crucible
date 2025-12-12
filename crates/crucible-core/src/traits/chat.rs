@@ -281,11 +281,7 @@ pub trait ChatContext: Send {
     /// # Returns
     ///
     /// Returns a list of search results.
-    async fn semantic_search(
-        &self,
-        query: &str,
-        limit: usize,
-    ) -> ChatResult<Vec<SearchResult>>;
+    async fn semantic_search(&self, query: &str, limit: usize) -> ChatResult<Vec<SearchResult>>;
 
     /// Send a command to the agent
     ///

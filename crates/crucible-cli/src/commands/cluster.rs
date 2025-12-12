@@ -70,7 +70,8 @@ impl ClusteringService for DefaultClusteringService {
     }
 
     async fn cluster_documents(&self, config: &ClusterConfig) -> Result<serde_json::Value> {
-        let clusters = self.tools
+        let clusters = self
+            .tools
             .cluster_documents(
                 Some(config.min_similarity),
                 Some(config.min_cluster_size),
@@ -118,7 +119,10 @@ pub async fn execute(
 
     // Validate kiln path exists
     if !cluster_config.kiln_path.exists() {
-        eprintln!("Error: kiln path does not exist: {}", cluster_config.kiln_path.display());
+        eprintln!(
+            "Error: kiln path does not exist: {}",
+            cluster_config.kiln_path.display()
+        );
         return Err(anyhow!("kiln path does not exist"));
     }
 
@@ -132,7 +136,11 @@ pub async fn execute(
         ClusterAction::Mocs => {
             println!("🔍 Detecting Maps of Content...\n");
             let mocs = service.detect_mocs(&cluster_config).await?;
-            format_output(&mocs, &cluster_config.output_format, Some("Maps of Content"));
+            format_output(
+                &mocs,
+                &cluster_config.output_format,
+                Some("Maps of Content"),
+            );
             if let Some(output_path) = &cluster_config.output_file {
                 let json = serde_json::to_string_pretty(&mocs)?;
                 fs::write(output_path, json).await?;
@@ -142,7 +150,11 @@ pub async fn execute(
         ClusterAction::Documents => {
             println!("📊 Clustering documents...\n");
             let clusters = service.cluster_documents(&cluster_config).await?;
-            format_output(&clusters, &cluster_config.output_format, Some("Document Clusters"));
+            format_output(
+                &clusters,
+                &cluster_config.output_format,
+                Some("Document Clusters"),
+            );
             if let Some(output_path) = &cluster_config.output_file {
                 let json = serde_json::to_string_pretty(&clusters)?;
                 fs::write(output_path, json).await?;
@@ -152,7 +164,11 @@ pub async fn execute(
         ClusterAction::Statistics => {
             println!("📈 Gathering statistics...\n");
             let stats = service.get_statistics(&cluster_config).await?;
-            format_output(&stats, &cluster_config.output_format, Some("Knowledge Base Statistics"));
+            format_output(
+                &stats,
+                &cluster_config.output_format,
+                Some("Knowledge Base Statistics"),
+            );
             if let Some(output_path) = &cluster_config.output_file {
                 let json = serde_json::to_string_pretty(&stats)?;
                 fs::write(output_path, json).await?;
@@ -163,15 +179,27 @@ pub async fn execute(
             // Run all clustering operations
             println!("🔍 Detecting Maps of Content...\n");
             let mocs = service.detect_mocs(&cluster_config).await?;
-            format_output(&mocs, &cluster_config.output_format, Some("Maps of Content"));
+            format_output(
+                &mocs,
+                &cluster_config.output_format,
+                Some("Maps of Content"),
+            );
 
             println!("\n📊 Clustering documents...\n");
             let clusters = service.cluster_documents(&cluster_config).await?;
-            format_output(&clusters, &cluster_config.output_format, Some("Document Clusters"));
+            format_output(
+                &clusters,
+                &cluster_config.output_format,
+                Some("Document Clusters"),
+            );
 
             println!("\n📈 Gathering statistics...\n");
             let stats = service.get_statistics(&cluster_config).await?;
-            format_output(&stats, &cluster_config.output_format, Some("Knowledge Base Statistics"));
+            format_output(
+                &stats,
+                &cluster_config.output_format,
+                Some("Knowledge Base Statistics"),
+            );
         }
     }
 
@@ -179,11 +207,7 @@ pub async fn execute(
 }
 
 /// Format output based on format type
-pub fn format_output(
-    data: &serde_json::Value,
-    format: &OutputFormat,
-    title: Option<&str>,
-) {
+pub fn format_output(data: &serde_json::Value, format: &OutputFormat, title: Option<&str>) {
     if let Some(t) = title {
         println!("## {}\n", t);
     }
@@ -235,12 +259,14 @@ fn format_as_summary(data: &serde_json::Value) {
 /// Format a single item as a summary line
 fn format_item_summary(item: &serde_json::Value) -> String {
     if let Some(obj) = item.as_object() {
-        let title = obj.get("title")
+        let title = obj
+            .get("title")
             .and_then(|v| v.as_str())
             .or_else(|| obj.get("path").and_then(|v| v.as_str()))
             .unwrap_or("<unnamed>");
 
-        let score = obj.get("score")
+        let score = obj
+            .get("score")
             .and_then(|v| v.as_f64())
             .map(|s| format!(" (score: {:.2})", s))
             .unwrap_or_default();

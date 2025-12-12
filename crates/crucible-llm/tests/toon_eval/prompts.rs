@@ -125,11 +125,12 @@ impl PromptConfig {
     pub fn components(&self) -> Vec<PromptComponent> {
         match self {
             PromptConfig::ZeroShot => vec![],
-            PromptConfig::SpecOnly => vec![PromptComponent::SpecGrammar, PromptComponent::SpecRules],
+            PromptConfig::SpecOnly => {
+                vec![PromptComponent::SpecGrammar, PromptComponent::SpecRules]
+            }
             PromptConfig::FewShot(n) => examples_for_count(*n),
             PromptConfig::SpecPlusFewShot(n) => {
-                let mut components =
-                    vec![PromptComponent::SpecGrammar, PromptComponent::SpecRules];
+                let mut components = vec![PromptComponent::SpecGrammar, PromptComponent::SpecRules];
                 components.extend(examples_for_count(*n));
                 components
             }
@@ -321,11 +322,7 @@ Answer the question about the following TOON data. Be concise and precise.
 TOON data:"#;
 
 /// Build a query prompt for TOON comprehension
-pub fn build_query_prompt(
-    config: &PromptConfig,
-    toon_data: &str,
-    question: &str,
-) -> String {
+pub fn build_query_prompt(config: &PromptConfig, toon_data: &str, question: &str) -> String {
     let mut parts = Vec::new();
 
     // Add context components

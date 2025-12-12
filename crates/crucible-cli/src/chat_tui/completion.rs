@@ -32,7 +32,11 @@ pub struct CompletionItem {
 
 impl CompletionItem {
     /// Create a new completion item
-    pub fn new(text: impl Into<String>, description: Option<String>, item_type: CompletionType) -> Self {
+    pub fn new(
+        text: impl Into<String>,
+        description: Option<String>,
+        item_type: CompletionType,
+    ) -> Self {
         Self {
             text: text.into(),
             description,
@@ -185,9 +189,21 @@ mod tests {
 
     fn test_items() -> Vec<CompletionItem> {
         vec![
-            CompletionItem::new("search", Some("Search notes".into()), CompletionType::Command),
-            CompletionItem::new("session", Some("Session management".into()), CompletionType::Command),
-            CompletionItem::new("clear", Some("Clear context".into()), CompletionType::Command),
+            CompletionItem::new(
+                "search",
+                Some("Search notes".into()),
+                CompletionType::Command,
+            ),
+            CompletionItem::new(
+                "session",
+                Some("Session management".into()),
+                CompletionType::Command,
+            ),
+            CompletionItem::new(
+                "clear",
+                Some("Clear context".into()),
+                CompletionType::Command,
+            ),
             CompletionItem::new("help", Some("Show help".into()), CompletionType::Command),
         ]
     }
@@ -437,14 +453,25 @@ mod tests {
     fn test_completion_state_with_descriptions() {
         // Test items with descriptions
         let items_with_desc = vec![
-            CompletionItem::new("cmd1", Some("First command".into()), CompletionType::Command),
-            CompletionItem::new("cmd2", Some("Second command".into()), CompletionType::Command),
+            CompletionItem::new(
+                "cmd1",
+                Some("First command".into()),
+                CompletionType::Command,
+            ),
+            CompletionItem::new(
+                "cmd2",
+                Some("Second command".into()),
+                CompletionType::Command,
+            ),
         ];
         let state = CompletionState::new(items_with_desc, CompletionType::Command);
 
         assert_eq!(state.all_items.len(), 2);
         assert!(state.all_items[0].description.is_some());
-        assert_eq!(state.all_items[0].description.as_ref().unwrap(), "First command");
+        assert_eq!(
+            state.all_items[0].description.as_ref().unwrap(),
+            "First command"
+        );
 
         // Test items without descriptions
         let items_no_desc = vec![
@@ -459,9 +486,17 @@ mod tests {
 
         // Test mixed items
         let items_mixed = vec![
-            CompletionItem::new("with_desc", Some("Has description".into()), CompletionType::Agent),
+            CompletionItem::new(
+                "with_desc",
+                Some("Has description".into()),
+                CompletionType::Agent,
+            ),
             CompletionItem::new("no_desc", None, CompletionType::Agent),
-            CompletionItem::new("also_desc", Some("Another one".into()), CompletionType::Agent),
+            CompletionItem::new(
+                "also_desc",
+                Some("Another one".into()),
+                CompletionType::Agent,
+            ),
         ];
         let state = CompletionState::new(items_mixed, CompletionType::Agent);
 
@@ -475,7 +510,11 @@ mod tests {
     fn test_completion_type_variants() {
         // Test Command type items
         let cmd_items = vec![
-            CompletionItem::new("clear", Some("Clear screen".into()), CompletionType::Command),
+            CompletionItem::new(
+                "clear",
+                Some("Clear screen".into()),
+                CompletionType::Command,
+            ),
             CompletionItem::new("help", Some("Show help".into()), CompletionType::Command),
         ];
         let cmd_state = CompletionState::new(cmd_items, CompletionType::Command);
@@ -501,8 +540,16 @@ mod tests {
 
         // Test Agent type items
         let agent_items = vec![
-            CompletionItem::new("rust-expert", Some("Rust programming expert".into()), CompletionType::Agent),
-            CompletionItem::new("code-reviewer", Some("Reviews code quality".into()), CompletionType::Agent),
+            CompletionItem::new(
+                "rust-expert",
+                Some("Rust programming expert".into()),
+                CompletionType::Agent,
+            ),
+            CompletionItem::new(
+                "code-reviewer",
+                Some("Reviews code quality".into()),
+                CompletionType::Agent,
+            ),
         ];
         let agent_state = CompletionState::new(agent_items, CompletionType::Agent);
 

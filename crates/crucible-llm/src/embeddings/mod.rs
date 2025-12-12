@@ -45,6 +45,7 @@ pub mod provider;
 /// Mock provider for testing
 pub mod mock;
 
+pub use burn::BurnProvider;
 pub use config::{EmbeddingConfig, EmbeddingProviderType, ProviderType};
 pub use core_adapter::CoreProviderAdapter;
 pub use error::{EmbeddingError, EmbeddingResult};
@@ -52,7 +53,6 @@ pub use fastembed::FastEmbedProvider;
 pub use mock::MockEmbeddingProvider;
 pub use ollama::OllamaProvider;
 pub use openai::OpenAIProvider;
-pub use burn::BurnProvider;
 pub use provider::{EmbeddingProvider, EmbeddingResponse};
 
 #[cfg(feature = "llama-cpp")]
@@ -87,7 +87,7 @@ pub async fn create_provider(
                 Ok(Arc::new(provider))
             } else {
                 Err(EmbeddingError::ConfigError(
-                    "Burn provider type requires Burn configuration".to_string()
+                    "Burn provider type requires Burn configuration".to_string(),
                 ))
             }
         }
@@ -95,8 +95,8 @@ pub async fn create_provider(
         EmbeddingProviderType::LlamaCpp => {
             // Extract LlamaCpp config from the embedding config
             if let crucible_config::EmbeddingProviderConfig::LlamaCpp(llama_config) = config {
+                use crate::embeddings::inference::{BackendConfig, DeviceType};
                 use std::path::PathBuf;
-                use crate::embeddings::inference::{DeviceType, BackendConfig};
 
                 // Parse device type from config
                 let device = match llama_config.device.to_lowercase().as_str() {
@@ -127,16 +127,14 @@ pub async fn create_provider(
                 Ok(Arc::new(provider))
             } else {
                 Err(EmbeddingError::ConfigError(
-                    "LlamaCpp provider type requires LlamaCpp configuration".to_string()
+                    "LlamaCpp provider type requires LlamaCpp configuration".to_string(),
                 ))
             }
         }
         #[cfg(not(feature = "llama-cpp"))]
-        EmbeddingProviderType::LlamaCpp => {
-            Err(EmbeddingError::ConfigError(
-                "LlamaCpp provider requires the 'llama-cpp' feature to be enabled".to_string()
-            ))
-        }
+        EmbeddingProviderType::LlamaCpp => Err(EmbeddingError::ConfigError(
+            "LlamaCpp provider requires the 'llama-cpp' feature to be enabled".to_string(),
+        )),
         EmbeddingProviderType::Mock => {
             let dimensions = config.dimensions().unwrap_or(768) as usize;
             let provider = mock::MockEmbeddingProvider::with_dimensions(dimensions);

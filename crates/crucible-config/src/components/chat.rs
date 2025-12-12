@@ -62,20 +62,18 @@ impl Default for ChatConfig {
 impl ChatConfig {
     /// Get the LLM endpoint, using provider-specific default if not specified
     pub fn llm_endpoint(&self) -> String {
-        self.endpoint.clone().unwrap_or_else(|| {
-            match self.provider {
+        self.endpoint
+            .clone()
+            .unwrap_or_else(|| match self.provider {
                 LlmProvider::Ollama => "http://localhost:11434".to_string(),
                 LlmProvider::OpenAI => "https://api.openai.com/v1".to_string(),
                 LlmProvider::Anthropic => "https://api.anthropic.com/v1".to_string(),
-            }
-        })
+            })
     }
 
     /// Get the chat model, using default if not specified
     pub fn chat_model(&self) -> String {
-        self.model
-            .clone()
-            .unwrap_or_else(|| "llama3.2".to_string())
+        self.model.clone().unwrap_or_else(|| "llama3.2".to_string())
     }
 
     /// Get the temperature, using default if not specified
