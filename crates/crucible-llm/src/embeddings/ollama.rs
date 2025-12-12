@@ -361,7 +361,26 @@ impl EmbeddingProvider for OllamaProvider {
             return Ok(results);
         }
 
-        // Use native batch endpoint (/api/embed) for ~7x speedup
+        // Use native batch endpoint (/api/embed) for maximum throughput
+        // Send all texts in one request if possible (Ollama handles large batches well)
+        // Only chunk if we have a very large number of texts
+        const MAX_SINGLE_BATCH: usize = 256; // Ollama can handle large batches efficiently
+
+        if non_empty.len() <= MAX_SINGLE_BATCH {
+            // Single batch - most efficient
+            match self.embed_batch_native(non_empty.clone()).await {
+                Ok(batch_results) => return Ok(batch_results),
+                Err(e) => {
+                    tracing::warn!(
+                        "Batch embedding failed, falling back to chunked: {}",
+                        e
+                    );
+                    // Fall through to chunked processing
+                }
+            }
+        }
+
+        // Chunked processing for very large batches or fallback
         let mut results = Vec::with_capacity(non_empty.len());
 
         for chunk in non_empty.chunks(self.batch_size) {
@@ -384,11 +403,7 @@ impl EmbeddingProvider for OllamaProvider {
                     }
                 }
             }
-
-            // Small delay between batches to be nice to the API
-            if non_empty.len() > self.batch_size {
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            }
+            // No delay - let Ollama handle rate limiting internally
         }
 
         Ok(results)

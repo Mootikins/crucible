@@ -686,6 +686,8 @@ impl CliAppConfig {
                 "vertexai" => EmbeddingProviderType::VertexAI,
                 "custom" => EmbeddingProviderType::Custom,
                 "mock" => EmbeddingProviderType::Mock,
+                "burn" => EmbeddingProviderType::Burn,
+                "llamacpp" | "llama-cpp" | "llama_cpp" => EmbeddingProviderType::LlamaCpp,
                 _ => {
                     warn!(
                         "Unknown embedding provider '{}', keeping current: {:?}",

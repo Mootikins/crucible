@@ -13,9 +13,7 @@ use uuid;
 use walkdir::WalkDir;
 
 #[cfg(feature = "burn")]
-mod burn_model;
-#[cfg(feature = "burn")]
-use burn_model::{ModelWeights, ModelConfig, find_model_files};
+use super::burn_model::{ModelWeights, ModelConfig, find_model_files};
 
 use super::gguf_model::{is_gguf_file, find_gguf_models, GGUFModelInfo};
 
@@ -63,7 +61,7 @@ enum BurnState {
         // Model loaded flag
         model_loaded: bool,
         // Loaded model weights (if available, for SafeTensors)
-        model_weights: Option<burn_model::ModelWeights>,
+        model_weights: Option<super::burn_model::ModelWeights>,
         // GGUF model info (if GGUF file)
         gguf_model: Option<GGUFModelInfo>,
     },
@@ -158,7 +156,7 @@ impl BurnProvider {
                 
                 // Try to load actual model weights if available (for SafeTensors)
                 #[cfg(feature = "burn")]
-                let model_weights: Option<burn_model::ModelWeights> = if let Some(ref path) = model_path {
+                let model_weights: Option<super::burn_model::ModelWeights> = if let Some(ref path) = model_path {
                     // Only try SafeTensors if it's not a GGUF file
                     if !is_gguf_file(path) {
                         // Find config.json in the same directory
@@ -672,12 +670,13 @@ impl BurnProvider {
         #[cfg(feature = "burn")]
         {
             if let BurnState::Initialized { model_weights: Some(ref weights), .. } = *state {
+                // Extract the embedding synchronously while we hold the lock
+                let embedding_result = self.generate_embedding_with_model_sync(weights, token_ids);
                 drop(state);
-                // Use actual model inference
-                return self.generate_embedding_with_model(weights, token_ids).await;
+                return embedding_result;
             }
         }
-        
+
         drop(state);
 
         // Fallback: Generate deterministic embedding based on tokens and text
@@ -685,11 +684,11 @@ impl BurnProvider {
         self.generate_fallback_embedding(token_ids, text).await
     }
 
-    /// Generate embedding using actual model weights
+    /// Generate embedding using actual model weights (synchronous version)
     #[cfg(feature = "burn")]
-    async fn generate_embedding_with_model(
+    fn generate_embedding_with_model_sync(
         &self,
-        weights: &burn_model::ModelWeights,
+        weights: &super::burn_model::ModelWeights,
         token_ids: &[u32],
     ) -> EmbeddingResult<Vec<f32>> {
         // TODO: Implement full BERT forward pass using Burn tensors
@@ -756,8 +755,35 @@ impl BurnProvider {
             return Ok(embedding);
         }
 
-        // If we can't find embedding weights, fall back
-        self.generate_fallback_embedding(token_ids, "").await
+        // If we can't find embedding weights, fall back to a simple deterministic embedding
+        Ok(self.generate_simple_fallback_embedding(token_ids))
+    }
+
+    /// Generate a simple deterministic fallback embedding (synchronous)
+    fn generate_simple_fallback_embedding(&self, token_ids: &[u32]) -> Vec<f32> {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        token_ids.hash(&mut hasher);
+        let hash = hasher.finish();
+
+        // Generate embedding values based on the hash
+        let mut embedding = vec![0.0f32; self.dimensions];
+        for (i, val) in embedding.iter_mut().enumerate() {
+            let value_hash = hash.wrapping_mul(19).wrapping_add(i as u64);
+            *val = ((value_hash % 1000000) as f32 / 500000.0 - 1.0) * 0.1;
+        }
+
+        // Normalize
+        let norm: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if norm > 0.0 {
+            for val in &mut embedding {
+                *val /= norm;
+            }
+        }
+
+        embedding
     }
 
     /// Generate fallback embedding when model weights are not available

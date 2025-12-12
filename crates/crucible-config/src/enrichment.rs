@@ -63,6 +63,9 @@ pub enum EmbeddingProviderConfig {
 
     /// Burn ML framework embedding provider (local, GPU-accelerated)
     Burn(BurnEmbedConfig),
+
+    /// LlamaCpp embedding provider (local GGUF models with GPU acceleration)
+    LlamaCpp(LlamaCppConfig),
 }
 
 impl Default for EmbeddingProviderConfig {
@@ -594,6 +597,67 @@ impl BurnBackendConfig {
     }
 }
 
+/// LlamaCpp embedding provider configuration
+///
+/// Provides local embedding generation using llama.cpp for GGUF models
+/// with GPU acceleration support through Vulkan, CUDA, Metal, or ROCm.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LlamaCppConfig {
+    /// Path to the GGUF model file
+    pub model_path: String,
+
+    /// Device type (auto, cpu, vulkan, cuda, metal, rocm)
+    #[serde(default = "LlamaCppConfig::default_device")]
+    pub device: String,
+
+    /// Number of GPU layers to offload (-1 = all, 0 = CPU only)
+    #[serde(default = "LlamaCppConfig::default_gpu_layers")]
+    pub gpu_layers: i32,
+
+    /// Batch size for embedding requests
+    #[serde(default = "LlamaCppConfig::default_batch_size")]
+    pub batch_size: usize,
+
+    /// Context size (max tokens per sequence)
+    #[serde(default = "LlamaCppConfig::default_context_size")]
+    pub context_size: usize,
+
+    /// Expected embedding dimensions (0 = auto-detect from model)
+    #[serde(default)]
+    pub dimensions: u32,
+}
+
+impl LlamaCppConfig {
+    fn default_device() -> String {
+        "auto".to_string()
+    }
+
+    fn default_gpu_layers() -> i32 {
+        -1 // Offload all layers to GPU
+    }
+
+    fn default_batch_size() -> usize {
+        8
+    }
+
+    fn default_context_size() -> usize {
+        512
+    }
+}
+
+impl Default for LlamaCppConfig {
+    fn default() -> Self {
+        Self {
+            model_path: String::new(),
+            device: Self::default_device(),
+            gpu_layers: Self::default_gpu_layers(),
+            batch_size: Self::default_batch_size(),
+            context_size: Self::default_context_size(),
+            dimensions: 0,
+        }
+    }
+}
+
 /// Pipeline configuration for enrichment operations
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PipelineConfig {
@@ -777,6 +841,22 @@ impl EmbeddingProviderConfig {
         })
     }
 
+    /// Create a LlamaCpp provider configuration
+    ///
+    /// # Arguments
+    /// * `model_path` - Path to the GGUF model file
+    /// * `device` - Optional device type (auto, cpu, vulkan, cuda, metal, rocm)
+    pub fn llamacpp(model_path: String, device: Option<String>) -> Self {
+        Self::LlamaCpp(LlamaCppConfig {
+            model_path,
+            device: device.unwrap_or_else(LlamaCppConfig::default_device),
+            gpu_layers: LlamaCppConfig::default_gpu_layers(),
+            batch_size: LlamaCppConfig::default_batch_size(),
+            context_size: LlamaCppConfig::default_context_size(),
+            dimensions: 0,
+        })
+    }
+
     /// Get the timeout as a Duration
     pub fn timeout(&self) -> Duration {
         let seconds = match self {
@@ -788,6 +868,7 @@ impl EmbeddingProviderConfig {
             Self::Custom(c) => c.timeout_seconds,
             Self::Mock(_) => 1,
             Self::Burn(_) => 60, // GPU inference may need more time for first load
+            Self::LlamaCpp(_) => 60, // GPU inference may need more time for first load
         };
         Duration::from_secs(seconds)
     }
@@ -803,6 +884,7 @@ impl EmbeddingProviderConfig {
             Self::Custom(c) => c.retry_attempts,
             Self::Mock(_) => 0,
             Self::Burn(_) => 0, // Local GPU processing doesn't need retries
+            Self::LlamaCpp(_) => 0, // Local GPU processing doesn't need retries
         }
     }
 
@@ -817,6 +899,7 @@ impl EmbeddingProviderConfig {
             Self::Custom(c) => &c.model,
             Self::Mock(c) => &c.model,
             Self::Burn(c) => &c.model,
+            Self::LlamaCpp(c) => &c.model_path, // Model path serves as model name
         }
     }
 
@@ -848,7 +931,7 @@ impl EmbeddingProviderConfig {
             Self::Cohere(c) => Some(&c.base_url),
             Self::VertexAI(c) => Some(&c.base_url),
             Self::Custom(c) => Some(&c.base_url),
-            Self::FastEmbed(_) | Self::Mock(_) | Self::Burn(_) => None,
+            Self::FastEmbed(_) | Self::Mock(_) | Self::Burn(_) | Self::LlamaCpp(_) => None,
         }
     }
 
@@ -870,6 +953,7 @@ impl EmbeddingProviderConfig {
             Self::Custom(c) => c.timeout_seconds,
             Self::Mock(_) => 1,
             Self::Burn(_) => 60,
+            Self::LlamaCpp(_) => 60, // GPU inference may need time for first load
         }
     }
 
@@ -884,6 +968,14 @@ impl EmbeddingProviderConfig {
             Self::Custom(c) => Some(c.dimensions),
             Self::Mock(c) => Some(c.dimensions),
             Self::Burn(c) => {
+                // 0 means auto-detect, return None
+                if c.dimensions == 0 {
+                    None
+                } else {
+                    Some(c.dimensions)
+                }
+            }
+            Self::LlamaCpp(c) => {
                 // 0 means auto-detect, return None
                 if c.dimensions == 0 {
                     None
@@ -908,6 +1000,7 @@ impl EmbeddingProviderConfig {
             Self::Mock(_) => 100,   // Mock can handle any batch size
             Self::Burn(_) => 32,    // GPU batch processing
             Self::VertexAI(_) => 5, // VertexAI has lower limits
+            Self::LlamaCpp(c) => c.batch_size, // GPU batch processing
         }
     }
 
@@ -1069,6 +1162,38 @@ impl EmbeddingProviderConfig {
                     });
                 }
                 // Note: model_search_paths and dimensions can be empty/0 (use defaults/auto-detect)
+            }
+            Self::LlamaCpp(c) => {
+                if c.model_path.is_empty() {
+                    return Err(ConfigValidationError::MissingField {
+                        field: "model_path".to_string(),
+                    });
+                }
+                // Validate device type
+                let valid_devices = ["auto", "cpu", "vulkan", "cuda", "metal", "rocm"];
+                if !valid_devices.contains(&c.device.as_str()) {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "device".to_string(),
+                        reason: format!(
+                            "must be one of: {}",
+                            valid_devices.join(", ")
+                        ),
+                    });
+                }
+                // Validate batch_size
+                if c.batch_size == 0 {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "batch_size".to_string(),
+                        reason: "must be greater than 0".to_string(),
+                    });
+                }
+                // Validate context_size
+                if c.context_size == 0 {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "context_size".to_string(),
+                        reason: "must be greater than 0".to_string(),
+                    });
+                }
             }
         }
         Ok(())
