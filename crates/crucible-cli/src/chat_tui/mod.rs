@@ -40,7 +40,7 @@ pub use input::{ChatAction, ChatInput};
 pub use keybindings::KeyBindings;
 pub use messages::{calculate_message_height, render_message, ChatMessageDisplay, MessageRole};
 pub use render::render_chat_viewport;
-pub use sources::{command_source, FileSource};
+pub use sources::{command_source, CommandSource, CompletionSource, FileSource};
 
 use anyhow::Result;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};

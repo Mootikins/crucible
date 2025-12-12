@@ -2,10 +2,18 @@
 //!
 //! Contains the main application state for the chat TUI including mode,
 //! render state, and dirty flag tracking.
+//!
+//! ## SOLID Principles Applied
+//!
+//! - **Single Responsibility**: ChatApp manages state; keybindings are in KeyBindings
+//! - **Open/Closed**: Completion sources are injectable via CompletionSource trait
+//! - **Dependency Inversion**: ChatApp depends on abstractions (CompletionSource), not concrete implementations
 
 use super::completion::{CompletionItem, CompletionState, CompletionType};
 use super::input::{ChatAction, ChatInput};
+use super::keybindings::KeyBindings;
 use super::messages::{calculate_message_height, render_message, ChatMessageDisplay};
+use super::sources::CompletionSource;
 use ratatui::backend::Backend;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Terminal;
@@ -88,6 +96,15 @@ pub struct ChatApp {
     /// Render state for dirty tracking
     pub render_state: RenderState,
 
+    /// Keybinding configuration (injected)
+    pub keybindings: KeyBindings,
+
+    /// Command completion source (optional, for hot-reload)
+    command_source: Option<Box<dyn CompletionSource>>,
+
+    /// File completion source (optional, for hot-reload)
+    file_source: Option<Box<dyn CompletionSource>>,
+
     /// Whether agent is currently streaming a response
     pub is_streaming: bool,
 
@@ -96,16 +113,60 @@ pub struct ChatApp {
 }
 
 impl ChatApp {
-    /// Create a new chat application
+    /// Create a new chat application with default keybindings
     pub fn new() -> Self {
+        Self::with_keybindings(KeyBindings::defaults())
+    }
+
+    /// Create with custom keybindings
+    pub fn with_keybindings(keybindings: KeyBindings) -> Self {
         Self {
             mode: ChatMode::default(),
             input: ChatInput::new(),
             completion: None,
             render_state: RenderState::new(),
+            keybindings,
+            command_source: None,
+            file_source: None,
             is_streaming: false,
             should_exit: false,
         }
+    }
+
+    // === Builder methods for completion sources ===
+
+    /// Set command completion source (builder pattern)
+    pub fn with_command_source(mut self, source: Box<dyn CompletionSource>) -> Self {
+        self.command_source = Some(source);
+        self
+    }
+
+    /// Set file completion source (builder pattern)
+    pub fn with_file_source(mut self, source: Box<dyn CompletionSource>) -> Self {
+        self.file_source = Some(source);
+        self
+    }
+
+    // === Hot-reload methods for runtime source updates ===
+
+    /// Set command source at runtime (for ACP hot-reload)
+    pub fn set_command_source(&mut self, source: Box<dyn CompletionSource>) {
+        self.command_source = Some(source);
+    }
+
+    /// Clear command source
+    pub fn clear_command_source(&mut self) {
+        self.command_source = None;
+    }
+
+    /// Set file source at runtime
+    pub fn set_file_source(&mut self, source: Box<dyn CompletionSource>) {
+        self.file_source = Some(source);
+    }
+
+    /// Clear file source
+    pub fn clear_file_source(&mut self) {
+        self.file_source = None;
     }
 
     /// Set the chat mode
@@ -247,33 +308,48 @@ impl ChatApp {
     }
 
     /// Show command completion popup
+    ///
+    /// Uses injected command_source if available, otherwise falls back to defaults.
     pub fn show_command_completion(&mut self) {
-        // Placeholder - will be populated by completion sources later
-        let items = vec![
-            CompletionItem::new("clear", Some("Clear conversation".into()), CompletionType::Command),
-            CompletionItem::new("help", Some("Show help".into()), CompletionType::Command),
-            CompletionItem::new("mode", Some("Change mode".into()), CompletionType::Command),
-            CompletionItem::new("exit", Some("Exit chat".into()), CompletionType::Command),
-        ];
+        let items = if let Some(source) = &self.command_source {
+            source.get_items()
+        } else {
+            // Fallback to hardcoded items if no source configured
+            vec![
+                CompletionItem::new("clear", Some("Clear conversation".into()), CompletionType::Command),
+                CompletionItem::new("help", Some("Show help".into()), CompletionType::Command),
+                CompletionItem::new("mode", Some("Change mode".into()), CompletionType::Command),
+                CompletionItem::new("exit", Some("Exit chat".into()), CompletionType::Command),
+            ]
+        };
         self.completion = Some(CompletionState::new(items, CompletionType::Command));
         self.render_state.mark_dirty();
     }
 
     /// Show file completion popup
+    ///
+    /// Uses injected file_source if available, otherwise falls back to defaults.
     pub fn show_file_completion(&mut self) {
-        // Placeholder - will be populated by file sources later
-        let items = vec![
-            CompletionItem::new("README.md", None, CompletionType::File),
-            CompletionItem::new("CLAUDE.md", None, CompletionType::File),
-        ];
+        let (items, multi_select) = if let Some(source) = &self.file_source {
+            (source.get_items(), source.supports_multi_select())
+        } else {
+            // Fallback to placeholder items
+            (
+                vec![
+                    CompletionItem::new("README.md", None, CompletionType::File),
+                    CompletionItem::new("CLAUDE.md", None, CompletionType::File),
+                ],
+                true, // Files support multi-select by default
+            )
+        };
         let mut state = CompletionState::new(items, CompletionType::File);
-        state.multi_select = true; // Files support multi-select
+        state.multi_select = multi_select;
         self.completion = Some(state);
         self.render_state.mark_dirty();
     }
 
     /// Confirm the current completion selection
-    fn confirm_completion(&mut self) {
+    pub fn confirm_completion(&mut self) {
         if let Some(completion) = self.completion.take() {
             // Get selected item(s) and insert into input
             let items = completion.selected_items();
@@ -918,5 +994,121 @@ mod tests {
             completion.is_selected(0),
             "Selection should persist during navigation"
         );
+    }
+
+    // === KeyBindings injection tests (Wave 3) ===
+
+    #[test]
+    fn test_chat_app_with_custom_keybindings() {
+        use crate::chat_tui::KeyBindings;
+        use crucible_core::traits::{InputMode, KeyPattern};
+
+        let bindings = KeyBindings::new(); // Empty bindings
+        let app = ChatApp::with_keybindings(bindings);
+        // Should have no default bindings
+        assert!(app
+            .keybindings
+            .resolve(KeyPattern::ctrl('d'), InputMode::Normal)
+            .is_none());
+    }
+
+    #[test]
+    fn test_chat_app_default_has_keybindings() {
+        use crucible_core::traits::{InputMode, KeyPattern};
+
+        let app = ChatApp::new();
+        // Should have default Ctrl+D binding
+        assert!(app
+            .keybindings
+            .resolve(KeyPattern::ctrl('d'), InputMode::Normal)
+            .is_some());
+    }
+
+    // === CompletionSource injection tests (Wave 3) ===
+
+    #[test]
+    fn test_chat_app_with_command_source() {
+        use crate::chat_tui::CommandSource;
+
+        let items = vec![CompletionItem::new(
+            "test",
+            Some("Test command".into()),
+            CompletionType::Command,
+        )];
+        let source = CommandSource::new(items);
+
+        let mut app = ChatApp::new().with_command_source(Box::new(source));
+        app.show_command_completion();
+
+        assert!(app.completion.is_some());
+        let completion = app.completion.as_ref().unwrap();
+        assert_eq!(completion.filtered_items.len(), 1);
+        assert_eq!(completion.filtered_items[0].text, "test");
+    }
+
+    #[test]
+    fn test_chat_app_hot_reload_command_source() {
+        use crate::chat_tui::CommandSource;
+
+        let mut app = ChatApp::new();
+
+        // Initially uses fallback
+        app.show_command_completion();
+        let initial_count = app.completion.as_ref().unwrap().filtered_items.len();
+        app.completion = None;
+
+        // Hot-reload new source
+        let items = vec![
+            CompletionItem::new("new1", None, CompletionType::Command),
+            CompletionItem::new("new2", None, CompletionType::Command),
+        ];
+        app.set_command_source(Box::new(CommandSource::new(items)));
+
+        app.show_command_completion();
+        assert_eq!(app.completion.as_ref().unwrap().filtered_items.len(), 2);
+
+        // Clear source returns to fallback
+        app.completion = None;
+        app.clear_command_source();
+        app.show_command_completion();
+        assert_eq!(
+            app.completion.as_ref().unwrap().filtered_items.len(),
+            initial_count
+        );
+    }
+
+    #[test]
+    fn test_chat_app_with_file_source() {
+        use crate::chat_tui::FileSource;
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create test directory with files
+        let temp_dir = TempDir::new().unwrap();
+        fs::write(temp_dir.path().join("test1.md"), "content").unwrap();
+        fs::write(temp_dir.path().join("test2.md"), "content").unwrap();
+
+        let source = FileSource::new(temp_dir.path());
+        let mut app = ChatApp::new().with_file_source(Box::new(source));
+        app.show_file_completion();
+
+        assert!(app.completion.is_some());
+        let completion = app.completion.as_ref().unwrap();
+        assert_eq!(completion.filtered_items.len(), 2);
+        assert!(completion.multi_select, "File source should enable multi-select");
+    }
+
+    #[test]
+    fn test_completion_source_multi_select_flag() {
+        use crate::chat_tui::CommandSource;
+
+        // Command source should be single-select
+        let items = vec![CompletionItem::new("test", None, CompletionType::Command)];
+        let mut app = ChatApp::new().with_command_source(Box::new(CommandSource::new(items)));
+        app.show_command_completion();
+
+        let completion = app.completion.as_ref().unwrap();
+        // Command completion is single-select (hardcoded in ChatApp, not from source)
+        assert!(!completion.multi_select);
     }
 }
