@@ -154,3 +154,24 @@ pub(crate) mod transaction_consumer;
 pub(crate) use eav_graph::{EAVGraphStore, NoteIngestor};
 pub(crate) use merkle_persistence::MerklePersistence;
 pub(crate) use surreal_client::SurrealClient;
+
+// ============================================================================
+// Test Utilities - Only available with test-utils feature
+// ============================================================================
+
+#[cfg(feature = "test-utils")]
+pub mod test_utils {
+    //! Test utilities for integration tests
+    //!
+    //! This module exposes internal types and functions for testing purposes only.
+    //! Enable the `test-utils` feature to use these.
+
+    pub use crate::eav_graph::{apply_eav_graph_schema, EAVGraphStore, NoteIngestor};
+    pub use crate::surreal_client::SurrealClient;
+    pub use crate::types::{QueryResult, Record};
+
+    #[cfg(feature = "embeddings")]
+    pub use crate::kiln_integration::{
+        store_parsed_document, semantic_search, semantic_search_with_reranking
+    };
+}

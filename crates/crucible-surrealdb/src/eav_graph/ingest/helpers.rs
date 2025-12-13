@@ -16,6 +16,7 @@ use std::fs;
 /// - Copy-pasted content with hidden control characters
 ///
 /// This function strips null bytes to allow such files to be stored safely.
+#[allow(dead_code)] // May be used for future FTS indexing
 pub(crate) fn sanitize_content(s: &str) -> String {
     s.replace('\0', "")
 }
