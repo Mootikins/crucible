@@ -10,7 +10,7 @@ use anyhow::Result;
 use crucible_cli::commands::process;
 use crucible_cli::config::{CliAppConfig, CliConfig};
 use crucible_config::{
-    AcpConfig, ChatConfig, EmbeddingConfig, EmbeddingProviderType, ProcessingConfig,
+    AcpConfig, ChatConfig, EmbeddingConfig, EmbeddingProviderType, LlmConfig, ProcessingConfig,
 };
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -58,6 +58,7 @@ fn create_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfig {
             ..Default::default()
         },
         chat: ChatConfig::default(),
+        llm: LlmConfig::default(),
         cli: CliAppConfig::default(),
         logging: None,
         processing: ProcessingConfig::default(),
