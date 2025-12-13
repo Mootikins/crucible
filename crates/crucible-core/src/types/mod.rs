@@ -6,7 +6,7 @@
 //! ## Organization
 //!
 //! Domain types are currently defined in their respective modules:
-//! - ACP types: `acp` (SessionConfig, SessionId, ChatMode, ToolDescriptor, etc.)
+//! - ACP types: `acp` (SessionConfig, SessionId, ChatMode, ToolInvocation, etc.)
 //! - Parser types: `parser::types` (ParsedNote, Wikilink, Tag, etc.)
 //! - Database types: `database` (Record, QueryResult, Node, Edge, Note, etc.)
 //! - Note types: `note` (NoteNode, ViewportState)
@@ -63,10 +63,10 @@ pub use crate::types::hashing::{
 pub use crate::traits::change_detection::{ChangeSet, ChangeSummary};
 
 // Re-export ACP types
+// NOTE: ToolDescriptor and ToolExample removed - use ToolDefinition from traits::tools
 pub use crate::types::acp::{
     ChatMode, ChunkType, FileDiff, FileMetadata, SessionConfig, SessionId, StreamChunk,
-    StreamMetadata, ToolCallInfo, ToolDescriptor, ToolExample as AcpToolExample, ToolInvocation,
-    ToolOutput,
+    StreamMetadata, ToolCallInfo, ToolInvocation, ToolOutput,
 };
 
 // Re-export trait types (these are associated with traits but used as data)
