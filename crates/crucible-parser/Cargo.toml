@@ -38,6 +38,7 @@ hex = "0.4"
 [dev-dependencies]
 tokio-test = "0.4"
 criterion = { workspace = true }
+proptest = { workspace = true }
 
 [[bench]]
 name = "parser_comparison"
