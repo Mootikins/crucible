@@ -115,7 +115,7 @@ pub struct ChatChunk {
     pub done: bool,
 
     /// Tool calls (populated in final chunk if any)
-    pub tool_calls: Option<Vec<ToolCall>>,
+    pub tool_calls: Option<Vec<ChatToolCall>>,
 }
 
 /// Runtime handle to an active agent
@@ -249,12 +249,15 @@ pub struct ChatResponse {
     pub content: String,
 
     /// Tool calls made by the agent (if any)
-    pub tool_calls: Vec<ToolCall>,
+    pub tool_calls: Vec<ChatToolCall>,
 }
 
-/// Tool call made by an agent
+/// Tool call made by an agent (chat layer)
+///
+/// This is distinct from `llm::ToolCall` which is the wire format for LLM APIs.
+/// `ChatToolCall` is the simplified format used in the chat/agent interface.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolCall {
+pub struct ChatToolCall {
     /// Tool name
     pub name: String,
 
@@ -471,7 +474,7 @@ mod tests {
 
     #[test]
     fn test_chat_chunk_with_tool_calls() {
-        let tool_call = ToolCall {
+        let tool_call = ChatToolCall {
             name: "test_tool".to_string(),
             arguments: Some(serde_json::json!({"key": "value"})),
             id: Some("call-123".to_string()),
@@ -583,7 +586,7 @@ mod tests {
                 &'a mut self,
                 _message: &'a str,
             ) -> BoxStream<'a, ChatResult<ChatChunk>> {
-                let tool_call = ToolCall {
+                let tool_call = ChatToolCall {
                     name: "search".to_string(),
                     arguments: Some(serde_json::json!({"query": "test"})),
                     id: Some("call-1".to_string()),
