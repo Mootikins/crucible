@@ -20,5 +20,5 @@ pub use api::{
     TextCompletionResponse,
 };
 pub use grammar::Grammar;
-pub use harness::{Mode, TestCase, TestHarness, TestResult};
+pub use harness::{ChatTemplate, Mode, TestCase, TestHarness, TestResult};
 pub use scoring::{Score, Scorer};
