@@ -77,6 +77,9 @@ pub(crate) async fn fetch_document_by_id(
 }
 
 /// Convert a database record to ParsedNote
+///
+/// Note: Content is read from disk using the stored path, not from the database.
+/// This avoids storing duplicate plain text in the database.
 pub(crate) async fn convert_record_to_parsed_document(record: &Record) -> Result<ParsedNote> {
     let data_map = record.data.get("data").and_then(|value| value.as_object());
 
@@ -87,11 +90,10 @@ pub(crate) async fn convert_record_to_parsed_document(record: &Record) -> Result
 
     let mut doc = ParsedNote::new(PathBuf::from(path));
 
-    doc.content.plain_text = data_map
-        .and_then(|obj| obj.get("content").and_then(|v| v.as_str()))
-        .or_else(|| record.data.get("content").and_then(|v| v.as_str()))
-        .unwrap_or("")
-        .to_string();
+    // Read content from disk instead of database
+    if let Ok(content) = tokio::fs::read_to_string(path).await {
+        doc.content.plain_text = content;
+    }
 
     doc.parsed_at = parse_timestamp(
         data_map.and_then(|obj| obj.get("parsed_at")),

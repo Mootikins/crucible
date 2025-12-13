@@ -14,6 +14,8 @@ pub mod types;
 mod integration_tests;
 #[cfg(test)]
 mod relation_tag_edge_case_tests;
+#[cfg(test)]
+mod search_metadata_tests;
 
 pub use ingest::NoteIngestor;
 pub use schema::apply_eav_graph_schema;

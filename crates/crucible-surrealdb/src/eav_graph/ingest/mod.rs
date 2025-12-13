@@ -47,7 +47,7 @@ use super::types::{
     AttributeValue, BlockNode, Entity, EntityRecord, EntityTag, EntityTagRecord, EntityType,
     Property, PropertyRecord, RecordId, TagRecord,
 };
-use helpers::{classify_content, extract_timestamps, sanitize_content};
+use helpers::{classify_content, extract_timestamps};
 
 /// High-level helper for writing parsed documents into the EAV+Graph schema.
 ///
@@ -116,8 +116,7 @@ impl<'a> NoteIngestor<'a> {
         let (created_at, updated_at) = extract_timestamps(doc);
 
         let mut entity = Entity::new(entity_id.clone(), EntityType::Note)
-            .with_content_hash(doc.content_hash.clone())
-            .with_search_text(sanitize_content(&doc.content.plain_text));
+            .with_content_hash(doc.content_hash.clone());
         entity.created_at = created_at;
         entity.updated_at = updated_at;
         entity.data = Some(self.entity_payload(doc, relative_path));
@@ -1155,10 +1154,6 @@ impl<'a> NoteIngestor<'a> {
             Value::String(relative_path.to_string()),
         );
         payload.insert("title".to_string(), Value::String(doc.title()));
-        payload.insert(
-            "content".to_string(),
-            Value::String(sanitize_content(&doc.content.plain_text)),
-        );
         payload.insert("tags".to_string(), Value::Array(tags));
         if let Some(frontmatter) = frontmatter_value {
             payload.insert("frontmatter".to_string(), frontmatter);
