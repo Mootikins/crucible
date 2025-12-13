@@ -7,7 +7,7 @@ use anyhow::Result;
 use crucible_cli::commands::chat;
 use crucible_cli::config::{CliAppConfig, CliConfig};
 use crucible_config::{
-    AcpConfig, ChatConfig, EmbeddingConfig, EmbeddingProviderType, ProcessingConfig,
+    AcpConfig, ChatConfig, EmbeddingConfig, EmbeddingProviderType, LlmConfig, ProcessingConfig,
 };
 use tempfile::TempDir;
 
@@ -35,6 +35,7 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
         },
         acp: AcpConfig::default(),
         chat: ChatConfig::default(),
+        llm: LlmConfig::default(),
         cli: CliAppConfig::default(),
         logging: None,
         processing: ProcessingConfig::default(),
@@ -51,6 +52,9 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
         true,                             // no_process (skip pipeline - this is key!)
         Some(3),                          // context_size
         false,                            // use_tui
+        false,                            // use_internal
+        None,                             // provider_key
+        8192,                             // max_context_tokens
     )
     .await;
 
@@ -114,6 +118,7 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
         },
         acp: AcpConfig::default(),
         chat: ChatConfig::default(),
+        llm: LlmConfig::default(),
         cli: CliAppConfig::default(),
         logging: None,
         processing: ProcessingConfig::default(),
@@ -130,6 +135,9 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
         true,  // no_process
         None,  // context_size
         false, // use_tui
+        false, // use_internal
+        None,  // provider_key
+        8192,  // max_context_tokens
     )
     .await;
 
