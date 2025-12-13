@@ -1,0 +1,106 @@
+// Daily Summary Script
+// Generates a summary of notes modified today
+//
+// Usage:
+//   cru script "Scripts/Daily Summary.rn"
+
+/// Format a list of notes as markdown
+pub fn format_note_list(notes, heading) {
+    if notes.is_empty() {
+        return "";
+    }
+
+    let output = format!("## {}\n\n", heading);
+    for note in notes {
+        output += format!("- [[{}]]\n", note.title);
+    }
+    output += "\n";
+    output
+}
+
+/// Get notes modified today
+pub fn get_todays_notes() {
+    let today = crucible::today();
+
+    crucible::search_by_properties(#{
+        modified_after: today
+    })
+}
+
+/// Categorize notes by tag
+pub fn categorize_notes(notes) {
+    let categories = #{
+        meetings: [],
+        decisions: [],
+        todos: [],
+        other: []
+    };
+
+    for note in notes {
+        let tags = note.frontmatter.get("tags").unwrap_or([]);
+
+        if tags.contains("meeting-notes") {
+            categories.meetings.push(note);
+        } else if tags.contains("decision") {
+            categories.decisions.push(note);
+        } else if tags.contains("actionable") {
+            categories.todos.push(note);
+        } else {
+            categories.other.push(note);
+        }
+    }
+
+    categories
+}
+
+/// Generate the summary content
+pub fn generate_summary(notes) {
+    let categories = categorize_notes(notes);
+
+    let content = format!("# Daily Summary - {}\n\n", crucible::today());
+
+    content += format!("Modified {} notes today.\n\n", notes.len());
+
+    content += format_note_list(categories.meetings, "Meetings");
+    content += format_note_list(categories.decisions, "Decisions");
+    content += format_note_list(categories.todos, "Action Items");
+    content += format_note_list(categories.other, "Other Notes");
+
+    // Add quick stats
+    content += "## Quick Stats\n\n";
+    content += format!("- Meetings: {}\n", categories.meetings.len());
+    content += format!("- Decisions: {}\n", categories.decisions.len());
+    content += format!("- Action items: {}\n", categories.todos.len());
+    content += format!("- Other: {}\n", categories.other.len());
+
+    content
+}
+
+/// Main entry point
+pub fn main() {
+    let notes = get_todays_notes()?;
+
+    if notes.is_empty() {
+        println("No notes modified today.");
+        return Ok(());
+    }
+
+    let summary = generate_summary(notes);
+
+    // Print to console
+    println(summary);
+
+    // In act mode, create a summary note
+    if crucible::is_act_mode() {
+        let filename = format!("Daily Summary {}.md", crucible::today());
+        crucible::create_note(filename, summary, #{
+            tags: ["daily-summary", "auto-generated"],
+            date: crucible::today()
+        })?;
+        println("\nSummary saved to [[{}]]", filename);
+    } else {
+        println("\nRun with --act to save as a note");
+    }
+
+    Ok(())
+}
