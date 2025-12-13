@@ -67,3 +67,8 @@ tracing-subscriber = { workspace = true }
 tempfile = "3.0"
 serial_test = "3.0"
 
+# Dev-kiln validation tests
+walkdir = "2.4"
+regex = { workspace = true }
+crucible-parser = { path = "../crucible-parser" }
+
