@@ -204,7 +204,6 @@ pub struct Entity {
     pub created_by: Option<String>,
     pub vault_id: Option<String>,
     pub data: Option<Value>,
-    pub search_text: Option<String>,
 }
 
 fn default_version() -> i32 {
@@ -224,19 +223,12 @@ impl Entity {
             created_by: None,
             vault_id: None,
             data: None,
-            search_text: None,
         }
     }
 
     #[must_use = "builder methods consume self and return a new value"]
     pub fn with_content_hash(mut self, hash: impl Into<String>) -> Self {
         self.content_hash = Some(hash.into());
-        self
-    }
-
-    #[must_use = "builder methods consume self and return a new value"]
-    pub fn with_search_text(mut self, text: impl Into<String>) -> Self {
-        self.search_text = Some(text.into());
         self
     }
 }
