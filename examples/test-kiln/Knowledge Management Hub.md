@@ -60,7 +60,7 @@ This hub demonstrates various link types supported by the system:
 1. **Basic Wikilinks**: [[Technical Documentation]]
 2. **Alias Links**: [[Project Management|Project Tracking]]
 3. **Heading Links**: [[Research Methods#Literature Review]]
-4. **Block References**: [[Meeting Notes^2024-01-15-key-decisions]]
+4. **Block References**: [[Meeting Notes#^2024-01-15-key-decisions]]
 5. **Embedded Content**: ![[Reading List#Books to Read]]
 
 ### Metadata Testing

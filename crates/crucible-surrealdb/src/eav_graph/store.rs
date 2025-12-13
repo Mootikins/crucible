@@ -178,8 +178,7 @@ impl EAVGraphStore {
             content_hash = $content_hash,
             created_by = $created_by,
             vault_id = $vault_id,
-            data = $data,
-            search_text = $search_text
+            data = $data
         "#;
 
         let params = json!({
@@ -194,7 +193,6 @@ impl EAVGraphStore {
             "created_by": entity.created_by,
             "vault_id": entity.vault_id,
             "data": entity.data,
-            "search_text": entity.search_text,
         });
 
         self.upsert_with_set(set_clause, &params, true, false)
@@ -1801,9 +1799,7 @@ mod tests {
     }
 
     fn sample_entity() -> Entity {
-        Entity::new(entity_id(), EntityType::Note)
-            .with_content_hash("abc123")
-            .with_search_text("hello world")
+        Entity::new(entity_id(), EntityType::Note).with_content_hash("abc123")
     }
 
     fn property_id(key: &str) -> RecordId<PropertyRecord> {

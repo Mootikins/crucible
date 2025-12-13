@@ -184,7 +184,6 @@ pub struct EAVDocumentBuilder {
     entity_id: Option<String>,
     entity_type: Option<EntityType>,
     content_hash: Option<String>,
-    search_text: Option<String>,
     vault_id: Option<String>,
     properties: HashMap<PropertyNamespace, Vec<Property>>,
     relations: Vec<Relation>,
@@ -214,12 +213,6 @@ impl EAVDocumentBuilder {
     /// Set the content hash
     pub fn content_hash(mut self, hash: impl Into<String>) -> Self {
         self.content_hash = Some(hash.into());
-        self
-    }
-
-    /// Set the search text
-    pub fn search_text(mut self, text: impl Into<String>) -> Self {
-        self.search_text = Some(text.into());
         self
     }
 
@@ -307,7 +300,6 @@ impl EAVDocumentBuilder {
             created_by: None,
             vault_id: self.vault_id,
             data: None,
-            search_text: self.search_text,
         };
 
         let doc = EAVDocument {
@@ -397,7 +389,6 @@ mod tests {
             .entity_id("note:test")
             .entity_type(EntityType::Note)
             .content_hash("abc123")
-            .search_text("Test content")
             .build();
 
         assert!(doc.is_ok());
@@ -405,7 +396,6 @@ mod tests {
         assert_eq!(doc.entity.id, "note:test");
         assert_eq!(doc.entity.entity_type, EntityType::Note);
         assert_eq!(doc.entity.content_hash, Some("abc123".to_string()));
-        assert_eq!(doc.entity.search_text, Some("Test content".to_string()));
     }
 
     #[test]
