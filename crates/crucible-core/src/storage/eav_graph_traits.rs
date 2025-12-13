@@ -57,7 +57,6 @@ pub struct Entity {
     pub created_by: Option<String>,
     pub vault_id: Option<String>,
     pub data: Option<Value>,
-    pub search_text: Option<String>,
 }
 
 impl Entity {
@@ -75,19 +74,12 @@ impl Entity {
             created_by: None,
             vault_id: None,
             data: None,
-            search_text: None,
         }
     }
 
     /// Set the content hash for this entity
     pub fn with_content_hash(mut self, hash: impl Into<String>) -> Self {
         self.content_hash = Some(hash.into());
-        self
-    }
-
-    /// Set the search text for this entity
-    pub fn with_search_text(mut self, text: impl Into<String>) -> Self {
-        self.search_text = Some(text.into());
         self
     }
 
@@ -777,8 +769,7 @@ mod tests {
 
         // Test store_entity
         let entity = Entity::new("note:test".to_string(), EntityType::Note)
-            .with_content_hash("abc123")
-            .with_search_text("Test note");
+            .with_content_hash("abc123");
 
         let id = storage.store_entity(entity.clone()).await.unwrap();
         assert_eq!(id, "note:test");
@@ -800,14 +791,14 @@ mod tests {
 
         // Test update_entity
         let mut updated_entity = retrieved.clone();
-        updated_entity.search_text = Some("Updated text".to_string());
+        updated_entity.content_hash = Some("updated_hash".to_string());
         storage
             .update_entity("note:test", updated_entity)
             .await
             .unwrap();
 
         let updated = storage.get_entity("note:test").await.unwrap().unwrap();
-        assert_eq!(updated.search_text, Some("Updated text".to_string()));
+        assert_eq!(updated.content_hash, Some("updated_hash".to_string()));
 
         // Test delete_entity
         storage.delete_entity("note:test").await.unwrap();
@@ -819,13 +810,11 @@ mod tests {
     async fn test_entity_builder_pattern() {
         let entity = Entity::new("note:builder".to_string(), EntityType::Note)
             .with_content_hash("hash123")
-            .with_search_text("Searchable content")
             .with_vault_id("vault:main");
 
         assert_eq!(entity.id, "note:builder");
         assert_eq!(entity.entity_type, EntityType::Note);
         assert_eq!(entity.content_hash, Some("hash123".to_string()));
-        assert_eq!(entity.search_text, Some("Searchable content".to_string()));
         assert_eq!(entity.vault_id, Some("vault:main".to_string()));
         assert_eq!(entity.version, 1);
     }
