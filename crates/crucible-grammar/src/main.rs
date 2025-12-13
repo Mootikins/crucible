@@ -1,11 +1,34 @@
 //! Grammar-constrained generation test runner
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use crucible_grammar::{
     grammar::{self, Grammar},
-    harness::{HarnessConfig, Mode, TestHarness, TestSuite},
+    harness::{ChatTemplate, HarnessConfig, Mode, TestHarness, TestSuite},
 };
 use std::path::PathBuf;
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum TemplateArg {
+    /// Qwen3/ChatML format
+    Qwen3,
+    /// Llama 3 format
+    Llama3,
+    /// GPT-OSS format with channel tags
+    GptOss,
+    /// DeepSeek R1 format
+    DeepseekR1,
+}
+
+impl From<TemplateArg> for ChatTemplate {
+    fn from(arg: TemplateArg) -> Self {
+        match arg {
+            TemplateArg::Qwen3 => ChatTemplate::Qwen3,
+            TemplateArg::Llama3 => ChatTemplate::Llama3,
+            TemplateArg::GptOss => ChatTemplate::GptOss,
+            TemplateArg::DeepseekR1 => ChatTemplate::DeepSeekR1,
+        }
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "crucible-grammar")]
@@ -18,6 +41,10 @@ struct Args {
     /// Model to use
     #[arg(long, default_value = "qwen3-14b-ud-q8_k_xl")]
     model: String,
+
+    /// Chat template format for text completions
+    #[arg(long, value_enum, default_value = "qwen3")]
+    template: TemplateArg,
 
     /// Grammar file (GBNF)
     #[arg(long)]
@@ -71,11 +98,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let allow_thinking = args.thinking_grammar;
 
     // Build config
+    // Use higher token limit for thinking mode (needs room for reasoning + tool call)
+    let max_tokens = if allow_thinking { 512 } else { 128 };
+
     let config = HarnessConfig {
         endpoint: args.endpoint,
         model: args.model.clone(),
         grammar,
         allow_thinking,
+        max_tokens,
+        chat_template: args.template.into(),
         ..Default::default()
     };
 
