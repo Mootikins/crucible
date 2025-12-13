@@ -1,0 +1,627 @@
+# =============================================================================
+# Crucible Dev-Kiln Configuration
+# =============================================================================
+# Location: examples/dev-kiln/Config.toml
+#
+# This is THE reference configuration for Crucible. Every available option is
+# documented here with examples and defaults. Use this as a guide to configure
+# your own kiln.
+#
+# For detailed documentation on each section, see:
+#   - General config: :h config
+#   - LLM providers: :h config.llm or Help/Config/llm.md
+#   - Embedding: :h config.embedding or Help/Config/embedding.md
+#   - Storage: :h config.storage or Help/Config/storage.md
+#   - Agents: :h config.agents or Help/Config/agents.md
+#
+# Environment Variable Support:
+#   Configuration values can reference environment variables using ${VAR_NAME}
+#   Many settings can also be overridden via environment variables:
+#   - CRUCIBLE_KILN_PATH - Path to your kiln
+#   - CRUCIBLE_EMBEDDING_PROVIDER - Embedding provider (fastembed, ollama, openai)
+#   - CRUCIBLE_EMBEDDING_URL - Embedding API endpoint
+#   - CRUCIBLE_EMBEDDING_MODEL - Embedding model name
+#   - OPENAI_API_KEY - OpenAI API key
+#   - ANTHROPIC_API_KEY - Anthropic API key
+#
+# File References:
+#   You can split configuration into multiple files using:
+#   - {file:path} syntax inline: api_key = "{file:~/.secrets/key.txt}"
+#   - [include] section for whole sections (see below)
+#
+# Priority Order (highest to lowest):
+#   1. CLI flags (--embedding-url, etc.)
+#   2. Environment variables (CRUCIBLE_*)
+#   3. This config file
+#   4. Defaults
+# =============================================================================
+
+# =============================================================================
+# [include] - Split Configuration Across Files
+# =============================================================================
+# Use the [include] section to load entire configuration sections from
+# external files. This is useful for:
+# - Keeping secrets separate (embedding.toml with API keys)
+# - Organizing complex configs (mcps.toml for MCP servers)
+# - Sharing configs across kilns (discovery.toml for shared tools)
+#
+# Paths are relative to this file's directory, or use absolute/~ paths.
+#
+# Example structure:
+#   dev-kiln/
+#   ├── Config.toml (this file)
+#   ├── embedding.toml (provider config with API keys)
+#   ├── mcps.toml (MCP server definitions)
+#   ├── discovery.toml (tool/hook discovery paths)
+#   └── hooks.toml (hook configurations)
+#
+# [include]
+# embedding = "embedding.toml"  # Load embedding config from separate file
+# gateway = "mcps.toml"          # Load MCP servers from separate file
+# discovery = "discovery.toml"   # Load discovery paths from separate file
+# hooks = "hooks.toml"           # Load hooks config from separate file
+
+# =============================================================================
+# Kiln Settings - Core paths and identification
+# =============================================================================
+
+# Path to your Obsidian vault / knowledge base
+# This is the root directory containing your markdown notes.
+# Can be absolute, relative to this config file, or use ~ for home directory.
+#
+# For dev-kiln, this points to the dev-kiln directory itself
+# Can be overridden by CRUCIBLE_KILN_PATH environment variable
+kiln_path = "."
+
+# Additional directories to search for agent cards (optional)
+# Paths can be absolute or relative to this config file location.
+# Agent cards are loaded from:
+#   1. KILN/Agents/ (always checked first)
+#   2. These additional directories
+#   3. ~/.crucible/agents/ (user-wide agents)
+#
+# Example:
+# agent_directories = [
+#     "/home/user/shared-agents",  # Shared across projects
+#     "./custom-agents"            # Project-specific agents
+# ]
+
+# =============================================================================
+# [profile] - Profile Selection and Configuration
+# =============================================================================
+# Profiles allow you to maintain multiple configurations and switch between
+# them easily. Useful for:
+# - Different vaults (work vs personal)
+# - Different embedding providers (local vs cloud)
+# - Different environments (dev vs prod)
+#
+# Set the active profile:
+# profile = "default"  # Options: "default", "work", "personal", etc.
+#
+# Define profiles (see profiles.toml example for full details):
+# [profiles.default]
+# kiln_path = "~/Documents/vault"
+#
+# [profiles.work]
+# kiln_path = "~/Documents/work-vault"
+# agent_directories = ["~/work/agents"]
+
+# =============================================================================
+# [llm] - LLM Provider Configuration (Named Instances)
+# =============================================================================
+# Configure multiple LLM providers and switch between them easily.
+# This is the new recommended way to configure LLM providers.
+#
+# Benefits:
+# - Multiple providers (local Ollama + cloud OpenAI/Anthropic)
+# - Named instances (home server, work server, cloud backup)
+# - Easy switching between providers
+# - Per-provider settings (temperature, timeout, etc.)
+#
+# See Help/Config/llm.md for full documentation
+# See examples/config/llm_providers.toml for more examples
+
+[llm]
+# Default provider to use for chat
+# This is the key name from [llm.providers.*] section
+default = "local"
+
+# --- Local Ollama Provider ---
+# Fast, private, no API key needed
+[llm.providers.local]
+type = "ollama"
+endpoint = "http://localhost:11434"
+default_model = "llama3.2"
+temperature = 0.7
+max_tokens = 4096
+timeout_secs = 120
+
+# --- Cloud OpenAI Provider (disabled by default) ---
+# Uncomment to enable. Requires OPENAI_API_KEY environment variable.
+# [llm.providers.cloud]
+# type = "openai"
+# endpoint = "https://api.openai.com/v1"  # Can be customized for compatible APIs
+# default_model = "gpt-4o"
+# temperature = 0.7
+# max_tokens = 4096
+# timeout_secs = 60
+# api_key_env = "OPENAI_API_KEY"  # Environment variable containing API key
+
+# --- Anthropic Provider (disabled by default) ---
+# Uncomment to enable. Requires ANTHROPIC_API_KEY environment variable.
+# [llm.providers.anthropic]
+# type = "anthropic"
+# endpoint = "https://api.anthropic.com/v1"
+# default_model = "claude-3-5-sonnet-20241022"
+# temperature = 0.7
+# max_tokens = 4096
+# timeout_secs = 60
+# api_key_env = "ANTHROPIC_API_KEY"
+
+# --- Remote Ollama Server (example) ---
+# Connect to Ollama running on another machine
+# [llm.providers.homeserver]
+# type = "ollama"
+# endpoint = "http://192.168.1.100:11434"
+# default_model = "llama3.1:70b"  # Larger model on beefy home server
+# temperature = 0.9
+# max_tokens = 8192
+# timeout_secs = 300
+
+# =============================================================================
+# [embedding] - Embedding Provider Configuration
+# =============================================================================
+# Configure the embedding provider used for semantic search and vector storage.
+#
+# Available providers:
+# - fastembed: Local CPU-based embeddings (default, no API key needed)
+# - ollama: Local GPU-accelerated embeddings via Ollama
+# - openai: OpenAI's text-embedding-3 models (requires API key)
+# - anthropic: Anthropic's embedding models (requires API key)
+# - cohere: Cohere's embedding models (requires API key)
+# - burn: Local GPU via Burn ML framework (experimental)
+# - llamacpp: Local GGUF models with GPU acceleration (experimental)
+# - custom: Custom HTTP endpoint
+# - mock: Testing only
+#
+# See Help/Config/embedding.md for full documentation
+# See examples/config/embedding.toml for more examples
+#
+# Can be overridden by environment variables:
+# - CRUCIBLE_EMBEDDING_PROVIDER=ollama
+# - CRUCIBLE_EMBEDDING_URL=http://localhost:11434
+# - CRUCIBLE_EMBEDDING_MODEL=nomic-embed-text
+
+[embedding]
+# Provider type
+# Options: fastembed, ollama, openai, anthropic, cohere, burn, llamacpp, custom
+provider = "ollama"
+
+# Model name (provider-specific)
+# - fastembed: "BAAI/bge-small-en-v1.5" (default, 384 dims, fast)
+#              "BAAI/bge-base-en-v1.5" (768 dims, better quality)
+# - ollama: "nomic-embed-text" (768 dims, recommended)
+#           "mxbai-embed-large" (1024 dims, higher quality)
+# - openai: "text-embedding-3-small" (default, 1536 dims)
+#           "text-embedding-3-large" (3072 dims, best quality)
+# - anthropic: "claude-3-haiku-20240307"
+model = "nomic-embed-text"
+
+# API URL (for remote providers)
+# - ollama: "http://localhost:11434" (default)
+#           "http://192.168.1.100:11434" (remote Ollama server)
+# - openai: "https://api.openai.com/v1" (default)
+# - anthropic: "https://api.anthropic.com" (default)
+api_url = "http://localhost:11434"
+
+# Batch size for embedding operations
+# Higher = faster processing but more memory
+# Recommended values:
+# - fastembed: 16-32 (CPU-bound)
+# - ollama: 50-100 (GPU-bound, ~7x speedup over sequential)
+# - openai/anthropic: 100-500 (API rate limits apply)
+batch_size = 50
+
+# Maximum concurrent embedding jobs (optional)
+# If not set, uses provider-specific defaults:
+# - ollama: 1 (single GPU, sequential to avoid OOM)
+# - fastembed: num_cpus/2 (CPU-bound, parallel OK)
+# - burn/llamacpp: 1 (GPU-bound, sequential)
+# - openai/anthropic: 8 (rate-limited, moderate concurrency)
+# - mock: 16 (testing, high concurrency)
+# max_concurrent = 4
+
+# =============================================================================
+# [chat] - Chat Configuration (Legacy/Fallback)
+# =============================================================================
+# Basic chat settings. This section is used as a fallback when [llm] section
+# is not configured. For new configurations, prefer [llm] section above.
+#
+# This section provides simple settings for backward compatibility.
+
+[chat]
+# Default chat model (can be overridden by agents)
+# If not set, uses agent's default model
+# model = "llama3.2"
+
+# Enable markdown rendering in terminal output
+enable_markdown = true
+
+# Legacy provider setting (used if [llm] section is not configured)
+# Options: ollama, openai, anthropic
+# provider = "ollama"
+
+# LLM endpoint URL (for Ollama/compatible providers)
+# endpoint = "http://localhost:11434"
+
+# Temperature for generation (0.0-2.0)
+# Lower = more focused, higher = more creative
+# temperature = 0.7
+
+# Maximum tokens to generate
+# max_tokens = 2048
+
+# API timeout in seconds
+# timeout_secs = 120
+
+# =============================================================================
+# [acp] - Agent Client Protocol Configuration
+# =============================================================================
+# Configure how Crucible communicates with AI agents (Claude Desktop, etc.)
+#
+# See Help/Config/agents.md for full documentation
+
+[acp]
+# Default agent to use for chat sessions
+# Options: "claude", "opencode", or path to custom agent card
+# If not set (null), auto-discovers first available agent
+default_agent = null
+
+# Enable automatic agent discovery
+# When true, Crucible searches for available agents in:
+# - Claude Desktop (if installed)
+# - Custom agent directories (from config)
+# - KILN/Agents/ (agent cards in the kiln)
+enable_discovery = true
+
+# Session timeout in minutes
+# How long to keep an agent session alive without activity
+session_timeout_minutes = 30
+
+# Maximum message size in MB
+# Prevents oversized requests that might fail or cost too much
+max_message_size_mb = 25
+
+# Streaming response timeout in minutes
+# Maximum time to wait for a complete LLM response
+# Default is 15 minutes to accommodate complex reasoning tasks
+streaming_timeout_minutes = 15
+
+# =============================================================================
+# [cli] - CLI Application Configuration
+# =============================================================================
+# Configure CLI behavior and user interface preferences
+
+[cli]
+# Show progress bars for long operations
+# Displays progress bars for processing, indexing, embedding, etc.
+show_progress = true
+
+# Require confirmation for destructive operations
+# When true, prompts for confirmation before:
+# - Deleting notes
+# - Dropping database tables
+# - Removing embeddings
+confirm_destructive = true
+
+# Verbose output by default
+# Can be overridden with --verbose flag
+verbose = false
+
+# =============================================================================
+# [database] - Database Configuration (Optional)
+# =============================================================================
+# Configure the SurrealDB database backend
+#
+# By default, Crucible creates a database at KILN/.crucible/kiln.db
+# You typically don't need to configure this section.
+#
+# See Help/Config/storage.md for full documentation
+
+# [database]
+# type = "surrealdb"  # Only SurrealDB is currently supported
+# url = "rocksdb://KILN/.crucible/kiln.db"  # RocksDB backend (default)
+# max_connections = 10  # Connection pool size (optional)
+# timeout_seconds = 30  # Connection timeout (optional)
+
+# =============================================================================
+# [server] - Web Server Configuration (Optional)
+# =============================================================================
+# Configure the HTTP/WebSocket server for the web UI and APIs
+#
+# Only needed if you're using `cru web` or running Crucible as a server.
+# See crates/crucible-web/AGENTS.md for web UI details
+
+# [server]
+# host = "127.0.0.1"  # Bind address (default: localhost only)
+# port = 8080         # Port to listen on
+# https = false       # Enable HTTPS (requires cert_file and key_file)
+# cert_file = "/path/to/cert.pem"  # TLS certificate (if HTTPS enabled)
+# key_file = "/path/to/key.pem"    # TLS private key (if HTTPS enabled)
+# max_body_size = 10485760  # Max request body size in bytes (10MB default)
+# timeout_seconds = 30      # Request timeout
+
+# =============================================================================
+# [logging] - Logging Configuration (Optional)
+# =============================================================================
+# Configure logging output and verbosity
+#
+# By default, logging is minimal (off/error level) unless --verbose or
+# --log-level flag is used. This section allows persistent logging config.
+
+# [logging]
+# # Global log level
+# # Options: "off", "error", "warn", "info", "debug", "trace"
+# level = "info"
+#
+# # Log format
+# # Options: "text" (human-readable), "json" (structured), "compact" (minimal)
+# format = "text"
+#
+# # Enable console/stdout logging
+# console = true
+#
+# # Enable file logging
+# file = false
+# file_path = "~/.local/share/crucible/crucible.log"
+#
+# # Log rotation settings
+# rotation = true
+# max_file_size = 10485760  # 10MB
+# max_files = 5  # Keep 5 rotated log files
+#
+# # Component/module-specific log levels
+# # Override the global level for specific components
+# [logging.component_levels]
+# crucible_core = "debug"
+# crucible_parser = "info"
+# crucible_surrealdb = "warn"
+#
+# # Formatting options
+# timestamps = true  # Include timestamps
+# target = true      # Include module/target path
+# ansi = true        # Use ANSI colors in console output
+
+# =============================================================================
+# [processing] - Processing Configuration (Optional)
+# =============================================================================
+# Configure parallel processing for bulk operations
+
+# [processing]
+# # Number of parallel workers for processing operations
+# # Default: num_cpus / 2 (half of available CPU cores)
+# # Increase for faster bulk processing, decrease to reduce CPU usage
+# parallel_workers = 4
+
+# =============================================================================
+# [discovery] - Discovery Paths Configuration (Optional)
+# =============================================================================
+# Configure where Crucible searches for Rune scripts (tools, hooks, events)
+#
+# By default, Crucible searches:
+# - ~/.crucible/tools/, ~/.crucible/hooks/, ~/.crucible/events/
+# - KILN/.crucible/tools/, KILN/.crucible/hooks/, KILN/.crucible/events/
+#
+# Use this section to add additional search paths or disable defaults.
+# See examples/config/discovery.toml for detailed examples
+#
+# See Help/Extending/Custom Tools.md for writing custom tools
+# See Help/Extending/Writing Plugins.md for Rune scripting guide
+
+# [discovery]
+# # Configure discovery for each resource type (tools, hooks, events)
+#
+# # Tools: Rune scripts that expose MCP-compatible tools
+# [discovery.type_configs.tools]
+# additional_paths = [
+#     "/opt/crucible/tools",           # System-wide tools
+#     "~/.local/share/crucible/tools", # User-specific tools
+# ]
+# use_defaults = true  # Also search default locations
+#
+# # Hooks: Rune scripts that intercept and transform tool operations
+# [discovery.type_configs.hooks]
+# additional_paths = []
+# use_defaults = true
+#
+# # Events: Rune scripts that respond to system events
+# [discovery.type_configs.events]
+# additional_paths = []
+# use_defaults = true
+#
+# # Custom types: Define your own discovery paths
+# [discovery.type_configs.templates]
+# additional_paths = ["~/.crucible/templates"]
+# use_defaults = false
+
+# =============================================================================
+# [gateway] - MCP Server Gateway Configuration (Optional)
+# =============================================================================
+# Configure upstream MCP servers to connect to and expose their tools
+# through Crucible's unified tool system.
+#
+# Examples include:
+# - GitHub MCP server (search code, repos, issues, PRs)
+# - Filesystem MCP server (read/write files)
+# - Memory MCP server (persistent key-value storage)
+# - Custom MCP servers
+#
+# See examples/config/mcps.toml for detailed examples and all available servers
+# See Help/Extending/Custom Tools.md for writing custom MCP servers
+
+# [gateway]
+# # Array of MCP servers to connect to
+#
+# # Example: GitHub MCP Server
+# [[gateway.servers]]
+# name = "github"
+# prefix = "gh_"  # Tools become: gh_search_code, gh_get_repo, etc.
+# auto_reconnect = true
+#
+# # Transport configuration: how to connect to the server
+# [gateway.servers.transport]
+# type = "stdio"  # Options: "stdio" (subprocess) or "sse" (HTTP)
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-github"]
+#
+# # Environment variables for the MCP server
+# [gateway.servers.transport.env]
+# GITHUB_TOKEN = "${GITHUB_TOKEN}"  # References shell environment variable
+#
+# # Tool filtering (optional)
+# allowed_tools = ["search_*", "get_*", "list_*"]  # Whitelist glob patterns
+# blocked_tools = ["delete_*", "create_*"]         # Blacklist glob patterns
+
+# =============================================================================
+# [hooks] - Hook Configuration (Optional)
+# =============================================================================
+# Configure built-in hooks that intercept and transform tool operations
+#
+# Hooks enable:
+# - Output filtering (remove verbose test output)
+# - Input transformation (modify tool arguments)
+# - Logging and auditing (track tool usage)
+# - Tool selection/blocking (restrict capabilities)
+#
+# See examples/config/hooks.toml for detailed examples
+# See Help/Extending/Writing Plugins.md for writing custom hooks
+
+# [hooks]
+# # Built-in hooks (provided by Crucible)
+# [hooks.builtin]
+#
+# # Test output filter: Clean up verbose test output
+# [hooks.builtin.test_filter]
+# enabled = true
+# pattern = "just_test*"  # Apply to tools matching glob pattern
+# priority = 10           # Lower priority runs first
+#
+# # TOON transform: Convert structured data to readable format
+# [hooks.builtin.toon_transform]
+# enabled = false
+# pattern = "*"  # Apply to all tools
+# priority = 50
+#
+# # Recipe enrichment: Add context to discovered patterns
+# [hooks.builtin.recipe_enrichment]
+# enabled = false
+# pattern = "recipe_*"
+# priority = 20
+#
+# # Tool selector: Whitelist/blacklist tools
+# [hooks.builtin.tool_selector]
+# enabled = false
+# allowed_tools = ["read_*", "search_*", "list_*"]  # Only allow these
+# blocked_tools = ["delete_*", "drop_*"]            # Block these
+# # suffix = "_filtered"  # Add suffix to tool names (for debugging)
+
+# =============================================================================
+# [enrichment] - Enrichment Pipeline Configuration (Advanced)
+# =============================================================================
+# Advanced configuration for the enrichment pipeline
+#
+# This section uses the detailed, provider-specific configuration format.
+# Most users should use the simpler [embedding] section above instead.
+#
+# Only use this if you need:
+# - Fine-grained control over provider settings
+# - Multiple embedding providers
+# - Advanced pipeline configuration
+#
+# See crates/crucible-config/src/enrichment.rs for full schema
+
+# [enrichment]
+# # Provider configuration (detailed format)
+# [enrichment.provider]
+# type = "ollama"  # Provider type
+# model = "nomic-embed-text"
+# base_url = "http://localhost:11434"
+# timeout_seconds = 30
+# retry_attempts = 3
+# dimensions = 768  # Expected embedding dimensions
+# batch_size = 50
+#
+# # Pipeline configuration
+# [enrichment.pipeline]
+# enabled = true
+# batch_size = 100
+# max_concurrent = 4
+# timeout_seconds = 300
+
+# =============================================================================
+# [custom] - Custom Configuration Values
+# =============================================================================
+# Store arbitrary custom configuration values
+#
+# Access these values programmatically via the Config API:
+#   config.get::<String>("custom_key")?
+#
+# Useful for:
+# - Plugin configuration
+# - Custom tool settings
+# - User-defined preferences
+
+# [custom]
+# # Example custom values
+# my_api_endpoint = "https://api.example.com"
+# feature_flag_x = true
+# max_retries = 5
+
+# =============================================================================
+# Notes on Configuration Best Practices
+# =============================================================================
+#
+# 1. **Security**:
+#    - NEVER commit API keys to version control
+#    - Use environment variables: api_key = "${OPENAI_API_KEY}"
+#    - Or use file references: api_key = "{file:~/.secrets/openai.key}"
+#    - Set proper permissions: chmod 600 Config.toml
+#
+# 2. **Organization**:
+#    - Split large configs into separate files using [include]
+#    - Keep secrets separate (embedding.toml, mcps.toml)
+#    - Use comments to document your choices
+#
+# 3. **Performance**:
+#    - Start with defaults, then tune based on your hardware
+#    - batch_size: Higher = faster but more memory
+#    - max_concurrent: Balance between speed and resource usage
+#    - For Ollama: batch_size=50-100, max_concurrent=1 works well
+#
+# 4. **Testing**:
+#    - Use `cru config show` to see effective configuration
+#    - Use `cru config validate` to check for errors
+#    - Test changes with small datasets first
+#
+# 5. **Profiles**:
+#    - Create profiles for different use cases (work, personal, dev)
+#    - Switch profiles with --profile flag or profile = "name"
+#
+# =============================================================================
+# Dev-Kiln Specific Notes
+# =============================================================================
+#
+# This configuration is optimized for the dev-kiln example:
+# - Uses local Ollama for LLM and embeddings (no API keys needed)
+# - Batch size tuned for development/testing
+# - All experimental features disabled by default
+# - Minimal external dependencies
+#
+# For your own kiln, customize:
+# 1. Set kiln_path to your vault location
+# 2. Choose embedding provider (ollama, fastembed, or cloud)
+# 3. Configure LLM providers (local, cloud, or both)
+# 4. Add MCP servers if needed (GitHub, etc.)
+# 5. Create profiles for different workflows
+#
+# =============================================================================
