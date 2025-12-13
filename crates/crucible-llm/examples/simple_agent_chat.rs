@@ -182,7 +182,12 @@ async fn main() -> Result<()> {
         // Run conversation
         match runtime.send_message(input.to_string()).await {
             Ok(response) => {
-                println!("\n🤖 Assistant: {}", response.message.content);
+                let content = response
+                    .choices
+                    .first()
+                    .map(|c| c.message.content.as_str())
+                    .unwrap_or("(no response)");
+                println!("\n🤖 Assistant: {}", content);
                 println!(
                     "   (tokens: {} prompt, {} completion)\n",
                     response.usage.prompt_tokens, response.usage.completion_tokens
