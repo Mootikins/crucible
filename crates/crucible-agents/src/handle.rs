@@ -15,6 +15,9 @@ use uuid::Uuid;
 use crate::prompt::LayeredPromptBuilder;
 use crate::token::TokenBudget;
 
+/// Default maximum number of tool execution iterations
+const DEFAULT_MAX_TOOL_ITERATIONS: usize = 10;
+
 /// Internal agent handle that uses direct LLM API calls
 ///
 /// This handle wraps a `TextGenerationProvider` and provides conversation
@@ -45,6 +48,9 @@ pub struct InternalAgentHandle {
     /// Unique agent ID (reserved for future use)
     #[allow(dead_code)]
     agent_id: String,
+
+    /// Maximum number of tool execution iterations to prevent infinite loops
+    max_tool_iterations: usize,
 }
 
 impl InternalAgentHandle {
@@ -83,7 +89,17 @@ impl InternalAgentHandle {
             mode: ChatMode::Plan,
             model,
             agent_id,
+            max_tool_iterations: DEFAULT_MAX_TOOL_ITERATIONS,
         }
+    }
+
+    /// Set the maximum number of tool execution iterations
+    ///
+    /// This prevents infinite loops when the LLM keeps requesting tool calls.
+    /// Default is 10 iterations.
+    pub fn with_max_tool_iterations(mut self, max: usize) -> Self {
+        self.max_tool_iterations = max;
+        self
     }
 
     /// Helper to convert LLM tool calls to chat tool calls
@@ -146,7 +162,17 @@ impl AgentHandle for InternalAgentHandle {
             self.context.add_message(LlmMessage::user(message));
 
             // Tool execution loop - continue until no more tool calls
+            let mut tool_iteration = 0;
             loop {
+                // Check for max iterations to prevent infinite loops
+                if tool_iteration >= self.max_tool_iterations {
+                    yield Err(ChatError::Internal(format!(
+                        "Maximum tool iterations ({}) exceeded - possible infinite loop",
+                        self.max_tool_iterations
+                    )));
+                    return;
+                }
+                tool_iteration += 1;
                 // Trim context to budget
                 self.context.trim_to_budget(self.token_budget.remaining());
 
@@ -511,5 +537,172 @@ mod tests {
         // Response is ~2 tokens
         // Total should be well under 100 tokens
         assert!(handle.context.token_estimate() <= 100);
+    }
+
+    // Tool call format conversion tests
+
+    #[test]
+    fn test_convert_tool_calls_basic() {
+        use crucible_core::traits::llm::FunctionCall;
+
+        let llm_calls = vec![LlmToolCall {
+            id: "call_123".to_string(),
+            r#type: "function".to_string(),
+            function: FunctionCall {
+                name: "get_weather".to_string(),
+                arguments: r#"{"location": "San Francisco"}"#.to_string(),
+            },
+        }];
+
+        let chat_calls = InternalAgentHandle::convert_tool_calls(&llm_calls);
+
+        assert_eq!(chat_calls.len(), 1);
+        assert_eq!(chat_calls[0].name, "get_weather");
+        assert_eq!(chat_calls[0].id, Some("call_123".to_string()));
+        assert!(chat_calls[0].arguments.is_some());
+
+        let args = chat_calls[0].arguments.as_ref().unwrap();
+        assert_eq!(args["location"], "San Francisco");
+    }
+
+    #[test]
+    fn test_convert_tool_calls_multiple() {
+        use crucible_core::traits::llm::FunctionCall;
+
+        let llm_calls = vec![
+            LlmToolCall {
+                id: "call_1".to_string(),
+                r#type: "function".to_string(),
+                function: FunctionCall {
+                    name: "tool_a".to_string(),
+                    arguments: r#"{"arg": "value1"}"#.to_string(),
+                },
+            },
+            LlmToolCall {
+                id: "call_2".to_string(),
+                r#type: "function".to_string(),
+                function: FunctionCall {
+                    name: "tool_b".to_string(),
+                    arguments: r#"{"arg": "value2"}"#.to_string(),
+                },
+            },
+        ];
+
+        let chat_calls = InternalAgentHandle::convert_tool_calls(&llm_calls);
+
+        assert_eq!(chat_calls.len(), 2);
+        assert_eq!(chat_calls[0].name, "tool_a");
+        assert_eq!(chat_calls[1].name, "tool_b");
+    }
+
+    #[test]
+    fn test_convert_tool_calls_empty() {
+        let llm_calls: Vec<LlmToolCall> = vec![];
+        let chat_calls = InternalAgentHandle::convert_tool_calls(&llm_calls);
+        assert!(chat_calls.is_empty());
+    }
+
+    #[test]
+    fn test_convert_tool_calls_invalid_json_arguments() {
+        use crucible_core::traits::llm::FunctionCall;
+
+        let llm_calls = vec![LlmToolCall {
+            id: "call_bad".to_string(),
+            r#type: "function".to_string(),
+            function: FunctionCall {
+                name: "bad_tool".to_string(),
+                arguments: "not valid json".to_string(), // Invalid JSON
+            },
+        }];
+
+        let chat_calls = InternalAgentHandle::convert_tool_calls(&llm_calls);
+
+        assert_eq!(chat_calls.len(), 1);
+        assert_eq!(chat_calls[0].name, "bad_tool");
+        assert_eq!(chat_calls[0].id, Some("call_bad".to_string()));
+        // Arguments should be None when JSON parsing fails
+        assert!(chat_calls[0].arguments.is_none());
+    }
+
+    #[test]
+    fn test_convert_tool_calls_empty_arguments() {
+        use crucible_core::traits::llm::FunctionCall;
+
+        let llm_calls = vec![LlmToolCall {
+            id: "call_empty".to_string(),
+            r#type: "function".to_string(),
+            function: FunctionCall {
+                name: "no_args_tool".to_string(),
+                arguments: "{}".to_string(),
+            },
+        }];
+
+        let chat_calls = InternalAgentHandle::convert_tool_calls(&llm_calls);
+
+        assert_eq!(chat_calls.len(), 1);
+        assert!(chat_calls[0].arguments.is_some());
+        let args = chat_calls[0].arguments.as_ref().unwrap();
+        assert!(args.as_object().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_convert_tool_calls_complex_arguments() {
+        use crucible_core::traits::llm::FunctionCall;
+
+        let llm_calls = vec![LlmToolCall {
+            id: "call_complex".to_string(),
+            r#type: "function".to_string(),
+            function: FunctionCall {
+                name: "complex_tool".to_string(),
+                arguments: r#"{"nested": {"a": 1, "b": [1, 2, 3]}, "flag": true, "null_val": null}"#.to_string(),
+            },
+        }];
+
+        let chat_calls = InternalAgentHandle::convert_tool_calls(&llm_calls);
+
+        assert_eq!(chat_calls.len(), 1);
+        let args = chat_calls[0].arguments.as_ref().unwrap();
+
+        assert!(args["nested"]["a"].is_number());
+        assert!(args["nested"]["b"].is_array());
+        assert_eq!(args["flag"], true);
+        assert!(args["null_val"].is_null());
+    }
+
+    #[test]
+    fn test_convert_tool_calls_preserves_id() {
+        use crucible_core::traits::llm::FunctionCall;
+
+        let llm_calls = vec![LlmToolCall {
+            id: "unique-tool-call-id-12345".to_string(),
+            r#type: "function".to_string(),
+            function: FunctionCall {
+                name: "test".to_string(),
+                arguments: "{}".to_string(),
+            },
+        }];
+
+        let chat_calls = InternalAgentHandle::convert_tool_calls(&llm_calls);
+
+        assert_eq!(chat_calls[0].id, Some("unique-tool-call-id-12345".to_string()));
+    }
+
+    #[test]
+    fn test_convert_tool_calls_empty_id() {
+        use crucible_core::traits::llm::FunctionCall;
+
+        let llm_calls = vec![LlmToolCall {
+            id: "".to_string(),
+            r#type: "function".to_string(),
+            function: FunctionCall {
+                name: "test".to_string(),
+                arguments: "{}".to_string(),
+            },
+        }];
+
+        let chat_calls = InternalAgentHandle::convert_tool_calls(&llm_calls);
+
+        // Empty string should still be Some("")
+        assert_eq!(chat_calls[0].id, Some("".to_string()));
     }
 }
