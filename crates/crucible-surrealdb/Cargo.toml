@@ -62,7 +62,9 @@ embeddings = ["crucible-llm"]
 # Test utilities - optionally enables LLM test-utils if embeddings feature is enabled
 test-utils = ["crucible-llm?/test-utils", "crucible-config/test-utils"]
 
+# Always enable test-utils for tests
 [dev-dependencies]
+crucible-surrealdb = { path = ".", features = ["test-utils"] }
 tempfile = "3.8"
 tokio-test = "0.4"
 num_cpus = "1.16"
@@ -70,6 +72,9 @@ tracing-test = "0.2"
 criterion = { version = "0.7", features = ["async_tokio"] }
 fake = { version = "2.9", features = ["derive"] }
 rand = "0.8"
+crucible-parser = { path = "../crucible-parser" }
+walkdir = "2.4"
+regex = "1.11"
 
 [[bench]]
 name = "graph_relations_bench"
