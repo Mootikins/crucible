@@ -227,6 +227,222 @@ impl TaskFile {
     }
 }
 
+/// Task dependency graph
+///
+/// Represents the dependency relationships between tasks for topological sorting
+/// and scheduling. Maintains both forward (dependencies) and reverse (dependents) edges.
+#[derive(Debug, Clone)]
+pub struct TaskGraph {
+    /// Forward edges: task_id -> tasks it depends on
+    dependencies: HashMap<String, Vec<String>>,
+    /// Reverse edges: task_id -> tasks that depend on it
+    dependents: HashMap<String, Vec<String>>,
+}
+
+/// Error building task graph
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GraphError {
+    /// Task depends on a non-existent task ID
+    MissingDependency { task_id: String, missing_dep: String },
+    /// Dependency graph contains a cycle
+    CycleDetected { cycle: Vec<String> },
+}
+
+impl std::fmt::Display for GraphError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GraphError::MissingDependency { task_id, missing_dep } => {
+                write!(f, "Task '{}' depends on non-existent task '{}'", task_id, missing_dep)
+            }
+            GraphError::CycleDetected { cycle } => {
+                write!(f, "Dependency cycle detected: {}", cycle.join(" -> "))
+            }
+        }
+    }
+}
+
+impl std::error::Error for GraphError {}
+
+impl TaskGraph {
+    /// Build a task graph from a list of tasks
+    ///
+    /// # Arguments
+    /// * `tasks` - List of tasks to build graph from
+    ///
+    /// # Returns
+    /// TaskGraph with dependency edges, or error if dependencies are invalid
+    ///
+    /// # Errors
+    /// Returns `GraphError::MissingDependency` if a task depends on a non-existent task ID
+    pub fn from_tasks(tasks: &[TaskItem]) -> Result<Self, GraphError> {
+        let mut dependencies = HashMap::new();
+        let mut dependents = HashMap::new();
+
+        // Collect all task IDs for validation
+        let task_ids: std::collections::HashSet<_> = tasks.iter().map(|t| t.id.as_str()).collect();
+
+        // Build dependency graph
+        for task in tasks {
+            // Verify all dependencies exist
+            for dep in &task.deps {
+                if !task_ids.contains(dep.as_str()) {
+                    return Err(GraphError::MissingDependency {
+                        task_id: task.id.clone(),
+                        missing_dep: dep.clone(),
+                    });
+                }
+            }
+
+            // Add forward edges (dependencies)
+            dependencies.insert(task.id.clone(), task.deps.clone());
+
+            // Add reverse edges (dependents)
+            for dep in &task.deps {
+                dependents
+                    .entry(dep.clone())
+                    .or_insert_with(Vec::new)
+                    .push(task.id.clone());
+            }
+
+            // Initialize empty dependents list if not already present
+            dependents.entry(task.id.clone()).or_insert_with(Vec::new);
+        }
+
+        Ok(Self {
+            dependencies,
+            dependents,
+        })
+    }
+
+    /// Get tasks that this task depends on
+    pub fn dependencies_of(&self, id: &str) -> &[String] {
+        self.dependencies.get(id).map(|v| v.as_slice()).unwrap_or(&[])
+    }
+
+    /// Get tasks that depend on this task
+    pub fn dependents_of(&self, id: &str) -> &[String] {
+        self.dependents.get(id).map(|v| v.as_slice()).unwrap_or(&[])
+    }
+
+    /// Returns task IDs in topological order (dependencies before dependents)
+    ///
+    /// Uses Kahn's algorithm for topological sorting:
+    /// 1. Find all nodes with in-degree 0 (no dependencies)
+    /// 2. Add to result, remove their edges
+    /// 3. Repeat until empty
+    /// 4. If nodes remain with in-degree > 0, there's a cycle
+    ///
+    /// # Returns
+    /// Vector of task IDs in execution order
+    ///
+    /// # Errors
+    /// Returns `GraphError::CycleDetected` if graph contains a cycle
+    pub fn topo_sort(&self) -> Result<Vec<String>, GraphError> {
+        // Build in-degree map (count of dependencies for each task)
+        let mut in_degree: HashMap<String, usize> = HashMap::new();
+
+        // Initialize all tasks with their dependency count
+        for (task_id, deps) in &self.dependencies {
+            in_degree.insert(task_id.clone(), deps.len());
+        }
+
+        // Find all nodes with in-degree 0 (no dependencies)
+        let mut queue: Vec<String> = in_degree
+            .iter()
+            .filter(|(_, &count)| count == 0)
+            .map(|(id, _)| id.clone())
+            .collect();
+
+        // Sort queue for deterministic ordering when multiple nodes have same in-degree
+        queue.sort();
+
+        let mut result = Vec::new();
+
+        // Process nodes in topological order
+        while !queue.is_empty() {
+            // Remove first element (sorted order)
+            let task_id = queue.remove(0);
+            result.push(task_id.clone());
+
+            // For each dependent of this task
+            for dependent in self.dependents_of(&task_id) {
+                // Decrease in-degree
+                if let Some(count) = in_degree.get_mut(dependent) {
+                    *count -= 1;
+
+                    // If in-degree reaches 0, add to queue
+                    if *count == 0 {
+                        queue.push(dependent.clone());
+                        queue.sort(); // Keep sorted for deterministic order
+                    }
+                }
+            }
+        }
+
+        // Check for cycles: if not all nodes were processed, there's a cycle
+        // Nodes with in-degree > 0 are part of cycles
+        let unprocessed: Vec<String> = in_degree
+            .iter()
+            .filter(|(_, &count)| count > 0)
+            .map(|(id, _)| id.clone())
+            .collect();
+
+        if !unprocessed.is_empty() {
+            // Return the cycle nodes (sorted for deterministic error messages)
+            let mut cycle = unprocessed;
+            cycle.sort();
+            return Err(GraphError::CycleDetected { cycle });
+        }
+
+        Ok(result)
+    }
+
+    /// Find tasks ready to execute (pending + all deps satisfied)
+    ///
+    /// A task is ready if:
+    /// 1. Its status is Pending (not Done, InProgress, or Blocked)
+    /// 2. All of its dependencies have status Done
+    ///
+    /// # Arguments
+    /// * `tasks` - List of tasks to check for readiness
+    ///
+    /// # Returns
+    /// Vector of task IDs that are ready to execute
+    pub fn ready_tasks(&self, tasks: &[TaskItem]) -> Vec<String> {
+        // Build a map of task ID to status for fast lookups
+        let status_map: HashMap<&str, CheckboxStatus> = tasks
+            .iter()
+            .map(|t| (t.id.as_str(), t.status))
+            .collect();
+
+        let mut ready = Vec::new();
+
+        for task in tasks {
+            // Only consider pending tasks
+            if task.status != CheckboxStatus::Pending {
+                continue;
+            }
+
+            // Check if all dependencies are done
+            let all_deps_done = task.deps.iter().all(|dep_id| {
+                status_map
+                    .get(dep_id.as_str())
+                    .map(|&status| status == CheckboxStatus::Done)
+                    .unwrap_or(false)
+            });
+
+            if all_deps_done {
+                ready.push(task.id.clone());
+            }
+        }
+
+        // Sort for deterministic ordering
+        ready.sort();
+
+        ready
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -391,5 +607,491 @@ Some other content...
         assert_eq!(task_file.tasks[2].id, "pr-review");
         assert_eq!(task_file.tasks[2].deps, vec!["feat-a", "bug-b"]);
         assert_eq!(task_file.tasks[3].id, "task-4");
+    }
+
+    // TaskGraph tests
+    #[test]
+    fn build_graph_from_tasks() {
+        // Creates graph with nodes for each task
+        let tasks = vec![
+            TaskItem::with_id(
+                "task-1".to_string(),
+                "First task".to_string(),
+                CheckboxStatus::Pending,
+                vec![],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "task-2".to_string(),
+                "Second task".to_string(),
+                CheckboxStatus::Pending,
+                vec![],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "task-3".to_string(),
+                "Third task".to_string(),
+                CheckboxStatus::Pending,
+                vec!["task-1".to_string()],
+                HashMap::new(),
+            ),
+        ];
+
+        let graph = TaskGraph::from_tasks(&tasks).unwrap();
+
+        // All tasks should be in the graph
+        assert_eq!(graph.dependencies_of("task-1").len(), 0);
+        assert_eq!(graph.dependencies_of("task-2").len(), 0);
+        assert_eq!(graph.dependencies_of("task-3").len(), 1);
+    }
+
+    #[test]
+    fn graph_edges_match_deps() {
+        // Edges correctly represent dependencies
+        let tasks = vec![
+            TaskItem::with_id(
+                "task-1".to_string(),
+                "First".to_string(),
+                CheckboxStatus::Pending,
+                vec![],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "task-2".to_string(),
+                "Second".to_string(),
+                CheckboxStatus::Pending,
+                vec![],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "task-3".to_string(),
+                "Third".to_string(),
+                CheckboxStatus::Pending,
+                vec!["task-1".to_string(), "task-2".to_string()],
+                HashMap::new(),
+            ),
+        ];
+
+        let graph = TaskGraph::from_tasks(&tasks).unwrap();
+
+        // Check forward edges (dependencies)
+        let deps = graph.dependencies_of("task-3");
+        assert_eq!(deps.len(), 2);
+        assert!(deps.contains(&"task-1".to_string()));
+        assert!(deps.contains(&"task-2".to_string()));
+
+        // Check reverse edges (dependents)
+        assert_eq!(graph.dependents_of("task-1"), &["task-3"]);
+        assert_eq!(graph.dependents_of("task-2"), &["task-3"]);
+        assert!(graph.dependents_of("task-3").is_empty());
+    }
+
+    #[test]
+    fn missing_dep_returns_error() {
+        // Task depends on non-existent ID -> error
+        let tasks = vec![
+            TaskItem::with_id(
+                "task-1".to_string(),
+                "First".to_string(),
+                CheckboxStatus::Pending,
+                vec![],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "task-2".to_string(),
+                "Second".to_string(),
+                CheckboxStatus::Pending,
+                vec!["task-1".to_string(), "task-nonexistent".to_string()],
+                HashMap::new(),
+            ),
+        ];
+
+        let result = TaskGraph::from_tasks(&tasks);
+        assert!(result.is_err());
+
+        if let Err(GraphError::MissingDependency { task_id, missing_dep }) = result {
+            assert_eq!(task_id, "task-2");
+            assert_eq!(missing_dep, "task-nonexistent");
+        } else {
+            panic!("Expected MissingDependency error");
+        }
+    }
+
+    // Topological sort tests
+    #[test]
+    fn topo_sort_linear_deps() {
+        // A→B→C should return [A, B, C]
+        let tasks = vec![
+            TaskItem::with_id(
+                "A".to_string(),
+                "Task A".to_string(),
+                CheckboxStatus::Pending,
+                vec![],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "B".to_string(),
+                "Task B".to_string(),
+                CheckboxStatus::Pending,
+                vec!["A".to_string()],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "C".to_string(),
+                "Task C".to_string(),
+                CheckboxStatus::Pending,
+                vec!["B".to_string()],
+                HashMap::new(),
+            ),
+        ];
+
+        let graph = TaskGraph::from_tasks(&tasks).unwrap();
+        let order = graph.topo_sort().unwrap();
+
+        assert_eq!(order, vec!["A", "B", "C"]);
+    }
+
+    #[test]
+    fn topo_sort_diamond_deps() {
+        // A→B,C→D should return valid order (A before B,C before D)
+        //     A
+        //    / \
+        //   B   C
+        //    \ /
+        //     D
+        let tasks = vec![
+            TaskItem::with_id(
+                "A".to_string(),
+                "Task A".to_string(),
+                CheckboxStatus::Pending,
+                vec![],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "B".to_string(),
+                "Task B".to_string(),
+                CheckboxStatus::Pending,
+                vec!["A".to_string()],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "C".to_string(),
+                "Task C".to_string(),
+                CheckboxStatus::Pending,
+                vec!["A".to_string()],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "D".to_string(),
+                "Task D".to_string(),
+                CheckboxStatus::Pending,
+                vec!["B".to_string(), "C".to_string()],
+                HashMap::new(),
+            ),
+        ];
+
+        let graph = TaskGraph::from_tasks(&tasks).unwrap();
+        let order = graph.topo_sort().unwrap();
+
+        // Verify A is first
+        assert_eq!(order[0], "A");
+        // Verify D is last
+        assert_eq!(order[3], "D");
+        // Verify B and C come after A and before D
+        let b_pos = order.iter().position(|x| x == "B").unwrap();
+        let c_pos = order.iter().position(|x| x == "C").unwrap();
+        assert!(b_pos > 0 && b_pos < 3);
+        assert!(c_pos > 0 && c_pos < 3);
+    }
+
+    #[test]
+    fn topo_sort_independent_tasks() {
+        // Tasks with no dependencies can be in any order
+        let tasks = vec![
+            TaskItem::with_id(
+                "X".to_string(),
+                "Task X".to_string(),
+                CheckboxStatus::Pending,
+                vec![],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "Y".to_string(),
+                "Task Y".to_string(),
+                CheckboxStatus::Pending,
+                vec![],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "Z".to_string(),
+                "Task Z".to_string(),
+                CheckboxStatus::Pending,
+                vec![],
+                HashMap::new(),
+            ),
+        ];
+
+        let graph = TaskGraph::from_tasks(&tasks).unwrap();
+        let order = graph.topo_sort().unwrap();
+
+        // All tasks should be in the result
+        assert_eq!(order.len(), 3);
+        assert!(order.contains(&"X".to_string()));
+        assert!(order.contains(&"Y".to_string()));
+        assert!(order.contains(&"Z".to_string()));
+    }
+
+    // Cycle detection tests
+    #[test]
+    fn cycle_detection_self_reference() {
+        // Task depends on itself -> error
+        let tasks = vec![
+            TaskItem::with_id(
+                "A".to_string(),
+                "Task A".to_string(),
+                CheckboxStatus::Pending,
+                vec!["A".to_string()],
+                HashMap::new(),
+            ),
+        ];
+
+        let graph = TaskGraph::from_tasks(&tasks).unwrap();
+        let result = graph.topo_sort();
+
+        assert!(result.is_err());
+        if let Err(GraphError::CycleDetected { cycle }) = result {
+            assert!(!cycle.is_empty());
+            assert!(cycle.contains(&"A".to_string()));
+        } else {
+            panic!("Expected CycleDetected error");
+        }
+    }
+
+    #[test]
+    fn cycle_detection_two_node() {
+        // A→B→A should return error
+        let tasks = vec![
+            TaskItem::with_id(
+                "A".to_string(),
+                "Task A".to_string(),
+                CheckboxStatus::Pending,
+                vec!["B".to_string()],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "B".to_string(),
+                "Task B".to_string(),
+                CheckboxStatus::Pending,
+                vec!["A".to_string()],
+                HashMap::new(),
+            ),
+        ];
+
+        let graph = TaskGraph::from_tasks(&tasks).unwrap();
+        let result = graph.topo_sort();
+
+        assert!(result.is_err());
+        if let Err(GraphError::CycleDetected { cycle }) = result {
+            assert!(!cycle.is_empty());
+            // Both nodes should be in the cycle
+            assert!(cycle.contains(&"A".to_string()));
+            assert!(cycle.contains(&"B".to_string()));
+        } else {
+            panic!("Expected CycleDetected error");
+        }
+    }
+
+    #[test]
+    fn cycle_detection_three_node() {
+        // A→B→C→A should return error
+        let tasks = vec![
+            TaskItem::with_id(
+                "A".to_string(),
+                "Task A".to_string(),
+                CheckboxStatus::Pending,
+                vec!["C".to_string()],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "B".to_string(),
+                "Task B".to_string(),
+                CheckboxStatus::Pending,
+                vec!["A".to_string()],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "C".to_string(),
+                "Task C".to_string(),
+                CheckboxStatus::Pending,
+                vec!["B".to_string()],
+                HashMap::new(),
+            ),
+        ];
+
+        let graph = TaskGraph::from_tasks(&tasks).unwrap();
+        let result = graph.topo_sort();
+
+        assert!(result.is_err());
+        if let Err(GraphError::CycleDetected { cycle }) = result {
+            assert!(!cycle.is_empty());
+            // All three nodes should be in the cycle
+            assert!(cycle.contains(&"A".to_string()));
+            assert!(cycle.contains(&"B".to_string()));
+            assert!(cycle.contains(&"C".to_string()));
+        } else {
+            panic!("Expected CycleDetected error");
+        }
+    }
+
+    #[test]
+    fn no_cycle_returns_ok() {
+        // Valid graph without cycles should succeed
+        let tasks = vec![
+            TaskItem::with_id(
+                "A".to_string(),
+                "Task A".to_string(),
+                CheckboxStatus::Pending,
+                vec![],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "B".to_string(),
+                "Task B".to_string(),
+                CheckboxStatus::Pending,
+                vec!["A".to_string()],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "C".to_string(),
+                "Task C".to_string(),
+                CheckboxStatus::Pending,
+                vec!["B".to_string()],
+                HashMap::new(),
+            ),
+        ];
+
+        let graph = TaskGraph::from_tasks(&tasks).unwrap();
+        let result = graph.topo_sort();
+
+        assert!(result.is_ok());
+        let order = result.unwrap();
+        assert_eq!(order, vec!["A", "B", "C"]);
+    }
+
+    // ready_tasks tests
+    #[test]
+    fn ready_tasks_no_deps() {
+        // Tasks with no deps are ready (if pending)
+        let tasks = vec![
+            TaskItem::with_id(
+                "task-1".to_string(),
+                "First task".to_string(),
+                CheckboxStatus::Pending,
+                vec![],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "task-2".to_string(),
+                "Second task".to_string(),
+                CheckboxStatus::Pending,
+                vec![],
+                HashMap::new(),
+            ),
+        ];
+
+        let graph = TaskGraph::from_tasks(&tasks).unwrap();
+        let ready = graph.ready_tasks(&tasks);
+
+        assert_eq!(ready.len(), 2);
+        assert!(ready.contains(&"task-1".to_string()));
+        assert!(ready.contains(&"task-2".to_string()));
+    }
+
+    #[test]
+    fn ready_tasks_all_deps_done() {
+        // Task with all deps Done is ready
+        let tasks = vec![
+            TaskItem::with_id(
+                "task-1".to_string(),
+                "First task".to_string(),
+                CheckboxStatus::Done,
+                vec![],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "task-2".to_string(),
+                "Second task".to_string(),
+                CheckboxStatus::Done,
+                vec![],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "task-3".to_string(),
+                "Third task".to_string(),
+                CheckboxStatus::Pending,
+                vec!["task-1".to_string(), "task-2".to_string()],
+                HashMap::new(),
+            ),
+        ];
+
+        let graph = TaskGraph::from_tasks(&tasks).unwrap();
+        let ready = graph.ready_tasks(&tasks);
+
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0], "task-3");
+    }
+
+    #[test]
+    fn ready_tasks_excludes_in_progress() {
+        // InProgress tasks not in ready list
+        let tasks = vec![
+            TaskItem::with_id(
+                "task-1".to_string(),
+                "First task".to_string(),
+                CheckboxStatus::InProgress,
+                vec![],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "task-2".to_string(),
+                "Second task".to_string(),
+                CheckboxStatus::Pending,
+                vec![],
+                HashMap::new(),
+            ),
+        ];
+
+        let graph = TaskGraph::from_tasks(&tasks).unwrap();
+        let ready = graph.ready_tasks(&tasks);
+
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0], "task-2");
+    }
+
+    #[test]
+    fn ready_tasks_excludes_blocked() {
+        // Blocked tasks not in ready list
+        let tasks = vec![
+            TaskItem::with_id(
+                "task-1".to_string(),
+                "First task".to_string(),
+                CheckboxStatus::Blocked,
+                vec![],
+                HashMap::new(),
+            ),
+            TaskItem::with_id(
+                "task-2".to_string(),
+                "Second task".to_string(),
+                CheckboxStatus::Pending,
+                vec![],
+                HashMap::new(),
+            ),
+        ];
+
+        let graph = TaskGraph::from_tasks(&tasks).unwrap();
+        let ready = graph.ready_tasks(&tasks);
+
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0], "task-2");
     }
 }

@@ -25,9 +25,13 @@ release-cli:
 
 # === Test ===
 
-# Run all tests
+# Run all tests (summary only)
 test:
-    cargo test
+    cargo test --workspace 2>&1 | awk '/^test result:/ {passed+=$4; failed+=$6} END {print "✓ PASSED:", passed, "✗ FAILED:", failed}'
+
+# Run all tests (full output)
+test-full:
+    cargo test --workspace
 
 # Run tests for a specific crate
 test-crate crate:
