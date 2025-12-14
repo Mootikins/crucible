@@ -28,6 +28,8 @@ pub enum EmbeddingProviderType {
     Burn,
     /// LlamaCpp provider for GGUF models (local, GPU-accelerated)
     LlamaCpp,
+    /// No provider configured (used when migrating from legacy config)
+    None,
 }
 
 /// Embedding configuration - pragmatic settings for performance and cost
@@ -96,6 +98,7 @@ impl EmbeddingProviderType {
             Self::Anthropic => "anthropic",
             Self::Burn => "burn",
             Self::LlamaCpp => "llamacpp",
+            Self::None => "none",
         }
     }
 }
@@ -114,6 +117,7 @@ impl EmbeddingConfig {
             EmbeddingProviderType::Mock => "mock-test-model",
             EmbeddingProviderType::Burn => "nomic-embed-text",
             EmbeddingProviderType::LlamaCpp => "nomic-embed-text-v1.5.Q8_0.gguf",
+            EmbeddingProviderType::None => "", // Not configured
         })
     }
 
@@ -143,6 +147,7 @@ impl EmbeddingConfig {
             EmbeddingProviderType::Mock => None,                      // Mock provider
             EmbeddingProviderType::Burn => None,                      // Local GPU provider
             EmbeddingProviderType::LlamaCpp => None,                  // Local GPU provider
+            EmbeddingProviderType::None => None,                      // Not configured
         }
     }
 
@@ -155,6 +160,7 @@ impl EmbeddingConfig {
                 | EmbeddingProviderType::Mock
                 | EmbeddingProviderType::Burn
                 | EmbeddingProviderType::LlamaCpp
+                | EmbeddingProviderType::None
         )
     }
 
@@ -184,6 +190,7 @@ impl EmbeddingConfig {
                 | EmbeddingProviderType::VertexAI => 8,
                 EmbeddingProviderType::Mock => 16,
                 EmbeddingProviderType::Custom => 4,
+                EmbeddingProviderType::None => 1, // Not configured, minimal
             }
         })
     }
