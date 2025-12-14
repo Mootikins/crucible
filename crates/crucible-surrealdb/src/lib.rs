@@ -89,6 +89,14 @@ pub use deduplication_reporting::{
 pub mod schema_types;
 pub use schema_types::*;
 
+// Task harness types
+pub mod task_types;
+pub use task_types::{TaskDependency, TaskFileRecord, TaskHistory, TaskRecord};
+
+// Task storage
+pub mod task_storage;
+pub use task_storage::{MockTaskStorage, TaskStorage};
+
 // Public database and storage APIs (high-level interfaces)
 pub mod database;
 pub use database::SurrealEmbeddingDatabase;
