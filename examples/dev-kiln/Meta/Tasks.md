@@ -1,7 +1,7 @@
 ---
 type: tasks
 status: active
-updated: 2025-12-13
+updated: 2025-12-14
 ---
 
 # Project Tasks
@@ -10,10 +10,13 @@ updated: 2025-12-13
 
 ### Near Term
 - [ ] **Config naming cleanup** - Rename CliConfig types to avoid confusion
-- [ ] **Fix watch mode tests** - Ignored tests need to be fixed and triggered processing verified
-- [ ] **Provider refactor** - Unify embedding/LLM providers with capability-based design
-  - Models have specific capabilities (embeddings, chat, vision, etc.)
-  - Provider trait hierarchy instead of separate embedding vs LLM providers
+- [x] **Fix watch mode tests** - Implemented timeout patterns for watch tests ✅
+- [x] **Provider refactor** - Unify embedding/LLM providers with capability-based design ✅
+  - [x] Phase 0: Library evaluation (genai, kalosm) - Decided: build our own
+  - [x] Track A: Unified config types (BackendType, ProviderConfig, ProvidersConfig)
+  - [x] Track B: Extension traits (Provider, CanEmbed, CanChat)
+  - [x] Track C: Unified factory and adapters
+  - [x] Track D: CLI integration with migration support
 
 ### Medium Term
 - [ ] Add pipeline error context (Phase 2/4/5 errors lack file path)
@@ -32,6 +35,14 @@ updated: 2025-12-13
 
 ---
 
+## Completed (2025-12-14)
+
+- [x] **Provider refactor complete** - Unified embedding/LLM providers
+  - Flat `[providers.name]` config format
+  - Unified model discovery with caching
+  - Automatic migration from legacy `[embedding]` section
+  - CLI integration with backward compatibility
+
 ## Completed (2025-12-13)
 
 - [x] Path traversal security fix (NoteTools)
@@ -47,5 +58,6 @@ updated: 2025-12-13
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2025-12-14 | Build own unified provider layer vs genai/kalosm | genai is alpha (0.5.0-alpha.5), kalosm overlaps fastembed, both add 300+ deps |
 | 2025-12-13 | Keep Anthropic provider, refactor to capability-based | Will need LLM providers too, not just embeddings |
 | 2025-12-13 | Security policies deferred to post-MVP | Single-user local operation for MVP |
