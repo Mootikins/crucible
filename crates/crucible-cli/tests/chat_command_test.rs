@@ -8,6 +8,7 @@ use crucible_cli::commands::chat;
 use crucible_cli::config::{CliAppConfig, CliConfig};
 use crucible_config::{
     AcpConfig, ChatConfig, EmbeddingConfig, EmbeddingProviderType, LlmConfig, ProcessingConfig,
+    ProvidersConfig,
 };
 use tempfile::TempDir;
 
@@ -39,6 +40,7 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
         cli: CliAppConfig::default(),
         logging: None,
         processing: ProcessingConfig::default(),
+        providers: ProvidersConfig::default(),
     };
 
     // This should NOT panic with "lock hold by current process" error
@@ -122,6 +124,7 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
         cli: CliAppConfig::default(),
         logging: None,
         processing: ProcessingConfig::default(),
+        providers: ProvidersConfig::default(),
     };
 
     // Try to execute with a query - should fail at agent discovery,
