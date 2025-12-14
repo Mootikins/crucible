@@ -103,10 +103,10 @@ impl InternalAgentHandle {
     }
 
     /// Helper to convert LLM tool calls to chat tool calls
-    fn convert_tool_calls(llm_calls: &[LlmToolCall]) -> Vec<crucible_core::traits::chat::ToolCall> {
+    fn convert_tool_calls(llm_calls: &[LlmToolCall]) -> Vec<crucible_core::traits::chat::ChatToolCall> {
         llm_calls
             .iter()
-            .map(|tc| crucible_core::traits::chat::ToolCall {
+            .map(|tc| crucible_core::traits::chat::ChatToolCall {
                 name: tc.function.name.clone(),
                 arguments: serde_json::from_str(&tc.function.arguments).ok(),
                 id: Some(tc.id.clone()),

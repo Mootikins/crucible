@@ -72,7 +72,6 @@ pub use types::{
     StreamChunk,
     StreamMetadata,
     ToolDefinition,
-    ToolDescriptor,
     ToolExample,
     ToolInvocation,
     ToolOutput,
