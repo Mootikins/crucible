@@ -4,6 +4,7 @@ pub mod chat;
 pub mod cluster;
 pub mod mcp;
 pub mod process;
+pub mod tasks;
 
 // Existing commands (kept for compatibility)
 pub mod config;
