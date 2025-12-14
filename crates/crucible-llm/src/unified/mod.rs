@@ -23,10 +23,14 @@
 //! ```
 
 mod adapters;
+mod discovery;
 mod factory;
+mod model_cache;
 
 pub use adapters::{ChatProviderAdapter, EmbeddingProviderAdapter, UnifiedProvider};
+pub use discovery::UnifiedModelDiscovery;
 pub use factory::{
     create_chat_provider_unified, create_embedding_provider_unified, create_provider_by_name,
     create_unified_provider,
 };
+pub use model_cache::{CachedModels, ModelCache};
