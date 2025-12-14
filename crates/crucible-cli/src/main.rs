@@ -8,16 +8,77 @@ use crucible_cli::{
     cli::{Cli, ClusterActions, Commands},
     commands::{self, cluster::ClusterAction},
     config,
+    factories,
+    sync::quick_sync_check,
 };
 
-/// Process files using the integrated ChangeDetectionService
+/// Process files with change detection on startup
 ///
-/// This function uses the new ChangeDetectionService that integrates
-/// FileScanningService with ChangeDetector and SurrealHashLookup for
-/// efficient selective processing based on ChangeSet.
-// Streamlined for Phase 5: File processing disabled (removed ChangeDetectionService dependency)
-async fn process_files_with_change_detection(_config: &crate::config::CliConfig) -> Result<()> {
-    debug!("File processing disabled for Phase 5 integration testing");
+/// Uses the quick_sync_check to detect files needing processing,
+/// then processes them through the NotePipeline.
+///
+/// # Arguments
+///
+/// * `config` - CLI configuration with kiln path and settings
+///
+/// # Returns
+///
+/// Success or an error describing what failed
+async fn process_files_with_change_detection(config: &crate::config::CliConfig) -> Result<()> {
+    // Step 1: Create storage client
+    let storage_client = factories::create_surrealdb_storage(config).await?;
+    debug!("Created SurrealDB storage client");
+
+    // Step 2: Initialize schema
+    factories::initialize_surrealdb_schema(&storage_client).await?;
+    debug!("Initialized SurrealDB schema");
+
+    // Step 3: Run quick sync check to find files needing processing
+    let kiln_path = &config.kiln_path;
+    let sync_status = quick_sync_check(&storage_client, kiln_path).await?;
+
+    debug!(
+        "Sync check complete: {} fresh, {} stale, {} new, {} deleted",
+        sync_status.fresh_count,
+        sync_status.stale_files.len(),
+        sync_status.new_files.len(),
+        sync_status.deleted_files.len()
+    );
+
+    // Step 4: Process files if needed
+    if sync_status.needs_processing() {
+        let pending = sync_status.pending_count();
+        info!("Processing {} files...", pending);
+
+        // Create pipeline for processing
+        let pipeline = factories::create_pipeline(storage_client, config, false).await?;
+
+        // Process each file
+        let files_to_process = sync_status.files_to_process();
+        let mut success_count = 0;
+        let mut failure_count = 0;
+
+        for file in files_to_process {
+            match pipeline.process(&file).await {
+                Ok(_) => {
+                    debug!("Successfully processed: {}", file.display());
+                    success_count += 1;
+                }
+                Err(e) => {
+                    warn!("Failed to process {}: {}", file.display(), e);
+                    failure_count += 1;
+                }
+            }
+        }
+
+        info!(
+            "File processing complete: {} succeeded, {} failed",
+            success_count, failure_count
+        );
+    } else {
+        debug!("No files need processing - all up to date");
+    }
+
     Ok(())
 }
 /// Parse log level string to LevelFilter
@@ -118,9 +179,6 @@ async fn main() -> Result<()> {
     if cli.verbose {
         config.log_config();
     }
-
-    // Database path override no longer supported - path is derived from kiln_path
-    // TODO: Update CLI args to use different approach if custom database paths needed
 
     // Note: Storage/Core initialization moved to individual commands that need it.
     // Creating it here caused database lock conflicts as multiple commands would
