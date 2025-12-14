@@ -16,8 +16,8 @@ crucible-rune = { workspace = true }
 crucible-surrealdb = { workspace = true }
 tq = { workspace = true }
 
-# MCP support
-rmcp = { version = "0.9.0", features = ["macros", "server", "transport-io", "transport-sse-server"] }
+# MCP support (server for hosting, client for calling upstream)
+rmcp = { version = "0.9.0", features = ["macros", "server", "client", "transport-io", "transport-sse-server", "transport-child-process", "transport-sse-client"] }
 
 # Serialization
 serde = { workspace = true }
