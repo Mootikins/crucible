@@ -12,8 +12,21 @@ name = "crucible_llm"
 path = "src/lib.rs"
 
 [features]
-# Enable test utilities (MockEmbeddingProvider) for integration tests in other crates
+# Default features - include fastembed for easy out-of-box experience
+default = ["fastembed"]
+
+# Enable test utilities (MockEmbeddingProvider, MockConstrainedProvider) for integration tests
 test-utils = []
+
+# Enable e2e tests that require local model configuration (GGUF models in ~/models/)
+# These tests are skipped unless this feature is enabled AND a local model exists
+local-config = ["llama-cpp"]
+
+# Enable local embedding tests (requires local embedding model)
+local-config-embedding = ["llama-cpp"]
+
+# FastEmbed local embedding provider (CPU, easy setup, no API keys needed)
+fastembed = ["dep:fastembed"]
 
 # Burn embedding provider with different backend options
 burn = ["dep:burn", "dep:burn-tensor", "dep:burn-import"]
@@ -33,6 +46,7 @@ llama-cpp-metal = ["llama-cpp", "llama-cpp-2/metal"]
 llama-cpp-gpu = ["llama-cpp-vulkan"]
 # Note: llama-cpp-2 doesn't have hipblas feature - use vulkan for AMD GPUs
 # llama-cpp-rocm = ["llama-cpp", "llama-cpp-2/hipblas"]
+
 
 [dependencies]
 # Core types and traits
@@ -96,8 +110,8 @@ uuid = { workspace = true }
 # Logging
 tracing = { workspace = true }
 
-# FastEmbed for local embeddings and reranking
-fastembed = "5.2"
+# FastEmbed for local embeddings and reranking (optional, feature-gated)
+fastembed = { version = "5.2", optional = true }
 
 # Path expansion (for tilde expansion)
 shellexpand = "3.1"
