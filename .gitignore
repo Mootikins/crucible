@@ -68,3 +68,6 @@ tree/
 .cargo/*
 !.cargo/config.toml
 WORKTREE.md
+
+# Local thoughts/plans (not committed)
+thoughts/
