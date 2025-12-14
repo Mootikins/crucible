@@ -128,7 +128,10 @@ impl AstConverter {
             for child in node.children.iter() {
                 if child.cast::<MdListItem>().is_some() {
                     let item_text = Self::extract_text(child);
-                    list_block.add_item(ListItem::new(item_text, 0));
+                    let (checkbox_status, cleaned_text) = Self::extract_checkbox(&item_text);
+                    let mut item = ListItem::new(cleaned_text, 0);
+                    item.checkbox_status = checkbox_status;
+                    list_block.add_item(item);
                 }
             }
 
@@ -144,7 +147,10 @@ impl AstConverter {
             for child in node.children.iter() {
                 if child.cast::<MdListItem>().is_some() {
                     let item_text = Self::extract_text(child);
-                    list_block.add_item(ListItem::new(item_text, 0));
+                    let (checkbox_status, cleaned_text) = Self::extract_checkbox(&item_text);
+                    let mut item = ListItem::new(cleaned_text, 0);
+                    item.checkbox_status = checkbox_status;
+                    list_block.add_item(item);
                 }
             }
 
@@ -204,6 +210,37 @@ impl AstConverter {
         }
 
         text
+    }
+
+    /// Extract checkbox status and cleaned text from list item content
+    /// Returns (checkbox_status, cleaned_text)
+    fn extract_checkbox(text: &str) -> (Option<CheckboxStatus>, String) {
+        let trimmed = text.trim();
+
+        // Check for checkbox pattern: [X] where X is a single character
+        if trimmed.len() >= 3 && trimmed.starts_with('[') {
+            if let Some(close_bracket) = trimmed[1..].find(']') {
+                // close_bracket is relative to trimmed[1..], so add 1 for actual position
+                let actual_pos = close_bracket + 1;
+                if actual_pos == 2 {
+                    // Single character checkbox: [X]
+                    let checkbox_char = trimmed.chars().nth(1).unwrap();
+                    if let Some(status) = CheckboxStatus::from_char(checkbox_char) {
+                        // Extract the text after the checkbox (skip "[X] " or "[X]")
+                        let remaining = if trimmed.len() > 3 && trimmed.chars().nth(3) == Some(' ') {
+                            trimmed[4..].to_string()
+                        } else if trimmed.len() > 3 {
+                            trimmed[3..].to_string()
+                        } else {
+                            String::new()
+                        };
+                        return (Some(status), remaining);
+                    }
+                }
+            }
+        }
+
+        (None, text.to_string())
     }
 
     /// Extract table structure: (rows, columns, headers)
@@ -285,6 +322,7 @@ impl AstConverter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::parser::CheckboxStatus;
     use markdown_it::MarkdownIt;
 
     fn setup_parser() -> MarkdownIt {
@@ -327,5 +365,95 @@ mod tests {
 
         // "Title" + "This is a test paragraph" = 6 words
         assert!(content.word_count >= 6);
+    }
+
+    #[test]
+    fn parse_pending_checkbox() {
+        let md = setup_parser();
+        let ast = md.parse("- [ ] task");
+
+        let content = AstConverter::convert(&ast).unwrap();
+
+        assert_eq!(content.lists.len(), 1);
+        assert_eq!(content.lists[0].items.len(), 1);
+        assert_eq!(
+            content.lists[0].items[0].checkbox_status,
+            Some(CheckboxStatus::Pending)
+        );
+    }
+
+    #[test]
+    fn parse_done_checkbox() {
+        let md = setup_parser();
+        let ast = md.parse("- [x] task");
+
+        let content = AstConverter::convert(&ast).unwrap();
+
+        assert_eq!(content.lists.len(), 1);
+        assert_eq!(content.lists[0].items.len(), 1);
+        assert_eq!(
+            content.lists[0].items[0].checkbox_status,
+            Some(CheckboxStatus::Done)
+        );
+    }
+
+    #[test]
+    fn parse_in_progress_checkbox() {
+        let md = setup_parser();
+        let ast = md.parse("- [/] task");
+
+        let content = AstConverter::convert(&ast).unwrap();
+
+        assert_eq!(content.lists.len(), 1);
+        assert_eq!(content.lists[0].items.len(), 1);
+        assert_eq!(
+            content.lists[0].items[0].checkbox_status,
+            Some(CheckboxStatus::InProgress)
+        );
+    }
+
+    #[test]
+    fn parse_cancelled_checkbox() {
+        let md = setup_parser();
+        let ast = md.parse("- [-] task");
+
+        let content = AstConverter::convert(&ast).unwrap();
+
+        assert_eq!(content.lists.len(), 1);
+        assert_eq!(content.lists[0].items.len(), 1);
+        assert_eq!(
+            content.lists[0].items[0].checkbox_status,
+            Some(CheckboxStatus::Cancelled)
+        );
+    }
+
+    #[test]
+    fn parse_blocked_checkbox() {
+        let md = setup_parser();
+        let ast = md.parse("- [!] task");
+
+        let content = AstConverter::convert(&ast).unwrap();
+
+        assert_eq!(content.lists.len(), 1);
+        assert_eq!(content.lists[0].items.len(), 1);
+        assert_eq!(
+            content.lists[0].items[0].checkbox_status,
+            Some(CheckboxStatus::Blocked)
+        );
+    }
+
+    #[test]
+    fn parse_uppercase_x_as_done() {
+        let md = setup_parser();
+        let ast = md.parse("- [X] task");
+
+        let content = AstConverter::convert(&ast).unwrap();
+
+        assert_eq!(content.lists.len(), 1);
+        assert_eq!(content.lists[0].items.len(), 1);
+        assert_eq!(
+            content.lists[0].items[0].checkbox_status,
+            Some(CheckboxStatus::Done)
+        );
     }
 }
