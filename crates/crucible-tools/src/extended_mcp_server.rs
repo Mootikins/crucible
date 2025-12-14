@@ -1013,6 +1013,35 @@ impl ExtendedMcpService {
     pub fn server(&self) -> &ExtendedMcpServer {
         &self.inner
     }
+
+    /// Serve via stdio transport (stdin/stdout)
+    ///
+    /// This blocks until the connection is closed.
+    pub async fn serve_stdio(self) -> Result<(), anyhow::Error> {
+        use rmcp::ServiceExt;
+
+        let _service = self
+            .serve((tokio::io::stdin(), tokio::io::stdout()))
+            .await?;
+
+        // Wait forever - the service will handle requests until EOF or error
+        std::future::pending::<()>().await;
+        Ok(())
+    }
+
+    /// Serve via SSE transport on the specified address
+    ///
+    /// Returns when the server receives a shutdown signal (Ctrl+C).
+    pub async fn serve_sse(self, addr: std::net::SocketAddr) -> Result<(), anyhow::Error> {
+        use rmcp::transport::SseServer;
+
+        let sse_server = SseServer::serve(addr).await?;
+        let _ct = sse_server.with_service(move || self.clone());
+
+        // Wait for shutdown signal
+        tokio::signal::ctrl_c().await?;
+        Ok(())
+    }
 }
 
 impl ServerHandler for ExtendedMcpService {

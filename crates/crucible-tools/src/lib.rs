@@ -36,6 +36,7 @@
 pub mod clustering;
 pub mod extended_mcp_server;
 pub mod kiln;
+pub mod mcp_client;
 pub mod mcp_server;
 pub mod notes;
 pub mod output_filter;
@@ -48,6 +49,7 @@ pub mod utils;
 pub use clustering::ClusteringTools;
 pub use extended_mcp_server::{ExtendedMcpServer, ExtendedMcpService};
 pub use kiln::KilnTools;
+pub use mcp_client::{create_stdio_executor, create_stdio_executor_with_env, RmcpExecutor};
 pub use mcp_server::CrucibleMcpServer;
 pub use notes::NoteTools;
 pub use search::SearchTools;

@@ -7,6 +7,9 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+# Core traits and types
+crucible-core = { path = "../crucible-core" }
+
 # Rune scripting
 rune = "0.14"
 rune-modules = { version = "0.14", features = ["json", "toml"] }
