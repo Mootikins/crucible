@@ -2,7 +2,7 @@
 
 use crate::components::{
     AcpConfig, ChatConfig, CliConfig, DiscoveryPathsConfig, EmbeddingConfig, EmbeddingProviderType,
-    GatewayConfig, HooksConfig, LlmConfig, LlmProvider, LlmProviderType,
+    GatewayConfig, HooksConfig, LlmConfig, LlmProvider, LlmProviderType, ProvidersConfig,
 };
 use crate::includes::IncludeConfig;
 use crate::{EnrichmentConfig, ProfileConfig};
@@ -616,6 +616,13 @@ pub struct CliAppConfig {
     #[serde(default)]
     pub llm: LlmConfig,
 
+    /// Unified provider configuration (new format)
+    ///
+    /// Supports both embedding and chat providers with capability-based traits.
+    /// This is the preferred way to configure providers.
+    #[serde(default)]
+    pub providers: ProvidersConfig,
+
     /// CLI-specific configuration
     #[serde(default)]
     pub cli: CliConfig,
@@ -642,6 +649,7 @@ impl Default for CliAppConfig {
             acp: AcpConfig::default(),
             chat: ChatConfig::default(),
             llm: LlmConfig::default(),
+            providers: ProvidersConfig::default(),
             cli: CliConfig::default(),
             logging: None,
             processing: ProcessingConfig::default(),
@@ -1023,6 +1031,54 @@ verbose = false
                 _ => None,
             },
         })
+    }
+
+    /// Get the effective embedding provider.
+    ///
+    /// Priority:
+    /// 1. New `providers` section with embedding capability
+    /// 2. Legacy `embedding` section
+    ///
+    /// Returns the provider name and config if found.
+    pub fn effective_embedding_provider(
+        &self,
+    ) -> Option<(String, crate::components::ProviderConfig)> {
+        // First, check the new providers config
+        if let Some((name, config)) = self.providers.first_embedding_provider() {
+            return Some((name.clone(), config.clone()));
+        }
+
+        // Fall back to legacy embedding config - convert to ProviderConfig
+        if self.embedding.provider != EmbeddingProviderType::None {
+            let provider_config =
+                crate::components::ProviderConfig::from_legacy_embedding(&self.embedding);
+            return Some(("legacy".to_string(), provider_config));
+        }
+
+        None
+    }
+
+    /// Migrate legacy config to new format.
+    ///
+    /// If legacy `[embedding]` section is populated but `[providers]` is empty,
+    /// automatically migrate to the new format. Emits a warning suggesting
+    /// the user update their config file.
+    pub fn migrate_legacy_config(&mut self) {
+        // If new providers section is empty and legacy embedding is configured
+        if !self.providers.has_providers()
+            && self.embedding.provider != EmbeddingProviderType::None
+        {
+            let provider_config =
+                crate::components::ProviderConfig::from_legacy_embedding(&self.embedding);
+
+            self.providers.add("default", provider_config);
+            self.providers.default_embedding = Some("default".to_string());
+
+            warn!(
+                "Migrated legacy [embedding] config to [providers.default]. \
+                 Consider updating your config file to use the new [providers] section."
+            );
+        }
     }
 }
 
@@ -1730,5 +1786,128 @@ max_tokens = 4096
             crate::components::LlmProviderType::Ollama
         );
         assert_eq!(effective.endpoint, "http://localhost:11434");
+    }
+
+    // === Phase 4: Unified Providers TDD Tests ===
+
+    #[test]
+    fn test_new_providers_config_loads() {
+        let toml = r#"
+kiln_path = "/tmp/test"
+
+[providers]
+default_embedding = "ollama"
+
+[providers.ollama]
+backend = "ollama"
+endpoint = "http://localhost:11434"
+
+[providers.ollama.models]
+embedding = "nomic-embed-text"
+"#;
+        let config: CliAppConfig = toml::from_str(toml).unwrap();
+
+        assert!(config.providers.get("ollama").is_some());
+        assert_eq!(
+            config.providers.default_embedding,
+            Some("ollama".to_string())
+        );
+
+        let ollama = config.providers.get("ollama").unwrap();
+        assert_eq!(ollama.backend, crate::components::BackendType::Ollama);
+        assert_eq!(
+            ollama.embedding_model(),
+            Some("nomic-embed-text".to_string())
+        );
+    }
+
+    #[test]
+    fn test_legacy_embedding_config_migrates() {
+        let toml = r#"
+kiln_path = "/tmp/test"
+
+[embedding]
+provider = "ollama"
+api_url = "http://localhost:11434"
+model = "nomic-embed-text"
+"#;
+        let mut config: CliAppConfig = toml::from_str(toml).unwrap();
+        config.migrate_legacy_config();
+
+        // Should have migrated to providers section
+        assert!(config.providers.has_providers());
+        let (name, provider) = config.providers.first_embedding_provider().unwrap();
+        assert_eq!(name, "default");
+        assert_eq!(provider.backend, crate::components::BackendType::Ollama);
+    }
+
+    #[test]
+    fn test_effective_embedding_provider_prefers_new_config() {
+        let toml = r#"
+kiln_path = "/tmp/test"
+
+[embedding]
+provider = "fastembed"
+model = "legacy-model"
+
+[providers]
+default_embedding = "new-provider"
+
+[providers.new-provider]
+backend = "ollama"
+endpoint = "http://localhost:11434"
+
+[providers.new-provider.models]
+embedding = "new-model"
+"#;
+        let config: CliAppConfig = toml::from_str(toml).unwrap();
+
+        // Should prefer new providers config over legacy
+        let (name, provider) = config.effective_embedding_provider().unwrap();
+        assert_eq!(name, "new-provider");
+        assert_eq!(provider.backend, crate::components::BackendType::Ollama);
+        assert_eq!(provider.embedding_model(), Some("new-model".to_string()));
+    }
+
+    #[test]
+    fn test_effective_embedding_provider_falls_back_to_legacy() {
+        let toml = r#"
+kiln_path = "/tmp/test"
+
+[embedding]
+provider = "fastembed"
+model = "legacy-model"
+batch_size = 32
+"#;
+        let config: CliAppConfig = toml::from_str(toml).unwrap();
+
+        // Should fall back to legacy embedding config
+        let (name, provider) = config.effective_embedding_provider().unwrap();
+        assert_eq!(name, "legacy");
+        assert_eq!(provider.backend, crate::components::BackendType::FastEmbed);
+        assert_eq!(provider.embedding_model(), Some("legacy-model".to_string()));
+        assert_eq!(provider.batch_size(), 32);
+    }
+
+    #[test]
+    fn test_provider_config_from_legacy_embedding() {
+        let legacy = crate::components::EmbeddingConfig {
+            provider: EmbeddingProviderType::Ollama,
+            model: Some("nomic-embed-text".to_string()),
+            api_url: Some("http://custom:11434".to_string()),
+            batch_size: 64,
+            max_concurrent: Some(4),
+        };
+
+        let converted = crate::components::ProviderConfig::from_legacy_embedding(&legacy);
+
+        assert_eq!(converted.backend, crate::components::BackendType::Ollama);
+        assert_eq!(converted.endpoint, Some("http://custom:11434".to_string()));
+        assert_eq!(
+            converted.models.embedding,
+            Some("nomic-embed-text".to_string())
+        );
+        assert_eq!(converted.batch_size(), 64);
+        assert_eq!(converted.max_concurrent(), 4);
     }
 }

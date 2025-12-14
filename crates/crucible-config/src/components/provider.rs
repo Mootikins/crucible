@@ -305,6 +305,130 @@ impl ProviderConfig {
         self.batch_size = Some(size);
         self
     }
+
+    /// Convert to EmbeddingProviderConfig for use with LLM crate
+    ///
+    /// This creates the appropriate embedding provider configuration based on
+    /// the backend type.
+    pub fn to_embedding_provider_config(&self) -> crate::enrichment::EmbeddingProviderConfig {
+        match self.backend {
+            BackendType::FastEmbed => {
+                crate::enrichment::EmbeddingProviderConfig::FastEmbed(
+                    crate::enrichment::FastEmbedConfig {
+                        model: self
+                            .embedding_model()
+                            .unwrap_or_else(|| "BAAI/bge-small-en-v1.5".to_string()),
+                        cache_dir: None, // Use default
+                        batch_size: self.batch_size() as u32,
+                        num_threads: None,
+                        dimensions: 0, // Use default
+                    },
+                )
+            }
+            BackendType::OpenAI => crate::enrichment::EmbeddingProviderConfig::OpenAI(
+                crate::enrichment::OpenAIConfig {
+                    api_key: self.api_key().unwrap_or_default(),
+                    model: self
+                        .embedding_model()
+                        .unwrap_or_else(|| "text-embedding-3-small".to_string()),
+                    base_url: self
+                        .endpoint()
+                        .unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
+                    timeout_seconds: self.timeout_secs as u64,
+                    retry_attempts: 3,
+                    dimensions: 0,
+                    headers: std::collections::HashMap::new(),
+                },
+            ),
+            BackendType::Ollama => crate::enrichment::EmbeddingProviderConfig::Ollama(
+                crate::enrichment::OllamaConfig {
+                    model: self
+                        .embedding_model()
+                        .unwrap_or_else(|| "nomic-embed-text".to_string()),
+                    base_url: self
+                        .endpoint()
+                        .unwrap_or_else(|| "http://localhost:11434".to_string()),
+                    timeout_seconds: self.timeout_secs as u64,
+                    retry_attempts: 3,
+                    dimensions: 0,
+                    batch_size: self.batch_size() as u32,
+                },
+            ),
+            BackendType::Mock => {
+                crate::enrichment::EmbeddingProviderConfig::Mock(crate::enrichment::MockConfig {
+                    model: "mock-test-model".to_string(),
+                    dimensions: 768,
+                    simulated_latency_ms: 0,
+                })
+            }
+            BackendType::Burn => crate::enrichment::EmbeddingProviderConfig::Burn(
+                crate::enrichment::BurnEmbedConfig {
+                    model: self
+                        .embedding_model()
+                        .unwrap_or_else(|| "nomic-embed-text".to_string()),
+                    backend: crate::enrichment::BurnBackendConfig::Auto,
+                    model_dir: crate::enrichment::BurnEmbedConfig::default_model_dir(),
+                    model_search_paths: Vec::new(),
+                    dimensions: 0,
+                },
+            ),
+            BackendType::LlamaCpp => crate::enrichment::EmbeddingProviderConfig::LlamaCpp(
+                crate::enrichment::LlamaCppConfig {
+                    model_path: self
+                        .embedding_model()
+                        .unwrap_or_else(|| "nomic-embed-text-v1.5.Q8_0.gguf".to_string()),
+                    device: "auto".to_string(),
+                    gpu_layers: -1,
+                    batch_size: self.batch_size(),
+                    context_size: 512,
+                    dimensions: 0,
+                },
+            ),
+            // Fallback for backends without embedding support
+            _ => crate::enrichment::EmbeddingProviderConfig::FastEmbed(
+                crate::enrichment::FastEmbedConfig {
+                    model: "BAAI/bge-small-en-v1.5".to_string(),
+                    cache_dir: None,
+                    batch_size: 16,
+                    num_threads: None,
+                    dimensions: 0,
+                },
+            ),
+        }
+    }
+
+    /// Create a ProviderConfig from a legacy EmbeddingConfig
+    ///
+    /// This is used for automatic migration from the old `[embedding]` config
+    /// format to the new `[providers]` format.
+    pub fn from_legacy_embedding(config: &super::EmbeddingConfig) -> Self {
+        use super::EmbeddingProviderType;
+
+        let backend = match config.provider {
+            EmbeddingProviderType::FastEmbed => BackendType::FastEmbed,
+            EmbeddingProviderType::OpenAI => BackendType::OpenAI,
+            EmbeddingProviderType::Anthropic => BackendType::Anthropic,
+            EmbeddingProviderType::Ollama => BackendType::Ollama,
+            EmbeddingProviderType::Cohere => BackendType::Cohere,
+            EmbeddingProviderType::VertexAI => BackendType::VertexAI,
+            EmbeddingProviderType::Custom => BackendType::Custom,
+            EmbeddingProviderType::Mock => BackendType::Mock,
+            EmbeddingProviderType::Burn => BackendType::Burn,
+            EmbeddingProviderType::LlamaCpp => BackendType::LlamaCpp,
+            EmbeddingProviderType::None => BackendType::FastEmbed, // Default fallback
+        };
+
+        let mut provider_config = Self::new(backend);
+        provider_config.endpoint = config.api_url.clone();
+        provider_config.batch_size = Some(config.batch_size);
+        provider_config.max_concurrent = config.max_concurrent;
+
+        if let Some(model) = &config.model {
+            provider_config.models.embedding = Some(model.clone());
+        }
+
+        provider_config
+    }
 }
 
 #[cfg(test)]
