@@ -33,6 +33,7 @@ pub mod context;
 pub mod input;
 pub mod knowledge;
 pub mod llm;
+pub mod mcp;
 pub mod parser;
 pub mod registry;
 pub mod storage;
@@ -61,3 +62,8 @@ pub use storage::Storage;
 pub use tools::{ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult};
 // Input abstractions for cross-platform UI
 pub use input::{ChatEvent, InputMode, KeyAction, KeyCode, KeyPattern, Modifiers, SessionAction};
+// MCP abstractions
+pub use mcp::{
+    ContentBlock, McpClient, McpClientConfig, McpConnection, McpError, McpServerInfo,
+    McpToolDiscovery, McpToolExecutor, McpToolInfo, McpTransportConfig, ToolCallResult,
+};
