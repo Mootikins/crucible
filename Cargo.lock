@@ -3223,6 +3223,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "crucible-grammar"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "crucible-core",
+ "crucible-tools",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-test",
+ "toml 0.9.8",
+]
+
+[[package]]
 name = "crucible-just"
 version = "0.1.0"
 dependencies = [
