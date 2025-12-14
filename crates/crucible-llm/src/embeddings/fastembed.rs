@@ -54,6 +54,12 @@
 //! ```
 
 use async_trait::async_trait;
+use crucible_config::BackendType;
+use crucible_core::traits::llm::LlmResult;
+use crucible_core::traits::provider::{
+    CanEmbed, EmbeddingResponse as UnifiedEmbeddingResponse, ExtendedCapabilities,
+    Provider as UnifiedProvider,
+};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -401,7 +407,7 @@ impl EmbeddingProvider for FastEmbedProvider {
     }
 
     async fn health_check(&self) -> EmbeddingResult<bool> {
-        match self.embed("health check").await {
+        match EmbeddingProvider::embed(self, "health check").await {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
         }
@@ -418,6 +424,86 @@ impl EmbeddingProvider for FastEmbedProvider {
             Self::get_model_info(&EmbeddingModel::BGEBaseENV15),
             Self::get_model_info(&EmbeddingModel::BGELargeENV15),
         ])
+    }
+}
+
+// =============================================================================
+// Unified Provider Trait Implementations
+// =============================================================================
+
+#[async_trait]
+impl UnifiedProvider for FastEmbedProvider {
+    fn name(&self) -> &str {
+        "fastembed"
+    }
+
+    fn backend_type(&self) -> BackendType {
+        BackendType::FastEmbed
+    }
+
+    fn endpoint(&self) -> Option<&str> {
+        None // Local provider, no endpoint
+    }
+
+    fn capabilities(&self) -> ExtendedCapabilities {
+        ExtendedCapabilities::embedding_only(self.model_info.dimensions.unwrap_or(768))
+    }
+
+    async fn health_check(&self) -> LlmResult<bool> {
+        // Reuse the legacy health check logic
+        match EmbeddingProvider::health_check(self).await {
+            Ok(healthy) => Ok(healthy),
+            Err(e) => Err(crucible_core::traits::llm::LlmError::ProviderError {
+                provider: "FastEmbed".to_string(),
+                message: e.to_string(),
+            }),
+        }
+    }
+}
+
+#[async_trait]
+impl CanEmbed for FastEmbedProvider {
+    async fn embed(&self, text: &str) -> LlmResult<UnifiedEmbeddingResponse> {
+        // Delegate to legacy impl and convert response type
+        let response = EmbeddingProvider::embed(self, text)
+            .await
+            .map_err(|e| crucible_core::traits::llm::LlmError::ProviderError {
+                provider: "FastEmbed".to_string(),
+                message: e.to_string(),
+            })?;
+
+        Ok(UnifiedEmbeddingResponse {
+            embedding: response.embedding,
+            token_count: None, // FastEmbed doesn't provide token count
+            model: response.model,
+        })
+    }
+
+    async fn embed_batch(&self, texts: Vec<String>) -> LlmResult<Vec<UnifiedEmbeddingResponse>> {
+        // Delegate to legacy impl and convert response type
+        let responses = EmbeddingProvider::embed_batch(self, texts)
+            .await
+            .map_err(|e| crucible_core::traits::llm::LlmError::ProviderError {
+                provider: "FastEmbed".to_string(),
+                message: e.to_string(),
+            })?;
+
+        Ok(responses
+            .into_iter()
+            .map(|r| UnifiedEmbeddingResponse {
+                embedding: r.embedding,
+                token_count: None,
+                model: r.model,
+            })
+            .collect())
+    }
+
+    fn embedding_dimensions(&self) -> usize {
+        self.model_info.dimensions.unwrap_or(768)
+    }
+
+    fn embedding_model(&self) -> &str {
+        &self.model_info.name
     }
 }
 
@@ -445,7 +531,7 @@ mod tests {
         );
         let provider = FastEmbedProvider::new(config).unwrap();
 
-        let response = provider.embed("Hello, world!").await;
+        let response = EmbeddingProvider::embed(&provider, "Hello, world!").await;
         if let Err(ref e) = response {
             eprintln!("FastEmbed error: {:?}", e);
         }
@@ -476,7 +562,7 @@ mod tests {
             "Third text".to_string(),
         ];
 
-        let responses = provider.embed_batch(texts).await;
+        let responses = EmbeddingProvider::embed_batch(&provider, texts).await;
         if let Err(ref e) = responses {
             eprintln!("FastEmbed batch error: {:?}", e);
         }
@@ -501,14 +587,14 @@ mod tests {
         let provider = FastEmbedProvider::new(config).unwrap();
 
         // Test empty text
-        let result = provider.embed("").await;
+        let result = EmbeddingProvider::embed(&provider, "").await;
         assert!(result.is_err());
 
-        let result = provider.embed("   ").await;
+        let result = EmbeddingProvider::embed(&provider, "   ").await;
         assert!(result.is_err());
 
         // Test empty batch
-        let result = provider.embed_batch(vec![]).await;
+        let result = EmbeddingProvider::embed_batch(&provider, vec![]).await;
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
     }
@@ -541,5 +627,112 @@ mod tests {
 
         // Test invalid model
         assert!(FastEmbedProvider::parse_model_name("invalid-model").is_err());
+    }
+
+    // =========================================================================
+    // TDD Tests for Unified Provider Traits (Provider + CanEmbed)
+    // =========================================================================
+
+    mod unified_traits {
+        use super::*;
+        use crucible_config::BackendType;
+        use crucible_core::traits::provider::{CanEmbed, Provider};
+
+        #[test]
+        fn test_fastembed_implements_provider_trait() {
+            let config = super::super::super::config::EmbeddingConfig::fastembed(None, None, None);
+            let provider = FastEmbedProvider::new(config).unwrap();
+
+            // Test Provider trait methods
+            assert_eq!(provider.name(), "fastembed");
+            assert_eq!(provider.backend_type(), BackendType::FastEmbed);
+            assert!(provider.endpoint().is_none()); // Local provider, no endpoint
+        }
+
+        #[test]
+        fn test_fastembed_provider_capabilities() {
+            let config = super::super::super::config::EmbeddingConfig::fastembed(None, None, None);
+            let provider = FastEmbedProvider::new(config).unwrap();
+
+            let caps = provider.capabilities();
+
+            // FastEmbed is embedding-only
+            assert!(caps.embeddings);
+            assert!(caps.embeddings_batch);
+            assert_eq!(caps.embedding_dimensions, Some(384)); // BGE-small default
+            assert!(!caps.llm.chat_completion); // No chat support
+        }
+
+        #[tokio::test]
+        async fn test_fastembed_can_embed_trait() {
+            let config = super::super::super::config::EmbeddingConfig::fastembed(
+                Some("all-MiniLM-L6-v2".to_string()),
+                Some("/tmp/fastembed_cache".to_string()),
+                None,
+            );
+            let provider = FastEmbedProvider::new(config).unwrap();
+
+            // Test CanEmbed trait methods
+            assert_eq!(provider.embedding_dimensions(), 384);
+            assert!(provider.embedding_model().contains("MiniLM"));
+
+            // Test embed via CanEmbed trait
+            let response = CanEmbed::embed(&provider, "Hello world").await;
+            assert!(response.is_ok());
+
+            let response = response.unwrap();
+            assert_eq!(response.embedding.len(), 384);
+            assert_eq!(response.model, provider.embedding_model());
+        }
+
+        #[tokio::test]
+        async fn test_fastembed_can_embed_batch() {
+            let config = super::super::super::config::EmbeddingConfig::fastembed(
+                None,
+                Some("/tmp/fastembed_cache".to_string()),
+                None,
+            );
+            let provider = FastEmbedProvider::new(config).unwrap();
+
+            let texts = vec!["First".to_string(), "Second".to_string()];
+            let responses = CanEmbed::embed_batch(&provider, texts).await;
+            assert!(responses.is_ok());
+
+            let responses = responses.unwrap();
+            assert_eq!(responses.len(), 2);
+        }
+
+        #[tokio::test]
+        async fn test_fastembed_unified_health_check() {
+            let config = super::super::super::config::EmbeddingConfig::fastembed(
+                None,
+                Some("/tmp/fastembed_cache".to_string()),
+                None,
+            );
+            let provider = FastEmbedProvider::new(config).unwrap();
+
+            // Test health_check via Provider trait (returns LlmResult<bool>)
+            let health = Provider::health_check(&provider).await;
+            assert!(health.is_ok());
+            assert!(health.unwrap());
+        }
+
+        #[test]
+        fn test_fastembed_can_be_used_as_dyn_provider() {
+            let config = super::super::super::config::EmbeddingConfig::fastembed(None, None, None);
+            let provider = FastEmbedProvider::new(config).unwrap();
+
+            // Should be usable as Box<dyn Provider>
+            let _boxed: Box<dyn Provider> = Box::new(provider);
+        }
+
+        #[test]
+        fn test_fastembed_can_be_used_as_dyn_can_embed() {
+            let config = super::super::super::config::EmbeddingConfig::fastembed(None, None, None);
+            let provider = FastEmbedProvider::new(config).unwrap();
+
+            // Should be usable as Box<dyn CanEmbed>
+            let _boxed: Box<dyn CanEmbed> = Box::new(provider);
+        }
     }
 }
