@@ -18,7 +18,6 @@ members = [
     "crates/crucible-just",
     "crates/crucible-rune",
     "crates/crucible-web",
-    "crates/crucible-desktop",
     "crates/crucible-grammar",
     "examples",
 ]
