@@ -185,6 +185,27 @@ impl LlamaCppTextProvider {
         })
     }
 
+    /// Create a provider from a discovered model
+    ///
+    /// This allows integration with the unified model discovery system.
+    pub fn from_discovered_model(
+        model: &crate::model_discovery::DiscoveredModel,
+    ) -> LlmResult<Self> {
+        Self::new_with_model(model.path.clone())
+    }
+
+    /// Discover local GGUF models using the model discovery system
+    ///
+    /// Returns a list of discovered models that can be used with `from_discovered_model`.
+    pub async fn discover_local_models(
+        config: &crate::model_discovery::DiscoveryConfig,
+    ) -> LlmResult<Vec<crate::model_discovery::DiscoveredModel>> {
+        let discovery = crate::model_discovery::ModelDiscovery::new(config.clone());
+        discovery.discover_models().await.map_err(|e| {
+            LlmError::ConfigError(format!("Failed to discover models: {}", e))
+        })
+    }
+
     /// Synchronous model loading (runs in background thread)
     fn load_model_sync(model_path: &std::path::Path, gpu_layers: i32) -> Result<LoadedState, String> {
         tracing::info!("Loading GGUF model from {}", model_path.display());
