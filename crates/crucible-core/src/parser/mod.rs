@@ -87,6 +87,10 @@ pub use types::{
     // Task types
     TaskItem,
     TaskStatus,
+    // Task file type
+    TaskFile,
+    // Task graph type
+    TaskGraph,
     // Link and tag types
     Wikilink,
 };

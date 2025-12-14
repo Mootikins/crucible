@@ -349,6 +349,10 @@ async fn main() -> Result<()> {
             .await?
         }
 
+        Some(Commands::Tasks { file, command }) => {
+            commands::tasks::execute(config, file, command).await?
+        }
+
         // Commands::EnhancedChat { // Temporarily disabled
         //     agent,
         //     model,
