@@ -84,14 +84,17 @@ crucible-cli semantic <query> [options]
 The interactive REPL starts by default when running `crucible-cli` without arguments. You can customize the REPL with global options:
 
 **Global Options:**
-- `--db-path <path>`: Database path override
-- `--tool-dir <path>`: Tool directory for Rune scripts
 - `-v, --verbose`: Enable verbose output
 - `-f, --format <format>`: Output format (table, json, csv)
+- `-C, --config <path>`: Config file path (defaults to ~/.config/crucible/config.toml)
+- `--embedding-url <url>`: Embedding service URL (overrides config file)
+- `--embedding-model <model>`: Embedding model name (overrides config file)
+- `--no-process`: Skip file processing on startup
+- `--process-timeout <seconds>`: File processing timeout in seconds (default: 300)
 
 ```bash
 # Start with custom settings
-crucible-cli --format json --tool-dir ~/my-tools --db-path ~/custom.db
+crucible-cli --format json
 ```
 
 **REPL Commands:**
