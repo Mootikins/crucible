@@ -239,6 +239,19 @@ impl LlmToolDefinition {
     }
 }
 
+impl From<super::tools::ToolDefinition> for LlmToolDefinition {
+    fn from(tool: super::tools::ToolDefinition) -> Self {
+        Self {
+            r#type: "function".to_string(),
+            function: FunctionDefinition {
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.parameters,
+            },
+        }
+    }
+}
+
 /// Function definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FunctionDefinition {
@@ -820,5 +833,26 @@ mod tests {
         );
         assert_eq!(tool.function.name, "search");
         assert_eq!(tool.r#type, "function");
+    }
+
+    #[test]
+    fn test_llm_tool_definition_from_tool_definition() {
+        use crate::traits::tools::ToolDefinition;
+
+        let tool_def = ToolDefinition::new("read_file", "Read contents of a file")
+            .with_parameters(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File path to read"}
+                },
+                "required": ["path"]
+            }));
+
+        let llm_tool: LlmToolDefinition = tool_def.into();
+
+        assert_eq!(llm_tool.r#type, "function");
+        assert_eq!(llm_tool.function.name, "read_file");
+        assert_eq!(llm_tool.function.description, "Read contents of a file");
+        assert!(llm_tool.function.parameters.is_some());
     }
 }
