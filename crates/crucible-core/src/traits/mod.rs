@@ -35,6 +35,7 @@ pub mod knowledge;
 pub mod llm;
 pub mod mcp;
 pub mod parser;
+pub mod provider;
 pub mod registry;
 pub mod storage;
 pub mod tools;
@@ -57,6 +58,10 @@ pub use llm::{
     TextModelInfo, TokenUsage, ToolCall, ToolCallDelta, ToolChoice,
 };
 pub use parser::MarkdownParser;
+pub use provider::{
+    CanChat, CanConstrainGeneration, CanEmbed, ConstrainedRequest, ConstrainedResponse,
+    EmbeddingResponse, ExtendedCapabilities, FullProvider, Provider, ProviderExt, SchemaFormat,
+};
 pub use registry::{Registry, RegistryBuilder};
 pub use storage::Storage;
 pub use tools::{ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult};

@@ -16,6 +16,7 @@
 //! This module serves as a central re-export point for types that cross module boundaries.
 
 pub mod acp;
+pub mod grammar;
 pub mod hashing;
 
 // Re-export parser domain types
@@ -72,3 +73,6 @@ pub use crate::types::acp::{
 // Re-export trait types (these are associated with traits but used as data)
 pub use crate::traits::storage::{Record as StorageRecord, RecordId as StorageRecordId};
 pub use crate::traits::tools::{ExecutionContext, ToolDefinition, ToolExample};
+
+// Re-export grammar types
+pub use crate::types::grammar::{Grammar, GrammarError, GrammarResult};
