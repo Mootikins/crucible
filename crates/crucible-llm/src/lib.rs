@@ -130,7 +130,8 @@ pub use crucible_core::enrichment::{
 // Re-export unified provider layer
 pub use unified::{
     create_chat_provider_unified, create_embedding_provider_unified, create_provider_by_name,
-    create_unified_provider, ChatProviderAdapter, EmbeddingProviderAdapter, UnifiedProvider,
+    create_unified_provider, CachedModels, ChatProviderAdapter, EmbeddingProviderAdapter,
+    ModelCache, UnifiedModelDiscovery, UnifiedProvider,
 };
 
 // Re-export model discovery
