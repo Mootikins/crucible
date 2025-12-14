@@ -97,6 +97,10 @@ pub use task_types::{TaskDependency, TaskFileRecord, TaskHistory, TaskRecord};
 pub mod task_storage;
 pub use task_storage::{MockTaskStorage, TaskStorage};
 
+// Task sync (markdown ↔ DB)
+pub mod task_sync;
+pub use task_sync::{ConflictResolution, SyncConflict, SyncResult, TaskSync};
+
 // Public database and storage APIs (high-level interfaces)
 pub mod database;
 pub use database::SurrealEmbeddingDatabase;
