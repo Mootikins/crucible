@@ -1,0 +1,30 @@
+# GBNF Grammar for grep command
+# Generated from: grep --help
+
+root ::= "grep" ws flags? ws pattern ws files?
+
+# Common flags (subset for testing)
+flags ::= flag (ws flag)*
+flag ::= "-i" | "-v" | "-n" | "-r" | "-l" | "-c" | "-w" | "-x" | "-E" | "-F" | "-o" | "-h" | "-H"
+       | "--ignore-case" | "--invert-match" | "--line-number" | "--recursive"
+       | "--files-with-matches" | "--count" | "--word-regexp" | "--line-regexp"
+       | "--extended-regexp" | "--fixed-strings" | "--only-matching"
+       | "-A" ws number | "-B" ws number | "-C" ws number
+       | "--after-context=" number | "--before-context=" number | "--context=" number
+       | "-m" ws number | "--max-count=" number
+       | "--include=" glob | "--exclude=" glob
+
+# Pattern (quoted or unquoted)
+pattern ::= quoted-string | simple-pattern
+quoted-string ::= "'" [^']* "'" | "\"" [^"]* "\""
+simple-pattern ::= [a-zA-Z0-9_.*^$\[\]\\|+?{}()-]+
+
+# Files/paths
+files ::= file (ws file)*
+file ::= path | "."
+path ::= [a-zA-Z0-9_./-]+
+
+# Helpers
+ws ::= " "+
+number ::= [0-9]+
+glob ::= [a-zA-Z0-9_.*?/-]+

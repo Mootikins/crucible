@@ -1,0 +1,17 @@
+# GBNF Grammar for CLI Passthrough Tool Calling
+# Simpler format: command args (directly executable)
+#
+# The model knows these commands from training:
+# - rg: ripgrep (content search)
+# - fd: fd-find (file search)
+# - cat: read files
+# - ls: list directory
+#
+# This grammar whitelists commands and allows any args
+
+root ::= command " " args
+
+command ::= "rg" | "fd" | "cat" | "ls"
+
+# Allow any non-newline characters as args
+args ::= [^\n]+
