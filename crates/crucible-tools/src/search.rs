@@ -129,12 +129,11 @@ impl SearchTools {
         let case_insensitive = params.case_insensitive;
         let limit = params.limit;
 
-        // Determine search path
-        let search_path = if let Some(ref folder) = folder {
-            Path::new(&self.kiln_path).join(folder)
-        } else {
-            PathBuf::from(&self.kiln_path)
-        };
+        // Security: Validate folder to prevent traversal attacks
+        let search_path = validate_folder_within_kiln(
+            &self.kiln_path,
+            folder.as_deref(),
+        )?;
 
         if !search_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
@@ -312,8 +311,8 @@ impl SearchTools {
     }
 }
 
-// Use shared utility for frontmatter parsing
-use crate::utils::parse_yaml_frontmatter;
+// Use shared utilities for frontmatter parsing and path validation
+use crate::utils::{parse_yaml_frontmatter, validate_folder_within_kiln};
 
 #[cfg(test)]
 mod tests {
@@ -680,5 +679,58 @@ mod tests {
         let fm = parse_yaml_frontmatter(content);
 
         assert!(fm.is_none());
+    }
+
+    // ===== Security Tests for Path Traversal =====
+
+    #[tokio::test]
+    async fn test_text_search_folder_traversal() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+        let search_tools = create_search_tools(kiln_path);
+
+        let result = search_tools
+            .text_search(Parameters(TextSearchParams {
+                query: "test".to_string(),
+                folder: Some("../../../etc".to_string()),
+                case_insensitive: true,
+                limit: 10,
+            }))
+            .await;
+
+        assert!(
+            result.is_err(),
+            "Should reject path traversal in folder parameter"
+        );
+        if let Err(e) = result {
+            assert!(
+                e.message.contains("Path traversal"),
+                "Error should mention path traversal"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_text_search_absolute_folder() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+        let search_tools = create_search_tools(kiln_path);
+
+        let result = search_tools
+            .text_search(Parameters(TextSearchParams {
+                query: "test".to_string(),
+                folder: Some("/etc".to_string()),
+                case_insensitive: true,
+                limit: 10,
+            }))
+            .await;
+
+        assert!(result.is_err(), "Should reject absolute path in folder");
+        if let Err(e) = result {
+            assert!(
+                e.message.contains("Absolute paths are not allowed"),
+                "Error should mention absolute paths"
+            );
+        }
     }
 }
