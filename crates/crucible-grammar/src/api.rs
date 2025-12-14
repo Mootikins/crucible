@@ -321,6 +321,23 @@ impl LlamaClient {
             .map(|c| c.message.content.as_str())
     }
 
+    /// Get reasoning/thinking content from a completion response (for thinking models)
+    pub fn extract_reasoning(response: &CompletionResponse) -> Option<&str> {
+        response
+            .choices
+            .first()
+            .and_then(|c| c.message.reasoning_content.as_deref())
+    }
+
+    /// Check if the response has reasoning content (indicates thinking model)
+    pub fn has_reasoning(response: &CompletionResponse) -> bool {
+        response
+            .choices
+            .first()
+            .map(|c| c.message.reasoning_content.is_some())
+            .unwrap_or(false)
+    }
+
     /// Get the text from a text completion response
     pub fn extract_text(response: &TextCompletionResponse) -> Option<&str> {
         response.choices.first().map(|c| c.text.as_str())
