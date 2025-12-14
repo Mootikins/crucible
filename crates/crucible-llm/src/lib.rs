@@ -18,6 +18,7 @@
 //! ## Modules
 //!
 //! - [`embeddings`]: Text embedding generation and management
+//! - [`model_discovery`]: Local GGUF model discovery and cataloging
 //! - [`reranking`]: Note reranking for improved search relevance
 //! - [`text_generation`]: Text generation and completion
 //!
@@ -48,12 +49,18 @@
 pub mod agent_runtime;
 pub mod chat;
 pub mod embeddings;
+pub mod model_discovery;
 pub mod reranking;
 pub mod text_generation;
+pub mod unified;
 
 // Mock implementations for testing (Phase 5)
 #[cfg(any(test, feature = "test-utils"))]
 pub mod text_generation_mock;
+
+// Mock constrained generation provider for testing grammar constraints
+#[cfg(any(test, feature = "test-utils"))]
+pub mod constrained_mock;
 
 // Re-export commonly used types at crate root
 // SOLID Phase 5: Re-export factory functions and traits, NOT concrete types
@@ -69,7 +76,9 @@ pub use embeddings::{
     EmbeddingResult,   // Result type alias
 };
 
-pub use reranking::{FastEmbedReranker, RerankResult, Reranker, RerankerModelInfo};
+pub use reranking::{RerankResult, Reranker, RerankerModelInfo};
+#[cfg(feature = "fastembed")]
+pub use reranking::FastEmbedReranker;
 
 pub use text_generation::{
     create_text_provider,  // Factory function
@@ -106,10 +115,25 @@ pub use chat::{
 #[cfg(any(test, feature = "test-utils"))]
 pub use text_generation_mock::MockTextProvider;
 
+// Re-export constrained generation mock for testing
+#[cfg(any(test, feature = "test-utils"))]
+pub use constrained_mock::MockConstrainedProvider;
+
 // Re-export core enrichment config types for convenience
 pub use crucible_core::enrichment::{
     CohereConfig, CustomConfig, EmbeddingProviderConfig as NewEmbeddingProviderConfig,
     EnrichmentConfig, FastEmbedConfig as NewFastEmbedConfig, MockConfig as NewMockConfig,
     OllamaConfig as NewOllamaConfig, OpenAIConfig as NewOpenAIConfig, PipelineConfig,
     VertexAIConfig,
+};
+
+// Re-export unified provider layer
+pub use unified::{
+    create_chat_provider_unified, create_embedding_provider_unified, create_provider_by_name,
+    create_unified_provider, ChatProviderAdapter, EmbeddingProviderAdapter, UnifiedProvider,
+};
+
+// Re-export model discovery
+pub use model_discovery::{
+    DiscoveredModel, DiscoveryConfig, ModelCapability, ModelDiscovery,
 };

@@ -7,8 +7,10 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
+#[cfg(feature = "fastembed")]
 pub mod fastembed;
 
+#[cfg(feature = "fastembed")]
 pub use fastembed::FastEmbedReranker;
 
 /// Result from a reranking operation

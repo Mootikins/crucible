@@ -20,6 +20,7 @@ pub mod ollama;
 pub mod openai;
 
 /// FastEmbed local provider implementation.
+#[cfg(feature = "fastembed")]
 pub mod fastembed;
 
 /// Burn ML framework provider implementation.
@@ -49,6 +50,7 @@ pub use burn::BurnProvider;
 pub use config::{EmbeddingConfig, EmbeddingProviderType, ProviderType};
 pub use core_adapter::CoreProviderAdapter;
 pub use error::{EmbeddingError, EmbeddingResult};
+#[cfg(feature = "fastembed")]
 pub use fastembed::FastEmbedProvider;
 pub use mock::MockEmbeddingProvider;
 pub use ollama::OllamaProvider;
@@ -76,10 +78,15 @@ pub async fn create_provider(
             let provider = openai::OpenAIProvider::new(config)?;
             Ok(Arc::new(provider))
         }
+        #[cfg(feature = "fastembed")]
         EmbeddingProviderType::FastEmbed => {
             let provider = fastembed::FastEmbedProvider::new(config)?;
             Ok(Arc::new(provider))
         }
+        #[cfg(not(feature = "fastembed"))]
+        EmbeddingProviderType::FastEmbed => Err(EmbeddingError::ConfigError(
+            "FastEmbed provider requires the 'fastembed' feature to be enabled".to_string(),
+        )),
         EmbeddingProviderType::Burn => {
             // Extract Burn config from the embedding config
             if let crucible_config::EmbeddingProviderConfig::Burn(burn_config) = config {
