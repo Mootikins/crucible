@@ -14,7 +14,7 @@
 //! ## Organization
 //!
 //! - **Session types**: SessionId, SessionConfig, ChatMode
-//! - **Tool types**: ToolDescriptor, ToolInvocation, ToolOutput
+//! - **Tool types**: ToolInvocation, ToolOutput, ToolCallInfo (see traits::tools for ToolDefinition)
 //! - **Stream types**: StreamChunk, StreamMetadata
 //! - **Filesystem types**: FileMetadata
 
@@ -238,126 +238,7 @@ impl std::str::FromStr for ChatMode {
 // Tool Types
 // ============================================================================
 
-/// Tool descriptor for agent discovery
-///
-/// Describes a Crucible tool's capabilities, parameters, and usage for
-/// agent tool discovery.
-///
-/// # Example
-///
-/// ```rust
-/// use crucible_core::types::acp::ToolDescriptor;
-///
-/// let tool = ToolDescriptor::new(
-///     "semantic_search",
-///     "Search the knowledge base using semantic similarity",
-/// )
-/// .with_category("search")
-/// .with_parameter_schema(serde_json::json!({
-///     "type": "object",
-///     "properties": {
-///         "query": { "type": "string" }
-///     }
-/// }));
-/// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolDescriptor {
-    /// Tool name/identifier
-    pub name: String,
-
-    /// Human-readable description
-    pub description: String,
-
-    /// Tool category (e.g., "search", "note", "kiln")
-    pub category: Option<String>,
-
-    /// Parameter schema (JSON Schema format)
-    pub parameter_schema: Option<serde_json::Value>,
-
-    /// Return type schema (JSON Schema format)
-    pub return_schema: Option<serde_json::Value>,
-
-    /// Example invocations
-    pub examples: Vec<ToolExample>,
-
-    /// Required permissions
-    pub required_permissions: Vec<String>,
-}
-
-impl ToolDescriptor {
-    /// Create a new tool descriptor
-    pub fn new(name: impl Into<String>, description: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            description: description.into(),
-            category: None,
-            parameter_schema: None,
-            return_schema: None,
-            examples: Vec::new(),
-            required_permissions: Vec::new(),
-        }
-    }
-
-    /// Set the category
-    pub fn with_category(mut self, category: impl Into<String>) -> Self {
-        self.category = Some(category.into());
-        self
-    }
-
-    /// Set the parameter schema
-    pub fn with_parameter_schema(mut self, schema: serde_json::Value) -> Self {
-        self.parameter_schema = Some(schema);
-        self
-    }
-
-    /// Set the return schema
-    pub fn with_return_schema(mut self, schema: serde_json::Value) -> Self {
-        self.return_schema = Some(schema);
-        self
-    }
-
-    /// Add an example
-    pub fn with_example(mut self, example: ToolExample) -> Self {
-        self.examples.push(example);
-        self
-    }
-
-    /// Add a required permission
-    pub fn with_permission(mut self, permission: impl Into<String>) -> Self {
-        self.required_permissions.push(permission.into());
-        self
-    }
-}
-
-/// Tool usage example
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolExample {
-    /// Example description
-    pub description: String,
-
-    /// Example parameters
-    pub parameters: serde_json::Value,
-
-    /// Expected result (optional)
-    pub result: Option<serde_json::Value>,
-}
-
-impl ToolExample {
-    /// Create a new tool example
-    pub fn new(description: impl Into<String>, parameters: serde_json::Value) -> Self {
-        Self {
-            description: description.into(),
-            parameters,
-            result: None,
-        }
-    }
-
-    /// Set the expected result
-    pub fn with_result(mut self, result: serde_json::Value) -> Self {
-        self.result = Some(result);
-        self
-    }
-}
+// NOTE: ToolDescriptor and ToolExample were removed - use ToolDefinition from traits::tools instead
 
 /// Tool invocation request
 ///
@@ -820,8 +701,11 @@ mod tests {
     }
 
     #[test]
-    fn test_tool_descriptor() {
-        let tool = ToolDescriptor::new("test_tool", "A test tool")
+    fn test_tool_definition_from_traits() {
+        // ToolDescriptor was removed - use ToolDefinition from traits::tools instead
+        use crate::traits::tools::ToolDefinition;
+
+        let tool = ToolDefinition::new("test_tool", "A test tool")
             .with_category("test")
             .with_permission("read:notes");
 

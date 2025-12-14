@@ -43,8 +43,8 @@ pub mod tools;
 pub use acp::{FilesystemHandler, SessionManager, StreamHandler, ToolBridge};
 pub use change_detection::{ChangeDetector, ContentHasher, HashLookupStorage};
 pub use chat::{
-    AgentHandle, ChatContext, ChatError, ChatMode, ChatResponse, ChatResult, CommandDescriptor,
-    CommandHandler, SearchResult, ToolCall as ChatToolCall,
+    AgentHandle, ChatChunk, ChatContext, ChatError, ChatMode, ChatResponse, ChatResult,
+    ChatToolCall, CommandDescriptor, CommandHandler, SearchResult,
 };
 pub use context::ContextManager;
 pub use knowledge::{KnowledgeRepository, NoteInfo};
