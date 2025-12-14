@@ -21,8 +21,6 @@ use crucible_core::enrichment::EmbeddingProvider;
 use crucible_llm::embeddings::CoreProviderAdapter;
 use crucible_rune::RuneDiscoveryConfig;
 use crucible_tools::{ExtendedMcpServer, ExtendedMcpService};
-use rmcp::transport::SseServer;
-use rmcp::ServiceExt;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -190,31 +188,16 @@ pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
     // Serve based on transport mode
     if args.stdio {
         info!("Server ready - waiting for stdio connection...");
-
-        // Serve via stdio (blocks until shutdown)
-        let _service = service
-            .serve((tokio::io::stdin(), tokio::io::stdout()))
-            .await?;
-
-        // Wait forever - the service will handle requests until EOF or error
-        std::future::pending::<()>().await;
+        service.serve_stdio().await?;
     } else {
         // SSE mode
         let addr: SocketAddr = format!("127.0.0.1:{}", args.port).parse()?;
         info!("Starting SSE server on http://{}", addr);
         info!("SSE endpoint: http://{}/sse", addr);
         info!("Message endpoint: http://{}/message", addr);
-
-        // Start SSE server
-        let sse_server = SseServer::serve(addr).await?;
-
-        // Clone service for each connection
-        let _ct = sse_server.with_service(move || service.clone());
-
         info!("MCP server running. Press Ctrl+C to stop.");
 
-        // Wait for shutdown signal
-        tokio::signal::ctrl_c().await?;
+        service.serve_sse(addr).await?;
         info!("Shutdown signal received");
     }
 

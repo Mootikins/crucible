@@ -3344,6 +3344,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "crucible-core",
  "dirs 6.0.0",
  "glob",
  "regex",
