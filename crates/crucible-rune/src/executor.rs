@@ -1,5 +1,6 @@
 //! Execute Rune scripts
 
+use crate::mcp_types::mcp_types_module;
 use crate::types::{RuneExecutionResult, RuneTool};
 use crate::RuneError;
 use rune::ast;
@@ -23,6 +24,17 @@ pub struct RuneExecutor {
 impl RuneExecutor {
     /// Create a new executor with default context
     pub fn new() -> Result<Self, RuneError> {
+        Self::with_modules(vec![])
+    }
+
+    /// Create a new executor with additional custom modules
+    ///
+    /// Use this to add MCP server modules dynamically:
+    /// ```rust,ignore
+    /// let mcp_module = generate_mcp_server_module("github", &tools, client)?;
+    /// let executor = RuneExecutor::with_modules(vec![mcp_module])?;
+    /// ```
+    pub fn with_modules(additional_modules: Vec<rune::Module>) -> Result<Self, RuneError> {
         let mut context =
             Context::with_default_modules().map_err(|e| RuneError::Context(e.to_string()))?;
 
@@ -41,6 +53,18 @@ impl RuneExecutor {
         context
             .install(Self::metadata_macros_module()?)
             .map_err(|e| RuneError::Context(e.to_string()))?;
+
+        // Register MCP types module (cru::mcp with McpResult type)
+        context
+            .install(mcp_types_module()?)
+            .map_err(|e| RuneError::Context(e.to_string()))?;
+
+        // Install additional modules (e.g., MCP server modules)
+        for module in additional_modules {
+            context
+                .install(module)
+                .map_err(|e| RuneError::Context(e.to_string()))?;
+        }
 
         let runtime = Arc::new(
             context

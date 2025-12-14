@@ -53,14 +53,20 @@
 
 use crate::event_bus::{Event, EventBus, EventContext, HandlerError};
 use crate::tool_events::ToolSource;
-use serde::{Deserialize, Serialize};
+use crucible_core::traits::mcp::McpToolExecutor;
 use serde_json::{json, Value as JsonValue};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 use thiserror::Error;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
+
+// Re-export core MCP types with backwards-compatible aliases
+pub use crucible_core::traits::mcp::{
+    ContentBlock, McpClientConfig as UpstreamConfig, McpServerInfo as UpstreamServerInfo,
+    McpToolInfo as UpstreamTool, McpTransportConfig as TransportConfig, ToolCallResult,
+};
 
 /// Errors that can occur in MCP gateway operations
 #[derive(Error, Debug)]
@@ -94,116 +100,28 @@ pub enum GatewayError {
     Serialization(String),
 }
 
-/// Configuration for an upstream MCP server
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpstreamConfig {
-    /// Unique name for this upstream (e.g., "github", "filesystem")
-    pub name: String,
-
-    /// Transport configuration
-    pub transport: TransportConfig,
-
-    /// Prefix to add to tool names (e.g., "gh_" -> "gh_search_repositories")
-    #[serde(default)]
-    pub prefix: Option<String>,
-
-    /// Whitelist of allowed tools (if None, all tools allowed)
-    #[serde(default)]
-    pub allowed_tools: Option<Vec<String>>,
-
-    /// Blacklist of blocked tools
-    #[serde(default)]
-    pub blocked_tools: Option<Vec<String>>,
-
-    /// Whether to auto-reconnect on disconnection
-    #[serde(default = "default_auto_reconnect")]
-    pub auto_reconnect: bool,
-}
-
-fn default_auto_reconnect() -> bool {
-    true
-}
-
-/// Transport configuration for connecting to upstream MCP servers
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "lowercase")]
-pub enum TransportConfig {
-    /// Stdio transport (spawn subprocess)
-    Stdio {
-        /// Command to execute
-        command: String,
-        /// Command arguments
-        #[serde(default)]
-        args: Vec<String>,
-        /// Environment variables to set
-        #[serde(default)]
-        env: Vec<(String, String)>,
-    },
-
-    /// SSE transport (HTTP+Server-Sent Events)
-    Sse {
-        /// URL to connect to
-        url: String,
-        /// Optional authorization header
-        #[serde(default)]
-        auth_header: Option<String>,
-    },
-}
-
-/// Information about a discovered tool from upstream
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpstreamTool {
-    /// Original tool name from upstream
-    pub name: String,
-    /// Prefixed name for use in Crucible
-    pub prefixed_name: String,
-    /// Tool description
-    pub description: Option<String>,
-    /// JSON schema for tool parameters
-    pub input_schema: JsonValue,
-    /// Source upstream name
-    pub upstream: String,
-}
-
-/// Server information from upstream
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpstreamServerInfo {
-    /// Server name
-    pub name: String,
-    /// Server version
-    pub version: Option<String>,
-    /// Protocol version
-    pub protocol_version: String,
-    /// Server capabilities
-    pub capabilities: JsonValue,
-}
-
-/// Result of a tool call
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolCallResult {
-    /// Content blocks returned by the tool
-    pub content: Vec<ContentBlock>,
-    /// Whether the tool execution resulted in an error
-    pub is_error: bool,
-}
-
-/// Content block types (matching MCP specification)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "lowercase")]
-pub enum ContentBlock {
-    /// Text content
-    Text { text: String },
-    /// Image content (base64 encoded)
-    Image { data: String, mime_type: String },
-    /// Resource reference
-    Resource { uri: String, text: Option<String> },
-}
+/// Boxed executor type for dynamic dispatch
+pub type BoxedMcpExecutor = Box<dyn McpToolExecutor + Send + Sync>;
 
 /// MCP Gateway client for connecting to upstream MCP servers
 ///
 /// This client manages the connection to an upstream MCP server and provides
 /// methods for discovering and calling tools. All tool calls are routed through
 /// the event system for hook processing.
+///
+/// ## Dependency Injection
+///
+/// The actual tool execution is delegated to an injected `McpToolExecutor`.
+/// This keeps the transport implementation (e.g., rmcp) separate from this crate.
+///
+/// ```rust,ignore
+/// // Create executor externally (e.g., in crucible-tools with rmcp)
+/// let executor = create_mcp_executor(config).await?;
+///
+/// // Inject into client
+/// let client = UpstreamMcpClient::new(config)
+///     .with_executor(executor);
+/// ```
 pub struct UpstreamMcpClient {
     /// Configuration for this client
     config: UpstreamConfig,
@@ -215,6 +133,8 @@ pub struct UpstreamMcpClient {
     event_bus: Option<Arc<RwLock<EventBus>>>,
     /// Connection state
     connected: Arc<RwLock<bool>>,
+    /// Injected tool executor (optional - required for actual tool calls)
+    executor: Option<Arc<BoxedMcpExecutor>>,
 }
 
 impl UpstreamMcpClient {
@@ -226,6 +146,7 @@ impl UpstreamMcpClient {
             tools: Arc::new(RwLock::new(HashMap::new())),
             event_bus: None,
             connected: Arc::new(RwLock::new(false)),
+            executor: None,
         }
     }
 
@@ -233,6 +154,26 @@ impl UpstreamMcpClient {
     pub fn with_event_bus(mut self, bus: Arc<RwLock<EventBus>>) -> Self {
         self.event_bus = Some(bus);
         self
+    }
+
+    /// Set the tool executor for this client
+    ///
+    /// The executor handles actual MCP tool calls. Without an executor,
+    /// tool calls will return an error.
+    pub fn with_executor(mut self, executor: BoxedMcpExecutor) -> Self {
+        self.executor = Some(Arc::new(executor));
+        self
+    }
+
+    /// Set the tool executor from an Arc (for sharing across instances)
+    pub fn with_shared_executor(mut self, executor: Arc<BoxedMcpExecutor>) -> Self {
+        self.executor = Some(executor);
+        self
+    }
+
+    /// Check if an executor is configured
+    pub fn has_executor(&self) -> bool {
+        self.executor.is_some()
     }
 
     /// Get the upstream name
@@ -456,17 +397,25 @@ impl UpstreamMcpClient {
         }
     }
 
-    /// Internal tool call (placeholder for actual rmcp implementation)
+    /// Internal tool call using injected executor
+    ///
+    /// Delegates to the configured `McpToolExecutor`. Returns an error if
+    /// no executor is configured.
     async fn call_tool_internal(
         &self,
-        _tool_name: &str,
-        _arguments: JsonValue,
+        tool_name: &str,
+        arguments: JsonValue,
     ) -> Result<ToolCallResult, GatewayError> {
-        // This is a placeholder - actual implementation requires integration
-        // with rmcp client transport
-        Err(GatewayError::Connection(
-            "Not implemented - requires rmcp transport integration".to_string(),
-        ))
+        let executor = self.executor.as_ref().ok_or_else(|| {
+            GatewayError::Connection(
+                "No executor configured - call with_executor() to enable tool calls".to_string(),
+            )
+        })?;
+
+        executor
+            .call_tool(tool_name, arguments)
+            .await
+            .map_err(|e| GatewayError::Execution(e.to_string()))
     }
 
     /// Update tools from a list (used when receiving toolListChanged notification)

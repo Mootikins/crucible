@@ -36,6 +36,8 @@ mod executor;
 mod hook_system;
 mod hook_types;
 pub mod mcp_gateway;
+pub mod mcp_module;
+pub mod mcp_types;
 pub mod note_events;
 mod plugin_loader;
 mod plugin_types;
@@ -65,9 +67,14 @@ pub use executor::RuneExecutor;
 pub use hook_system::{BuiltinHook, Hook, HookManager, HookRegistry, RuneHookHandler};
 pub use hook_types::RuneHook;
 pub use mcp_gateway::{
-    ContentBlock as GatewayContentBlock, GatewayError, McpGatewayManager, ToolCallResult,
-    TransportConfig, UpstreamConfig, UpstreamMcpClient, UpstreamServerInfo, UpstreamTool,
+    BoxedMcpExecutor, ContentBlock as GatewayContentBlock, GatewayError, McpGatewayManager,
+    ToolCallResult, TransportConfig, UpstreamConfig, UpstreamMcpClient, UpstreamServerInfo,
+    UpstreamTool,
 };
+pub use mcp_module::{
+    extract_param_names, extract_param_types, generate_mcp_server_module, McpToolCaller,
+};
+pub use mcp_types::{build_args_json, json_to_rune, mcp_types_module, rune_to_json, McpResult};
 pub use note_events::{
     BlockChange, BlockChangeOperation, BlockInfo, BlockType, InlineLinkInfo, NoteChangeType,
     NoteCreatedPayload, NoteEventEmitter, NoteMetadata, NoteModifiedPayload, NotePayload,

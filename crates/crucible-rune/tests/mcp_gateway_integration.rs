@@ -249,3 +249,195 @@ async fn test_multiple_upstreams() {
     assert_eq!(t1.upstream, "server1");
     assert_eq!(t2.upstream, "server2");
 }
+
+// =============================================================================
+// MCP Module Generation and Rune Integration Tests
+// =============================================================================
+
+use crucible_rune::mcp_gateway::{ContentBlock, ToolCallResult};
+use crucible_rune::mcp_module::{generate_mcp_server_module, McpToolCaller};
+use crucible_rune::RuneExecutor;
+
+/// Mock MCP client for testing
+struct MockMcpClient {
+    responses: std::collections::HashMap<String, ToolCallResult>,
+}
+
+impl MockMcpClient {
+    fn new() -> Self {
+        Self {
+            responses: std::collections::HashMap::new(),
+        }
+    }
+
+    fn with_response(mut self, tool: &str, text: &str, is_error: bool) -> Self {
+        self.responses.insert(
+            tool.to_string(),
+            ToolCallResult {
+                content: vec![ContentBlock::Text {
+                    text: text.to_string(),
+                }],
+                is_error,
+            },
+        );
+        self
+    }
+}
+
+impl McpToolCaller for MockMcpClient {
+    async fn call_tool(
+        &self,
+        tool_name: &str,
+        _args: serde_json::Value,
+    ) -> Result<ToolCallResult, String> {
+        self.responses
+            .get(tool_name)
+            .cloned()
+            .ok_or_else(|| format!("Unknown tool: {}", tool_name))
+    }
+}
+
+#[tokio::test]
+async fn test_generate_mcp_module_creates_valid_module() {
+    let client = Arc::new(MockMcpClient::new().with_response("echo", "hello", false));
+
+    let tools = vec![UpstreamTool {
+        name: "echo".to_string(),
+        prefixed_name: "test_echo".to_string(),
+        description: Some("Echo a message".to_string()),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "message": { "type": "string" }
+            },
+            "required": ["message"]
+        }),
+        upstream: "test".to_string(),
+    }];
+
+    let module = generate_mcp_server_module("test", &tools, client);
+    assert!(module.is_ok(), "Module generation should succeed");
+}
+
+#[tokio::test]
+async fn test_mcp_module_can_be_installed_in_executor() {
+    let client = Arc::new(MockMcpClient::new().with_response("greet", "Hello!", false));
+
+    let tools = vec![UpstreamTool {
+        name: "greet".to_string(),
+        prefixed_name: "mock_greet".to_string(),
+        description: Some("Greet someone".to_string()),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" }
+            },
+            "required": ["name"]
+        }),
+        upstream: "mock".to_string(),
+    }];
+
+    let module = generate_mcp_server_module("mock", &tools, client).unwrap();
+    let executor = RuneExecutor::with_modules(vec![module]);
+    assert!(executor.is_ok(), "Executor with MCP module should be created");
+}
+
+#[tokio::test]
+async fn test_rune_script_can_call_mcp_tool() {
+    // Create mock client that returns JSON
+    let client = Arc::new(
+        MockMcpClient::new().with_response("get_data", r#"{"value": 42}"#, false),
+    );
+
+    let tools = vec![UpstreamTool {
+        name: "get_data".to_string(),
+        prefixed_name: "mock_get_data".to_string(),
+        description: Some("Get some data".to_string()),
+        input_schema: json!({
+            "type": "object",
+            "properties": {}
+        }),
+        upstream: "mock".to_string(),
+    }];
+
+    let module = generate_mcp_server_module("mock", &tools, client).unwrap();
+    let executor = RuneExecutor::with_modules(vec![module]).unwrap();
+
+    // Compile a script that calls the MCP tool
+    let script = r#"
+use cru::mcp::mock;
+
+pub async fn main() {
+    let result = mock::get_data().await?;
+    result.text()
+}
+"#;
+
+    let unit = executor.compile("test", script);
+    assert!(
+        unit.is_ok(),
+        "Script using MCP tools should compile: {:?}",
+        unit.err()
+    );
+
+    // Note: Actually executing would require async execution support
+    // This test verifies the module is correctly registered and accessible
+}
+
+#[tokio::test]
+async fn test_mcp_result_methods_in_rune() {
+    let client = Arc::new(
+        MockMcpClient::new()
+            .with_response("success_tool", "Success!", false)
+            .with_response("error_tool", "Error occurred", true),
+    );
+
+    let tools = vec![
+        UpstreamTool {
+            name: "success_tool".to_string(),
+            prefixed_name: "mock_success_tool".to_string(),
+            description: Some("A successful tool".to_string()),
+            input_schema: json!({"type": "object", "properties": {}}),
+            upstream: "mock".to_string(),
+        },
+        UpstreamTool {
+            name: "error_tool".to_string(),
+            prefixed_name: "mock_error_tool".to_string(),
+            description: Some("A failing tool".to_string()),
+            input_schema: json!({"type": "object", "properties": {}}),
+            upstream: "mock".to_string(),
+        },
+    ];
+
+    let module = generate_mcp_server_module("mock", &tools, client).unwrap();
+    let executor = RuneExecutor::with_modules(vec![module]).unwrap();
+
+    // Script that uses various McpResult methods
+    let script = r#"
+use cru::mcp::mock;
+
+pub async fn test_success() {
+    let result = mock::success_tool().await?;
+
+    // Test is_error()
+    if result.is_error() {
+        return "ERROR";
+    }
+
+    // Test text()
+    result.text()
+}
+
+pub async fn test_error() {
+    let result = mock::error_tool().await?;
+    result.is_error()
+}
+"#;
+
+    let unit = executor.compile("test", script);
+    assert!(
+        unit.is_ok(),
+        "Script with McpResult methods should compile: {:?}",
+        unit.err()
+    );
+}
