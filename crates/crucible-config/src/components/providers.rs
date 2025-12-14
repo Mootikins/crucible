@@ -5,7 +5,8 @@
 
 use super::backend::BackendType;
 use super::provider::ProviderConfig;
-use serde::{Deserialize, Serialize};
+use serde::{de::Deserializer, Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 
 /// Configuration for multiple provider instances
@@ -14,26 +15,36 @@ use std::collections::HashMap;
 /// It manages named provider instances and default selections for different
 /// capabilities (embedding, chat).
 ///
-/// # Example TOML
+/// # Example TOML (New Flat Format)
 ///
 /// ```toml
 /// [providers]
 /// default_embedding = "local-ollama"
 /// default_chat = "local-ollama"
 ///
-/// [providers.instances.local-ollama]
+/// [providers.local-ollama]
 /// backend = "ollama"
 /// endpoint = "http://localhost:11434"
 /// models.embedding = "nomic-embed-text"
 /// models.chat = "llama3.2"
 ///
-/// [providers.instances.openai-prod]
+/// [providers.openai-prod]
 /// backend = "openai"
 /// api_key = { env = "OPENAI_API_KEY" }
 /// models.embedding = "text-embedding-3-small"
 /// models.chat = "gpt-4o"
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+///
+/// # Legacy Format (Still Supported)
+///
+/// ```toml
+/// [providers]
+/// default_embedding = "local-ollama"
+///
+/// [providers.instances.local-ollama]
+/// backend = "ollama"
+/// ```
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct ProvidersConfig {
     /// Default provider name for embedding operations
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -43,9 +54,54 @@ pub struct ProvidersConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_chat: Option<String>,
 
-    /// Named provider instances
-    #[serde(default)]
-    pub instances: HashMap<String, ProviderConfig>,
+    /// Named provider instances (flattened in serialization)
+    #[serde(flatten)]
+    providers: HashMap<String, ProviderConfig>,
+}
+
+// Custom deserialization to support both flat and legacy formats
+impl<'de> Deserialize<'de> for ProvidersConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        // Parse as a generic map
+        let mut map: HashMap<String, Value> = HashMap::deserialize(deserializer)?;
+
+        // Extract special keys
+        let default_embedding = map
+            .remove("default_embedding")
+            .map(|v| serde_json::from_value(v).map_err(D::Error::custom))
+            .transpose()?;
+
+        let default_chat = map
+            .remove("default_chat")
+            .map(|v| serde_json::from_value(v).map_err(D::Error::custom))
+            .transpose()?;
+
+        // Handle legacy "instances" key
+        let mut providers = HashMap::new();
+        if let Some(instances_value) = map.remove("instances") {
+            // Legacy format: [providers.instances.X]
+            let instances: HashMap<String, ProviderConfig> =
+                serde_json::from_value(instances_value).map_err(D::Error::custom)?;
+            providers.extend(instances);
+        }
+
+        // All remaining keys are provider names in flat format
+        for (key, value) in map {
+            let config: ProviderConfig = serde_json::from_value(value).map_err(D::Error::custom)?;
+            providers.insert(key, config);
+        }
+
+        Ok(ProvidersConfig {
+            default_embedding,
+            default_chat,
+            providers,
+        })
+    }
 }
 
 impl ProvidersConfig {
@@ -56,18 +112,18 @@ impl ProvidersConfig {
 
     /// Add a provider instance
     pub fn add(&mut self, name: impl Into<String>, config: ProviderConfig) {
-        self.instances.insert(name.into(), config);
+        self.providers.insert(name.into(), config);
     }
 
     /// Get a provider by name
     pub fn get(&self, name: &str) -> Option<&ProviderConfig> {
-        self.instances.get(name)
+        self.providers.get(name)
     }
 
     /// Get the default embedding provider
     pub fn default_embedding_provider(&self) -> Option<(&String, &ProviderConfig)> {
         let name = self.default_embedding.as_ref()?;
-        let config = self.instances.get(name)?;
+        let config = self.providers.get(name)?;
         if config.supports_embeddings() {
             Some((name, config))
         } else {
@@ -78,7 +134,7 @@ impl ProvidersConfig {
     /// Get the default chat provider
     pub fn default_chat_provider(&self) -> Option<(&String, &ProviderConfig)> {
         let name = self.default_chat.as_ref()?;
-        let config = self.instances.get(name)?;
+        let config = self.providers.get(name)?;
         if config.supports_chat() {
             Some((name, config))
         } else {
@@ -89,7 +145,7 @@ impl ProvidersConfig {
     /// Find the first provider that supports embeddings
     pub fn first_embedding_provider(&self) -> Option<(&String, &ProviderConfig)> {
         self.default_embedding_provider().or_else(|| {
-            self.instances
+            self.providers
                 .iter()
                 .find(|(_, c)| c.supports_embeddings())
         })
@@ -98,17 +154,17 @@ impl ProvidersConfig {
     /// Find the first provider that supports chat
     pub fn first_chat_provider(&self) -> Option<(&String, &ProviderConfig)> {
         self.default_chat_provider()
-            .or_else(|| self.instances.iter().find(|(_, c)| c.supports_chat()))
+            .or_else(|| self.providers.iter().find(|(_, c)| c.supports_chat()))
     }
 
     /// List all provider names
     pub fn names(&self) -> Vec<&String> {
-        self.instances.keys().collect()
+        self.providers.keys().collect()
     }
 
     /// List providers that support embeddings
     pub fn embedding_providers(&self) -> Vec<(&String, &ProviderConfig)> {
-        self.instances
+        self.providers
             .iter()
             .filter(|(_, c)| c.supports_embeddings())
             .collect()
@@ -116,7 +172,7 @@ impl ProvidersConfig {
 
     /// List providers that support chat
     pub fn chat_providers(&self) -> Vec<(&String, &ProviderConfig)> {
-        self.instances
+        self.providers
             .iter()
             .filter(|(_, c)| c.supports_chat())
             .collect()
@@ -124,13 +180,13 @@ impl ProvidersConfig {
 
     /// Check if any providers are configured
     pub fn has_providers(&self) -> bool {
-        !self.instances.is_empty()
+        !self.providers.is_empty()
     }
 
     /// Validate all provider configurations
     pub fn validate(&self) -> Result<(), Vec<(String, String)>> {
         let errors: Vec<(String, String)> = self
-            .instances
+            .providers
             .iter()
             .filter_map(|(name, config)| config.validate().err().map(|e| (name.clone(), e)))
             .collect();
@@ -158,7 +214,7 @@ impl ProvidersConfig {
 
     /// Add a provider instance (builder pattern)
     pub fn with_provider(mut self, name: impl Into<String>, config: ProviderConfig) -> Self {
-        self.instances.insert(name.into(), config);
+        self.providers.insert(name.into(), config);
         self
     }
 
@@ -315,5 +371,102 @@ mod tests {
         let parsed: ProvidersConfig = toml::from_str(&toml).unwrap();
         assert_eq!(parsed.default_embedding, Some("local-ollama".to_string()));
         assert!(parsed.get("local-ollama").is_some());
+    }
+}
+
+#[cfg(test)]
+mod flat_config_tests {
+    use super::*;
+
+    // RED: Test flat config parsing
+    #[test]
+    fn test_flat_providers_config_parsing() {
+        let toml = r#"
+default_embedding = "ollama"
+default_chat = "ollama"
+
+[ollama]
+backend = "ollama"
+endpoint = "http://localhost:11434"
+
+[fastembed]
+backend = "fastembed"
+"#;
+        let config: ProvidersConfig = toml::from_str(toml).unwrap();
+
+        assert_eq!(config.default_embedding, Some("ollama".to_string()));
+        assert_eq!(config.default_chat, Some("ollama".to_string()));
+        assert!(config.get("ollama").is_some());
+        assert!(config.get("fastembed").is_some());
+        // "instances" should not be in the config
+        assert!(config.get("instances").is_none());
+    }
+
+    // RED: Test backwards compatibility with old format
+    #[test]
+    fn test_legacy_instances_format_still_works() {
+        let toml = r#"
+default_embedding = "ollama"
+
+[instances.ollama]
+backend = "ollama"
+"#;
+        let config: ProvidersConfig = toml::from_str(toml).unwrap();
+        assert!(config.get("ollama").is_some());
+        assert_eq!(config.default_embedding, Some("ollama".to_string()));
+    }
+
+    // RED: Test serialization produces flat format
+    #[test]
+    fn test_serialization_produces_flat_format() {
+        let config = ProvidersConfig::new()
+            .with_provider("ollama", ProviderConfig::new(BackendType::Ollama))
+            .with_default_embedding("ollama");
+
+        let toml = toml::to_string_pretty(&config).unwrap();
+
+        // Should NOT contain "instances"
+        assert!(!toml.contains("[instances"));
+        // Should have flat provider section
+        assert!(toml.contains("[ollama]"));
+    }
+
+    // RED: Reserved keys should not be treated as providers
+    #[test]
+    fn test_reserved_keys_not_providers() {
+        let config = ProvidersConfig::new()
+            .with_default_embedding("test")
+            .with_default_chat("chat-test");
+
+        // These should not appear as provider names
+        let names = config.names();
+        assert!(!names.contains(&&"default_embedding".to_string()));
+        assert!(!names.contains(&&"default_chat".to_string()));
+    }
+
+    // Verify the actual serialized output looks correct
+    #[test]
+    fn test_flat_format_visual_verification() {
+        let config = ProvidersConfig::new()
+            .with_provider(
+                "ollama",
+                ProviderConfig::new(BackendType::Ollama)
+                    .with_endpoint("http://localhost:11434"),
+            )
+            .with_provider("fastembed", ProviderConfig::new(BackendType::FastEmbed))
+            .with_default_embedding("ollama")
+            .with_default_chat("ollama");
+
+        let toml = toml::to_string_pretty(&config).unwrap();
+
+        // Verify structure
+        assert!(toml.contains("default_embedding = \"ollama\""));
+        assert!(toml.contains("default_chat = \"ollama\""));
+        assert!(toml.contains("[ollama]"));
+        assert!(toml.contains("[fastembed]"));
+        assert!(!toml.contains("[instances"));
+
+        // Print for visual verification during development
+        eprintln!("Serialized TOML:\n{}", toml);
     }
 }
