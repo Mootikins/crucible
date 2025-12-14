@@ -304,6 +304,7 @@ DEFINE FIELD icon ON TABLE tags
 
 DEFINE INDEX tag_name_unique ON TABLE tags COLUMNS name UNIQUE;
 DEFINE INDEX tag_path_idx ON TABLE tags COLUMNS path;
+DEFINE INDEX tag_parent_idx ON TABLE tags COLUMNS parent_id;
 
 -- ============================================================================
 -- TABLE: entity_tags
@@ -333,3 +334,5 @@ DEFINE FIELD created_at ON TABLE entity_tags
 
 DEFINE INDEX entity_tag_unique ON TABLE entity_tags
     COLUMNS entity_id, tag_id UNIQUE;
+
+DEFINE INDEX entity_tag_tag_idx ON TABLE entity_tags COLUMNS tag_id;
