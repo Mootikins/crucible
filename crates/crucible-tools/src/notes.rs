@@ -99,7 +99,8 @@ impl NoteTools {
         let content = params.content;
         let frontmatter = params.frontmatter;
 
-        let full_path = std::path::Path::new(&self.kiln_path).join(&path);
+        // Security: Validate path to prevent traversal attacks
+        let full_path = validate_path_within_kiln(&self.kiln_path, &path)?;
 
         // Build final content with optional frontmatter
         let final_content = if let Some(fm) = frontmatter {
@@ -132,7 +133,9 @@ impl NoteTools {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
         let path = ensure_md_suffix(params.path);
-        let full_path = std::path::Path::new(&self.kiln_path).join(&path);
+
+        // Security: Validate path to prevent traversal attacks
+        let full_path = validate_path_within_kiln(&self.kiln_path, &path)?;
 
         if !full_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
@@ -186,7 +189,9 @@ impl NoteTools {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
         let path = ensure_md_suffix(params.path);
-        let full_path = std::path::Path::new(&self.kiln_path).join(&path);
+
+        // Security: Validate path to prevent traversal attacks
+        let full_path = validate_path_within_kiln(&self.kiln_path, &path)?;
 
         if !full_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
@@ -245,7 +250,9 @@ impl NoteTools {
         let path = ensure_md_suffix(params.path);
         let new_content = params.content;
         let new_frontmatter = params.frontmatter;
-        let full_path = std::path::Path::new(&self.kiln_path).join(&path);
+
+        // Security: Validate path to prevent traversal attacks
+        let full_path = validate_path_within_kiln(&self.kiln_path, &path)?;
 
         if !full_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
@@ -323,7 +330,9 @@ impl NoteTools {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
         let path = ensure_md_suffix(params.path);
-        let full_path = std::path::Path::new(&self.kiln_path).join(&path);
+
+        // Security: Validate path to prevent traversal attacks
+        let full_path = validate_path_within_kiln(&self.kiln_path, &path)?;
 
         if !full_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
@@ -357,11 +366,11 @@ impl NoteTools {
         let include_frontmatter = params.include_frontmatter;
         let recursive = params.recursive;
 
-        let search_path = if let Some(ref folder) = folder {
-            std::path::Path::new(&self.kiln_path).join(folder)
-        } else {
-            std::path::Path::new(&self.kiln_path).to_path_buf()
-        };
+        // Security: Validate folder to prevent traversal attacks
+        let search_path = validate_folder_within_kiln(
+            &self.kiln_path,
+            folder.as_deref(),
+        )?;
 
         if !search_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
@@ -461,8 +470,8 @@ impl NoteTools {
     }
 }
 
-// Use shared utility for frontmatter parsing
-use crate::utils::parse_yaml_frontmatter;
+// Use shared utilities for frontmatter parsing and path validation
+use crate::utils::{parse_yaml_frontmatter, validate_path_within_kiln, validate_folder_within_kiln};
 
 /// Serialize frontmatter to YAML format with delimiters
 fn serialize_frontmatter_to_yaml(frontmatter: &serde_json::Value) -> Result<String, String> {
@@ -1444,5 +1453,187 @@ mod tests {
 
         // This should compile and not panic - the tool_router macro generates the router
         let _router = NoteTools::tool_router();
+    }
+
+    // ===== Security Tests for Path Traversal =====
+
+    #[tokio::test]
+    async fn test_create_note_path_traversal_parent_dir() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+        let note_tools = NoteTools::new(kiln_path);
+
+        let result = note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "../../../etc/passwd".to_string(),
+                content: "malicious content".to_string(),
+                frontmatter: None,
+            }))
+            .await;
+
+        assert!(result.is_err(), "Should reject path traversal attack");
+        if let Err(e) = result {
+            assert!(
+                e.message.contains("Path traversal"),
+                "Error should mention path traversal"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_note_path_traversal_absolute() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+        let note_tools = NoteTools::new(kiln_path);
+
+        let result = note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "/etc/passwd".to_string(),
+                content: "malicious content".to_string(),
+                frontmatter: None,
+            }))
+            .await;
+
+        assert!(result.is_err(), "Should reject absolute path");
+        if let Err(e) = result {
+            assert!(
+                e.message.contains("Absolute paths are not allowed"),
+                "Error should mention absolute paths"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_note_path_traversal() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+        let note_tools = NoteTools::new(kiln_path);
+
+        let result = note_tools
+            .read_note(Parameters(ReadNoteParams {
+                path: "../../etc/passwd".to_string(),
+                start_line: None,
+                end_line: None,
+            }))
+            .await;
+
+        assert!(result.is_err(), "Should reject path traversal");
+    }
+
+    #[tokio::test]
+    async fn test_update_note_path_traversal() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+        let note_tools = NoteTools::new(kiln_path);
+
+        let result = note_tools
+            .update_note(Parameters(UpdateNoteParams {
+                path: "../../../etc/passwd".to_string(),
+                content: Some("malicious".to_string()),
+                frontmatter: None,
+            }))
+            .await;
+
+        assert!(result.is_err(), "Should reject path traversal");
+    }
+
+    #[tokio::test]
+    async fn test_delete_note_path_traversal() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+        let note_tools = NoteTools::new(kiln_path);
+
+        let result = note_tools
+            .delete_note(Parameters(DeleteNoteParams {
+                path: "../../etc/passwd".to_string(),
+            }))
+            .await;
+
+        assert!(result.is_err(), "Should reject path traversal");
+    }
+
+    #[tokio::test]
+    async fn test_list_notes_path_traversal() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+        let note_tools = NoteTools::new(kiln_path);
+
+        let result = note_tools
+            .list_notes(Parameters(ListNotesParams {
+                folder: Some("../../../etc".to_string()),
+                include_frontmatter: false,
+                recursive: false,
+            }))
+            .await;
+
+        assert!(result.is_err(), "Should reject path traversal in folder");
+    }
+
+    #[tokio::test]
+    async fn test_read_metadata_path_traversal() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+        let note_tools = NoteTools::new(kiln_path);
+
+        let result = note_tools
+            .read_metadata(Parameters(ReadMetadataParams {
+                path: "../../../etc/passwd".to_string(),
+            }))
+            .await;
+
+        assert!(result.is_err(), "Should reject path traversal");
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_symlink_escape_blocked() {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+        let note_tools = NoteTools::new(kiln_path.clone());
+
+        // Create a directory outside the kiln
+        let outside_dir = TempDir::new().unwrap();
+        std::fs::write(outside_dir.path().join("secret.txt"), "secret data").unwrap();
+
+        // Create a symlink inside kiln that points outside
+        let symlink_path = temp_dir.path().join("evil_link");
+        symlink(outside_dir.path(), &symlink_path).unwrap();
+
+        // Try to create a file through the symlink
+        let result = note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "evil_link/secret.txt".to_string(),
+                content: "overwrite attempt".to_string(),
+                frontmatter: None,
+            }))
+            .await;
+
+        assert!(
+            result.is_err(),
+            "Should reject symlink escape to outside kiln"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_valid_nested_path_allowed() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+        let note_tools = NoteTools::new(kiln_path);
+
+        // Create nested directory
+        std::fs::create_dir_all(temp_dir.path().join("projects/rust")).unwrap();
+
+        // This should succeed - normal nested path
+        let result = note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: "projects/rust/main.md".to_string(),
+                content: "# Rust Project".to_string(),
+                frontmatter: None,
+            }))
+            .await;
+
+        assert!(result.is_ok(), "Should allow valid nested path");
     }
 }
