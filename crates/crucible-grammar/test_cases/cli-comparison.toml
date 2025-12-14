@@ -1,0 +1,110 @@
+# CLI Tool Format Comparison Test Suite
+#
+# These test cases compare three tool calling formats:
+# 1. Structured: rg(pattern="TODO", path="src")
+# 2. Passthrough: rg(args="-n TODO src/")
+# 3. Raw CLI: rg -n TODO src/
+#
+# The expected values use "rg" as the tool name - scoring handles
+# all three formats and maps raw CLI commands appropriately.
+
+name = "cli-comparison"
+
+# --- Simple Search Cases ---
+
+[[cases]]
+name = "search_todo"
+prompt = "Search for TODO comments in the source code"
+[cases.expected]
+tool = "rg"
+[cases.expected.params]
+pattern = "TODO"
+
+[[cases]]
+name = "search_in_directory"
+prompt = "Find the word 'error' in the src directory"
+[cases.expected]
+tool = "rg"
+[cases.expected.params]
+pattern = "error"
+path = "src"
+
+[[cases]]
+name = "search_case_insensitive"
+prompt = "Search for 'FIXME' (case insensitive) in rust files with line numbers"
+[cases.expected]
+tool = "rg"
+[cases.expected.params]
+pattern = "FIXME"
+
+# --- File Finding Cases ---
+
+[[cases]]
+name = "find_rust_files"
+prompt = "Find all .rs files in the project"
+[cases.expected]
+tool = "fd"
+[cases.expected.params]
+pattern = ".rs"
+
+[[cases]]
+name = "find_test_files"
+prompt = "Find files named test*.rs"
+[cases.expected]
+tool = "fd"
+[cases.expected.params]
+pattern = "test"
+
+# --- File Reading Cases ---
+
+[[cases]]
+name = "read_file"
+prompt = "Read the contents of README.md"
+[cases.expected]
+tool = "read"
+[cases.expected.params]
+path = "README.md"
+
+[[cases]]
+name = "read_config"
+prompt = "Show the Cargo.toml file"
+[cases.expected]
+tool = "read"
+[cases.expected.params]
+path = "Cargo.toml"
+
+# --- Directory Listing Cases ---
+
+[[cases]]
+name = "list_current"
+prompt = "List files in the current directory"
+[cases.expected]
+tool = "ls"
+[cases.expected.params]
+path = "."
+
+[[cases]]
+name = "list_src"
+prompt = "Show what's in the src folder"
+[cases.expected]
+tool = "ls"
+[cases.expected.params]
+path = "src"
+
+# --- Complex Cases ---
+
+[[cases]]
+name = "search_function_definition"
+prompt = "Find the definition of 'parse_tool_call' function"
+[cases.expected]
+tool = "rg"
+[cases.expected.params]
+pattern = "fn parse_tool_call"
+
+[[cases]]
+name = "search_with_context"
+prompt = "Search for 'impl Scorer' and show 5 lines after each match"
+[cases.expected]
+tool = "rg"
+[cases.expected.params]
+pattern = "impl Scorer"
