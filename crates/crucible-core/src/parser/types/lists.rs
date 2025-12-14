@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use super::inline_metadata::InlineMetadata;
+
 /// List block
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListBlock {
@@ -209,8 +211,11 @@ pub struct ListItem {
     /// Item level (for nested lists)
     pub level: usize,
 
-    /// Task status (for task lists)
+    /// Task status (for task lists) - legacy field, use checkbox_status instead
     pub task_status: Option<TaskStatus>,
+
+    /// Checkbox status (for task lists with extended status support)
+    pub checkbox_status: Option<CheckboxStatus>,
 
     /// The specific marker used for this item
     pub marker: ListMarkerStyle,
@@ -229,6 +234,9 @@ pub struct ListItem {
 
     /// Whether this item has nested items
     pub has_nested: bool,
+
+    /// Inline metadata fields extracted from content
+    pub metadata: Vec<InlineMetadata>,
 }
 
 impl ListItem {
@@ -238,12 +246,14 @@ impl ListItem {
             content,
             level,
             task_status: None,
+            checkbox_status: None,
             marker: ListMarkerStyle::default_for_type(ListType::Unordered),
             marker_text: "-".to_string(),
             sequence_number: None,
             offset: 0,
             indent_spaces: level * 2, // Default 2 spaces per level
             has_nested: false,
+            metadata: Vec::new(),
         }
     }
 
@@ -261,12 +271,14 @@ impl ListItem {
             content,
             level,
             task_status: None,
+            checkbox_status: None,
             marker,
             marker_text,
             sequence_number,
             offset,
             indent_spaces,
             has_nested: false,
+            metadata: Vec::new(),
         }
     }
 
@@ -280,12 +292,18 @@ impl ListItem {
             } else {
                 TaskStatus::Pending
             }),
+            checkbox_status: Some(if completed {
+                CheckboxStatus::Done
+            } else {
+                CheckboxStatus::Pending
+            }),
             marker: ListMarkerStyle::default_for_type(ListType::Unordered),
             marker_text: "-".to_string(),
             sequence_number: None,
             offset: 0,
             indent_spaces: level * 2,
             has_nested: false,
+            metadata: Vec::new(),
         }
     }
 
@@ -308,12 +326,18 @@ impl ListItem {
             } else {
                 TaskStatus::Pending
             }),
+            checkbox_status: Some(if completed {
+                CheckboxStatus::Done
+            } else {
+                CheckboxStatus::Pending
+            }),
             marker,
             marker_text,
             sequence_number,
             offset,
             indent_spaces,
             has_nested: false,
+            metadata: Vec::new(),
         }
     }
 
@@ -355,6 +379,73 @@ impl ListItem {
             self.content.clone()
         }
     }
+
+    /// Create a new list item with inline metadata extraction
+    ///
+    /// Extracts inline metadata from the content and stores it in the metadata field.
+    /// The metadata patterns are stripped from the content string.
+    pub fn new_with_inline_metadata(content: String, level: usize) -> Self {
+        use super::inline_metadata::extract_inline_metadata;
+        use regex::Regex;
+
+        // Extract metadata
+        let metadata = extract_inline_metadata(&content);
+
+        // Strip metadata patterns from content
+        let re = Regex::new(r"\[([^:]+)::\s*([^\]]+)\]").expect("valid regex");
+        let stripped_content = re.replace_all(&content, "").trim().to_string();
+
+        Self {
+            content: stripped_content,
+            level,
+            task_status: None,
+            checkbox_status: None,
+            marker: ListMarkerStyle::default_for_type(ListType::Unordered),
+            marker_text: "-".to_string(),
+            sequence_number: None,
+            offset: 0,
+            indent_spaces: level * 2,
+            has_nested: false,
+            metadata,
+        }
+    }
+
+    /// Create a task list item with inline metadata extraction
+    pub fn new_task_with_inline_metadata(
+        content: String,
+        level: usize,
+        checkbox_status: CheckboxStatus,
+    ) -> Self {
+        use super::inline_metadata::extract_inline_metadata;
+        use regex::Regex;
+
+        // Extract metadata
+        let metadata = extract_inline_metadata(&content);
+
+        // Strip metadata patterns from content
+        let re = Regex::new(r"\[([^:]+)::\s*([^\]]+)\]").expect("valid regex");
+        let stripped_content = re.replace_all(&content, "").trim().to_string();
+
+        // Map CheckboxStatus to legacy TaskStatus
+        let task_status = match checkbox_status {
+            CheckboxStatus::Done => Some(TaskStatus::Completed),
+            _ => Some(TaskStatus::Pending),
+        };
+
+        Self {
+            content: stripped_content,
+            level,
+            task_status,
+            checkbox_status: Some(checkbox_status),
+            marker: ListMarkerStyle::default_for_type(ListType::Unordered),
+            marker_text: "-".to_string(),
+            sequence_number: None,
+            offset: 0,
+            indent_spaces: level * 2,
+            has_nested: false,
+            metadata,
+        }
+    }
 }
 
 /// Statistics about a list's structure
@@ -381,4 +472,137 @@ pub enum TaskStatus {
     Completed,
     /// Task is pending ([ ])
     Pending,
+}
+
+/// Extended checkbox status for task list items
+///
+/// Supports additional states beyond the basic pending/completed:
+/// - `[ ]` (space) - Pending
+/// - `[x]` or `[X]` - Done
+/// - `[/]` - InProgress
+/// - `[-]` - Cancelled
+/// - `[!]` - Blocked
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CheckboxStatus {
+    /// Task is pending ([ ])
+    Pending,
+    /// Task is done ([x] or [X])
+    Done,
+    /// Task is in progress ([/])
+    InProgress,
+    /// Task is cancelled ([-])
+    Cancelled,
+    /// Task is blocked ([!])
+    Blocked,
+}
+
+impl CheckboxStatus {
+    /// Parse a checkbox status from a character
+    pub fn from_char(c: char) -> Option<Self> {
+        match c {
+            ' ' => Some(CheckboxStatus::Pending),
+            'x' | 'X' => Some(CheckboxStatus::Done),
+            '/' => Some(CheckboxStatus::InProgress),
+            '-' => Some(CheckboxStatus::Cancelled),
+            '!' => Some(CheckboxStatus::Blocked),
+            _ => None,
+        }
+    }
+
+    /// Convert checkbox status to a character
+    pub fn to_char(self) -> char {
+        match self {
+            CheckboxStatus::Pending => ' ',
+            CheckboxStatus::Done => 'x',
+            CheckboxStatus::InProgress => '/',
+            CheckboxStatus::Cancelled => '-',
+            CheckboxStatus::Blocked => '!',
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checkbox_status_from_char_space_is_pending() {
+        assert_eq!(CheckboxStatus::from_char(' '), Some(CheckboxStatus::Pending));
+    }
+
+    #[test]
+    fn checkbox_status_from_char_x_is_done() {
+        assert_eq!(CheckboxStatus::from_char('x'), Some(CheckboxStatus::Done));
+        assert_eq!(CheckboxStatus::from_char('X'), Some(CheckboxStatus::Done));
+    }
+
+    #[test]
+    fn checkbox_status_from_char_slash_is_in_progress() {
+        assert_eq!(CheckboxStatus::from_char('/'), Some(CheckboxStatus::InProgress));
+    }
+
+    #[test]
+    fn checkbox_status_from_char_dash_is_cancelled() {
+        assert_eq!(CheckboxStatus::from_char('-'), Some(CheckboxStatus::Cancelled));
+    }
+
+    #[test]
+    fn checkbox_status_from_char_bang_is_blocked() {
+        assert_eq!(CheckboxStatus::from_char('!'), Some(CheckboxStatus::Blocked));
+    }
+
+    #[test]
+    fn checkbox_status_to_char_roundtrips() {
+        let statuses = vec![
+            CheckboxStatus::Pending,
+            CheckboxStatus::Done,
+            CheckboxStatus::InProgress,
+            CheckboxStatus::Cancelled,
+            CheckboxStatus::Blocked,
+        ];
+
+        for status in statuses {
+            let c = status.to_char();
+            let parsed = CheckboxStatus::from_char(c);
+            assert_eq!(parsed, Some(status), "Failed to roundtrip {:?}", status);
+        }
+    }
+
+    #[test]
+    fn list_item_with_inline_metadata() {
+        // Test parsing "- [ ] task [id:: 1.1]" extracts the metadata
+        let item = ListItem::new_with_inline_metadata("task [id:: 1.1]".to_string(), 0);
+
+        assert_eq!(item.metadata.len(), 1);
+        assert_eq!(item.metadata[0].key, "id");
+        assert_eq!(item.metadata[0].values, vec!["1.1"]);
+    }
+
+    #[test]
+    fn list_item_metadata_stripped_from_content() {
+        // Test that "[id:: 1.1]" is removed from content text
+        let item = ListItem::new_with_inline_metadata("task [id:: 1.1]".to_string(), 0);
+
+        // Content should have metadata stripped
+        assert_eq!(item.content, "task");
+        assert_eq!(item.metadata.len(), 1);
+    }
+
+    #[test]
+    fn checkbox_item_with_id_and_deps() {
+        // Test "- [/] task [id:: 1.2] [deps:: 1.1]" extracts both fields
+        let item = ListItem::new_task_with_inline_metadata(
+            "task [id:: 1.2] [deps:: 1.1]".to_string(),
+            0,
+            CheckboxStatus::InProgress,
+        );
+
+        assert_eq!(item.metadata.len(), 2);
+        assert_eq!(item.metadata[0].key, "id");
+        assert_eq!(item.metadata[0].values, vec!["1.2"]);
+        assert_eq!(item.metadata[1].key, "deps");
+        assert_eq!(item.metadata[1].values, vec!["1.1"]);
+        assert_eq!(item.content, "task");
+        assert_eq!(item.checkbox_status, Some(CheckboxStatus::InProgress));
+    }
 }

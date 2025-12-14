@@ -23,9 +23,11 @@ mod blocks;
 mod callout;
 mod content;
 mod frontmatter;
+mod inline_metadata;
 mod links;
 mod lists;
 mod parsed_note;
+mod task;
 
 // Re-export ParseError from parser error module
 pub use crate::parser::error::ParseError;
@@ -37,9 +39,11 @@ pub use blocks::{Blockquote, HorizontalRule, Table};
 pub use callout::{Callout, LatexExpression};
 pub use content::{CodeBlock, Heading, NoteContent, Paragraph};
 pub use frontmatter::{Frontmatter, FrontmatterFormat};
+pub use inline_metadata::{extract_inline_metadata, InlineMetadata};
 pub use links::{FootnoteDefinition, FootnoteMap, FootnoteReference, InlineLink, Tag, Wikilink};
-pub use lists::{ListBlock, ListItem, ListMarkerStyle, ListStats, ListType, TaskStatus};
+pub use lists::{CheckboxStatus, ListBlock, ListItem, ListMarkerStyle, ListStats, ListType, TaskStatus};
 pub use parsed_note::{ParsedNote, ParsedNoteBuilder, ParsedNoteMetadata};
+pub use task::{TaskFile, TaskItem};
 
 #[cfg(test)]
 mod tests {
