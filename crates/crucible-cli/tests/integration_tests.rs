@@ -93,14 +93,6 @@ fn test_global_embedding_model_flag() {
 }
 
 #[test]
-fn test_global_db_path_flag() {
-    let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("--db-path").arg("/tmp/test.db").arg("--help");
-
-    cmd.assert().success();
-}
-
-#[test]
 fn test_global_format_flag() {
     let mut cmd = Command::cargo_bin("cru").unwrap();
     cmd.arg("--format").arg("json").arg("--help");
