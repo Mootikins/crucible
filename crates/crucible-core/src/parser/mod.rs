@@ -56,6 +56,7 @@ pub use types::{
     Blockquote,
     // Enhanced content types
     Callout,
+    CheckboxStatus,
     CodeBlock,
     FootnoteDefinition,
     // Footnote types
@@ -67,6 +68,8 @@ pub use types::{
     Heading,
     HorizontalRule,
     InlineLink,
+    // Inline metadata
+    InlineMetadata,
     LatexExpression,
     ListBlock,
     ListItem,
@@ -81,6 +84,8 @@ pub use types::{
     // Additional content types
     Table,
     Tag,
+    // Task types
+    TaskItem,
     TaskStatus,
     // Link and tag types
     Wikilink,
