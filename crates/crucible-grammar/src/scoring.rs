@@ -1,4 +1,9 @@
 //! Scoring metrics for tool call accuracy
+//!
+//! Supports multiple tool call formats:
+//! - **Structured**: `tool(param="value", ...)` - full param decomposition
+//! - **Passthrough**: `tool(args="...")` - args passed through
+//! - **Raw CLI**: `command args...` - directly executable
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -37,11 +42,149 @@ pub struct ExpectedToolCall {
     pub params: HashMap<String, serde_json::Value>,
 }
 
+/// Parsed tool call - unified representation
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParsedToolCall {
+    /// Structured: tool(param="value", ...)
+    Structured {
+        tool: String,
+        params: HashMap<String, String>,
+    },
+    /// Passthrough: tool(args="...")
+    Passthrough { tool: String, args: String },
+    /// Raw CLI: command args...
+    RawCli { command: String, args: String },
+}
+
+impl ParsedToolCall {
+    /// Get the tool/command name
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Structured { tool, .. } => tool,
+            Self::Passthrough { tool, .. } => tool,
+            Self::RawCli { command, .. } => command,
+        }
+    }
+
+    /// Check if this matches an expected tool call
+    pub fn matches(&self, expected: &ExpectedToolCall) -> bool {
+        match self {
+            Self::Structured { tool, params } => {
+                if tool != &expected.tool {
+                    return false;
+                }
+                // Check all expected params match
+                expected.params.iter().all(|(key, val)| {
+                    let expected_str = match val {
+                        serde_json::Value::String(s) => s.clone(),
+                        v => v.to_string().trim_matches('"').to_string(),
+                    };
+                    params.get(key).map(|v| v == &expected_str).unwrap_or(false)
+                })
+            }
+            Self::Passthrough { tool, args } => {
+                if tool != &expected.tool {
+                    return false;
+                }
+                // For passthrough, check if expected args substring exists
+                if let Some(expected_args) = expected.params.get("args") {
+                    let expected_str = expected_args.as_str().unwrap_or("");
+                    args.contains(expected_str) || expected_str.is_empty()
+                } else {
+                    true
+                }
+            }
+            Self::RawCli { command, args } => {
+                // Map CLI commands to tool names
+                let tool_name = match command.as_str() {
+                    "rg" => "rg",
+                    "fd" => "fd",
+                    "cat" => "read",
+                    "ls" => "ls",
+                    "grep" => "grep",
+                    other => other,
+                };
+                if tool_name != expected.tool {
+                    return false;
+                }
+                // For raw CLI, check key values appear in args
+                expected.params.iter().all(|(key, val)| {
+                    if key == "args" {
+                        return true; // Skip generic args key
+                    }
+                    let val_str = match val {
+                        serde_json::Value::String(s) => s.clone(),
+                        v => v.to_string().trim_matches('"').to_string(),
+                    };
+                    args.contains(&val_str)
+                })
+            }
+        }
+    }
+}
+
 /// Scorer for comparing actual vs expected tool calls
 pub struct Scorer;
 
 impl Scorer {
-    /// Parse a tool call from output string
+    /// Parse output into a unified ParsedToolCall
+    ///
+    /// Auto-detects format:
+    /// - `tool(param="val")` → Structured
+    /// - `tool(args="...")` → Passthrough
+    /// - `command args` → RawCli
+    pub fn parse(output: &str) -> Option<ParsedToolCall> {
+        let output = output.trim();
+
+        // Try structured/passthrough first (has parentheses)
+        if let Some(paren_start) = output.find('(') {
+            if let Some(paren_end) = output.rfind(')') {
+                let tool_name = output[..paren_start].trim().to_string();
+                let params_str = &output[paren_start + 1..paren_end];
+
+                // Check if it's passthrough format: args="..."
+                if params_str.trim().starts_with("args=") {
+                    let args = params_str
+                        .trim()
+                        .strip_prefix("args=")
+                        .unwrap_or("")
+                        .trim_matches('"')
+                        .to_string();
+                    return Some(ParsedToolCall::Passthrough { tool: tool_name, args });
+                }
+
+                // Otherwise it's structured
+                let mut params = HashMap::new();
+                for part in Self::split_params(params_str) {
+                    let part = part.trim();
+                    if part.is_empty() {
+                        continue;
+                    }
+                    if let Some(eq_pos) = part.find('=') {
+                        let key = part[..eq_pos].trim().to_string();
+                        let value = part[eq_pos + 1..].trim().trim_matches('"').to_string();
+                        params.insert(key, value);
+                    }
+                }
+                return Some(ParsedToolCall::Structured { tool: tool_name, params });
+            }
+        }
+
+        // Try raw CLI format: command args
+        let mut parts = output.splitn(2, ' ');
+        if let Some(command) = parts.next() {
+            let command = command.trim().to_string();
+            // Only accept known CLI commands
+            if matches!(command.as_str(), "rg" | "fd" | "cat" | "ls" | "grep" | "find") {
+                let args = parts.next().unwrap_or("").trim().to_string();
+                return Some(ParsedToolCall::RawCli { command, args });
+            }
+        }
+
+        None
+    }
+
+    /// Parse a tool call from output string (legacy)
     ///
     /// Expects format: `tool_name(param="value", ...)`
     pub fn parse_tool_call(output: &str) -> Option<(String, HashMap<String, String>)> {
@@ -117,6 +260,68 @@ impl Scorer {
             Some((tool_name, actual_params)) => {
                 let tool_correct = tool_name == expected.tool;
                 let param_accuracy = Self::param_accuracy(&actual_params, &expected.params);
+
+                Score {
+                    parsed: true,
+                    tool_correct,
+                    param_accuracy,
+                    task_success: None,
+                }
+            }
+        }
+    }
+
+    /// Score using unified parser (handles all formats)
+    pub fn score_unified(output: &str, expected: &ExpectedToolCall) -> Score {
+        match Self::parse(output) {
+            None => Score {
+                parsed: false,
+                tool_correct: false,
+                param_accuracy: 0.0,
+                task_success: None,
+            },
+            Some(parsed) => {
+                let tool_correct = parsed.name() == expected.tool
+                    || (parsed.name() == "cat" && expected.tool == "read"); // Alias
+
+                // For raw CLI, check if key values appear in args
+                let param_accuracy = match &parsed {
+                    ParsedToolCall::RawCli { args, .. } => {
+                        if expected.params.is_empty() {
+                            1.0
+                        } else {
+                            let matches = expected.params.iter().filter(|(key, val)| {
+                                if *key == "args" {
+                                    return true;
+                                }
+                                let val_str = match val {
+                                    serde_json::Value::String(s) => s.clone(),
+                                    v => v.to_string().trim_matches('"').to_string(),
+                                };
+                                args.contains(&val_str)
+                            }).count();
+                            matches as f64 / expected.params.len() as f64
+                        }
+                    }
+                    ParsedToolCall::Passthrough { args, .. } => {
+                        // Check if expected args/values appear
+                        if expected.params.is_empty() {
+                            1.0
+                        } else {
+                            let matches = expected.params.iter().filter(|(_, val)| {
+                                let val_str = match val {
+                                    serde_json::Value::String(s) => s.clone(),
+                                    v => v.to_string().trim_matches('"').to_string(),
+                                };
+                                args.contains(&val_str)
+                            }).count();
+                            matches as f64 / expected.params.len() as f64
+                        }
+                    }
+                    ParsedToolCall::Structured { params: actual, .. } => {
+                        Self::param_accuracy(actual, &expected.params)
+                    }
+                };
 
                 Score {
                     parsed: true,
@@ -211,6 +416,105 @@ impl AggregateScore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ===== New unified parser tests =====
+
+    #[test]
+    fn test_parse_structured() {
+        let parsed = Scorer::parse(r#"rg(pattern="TODO", path="src")"#).unwrap();
+        match parsed {
+            ParsedToolCall::Structured { tool, params } => {
+                assert_eq!(tool, "rg");
+                assert_eq!(params.get("pattern"), Some(&"TODO".to_string()));
+                assert_eq!(params.get("path"), Some(&"src".to_string()));
+            }
+            _ => panic!("Expected Structured, got {:?}", parsed),
+        }
+    }
+
+    #[test]
+    fn test_parse_passthrough() {
+        let parsed = Scorer::parse(r#"rg(args="-n TODO src/")"#).unwrap();
+        match parsed {
+            ParsedToolCall::Passthrough { tool, args } => {
+                assert_eq!(tool, "rg");
+                assert_eq!(args, "-n TODO src/");
+            }
+            _ => panic!("Expected Passthrough, got {:?}", parsed),
+        }
+    }
+
+    #[test]
+    fn test_parse_raw_cli() {
+        let parsed = Scorer::parse("rg -n TODO src/").unwrap();
+        match parsed {
+            ParsedToolCall::RawCli { command, args } => {
+                assert_eq!(command, "rg");
+                assert_eq!(args, "-n TODO src/");
+            }
+            _ => panic!("Expected RawCli, got {:?}", parsed),
+        }
+    }
+
+    #[test]
+    fn test_parse_raw_cli_fd() {
+        let parsed = Scorer::parse("fd -e rs .").unwrap();
+        match parsed {
+            ParsedToolCall::RawCli { command, args } => {
+                assert_eq!(command, "fd");
+                assert_eq!(args, "-e rs .");
+            }
+            _ => panic!("Expected RawCli, got {:?}", parsed),
+        }
+    }
+
+    #[test]
+    fn test_score_unified_raw_cli() {
+        let expected = ExpectedToolCall {
+            tool: "rg".to_string(),
+            params: [("pattern".to_string(), serde_json::json!("TODO"))]
+                .into_iter()
+                .collect(),
+        };
+
+        let score = Scorer::score_unified("rg -n TODO src/", &expected);
+        assert!(score.parsed);
+        assert!(score.tool_correct);
+        assert_eq!(score.param_accuracy, 1.0); // "TODO" appears in args
+    }
+
+    #[test]
+    fn test_score_unified_passthrough() {
+        let expected = ExpectedToolCall {
+            tool: "rg".to_string(),
+            params: [("pattern".to_string(), serde_json::json!("TODO"))]
+                .into_iter()
+                .collect(),
+        };
+
+        let score = Scorer::score_unified(r#"rg(args="-n TODO src/")"#, &expected);
+        assert!(score.parsed);
+        assert!(score.tool_correct);
+        assert_eq!(score.param_accuracy, 1.0);
+    }
+
+    #[test]
+    fn test_score_unified_cat_read_alias() {
+        let expected = ExpectedToolCall {
+            tool: "read".to_string(),
+            params: [("path".to_string(), serde_json::json!("README.md"))]
+                .into_iter()
+                .collect(),
+        };
+
+        // Raw CLI "cat" should match expected "read"
+        let score = Scorer::score_unified("cat README.md", &expected);
+        assert!(score.parsed);
+        assert!(score.tool_correct);
+        assert_eq!(score.param_accuracy, 1.0);
+    }
+
+    // ===== Legacy parser tests =====
 
     #[test]
     fn test_parse_tool_call_simple() {
