@@ -470,7 +470,7 @@ fn test_tool_call_id_preserved() {
     assert_eq!(tool_call.id, original_id);
 
     // Simulate conversion (like in handle.rs)
-    let chat_tool_call = crucible_core::traits::chat::ToolCall {
+    let chat_tool_call = crucible_core::traits::chat::ChatToolCall {
         name: tool_call.function.name.clone(),
         arguments: serde_json::from_str(&tool_call.function.arguments).ok(),
         id: Some(tool_call.id.clone()),
