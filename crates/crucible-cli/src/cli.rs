@@ -63,14 +63,6 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub embedding_model: Option<String>,
 
-    /// Database path to use (overrides config)
-    #[arg(long, global = true)]
-    pub db_path: Option<String>,
-
-    /// (Deprecated) Tool directory path - Rune removed from MVP
-    #[arg(long, global = true)]
-    pub tool_dir: Option<String>,
-
     /// Set output format (table, json, csv)
     #[arg(short = 'f', long, global = true, default_value = "table")]
     pub format: String,
