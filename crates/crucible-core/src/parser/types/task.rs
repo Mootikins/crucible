@@ -134,6 +134,41 @@ pub struct TaskFile {
 }
 
 impl TaskFile {
+    /// Build a system prompt from frontmatter metadata
+    ///
+    /// Constructs a formatted system prompt that includes:
+    /// - Title (if present)
+    /// - Description (if present)
+    /// - Context files list (if present)
+    /// - Verify command (if present)
+    ///
+    /// This is useful for providing LLMs with task context when executing tasks.
+    pub fn system_prompt(&self) -> String {
+        let mut parts = Vec::new();
+
+        // Add title
+        if let Some(title) = &self.title {
+            parts.push(format!("# {}", title));
+        }
+
+        // Add description
+        if let Some(desc) = &self.description {
+            parts.push(desc.clone());
+        }
+
+        // Add context files
+        if !self.context_files.is_empty() {
+            parts.push(format!("Context files: {:?}", self.context_files));
+        }
+
+        // Add verify command
+        if let Some(verify) = &self.verify {
+            parts.push(format!("Verify: {:?}", verify));
+        }
+
+        parts.join("\n")
+    }
+
     /// Parse a TaskFile from markdown content
     ///
     /// # Arguments
@@ -607,6 +642,56 @@ Some other content...
         assert_eq!(task_file.tasks[2].id, "pr-review");
         assert_eq!(task_file.tasks[2].deps, vec!["feat-a", "bug-b"]);
         assert_eq!(task_file.tasks[3].id, "task-4");
+    }
+
+    #[test]
+    fn system_prompt_includes_all_frontmatter() {
+        // Test: system_prompt() method builds prompt from frontmatter
+        let content = r#"---
+title: Task Harness Implementation
+description: Implement AI-driven task execution system
+context_files:
+  - crates/crucible-core/src/parser/types/task.rs
+  - crates/crucible-cli/src/commands/tasks.rs
+verify: cargo test --workspace
+---
+
+- [ ] Parse frontmatter [id:: 3.1.3]
+"#;
+
+        let path = std::path::PathBuf::from("/test/TASKS.md");
+        let task_file = TaskFile::from_markdown(path, content).unwrap();
+
+        let prompt = task_file.system_prompt();
+
+        // Verify prompt contains all frontmatter fields
+        assert!(prompt.contains("# Task Harness Implementation"));
+        assert!(prompt.contains("Implement AI-driven task execution system"));
+        assert!(prompt.contains("Context files:"));
+        assert!(prompt.contains("crates/crucible-core/src/parser/types/task.rs"));
+        assert!(prompt.contains("Verify:"));
+        assert!(prompt.contains("cargo test --workspace"));
+    }
+
+    #[test]
+    fn system_prompt_handles_missing_fields() {
+        // Test: system_prompt() works with minimal frontmatter
+        let content = r#"---
+title: Minimal Task File
+---
+
+- [ ] Single task [id:: task-1]
+"#;
+
+        let path = std::path::PathBuf::from("/test/TASKS.md");
+        let task_file = TaskFile::from_markdown(path, content).unwrap();
+
+        let prompt = task_file.system_prompt();
+
+        // Should only contain title
+        assert!(prompt.contains("# Minimal Task File"));
+        assert!(!prompt.contains("Context files:"));
+        assert!(!prompt.contains("Verify:"));
     }
 
     // TaskGraph tests
