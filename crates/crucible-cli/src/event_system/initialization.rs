@@ -2,6 +2,19 @@
 //!
 //! This module contains the `initialize_event_system` function that wires together
 //! all event-driven components.
+//!
+//! # Handler Wiring Architecture
+//!
+//! The EventBus uses sync handler closures, but the actual handlers (StorageHandler,
+//! TagHandler, EmbeddingHandler) are async. We bridge this gap by:
+//!
+//! 1. Extracting event data from the serialized payload in the closure
+//! 2. Using `tokio::spawn` to invoke async handler methods
+//! 3. Keeping handler Arc references alive in the EventSystemHandle
+//!
+//! This "fire-and-forget" pattern allows the sync EventBus pipeline to continue
+//! while handlers process events asynchronously. Handlers emit follow-up events
+//! through the shared EventEmitter.
 
 use anyhow::{Context, Result};
 use crucible_core::events::SessionEvent;
@@ -10,10 +23,11 @@ use crucible_rune::{EventBus, EventType, Handler};
 use crucible_surrealdb::adapters;
 use crucible_surrealdb::event_handlers::{StorageHandler, TagHandler};
 use crucible_watch::{WatchManager, WatchManagerConfig};
-use std::path::Path;
+use std::any::Any;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::config::CliConfig;
 use crate::factories;
@@ -54,6 +68,9 @@ use super::handle::EventSystemHandle;
 pub async fn initialize_event_system(config: &CliConfig) -> Result<EventSystemHandle> {
     info!("Initializing event system...");
 
+    // Collect handler references to keep them alive
+    let mut handlers: Vec<Arc<dyn Any + Send + Sync>> = Vec::new();
+
     // 7.2.1: Create EventBus
     debug!("Creating EventBus");
     let bus = Arc::new(RwLock::new(EventBus::new()));
@@ -70,13 +87,15 @@ pub async fn initialize_event_system(config: &CliConfig) -> Result<EventSystemHa
     debug!("Registering StorageHandler (priority 100)");
     let storage_handler =
         adapters::create_storage_handler(storage_client.clone(), handler_emitter.clone());
-    register_storage_handler(&bus, storage_handler).await;
+    let storage_handler_ref = register_storage_handler(&bus, storage_handler).await;
+    handlers.push(storage_handler_ref);
 
     // 7.2.4: Register TagHandler
     debug!("Registering TagHandler (priority 110)");
     let tag_handler =
         adapters::create_tag_handler(storage_client.clone(), handler_emitter.clone());
-    register_tag_handler(&bus, tag_handler).await;
+    let tag_handler_ref = register_tag_handler(&bus, tag_handler).await;
+    handlers.push(tag_handler_ref);
 
     // 7.2.5 & 7.2.6: Initialize embedding provider and register EmbeddingHandler
     debug!("Initializing embedding provider");
@@ -86,7 +105,8 @@ pub async fn initialize_event_system(config: &CliConfig) -> Result<EventSystemHa
             let enrichment_service =
                 crucible_enrichment::create_default_enrichment_service(Some(embedding_provider))?;
             let embedding_handler = EmbeddingHandler::new(enrichment_service);
-            register_embedding_handler(&bus, embedding_handler).await;
+            let embedding_handler_ref = register_embedding_handler(&bus, embedding_handler).await;
+            handlers.push(embedding_handler_ref);
         }
         Err(e) => {
             warn!(
@@ -120,7 +140,12 @@ pub async fn initialize_event_system(config: &CliConfig) -> Result<EventSystemHa
         bus.read().await.list_handlers().count()
     );
 
-    Ok(EventSystemHandle::new(bus, watch_manager, storage_client))
+    Ok(EventSystemHandle::with_handlers(
+        bus,
+        watch_manager,
+        storage_client,
+        handlers,
+    ))
 }
 
 /// Create a SessionEvent emitter that dispatches to the EventBus.
@@ -166,7 +191,14 @@ impl crucible_core::events::EventEmitter for EventBusEmitter {
         event: Self::Event,
     ) -> crucible_core::events::EmitResult<Vec<crucible_core::events::EmitOutcome<Self::Event>>>
     {
-        // For now, just do a single emit - recursive emission is handled by EventBus internally
+        // Recursive emission in this architecture works differently:
+        // - Handlers are invoked via tokio::spawn from sync closures
+        // - Each spawned handler may call self.emitter.emit() for follow-up events
+        // - Those emissions are independent emit() calls, not collected here
+        //
+        // This is intentional: the "fire-and-forget" async pattern means secondary
+        // events are emitted asynchronously as handlers complete their work.
+        // The EventBus processes each event independently.
         let outcome = self.emit(event).await?;
         Ok(vec![outcome])
     }
@@ -177,18 +209,41 @@ impl crucible_core::events::EventEmitter for EventBusEmitter {
 }
 
 /// Register the StorageHandler with the EventBus.
-async fn register_storage_handler(bus: &Arc<RwLock<EventBus>>, handler: StorageHandler) {
+///
+/// The handler closure extracts event data from the payload and spawns
+/// an async task to invoke the actual handler methods.
+///
+/// Returns the handler reference to keep it alive in EventSystemHandle.
+async fn register_storage_handler(
+    bus: &Arc<RwLock<EventBus>>,
+    handler: StorageHandler,
+) -> Arc<dyn Any + Send + Sync> {
     let handler = Arc::new(handler);
 
     // Register for NoteParsed events
-    let h1 = handler.clone();
+    let handler_clone = handler.clone();
     let bus_handler = Handler::new(
         "storage_handler_note_parsed",
         EventType::NoteParsed,
         "*",
         move |_ctx, event| {
-            // We can't run async code directly in the handler, so we use a blocking approach
-            // The actual async handling happens through the SessionEvent emission
+            // Extract path and block_count from the serialized payload
+            if let Some(path_str) = event.payload.get("path").and_then(|v| v.as_str()) {
+                let path = PathBuf::from(path_str);
+                let block_count = event
+                    .payload
+                    .get("block_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize;
+
+                // Spawn async handler invocation
+                let h = handler_clone.clone();
+                tokio::spawn(async move {
+                    h.handle_note_parsed(&path, block_count).await;
+                });
+            } else {
+                error!("NoteParsed event missing path in payload");
+            }
             Ok(event)
         },
     )
@@ -197,12 +252,26 @@ async fn register_storage_handler(bus: &Arc<RwLock<EventBus>>, handler: StorageH
     bus.write().await.register(bus_handler);
 
     // Register for FileDeleted events
-    let h2 = handler.clone();
+    let handler_clone = handler.clone();
     let bus_handler = Handler::new(
         "storage_handler_file_deleted",
         EventType::FileDeleted,
         "*",
-        move |_ctx, event| Ok(event),
+        move |_ctx, event| {
+            // Extract path from the serialized payload
+            if let Some(path_str) = event.payload.get("path").and_then(|v| v.as_str()) {
+                let path = PathBuf::from(path_str);
+
+                // Spawn async handler invocation
+                let h = handler_clone.clone();
+                tokio::spawn(async move {
+                    h.handle_file_deleted(&path).await;
+                });
+            } else {
+                error!("FileDeleted event missing path in payload");
+            }
+            Ok(event)
+        },
     )
     .with_priority(StorageHandler::PRIORITY);
 
@@ -210,48 +279,116 @@ async fn register_storage_handler(bus: &Arc<RwLock<EventBus>>, handler: StorageH
 
     debug!("Registered StorageHandler for note_parsed and file_deleted events");
 
-    // Store the handler so we can call it from the SessionEvent flow
-    // The actual handling will be done via the emit_session pathway
-    let _ = (h1, h2); // Keep references alive
+    // Return the handler reference to keep it alive
+    handler as Arc<dyn Any + Send + Sync>
 }
 
 /// Register the TagHandler with the EventBus.
-async fn register_tag_handler(bus: &Arc<RwLock<EventBus>>, handler: TagHandler) {
+///
+/// The handler closure extracts event data from the payload and spawns
+/// an async task to invoke the actual handler methods.
+///
+/// Returns the handler reference to keep it alive in EventSystemHandle.
+async fn register_tag_handler(
+    bus: &Arc<RwLock<EventBus>>,
+    handler: TagHandler,
+) -> Arc<dyn Any + Send + Sync> {
     let handler = Arc::new(handler);
 
     // Register for NoteParsed events
-    let h = handler.clone();
+    let handler_clone = handler.clone();
     let bus_handler = Handler::new(
         "tag_handler_note_parsed",
         EventType::NoteParsed,
         "*",
-        move |_ctx, event| Ok(event),
+        move |_ctx, event| {
+            // Extract path and block_count from the serialized payload
+            if let Some(path_str) = event.payload.get("path").and_then(|v| v.as_str()) {
+                let path = PathBuf::from(path_str);
+                let block_count = event
+                    .payload
+                    .get("block_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize;
+
+                // Spawn async handler invocation
+                let h = handler_clone.clone();
+                tokio::spawn(async move {
+                    h.handle_note_parsed(&path, block_count).await;
+                });
+            } else {
+                error!("NoteParsed event missing path in payload for TagHandler");
+            }
+            Ok(event)
+        },
     )
     .with_priority(TagHandler::PRIORITY);
 
     bus.write().await.register(bus_handler);
 
     debug!("Registered TagHandler for note_parsed events");
-    let _ = h; // Keep reference alive
+
+    // Return the handler reference to keep it alive
+    handler as Arc<dyn Any + Send + Sync>
 }
 
 /// Register the EmbeddingHandler with the EventBus.
-async fn register_embedding_handler(bus: &Arc<RwLock<EventBus>>, handler: EmbeddingHandler) {
+///
+/// The handler closure extracts event data from the payload and spawns
+/// an async task to invoke the actual handler methods.
+///
+/// Note: The EmbeddingHandler requires a full ParsedNote for enrichment,
+/// which is not available in the NoteParsed event payload. The handler
+/// logs the event and requires coordination with parser/storage for
+/// full enrichment.
+///
+/// Returns the handler reference to keep it alive in EventSystemHandle.
+async fn register_embedding_handler(
+    bus: &Arc<RwLock<EventBus>>,
+    handler: EmbeddingHandler,
+) -> Arc<dyn Any + Send + Sync> {
     let handler = Arc::new(handler);
 
     // Register for NoteParsed events (to trigger embedding generation)
+    let handler_clone = handler.clone();
     let bus_handler = Handler::new(
         "embedding_handler_note_parsed",
         EventType::NoteParsed,
         "*",
-        move |_ctx, event| Ok(event),
+        move |_ctx, event| {
+            // Reconstruct SessionEvent from payload for handler
+            if let Some(path_str) = event.payload.get("path").and_then(|v| v.as_str()) {
+                let path = PathBuf::from(path_str);
+                let block_count = event
+                    .payload
+                    .get("block_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize;
+
+                // Spawn async handler invocation
+                let h = handler_clone.clone();
+                tokio::spawn(async move {
+                    let session_event = SessionEvent::NoteParsed {
+                        path,
+                        block_count,
+                        payload: None, // Full payload requires re-parsing
+                    };
+                    h.handle_event(&session_event).await;
+                });
+            } else {
+                error!("NoteParsed event missing path in payload for EmbeddingHandler");
+            }
+            Ok(event)
+        },
     )
     .with_priority(EmbeddingHandler::PRIORITY);
 
     bus.write().await.register(bus_handler);
 
     debug!("Registered EmbeddingHandler for note_parsed events");
-    let _ = handler; // Keep reference alive
+
+    // Return the handler reference to keep it alive
+    handler as Arc<dyn Any + Send + Sync>
 }
 
 /// Load Rune handlers from the kiln's `.crucible/handlers/` directory.
