@@ -5,6 +5,7 @@ pub mod crdt;
 pub mod crucible_core;
 pub mod database;
 pub mod enrichment;
+pub mod events;
 pub mod hashing;
 pub mod merkle;
 pub mod note;
@@ -173,6 +174,20 @@ pub use properties::{AttributeValue, PropertyMap};
 pub use sink::{
     CircuitBreaker, CircuitBreakerConfig, CircuitState, OutputSink, SinkError, SinkHealth,
     SinkResult,
+};
+
+// Re-export event system types
+pub use events::{
+    // Emitter types
+    EmitOutcome, EmitResult, EventEmitter, EventError, HandlerErrorInfo, NoOpEmitter,
+    SharedEventBus,
+    // Subscriber types
+    box_handler, BoxedHandlerFn, EventBus, EventFilter, EventSubscriber, HandlerFuture,
+    HandlerResult, SubscriptionError, SubscriptionId, SubscriptionIdGenerator, SubscriptionInfo,
+    SubscriptionResult,
+    // Session event types
+    EntityType, FileChangeKind, NoteChangeType, NotePayload, Priority, SessionEvent,
+    SessionEventConfig, ToolCall, ToolSource,
 };
 
 #[derive(Debug, thiserror::Error)]
