@@ -236,6 +236,22 @@ impl LoggingHandler {
             SessionEvent::McpAttached { .. } => "McpAttached",
             SessionEvent::ToolDiscovered { .. } => "ToolDiscovered",
             SessionEvent::Custom { .. } => "Custom",
+            // File events
+            SessionEvent::FileChanged { .. } => "FileChanged",
+            SessionEvent::FileDeleted { .. } => "FileDeleted",
+            SessionEvent::FileMoved { .. } => "FileMoved",
+            // Storage events
+            SessionEvent::EntityStored { .. } => "EntityStored",
+            SessionEvent::EntityDeleted { .. } => "EntityDeleted",
+            SessionEvent::BlocksUpdated { .. } => "BlocksUpdated",
+            SessionEvent::RelationStored { .. } => "RelationStored",
+            SessionEvent::RelationDeleted { .. } => "RelationDeleted",
+            SessionEvent::TagAssociated { .. } => "TagAssociated",
+            // Embedding events
+            SessionEvent::EmbeddingRequested { .. } => "EmbeddingRequested",
+            SessionEvent::EmbeddingStored { .. } => "EmbeddingStored",
+            SessionEvent::EmbeddingFailed { .. } => "EmbeddingFailed",
+            SessionEvent::EmbeddingBatchComplete { .. } => "EmbeddingBatchComplete",
         }
     }
 
@@ -301,8 +317,9 @@ impl LoggingHandler {
             SessionEvent::TextDelta { delta, seq } => {
                 format!("seq={}, delta_len={}", seq, delta.len())
             }
-            SessionEvent::NoteParsed { path, block_count } => {
-                format!("path={}, blocks={}", path.display(), block_count)
+            SessionEvent::NoteParsed { path, block_count, payload } => {
+                let payload_str = if payload.is_some() { ", has_payload" } else { "" };
+                format!("path={}, blocks={}{}", path.display(), block_count, payload_str)
             }
             SessionEvent::NoteCreated { path, title } => {
                 let title_str = title.as_deref().unwrap_or("(none)");
@@ -319,6 +336,48 @@ impl LoggingHandler {
             }
             SessionEvent::Custom { name, payload } => {
                 format!("name={}, payload_size={}", name, payload.to_string().len())
+            }
+            // File events
+            SessionEvent::FileChanged { path, kind } => {
+                format!("path={}, kind={:?}", path.display(), kind)
+            }
+            SessionEvent::FileDeleted { path } => {
+                format!("path={}", path.display())
+            }
+            SessionEvent::FileMoved { from, to } => {
+                format!("from={}, to={}", from.display(), to.display())
+            }
+            // Storage events
+            SessionEvent::EntityStored { entity_id, entity_type } => {
+                format!("entity_id={}, type={:?}", entity_id, entity_type)
+            }
+            SessionEvent::EntityDeleted { entity_id, entity_type } => {
+                format!("entity_id={}, type={:?}", entity_id, entity_type)
+            }
+            SessionEvent::BlocksUpdated { entity_id, block_count } => {
+                format!("entity_id={}, blocks={}", entity_id, block_count)
+            }
+            SessionEvent::RelationStored { from_id, to_id, relation_type } => {
+                format!("from={}, to={}, type={}", from_id, to_id, relation_type)
+            }
+            SessionEvent::RelationDeleted { from_id, to_id, relation_type } => {
+                format!("from={}, to={}, type={}", from_id, to_id, relation_type)
+            }
+            SessionEvent::TagAssociated { entity_id, tag } => {
+                format!("entity_id={}, tag={}", entity_id, tag)
+            }
+            // Embedding events
+            SessionEvent::EmbeddingRequested { entity_id, priority, .. } => {
+                format!("entity_id={}, priority={:?}", entity_id, priority)
+            }
+            SessionEvent::EmbeddingStored { entity_id, dimensions, .. } => {
+                format!("entity_id={}, dims={}", entity_id, dimensions)
+            }
+            SessionEvent::EmbeddingFailed { entity_id, error, .. } => {
+                format!("entity_id={}, error={}", entity_id, truncate(error, max_len))
+            }
+            SessionEvent::EmbeddingBatchComplete { entity_id, count, duration_ms } => {
+                format!("entity_id={}, count={}, duration={}ms", entity_id, count, duration_ms)
             }
         };
 
@@ -354,6 +413,46 @@ impl LoggingHandler {
             SessionEvent::ToolDiscovered { name, source, schema } => {
                 let schema_len = schema.as_ref().map(|s| s.to_string().len()).unwrap_or(0);
                 Some(format!("{}: {:?}, schema_len={}", name, source, schema_len))
+            }
+            // File events
+            SessionEvent::FileChanged { path, kind } => {
+                Some(format!("{}: {:?}", path.display(), kind))
+            }
+            SessionEvent::FileDeleted { path } => Some(path.display().to_string()),
+            SessionEvent::FileMoved { from, to } => {
+                Some(format!("{} -> {}", from.display(), to.display()))
+            }
+            // Storage events
+            SessionEvent::EntityStored { entity_id, entity_type } => {
+                Some(format!("{}: {:?}", entity_id, entity_type))
+            }
+            SessionEvent::EntityDeleted { entity_id, entity_type } => {
+                Some(format!("{}: {:?}", entity_id, entity_type))
+            }
+            SessionEvent::BlocksUpdated { entity_id, block_count } => {
+                Some(format!("{}: {} blocks", entity_id, block_count))
+            }
+            SessionEvent::RelationStored { from_id, to_id, relation_type } => {
+                Some(format!("{} -> {} ({})", from_id, to_id, relation_type))
+            }
+            SessionEvent::RelationDeleted { from_id, to_id, relation_type } => {
+                Some(format!("{} -> {} ({})", from_id, to_id, relation_type))
+            }
+            SessionEvent::TagAssociated { entity_id, tag } => {
+                Some(format!("{}#{}", entity_id, tag))
+            }
+            // Embedding events
+            SessionEvent::EmbeddingRequested { entity_id, priority, .. } => {
+                Some(format!("{}: {:?}", entity_id, priority))
+            }
+            SessionEvent::EmbeddingStored { entity_id, dimensions, model, .. } => {
+                Some(format!("{}: {} dims, model={}", entity_id, dimensions, model))
+            }
+            SessionEvent::EmbeddingFailed { entity_id, error, .. } => {
+                Some(format!("{}: {}", entity_id, error))
+            }
+            SessionEvent::EmbeddingBatchComplete { entity_id, count, duration_ms } => {
+                Some(format!("{}: {} embeddings in {}ms", entity_id, count, duration_ms))
             }
         };
 
@@ -512,7 +611,7 @@ fn truncate(s: &str, max_len: usize) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::reactor::SessionConfig;
+    use crate::reactor::SessionEventConfig;
     use serde_json::json;
     use std::path::PathBuf;
 
@@ -686,7 +785,7 @@ mod tests {
         assert_eq!(payload, Some("Hello world".to_string()));
 
         let event = SessionEvent::SessionStarted {
-            config: SessionConfig::default(),
+            config: SessionEventConfig::new("test"),
         };
         let payload = LoggingHandler::event_payload(&event, 100);
         assert!(payload.is_none());
@@ -809,7 +908,7 @@ mod tests {
                 error: None,
             },
             SessionEvent::SessionStarted {
-                config: SessionConfig::default(),
+                config: SessionEventConfig::new("test"),
             },
             SessionEvent::SessionCompacted {
                 summary: "summary".into(),

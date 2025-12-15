@@ -476,6 +476,22 @@ fn estimate_event_tokens(event: &SessionEvent) -> usize {
         SessionEvent::ToolDiscovered { name, schema, .. } => {
             name.len() + schema.as_ref().map(|s| s.to_string().len()).unwrap_or(0)
         }
+        // File events (from crucible-core)
+        SessionEvent::FileChanged { .. } => 50,
+        SessionEvent::FileDeleted { .. } => 50,
+        SessionEvent::FileMoved { .. } => 50,
+        // Storage events (from crucible-core)
+        SessionEvent::EntityStored { .. } => 50,
+        SessionEvent::EntityDeleted { .. } => 50,
+        SessionEvent::BlocksUpdated { .. } => 50,
+        SessionEvent::RelationStored { .. } => 50,
+        SessionEvent::RelationDeleted { .. } => 50,
+        SessionEvent::TagAssociated { tag, .. } => tag.len() + 50,
+        // Embedding events (from crucible-core)
+        SessionEvent::EmbeddingRequested { .. } => 50,
+        SessionEvent::EmbeddingStored { .. } => 50,
+        SessionEvent::EmbeddingFailed { .. } => 50,
+        SessionEvent::EmbeddingBatchComplete { .. } => 50,
     };
 
     // Rough estimate: ~4 characters per token
@@ -747,7 +763,7 @@ mod tests {
         assert!(tokens >= 10 && tokens <= 30);
 
         let event = SessionEvent::SessionStarted {
-            config: crate::reactor::SessionConfig::default(),
+            config: crate::reactor::SessionEventConfig::new("test"),
         };
         let tokens = estimate_event_tokens(&event);
         // Fixed 100 / 4 = 25, + 10 = 35

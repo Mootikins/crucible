@@ -65,6 +65,12 @@ use std::sync::Arc;
 
 use crate::event_bus::EventContext;
 
+// Re-export event types from crucible-core (canonical location)
+pub use crucible_core::events::{
+    EntityType, FileChangeKind, NoteChangeType, Priority, SessionEvent, SessionEventConfig,
+    ToolCall, ToolSource,
+};
+
 /// Result type for reactor operations.
 pub type ReactorResult<T> = Result<T, ReactorError>;
 
@@ -522,289 +528,26 @@ impl Default for ReactorContext {
     }
 }
 
-/// Events that flow through a session.
+// ─────────────────────────────────────────────────────────────────────────────
+// SessionEvent conversions (crucible-rune specific)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Map a SessionEvent to an EventType for handler matching.
 ///
-/// These are the high-level session events that the reactor processes.
-/// They integrate with the EventBus system for pub/sub delivery.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum SessionEvent {
-    // ─────────────────────────────────────────────────────────────────────
-    // User/participant events
-    // ─────────────────────────────────────────────────────────────────────
-    /// Message received from a participant.
-    MessageReceived {
-        content: String,
-        participant_id: String,
-    },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Agent events
-    // ─────────────────────────────────────────────────────────────────────
-    /// Agent responded with content and/or tool calls.
-    AgentResponded {
-        content: String,
-        tool_calls: Vec<ToolCall>,
-    },
-
-    /// Agent is thinking (intermediate state).
-    AgentThinking { thought: String },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Tool events
-    // ─────────────────────────────────────────────────────────────────────
-    /// Tool was called.
-    ToolCalled { name: String, args: JsonValue },
-
-    /// Tool execution completed.
-    ToolCompleted {
-        name: String,
-        result: String,
-        error: Option<String>,
-    },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Session lifecycle
-    // ─────────────────────────────────────────────────────────────────────
-    /// Session started with configuration.
-    SessionStarted { config: SessionConfig },
-
-    /// Session context was compacted.
-    SessionCompacted { summary: String, new_file: PathBuf },
-
-    /// Session ended.
-    SessionEnded { reason: String },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Subagent events
-    // ─────────────────────────────────────────────────────────────────────
-    /// Subagent was spawned.
-    SubagentSpawned { id: String, prompt: String },
-
-    /// Subagent completed successfully.
-    SubagentCompleted { id: String, result: String },
-
-    /// Subagent failed.
-    SubagentFailed { id: String, error: String },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Streaming events
-    // ─────────────────────────────────────────────────────────────────────
-    /// Incremental text delta from agent (for streaming responses).
-    TextDelta {
-        /// The text chunk
-        delta: String,
-        /// Sequence number for ordering
-        seq: u64,
-    },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Note events (from EventBus consolidation)
-    // ─────────────────────────────────────────────────────────────────────
-    /// Note was parsed (AST available).
-    NoteParsed {
-        path: PathBuf,
-        /// Number of parsed blocks
-        block_count: usize,
-    },
-
-    /// New note was created.
-    NoteCreated {
-        path: PathBuf,
-        title: Option<String>,
-    },
-
-    /// Note content was modified.
-    NoteModified {
-        path: PathBuf,
-        /// Type of modification
-        change_type: NoteChangeType,
-    },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // MCP/Tool discovery events (from EventBus consolidation)
-    // ─────────────────────────────────────────────────────────────────────
-    /// Upstream MCP server connected.
-    McpAttached {
-        server: String,
-        tool_count: usize,
-    },
-
-    /// New tool discovered (can be filtered).
-    ToolDiscovered {
-        name: String,
-        source: ToolSource,
-        schema: Option<JsonValue>,
-    },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Custom events
-    // ─────────────────────────────────────────────────────────────────────
-    /// Custom event for extensibility.
-    Custom { name: String, payload: JsonValue },
-}
-
-/// Type of note modification.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum NoteChangeType {
-    /// Content body changed
-    Content,
-    /// Frontmatter changed
-    Frontmatter,
-    /// Wikilinks changed
-    Links,
-    /// Tags changed
-    Tags,
-}
-
-/// Source of a discovered tool.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ToolSource {
-    /// Built-in Rune tool
-    Rune,
-    /// Tool from an MCP server
-    Mcp { server: String },
-    /// Built-in system tool
-    Builtin,
-}
-
-/// A tool call made by an agent.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolCall {
-    /// Tool name.
-    pub name: String,
-    /// Tool arguments as JSON.
-    pub args: JsonValue,
-    /// Optional call ID for correlation.
-    #[serde(default)]
-    pub call_id: Option<String>,
-}
-
-impl ToolCall {
-    /// Create a new tool call.
-    pub fn new(name: impl Into<String>, args: JsonValue) -> Self {
-        Self {
-            name: name.into(),
-            args,
-            call_id: None,
-        }
-    }
-
-    /// Set the call ID.
-    pub fn with_call_id(mut self, id: impl Into<String>) -> Self {
-        self.call_id = Some(id.into());
-        self
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SessionEvent helpers and conversions
-// ─────────────────────────────────────────────────────────────────────────────
-
-impl SessionEvent {
-    /// Get the event type name for filtering and pattern matching.
-    ///
-    /// Returns a stable string identifier that can be used for:
-    /// - Handler registration (e.g., `bus.on("tool_called", ...)`)
-    /// - Event filtering in queries
-    /// - Logging and debugging
-    pub fn event_type(&self) -> &'static str {
-        match self {
-            Self::MessageReceived { .. } => "message_received",
-            Self::AgentResponded { .. } => "agent_responded",
-            Self::AgentThinking { .. } => "agent_thinking",
-            Self::ToolCalled { .. } => "tool_called",
-            Self::ToolCompleted { .. } => "tool_completed",
-            Self::SessionStarted { .. } => "session_started",
-            Self::SessionCompacted { .. } => "session_compacted",
-            Self::SessionEnded { .. } => "session_ended",
-            Self::SubagentSpawned { .. } => "subagent_spawned",
-            Self::SubagentCompleted { .. } => "subagent_completed",
-            Self::SubagentFailed { .. } => "subagent_failed",
-            Self::TextDelta { .. } => "text_delta",
-            Self::NoteParsed { .. } => "note_parsed",
-            Self::NoteCreated { .. } => "note_created",
-            Self::NoteModified { .. } => "note_modified",
-            Self::McpAttached { .. } => "mcp_attached",
-            Self::ToolDiscovered { .. } => "tool_discovered",
-            Self::Custom { name, .. } => {
-                // For custom events, we return "custom" as the type
-                // The actual name is in the payload
-                let _ = name; // silence unused warning
-                "custom"
-            }
-        }
-    }
-
-    /// Check if this is a tool-related event.
-    pub fn is_tool_event(&self) -> bool {
-        matches!(
-            self,
-            Self::ToolCalled { .. } | Self::ToolCompleted { .. } | Self::ToolDiscovered { .. }
-        )
-    }
-
-    /// Check if this is a note-related event.
-    pub fn is_note_event(&self) -> bool {
-        matches!(
-            self,
-            Self::NoteParsed { .. } | Self::NoteCreated { .. } | Self::NoteModified { .. }
-        )
-    }
-
-    /// Check if this is a session lifecycle event.
-    pub fn is_lifecycle_event(&self) -> bool {
-        matches!(
-            self,
-            Self::SessionStarted { .. } | Self::SessionCompacted { .. } | Self::SessionEnded { .. }
-        )
-    }
-
-    /// Get the identifier for pattern matching (tool name, note path, etc.).
-    ///
-    /// This is used by the EventBus for glob pattern matching against handlers.
-    pub fn identifier(&self) -> String {
-        match self {
-            Self::MessageReceived { participant_id, .. } => format!("message:{}", participant_id),
-            Self::AgentResponded { .. } => "agent:responded".into(),
-            Self::AgentThinking { .. } => "agent:thinking".into(),
-            Self::ToolCalled { name, .. } => name.clone(),
-            Self::ToolCompleted { name, .. } => name.clone(),
-            Self::SessionStarted { config, .. } => format!("session:{}", config.session_id),
-            Self::SessionCompacted { .. } => "session:compacted".into(),
-            Self::SessionEnded { .. } => "session:ended".into(),
-            Self::SubagentSpawned { id, .. } => format!("subagent:spawned:{}", id),
-            Self::SubagentCompleted { id, .. } => format!("subagent:completed:{}", id),
-            Self::SubagentFailed { id, .. } => format!("subagent:failed:{}", id),
-            Self::TextDelta { seq, .. } => format!("streaming:delta:{}", seq),
-            Self::NoteParsed { path, .. } => path.display().to_string(),
-            Self::NoteCreated { path, .. } => path.display().to_string(),
-            Self::NoteModified { path, .. } => path.display().to_string(),
-            Self::McpAttached { server, .. } => server.clone(),
-            Self::ToolDiscovered { name, .. } => name.clone(),
-            Self::Custom { name, .. } => name.clone(),
-        }
-    }
-
-    /// Map this event to an EventType for handler matching.
-    ///
-    /// This provides backwards compatibility with handlers registered by EventType.
-    pub fn to_event_type(&self) -> crate::event_bus::EventType {
-        use crate::event_bus::EventType;
-        match self {
-            Self::ToolCalled { .. } => EventType::ToolBefore,
-            Self::ToolCompleted { error: None, .. } => EventType::ToolAfter,
-            Self::ToolCompleted { error: Some(_), .. } => EventType::ToolError,
-            Self::ToolDiscovered { .. } => EventType::ToolDiscovered,
-            Self::NoteParsed { .. } => EventType::NoteParsed,
-            Self::NoteCreated { .. } => EventType::NoteCreated,
-            Self::NoteModified { .. } => EventType::NoteModified,
-            Self::McpAttached { .. } => EventType::McpAttached,
-            // All other events map to Custom
-            _ => EventType::Custom,
-        }
+/// This provides backwards compatibility with handlers registered by EventType.
+pub fn session_event_to_event_type(event: &SessionEvent) -> crate::event_bus::EventType {
+    use crate::event_bus::EventType;
+    match event {
+        SessionEvent::ToolCalled { .. } => EventType::ToolBefore,
+        SessionEvent::ToolCompleted { error: None, .. } => EventType::ToolAfter,
+        SessionEvent::ToolCompleted { error: Some(_), .. } => EventType::ToolError,
+        SessionEvent::ToolDiscovered { .. } => EventType::ToolDiscovered,
+        SessionEvent::NoteParsed { .. } => EventType::NoteParsed,
+        SessionEvent::NoteCreated { .. } => EventType::NoteCreated,
+        SessionEvent::NoteModified { .. } => EventType::NoteModified,
+        SessionEvent::McpAttached { .. } => EventType::McpAttached,
+        // All other events map to Custom
+        _ => EventType::Custom,
     }
 }
 
@@ -813,50 +556,64 @@ impl SessionEvent {
 /// This is used during the consolidation of EventBus events into the
 /// SessionEvent system. Note/MCP/Tool events are converted to their
 /// specific SessionEvent variants; other events become Custom.
-impl From<crate::event_bus::Event> for SessionEvent {
-    fn from(event: crate::event_bus::Event) -> Self {
-        use crate::event_bus::EventType;
+pub fn event_to_session_event(event: crate::event_bus::Event) -> SessionEvent {
+    use crate::event_bus::EventType;
 
-        match event.event_type {
-            EventType::ToolBefore => SessionEvent::ToolCalled {
-                name: event.identifier,
-                args: event.payload,
-            },
-            EventType::ToolAfter => SessionEvent::ToolCompleted {
-                name: event.identifier,
-                result: event.payload.to_string(),
-                error: None,
-            },
-            EventType::ToolError => SessionEvent::ToolCompleted {
-                name: event.identifier,
-                result: String::new(),
-                error: Some(event.payload.to_string()),
-            },
-            EventType::ToolDiscovered => SessionEvent::ToolDiscovered {
-                name: event.identifier,
-                source: ToolSource::Rune, // Default source
-                schema: Some(event.payload),
-            },
-            EventType::NoteParsed => SessionEvent::NoteParsed {
-                path: std::path::PathBuf::from(&event.identifier),
-                block_count: event.payload.get("block_count").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
-            },
-            EventType::NoteCreated => SessionEvent::NoteCreated {
-                path: std::path::PathBuf::from(&event.identifier),
-                title: event.payload.get("title").and_then(|v| v.as_str()).map(String::from),
-            },
-            EventType::NoteModified => SessionEvent::NoteModified {
-                path: std::path::PathBuf::from(&event.identifier),
-                change_type: NoteChangeType::Content, // Default
-            },
-            EventType::McpAttached => SessionEvent::McpAttached {
-                server: event.identifier,
-                tool_count: event.payload.get("tool_count").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
-            },
-            EventType::Custom => SessionEvent::Custom {
-                name: event.identifier,
-                payload: event.payload,
-            },
+    match event.event_type {
+        EventType::ToolBefore => SessionEvent::ToolCalled {
+            name: event.identifier,
+            args: event.payload,
+        },
+        EventType::ToolAfter => SessionEvent::ToolCompleted {
+            name: event.identifier,
+            result: event.payload.to_string(),
+            error: None,
+        },
+        EventType::ToolError => SessionEvent::ToolCompleted {
+            name: event.identifier,
+            result: String::new(),
+            error: Some(event.payload.to_string()),
+        },
+        EventType::ToolDiscovered => SessionEvent::ToolDiscovered {
+            name: event.identifier,
+            source: ToolSource::Rune, // Default source
+            schema: Some(event.payload),
+        },
+        EventType::NoteParsed => SessionEvent::NoteParsed {
+            path: std::path::PathBuf::from(&event.identifier),
+            block_count: event.payload.get("block_count").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+            payload: None, // Payload extracted from legacy event doesn't include NotePayload
+        },
+        EventType::NoteCreated => SessionEvent::NoteCreated {
+            path: std::path::PathBuf::from(&event.identifier),
+            title: event.payload.get("title").and_then(|v| v.as_str()).map(String::from),
+        },
+        EventType::NoteModified => SessionEvent::NoteModified {
+            path: std::path::PathBuf::from(&event.identifier),
+            change_type: NoteChangeType::Content, // Default
+        },
+        EventType::FileDeleted => SessionEvent::FileDeleted {
+            path: std::path::PathBuf::from(&event.identifier),
+        },
+        EventType::McpAttached => SessionEvent::McpAttached {
+            server: event.identifier,
+            tool_count: event.payload.get("tool_count").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+        },
+        EventType::Custom => SessionEvent::Custom {
+            name: event.identifier,
+            payload: event.payload,
+        },
+    }
+}
+
+/// Convert a SessionConfig to a SessionEventConfig.
+impl From<&SessionConfig> for SessionEventConfig {
+    fn from(config: &SessionConfig) -> Self {
+        SessionEventConfig {
+            session_id: config.session_id.clone(),
+            folder: Some(config.folder.clone()),
+            max_context_tokens: config.max_context_tokens,
+            system_prompt: config.system_prompt.clone(),
         }
     }
 }
@@ -1132,7 +889,7 @@ mod tests {
                 error: None,
             },
             SessionEvent::SessionStarted {
-                config: SessionConfig::default(),
+                config: SessionEventConfig::new("test"),
             },
             SessionEvent::SessionCompacted {
                 summary: "summary".into(),
@@ -1162,6 +919,7 @@ mod tests {
             SessionEvent::NoteParsed {
                 path: PathBuf::from("/notes/test.md"),
                 block_count: 5,
+                payload: None,
             },
             SessionEvent::NoteCreated {
                 path: PathBuf::from("/notes/new.md"),
@@ -1574,7 +1332,8 @@ mod tests {
         assert_eq!(
             SessionEvent::NoteParsed {
                 path: PathBuf::new(),
-                block_count: 0
+                block_count: 0,
+                payload: None,
             }
             .event_type(),
             "note_parsed"
@@ -1626,7 +1385,8 @@ mod tests {
         // Note events
         assert!(SessionEvent::NoteParsed {
             path: PathBuf::new(),
-            block_count: 0
+            block_count: 0,
+            payload: None,
         }
         .is_note_event());
         assert!(SessionEvent::NoteCreated {
@@ -1647,7 +1407,7 @@ mod tests {
 
         // Lifecycle events
         assert!(SessionEvent::SessionStarted {
-            config: SessionConfig::default()
+            config: SessionEventConfig::new("test")
         }
         .is_lifecycle_event());
         assert!(SessionEvent::SessionEnded {
@@ -1667,7 +1427,7 @@ mod tests {
 
         // Tool events
         let bus_event = Event::new(EventType::ToolBefore, "search", json!({"query": "test"}));
-        let session_event: SessionEvent = bus_event.into();
+        let session_event: SessionEvent = event_to_session_event(bus_event);
         match session_event {
             SessionEvent::ToolCalled { name, args } => {
                 assert_eq!(name, "search");
@@ -1677,7 +1437,7 @@ mod tests {
         }
 
         let bus_event = Event::new(EventType::ToolAfter, "search", json!({"result": "found"}));
-        let session_event: SessionEvent = bus_event.into();
+        let session_event: SessionEvent = event_to_session_event(bus_event);
         match session_event {
             SessionEvent::ToolCompleted { name, error, .. } => {
                 assert_eq!(name, "search");
@@ -1687,7 +1447,7 @@ mod tests {
         }
 
         let bus_event = Event::new(EventType::ToolError, "search", json!({"error": "failed"}));
-        let session_event: SessionEvent = bus_event.into();
+        let session_event: SessionEvent = event_to_session_event(bus_event);
         match session_event {
             SessionEvent::ToolCompleted { name, error, .. } => {
                 assert_eq!(name, "search");
@@ -1702,11 +1462,12 @@ mod tests {
             "/notes/test.md",
             json!({"block_count": 5}),
         );
-        let session_event: SessionEvent = bus_event.into();
+        let session_event: SessionEvent = event_to_session_event(bus_event);
         match session_event {
-            SessionEvent::NoteParsed { path, block_count } => {
+            SessionEvent::NoteParsed { path, block_count, payload } => {
                 assert_eq!(path, PathBuf::from("/notes/test.md"));
                 assert_eq!(block_count, 5);
+                assert!(payload.is_none()); // Legacy conversion doesn't include payload
             }
             _ => panic!("Wrong conversion for NoteParsed"),
         }
@@ -1717,7 +1478,7 @@ mod tests {
             "crucible",
             json!({"tool_count": 10}),
         );
-        let session_event: SessionEvent = bus_event.into();
+        let session_event: SessionEvent = event_to_session_event(bus_event);
         match session_event {
             SessionEvent::McpAttached { server, tool_count } => {
                 assert_eq!(server, "crucible");
@@ -1728,7 +1489,7 @@ mod tests {
 
         // Custom events
         let bus_event = Event::new(EventType::Custom, "my_event", json!({"key": "value"}));
-        let session_event: SessionEvent = bus_event.into();
+        let session_event: SessionEvent = event_to_session_event(bus_event);
         match session_event {
             SessionEvent::Custom { name, payload } => {
                 assert_eq!(name, "my_event");

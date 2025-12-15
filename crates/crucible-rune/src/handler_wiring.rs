@@ -141,7 +141,7 @@ impl RingHandler<SessionEvent> for EventBusRingHandler {
         // so we convert them to SessionEvent
         let mut bus_ctx = bus_ctx;
         for emitted in bus_ctx.take_emitted() {
-            ctx.emit(emitted.into());
+            ctx.emit(crate::reactor::event_to_session_event(emitted));
         }
 
         // If there were fatal errors, propagate them
