@@ -229,6 +229,12 @@ impl LoggingHandler {
             SessionEvent::SubagentSpawned { .. } => "SubagentSpawned",
             SessionEvent::SubagentCompleted { .. } => "SubagentCompleted",
             SessionEvent::SubagentFailed { .. } => "SubagentFailed",
+            SessionEvent::TextDelta { .. } => "TextDelta",
+            SessionEvent::NoteParsed { .. } => "NoteParsed",
+            SessionEvent::NoteCreated { .. } => "NoteCreated",
+            SessionEvent::NoteModified { .. } => "NoteModified",
+            SessionEvent::McpAttached { .. } => "McpAttached",
+            SessionEvent::ToolDiscovered { .. } => "ToolDiscovered",
             SessionEvent::Custom { .. } => "Custom",
         }
     }
@@ -292,6 +298,25 @@ impl LoggingHandler {
             SessionEvent::SubagentFailed { id, error } => {
                 format!("id={}, error={}", id, truncate(error, max_len))
             }
+            SessionEvent::TextDelta { delta, seq } => {
+                format!("seq={}, delta_len={}", seq, delta.len())
+            }
+            SessionEvent::NoteParsed { path, block_count } => {
+                format!("path={}, blocks={}", path.display(), block_count)
+            }
+            SessionEvent::NoteCreated { path, title } => {
+                let title_str = title.as_deref().unwrap_or("(none)");
+                format!("path={}, title={}", path.display(), truncate(title_str, max_len))
+            }
+            SessionEvent::NoteModified { path, change_type } => {
+                format!("path={}, change={:?}", path.display(), change_type)
+            }
+            SessionEvent::McpAttached { server, tool_count } => {
+                format!("server={}, tools={}", server, tool_count)
+            }
+            SessionEvent::ToolDiscovered { name, source, .. } => {
+                format!("name={}, source={:?}", name, source)
+            }
             SessionEvent::Custom { name, payload } => {
                 format!("name={}, payload_size={}", name, payload.to_string().len())
             }
@@ -315,6 +340,21 @@ impl LoggingHandler {
             SessionEvent::SubagentFailed { error, .. } => Some(error.clone()),
             SessionEvent::Custom { payload, .. } => Some(payload.to_string()),
             SessionEvent::SessionStarted { .. } => None,
+            SessionEvent::TextDelta { delta, .. } => Some(delta.clone()),
+            SessionEvent::NoteParsed { path, .. } => Some(path.display().to_string()),
+            SessionEvent::NoteCreated { path, title } => {
+                Some(format!("{}: {}", path.display(), title.as_deref().unwrap_or("(none)")))
+            }
+            SessionEvent::NoteModified { path, change_type } => {
+                Some(format!("{}: {:?}", path.display(), change_type))
+            }
+            SessionEvent::McpAttached { server, tool_count } => {
+                Some(format!("{}: {} tools", server, tool_count))
+            }
+            SessionEvent::ToolDiscovered { name, source, schema } => {
+                let schema_len = schema.as_ref().map(|s| s.to_string().len()).unwrap_or(0);
+                Some(format!("{}: {:?}, schema_len={}", name, source, schema_len))
+            }
         };
 
         payload.map(|p| truncate(&p, max_len).to_string())
