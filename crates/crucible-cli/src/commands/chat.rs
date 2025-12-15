@@ -5,7 +5,7 @@
 
 use anyhow::Result;
 use std::sync::Arc;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, info, warn};
 
 use crate::acp::{ContextEnricher, CrucibleAcpClient};
 use crate::chat::{ChatMode, ChatModeDisplay};
@@ -15,8 +15,7 @@ use crate::factories;
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
 use crucible_pipeline::NotePipeline;
 use crucible_watch::traits::{DebounceConfig, HandlerConfig, WatchConfig};
-use crucible_watch::{EventFilter, FileEvent, FileEventKind, WatchMode};
-use tokio::sync::mpsc;
+use crucible_watch::{EventFilter, WatchMode};
 
 /// Execute the chat command
 ///
@@ -365,89 +364,69 @@ async fn run_interactive_session_internal(
     session.run(handle).await
 }
 
-/// Spawn background watch task for chat mode
+/// Spawn background watch task for chat mode using the event system
 ///
-/// This function runs silently in the background, watching for file changes
-/// and reprocessing them automatically. All output goes through tracing
-/// (logged to file) to avoid polluting stdio used for JSON-RPC.
+/// This function runs silently in the background, using the full event system
+/// to handle file changes. The event cascade triggers all handlers:
+/// FileChanged -> NoteParsed -> EntityStored -> BlocksUpdated -> EmbeddingGenerated
 ///
 /// The background task will be automatically cancelled when the chat
 /// command exits (tokio runtime cleanup).
-async fn spawn_background_watch(config: CliConfig, pipeline: Arc<NotePipeline>) -> Result<()> {
+async fn spawn_background_watch(config: CliConfig, _pipeline: Arc<NotePipeline>) -> Result<()> {
+    use crate::event_system::initialize_event_system;
+
     let kiln_path = config.kiln_path.clone();
 
-    // Create watcher via factory (DIP pattern - depends only on FileWatcher trait)
-    let mut watcher_arc = factories::create_file_watcher(&config)?;
+    // Initialize the full event system
+    let event_handle = initialize_event_system(&config).await?;
+    info!(
+        "Background event system initialized with {} handlers",
+        event_handle.handler_count().await
+    );
 
-    // Get mutable access to configure the watcher
-    let watcher = Arc::get_mut(&mut watcher_arc)
-        .ok_or_else(|| anyhow::anyhow!("Failed to get mutable watcher reference"))?;
+    // Add watch for the kiln directory
+    {
+        let mut watch = event_handle.watch_manager().write().await;
 
-    // Create event channel
-    let (tx, mut rx) = mpsc::unbounded_channel::<FileEvent>();
-    watcher.set_event_sender(tx);
+        // Configure watch with markdown file filter and debouncing
+        let crucible_dir = kiln_path.join(".crucible");
+        let filter = EventFilter::new()
+            .with_extension("md")
+            .exclude_dir(crucible_dir);
+        let watch_config = WatchConfig {
+            id: "chat-background-watch".to_string(),
+            recursive: true,
+            filter: Some(filter),
+            debounce: DebounceConfig::default(),
+            handler_config: HandlerConfig::default(),
+            mode: WatchMode::Standard,
+            backend_options: Default::default(),
+        };
 
-    // Configure watch with markdown file filter and debouncing
-    // Exclude .crucible directory (contains SurrealDB database files)
-    let crucible_dir = kiln_path.join(".crucible");
-    let filter = EventFilter::new()
-        .with_extension("md")
-        .exclude_dir(crucible_dir);
-    let watch_config = WatchConfig {
-        id: "chat-background-watch".to_string(),
-        recursive: true,
-        filter: Some(filter),
-        debounce: DebounceConfig::default(),
-        handler_config: HandlerConfig::default(),
-        mode: WatchMode::Standard, // Standard mode for immediate event processing
-        backend_options: Default::default(),
-    };
+        watch.add_watch(kiln_path.clone(), watch_config).await?;
+    }
 
-    // Start watching the kiln directory
-    let _handle = watcher.watch(kiln_path.clone(), watch_config).await?;
     info!(
         "Background watch started for chat mode on: {}",
         kiln_path.display()
     );
 
-    // Event processing loop (runs until chat exits)
-    while let Some(event) = rx.recv().await {
-        match event.kind {
-            FileEventKind::Created | FileEventKind::Modified => {
-                debug!("Background watch detected change: {}", event.path.display());
+    // The event system handles everything automatically via registered handlers
+    // Just wait until shutdown is requested (channel close or task cancellation)
+    // The event system runs in the background processing events
+    loop {
+        // Sleep and check periodically - this allows cancellation
+        tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
 
-                // Silently reprocess changed file
-                match pipeline.process(&event.path).await {
-                    Ok(crucible_core::processing::ProcessingResult::Success { .. }) => {
-                        debug!("Background reprocessed: {}", event.path.display());
-                    }
-                    Ok(crucible_core::processing::ProcessingResult::Skipped)
-                    | Ok(crucible_core::processing::ProcessingResult::NoChanges) => {
-                        trace!("Background skipped (unchanged): {}", event.path.display());
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Background reprocess failed for {}: {}",
-                            event.path.display(),
-                            e
-                        );
-                    }
-                }
-            }
-            FileEventKind::Deleted => {
-                debug!("File deleted: {}", event.path.display());
-                // Could mark as deleted in DB in future
-            }
-            _ => {
-                trace!(
-                    "Ignoring event: {:?} for {}",
-                    event.kind,
-                    event.path.display()
-                );
-            }
+        // Check if watch is still running
+        if !event_handle.is_watching().await {
+            debug!("Watch manager stopped, exiting background watch loop");
+            break;
         }
     }
 
+    // Graceful shutdown
+    event_handle.shutdown().await?;
     info!("Background watch stopped");
     Ok(())
 }

@@ -37,10 +37,12 @@
 //! }
 //! ```
 
+use crate::event_handlers::{StorageHandler, TagHandler};
 use crate::{EAVGraphStore, MerklePersistence, NoteIngestor, SurrealClient, SurrealDbConfig};
 use anyhow::Result;
 use async_trait::async_trait;
 use crucible_core::enrichment::{EnrichedNote, EnrichedNoteStore};
+use crucible_core::events::{SessionEvent, SharedEventBus};
 use crucible_merkle::MerkleStore;
 use std::sync::Arc;
 
@@ -199,4 +201,50 @@ impl EnrichedNoteStore for EnrichedNoteStoreAdapter {
         let ingestor = NoteIngestor::new(&self.store);
         ingestor.note_exists(relative_path).await
     }
+}
+
+// ============================================================================
+// Event Handler Factory Functions
+// ============================================================================
+
+/// Create a storage handler for database event processing.
+///
+/// The storage handler subscribes to `NoteParsed`, `FileDeleted`, and `FileMoved` events
+/// to store/update/delete entities in the EAV graph database.
+///
+/// # Arguments
+///
+/// * `client` - Opaque handle to a SurrealDB client
+/// * `emitter` - Event emitter for emitting storage events
+///
+/// # Returns
+///
+/// A `StorageHandler` that can be registered with the event bus.
+pub fn create_storage_handler(
+    client: SurrealClientHandle,
+    emitter: SharedEventBus<SessionEvent>,
+) -> StorageHandler {
+    let store = Arc::new(EAVGraphStore::new((*client.inner()).clone()));
+    StorageHandler::new(store, emitter)
+}
+
+/// Create a tag handler for processing entity tags.
+///
+/// The tag handler subscribes to `NoteParsed` events to extract and associate tags
+/// with entities in the database.
+///
+/// # Arguments
+///
+/// * `client` - Opaque handle to a SurrealDB client
+/// * `emitter` - Event emitter for emitting tag events
+///
+/// # Returns
+///
+/// A `TagHandler` that can be registered with the event bus.
+pub fn create_tag_handler(
+    client: SurrealClientHandle,
+    emitter: SharedEventBus<SessionEvent>,
+) -> TagHandler {
+    let store = Arc::new(EAVGraphStore::new((*client.inner()).clone()));
+    TagHandler::new(store, emitter)
 }
