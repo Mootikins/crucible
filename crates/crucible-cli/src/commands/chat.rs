@@ -226,9 +226,9 @@ pub async fn execute(
                 info!("Interactive chat mode");
 
                 if use_tui {
-                    // Use new ratatui TUI
-                    info!("Using ratatui TUI");
-                    run_tui_session(client).await?;
+                    // TUI removed - event architecture cleanup
+                    eprintln!("TUI mode not yet implemented. Use --query for one-shot mode or omit --tui for stub interactive mode.");
+                    return Ok(());
                 } else {
                     // Use reedline-based session
                     run_interactive_session(
@@ -293,10 +293,9 @@ pub async fn execute(
                 info!("Interactive chat mode (internal agent)");
 
                 if use_tui {
-                    // Use ratatui TUI (generic over AgentHandle)
-                    info!("Using ratatui TUI (internal agent)");
-                    use crate::chat_tui::run_with_agent;
-                    run_with_agent(handle).await?;
+                    // TUI removed - event architecture cleanup
+                    eprintln!("TUI mode not yet implemented. Use --query for one-shot mode or omit --tui for stub interactive mode.");
+                    return Ok(());
                 } else {
                     // Use reedline-based session
                     run_interactive_session_internal(
@@ -364,19 +363,6 @@ async fn run_interactive_session_internal(
 
     // Run interactive session with internal agent
     session.run(handle).await
-}
-
-/// Run an interactive chat session using the new ratatui TUI
-///
-/// This uses the chat_tui module which provides:
-/// - Inline viewport that preserves terminal scrollback
-/// - Fuzzy completion for /commands and @files
-/// - Status bar with mode indicator and streaming state
-async fn run_tui_session(client: CrucibleAcpClient) -> Result<()> {
-    use crate::chat_tui::run_with_agent;
-
-    // The TUI handles its own cleanup via run_with_agent
-    run_with_agent(client).await
 }
 
 /// Spawn background watch task for chat mode
