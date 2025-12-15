@@ -1,7 +1,11 @@
 //! Integration handler for automatic file parsing and database indexing.
 //! Integrates PulldownParser with file watching for real-time note processing.
-//! Emits EmbeddingEvent objects for integration with the embedding pipeline.
+//!
+//! Note: This handler currently uses deprecated `EmbeddingEvent` types for backward
+//! compatibility. New code should use `SessionEvent::EmbeddingRequested` from
+//! `crucible_core::events` instead.
 
+#[allow(deprecated)]
 use crate::{
     embedding_events::{create_embedding_metadata, EmbeddingEvent, EventDrivenEmbeddingConfig},
     error::{Error, Result},
@@ -9,6 +13,7 @@ use crate::{
     traits::EventHandler,
 };
 use async_trait::async_trait;
+use crucible_core::events::{EventEmitter, NoOpEmitter, SessionEvent};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
@@ -16,7 +21,8 @@ use tracing::{debug, error, info, warn};
 
 /// Handler for automatically indexing files when they change.
 /// Integrates with PulldownParser for note parsing and prepares for database storage.
-/// Emits EmbeddingEvent objects for the embedding pipeline.
+/// Emits SessionEvent variants (FileChanged, FileDeleted, FileMoved) to the event bus
+/// and EmbeddingEvent objects for integration with the embedding pipeline.
 pub struct IndexingHandler {
     supported_extensions: Vec<String>,
     index_debounce: std::time::Duration,
@@ -29,18 +35,42 @@ pub struct IndexingHandler {
 
     /// Recent events for deduplication
     recent_events: Arc<RwLock<std::collections::HashMap<String, std::time::Instant>>>,
+
+    /// Event emitter for SessionEvent emission (FileChanged, FileDeleted, FileMoved)
+    emitter: Arc<dyn EventEmitter<Event = SessionEvent>>,
     // Database connection will be added in Phase 4
 }
 
 #[allow(dead_code)] // Many methods scaffolded for future Phase 4 implementation
 impl IndexingHandler {
-    /// Create a new indexing handler.
+    /// Create a new indexing handler with default NoOpEmitter.
+    ///
+    /// Uses a no-op emitter by default. To emit events, use `with_emitter()` to
+    /// provide a real event bus.
     pub fn new() -> Result<Self> {
-        Self::with_embedding_config(EventDrivenEmbeddingConfig::default())
+        Self::with_emitter(Arc::new(NoOpEmitter::new()))
+    }
+
+    /// Create a new indexing handler with a custom event emitter.
+    ///
+    /// The emitter is used to emit `SessionEvent` variants (e.g., `FileChanged`,
+    /// `FileDeleted`, `FileMoved`) when file system changes are processed.
+    pub fn with_emitter(emitter: Arc<dyn EventEmitter<Event = SessionEvent>>) -> Result<Self> {
+        Self::with_emitter_and_config(emitter, EventDrivenEmbeddingConfig::default())
     }
 
     /// Create a new indexing handler with custom embedding configuration.
+    ///
+    /// Uses a no-op emitter by default. To emit events, chain with `set_emitter()`.
     pub fn with_embedding_config(embedding_config: EventDrivenEmbeddingConfig) -> Result<Self> {
+        Self::with_emitter_and_config(Arc::new(NoOpEmitter::new()), embedding_config)
+    }
+
+    /// Create a new indexing handler with both custom emitter and embedding configuration.
+    pub fn with_emitter_and_config(
+        emitter: Arc<dyn EventEmitter<Event = SessionEvent>>,
+        embedding_config: EventDrivenEmbeddingConfig,
+    ) -> Result<Self> {
         info!("IndexingHandler created with PulldownParser integration and embedding events");
         Ok(Self {
             supported_extensions: vec![
@@ -53,7 +83,21 @@ impl IndexingHandler {
             embedding_config,
             embedding_event_tx: None,
             recent_events: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            emitter,
         })
+    }
+
+    /// Set the event emitter for SessionEvent emission.
+    ///
+    /// The emitter is used to emit `SessionEvent` variants when file system
+    /// changes are processed by this handler.
+    pub fn set_emitter(&mut self, emitter: Arc<dyn EventEmitter<Event = SessionEvent>>) {
+        self.emitter = emitter;
+    }
+
+    /// Get a reference to the event emitter.
+    pub fn emitter(&self) -> &Arc<dyn EventEmitter<Event = SessionEvent>> {
+        &self.emitter
     }
 
     /// Set the embedding event channel for sending embedding events.
@@ -134,13 +178,16 @@ impl IndexingHandler {
             file_size
         );
 
-        // Use CrucibleParser to parse the file
-        let _parser = crucible_parser::CrucibleParser::new();
-
-        // Return error for now as watch mode parser is not yet implemented
-        Err(Error::Parser(
-            "Watch mode parser not yet implemented".to_string(),
-        ))
+        // Note: Parsing is now handled by ParserHandler which listens for FileChanged events.
+        // The IndexingHandler emits FileChanged events (via emit_session_event), and the
+        // ParserHandler picks those up and emits NoteParsed events with the parsed content.
+        // This method now just validates the file exists and returns success.
+        debug!(
+            "File validated for indexing: {} ({} bytes) - parsing handled by ParserHandler",
+            path.display(),
+            file_size
+        );
+        Ok(())
     }
 
     async fn remove_file_index(&self, path: &PathBuf) -> Result<()> {
@@ -567,6 +614,77 @@ impl IndexingHandler {
         Ok(())
     }
 
+    /// Emit a SessionEvent corresponding to the file change.
+    ///
+    /// Converts a `FileEvent` from the watch system into a `SessionEvent` variant
+    /// (`FileChanged`, `FileDeleted`, or `FileMoved`) and emits it to the event bus.
+    async fn emit_session_event(&self, event: &FileEvent) {
+        use crucible_core::events::FileChangeKind;
+
+        let session_event = match &event.kind {
+            crate::events::FileEventKind::Created => SessionEvent::FileChanged {
+                path: event.path.clone(),
+                kind: FileChangeKind::Created,
+            },
+            crate::events::FileEventKind::Modified => SessionEvent::FileChanged {
+                path: event.path.clone(),
+                kind: FileChangeKind::Modified,
+            },
+            crate::events::FileEventKind::Deleted => SessionEvent::FileDeleted {
+                path: event.path.clone(),
+            },
+            crate::events::FileEventKind::Moved { from, to } => SessionEvent::FileMoved {
+                from: from.clone(),
+                to: to.clone(),
+            },
+            crate::events::FileEventKind::Batch(events) => {
+                // Recursively emit events for batch operations
+                for batch_event in events {
+                    // Use Box::pin to avoid infinitely-sized future
+                    Box::pin(self.emit_session_event(batch_event)).await;
+                }
+                return;
+            }
+            crate::events::FileEventKind::Unknown(_) => {
+                debug!(
+                    "Not emitting SessionEvent for unknown file event: {}",
+                    event.path.display()
+                );
+                return;
+            }
+        };
+
+        // Emit the event to the bus
+        match self.emitter.emit(session_event).await {
+            Ok(outcome) => {
+                if outcome.cancelled {
+                    debug!(
+                        "FileChanged event was cancelled for: {}",
+                        event.path.display()
+                    );
+                } else if outcome.has_errors() {
+                    warn!(
+                        "FileChanged event had {} handler errors for: {}",
+                        outcome.error_count(),
+                        event.path.display()
+                    );
+                } else {
+                    debug!(
+                        "Successfully emitted SessionEvent for: {}",
+                        event.path.display()
+                    );
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to emit SessionEvent for {}: {}",
+                    event.path.display(),
+                    e
+                );
+            }
+        }
+    }
+
     /// Log detailed error information for debugging
     fn log_event_error(&self, event: &FileEvent, error: &Error, elapsed: std::time::Duration) {
         error!("Event processing error details:");
@@ -616,6 +734,9 @@ impl EventHandler for IndexingHandler {
             debug!("Skipping debounced event for: {}", event.path.display());
             return Ok(());
         }
+
+        // Emit SessionEvent for the file change
+        self.emit_session_event(&event).await;
 
         let start_time = std::time::Instant::now();
         let result = match event.kind {

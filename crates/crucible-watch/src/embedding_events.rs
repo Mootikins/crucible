@@ -3,6 +3,18 @@
 //! This module provides the EmbeddingEvent structures and related functionality
 //! to bridge file system events with the embedding processing pipeline, eliminating
 //! inefficient polling and providing real-time, event-driven processing.
+//!
+//! # Deprecation Notice
+//!
+//! The types in this module are deprecated in favor of `SessionEvent` variants in
+//! `crucible_core::events`:
+//!
+//! - `EmbeddingEvent` → Use `SessionEvent::EmbeddingRequested`
+//! - `EmbeddingEventResult` → Use `SessionEvent::EmbeddingStored` or `SessionEvent::EmbeddingFailed`
+//! - `EmbeddingEventPriority` → Use `crucible_core::events::Priority`
+//!
+//! The `SessionEvent` system provides a unified event model across all Crucible
+//! components, enabling better integration with the event bus and handler system.
 
 use crate::FileEventKind;
 use serde::{Deserialize, Serialize};
@@ -10,7 +22,32 @@ use std::path::PathBuf;
 use std::time::Duration;
 use uuid::Uuid;
 
-/// Represents an embedding request derived from file system events
+/// Represents an embedding request derived from file system events.
+///
+/// # Deprecation
+///
+/// This type is deprecated. Use `SessionEvent::EmbeddingRequested` from `crucible_core::events`
+/// instead. The `SessionEvent` system provides unified event handling across all Crucible
+/// components.
+///
+/// ## Migration
+///
+/// ```ignore
+/// // Old code:
+/// let event = EmbeddingEvent::new(path, trigger, content, metadata);
+///
+/// // New code:
+/// use crucible_core::events::{SessionEvent, Priority};
+/// let event = SessionEvent::EmbeddingRequested {
+///     entity_id: format!("note:{}", path.display()),
+///     block_id: None,
+///     priority: Priority::Normal,
+/// };
+/// ```
+#[deprecated(
+    since = "0.1.0",
+    note = "Use SessionEvent::EmbeddingRequested from crucible_core::events instead"
+)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EmbeddingEvent {
     /// Unique identifier for this embedding request
@@ -35,6 +72,7 @@ pub struct EmbeddingEvent {
     pub metadata: EmbeddingEventMetadata,
 }
 
+#[allow(deprecated)]
 impl EmbeddingEvent {
     /// Create a new embedding event
     pub fn new(
@@ -95,7 +133,16 @@ impl EmbeddingEvent {
     }
 }
 
-/// Metadata for embedding events
+/// Metadata for embedding events.
+///
+/// # Deprecation
+///
+/// This type is deprecated. Metadata should be encoded in the `entity_id` or
+/// handled through separate storage queries when using `SessionEvent::EmbeddingRequested`.
+#[deprecated(
+    since = "0.1.0",
+    note = "Use SessionEvent::EmbeddingRequested from crucible_core::events instead"
+)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EmbeddingEventMetadata {
     /// File size in bytes
@@ -117,6 +164,7 @@ pub struct EmbeddingEventMetadata {
     pub priority: EmbeddingEventPriority,
 }
 
+#[allow(deprecated)]
 impl Default for EmbeddingEventMetadata {
     fn default() -> Self {
         Self {
@@ -130,7 +178,17 @@ impl Default for EmbeddingEventMetadata {
     }
 }
 
-/// Priority levels for embedding events
+/// Priority levels for embedding events.
+///
+/// # Deprecation
+///
+/// This type is deprecated. Use `crucible_core::events::Priority` instead, which provides
+/// the same priority levels (`Low`, `Normal`, `High`, `Critical`) and integrates with
+/// the unified `SessionEvent` system.
+#[deprecated(
+    since = "0.1.0",
+    note = "Use crucible_core::events::Priority instead"
+)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub enum EmbeddingEventPriority {
     /// Low priority - background processing
@@ -143,13 +201,40 @@ pub enum EmbeddingEventPriority {
     Critical = 4,
 }
 
+#[allow(deprecated)]
 impl Default for EmbeddingEventPriority {
     fn default() -> Self {
         Self::Normal
     }
 }
 
-/// Result of processing an embedding event
+/// Result of processing an embedding event.
+///
+/// # Deprecation
+///
+/// This type is deprecated. Use `SessionEvent::EmbeddingStored` for successful results
+/// or `SessionEvent::EmbeddingFailed` for failures. These variants from `crucible_core::events`
+/// provide a unified event model.
+///
+/// ## Migration
+///
+/// ```ignore
+/// // Old code:
+/// let result = EmbeddingEventResult::success(event_id, processing_time, dimensions);
+///
+/// // New code:
+/// use crucible_core::events::SessionEvent;
+/// let event = SessionEvent::EmbeddingStored {
+///     entity_id: entity_id.to_string(),
+///     block_id: None,
+///     dimensions: 256,
+///     model: "nomic-embed-text".to_string(),
+/// };
+/// ```
+#[deprecated(
+    since = "0.1.0",
+    note = "Use SessionEvent::EmbeddingStored or SessionEvent::EmbeddingFailed from crucible_core::events instead"
+)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EmbeddingEventResult {
     /// Event ID
@@ -171,6 +256,7 @@ pub struct EmbeddingEventResult {
     pub completed_at: chrono::DateTime<chrono::Utc>,
 }
 
+#[allow(deprecated)]
 impl EmbeddingEventResult {
     /// Create a successful result
     pub fn success(event_id: Uuid, processing_time: Duration, embedding_dimensions: usize) -> Self {
@@ -197,7 +283,17 @@ impl EmbeddingEventResult {
     }
 }
 
-/// Configuration for the event-driven embedding integration
+/// Configuration for the event-driven embedding integration.
+///
+/// # Deprecation
+///
+/// This type is deprecated along with the `EmbeddingEvent` system. New code should
+/// use the `SessionEvent` variants for embedding-related events. Configuration for
+/// embedding behavior should be managed through the embedding provider configuration.
+#[deprecated(
+    since = "0.1.0",
+    note = "Use SessionEvent-based embedding pipeline instead"
+)]
 #[derive(Debug, Clone)]
 pub struct EventDrivenEmbeddingConfig {
     /// Maximum batch size for processing multiple file changes
@@ -225,6 +321,7 @@ pub struct EventDrivenEmbeddingConfig {
     pub deduplication_window_ms: u64,
 }
 
+#[allow(deprecated)]
 impl Default for EventDrivenEmbeddingConfig {
     fn default() -> Self {
         Self {
@@ -277,7 +374,17 @@ pub fn determine_content_type(extension: Option<&str>) -> String {
     }
 }
 
-/// Determine priority from file event kind and path
+/// Determine priority from file event kind and path.
+///
+/// # Deprecation
+///
+/// This function is deprecated along with `EmbeddingEventPriority`. Use
+/// `crucible_core::events::Priority` directly instead.
+#[allow(deprecated)]
+#[deprecated(
+    since = "0.1.0",
+    note = "Use crucible_core::events::Priority directly instead"
+)]
 pub fn determine_event_priority(
     event_kind: &FileEventKind,
     file_path: &PathBuf,
@@ -308,7 +415,17 @@ pub fn determine_event_priority(
     EmbeddingEventPriority::Normal
 }
 
-/// Create embedding metadata from file path and event
+/// Create embedding metadata from file path and event.
+///
+/// # Deprecation
+///
+/// This function is deprecated along with `EmbeddingEventMetadata`. Use
+/// `SessionEvent::EmbeddingRequested` which doesn't require this metadata.
+#[allow(deprecated)]
+#[deprecated(
+    since = "0.1.0",
+    note = "Use SessionEvent::EmbeddingRequested from crucible_core::events instead"
+)]
 pub fn create_embedding_metadata(
     file_path: &PathBuf,
     event_kind: &FileEventKind,
