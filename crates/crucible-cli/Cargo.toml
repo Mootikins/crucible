@@ -73,10 +73,7 @@ walkdir = "2.4"
 # Rune scripting
 # rune = { workspace = true }  # Commented out - not MVP critical
 
-# Fuzzy search
-nucleo = { workspace = true }
-nucleo-matcher = { workspace = true }
-nucleo-picker = { workspace = true }
+# Fuzzy search removed - was for TUI completion
 
 # Additional dependencies for REPL
 csv = { workspace = true }
@@ -97,16 +94,11 @@ markdown-it = { workspace = true }
 reqwest = { workspace = true, features = ["json", "stream"] }
 futures = { workspace = true }
 
-# Chat REPL dependencies
+# Terminal utilities (kept for progress.rs, markdown_renderer.rs)
 crossterm = { workspace = true }
-reedline = { workspace = true }
 
 # Diff rendering
 similar = "2.7"
-
-# TUI framework
-ratatui = { workspace = true }
-tui-textarea = { version = "0.7", default-features = false, features = ["crossterm"] }
 
 # UUID generation
 uuid = { workspace = true, features = ["v4", "serde"] }
