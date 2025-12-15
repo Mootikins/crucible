@@ -442,6 +442,22 @@ fn estimate_event_tokens(event: &SessionEvent) -> usize {
         SessionEvent::ToolDiscovered { name, schema, .. } => {
             name.len() + schema.as_ref().map(|s| s.to_string().len()).unwrap_or(0)
         }
+        // File events (small metadata)
+        SessionEvent::FileChanged { .. } => 50,
+        SessionEvent::FileDeleted { .. } => 50,
+        SessionEvent::FileMoved { .. } => 50,
+        // Storage events (small metadata)
+        SessionEvent::EntityStored { .. } => 50,
+        SessionEvent::EntityDeleted { .. } => 50,
+        SessionEvent::BlocksUpdated { .. } => 50,
+        SessionEvent::RelationStored { .. } => 50,
+        SessionEvent::RelationDeleted { .. } => 50,
+        SessionEvent::TagAssociated { tag, .. } => tag.len() + 50,
+        // Embedding events (small metadata)
+        SessionEvent::EmbeddingRequested { .. } => 50,
+        SessionEvent::EmbeddingStored { .. } => 50,
+        SessionEvent::EmbeddingFailed { error, .. } => error.len() + 50,
+        SessionEvent::EmbeddingBatchComplete { .. } => 50,
     };
 
     // Rough estimate: ~4 characters per token
@@ -540,7 +556,7 @@ impl Reactor for LinearReactor {
 
         // Push a SessionStarted event
         let start_event = SessionEvent::SessionStarted {
-            config: config.clone(),
+            config: config.into(),
         };
         self.ring.push(start_event);
 
