@@ -1,17 +1,25 @@
 //! Process Command - Explicit Pipeline Processing
 //!
 //! Runs the note processing pipeline on files in the kiln.
+//!
+//! When `--watch` is enabled, this command uses the full event system to process
+//! file changes through the event cascade:
+//! ```text
+//! FileChanged -> NoteParsed -> EntityStored -> BlocksUpdated -> EmbeddingGenerated
+//! ```
 
 use anyhow::Result;
+use crucible_core::events::{FileChangeKind, SessionEvent};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use walkdir::WalkDir;
 
 use crate::config::CliConfig;
+use crate::event_system::initialize_event_system;
 use crate::{factories, output};
 use crucible_watch::traits::{DebounceConfig, HandlerConfig, WatchConfig};
 use crucible_watch::{EventFilter, FileEvent, FileEventKind, WatchMode};
@@ -188,104 +196,55 @@ pub async fn execute(
         }
     }
 
-    // Watch mode
+    // Watch mode - uses full event system for event-driven processing
     if watch {
         println!("\n👀 Watching for changes (Press Ctrl+C to stop)...");
-        info!("Starting watch mode");
+        info!("Starting watch mode with event system");
 
-        // Create watcher via factory (DIP pattern - depends only on FileWatcher trait)
-        let mut watcher_arc = factories::create_file_watcher(&config)?;
+        // Initialize the full event system
+        output::info("Initializing event system...");
+        let event_handle = initialize_event_system(&config).await?;
+        info!(
+            "Event system ready with {} handlers",
+            event_handle.handler_count().await
+        );
+        output::success("Event system initialized");
 
-        // Get mutable access to configure the watcher
-        let watcher = Arc::get_mut(&mut watcher_arc)
-            .ok_or_else(|| anyhow::anyhow!("Failed to get mutable watcher reference"))?;
+        // Add watch for the target path
+        {
+            let mut watch = event_handle.watch_manager().write().await;
 
-        // Create event channel
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<FileEvent>();
-        watcher.set_event_sender(tx);
+            // Configure watch with markdown file filter and debouncing
+            let crucible_dir = target_path.join(".crucible");
+            let filter = EventFilter::new()
+                .with_extension("md")
+                .exclude_dir(crucible_dir);
+            let watch_config = WatchConfig {
+                id: "process-watch".to_string(),
+                recursive: true,
+                filter: Some(filter),
+                debounce: DebounceConfig::new(500), // 500ms debounce
+                handler_config: HandlerConfig::default(),
+                mode: WatchMode::Standard,
+                backend_options: Default::default(),
+            };
 
-        // Configure watch with markdown file filter and debouncing
-        // Exclude .crucible directory (contains SurrealDB database files)
-        let crucible_dir = target_path.join(".crucible");
-        let filter = EventFilter::new()
-            .with_extension("md")
-            .exclude_dir(crucible_dir);
-        let watch_config = WatchConfig {
-            id: "process-watch".to_string(),
-            recursive: true,
-            filter: Some(filter),
-            debounce: DebounceConfig::new(500), // 500ms debounce
-            handler_config: HandlerConfig::default(),
-            mode: WatchMode::Standard,
-            backend_options: Default::default(),
-        };
-
-        // Start watching the target path
-        // IMPORTANT: Keep handle alive for duration of watch to prevent premature cleanup
-        let watch_handle = watcher
-            .watch(target_path.to_path_buf(), watch_config)
-            .await?;
+            watch.add_watch(target_path.to_path_buf(), watch_config).await?;
+        }
         info!("Watch started on: {}", target_path.display());
 
-        // Event processing loop with Ctrl+C handling
-        loop {
-            tokio::select! {
-                Some(event) = rx.recv() => {
-                    // Process file change events
-                    match &event.kind {
-                        FileEventKind::Modified | FileEventKind::Created => {
-                            if verbose {
-                                println!("📝 Change detected: {}", event.path.display());
-                            }
+        println!(
+            "📡 Event-driven processing active. File changes will trigger the event cascade:"
+        );
+        println!("   FileChanged -> NoteParsed -> EntityStored -> BlocksUpdated -> EmbeddingGenerated");
 
-                            // Reprocess changed file through pipeline
-                            if dry_run {
-                                println!("   Would reprocess: {}", event.path.display());
-                            } else {
-                                match pipeline.process(&event.path).await {
-                                    Ok(crucible_core::processing::ProcessingResult::Success { .. }) => {
-                                        if verbose {
-                                            println!("   ✓ Reprocessed successfully");
-                                        }
-                                    }
-                                    Ok(crucible_core::processing::ProcessingResult::Skipped) |
-                                    Ok(crucible_core::processing::ProcessingResult::NoChanges) => {
-                                        if verbose {
-                                            println!("   ⏭ Skipped (unchanged)");
-                                        }
-                                    }
-                                    Err(e) => {
-                                        eprintln!("   ⚠ Error reprocessing: {}", e);
-                                        warn!("Failed to reprocess {}: {}", event.path.display(), e);
-                                    }
-                                }
-                            }
-                        }
-                        FileEventKind::Deleted => {
-                            if verbose {
-                                println!("🗑 Deleted: {}", event.path.display());
-                                // Could optionally mark as deleted in DB in the future
-                            }
-                        }
-                        _ => {
-                            // Ignore other event types (Moved, Batch, Unknown)
-                            if verbose {
-                                println!("   ℹ Ignoring event type: {:?}", event.kind);
-                            }
-                        }
-                    }
-                }
+        // Wait for Ctrl+C
+        tokio::signal::ctrl_c().await?;
+        println!("\n👋 Stopping watch mode...");
+        info!("Watch mode stopped by user");
 
-                _ = tokio::signal::ctrl_c() => {
-                    println!("\n👋 Stopping watch mode...");
-                    info!("Watch mode stopped by user");
-                    break;
-                }
-            }
-        }
-
-        // Cleanup - explicitly drop handle to ensure clean shutdown
-        drop(watch_handle);
+        // Graceful shutdown
+        event_handle.shutdown().await?;
         println!("✅ Watch mode stopped");
     }
 
