@@ -115,7 +115,10 @@ pub use plugin_loader::PluginLoader;
 pub use plugin_types::{HookConfig, PluginManifest, RegisteredHook};
 pub use regex_module::regex_module;
 pub use registry::RuneToolRegistry;
-pub use rune_types::crucible_module;
+pub use rune_types::{
+    categorize_by_name_impl, crucible_module, session_event_module, RuneEventContext,
+    RuneFileChangeKind, RuneNoteChangeType, RuneRecipe, RuneRecipeEnrichment, RuneSessionEvent,
+};
 pub use session::{Session, SessionBuilder, SessionHandle, SessionState};
 pub use tool_events::{ContentBlock as ToolContentBlock, ToolEventEmitter, ToolSource};
 pub use types::{RuneDiscoveryConfig, RuneExecutionResult, RuneTool};

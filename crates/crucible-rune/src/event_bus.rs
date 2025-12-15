@@ -32,6 +32,7 @@
 //! let result = bus.emit(event).await?;
 //! ```
 
+use crucible_core::events::SessionEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -71,6 +72,10 @@ pub enum EventType {
     #[serde(rename = "note:modified")]
     NoteModified,
 
+    /// File was deleted from disk
+    #[serde(rename = "file:deleted")]
+    FileDeleted,
+
     /// Upstream MCP server connected
     #[serde(rename = "mcp:attached")]
     McpAttached,
@@ -82,7 +87,7 @@ pub enum EventType {
 
 impl EventType {
     /// Parse event type from string (e.g., "tool:after")
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "tool:before" => Some(Self::ToolBefore),
             "tool:after" => Some(Self::ToolAfter),
@@ -91,6 +96,7 @@ impl EventType {
             "note:parsed" => Some(Self::NoteParsed),
             "note:created" => Some(Self::NoteCreated),
             "note:modified" => Some(Self::NoteModified),
+            "file:deleted" => Some(Self::FileDeleted),
             "mcp:attached" => Some(Self::McpAttached),
             "custom" => Some(Self::Custom),
             _ => None,
@@ -107,6 +113,7 @@ impl EventType {
             Self::NoteParsed => "note:parsed",
             Self::NoteCreated => "note:created",
             Self::NoteModified => "note:modified",
+            Self::FileDeleted => "file:deleted",
             Self::McpAttached => "mcp:attached",
             Self::Custom => "custom",
         }
@@ -194,6 +201,11 @@ impl Event {
     /// Create a note:modified event
     pub fn note_modified(note_path: impl Into<String>, changes: JsonValue) -> Self {
         Self::new(EventType::NoteModified, note_path, changes)
+    }
+
+    /// Create a file:deleted event
+    pub fn file_deleted(file_path: impl Into<String>, metadata: JsonValue) -> Self {
+        Self::new(EventType::FileDeleted, file_path, metadata)
     }
 
     /// Create an mcp:attached event
@@ -301,18 +313,102 @@ impl EventContext {
 pub type HandlerResult = Result<Event, HandlerError>;
 
 /// Result type for handler execution with SessionEvent
-pub type SessionHandlerResult = Result<crate::reactor::SessionEvent, HandlerError>;
+pub type SessionHandlerResult = Result<SessionEvent, HandlerError>;
 
 /// Convert a SessionEvent to an Event for handler execution
 ///
 /// This bridges the SessionEvent type to the legacy Event type used by handlers.
-fn session_event_to_event(session_event: &crate::reactor::SessionEvent) -> Event {
-    let event_type = session_event.to_event_type();
+fn session_event_to_event(session_event: &SessionEvent) -> Event {
+    let event_type = session_event_to_event_type(session_event);
     let identifier = session_event.identifier();
     let payload = serde_json::to_value(session_event)
         .unwrap_or_else(|_| serde_json::json!({"error": "serialization failed"}));
 
     Event::new(event_type, identifier, payload)
+}
+
+/// Map a SessionEvent to an EventType for handler matching.
+///
+/// This provides backwards compatibility with handlers registered by EventType.
+fn session_event_to_event_type(event: &SessionEvent) -> EventType {
+    match event {
+        SessionEvent::ToolCalled { .. } => EventType::ToolBefore,
+        SessionEvent::ToolCompleted { error: None, .. } => EventType::ToolAfter,
+        SessionEvent::ToolCompleted { error: Some(_), .. } => EventType::ToolError,
+        SessionEvent::ToolDiscovered { .. } => EventType::ToolDiscovered,
+        SessionEvent::NoteParsed { .. } => EventType::NoteParsed,
+        SessionEvent::NoteCreated { .. } => EventType::NoteCreated,
+        SessionEvent::NoteModified { .. } => EventType::NoteModified,
+        SessionEvent::FileDeleted { .. } => EventType::FileDeleted,
+        SessionEvent::McpAttached { .. } => EventType::McpAttached,
+        // All other events map to Custom
+        _ => EventType::Custom,
+    }
+}
+
+/// Convert an EventBus Event back to a SessionEvent.
+///
+/// This is used after handler processing to return the result as a SessionEvent.
+fn event_to_session_event(event: Event) -> SessionEvent {
+    use crucible_core::events::{NoteChangeType, ToolSource};
+
+    match event.event_type {
+        EventType::ToolBefore => SessionEvent::ToolCalled {
+            name: event.identifier,
+            args: event.payload,
+        },
+        EventType::ToolAfter => SessionEvent::ToolCompleted {
+            name: event.identifier,
+            result: event.payload.to_string(),
+            error: None,
+        },
+        EventType::ToolError => SessionEvent::ToolCompleted {
+            name: event.identifier,
+            result: String::new(),
+            error: Some(event.payload.to_string()),
+        },
+        EventType::ToolDiscovered => SessionEvent::ToolDiscovered {
+            name: event.identifier,
+            source: ToolSource::Rune,
+            schema: Some(event.payload),
+        },
+        EventType::NoteParsed => SessionEvent::NoteParsed {
+            path: std::path::PathBuf::from(&event.identifier),
+            block_count: event
+                .payload
+                .get("block_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as usize,
+            payload: None, // Legacy conversion doesn't include NotePayload
+        },
+        EventType::NoteCreated => SessionEvent::NoteCreated {
+            path: std::path::PathBuf::from(&event.identifier),
+            title: event
+                .payload
+                .get("title")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+        },
+        EventType::NoteModified => SessionEvent::NoteModified {
+            path: std::path::PathBuf::from(&event.identifier),
+            change_type: NoteChangeType::Content,
+        },
+        EventType::FileDeleted => SessionEvent::FileDeleted {
+            path: std::path::PathBuf::from(&event.identifier),
+        },
+        EventType::McpAttached => SessionEvent::McpAttached {
+            server: event.identifier,
+            tool_count: event
+                .payload
+                .get("tool_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as usize,
+        },
+        EventType::Custom => SessionEvent::Custom {
+            name: event.identifier,
+            payload: event.payload,
+        },
+    }
 }
 
 /// Errors that can occur during handler execution
@@ -432,12 +528,12 @@ impl Handler {
 
     /// Check if this handler matches a SessionEvent
     ///
-    /// Uses SessionEvent::to_event_type() and SessionEvent::identifier() for matching.
-    pub fn matches_session(&self, event: &crate::reactor::SessionEvent) -> bool {
+    /// Uses session_event_to_event_type() and SessionEvent::identifier() for matching.
+    pub fn matches_session(&self, event: &SessionEvent) -> bool {
         if !self.enabled {
             return false;
         }
-        if self.event_type != event.to_event_type() {
+        if self.event_type != session_event_to_event_type(event) {
             return false;
         }
         match_glob(&self.pattern, &event.identifier())
@@ -454,7 +550,7 @@ impl Handler {
     pub fn handle_session(
         &self,
         ctx: &mut EventContext,
-        event: crate::reactor::SessionEvent,
+        event: SessionEvent,
     ) -> SessionHandlerResult {
         // Convert SessionEvent to Event for the handler
         let bus_event = session_event_to_event(&event);
@@ -464,7 +560,7 @@ impl Handler {
                 if modified.cancelled {
                     ctx.cancel();
                 }
-                Ok(modified.into()) // Convert back to SessionEvent
+                Ok(event_to_session_event(modified)) // Convert back to SessionEvent
             }
             Err(e) => Err(e),
         }
@@ -585,8 +681,8 @@ impl EventBus {
     /// Returns the (possibly modified) SessionEvent after all handlers have processed it.
     pub fn emit_session(
         &self,
-        event: crate::reactor::SessionEvent,
-    ) -> (crate::reactor::SessionEvent, EventContext, Vec<HandlerError>) {
+        event: SessionEvent,
+    ) -> (SessionEvent, EventContext, Vec<HandlerError>) {
         let mut ctx = EventContext::new();
         let mut current_event = event;
         let mut errors = Vec::new();
@@ -708,11 +804,15 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn test_event_type_from_str() {
-        assert_eq!(EventType::from_str("tool:before"), Some(EventType::ToolBefore));
-        assert_eq!(EventType::from_str("tool:after"), Some(EventType::ToolAfter));
-        assert_eq!(EventType::from_str("note:parsed"), Some(EventType::NoteParsed));
-        assert_eq!(EventType::from_str("invalid"), None);
+    fn test_event_type_parse() {
+        assert_eq!(EventType::parse("tool:before"), Some(EventType::ToolBefore));
+        assert_eq!(EventType::parse("tool:after"), Some(EventType::ToolAfter));
+        assert_eq!(EventType::parse("note:parsed"), Some(EventType::NoteParsed));
+        assert_eq!(
+            EventType::parse("file:deleted"),
+            Some(EventType::FileDeleted)
+        );
+        assert_eq!(EventType::parse("invalid"), None);
     }
 
     #[test]
@@ -720,6 +820,7 @@ mod tests {
         assert_eq!(EventType::ToolBefore.as_str(), "tool:before");
         assert_eq!(EventType::ToolAfter.as_str(), "tool:after");
         assert_eq!(EventType::NoteParsed.as_str(), "note:parsed");
+        assert_eq!(EventType::FileDeleted.as_str(), "file:deleted");
     }
 
     #[test]
@@ -732,9 +833,17 @@ mod tests {
     }
 
     #[test]
+    fn test_file_deleted_event_creation() {
+        let event = Event::file_deleted("/notes/deleted.md", json!({}));
+        assert_eq!(event.event_type, EventType::FileDeleted);
+        assert_eq!(event.identifier, "/notes/deleted.md");
+        assert!(!event.cancelled);
+        assert!(event.timestamp_ms > 0);
+    }
+
+    #[test]
     fn test_event_with_source() {
-        let event = Event::tool_after("gh_search", json!({}))
-            .with_source("upstream:github");
+        let event = Event::tool_after("gh_search", json!({})).with_source("upstream:github");
         assert_eq!(event.source, Some("upstream:github".to_string()));
     }
 
@@ -801,12 +910,9 @@ mod tests {
 
     #[test]
     fn test_handler_disabled() {
-        let handler = Handler::new(
-            "test_handler",
-            EventType::ToolAfter,
-            "*",
-            |_ctx, event| Ok(event),
-        )
+        let handler = Handler::new("test_handler", EventType::ToolAfter, "*", |_ctx, event| {
+            Ok(event)
+        })
         .with_enabled(false);
 
         let event = Event::tool_after("anything", json!({}));
@@ -815,13 +921,8 @@ mod tests {
 
     #[test]
     fn test_handler_priority() {
-        let handler = Handler::new(
-            "test",
-            EventType::ToolAfter,
-            "*",
-            |_ctx, event| Ok(event),
-        )
-        .with_priority(50);
+        let handler = Handler::new("test", EventType::ToolAfter, "*", |_ctx, event| Ok(event))
+            .with_priority(50);
 
         assert_eq!(handler.priority, 50);
     }
@@ -904,10 +1005,15 @@ mod tests {
 
         // Second handler should still run
         bus.register(
-            Handler::new("succeeding", EventType::ToolAfter, "*", |_ctx, mut event| {
-                event.payload = json!("success");
-                Ok(event)
-            })
+            Handler::new(
+                "succeeding",
+                EventType::ToolAfter,
+                "*",
+                |_ctx, mut event| {
+                    event.payload = json!("success");
+                    Ok(event)
+                },
+            )
             .with_priority(200),
         );
 
@@ -933,10 +1039,15 @@ mod tests {
         );
 
         bus.register(
-            Handler::new("never_runs", EventType::ToolAfter, "*", |_ctx, mut event| {
-                event.payload = json!("should not see this");
-                Ok(event)
-            })
+            Handler::new(
+                "never_runs",
+                EventType::ToolAfter,
+                "*",
+                |_ctx, mut event| {
+                    event.payload = json!("should not see this");
+                    Ok(event)
+                },
+            )
             .with_priority(200),
         );
 
@@ -954,18 +1065,28 @@ mod tests {
         let mut bus = EventBus::new();
 
         bus.register(
-            Handler::new("canceller", EventType::ToolBefore, "*", |_ctx, mut event| {
-                event.cancel();
-                Ok(event)
-            })
+            Handler::new(
+                "canceller",
+                EventType::ToolBefore,
+                "*",
+                |_ctx, mut event| {
+                    event.cancel();
+                    Ok(event)
+                },
+            )
             .with_priority(100),
         );
 
         bus.register(
-            Handler::new("never_runs", EventType::ToolBefore, "*", |_ctx, mut event| {
-                event.payload = json!("should not see this");
-                Ok(event)
-            })
+            Handler::new(
+                "never_runs",
+                EventType::ToolBefore,
+                "*",
+                |_ctx, mut event| {
+                    event.payload = json!("should not see this");
+                    Ok(event)
+                },
+            )
             .with_priority(200),
         );
 
@@ -980,7 +1101,12 @@ mod tests {
     fn test_event_bus_unregister() {
         let mut bus = EventBus::new();
 
-        bus.register(Handler::new("test", EventType::ToolAfter, "*", |_ctx, e| Ok(e)));
+        bus.register(Handler::new(
+            "test",
+            EventType::ToolAfter,
+            "*",
+            |_ctx, e| Ok(e),
+        ));
 
         assert_eq!(bus.count_handlers(EventType::ToolAfter), 1);
 
@@ -1081,8 +1207,7 @@ mod tests {
 
     #[test]
     fn test_event_serialization() {
-        let event = Event::tool_after("test", json!({"key": "value"}))
-            .with_source("kiln");
+        let event = Event::tool_after("test", json!({"key": "value"})).with_source("kiln");
 
         let json = serde_json::to_string(&event).unwrap();
         let parsed: Event = serde_json::from_str(&json).unwrap();

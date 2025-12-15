@@ -113,7 +113,7 @@ impl PersistenceHandler {
     /// Set the initial file index.
     ///
     /// Use when resuming a session that already has context files.
-    pub fn with_file_index(mut self, index: usize) -> Self {
+    pub fn with_file_index(self, index: usize) -> Self {
         self.file_index.store(index, Ordering::SeqCst);
         self
     }
@@ -779,7 +779,7 @@ mod tests {
                 error: None,
             },
             SessionEvent::SessionStarted {
-                config: crate::reactor::SessionConfig::new("test", "/tmp/test"),
+                config: crate::reactor::SessionEventConfig::new("test").with_folder("/tmp/test"),
             },
             SessionEvent::SessionCompacted {
                 summary: "Session summary".into(),
