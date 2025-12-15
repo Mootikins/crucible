@@ -64,6 +64,9 @@ pub use config::{
     ValidationError, WatchLoggingConfig, WatchManagerConfig, WatchModeConfig, WatchPath,
     WatchPerformanceConfig, WatchProfile,
 };
+// Note: embedding_events types are deprecated. Use SessionEvent variants from
+// crucible_core::events instead (EmbeddingRequested, EmbeddingStored, EmbeddingFailed).
+#[allow(deprecated)]
 pub use embedding_events::*;
 pub use error::*;
 pub use events::*;
@@ -73,6 +76,9 @@ pub use file_scanner::{
 };
 pub use handlers::*;
 pub use manager::*;
+// Note: message_channel_infrastructure is deprecated. Use EventBus with SessionEvent
+// from crucible_core::events instead. See the module-level docs for migration guidance.
+#[allow(deprecated)]
 pub use message_channel_infrastructure::*;
 pub use traits::{BackendCapabilities, EventHandler, FileWatcher, WatchHandle, WatchMode};
 pub use types::*;
@@ -88,8 +94,15 @@ pub enum WatchBackend {
     Editor,
 }
 
-/// Re-export common types for convenience
+/// Re-export common types for convenience.
+///
+/// Note: The embedding_events types are deprecated. New code should use:
+/// - `SessionEvent::EmbeddingRequested` instead of `EmbeddingEvent`
+/// - `SessionEvent::EmbeddingStored` instead of `EmbeddingEventResult::success`
+/// - `SessionEvent::EmbeddingFailed` instead of `EmbeddingEventResult::failure`
+/// - `Priority` from `crucible_core::events` instead of `EmbeddingEventPriority`
 pub mod prelude {
+    #[allow(deprecated)]
     pub use crate::{
         embedding_events::{
             create_embedding_metadata, determine_content_type, determine_event_priority,

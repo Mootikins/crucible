@@ -3,7 +3,47 @@
 //! This module provides the core message channel infrastructure that connects
 //! file system events to embedding processing, enabling efficient event-driven
 //! processing without polling.
+//!
+//! # Deprecation Notice
+//!
+//! This entire module is deprecated in favor of the `SessionEvent` event bus architecture.
+//! The `MessageChannelInfrastructure` used tokio broadcast/mpsc channels for embedding events,
+//! but this functionality is now handled by the unified `EventBus` from `crucible_rune::event_bus`
+//! with `SessionEvent` variants from `crucible_core::events`.
+//!
+//! ## Migration
+//!
+//! Instead of using `MessageChannelInfrastructure` to manage embedding event channels:
+//!
+//! 1. Use `EventBus::emit_session()` to emit `SessionEvent::EmbeddingRequested`
+//! 2. Register handlers with `EventBus::register()` to process embedding events
+//! 3. Emit `SessionEvent::EmbeddingGenerated` or `SessionEvent::EmbeddingBatchComplete` on completion
+//!
+//! ```ignore
+//! // Old approach:
+//! let mut infra = MessageChannelInfrastructure::new(config)?;
+//! infra.start().await?;
+//! infra.send_embedding_event(event).await?;
+//!
+//! // New approach:
+//! use crucible_core::events::{SessionEvent, Priority, EventEmitter};
+//! use crucible_rune::event_bus::EventBus;
+//!
+//! let bus = EventBus::new();
+//! bus.emit_session(SessionEvent::EmbeddingRequested {
+//!     entity_id: "note:path/to/note.md".into(),
+//!     block_ids: vec!["block_abc123".into()],
+//!     priority: Priority::Normal,
+//! });
+//! ```
+//!
+//! The event bus provides:
+//! - Unified event handling across all Crucible components
+//! - Handler priority and fail-open semantics
+//! - Rune scripting integration for custom handlers
+//! - Better integration with storage and watch systems
 
+#[allow(deprecated)]
 use crate::{
     embedding_events::{EmbeddingEvent, EmbeddingEventResult, EventDrivenEmbeddingConfig},
     error::Result,
@@ -14,7 +54,20 @@ use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tracing::{debug, error, info, warn};
 
-/// Message channel infrastructure for event-driven embedding
+/// Message channel infrastructure for event-driven embedding.
+///
+/// # Deprecation
+///
+/// This struct is deprecated. Use the `EventBus` from `crucible_rune::event_bus` with
+/// `SessionEvent` variants from `crucible_core::events` instead. The event bus provides
+/// unified event handling across all Crucible components.
+///
+/// See the module-level documentation for migration guidance.
+#[deprecated(
+    since = "0.1.0",
+    note = "Use EventBus with SessionEvent from crucible_core::events instead"
+)]
+#[allow(deprecated)]
 pub struct MessageChannelInfrastructure {
     /// Configuration for the channel infrastructure
     config: EventDrivenEmbeddingConfig,
@@ -37,6 +90,7 @@ pub struct MessageChannelInfrastructure {
 }
 
 /// Internal state for the channel infrastructure
+#[allow(deprecated)]
 #[derive(Debug, Default)]
 struct ChannelState {
     /// Current batch being accumulated
@@ -59,7 +113,16 @@ struct ChannelState {
     metrics: ChannelMetrics,
 }
 
-/// Metrics for the channel infrastructure
+/// Metrics for the channel infrastructure.
+///
+/// # Deprecation
+///
+/// This struct is deprecated along with `MessageChannelInfrastructure`. Event bus
+/// handlers should track their own metrics through the tracing/metrics system.
+#[deprecated(
+    since = "0.1.0",
+    note = "Use EventBus with SessionEvent from crucible_core::events instead"
+)]
 #[derive(Debug, Default, Clone)]
 pub struct ChannelMetrics {
     /// Total events received
@@ -90,6 +153,7 @@ pub struct ChannelMetrics {
     pub active_subscribers: u32,
 }
 
+#[allow(deprecated)]
 impl MessageChannelInfrastructure {
     /// Create a new message channel infrastructure
     pub fn new(config: EventDrivenEmbeddingConfig) -> Result<Self> {
@@ -477,6 +541,7 @@ impl MessageChannelInfrastructure {
 }
 
 /// Factory functions for creating message channel infrastructure
+#[allow(deprecated)]
 impl MessageChannelInfrastructure {
     /// Create infrastructure optimized for high throughput
     pub fn optimize_for_throughput() -> Result<Self> {
