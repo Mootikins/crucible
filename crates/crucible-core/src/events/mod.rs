@@ -24,7 +24,8 @@
 //! The [`handler`] module provides `HandlerResult<E>` for controlling event flow:
 //!
 //! - `Continue(event)` - Processing succeeded, pass to next handler
-//! - `Cancel` - Stop processing, event is cancelled
+//! - `Cancel` - Stop processing, event is discarded
+//! - `Cancelled(event)` - Stop processing, event is preserved for inspection
 //! - `SoftError { event, error }` - Non-fatal error, continue with event
 //! - `FatalError(error)` - Fatal error, stop processing immediately
 //!
