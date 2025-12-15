@@ -69,6 +69,12 @@ impl EventToMarkdown for SessionEvent {
             SessionEvent::SubagentSpawned { .. } => "SubagentSpawned",
             SessionEvent::SubagentCompleted { .. } => "SubagentCompleted",
             SessionEvent::SubagentFailed { .. } => "SubagentFailed",
+            SessionEvent::TextDelta { .. } => "TextDelta",
+            SessionEvent::NoteParsed { .. } => "NoteParsed",
+            SessionEvent::NoteCreated { .. } => "NoteCreated",
+            SessionEvent::NoteModified { .. } => "NoteModified",
+            SessionEvent::McpAttached { .. } => "McpAttached",
+            SessionEvent::ToolDiscovered { .. } => "ToolDiscovered",
             SessionEvent::Custom { .. } => "Custom",
         }
     }
@@ -131,6 +137,43 @@ impl EventToMarkdown for SessionEvent {
 
             SessionEvent::SubagentFailed { id, error } => {
                 format_subagent_failed(id, error)
+            }
+
+            SessionEvent::TextDelta { delta, seq } => {
+                format!("**Seq:** {}\n\n```\n{}\n```\n", seq, delta)
+            }
+
+            SessionEvent::NoteParsed { path, block_count } => {
+                format!(
+                    "**Path:** `{}`\n**Blocks:** {}\n",
+                    path.display(),
+                    block_count
+                )
+            }
+
+            SessionEvent::NoteCreated { path, title } => {
+                let title_str = title.as_deref().unwrap_or("(untitled)");
+                format!("**Path:** `{}`\n**Title:** {}\n", path.display(), title_str)
+            }
+
+            SessionEvent::NoteModified { path, change_type } => {
+                format!(
+                    "**Path:** `{}`\n**Change:** {:?}\n",
+                    path.display(),
+                    change_type
+                )
+            }
+
+            SessionEvent::McpAttached { server, tool_count } => {
+                format!("**Server:** {}\n**Tools:** {}\n", server, tool_count)
+            }
+
+            SessionEvent::ToolDiscovered { name, source, schema } => {
+                let schema_str = schema
+                    .as_ref()
+                    .map(|s| format!("\n```json\n{}\n```\n", serde_json::to_string_pretty(s).unwrap_or_default()))
+                    .unwrap_or_default();
+                format!("**Name:** {}\n**Source:** {:?}{}", name, source, schema_str)
             }
 
             SessionEvent::Custom { name, payload } => {
