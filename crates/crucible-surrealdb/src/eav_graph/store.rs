@@ -1,7 +1,9 @@
 use anyhow::{anyhow, Result};
 use serde_json::{json, Value};
+use std::sync::Arc;
 
 use crate::{QueryResult, SurrealClient};
+use crucible_core::events::{EventEmitter, SessionEvent};
 
 #[cfg(test)]
 use super::types::EmbeddingVector;
@@ -15,11 +17,41 @@ use surrealdb::sql::Thing;
 #[derive(Clone)]
 pub struct EAVGraphStore {
     pub(crate) client: SurrealClient,
+    /// Optional event emitter for emitting storage events (EntityStored, BlocksUpdated, etc.)
+    emitter: Option<Arc<dyn EventEmitter<Event = SessionEvent>>>,
 }
 
 impl EAVGraphStore {
     pub fn new(client: SurrealClient) -> Self {
-        Self { client }
+        Self {
+            client,
+            emitter: None,
+        }
+    }
+
+    /// Add an event emitter to this store for emitting storage events.
+    ///
+    /// When an emitter is set, the store will emit `SessionEvent` variants
+    /// (EntityStored, BlocksUpdated, RelationCreated, etc.) after successful
+    /// database operations.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let store = EAVGraphStore::new(client)
+    ///     .with_emitter(event_bus.clone());
+    /// ```
+    pub fn with_emitter(
+        mut self,
+        emitter: Arc<dyn EventEmitter<Event = SessionEvent>>,
+    ) -> Self {
+        self.emitter = Some(emitter);
+        self
+    }
+
+    /// Get a reference to the emitter if one is configured.
+    pub fn emitter(&self) -> Option<&Arc<dyn EventEmitter<Event = SessionEvent>>> {
+        self.emitter.as_ref()
     }
 
     /// Generic upsert helper using CONTENT syntax.
@@ -162,6 +194,9 @@ impl EAVGraphStore {
     }
 
     /// Upsert an entity record.
+    ///
+    /// If an event emitter is configured via `with_emitter()`, this will emit
+    /// a `SessionEvent::EntityStored` event after successful upsert.
     pub async fn upsert_entity(&self, entity: &Entity) -> Result<RecordId<EntityRecord>> {
         let id = entity
             .id
@@ -197,6 +232,22 @@ impl EAVGraphStore {
 
         self.upsert_with_set(set_clause, &params, true, false)
             .await?;
+
+        // Emit EntityStored event if emitter is configured
+        if let Some(emitter) = &self.emitter {
+            let event = SessionEvent::EntityStored {
+                entity_id: id.to_string(),
+                entity_type: surreal_entity_type_to_core(entity.entity_type),
+            };
+            // Fire-and-forget: we log errors but don't fail the upsert
+            if let Err(e) = emitter.emit(event).await {
+                tracing::warn!(
+                    error = %e,
+                    entity_id = %id,
+                    "Failed to emit EntityStored event"
+                );
+            }
+        }
 
         Ok(id.clone())
     }
@@ -309,6 +360,23 @@ impl EAVGraphStore {
                     })],
                 )
                 .await?;
+        }
+
+        // Emit BlocksUpdated event if emitter is configured
+        if let Some(emitter) = &self.emitter {
+            let event = SessionEvent::BlocksUpdated {
+                entity_id: entity_id.to_string(),
+                block_count: blocks.len(),
+            };
+            // Fire-and-forget: we log errors but don't fail the operation
+            if let Err(e) = emitter.emit(event).await {
+                tracing::warn!(
+                    error = %e,
+                    entity_id = %entity_id,
+                    block_count = blocks.len(),
+                    "Failed to emit BlocksUpdated event"
+                );
+            }
         }
 
         Ok(())
@@ -643,6 +711,25 @@ impl EAVGraphStore {
                     &[params],
                 )
                 .await?;
+        }
+
+        // Emit RelationStored event if emitter is configured
+        if let Some(emitter) = &self.emitter {
+            let event = SessionEvent::RelationStored {
+                from_id: relation.from_id.to_string(),
+                to_id: relation.to_id.to_string(),
+                relation_type: relation.relation_type.clone(),
+            };
+            // Fire-and-forget: we log errors but don't fail the upsert
+            if let Err(e) = emitter.emit(event).await {
+                tracing::warn!(
+                    error = %e,
+                    from_id = %relation.from_id,
+                    to_id = %relation.to_id,
+                    relation_type = %relation.relation_type,
+                    "Failed to emit RelationStored event"
+                );
+            }
         }
 
         Ok(id.clone())
@@ -1291,6 +1378,28 @@ fn thing_value<T>(id: &RecordId<T>) -> serde_json::Value {
         );
         json!({"tb": id.table, "id": id.id})
     })
+}
+
+/// Convert SurrealDB EntityType to crucible-core EntityType for event emission.
+///
+/// This maps the storage-layer entity types to the event system types.
+/// Types that don't have a direct mapping default to `Note`.
+fn surreal_entity_type_to_core(
+    surreal_type: super::types::EntityType,
+) -> crucible_core::events::EntityType {
+    use super::types::EntityType as SurrealEntityType;
+    use crucible_core::events::EntityType as CoreEntityType;
+
+    match surreal_type {
+        SurrealEntityType::Note => CoreEntityType::Note,
+        SurrealEntityType::Block => CoreEntityType::Block,
+        SurrealEntityType::Tag => CoreEntityType::Tag,
+        // Section, Media, Person don't have direct mappings in core;
+        // default to Note as the closest general-purpose type
+        SurrealEntityType::Section | SurrealEntityType::Media | SurrealEntityType::Person => {
+            CoreEntityType::Note
+        }
+    }
 }
 
 // ============================================================================
