@@ -58,6 +58,7 @@ mod agent_tests {
 
     #[tokio::test]
     async fn test_discover_agent_with_nonexistent_preferred() {
+        // Note: cache is only checked when preferred=None, so no need to clear it here
         // When preferred agent doesn't exist, should fall back to known agents
         let result = discover_agent(Some("nonexistent-agent-xyz")).await;
 
@@ -66,11 +67,13 @@ mod agent_tests {
         match result {
             Ok(agent) => {
                 // Fallback succeeded - should be one of the known agents
+                // List matches KNOWN_AGENTS in crucible-acp/src/discovery.rs
                 assert!(
                     agent.name == "opencode"
-                        || agent.name == "claude-acp"
+                        || agent.name == "claude"
                         || agent.name == "gemini"
-                        || agent.name == "codex",
+                        || agent.name == "codex"
+                        || agent.name == "cursor",
                     "Should fall back to a known agent, got: {}",
                     agent.name
                 );
@@ -85,7 +88,10 @@ mod agent_tests {
 
     #[tokio::test]
     async fn test_discover_agent_no_preferred() {
-        // Should try to find any available agent
+        // Note: This may use a cached agent from other tests - that's acceptable
+        // The test verifies discover_agent works, not specific agent discovery behavior
+
+        // Should try to find any available agent (or use cache if populated)
         let result = discover_agent(None).await;
 
         // Will fail if no compatible agents are installed
