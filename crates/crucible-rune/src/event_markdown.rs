@@ -76,6 +76,22 @@ impl EventToMarkdown for SessionEvent {
             SessionEvent::McpAttached { .. } => "McpAttached",
             SessionEvent::ToolDiscovered { .. } => "ToolDiscovered",
             SessionEvent::Custom { .. } => "Custom",
+            // File events
+            SessionEvent::FileChanged { .. } => "FileChanged",
+            SessionEvent::FileDeleted { .. } => "FileDeleted",
+            SessionEvent::FileMoved { .. } => "FileMoved",
+            // Storage events
+            SessionEvent::EntityStored { .. } => "EntityStored",
+            SessionEvent::EntityDeleted { .. } => "EntityDeleted",
+            SessionEvent::BlocksUpdated { .. } => "BlocksUpdated",
+            SessionEvent::RelationStored { .. } => "RelationStored",
+            SessionEvent::RelationDeleted { .. } => "RelationDeleted",
+            SessionEvent::TagAssociated { .. } => "TagAssociated",
+            // Embedding events
+            SessionEvent::EmbeddingRequested { .. } => "EmbeddingRequested",
+            SessionEvent::EmbeddingStored { .. } => "EmbeddingStored",
+            SessionEvent::EmbeddingFailed { .. } => "EmbeddingFailed",
+            SessionEvent::EmbeddingBatchComplete { .. } => "EmbeddingBatchComplete",
         }
     }
 
@@ -116,7 +132,8 @@ impl EventToMarkdown for SessionEvent {
             }
 
             SessionEvent::SessionStarted { config } => {
-                format_session_started(&config.session_id, config.folder.as_path())
+                let folder = config.folder.as_ref().map(|p| p.as_path()).unwrap_or(std::path::Path::new(""));
+                format_session_started(&config.session_id, folder)
             }
 
             SessionEvent::SessionCompacted { summary, new_file } => {
@@ -143,12 +160,19 @@ impl EventToMarkdown for SessionEvent {
                 format!("**Seq:** {}\n\n```\n{}\n```\n", seq, delta)
             }
 
-            SessionEvent::NoteParsed { path, block_count } => {
-                format!(
+            SessionEvent::NoteParsed { path, block_count, payload } => {
+                let mut out = format!(
                     "**Path:** `{}`\n**Blocks:** {}\n",
                     path.display(),
                     block_count
-                )
+                );
+                if let Some(p) = payload {
+                    out.push_str(&format!("**Title:** {}\n", p.title));
+                    if !p.tags.is_empty() {
+                        out.push_str(&format!("**Tags:** {}\n", p.tags.join(", ")));
+                    }
+                }
+                out
             }
 
             SessionEvent::NoteCreated { path, title } => {
@@ -178,6 +202,64 @@ impl EventToMarkdown for SessionEvent {
 
             SessionEvent::Custom { name, payload } => {
                 format_custom_event(name, payload)
+            }
+
+            // File events
+            SessionEvent::FileChanged { path, kind } => {
+                format!("**Path:** `{}`\n**Kind:** {:?}\n", path.display(), kind)
+            }
+            SessionEvent::FileDeleted { path } => {
+                format!("**Path:** `{}`\n", path.display())
+            }
+            SessionEvent::FileMoved { from, to } => {
+                format!("**From:** `{}`\n**To:** `{}`\n", from.display(), to.display())
+            }
+
+            // Storage events
+            SessionEvent::EntityStored { entity_id, entity_type } => {
+                format!("**Entity:** {:?}\n**ID:** {}\n", entity_type, entity_id)
+            }
+            SessionEvent::EntityDeleted { entity_id, entity_type } => {
+                format!("**Entity:** {:?}\n**ID:** {}\n", entity_type, entity_id)
+            }
+            SessionEvent::BlocksUpdated { entity_id, block_count } => {
+                format!(
+                    "**Entity:** {}\n**Blocks:** {}\n",
+                    entity_id,
+                    block_count
+                )
+            }
+            SessionEvent::RelationStored { from_id, to_id, relation_type } => {
+                format!(
+                    "**From:** {}\n**To:** {}\n**Type:** {}\n",
+                    from_id, to_id, relation_type
+                )
+            }
+            SessionEvent::RelationDeleted { from_id, to_id, relation_type } => {
+                format!(
+                    "**From:** {}\n**To:** {}\n**Type:** {}\n",
+                    from_id, to_id, relation_type
+                )
+            }
+            SessionEvent::TagAssociated { entity_id, tag } => {
+                format!("**Entity:** {}\n**Tag:** #{}\n", entity_id, tag)
+            }
+
+            // Embedding events
+            SessionEvent::EmbeddingRequested { entity_id, priority, .. } => {
+                format!("**Entity:** {}\n**Priority:** {:?}\n", entity_id, priority)
+            }
+            SessionEvent::EmbeddingStored { entity_id, dimensions, .. } => {
+                format!("**Entity:** {}\n**Dimensions:** {}\n", entity_id, dimensions)
+            }
+            SessionEvent::EmbeddingFailed { entity_id, error, .. } => {
+                format!("**Entity:** {}\n**Error:** {}\n", entity_id, error)
+            }
+            SessionEvent::EmbeddingBatchComplete { entity_id, count, duration_ms } => {
+                format!(
+                    "**Entity:** {}\n**Count:** {}\n**Duration:** {}ms\n",
+                    entity_id, count, duration_ms
+                )
             }
         };
 
@@ -722,7 +804,7 @@ fn parse_session_started(body: &str) -> MarkdownParseResult<SessionEvent> {
     let folder = PathBuf::from(folder_str);
 
     Ok(SessionEvent::SessionStarted {
-        config: crate::reactor::SessionConfig::new(session_id, folder),
+        config: crate::reactor::SessionEventConfig::new(session_id).with_folder(folder),
     })
 }
 
@@ -1008,7 +1090,7 @@ mod tests {
     use serde_json::json;
     use std::path::PathBuf;
 
-    use crate::reactor::SessionConfig;
+    use crate::reactor::SessionEventConfig;
 
     // Fixed timestamp for consistent test output: 2025-12-14T15:30:45.123 UTC
     // Calculated using: datetime.datetime(2025, 12, 14, 15, 30, 45, 123000, tzinfo=datetime.timezone.utc).timestamp() * 1000
@@ -1243,13 +1325,9 @@ mod tests {
     #[test]
     fn session_started_to_markdown() {
         let event = SessionEvent::SessionStarted {
-            config: SessionConfig {
-                session_id: "2025-12-14T1530-task".into(),
-                folder: PathBuf::from("/kiln/Sessions/2025-12-14T1530-task"),
-                max_context_tokens: 100_000,
-                system_prompt: None,
-                custom: json!(null),
-            },
+            config: SessionEventConfig::new("2025-12-14T1530-task")
+                .with_folder("/kiln/Sessions/2025-12-14T1530-task")
+                .with_max_context_tokens(100_000),
         };
 
         let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
@@ -1652,7 +1730,8 @@ mod tests {
     #[test]
     fn roundtrip_session_started() {
         let original = SessionEvent::SessionStarted {
-            config: SessionConfig::new("2025-12-14T1530-task", "/kiln/Sessions/2025-12-14T1530-task"),
+            config: SessionEventConfig::new("2025-12-14T1530-task")
+                .with_folder("/kiln/Sessions/2025-12-14T1530-task"),
         };
 
         let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
@@ -1663,7 +1742,7 @@ mod tests {
                 assert_eq!(config.session_id, "2025-12-14T1530-task");
                 assert_eq!(
                     config.folder,
-                    PathBuf::from("/kiln/Sessions/2025-12-14T1530-task")
+                    Some(PathBuf::from("/kiln/Sessions/2025-12-14T1530-task"))
                 );
             }
             _ => panic!("Wrong event type"),
