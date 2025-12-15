@@ -179,7 +179,14 @@ impl WatchManager {
             .await?;
 
         // Try to get mutable access to the watcher to call watch()
-        // This works if this is the only Arc reference (which it should be since we just created it)
+        // SAFETY: This works because the Arc was just created by create_optimal_watcher()
+        // and no other references exist yet. If this fails, it would indicate a bug in
+        // the factory implementation that's cloning the Arc internally.
+        //
+        // TODO: A more robust approach would be to either:
+        // 1. Pass event_sender to create_optimal_watcher() so it's set during construction
+        // 2. Change WatcherBackend trait methods to take &self with interior mutability
+        // For now, this is safe because we control the factory and know it doesn't clone.
         if let Some(watcher) = Arc::get_mut(&mut watcher_arc) {
             // Set the event sender so the watcher can send events to our processing pipeline
             watcher.set_event_sender(event_sender.clone());

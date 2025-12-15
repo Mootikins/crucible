@@ -18,9 +18,7 @@
 //! before downstream handlers (like TagHandler) process the same events.
 
 use chrono::Utc;
-use crucible_core::events::{
-    EntityType as EventEntityType, EventEmitter, SessionEvent, SharedEventBus,
-};
+use crucible_core::events::{EntityType as EventEntityType, SessionEvent, SharedEventBus};
 use std::path::Path;
 use std::sync::Arc;
 use tracing::{debug, error};
@@ -160,6 +158,14 @@ impl StorageHandler {
     ///
     /// Updates the entity path and emits appropriate events.
     /// Emits `EntityStored` for the new path and `EntityDeleted` for the old path.
+    /// Handle a file move by creating the new entity first, then soft-deleting the old one.
+    ///
+    /// # Fail-Safe Ordering
+    ///
+    /// Operations are ordered for safety: create new entity FIRST, then soft-delete old.
+    /// This ensures that if creation fails, the old entity remains intact - no data is lost.
+    /// The alternative (delete-then-create) could leave the system in an inconsistent state
+    /// if creation fails after deletion.
     pub async fn handle_file_moved(&self, from: &Path, to: &Path) {
         let old_entity_id = self.path_to_entity_id(from);
         let new_entity_id = self.path_to_entity_id(to);
@@ -171,7 +177,33 @@ impl StorageHandler {
             "Handling FileMoved event"
         );
 
-        // Soft delete old entity
+        // Step 1: Create new entity FIRST (fail-safe: if this fails, old entity remains)
+        let new_entity = Entity {
+            id: Some(RecordId::new("entities", &new_entity_id)),
+            entity_type: EntityType::Note,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            deleted_at: None,
+            version: 1,
+            content_hash: None,
+            created_by: None,
+            vault_id: None,
+            data: Some(serde_json::json!({
+                "path": to.display().to_string(),
+            })),
+        };
+
+        if let Err(e) = self.store.upsert_entity(&new_entity).await {
+            error!(
+                error = %e,
+                entity_id = %new_entity_id,
+                "Failed to create new entity for moved file - old entity preserved"
+            );
+            return;
+        }
+        debug!(entity_id = %new_entity_id, "New entity created for moved file");
+
+        // Step 2: Soft-delete old entity (only after new entity is safely created)
         let old_entity = Entity {
             id: Some(RecordId::new("entities", &old_entity_id)),
             entity_type: EntityType::Note,
@@ -188,51 +220,30 @@ impl StorageHandler {
         };
 
         if let Err(e) = self.store.upsert_entity(&old_entity).await {
-            error!(error = %e, entity_id = %old_entity_id, "Failed to soft-delete old entity");
-            return;
+            // Non-fatal: new entity exists, old entity just won't be marked deleted
+            // This is better than the reverse (losing the old entity)
+            error!(
+                error = %e,
+                entity_id = %old_entity_id,
+                "Failed to soft-delete old entity - new entity already created"
+            );
         }
 
-        // Create new entity with new path
-        let new_entity = Entity {
-            id: Some(RecordId::new("entities", &new_entity_id)),
-            entity_type: EntityType::Note,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            deleted_at: None,
-            version: 1,
-            content_hash: None,
-            created_by: None,
-            vault_id: None,
-            data: Some(serde_json::json!({
-                "path": to.display().to_string(),
-            })),
+        // Step 3: Emit events (new entity first, then deletion)
+        let event = SessionEvent::EntityStored {
+            entity_id: new_entity_id.clone(),
+            entity_type: EventEntityType::Note,
         };
+        if let Err(e) = self.emitter.emit(event).await {
+            error!(error = %e, "Failed to emit EntityStored event");
+        }
 
-        match self.store.upsert_entity(&new_entity).await {
-            Ok(_) => {
-                debug!(entity_id = %new_entity_id, "New entity created for moved file");
-
-                // Emit EntityDeleted for old path
-                let event = SessionEvent::EntityDeleted {
-                    entity_id: old_entity_id.clone(),
-                    entity_type: EventEntityType::Note,
-                };
-                if let Err(e) = self.emitter.emit(event).await {
-                    error!(error = %e, "Failed to emit EntityDeleted event");
-                }
-
-                // Emit EntityStored for new path
-                let event = SessionEvent::EntityStored {
-                    entity_id: new_entity_id.clone(),
-                    entity_type: EventEntityType::Note,
-                };
-                if let Err(e) = self.emitter.emit(event).await {
-                    error!(error = %e, "Failed to emit EntityStored event");
-                }
-            }
-            Err(e) => {
-                error!(error = %e, entity_id = %new_entity_id, "Failed to create new entity for moved file");
-            }
+        let event = SessionEvent::EntityDeleted {
+            entity_id: old_entity_id.clone(),
+            entity_type: EventEntityType::Note,
+        };
+        if let Err(e) = self.emitter.emit(event).await {
+            error!(error = %e, "Failed to emit EntityDeleted event");
         }
     }
 

@@ -15,7 +15,7 @@
 //! TagHandler runs at priority 110 (after StorageHandler at 100) to ensure
 //! the entity exists before associating tags with it.
 
-use crucible_core::events::{EntityType as EventEntityType, EventEmitter, SessionEvent, SharedEventBus};
+use crucible_core::events::{EntityType as EventEntityType, SessionEvent, SharedEventBus};
 use std::path::Path;
 use std::sync::Arc;
 use tracing::{debug, error};
