@@ -233,6 +233,9 @@ pub struct EventContext {
 
     /// Events emitted by handlers during processing
     emitted_events: Vec<Event>,
+
+    /// Whether event processing was cancelled by a handler
+    cancelled: bool,
 }
 
 impl EventContext {
@@ -281,6 +284,16 @@ impl EventContext {
     /// Get reference to all metadata
     pub fn metadata(&self) -> &HashMap<String, JsonValue> {
         &self.metadata
+    }
+
+    /// Mark the event as cancelled
+    pub fn cancel(&mut self) {
+        self.cancelled = true;
+    }
+
+    /// Check if the event was cancelled
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled
     }
 }
 
@@ -446,7 +459,13 @@ impl Handler {
         // Convert SessionEvent to Event for the handler
         let bus_event = session_event_to_event(&event);
         match (self.handler_fn)(ctx, bus_event) {
-            Ok(modified) => Ok(modified.into()), // Convert back to SessionEvent
+            Ok(modified) => {
+                // Track cancellation from the Event in the context
+                if modified.cancelled {
+                    ctx.cancel();
+                }
+                Ok(modified.into()) // Convert back to SessionEvent
+            }
             Err(e) => Err(e),
         }
     }
