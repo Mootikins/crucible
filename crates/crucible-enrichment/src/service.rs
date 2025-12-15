@@ -8,6 +8,7 @@ use crate::types::{BlockEmbedding, EnrichedNoteWithTree, EnrichmentMetadata, Inf
 use anyhow::Result;
 use async_trait::async_trait;
 use crucible_core::enrichment::EmbeddingProvider;
+use crucible_core::events::{SessionEvent, SharedEventBus};
 use crucible_core::{MerkleTreeBuilder, ParsedNote};
 use std::sync::Arc;
 use tracing::{debug, info};
@@ -38,6 +39,9 @@ pub struct DefaultEnrichmentService<M: MerkleTreeBuilder> {
 
     /// Maximum blocks to embed in a single batch (prevents memory issues)
     max_batch_size: usize,
+
+    /// Event emitter for SessionEvent emission (EmbeddingBatchComplete, etc.)
+    emitter: Option<SharedEventBus<SessionEvent>>,
 }
 
 impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
@@ -48,6 +52,7 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
             merkle_builder,
             min_words_for_embedding: DEFAULT_MIN_WORDS_FOR_EMBEDDING,
             max_batch_size: DEFAULT_MAX_BATCH_SIZE,
+            emitter: None,
         }
     }
 
@@ -58,6 +63,7 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
             merkle_builder,
             min_words_for_embedding: DEFAULT_MIN_WORDS_FOR_EMBEDDING,
             max_batch_size: DEFAULT_MAX_BATCH_SIZE,
+            emitter: None,
         }
     }
 
@@ -75,6 +81,20 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
         self
     }
 
+    /// Set the event emitter for SessionEvent emission (builder pattern)
+    ///
+    /// The emitter is used to emit `SessionEvent` variants (e.g., `EmbeddingBatchComplete`)
+    /// when enrichment operations complete.
+    pub fn with_emitter(mut self, emitter: SharedEventBus<SessionEvent>) -> Self {
+        self.emitter = Some(emitter);
+        self
+    }
+
+    /// Get a reference to the event emitter (if configured)
+    pub fn emitter(&self) -> Option<&SharedEventBus<SessionEvent>> {
+        self.emitter.as_ref()
+    }
+
     /// Enrich a parsed note with all available enrichments
     ///
     /// # Arguments
@@ -90,11 +110,16 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
         merkle_tree: M::Tree,
         changed_blocks: Vec<String>,
     ) -> Result<EnrichedNoteWithTree<M::Tree>> {
+        use std::time::Instant;
+
         info!(
             "Enriching note: {} ({} changed blocks)",
             parsed.path.display(),
             changed_blocks.len()
         );
+
+        // Track embedding generation time
+        let embed_start = Instant::now();
 
         // Run enrichment operations in parallel
         let (embeddings, metadata, relations) = tokio::join!(
@@ -103,10 +128,30 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
             self.infer_relations(&parsed),
         );
 
+        let embeddings = embeddings?;
+        let embed_duration = embed_start.elapsed();
+
+        // Emit EmbeddingBatchComplete if we have an emitter and generated embeddings
+        if !embeddings.is_empty() {
+            if let Some(ref emitter) = self.emitter {
+                let entity_id = format!("note:{}", parsed.path.display());
+                let _ = emitter.emit(SessionEvent::EmbeddingBatchComplete {
+                    entity_id,
+                    count: embeddings.len(),
+                    duration_ms: embed_duration.as_millis() as u64,
+                });
+                debug!(
+                    "Emitted EmbeddingBatchComplete for {} embeddings in {}ms",
+                    embeddings.len(),
+                    embed_duration.as_millis()
+                );
+            }
+        }
+
         Ok(EnrichedNoteWithTree::new(
             parsed,
             merkle_tree,
-            embeddings?,
+            embeddings,
             metadata?,
             relations?,
         ))

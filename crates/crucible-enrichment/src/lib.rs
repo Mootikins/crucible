@@ -46,11 +46,15 @@
 //! - **service**: EnrichmentService implementation (private, use factory)
 
 pub mod types;
+pub mod event_handler;
 
 // Re-export enrichment types (domain types are public)
 pub use types::{
     BlockEmbedding, EnrichedNoteWithTree, EnrichmentMetadata, InferredRelation, RelationType,
 };
+
+// Re-export event handler
+pub use event_handler::EmbeddingHandler;
 
 // Re-export constants (configuration values)
 pub use service::{DEFAULT_MAX_BATCH_SIZE, DEFAULT_MIN_WORDS_FOR_EMBEDDING};
