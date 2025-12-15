@@ -43,6 +43,16 @@ use super::emitter::EventError;
 /// - Pass the event to the next handler
 /// - Stop processing (cancellation or fatal error)
 /// - Log errors but continue (soft error)
+///
+/// # Variants Summary
+///
+/// | Variant | Continues? | Preserves Event? | Use Case |
+/// |---------|------------|------------------|----------|
+/// | `Continue` | Yes | Yes | Normal processing |
+/// | `Cancel` | No | No | Stop without event access |
+/// | `Cancelled` | No | Yes | Stop but preserve event |
+/// | `SoftError` | Yes | Yes | Non-fatal error |
+/// | `FatalError` | No | No | Fatal error |
 #[derive(Debug, Clone)]
 pub enum HandlerResult<E> {
     /// Handler processed successfully, continue with the (possibly modified) event.
@@ -51,11 +61,19 @@ pub enum HandlerResult<E> {
     /// handler in the chain.
     Continue(E),
 
-    /// Handler cancelled the event, stop processing.
+    /// Handler cancelled the event, stop processing (event discarded).
     ///
     /// Use this for events like `ToolCalled` where a handler wants to prevent
     /// the tool from executing. The event will not be passed to subsequent handlers.
+    /// Use `Cancelled(E)` if you need to preserve the event for inspection.
     Cancel,
+
+    /// Handler cancelled the event, stop processing (event preserved).
+    ///
+    /// Similar to `Cancel` but preserves the event for inspection by the caller.
+    /// Useful when the cancellation reason depends on event content that the
+    /// caller may want to log or inspect.
+    Cancelled(E),
 
     /// Handler encountered a recoverable error.
     ///
@@ -81,9 +99,17 @@ impl<E> HandlerResult<E> {
         Self::Continue(event)
     }
 
-    /// Create a cancel result.
+    /// Create a cancel result (event discarded).
     pub fn cancel() -> Self {
         Self::Cancel
+    }
+
+    /// Create a cancelled result (event preserved).
+    ///
+    /// Use this when you need to cancel processing but preserve the event
+    /// for inspection by the caller.
+    pub fn cancelled(event: E) -> Self {
+        Self::Cancelled(event)
     }
 
     /// Create a soft error result.
@@ -109,9 +135,14 @@ impl<E> HandlerResult<E> {
         matches!(self, Self::Continue(_))
     }
 
-    /// Check if this result is a cancellation.
+    /// Check if this result is a cancellation (Cancel or Cancelled).
     pub fn is_cancel(&self) -> bool {
-        matches!(self, Self::Cancel)
+        matches!(self, Self::Cancel | Self::Cancelled(_))
+    }
+
+    /// Check if this result is a cancellation with preserved event.
+    pub fn is_cancelled(&self) -> bool {
+        matches!(self, Self::Cancelled(_))
     }
 
     /// Check if this result is a soft error.
@@ -129,15 +160,15 @@ impl<E> HandlerResult<E> {
         matches!(self, Self::Continue(_) | Self::SoftError { .. })
     }
 
-    /// Check if processing should stop (Cancel or FatalError).
+    /// Check if processing should stop (Cancel, Cancelled, or FatalError).
     pub fn should_stop(&self) -> bool {
-        matches!(self, Self::Cancel | Self::FatalError(_))
+        matches!(self, Self::Cancel | Self::Cancelled(_) | Self::FatalError(_))
     }
 
-    /// Get the event if available (Continue or SoftError).
+    /// Get the event if available (Continue, Cancelled, or SoftError).
     pub fn event(self) -> Option<E> {
         match self {
-            Self::Continue(e) | Self::SoftError { event: e, .. } => Some(e),
+            Self::Continue(e) | Self::Cancelled(e) | Self::SoftError { event: e, .. } => Some(e),
             Self::Cancel | Self::FatalError(_) => None,
         }
     }
@@ -145,7 +176,7 @@ impl<E> HandlerResult<E> {
     /// Get the event reference if available.
     pub fn event_ref(&self) -> Option<&E> {
         match self {
-            Self::Continue(e) | Self::SoftError { event: e, .. } => Some(e),
+            Self::Continue(e) | Self::Cancelled(e) | Self::SoftError { event: e, .. } => Some(e),
             Self::Cancel | Self::FatalError(_) => None,
         }
     }
@@ -174,6 +205,7 @@ impl<E> HandlerResult<E> {
         match self {
             Self::Continue(e) => HandlerResult::Continue(f(e)),
             Self::Cancel => HandlerResult::Cancel,
+            Self::Cancelled(e) => HandlerResult::Cancelled(f(e)),
             Self::SoftError { event, error } => HandlerResult::SoftError {
                 event: f(event),
                 error,
@@ -194,6 +226,7 @@ impl<E: std::fmt::Debug> std::fmt::Display for HandlerResult<E> {
         match self {
             Self::Continue(_) => write!(f, "Continue"),
             Self::Cancel => write!(f, "Cancel"),
+            Self::Cancelled(_) => write!(f, "Cancelled"),
             Self::SoftError { error, .. } => write!(f, "SoftError: {}", error),
             Self::FatalError(e) => write!(f, "FatalError: {}", e),
         }
@@ -220,11 +253,25 @@ mod tests {
         let result: HandlerResult<String> = HandlerResult::cancel();
         assert!(!result.is_continue());
         assert!(result.is_cancel());
+        assert!(!result.is_cancelled()); // Cancel without event
         assert!(!result.is_soft_error());
         assert!(!result.is_fatal());
         assert!(!result.should_continue());
         assert!(result.should_stop());
         assert!(result.event().is_none());
+    }
+
+    #[test]
+    fn test_handler_result_cancelled_with_event() {
+        let result: HandlerResult<String> = HandlerResult::cancelled("preserved".into());
+        assert!(!result.is_continue());
+        assert!(result.is_cancel()); // Both Cancel and Cancelled are "cancelled"
+        assert!(result.is_cancelled()); // But only Cancelled preserves event
+        assert!(!result.is_soft_error());
+        assert!(!result.is_fatal());
+        assert!(!result.should_continue());
+        assert!(result.should_stop());
+        assert_eq!(result.event(), Some("preserved".into())); // Event preserved!
     }
 
     #[test]
@@ -267,6 +314,9 @@ mod tests {
         let result: HandlerResult<String> = HandlerResult::cancel();
         assert_eq!(result.event(), None);
 
+        let result: HandlerResult<String> = HandlerResult::cancelled("preserved".into());
+        assert_eq!(result.event(), Some("preserved".into()));
+
         let result: HandlerResult<String> =
             HandlerResult::soft_error("test".into(), "error");
         assert_eq!(result.event(), Some("test".into()));
@@ -290,6 +340,12 @@ mod tests {
         let result: HandlerResult<i32> = HandlerResult::cancel();
         let mapped = result.map(|n| n.to_string());
         assert!(mapped.is_cancel());
+        assert!(!mapped.is_cancelled());
+
+        let result: HandlerResult<i32> = HandlerResult::cancelled(42);
+        let mapped = result.map(|n| n.to_string());
+        assert!(mapped.is_cancelled());
+        assert_eq!(mapped.event(), Some("42".to_string()));
 
         let result: HandlerResult<i32> = HandlerResult::soft_error(42, "oops");
         let mapped = result.map(|n| n.to_string());
@@ -304,6 +360,9 @@ mod tests {
 
         let result: HandlerResult<String> = HandlerResult::cancel();
         assert_eq!(format!("{}", result), "Cancel");
+
+        let result: HandlerResult<String> = HandlerResult::cancelled("test".into());
+        assert_eq!(format!("{}", result), "Cancelled");
 
         let result: HandlerResult<String> =
             HandlerResult::soft_error("test".into(), "oops");

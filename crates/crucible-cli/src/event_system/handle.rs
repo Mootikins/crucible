@@ -9,6 +9,7 @@ use anyhow::Result;
 use crucible_rune::EventBus;
 use crucible_surrealdb::adapters::SurrealClientHandle;
 use crucible_watch::WatchManager;
+use std::any::Any;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
@@ -24,6 +25,9 @@ pub struct EventSystemHandle {
     pub watch_manager: Arc<RwLock<WatchManager>>,
     /// Storage handle for database access
     storage_client: SurrealClientHandle,
+    /// Handler references kept alive for the lifetime of the event system
+    /// Without this, handlers would be dropped after registration
+    _handlers: Vec<Arc<dyn Any + Send + Sync>>,
 }
 
 impl EventSystemHandle {
@@ -37,6 +41,22 @@ impl EventSystemHandle {
             bus,
             watch_manager,
             storage_client,
+            _handlers: Vec::new(),
+        }
+    }
+
+    /// Create a new event system handle with handler references.
+    pub(crate) fn with_handlers(
+        bus: Arc<RwLock<EventBus>>,
+        watch_manager: Arc<RwLock<WatchManager>>,
+        storage_client: SurrealClientHandle,
+        handlers: Vec<Arc<dyn Any + Send + Sync>>,
+    ) -> Self {
+        Self {
+            bus,
+            watch_manager,
+            storage_client,
+            _handlers: handlers,
         }
     }
 
