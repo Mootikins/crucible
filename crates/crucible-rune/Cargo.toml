@@ -29,6 +29,9 @@ anyhow = { workspace = true }
 # Logging
 tracing = { workspace = true }
 
+# Synchronization
+parking_lot = { workspace = true }
+
 # Regex for attribute parsing
 regex = { workspace = true }
 
@@ -36,6 +39,9 @@ regex = { workspace = true }
 glob = { workspace = true }
 dirs = { workspace = true }
 shellexpand = "3.1"
+
+# Duration serialization
+humantime-serde = "1.1"
 
 [dev-dependencies]
 tempfile = { workspace = true }
