@@ -9,6 +9,7 @@ use crate::{
     traits::{EventHandler, FileWatcher, WatchConfig, WatchHandle},
     utils::{Debouncer, EventQueue, PerformanceMonitor, PerformanceStats, QueueStats},
 };
+use crucible_core::events::{EventEmitter, NoOpEmitter, SessionEvent};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -43,11 +44,24 @@ pub struct WatchManager {
     shutdown_tx: Option<mpsc::Sender<()>>,
     /// Running state
     is_running: Arc<RwLock<bool>>,
+    /// Event emitter for SessionEvent emission
+    emitter: Arc<dyn EventEmitter<Event = SessionEvent>>,
 }
 
 impl WatchManager {
-    /// Create a new watch manager.
+    /// Create a new watch manager with default NoOpEmitter.
     pub async fn new(config: WatchManagerConfig) -> Result<Self> {
+        Self::with_emitter(config, Arc::new(NoOpEmitter::new())).await
+    }
+
+    /// Create a new watch manager with a custom event emitter.
+    ///
+    /// The emitter is used to emit `SessionEvent` variants (e.g., `FileChanged`,
+    /// `FileDeleted`, `FileMoved`) when file system changes are detected.
+    pub async fn with_emitter(
+        config: WatchManagerConfig,
+        emitter: Arc<dyn EventEmitter<Event = SessionEvent>>,
+    ) -> Result<Self> {
         let manager = Self {
             config: config.clone(),
             backend_registry: ExtendedBackendRegistry::new(),
@@ -61,6 +75,7 @@ impl WatchManager {
             event_receiver: None,
             shutdown_tx: None,
             is_running: Arc::new(RwLock::new(false)),
+            emitter,
         };
 
         // Initialize default handlers if enabled
@@ -73,6 +88,11 @@ impl WatchManager {
         }
 
         Ok(manager)
+    }
+
+    /// Get a reference to the event emitter.
+    pub fn emitter(&self) -> &Arc<dyn EventEmitter<Event = SessionEvent>> {
+        &self.emitter
     }
 
     /// Start the watch manager.
