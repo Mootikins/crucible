@@ -4,10 +4,12 @@
 pub mod composite;
 mod indexing;
 mod obsidian_sync;
+mod parser_handler;
 
 pub use composite::*;
 pub use indexing::*;
 pub use obsidian_sync::*;
+pub use parser_handler::ParserHandler;
 
 use crate::{error::Result, events::FileEvent, traits::EventHandler};
 use std::sync::Arc;
