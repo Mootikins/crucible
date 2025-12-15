@@ -56,7 +56,7 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::event_bus::{Event, EventBus, EventContext, EventType};
+use crate::event_bus::{EventBus, EventContext};
 use crate::event_ring::EventRing;
 use crate::handler::BoxedRingHandler;
 use crate::handler_chain::{ChainResult, HandlerChain};
@@ -282,66 +282,6 @@ impl LinearReactor {
         Ok((seq, result, emitted_seqs))
     }
 
-    /// Convert a SessionEvent to an EventBus Event.
-    fn to_bus_event(event: &SessionEvent) -> Event {
-        let (event_type, identifier) = match event {
-            SessionEvent::MessageReceived { participant_id, .. } => {
-                (EventType::Custom, format!("message:{}", participant_id))
-            }
-            SessionEvent::AgentResponded { .. } => (EventType::Custom, "agent:responded".into()),
-            SessionEvent::AgentThinking { .. } => (EventType::Custom, "agent:thinking".into()),
-            SessionEvent::ToolCalled { name, .. } => (EventType::ToolBefore, name.clone()),
-            SessionEvent::ToolCompleted { name, error, .. } => {
-                if error.is_some() {
-                    (EventType::ToolError, name.clone())
-                } else {
-                    (EventType::ToolAfter, name.clone())
-                }
-            }
-            SessionEvent::SessionStarted { .. } => (EventType::Custom, "session:started".into()),
-            SessionEvent::SessionCompacted { .. } => {
-                (EventType::Custom, "session:compacted".into())
-            }
-            SessionEvent::SessionEnded { .. } => (EventType::Custom, "session:ended".into()),
-            SessionEvent::SubagentSpawned { id, .. } => {
-                (EventType::Custom, format!("subagent:spawned:{}", id))
-            }
-            SessionEvent::SubagentCompleted { id, .. } => {
-                (EventType::Custom, format!("subagent:completed:{}", id))
-            }
-            SessionEvent::SubagentFailed { id, .. } => {
-                (EventType::Custom, format!("subagent:failed:{}", id))
-            }
-            // Streaming events
-            SessionEvent::TextDelta { seq, .. } => {
-                (EventType::Custom, format!("streaming:delta:{}", seq))
-            }
-            // Note events (direct mapping)
-            SessionEvent::NoteParsed { path, .. } => {
-                (EventType::NoteParsed, path.display().to_string())
-            }
-            SessionEvent::NoteCreated { path, .. } => {
-                (EventType::NoteCreated, path.display().to_string())
-            }
-            SessionEvent::NoteModified { path, .. } => {
-                (EventType::NoteModified, path.display().to_string())
-            }
-            // MCP/Tool events (direct mapping)
-            SessionEvent::McpAttached { server, .. } => {
-                (EventType::McpAttached, server.clone())
-            }
-            SessionEvent::ToolDiscovered { name, .. } => {
-                (EventType::ToolDiscovered, name.clone())
-            }
-            SessionEvent::Custom { name, .. } => (EventType::Custom, name.clone()),
-        };
-
-        let payload =
-            serde_json::to_value(event).unwrap_or_else(|_| serde_json::json!({"error": "serialization failed"}));
-
-        Event::new(event_type, identifier, payload)
-    }
-
     /// Emit an event to the EventBus if configured.
     async fn emit_to_bus(&self, event: &SessionEvent, ctx: &mut EventContext) {
         if !self.config.emit_to_event_bus {
@@ -350,8 +290,8 @@ impl LinearReactor {
 
         let bus_guard = self.event_bus.read().await;
         if let Some(bus) = bus_guard.as_ref() {
-            let bus_event = Self::to_bus_event(event);
-            let (_, mut bus_ctx, errors) = bus.emit(bus_event);
+            // Use emit_session() directly with SessionEvent
+            let (_, bus_ctx, errors) = bus.emit_session(event.clone());
 
             // Log any errors (fail-open)
             for err in errors {
@@ -359,7 +299,9 @@ impl LinearReactor {
             }
 
             // Bridge emitted events from EventBus to our context
+            // Note: emitted events from bus_ctx are still in legacy Event format
             if self.config.bridge_event_bus {
+                let mut bus_ctx = bus_ctx;
                 for emitted in bus_ctx.take_emitted() {
                     ctx.emit(emitted);
                 }
@@ -655,6 +597,7 @@ impl Reactor for LinearReactor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event_bus::{Event, EventType};
     use crate::handler::{RingHandler, RingHandlerContext, RingHandlerResult};
     use serde_json::json;
 
@@ -975,42 +918,6 @@ mod tests {
 
         // Non-existent sequence
         assert!(reactor.get_event(999).is_none());
-    }
-
-    #[tokio::test]
-    async fn test_linear_reactor_to_bus_event() {
-        // Test various event type conversions
-        let msg_event = SessionEvent::MessageReceived {
-            content: "Hello".into(),
-            participant_id: "user".into(),
-        };
-        let bus_event = LinearReactor::to_bus_event(&msg_event);
-        assert_eq!(bus_event.event_type, EventType::Custom);
-        assert_eq!(bus_event.identifier, "message:user");
-
-        let tool_before = SessionEvent::ToolCalled {
-            name: "read_file".into(),
-            args: json!({}),
-        };
-        let bus_event = LinearReactor::to_bus_event(&tool_before);
-        assert_eq!(bus_event.event_type, EventType::ToolBefore);
-        assert_eq!(bus_event.identifier, "read_file");
-
-        let tool_after = SessionEvent::ToolCompleted {
-            name: "read_file".into(),
-            result: "content".into(),
-            error: None,
-        };
-        let bus_event = LinearReactor::to_bus_event(&tool_after);
-        assert_eq!(bus_event.event_type, EventType::ToolAfter);
-
-        let tool_error = SessionEvent::ToolCompleted {
-            name: "read_file".into(),
-            result: "".into(),
-            error: Some("failed".into()),
-        };
-        let bus_event = LinearReactor::to_bus_event(&tool_error);
-        assert_eq!(bus_event.event_type, EventType::ToolError);
     }
 
     #[tokio::test]
