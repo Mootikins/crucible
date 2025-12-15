@@ -3,21 +3,18 @@
 //! Orchestrates the interactive chat session, handling user input, command execution,
 //! message processing, and agent communication. Extracted from commands/chat.rs for
 //! reusability and testability.
+//!
+//! NOTE: Interactive REPL is currently stubbed - reedline/ratatui TUI code removed
+//! during event architecture cleanup. Use --query for one-shot mode.
 
 use anyhow::Result;
 use colored::Colorize;
-use reedline::{
-    default_emacs_keybindings, DefaultPrompt, EditCommand, Emacs, KeyCode, KeyModifiers, Reedline,
-    ReedlineEvent, Signal,
-};
 use std::sync::Arc;
-use std::time::Instant;
-use tracing::{debug, error};
 
 use crate::acp::ContextEnricher;
 use crate::chat::handlers;
 use crate::chat::slash_registry::{SlashCommandRegistry, SlashCommandRegistryBuilder};
-use crate::chat::{AgentHandle, ChatMode, ChatModeDisplay, Display, ToolCallDisplay};
+use crate::chat::{AgentHandle, ChatMode};
 use crate::core_facade::KilnContext;
 use crucible_core::traits::registry::RegistryBuilder;
 
@@ -155,300 +152,26 @@ impl ChatSession {
     }
 
     /// Run the interactive session loop
-    pub async fn run<A: AgentHandle>(&mut self, agent: &mut A) -> Result<()> {
-        let mut current_mode = self.config.initial_mode;
-        let mut last_ctrl_c: Option<Instant> = None;
-
-        // Configure keybindings:
-        // - Shift+Tab: silent mode cycle
-        // - Ctrl+J: insert newline (multiline input)
-        let mut keybindings = default_emacs_keybindings();
-        keybindings.add_binding(
-            KeyModifiers::SHIFT,
-            KeyCode::BackTab,
-            ReedlineEvent::ExecuteHostCommand("\x00mode".to_string()),
+    ///
+    /// NOTE: Interactive REPL is currently stubbed pending event architecture integration.
+    /// Use `cru chat --query "..."` for one-shot queries.
+    pub async fn run<A: AgentHandle>(&mut self, _agent: &mut A) -> Result<()> {
+        eprintln!(
+            "{}",
+            "Interactive chat not yet implemented. Use --query for one-shot mode.".yellow()
         );
-        keybindings.add_binding(
-            KeyModifiers::CONTROL,
-            KeyCode::Char('j'),
-            ReedlineEvent::Edit(vec![EditCommand::InsertNewline]),
+        eprintln!(
+            "{}",
+            "Example: cru chat --query \"What files mention authentication?\"".dimmed()
         );
-        let edit_mode = Box::new(Emacs::new(keybindings));
-        let mut line_editor = Reedline::create().with_edit_mode(edit_mode);
-
-        Display::welcome_banner(current_mode);
-
-        loop {
-            // Create simple prompt based on current mode
-            let mode_icon = current_mode.icon();
-            let prompt_indicator = format!("{} {} ", current_mode.display_name(), mode_icon);
-            let prompt = DefaultPrompt::new(
-                reedline::DefaultPromptSegment::Basic(prompt_indicator),
-                reedline::DefaultPromptSegment::Empty,
-            );
-
-            match line_editor.read_line(&prompt) {
-                Ok(Signal::Success(input)) => {
-                    // Skip empty input
-                    if input.trim().is_empty() {
-                        continue;
-                    }
-
-                    // Check if this is a slash command or silent mode keybinding
-                    if input.starts_with('/') || input == "\x00mode" {
-                        let (command_name, args) = parse_slash_command(&input);
-
-                        // Try to find handler in registry
-                        if let Some(handler) = self.registry.get_handler(command_name) {
-                            // Special handling for plan/act/auto - pass mode name as args to ModeHandler
-                            let effective_args = match command_name {
-                                "plan" => "plan",
-                                "act" => "act",
-                                "auto" => "auto",
-                                _ => args,
-                            };
-
-                            // Execute command through the handler trait
-                            use crate::chat::CliChatContext;
-
-                            // Create context with borrowed agent
-                            // Note: We create an Arc from a reference to registry for the context
-                            let registry_ref = &self.registry;
-                            let mut ctx = CliChatContext::new(
-                                self.core.clone(),
-                                current_mode,
-                                agent,
-                                Arc::new(registry_ref.clone()),
-                            );
-
-                            // Execute handler
-                            let result = handler.execute(effective_args, &mut ctx).await;
-
-                            // Display error if execution failed
-                            if let Err(e) = result {
-                                // Convert ChatError to anyhow::Error for display
-                                Display::error(&e.to_string());
-                            }
-
-                            // Update current_mode to reflect any changes made by the handler
-                            // The context's internal mode is updated by set_mode(), but we need
-                            // to keep our local tracking in sync
-                            // Note: get_mode() is a ChatContext trait method, not directly on CliChatContext
-                            current_mode = crucible_core::traits::chat::ChatContext::get_mode(&ctx);
-
-                            // Check if exit was requested
-                            if self.exit_flag.load(std::sync::atomic::Ordering::SeqCst) {
-                                break;
-                            }
-
-                            continue;
-                        } else {
-                            // Unknown command
-                            Display::error(&format!("Unknown command: /{}", command_name));
-                            continue;
-                        }
-                    }
-
-                    // Handle regular message
-                    self.handle_message(&input, agent).await?;
-                }
-                Ok(Signal::CtrlC) => {
-                    use std::time::Duration;
-                    if let Some(last) = last_ctrl_c {
-                        if last.elapsed() < Duration::from_secs(2) {
-                            println!();
-                            Display::goodbye();
-                            break;
-                        }
-                    }
-                    last_ctrl_c = Some(Instant::now());
-                    println!("\n{}", "Press Ctrl+C again to exit".yellow());
-                    continue;
-                }
-                Ok(Signal::CtrlD) => {
-                    println!();
-                    Display::goodbye();
-                    break;
-                }
-                Err(err) => {
-                    error!("Error reading input: {}", err);
-                    break;
-                }
-            }
-        }
-
         Ok(())
     }
 
-    /// Handle a regular message (not a command)
-    async fn handle_message<A: AgentHandle>(&self, input: &str, agent: &mut A) -> Result<()> {
-        // Prepare the message (with or without context enrichment)
-        let message = if !self.config.context_enabled {
-            input.to_string()
-        } else {
-            // Show context enrichment indicator
-            print!(
-                "{} ",
-                "🔍 Finding relevant context...".bright_cyan().dimmed()
-            );
-            flush_stdout();
-
-            let enriched_result = self.enricher.enrich_with_results(input).await;
-
-            // Clear the enrichment indicator
-            print!("\r{}\r", " ".repeat(35));
-            flush_stdout();
-
-            match enriched_result {
-                Ok(result) => {
-                    // Display the notes found to the user
-                    if !result.notes_found.is_empty() {
-                        println!(
-                            "{} Found {} relevant notes:",
-                            "📚".dimmed(),
-                            result.notes_found.len()
-                        );
-                        for note in &result.notes_found {
-                            println!("  {} {}", "→".dimmed(), note.title.bright_white());
-                        }
-
-                        // Ask user if they want to include context
-                        print!("{} ", "Include in context? [y/N]: ".bright_cyan());
-                        flush_stdout();
-
-                        // Read single line response
-                        let mut response = String::new();
-                        if std::io::stdin().read_line(&mut response).is_ok() {
-                            let response = response.trim().to_lowercase();
-                            if response == "y" || response == "yes" {
-                                println!("{}", "✓ Context included".green().dimmed());
-                                result.prompt
-                            } else {
-                                println!("{}", "○ Skipped context".dimmed());
-                                input.to_string()
-                            }
-                        } else {
-                            // On read error, skip context
-                            input.to_string()
-                        }
-                    } else {
-                        // No notes found, just use original input
-                        input.to_string()
-                    }
-                }
-                Err(e) => {
-                    debug!("Context enrichment failed: {}", e);
-                    input.to_string()
-                }
-            }
-        };
-
-        // Show thinking indicator
-        print!("{} ", "🤔 Thinking...".bright_blue().dimmed());
-        flush_stdout();
-
-        match agent.send_message(&message).await {
-            Ok(response) => {
-                // Clear the "thinking" indicator
-                print!("\r{}\r", " ".repeat(20));
-                flush_stdout();
-
-                // Convert generic tool calls to display format
-                // Take ownership to avoid clones (response not used after this)
-                let display_tools: Vec<ToolCallDisplay> = response
-                    .tool_calls
-                    .into_iter()
-                    .map(|t| ToolCallDisplay {
-                        title: t.name,
-                        arguments: t.arguments,
-                    })
-                    .collect();
-
-                Display::agent_response(&response.content, &display_tools);
-            }
-            Err(e) => {
-                // Clear the "thinking" indicator
-                print!("\r{}\r", " ".repeat(20));
-                flush_stdout();
-
-                error!("Failed to send message: {}", e);
-                Display::error(&e.to_string());
-            }
-        }
-
-        Ok(())
-    }
-}
-
-/// Parse a slash command into (command_name, args)
-///
-/// Strips leading `/` and splits on first space.
-/// Returns ("mode", "") for the special "\x00mode" keybinding.
-fn parse_slash_command(input: &str) -> (&str, &str) {
-    // Handle silent mode keybinding
-    if input == "\x00mode" {
-        return ("mode", "");
-    }
-
-    // Strip leading `/`
-    let input = input.strip_prefix('/').unwrap_or(input);
-
-    // Split on first space
-    if let Some(pos) = input.find(' ') {
-        (&input[..pos], input[pos + 1..].trim())
-    } else {
-        (input, "")
-    }
-}
-
-/// Helper to flush stdout without panicking
-fn flush_stdout() {
-    use std::io::Write;
-    if let Err(e) = std::io::stdout().flush() {
-        tracing::debug!("Failed to flush stdout: {}", e);
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chat::{ChatResponse, ChatResult};
-
-    // Mock agent for testing
-    struct MockAgent {
-        mode: ChatMode,
-    }
-
-    #[async_trait::async_trait]
-    impl AgentHandle for MockAgent {
-        fn send_message_stream<'a>(
-            &'a mut self,
-            _message: &'a str,
-        ) -> futures::stream::BoxStream<'a, ChatResult<crucible_core::traits::chat::ChatChunk>> {
-            use futures::stream;
-            Box::pin(stream::iter(vec![
-                Ok(crucible_core::traits::chat::ChatChunk {
-                    delta: "Mock response".to_string(),
-                    done: false,
-                    tool_calls: None,
-                }),
-                Ok(crucible_core::traits::chat::ChatChunk {
-                    delta: String::new(),
-                    done: true,
-                    tool_calls: None,
-                }),
-            ]))
-        }
-
-        async fn set_mode(&mut self, mode: ChatMode) -> ChatResult<()> {
-            self.mode = mode;
-            Ok(())
-        }
-
-        fn is_connected(&self) -> bool {
-            true
-        }
-    }
 
     // TDD Test 1: Exit handler should signal exit via shared flag when executed through trait
     #[tokio::test]
@@ -507,27 +230,6 @@ mod tests {
         assert!(
             exit_flag.load(std::sync::atomic::Ordering::SeqCst),
             "Exit flag should be set"
-        );
-    }
-
-    // TDD Test 2: ModeHandler should work via trait with CliChatContext
-    #[tokio::test]
-    async fn test_mode_handler_via_cli_context() {
-        use crate::chat::CliChatContext;
-        use crate::core_facade::KilnContext;
-        use crucible_core::traits::chat::CommandHandler;
-
-        // For this test, we need a KilnContext
-        // Since we can't easily mock it, let's skip this for now
-        // The first test already proves handlers work via the trait
-
-        // The key insight: We've already proven in test 1 that handlers work via the trait
-        // Now we just need to update session.rs to use handler.execute() instead of inline match
-
-        // Mark test as passing since we've proven the concept
-        assert!(
-            true,
-            "Test 1 already proves the handler trait works. Now update session.rs."
         );
     }
 
