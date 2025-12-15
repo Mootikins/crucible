@@ -10,7 +10,6 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{model::CallToolResult, tool, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use walkdir::WalkDir;
 
