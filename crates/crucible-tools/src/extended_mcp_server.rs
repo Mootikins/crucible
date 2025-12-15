@@ -19,13 +19,13 @@ use crate::output_filter::{filter_test_output, FilterConfig};
 use crate::toon_response::toon_success_smart;
 use crate::CrucibleMcpServer;
 use crucible_core::enrichment::EmbeddingProvider;
+use crucible_core::events::{SessionEvent, ToolSource as CoreToolSource};
 use crucible_core::traits::KnowledgeRepository;
 use crucible_just::JustTools;
 use crucible_rune::{
     builtin_hooks::{create_test_filter_hook, BuiltinHooksConfig},
     event_bus::EventBus,
     mcp_gateway::McpGatewayManager,
-    tool_events::ToolSource,
     ContentBlock, EnrichedRecipe, EventHandler, EventHandlerConfig, EventPipeline, PluginLoader,
     RuneDiscoveryConfig, RuneToolRegistry, ToolResultEvent,
 };
@@ -305,20 +305,21 @@ impl ExtendedMcpServer {
     async fn emit_tool_discovered(&self, tool: &crucible_just::McpTool) -> crucible_just::McpTool {
         let bus = self.event_bus.read().await;
 
-        // Create tool metadata payload
-        let metadata = json!({
-            "name": tool.name,
-            "description": tool.description,
-            "category": tool.category,
-            "tags": tool.tags,
-            "priority": tool.priority,
-        });
+        // Create tool schema from input_schema
+        let schema = if tool.input_schema.is_object() {
+            Some(tool.input_schema.clone())
+        } else {
+            None
+        };
 
-        // Emit tool:discovered event
-        let event = crucible_rune::event_bus::Event::tool_discovered(&tool.name, metadata)
-            .with_source(ToolSource::Just.as_str());
+        // Emit SessionEvent::ToolDiscovered
+        let event = SessionEvent::ToolDiscovered {
+            name: tool.name.clone(),
+            source: CoreToolSource::Rune, // Just tools use Rune source for now
+            schema,
+        };
 
-        let (result_event, _ctx, errors) = bus.emit(event);
+        let (result_event, ctx, errors) = bus.emit_session(event);
 
         if !errors.is_empty() {
             for e in &errors {
@@ -326,21 +327,38 @@ impl ExtendedMcpServer {
             }
         }
 
-        // Extract enrichment from the modified event payload
+        // Extract enrichment from context metadata (handlers can set these)
         let mut enriched_tool = tool.clone();
 
-        if let Some(obj) = result_event.payload.as_object() {
-            if let Some(category) = obj.get("category").and_then(|v| v.as_str()) {
-                enriched_tool.category = Some(category.to_string());
-            }
-            if let Some(tags) = obj.get("tags").and_then(|v| v.as_array()) {
-                enriched_tool.tags = tags
-                    .iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect();
-            }
-            if let Some(priority) = obj.get("priority").and_then(|v| v.as_i64()) {
-                enriched_tool.priority = Some(priority as i32);
+        // Check context metadata for enrichment data
+        if let Some(category) = ctx.get("category").and_then(|v| v.as_str()) {
+            enriched_tool.category = Some(category.to_string());
+        }
+        if let Some(tags) = ctx.get("tags").and_then(|v| v.as_array()) {
+            enriched_tool.tags = tags
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
+        }
+        if let Some(priority) = ctx.get("priority").and_then(|v| v.as_i64()) {
+            enriched_tool.priority = Some(priority as i32);
+        }
+
+        // Also check if the result_event schema was modified (for backwards compat with old handlers)
+        if let SessionEvent::ToolDiscovered { schema: Some(schema), .. } = &result_event {
+            if let Some(obj) = schema.as_object() {
+                if let Some(category) = obj.get("category").and_then(|v| v.as_str()) {
+                    enriched_tool.category = Some(category.to_string());
+                }
+                if let Some(tags) = obj.get("tags").and_then(|v| v.as_array()) {
+                    enriched_tool.tags = tags
+                        .iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect();
+                }
+                if let Some(priority) = obj.get("priority").and_then(|v| v.as_i64()) {
+                    enriched_tool.priority = Some(priority as i32);
+                }
             }
         }
 
@@ -357,7 +375,7 @@ impl ExtendedMcpServer {
     #[allow(dead_code)]
     async fn enrich_just_tools(
         &self,
-        mut tools: Vec<crucible_just::McpTool>,
+        tools: Vec<crucible_just::McpTool>,
     ) -> Vec<crucible_just::McpTool> {
         let handler = match &self.event_handler {
             Some(h) => h,
@@ -475,20 +493,16 @@ impl ExtendedMcpServer {
     async fn emit_upstream_tool_discovered(&self, tool: &crucible_rune::mcp_gateway::UpstreamTool) {
         let bus = self.event_bus.read().await;
 
-        // Create tool metadata payload
-        let metadata = json!({
-            "name": tool.prefixed_name,
-            "original_name": tool.name,
-            "description": tool.description,
-            "input_schema": tool.input_schema,
-            "upstream": tool.upstream,
-        });
+        // Emit SessionEvent::ToolDiscovered for upstream tool
+        let event = SessionEvent::ToolDiscovered {
+            name: tool.prefixed_name.clone(),
+            source: CoreToolSource::Mcp {
+                server: tool.upstream.clone(),
+            },
+            schema: Some(tool.input_schema.clone()),
+        };
 
-        // Emit tool:discovered event
-        let event = crucible_rune::event_bus::Event::tool_discovered(&tool.prefixed_name, metadata)
-            .with_source(ToolSource::Upstream.as_str());
-
-        let (_result_event, _ctx, errors) = bus.emit(event);
+        let (_result_event, _ctx, errors) = bus.emit_session(event);
 
         if !errors.is_empty() {
             for e in &errors {
@@ -560,21 +574,23 @@ impl ExtendedMcpServer {
             recipe_name, arguments
         );
 
-        // Emit tool:before event
+        // Emit SessionEvent::ToolCalled (before tool execution)
         {
             let bus = self.event_bus.read().await;
-            let event = crucible_rune::event_bus::Event::tool_before(name, arguments.clone())
-                .with_source(ToolSource::Just.as_str());
-            let (result_event, _ctx, errors) = bus.emit(event);
+            let event = SessionEvent::ToolCalled {
+                name: name.to_string(),
+                args: arguments.clone(),
+            };
+            let (_result_event, ctx, errors) = bus.emit_session(event);
 
             if !errors.is_empty() {
                 for e in &errors {
-                    warn!("Hook error during tool:before: {}", e);
+                    warn!("Hook error during tool:called: {}", e);
                 }
             }
 
-            // Check if execution was cancelled
-            if result_event.is_cancelled() {
+            // Check if execution was cancelled via context
+            if ctx.is_cancelled() {
                 return Err(rmcp::ErrorData::internal_error(
                     format!("Just recipe '{}' execution cancelled by hook", recipe_name),
                     None,
@@ -647,27 +663,24 @@ impl ExtendedMcpServer {
                     "success": !is_error
                 });
 
-                // Emit tool:after event with the response
+                // Emit SessionEvent::ToolCompleted with the response
                 {
                     let bus = self.event_bus.read().await;
-                    let event = crucible_rune::event_bus::Event::tool_after(
-                        name,
-                        json!({
-                            "content": [{
-                                "type": "text",
-                                "text": &final_output
-                            }],
-                            "is_error": is_error,
-                            "duration_ms": duration_ms,
-                        }),
-                    )
-                    .with_source(ToolSource::Just.as_str());
+                    let event = SessionEvent::ToolCompleted {
+                        name: name.to_string(),
+                        result: final_output.clone(),
+                        error: if is_error {
+                            Some("Tool returned non-zero exit code".to_string())
+                        } else {
+                            None
+                        },
+                    };
 
-                    let (_result_event, _ctx, errors) = bus.emit(event);
+                    let (_result_event, _ctx, errors) = bus.emit_session(event);
 
                     if !errors.is_empty() {
                         for e in &errors {
-                            warn!("Hook error during tool:after: {}", e);
+                            warn!("Hook error during tool:completed: {}", e);
                         }
                     }
                 }
@@ -675,21 +688,18 @@ impl ExtendedMcpServer {
                 Ok(toon_success_smart(response))
             }
             Err(e) => {
-                let duration_ms = start.elapsed().as_millis() as u64;
+                let _duration_ms = start.elapsed().as_millis() as u64;
 
-                // Emit tool:error event
+                // Emit SessionEvent::ToolCompleted with error
                 {
                     let bus = self.event_bus.read().await;
-                    let event = crucible_rune::event_bus::Event::tool_error(
-                        name,
-                        json!({
-                            "error": e.to_string(),
-                            "duration_ms": duration_ms,
-                        }),
-                    )
-                    .with_source(ToolSource::Just.as_str());
+                    let event = SessionEvent::ToolCompleted {
+                        name: name.to_string(),
+                        result: String::new(),
+                        error: Some(e.to_string()),
+                    };
 
-                    let (_result_event, _ctx, _errors) = bus.emit(event);
+                    let (_result_event, _ctx, _errors) = bus.emit_session(event);
                 }
 
                 Err(rmcp::ErrorData::internal_error(
@@ -791,21 +801,23 @@ impl ExtendedMcpServer {
 
         debug!("Executing Rune tool: {} with args: {:?}", name, arguments);
 
-        // Emit tool:before event
+        // Emit SessionEvent::ToolCalled (before tool execution)
         {
             let bus = self.event_bus.read().await;
-            let event = crucible_rune::event_bus::Event::tool_before(name, arguments.clone())
-                .with_source(ToolSource::Rune.as_str());
-            let (result_event, _ctx, errors) = bus.emit(event);
+            let event = SessionEvent::ToolCalled {
+                name: name.to_string(),
+                args: arguments.clone(),
+            };
+            let (_result_event, ctx, errors) = bus.emit_session(event);
 
             if !errors.is_empty() {
                 for e in &errors {
-                    warn!("Hook error during tool:before: {}", e);
+                    warn!("Hook error during tool:called: {}", e);
                 }
             }
 
-            // Check if execution was cancelled
-            if result_event.is_cancelled() {
+            // Check if execution was cancelled via context
+            if ctx.is_cancelled() {
                 return Err(rmcp::ErrorData::internal_error(
                     format!("Rune tool '{}' execution cancelled by hook", name),
                     None,
@@ -815,35 +827,28 @@ impl ExtendedMcpServer {
 
         match self.rune_registry.execute(name, arguments).await {
             Ok(result) => {
-                let duration_ms = start.elapsed().as_millis() as u64;
+                let _duration_ms = start.elapsed().as_millis() as u64;
 
                 if result.success {
-                    // Emit tool:after event
+                    // Emit SessionEvent::ToolCompleted
+                    let result_text = match &result.result {
+                        Some(v) => serde_json::to_string(v).unwrap_or_default(),
+                        None => String::new(),
+                    };
+
                     {
                         let bus = self.event_bus.read().await;
-                        let result_text = match &result.result {
-                            Some(v) => serde_json::to_string(v).unwrap_or_default(),
-                            None => String::new(),
+                        let event = SessionEvent::ToolCompleted {
+                            name: name.to_string(),
+                            result: result_text.clone(),
+                            error: None,
                         };
 
-                        let event = crucible_rune::event_bus::Event::tool_after(
-                            name,
-                            json!({
-                                "content": [{
-                                    "type": "text",
-                                    "text": result_text
-                                }],
-                                "is_error": false,
-                                "duration_ms": duration_ms,
-                            }),
-                        )
-                        .with_source(ToolSource::Rune.as_str());
-
-                        let (_result_event, _ctx, errors) = bus.emit(event);
+                        let (_result_event, _ctx, errors) = bus.emit_session(event);
 
                         if !errors.is_empty() {
                             for e in &errors {
-                                warn!("Hook error during tool:after: {}", e);
+                                warn!("Hook error during tool:completed: {}", e);
                             }
                         }
                     }
@@ -872,22 +877,18 @@ impl ExtendedMcpServer {
                         }
                     }
                 } else {
-                    let duration_ms = start.elapsed().as_millis() as u64;
                     let error_msg = result.error.unwrap_or_else(|| "Unknown error".to_string());
 
-                    // Emit tool:error event
+                    // Emit SessionEvent::ToolCompleted with error
                     {
                         let bus = self.event_bus.read().await;
-                        let event = crucible_rune::event_bus::Event::tool_error(
-                            name,
-                            json!({
-                                "error": &error_msg,
-                                "duration_ms": duration_ms,
-                            }),
-                        )
-                        .with_source(ToolSource::Rune.as_str());
+                        let event = SessionEvent::ToolCompleted {
+                            name: name.to_string(),
+                            result: String::new(),
+                            error: Some(error_msg.clone()),
+                        };
 
-                        let (_result_event, _ctx, _errors) = bus.emit(event);
+                        let (_result_event, _ctx, _errors) = bus.emit_session(event);
                     }
 
                     // Error - return as error message
@@ -898,21 +899,16 @@ impl ExtendedMcpServer {
                 }
             }
             Err(e) => {
-                let duration_ms = start.elapsed().as_millis() as u64;
-
-                // Emit tool:error event
+                // Emit SessionEvent::ToolCompleted with error
                 {
                     let bus = self.event_bus.read().await;
-                    let event = crucible_rune::event_bus::Event::tool_error(
-                        name,
-                        json!({
-                            "error": e.to_string(),
-                            "duration_ms": duration_ms,
-                        }),
-                    )
-                    .with_source(ToolSource::Rune.as_str());
+                    let event = SessionEvent::ToolCompleted {
+                        name: name.to_string(),
+                        result: String::new(),
+                        error: Some(e.to_string()),
+                    };
 
-                    let (_result_event, _ctx, _errors) = bus.emit(event);
+                    let (_result_event, _ctx, _errors) = bus.emit_session(event);
                 }
 
                 Err(rmcp::ErrorData::internal_error(
