@@ -143,6 +143,10 @@ pub use clustering::{
     PerformanceConfig, QualityPreference, SimpleClusteringService,
 };
 
+// Event handlers for database operations
+pub mod event_handlers;
+pub use event_handlers::{StorageHandler, TagHandler};
+
 // ============================================================================
 // PRIVATE infrastructure modules - use factory functions instead!
 // ============================================================================
