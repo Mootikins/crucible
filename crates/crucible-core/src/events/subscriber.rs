@@ -36,7 +36,8 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use super::emitter::HandlerErrorInfo;
+// Import HandlerResult from handler module (consolidated type)
+pub use super::handler::HandlerResult;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Subscription ID
@@ -226,78 +227,6 @@ fn match_glob(pattern: &str, text: &str) -> bool {
     }
 
     pattern_idx == pattern_chars.len()
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Handler Result
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Result returned by event handlers.
-#[derive(Debug, Clone)]
-pub enum HandlerResult<E> {
-    /// Handler processed the event successfully.
-    ///
-    /// Returns the (possibly modified) event.
-    Ok(E),
-
-    /// Handler encountered a non-fatal error.
-    ///
-    /// Event processing continues to other handlers.
-    Error(HandlerErrorInfo),
-
-    /// Handler cancelled the event.
-    ///
-    /// Event processing stops. Only applicable for certain event types
-    /// (e.g., `tool:before`).
-    Cancelled(E),
-}
-
-impl<E> HandlerResult<E> {
-    /// Create a successful result.
-    pub fn ok(event: E) -> Self {
-        Self::Ok(event)
-    }
-
-    /// Create an error result.
-    pub fn error(info: HandlerErrorInfo) -> Self {
-        Self::Error(info)
-    }
-
-    /// Create a cancelled result.
-    pub fn cancelled(event: E) -> Self {
-        Self::Cancelled(event)
-    }
-
-    /// Check if this result is successful.
-    pub fn is_ok(&self) -> bool {
-        matches!(self, Self::Ok(_))
-    }
-
-    /// Check if this result is an error.
-    pub fn is_error(&self) -> bool {
-        matches!(self, Self::Error(_))
-    }
-
-    /// Check if this result is a cancellation.
-    pub fn is_cancelled(&self) -> bool {
-        matches!(self, Self::Cancelled(_))
-    }
-
-    /// Get the event if successful or cancelled.
-    pub fn event(self) -> Option<E> {
-        match self {
-            Self::Ok(e) | Self::Cancelled(e) => Some(e),
-            Self::Error(_) => None,
-        }
-    }
-
-    /// Get the error info if this is an error.
-    pub fn error_info(self) -> Option<HandlerErrorInfo> {
-        match self {
-            Self::Error(info) => Some(info),
-            _ => None,
-        }
-    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -700,32 +629,38 @@ mod tests {
         assert!(!match_glob("exact", "exac"));
     }
 
+    // HandlerResult tests are now in handler.rs module (consolidated).
+    // These tests verify the re-export works correctly.
+
     #[test]
-    fn test_handler_result_ok() {
+    fn test_handler_result_reexport_ok() {
+        // Verify HandlerResult is usable through the subscriber module
         let result: HandlerResult<String> = HandlerResult::ok("event".into());
-        assert!(result.is_ok());
-        assert!(!result.is_error());
+        assert!(result.is_continue());
+        assert!(!result.is_cancel());
         assert!(!result.is_cancelled());
         assert_eq!(result.event(), Some("event".into()));
     }
 
     #[test]
-    fn test_handler_result_error() {
-        let result: HandlerResult<String> =
-            HandlerResult::error(HandlerErrorInfo::new("handler", "failed"));
-        assert!(!result.is_ok());
-        assert!(result.is_error());
-        assert!(!result.is_cancelled());
-        let info = result.error_info().unwrap();
-        assert_eq!(info.handler_name, "handler");
+    fn test_handler_result_reexport_cancelled() {
+        // Verify Cancelled variant works (preserves event)
+        let result: HandlerResult<String> = HandlerResult::cancelled("event".into());
+        assert!(!result.is_continue());
+        assert!(result.is_cancel()); // is_cancel() matches both Cancel and Cancelled
+        assert!(result.is_cancelled()); // is_cancelled() only matches Cancelled
+        assert_eq!(result.event(), Some("event".into()));
     }
 
     #[test]
-    fn test_handler_result_cancelled() {
-        let result: HandlerResult<String> = HandlerResult::cancelled("event".into());
-        assert!(!result.is_ok());
-        assert!(!result.is_error());
-        assert!(result.is_cancelled());
+    fn test_handler_result_reexport_soft_error() {
+        // Verify SoftError variant works (continues with event)
+        let result: HandlerResult<String> =
+            HandlerResult::soft_error("event".into(), "handler failed");
+        assert!(!result.is_continue());
+        assert!(result.is_soft_error());
+        assert!(result.should_continue()); // SoftError allows continuation
+        assert_eq!(result.soft_error_msg(), Some("handler failed"));
         assert_eq!(result.event(), Some("event".into()));
     }
 
