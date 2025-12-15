@@ -69,5 +69,8 @@ tree/
 !.cargo/config.toml
 WORKTREE.md
 
+# Session artifacts (from session architecture tests)
+**/Sessions/
+
 # Local thoughts/plans (not committed)
 thoughts/

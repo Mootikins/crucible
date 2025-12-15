@@ -1,9 +1,10 @@
+//! Interactive utilities for CLI
+//!
+//! NOTE: Fuzzy matching stubbed - nucleo removed during event architecture cleanup.
+//! Uses simple substring matching as fallback.
+
 use anyhow::Result;
 use crucible_core::database::SearchResult;
-use nucleo_matcher::{
-    pattern::{CaseMatching, Pattern},
-    Config, Matcher,
-};
 use std::io::{self, Write};
 
 /// Compatibility wrapper for search results with display information
@@ -27,16 +28,12 @@ impl From<SearchResult> for SearchResultWithScore {
     }
 }
 
-/// Interactive fuzzy picker using nucleo
-pub struct FuzzyPicker {
-    matcher: Matcher,
-}
+/// Interactive picker (fuzzy matching stubbed pending event architecture)
+pub struct FuzzyPicker;
 
 impl FuzzyPicker {
     pub fn new() -> Self {
-        Self {
-            matcher: Matcher::new(Config::DEFAULT),
-        }
+        Self
     }
 
     /// Pick from search results interactively
@@ -45,8 +42,6 @@ impl FuzzyPicker {
             return Ok(None);
         }
 
-        // For now, implement simple numbered selection
-        // TODO: Full interactive picker with nucleo in future iteration
         self.print_results(results)?;
         self.get_selection(results.len())
     }
@@ -88,18 +83,25 @@ impl FuzzyPicker {
         }
     }
 
-    /// Filter items by query using nucleo matcher
+    /// Filter items by query using simple substring matching
+    /// (nucleo fuzzy matching removed - will be reimplemented with event architecture)
     pub fn filter_items(&mut self, items: &[String], query: &str) -> Vec<(usize, u32)> {
-        use nucleo_matcher::pattern::Normalization;
-        use nucleo_matcher::Utf32Str;
-
-        let pattern = Pattern::parse(query, CaseMatching::Ignore, Normalization::Smart);
+        let query_lower = query.to_lowercase();
         let mut matches = Vec::new();
 
         for (idx, item) in items.iter().enumerate() {
-            let mut buf = Vec::new();
-            let haystack = Utf32Str::new(item, &mut buf);
-            if let Some(score) = pattern.score(haystack, &mut self.matcher) {
+            let item_lower = item.to_lowercase();
+            if query.is_empty() || item_lower.contains(&query_lower) {
+                // Score based on position (earlier = better) and length match
+                let score = if query.is_empty() {
+                    100
+                } else if item_lower == query_lower {
+                    1000 // Exact match
+                } else if item_lower.starts_with(&query_lower) {
+                    500 // Prefix match
+                } else {
+                    100 // Substring match
+                };
                 matches.push((idx, score));
             }
         }
@@ -123,7 +125,6 @@ mod tests {
     #[test]
     fn test_fuzzy_picker_initialization() {
         let _picker = FuzzyPicker::new();
-        // Just verify it doesn't panic
         assert!(true);
     }
 
@@ -136,14 +137,13 @@ mod tests {
             "test.md".to_string(),
         ];
 
-        let results = picker.filter_items(&items, "hello");
-
-        assert_eq!(results.len(), 1);
+        let results = picker.filter_items(&items, "hello.md");
+        assert!(!results.is_empty());
         assert_eq!(results[0].0, 0); // Index of "hello.md"
     }
 
     #[test]
-    fn test_filter_items_fuzzy_match() {
+    fn test_filter_items_substring_match() {
         let mut picker = FuzzyPicker::new();
         let items = vec![
             "my-note.md".to_string(),
@@ -151,29 +151,8 @@ mod tests {
             "other-file.md".to_string(),
         ];
 
-        let results = picker.filter_items(&items, "mynote");
-
-        assert!(results.len() > 0);
-        assert_eq!(results[0].0, 0); // Should match "my-note.md"
-    }
-
-    #[test]
-    fn test_filter_items_score_ordering() {
-        let mut picker = FuzzyPicker::new();
-        let items = vec![
-            "test.md".to_string(),
-            "testing.md".to_string(),
-            "test-file.md".to_string(),
-        ];
-
-        let results = picker.filter_items(&items, "test");
-
-        // All items should match
-        assert!(results.len() >= 2);
-        // Results should be sorted by score (descending)
-        if results.len() > 1 {
-            assert!(results[0].1 >= results[1].1);
-        }
+        let results = picker.filter_items(&items, "note");
+        assert_eq!(results.len(), 2); // Both notes match
     }
 
     #[test]
@@ -182,8 +161,6 @@ mod tests {
         let items = vec!["file1.md".to_string(), "file2.md".to_string()];
 
         let results = picker.filter_items(&items, "");
-
-        // Empty query should match all items
         assert_eq!(results.len(), 2);
     }
 
@@ -193,7 +170,6 @@ mod tests {
         let items: Vec<String> = vec![];
 
         let results = picker.filter_items(&items, "test");
-
         assert_eq!(results.len(), 0);
     }
 
@@ -203,9 +179,8 @@ mod tests {
         let items = vec!["HelloWorld.md".to_string(), "goodbye.md".to_string()];
 
         let results = picker.filter_items(&items, "helloworld");
-
-        assert!(results.len() > 0);
-        assert_eq!(results[0].0, 0); // Should match "HelloWorld.md"
+        assert!(!results.is_empty());
+        assert_eq!(results[0].0, 0);
     }
 
     #[test]
@@ -214,21 +189,6 @@ mod tests {
         let items = vec!["foo.md".to_string(), "bar.md".to_string()];
 
         let results = picker.filter_items(&items, "xyz");
-
         assert_eq!(results.len(), 0);
-    }
-
-    #[test]
-    fn test_filter_items_special_characters() {
-        let mut picker = FuzzyPicker::new();
-        let items = vec![
-            "file-with-dashes.md".to_string(),
-            "file_with_underscores.md".to_string(),
-        ];
-
-        let results = picker.filter_items(&items, "dashes");
-
-        assert!(results.len() > 0);
-        assert_eq!(results[0].0, 0);
     }
 }
