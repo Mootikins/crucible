@@ -312,6 +312,27 @@ impl LinearReactor {
             SessionEvent::SubagentFailed { id, .. } => {
                 (EventType::Custom, format!("subagent:failed:{}", id))
             }
+            // Streaming events
+            SessionEvent::TextDelta { seq, .. } => {
+                (EventType::Custom, format!("streaming:delta:{}", seq))
+            }
+            // Note events (direct mapping)
+            SessionEvent::NoteParsed { path, .. } => {
+                (EventType::NoteParsed, path.display().to_string())
+            }
+            SessionEvent::NoteCreated { path, .. } => {
+                (EventType::NoteCreated, path.display().to_string())
+            }
+            SessionEvent::NoteModified { path, .. } => {
+                (EventType::NoteModified, path.display().to_string())
+            }
+            // MCP/Tool events (direct mapping)
+            SessionEvent::McpAttached { server, .. } => {
+                (EventType::McpAttached, server.clone())
+            }
+            SessionEvent::ToolDiscovered { name, .. } => {
+                (EventType::ToolDiscovered, name.clone())
+            }
             SessionEvent::Custom { name, .. } => (EventType::Custom, name.clone()),
         };
 
@@ -468,6 +489,17 @@ fn estimate_event_tokens(event: &SessionEvent) -> usize {
         SessionEvent::SubagentFailed { error, .. } => error.len(),
         SessionEvent::Custom { payload, .. } => payload.to_string().len(),
         SessionEvent::SessionStarted { .. } => 100, // Fixed overhead
+        // Streaming events
+        SessionEvent::TextDelta { delta, .. } => delta.len(),
+        // Note events (small metadata)
+        SessionEvent::NoteParsed { .. } => 50,
+        SessionEvent::NoteCreated { title, .. } => title.as_ref().map(|t| t.len()).unwrap_or(0) + 50,
+        SessionEvent::NoteModified { .. } => 50,
+        // MCP/Tool events
+        SessionEvent::McpAttached { server, .. } => server.len() + 50,
+        SessionEvent::ToolDiscovered { name, schema, .. } => {
+            name.len() + schema.as_ref().map(|s| s.to_string().len()).unwrap_or(0)
+        }
     };
 
     // Rough estimate: ~4 characters per token

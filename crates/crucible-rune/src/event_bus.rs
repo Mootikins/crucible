@@ -287,6 +287,21 @@ impl EventContext {
 /// Result type for handler execution
 pub type HandlerResult = Result<Event, HandlerError>;
 
+/// Result type for handler execution with SessionEvent
+pub type SessionHandlerResult = Result<crate::reactor::SessionEvent, HandlerError>;
+
+/// Convert a SessionEvent to an Event for handler execution
+///
+/// This bridges the SessionEvent type to the legacy Event type used by handlers.
+fn session_event_to_event(session_event: &crate::reactor::SessionEvent) -> Event {
+    let event_type = session_event.to_event_type();
+    let identifier = session_event.identifier();
+    let payload = serde_json::to_value(session_event)
+        .unwrap_or_else(|_| serde_json::json!({"error": "serialization failed"}));
+
+    Event::new(event_type, identifier, payload)
+}
+
 /// Errors that can occur during handler execution
 #[derive(Debug, Clone)]
 pub struct HandlerError {
@@ -402,9 +417,38 @@ impl Handler {
         match_glob(&self.pattern, &event.identifier)
     }
 
+    /// Check if this handler matches a SessionEvent
+    ///
+    /// Uses SessionEvent::to_event_type() and SessionEvent::identifier() for matching.
+    pub fn matches_session(&self, event: &crate::reactor::SessionEvent) -> bool {
+        if !self.enabled {
+            return false;
+        }
+        if self.event_type != event.to_event_type() {
+            return false;
+        }
+        match_glob(&self.pattern, &event.identifier())
+    }
+
     /// Execute this handler
     pub fn handle(&self, ctx: &mut EventContext, event: Event) -> HandlerResult {
         (self.handler_fn)(ctx, event)
+    }
+
+    /// Execute this handler with a SessionEvent
+    ///
+    /// Converts SessionEvent to Event internally for handler execution.
+    pub fn handle_session(
+        &self,
+        ctx: &mut EventContext,
+        event: crate::reactor::SessionEvent,
+    ) -> SessionHandlerResult {
+        // Convert SessionEvent to Event for the handler
+        let bus_event = session_event_to_event(&event);
+        match (self.handler_fn)(ctx, bus_event) {
+            Ok(modified) => Ok(modified.into()), // Convert back to SessionEvent
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -498,6 +542,60 @@ impl EventBus {
                         e.handler_name,
                         current_event.event_type,
                         current_event.identifier,
+                        e.message
+                    );
+                    errors.push(e.clone());
+
+                    // Only stop if error is fatal
+                    if e.fatal {
+                        break;
+                    }
+                }
+            }
+        }
+
+        (current_event, ctx, errors)
+    }
+
+    /// Emit a SessionEvent through the handler pipeline
+    ///
+    /// This is the SessionEvent-native version of `emit()`. Handlers still receive
+    /// Event internally (for backwards compatibility), but the conversion is handled
+    /// automatically.
+    ///
+    /// Returns the (possibly modified) SessionEvent after all handlers have processed it.
+    pub fn emit_session(
+        &self,
+        event: crate::reactor::SessionEvent,
+    ) -> (crate::reactor::SessionEvent, EventContext, Vec<HandlerError>) {
+        let mut ctx = EventContext::new();
+        let mut current_event = event;
+        let mut errors = Vec::new();
+
+        // Find matching handlers (already sorted by priority)
+        let matching: Vec<_> = self
+            .handlers
+            .iter()
+            .filter(|h| h.matches_session(&current_event))
+            .collect();
+
+        for handler in matching {
+            match handler.handle_session(&mut ctx, current_event.clone()) {
+                Ok(modified_event) => {
+                    current_event = modified_event;
+
+                    // Check if this was a tool event that got cancelled
+                    // (We can't easily check cancelled flag on SessionEvent,
+                    // so we skip this check for now - handlers can use Custom
+                    // events to signal cancellation if needed)
+                }
+                Err(e) => {
+                    // Log error but continue (fail-open)
+                    tracing::warn!(
+                        "Handler '{}' failed for event '{}:{}': {}",
+                        e.handler_name,
+                        current_event.event_type(),
+                        current_event.identifier(),
                         e.message
                     );
                     errors.push(e.clone());
