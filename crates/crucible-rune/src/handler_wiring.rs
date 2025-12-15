@@ -130,6 +130,27 @@ impl EventBusRingHandler {
             SessionEvent::SubagentFailed { id, .. } => {
                 (EventType::Custom, format!("subagent:failed:{}", id))
             }
+            // Streaming events
+            SessionEvent::TextDelta { seq, .. } => {
+                (EventType::Custom, format!("streaming:delta:{}", seq))
+            }
+            // Note events (direct mapping)
+            SessionEvent::NoteParsed { path, .. } => {
+                (EventType::NoteParsed, path.display().to_string())
+            }
+            SessionEvent::NoteCreated { path, .. } => {
+                (EventType::NoteCreated, path.display().to_string())
+            }
+            SessionEvent::NoteModified { path, .. } => {
+                (EventType::NoteModified, path.display().to_string())
+            }
+            // MCP/Tool events (direct mapping)
+            SessionEvent::McpAttached { server, .. } => {
+                (EventType::McpAttached, server.clone())
+            }
+            SessionEvent::ToolDiscovered { name, .. } => {
+                (EventType::ToolDiscovered, name.clone())
+            }
             SessionEvent::Custom { name, .. } => (EventType::Custom, name.clone()),
         };
 

@@ -98,6 +98,17 @@ fn estimate_event_tokens(event: &SessionEvent) -> usize {
         SessionEvent::SubagentFailed { error, .. } => error.len(),
         SessionEvent::Custom { payload, .. } => payload.to_string().len(),
         SessionEvent::SessionStarted { .. } => 100, // Fixed overhead
+        // Streaming events
+        SessionEvent::TextDelta { delta, .. } => delta.len(),
+        // Note events (small metadata)
+        SessionEvent::NoteParsed { .. } => 50,
+        SessionEvent::NoteCreated { title, .. } => title.as_ref().map(|t| t.len()).unwrap_or(0) + 50,
+        SessionEvent::NoteModified { .. } => 50,
+        // MCP/Tool events
+        SessionEvent::McpAttached { server, .. } => server.len() + 50,
+        SessionEvent::ToolDiscovered { name, schema, .. } => {
+            name.len() + schema.as_ref().map(|s| s.to_string().len()).unwrap_or(0)
+        }
     };
 
     // Rough estimate: ~4 characters per token
