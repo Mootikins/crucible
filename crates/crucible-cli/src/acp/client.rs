@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, info};
 
-use crate::chat::{AgentHandle, ChatError, ChatMode, ChatResponse, ChatResult};
+use crate::chat::{AgentHandle, ChatError, ChatMode, ChatResult};
 use crucible_acp::{
     AgentInfo, ChatConfig, ChatSession, ContextConfig, CrucibleAcpClient as AcpClient,
     HistoryConfig, InProcessMcpHost, StreamConfig,
