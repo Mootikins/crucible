@@ -10,24 +10,26 @@
 //!
 //! ## Components
 //!
-//! - `mode_ext`: CLI display extensions for ChatMode
+//! - `mode_registry`: Dynamic mode management from agent SessionModeState
 //! - `slash_registry`: Generic Registry trait implementation for slash commands
 //! - `handlers`: Built-in command handlers (exit, mode, search, help)
 //! - `context`: CLI chat context implementation
 //! - `display`: Terminal UI formatting
 //! - `session`: Interactive session orchestrator
 
+pub mod bridge;
 pub mod context;
 pub mod diff;
 pub mod display;
 pub mod handlers;
-pub mod mode_ext;
+pub mod mode_registry;
 pub mod session;
 pub mod slash_registry;
 
 // Re-export core traits for convenience
+
 pub use crucible_core::traits::chat::{
-    AgentHandle, ChatChunk, ChatContext, ChatError, ChatMode, ChatResponse, ChatResult,
+    AgentHandle, ChatChunk, ChatContext, ChatError, ChatResponse, ChatResult,
     ChatToolCall, CommandDescriptor, CommandHandler, SearchResult,
 };
 
@@ -36,6 +38,6 @@ pub use context::CliChatContext;
 pub use diff::DiffRenderer;
 pub use display::{format_tool_args, Display, ToolCallDisplay};
 pub use handlers::{ExitHandler, HelpHandler, ModeCycleHandler, ModeHandler, SearchHandler};
-pub use mode_ext::ChatModeDisplay;
+pub use mode_registry::{ModeError, ModeRegistry, ModeResult};
 pub use session::{ChatSession, SessionConfig};
 pub use slash_registry::{SlashCommand, SlashCommandRegistry, SlashCommandRegistryBuilder};

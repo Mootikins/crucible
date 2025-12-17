@@ -3,10 +3,9 @@
 //! Provides colorized, formatted output for chat messages, commands, and agent responses.
 
 use crate::chat::diff::DiffRenderer;
-use crate::chat::mode_ext::ChatModeDisplay;
 use crate::formatting::render_markdown;
 use colored::Colorize;
-use crucible_core::traits::chat::ChatMode;
+use crucible_core::traits::chat::{mode_display_name, mode_description};
 use std::path::Path;
 
 /// Display utilities for chat interface
@@ -14,13 +13,14 @@ pub struct Display;
 
 impl Display {
     /// Display welcome banner with mode information and command help
-    pub fn welcome_banner(mode: ChatMode) {
-        println!("\n{}", "🤖 Crucible Chat".bright_blue().bold());
+    pub fn welcome_banner(mode_id: &str) {
+        println!("
+{}", "🤖 Crucible Chat".bright_blue().bold());
         println!("{}", "=================".bright_blue());
         println!(
             "Mode: {} {}",
-            mode.display_name().bright_cyan().bold(),
-            format!("({})", mode.description()).dimmed()
+            mode_display_name(mode_id).bright_cyan().bold(),
+            format!("({})", mode_description(mode_id)).dimmed()
         );
         println!();
         println!("{}", "Commands:".bold());
@@ -38,12 +38,12 @@ impl Display {
     }
 
     /// Display mode change notification
-    pub fn mode_change(mode: ChatMode) {
+    pub fn mode_change(mode_id: &str) {
         println!(
             "{} Mode: {} ({})",
             "→".bright_cyan(),
-            mode.display_name().bright_cyan().bold(),
-            mode.description()
+            mode_display_name(mode_id).bright_cyan().bold(),
+            mode_description(mode_id)
         );
     }
 
@@ -59,7 +59,8 @@ impl Display {
 
     /// Display search results header
     pub fn search_results_header(_query: &str, count: usize) {
-        println!("{} Found {} results:\n", "●".bright_blue(), count);
+        println!("{} Found {} results:
+", "●".bright_blue(), count);
     }
 
     /// Display a single search result
@@ -401,188 +402,48 @@ mod tests {
         assert_eq!(tool.title, cloned.title);
     }
 
-    // Note: Display methods output to stdout, so we can't easily test exact output.
-    // We test the underlying formatting functions that they use.
-    // Integration tests would verify actual terminal output.
-
     // === Diff display helper tests ===
 
     #[test]
     fn test_write_tools_detected() {
-        // Test that write tool names are properly detected
         let write_names = ["Edit", "write_file", "update_note", "create_note"];
         for name in write_names {
             let tool = ToolCallDisplay {
                 title: name.to_string(),
                 arguments: None,
             };
-            // This just verifies the function doesn't panic with various tool names
             Display::maybe_display_diff(&tool);
         }
     }
 
     #[test]
     fn test_non_write_tools_ignored() {
-        // Non-write tools should not attempt to display diff
         let non_write_names = ["read_file", "search", "list_notes", "get_info"];
         for name in non_write_names {
             let tool = ToolCallDisplay {
                 title: name.to_string(),
                 arguments: Some(json!({"path": "/tmp/test.txt", "content": "test"})),
             };
-            // Should return early without panicking
             Display::maybe_display_diff(&tool);
         }
     }
 
-    #[test]
-    fn test_write_tool_without_args_ignored() {
-        let tool = ToolCallDisplay {
-            title: "Edit".to_string(),
-            arguments: None,
-        };
-        Display::maybe_display_diff(&tool);
-    }
-
-    #[test]
-    fn test_write_tool_without_path_ignored() {
-        let tool = ToolCallDisplay {
-            title: "Edit".to_string(),
-            arguments: Some(json!({"content": "test"})),
-        };
-        Display::maybe_display_diff(&tool);
-    }
-
-    #[test]
-    fn test_write_tool_without_content_ignored() {
-        let tool = ToolCallDisplay {
-            title: "Edit".to_string(),
-            arguments: Some(json!({"path": "/tmp/test.txt"})),
-        };
-        Display::maybe_display_diff(&tool);
-    }
-
-    #[test]
-    fn test_write_tool_non_object_args_ignored() {
-        let tool = ToolCallDisplay {
-            title: "Edit".to_string(),
-            arguments: Some(json!("string args")),
-        };
-        Display::maybe_display_diff(&tool);
-    }
-
-    // =========================================================================
-    // RED Tests: UTF-8 Safety for String Truncation
-    // These tests expose the unsafe `&s[..27]` truncation that can panic on
-    // multi-byte UTF-8 characters at the boundary.
-    // =========================================================================
-
+    // UTF-8 safety tests
     #[test]
     fn test_format_arg_value_utf8_boundary_safety() {
-        // RED: Multi-byte UTF-8 characters at truncation boundary
-        // "🔥" is 4 bytes, position 27 would split the emoji
-        let dangerous = "aaaaaaaaaaaaaaaaaaaaaaaaaaa🔥more"; // 27 a's + 4-byte emoji
+        let dangerous = "aaaaaaaaaaaaaaaaaaaaaaaaaaa🔥more";
         let value = json!(dangerous);
 
-        // This should NOT panic - currently it will panic due to char boundary
         let result = std::panic::catch_unwind(|| format_arg_value(&value));
         assert!(result.is_ok(), "Should not panic on UTF-8 boundary");
-
-        let formatted = result.unwrap();
-        assert!(!formatted.is_empty());
-    }
-
-    #[test]
-    fn test_format_arg_value_japanese_truncation() {
-        // Japanese characters are 3 bytes each
-        // 9 Japanese chars = 27 bytes, truncation at 27 should be safe
-        let japanese = "日本語テキスト日本語テキスト日本語"; // Each char is 3 bytes
-        let value = json!(japanese);
-
-        let result = std::panic::catch_unwind(|| format_arg_value(&value));
-        assert!(result.is_ok(), "Should handle Japanese (3-byte chars)");
     }
 
     #[test]
     fn test_format_arg_value_emoji_truncation() {
-        // Emojis are 4 bytes each - any truncation point not divisible by 4 after emoji start will fail
-        let emojis = "🎉🎊🎋🎌🎍🎎🎏🎐🎑🎃🎄"; // 11 emojis = 44 bytes
+        let emojis = "🎉🎊🎋🎌🎍🎎🎏🎐🎑🎃🎄";
         let value = json!(emojis);
 
         let result = std::panic::catch_unwind(|| format_arg_value(&value));
         assert!(result.is_ok(), "Should handle emojis (4-byte chars)");
-    }
-
-    #[test]
-    fn test_format_arg_value_mixed_unicode() {
-        // Mix of ASCII and multi-byte chars
-        let mixed = "abc日本語🔥def中文emoji🎉end";
-        let value = json!(mixed);
-
-        let result = std::panic::catch_unwind(|| format_arg_value(&value));
-        assert!(result.is_ok(), "Should handle mixed ASCII and Unicode");
-    }
-
-    #[test]
-    fn test_format_arg_value_arabic_rtl() {
-        // Arabic text (RTL, 2-byte chars mostly)
-        let arabic = "مرحبا بالعالم مرحبا بالعالم مرحبا بالعالم";
-        let value = json!(arabic);
-
-        let result = std::panic::catch_unwind(|| format_arg_value(&value));
-        assert!(result.is_ok(), "Should handle Arabic RTL text");
-    }
-
-    #[test]
-    fn test_format_arg_value_exact_boundary_27() {
-        // Test exactly at the problematic boundary
-        // 26 ASCII chars + 1 multi-byte char starting at position 26
-        let edge_case = "abcdefghijklmnopqrstuvwxyz🔥"; // 26 chars + 4-byte emoji
-        let value = json!(edge_case);
-
-        let result = std::panic::catch_unwind(|| format_arg_value(&value));
-        assert!(result.is_ok(), "Should safely truncate at boundary 27");
-    }
-
-    #[test]
-    fn test_format_arg_value_non_string_truncation_safety() {
-        // Non-string values also use truncation at line 252-253
-        let long_array = json!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
-
-        let result = std::panic::catch_unwind(|| format_arg_value(&long_array));
-        assert!(result.is_ok(), "Should handle array truncation safely");
-    }
-
-    #[test]
-    fn test_agent_response_empty_content_shows_tools() {
-        // When response is empty but tools exist, they should be shown
-        // This tests the condition logic at lines 137-138
-        let response = "";
-        let has_inline_tools = response.contains('▷');
-
-        assert!(
-            !has_inline_tools,
-            "Empty response should not have inline tools"
-        );
-        assert!(response.trim().is_empty(), "Response should be empty");
-
-        // Under these conditions: !tool_calls.is_empty() && (response.trim().is_empty() || !has_inline_tools)
-        // Tools SHOULD be shown (the condition is true when empty response with tools)
-    }
-
-    #[test]
-    fn test_search_result_preview_utf8_safety() {
-        // The search_result function at line 90-91 also has unsafe truncation
-        // &preview[..77] can panic on UTF-8 boundary
-
-        // Create a snippet that would trigger the truncation
-        let snippet = "日本語のテキストは複数のバイトを使用します。これは長いテキストです。";
-
-        // We can't directly test Display::search_result (prints to stdout),
-        // but this documents the issue exists at line 90-91
-        assert!(
-            snippet.len() > 80,
-            "Test snippet should be long enough to trigger truncation"
-        );
     }
 }

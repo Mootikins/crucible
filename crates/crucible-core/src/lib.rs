@@ -58,7 +58,7 @@ pub use types::{
     ChangeSet,
     ChangeSummary,
     // ACP types
-    ChatMode,
+    
     ChunkType,
     // Storage trait types (from traits/storage.rs)
     // Note: Parser types (ParsedNote, Wikilink, Tag, etc.) are exported from parser:: module below
@@ -76,6 +76,15 @@ pub use types::{
     ToolExample,
     ToolInvocation,
     ToolOutput,
+    // ACP schema types from agent-client-protocol-schema
+    AvailableCommand,
+    AvailableCommandInput,
+    AvailableCommandsUpdate,
+    SessionMode,
+    SessionModeId,
+    SessionModeState,
+    // Mode descriptor types
+    ModeDescriptor,
 };
 
 pub use database::{

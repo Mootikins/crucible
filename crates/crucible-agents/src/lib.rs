@@ -17,7 +17,8 @@ pub mod prompt;
 pub mod token;
 
 // Re-exports from crucible-core for convenience
-pub use crucible_core::traits::chat::{AgentHandle, ChatMode};
+
+pub use crucible_core::traits::chat::AgentHandle;
 
 // Re-exports from this crate
 pub use context::SlidingWindowContext;

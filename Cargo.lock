@@ -2482,6 +2482,7 @@ dependencies = [
  "once_cell",
  "predicates",
  "rand 0.8.5",
+ "ratatui",
  "regex",
  "reqwest",
  "rmcp",
@@ -2528,6 +2529,7 @@ dependencies = [
 name = "crucible-core"
 version = "0.1.0"
 dependencies = [
+ "agent-client-protocol-schema",
  "anyhow",
  "async-trait",
  "bitflags 2.10.0",

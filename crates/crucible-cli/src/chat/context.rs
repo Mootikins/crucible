@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use std::sync::Arc;
 
 use crucible_core::traits::chat::{
-    AgentHandle, ChatContext, ChatError, ChatMode, ChatResult, SearchResult,
+    AgentHandle, ChatContext, ChatError, ChatResult, SearchResult,
 };
 
 use crate::chat::display::Display;
@@ -18,7 +18,7 @@ use crate::core_facade::KilnContext;
 ///
 /// Provides command handlers with access to:
 /// - Kiln context (storage, semantic search)
-/// - Chat mode state (read-only - use set_mode to change)
+/// - Chat mode state (read-only - use set_mode_str to change)
 /// - Agent handle reference for forwarding commands
 /// - Display utilities for terminal output
 ///
@@ -27,8 +27,8 @@ use crate::core_facade::KilnContext;
 pub struct CliChatContext<'a> {
     /// Reference to kiln context for storage and search
     kiln: Arc<KilnContext>,
-    /// Current chat mode (read-only)
-    mode: ChatMode,
+    /// Current chat mode ID (read-only)
+    mode_id: String,
     /// Mutable reference to agent for sending commands
     agent: &'a mut dyn AgentHandle,
     /// Command registry for listing available commands
@@ -41,18 +41,18 @@ impl<'a> CliChatContext<'a> {
     /// # Arguments
     ///
     /// * `kiln` - Kiln context for storage and search
-    /// * `mode` - Current chat mode (read-only snapshot)
+    /// * `mode_id` - Current chat mode ID (read-only snapshot)
     /// * `agent` - Mutable reference to agent handle
     /// * `registry` - Command registry for listing commands
     pub fn new(
         kiln: Arc<KilnContext>,
-        mode: ChatMode,
+        mode_id: impl Into<String>,
         agent: &'a mut dyn AgentHandle,
         registry: Arc<SlashCommandRegistry>,
     ) -> Self {
         Self {
             kiln,
-            mode,
+            mode_id: mode_id.into(),
             agent,
             registry,
         }
@@ -61,8 +61,8 @@ impl<'a> CliChatContext<'a> {
 
 #[async_trait]
 impl<'a> ChatContext for CliChatContext<'a> {
-    fn get_mode(&self) -> ChatMode {
-        self.mode
+    fn get_mode_id(&self) -> &str {
+        &self.mode_id
     }
 
     fn request_exit(&mut self) {
@@ -76,18 +76,18 @@ impl<'a> ChatContext for CliChatContext<'a> {
         false
     }
 
-    async fn set_mode(&mut self, mode: ChatMode) -> ChatResult<()> {
+    async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {
         // Update agent mode
         self.agent
-            .set_mode(mode)
+            .set_mode_str(mode_id)
             .await
             .map_err(|e| ChatError::ModeChange(e.to_string()))?;
 
         // Update local mode
-        self.mode = mode;
+        self.mode_id = mode_id.to_string();
 
         // Display mode change notification
-        Display::mode_change(mode);
+        Display::mode_change(mode_id);
 
         Ok(())
     }
@@ -153,7 +153,8 @@ impl<'a> ChatContext for CliChatContext<'a> {
     }
 
     fn display_help(&self) {
-        println!("\nAvailable Commands:");
+        println!("
+Available Commands:");
         println!("{}", "=".repeat(40));
 
         // List all commands from registry
@@ -183,11 +184,10 @@ impl<'a> ChatContext for CliChatContext<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_core::traits::chat::ChatResponse;
 
     // Mock agent for testing
     struct MockAgent {
-        mode: ChatMode,
+        mode_id: String,
     }
 
     #[async_trait]
@@ -211,8 +211,12 @@ mod tests {
             ]))
         }
 
-        async fn set_mode(&mut self, mode: ChatMode) -> ChatResult<()> {
-            self.mode = mode;
+        fn get_mode_id(&self) -> &str {
+            &self.mode_id
+        }
+
+        async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {
+            self.mode_id = mode_id.to_string();
             Ok(())
         }
 

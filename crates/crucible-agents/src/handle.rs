@@ -3,12 +3,14 @@
 //! Implements `AgentHandle` using direct LLM API calls via `TextGenerationProvider`.
 
 use async_trait::async_trait;
-use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatError, ChatMode, ChatResult};
+use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatError, ChatResult};
 use crucible_core::traits::context::ContextManager;
 use crucible_core::traits::llm::{
     ChatCompletionRequest, LlmMessage, TextGenerationProvider, ToolCall as LlmToolCall,
 };
 use crucible_core::traits::tools::{ExecutionContext, ToolExecutor};
+use crucible_core::types::acp::schema::SessionModeState;
+use crucible_core::types::mode::default_internal_modes;
 use futures::stream::{BoxStream, StreamExt};
 use uuid::Uuid;
 
@@ -39,8 +41,11 @@ pub struct InternalAgentHandle {
     /// Token budget tracker
     token_budget: TokenBudget,
 
-    /// Current chat mode
-    mode: ChatMode,
+    /// Mode state advertised by this agent (Plan/Act/Auto)
+    mode_state: SessionModeState,
+
+    /// Current mode ID
+    current_mode_id: String,
 
     /// Model identifier
     model: String,
@@ -80,13 +85,17 @@ impl InternalAgentHandle {
         let system_prompt = prompt_builder.build();
         new_context.set_system_prompt(system_prompt);
 
+        let mode_state = default_internal_modes();
+        let current_mode_id = mode_state.current_mode_id.0.to_string();
+
         Self {
             provider,
             context: new_context,
             tools,
             prompt_builder,
             token_budget,
-            mode: ChatMode::Plan,
+            mode_state,
+            current_mode_id,
             model,
             agent_id,
             max_tool_iterations: DEFAULT_MAX_TOOL_ITERATIONS,
@@ -286,8 +295,29 @@ impl AgentHandle for InternalAgentHandle {
         })
     }
 
-    async fn set_mode(&mut self, mode: ChatMode) -> ChatResult<()> {
-        self.mode = mode;
+
+    fn get_modes(&self) -> Option<&SessionModeState> {
+        Some(&self.mode_state)
+    }
+
+    fn get_mode_id(&self) -> &str {
+        &self.current_mode_id
+    }
+
+    async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {
+        // Validate mode exists in our advertised modes
+        let exists = self.mode_state.available_modes.iter()
+            .any(|m| m.id.0.as_ref() == mode_id);
+
+        if !exists {
+            return Err(ChatError::InvalidMode(format!(
+                "Unknown mode '{}'. Available: {:?}",
+                mode_id,
+                self.mode_state.available_modes.iter().map(|m| m.id.0.as_ref()).collect::<Vec<_>>()
+            )));
+        }
+
+        self.current_mode_id = mode_id.to_string();
         Ok(())
     }
 
@@ -406,7 +436,9 @@ mod tests {
         );
 
         assert!(handle.is_connected());
-        assert_eq!(handle.mode, ChatMode::Plan);
+        assert_eq!(handle.get_mode_id(), "plan");
+        assert!(handle.get_modes().is_some());
+        assert_eq!(handle.get_modes().unwrap().available_modes.len(), 3);
     }
 
     #[tokio::test]
@@ -485,13 +517,17 @@ mod tests {
             1000,
         );
 
-        assert_eq!(handle.mode, ChatMode::Plan);
+        assert_eq!(handle.get_mode_id(), "plan");
 
-        handle.set_mode(ChatMode::Act).await.unwrap();
-        assert_eq!(handle.mode, ChatMode::Act);
+        handle.set_mode_str("act").await.unwrap();
+        assert_eq!(handle.get_mode_id(), "act");
 
-        handle.set_mode(ChatMode::AutoApprove).await.unwrap();
-        assert_eq!(handle.mode, ChatMode::AutoApprove);
+        handle.set_mode_str("auto").await.unwrap();
+        assert_eq!(handle.get_mode_id(), "auto");
+
+        // Test invalid mode returns error
+        let result = handle.set_mode_str("invalid").await;
+        assert!(result.is_err());
     }
 
     #[tokio::test]
