@@ -73,6 +73,13 @@ impl KilnContext {
         &self.config.kiln_path
     }
 
+    /// Get the sessions folder path
+    ///
+    /// Returns `<kiln_root>/Sessions/` where chat sessions are stored.
+    pub fn session_folder(&self) -> std::path::PathBuf {
+        self.config.kiln_path.join("Sessions")
+    }
+
     /// Perform semantic search
     ///
     /// # Arguments

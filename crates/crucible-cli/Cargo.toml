@@ -96,6 +96,7 @@ futures = { workspace = true }
 
 # Terminal utilities (kept for progress.rs, markdown_renderer.rs)
 crossterm = { workspace = true }
+ratatui = "0.29"
 
 # Diff rendering
 similar = "2.7"

@@ -25,3 +25,4 @@ pub mod interactive;
 pub mod output;
 pub mod progress;
 pub mod sync;
+pub mod tui;
