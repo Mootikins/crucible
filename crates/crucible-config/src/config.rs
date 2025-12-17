@@ -866,6 +866,234 @@ impl CliAppConfig {
             .map_err(|e| anyhow::anyhow!("Failed to serialize config as JSON: {}", e))
     }
 
+    /// Display the current configuration as JSON with source tracking
+    pub fn display_as_json_with_sources(&self) -> anyhow::Result<String> {
+        use crate::value_source::SourceMapBuilder;
+
+        // Build source map
+        let config_path = Self::default_config_path();
+        let config_path_str = config_path.to_string_lossy().to_string();
+        let mut builder = SourceMapBuilder::new().config_file(Some(config_path_str));
+
+        // Track file values (would be done during actual loading)
+        // This is a simplified version - in practice, this would be built during load()
+        builder = builder
+            .default_value("kiln_path")
+            .default_value("embedding.provider")
+            .default_value("embedding.batch_size")
+            .default_value("acp.default_agent")
+            .default_value("chat.model")
+            .default_value("cli.verbose");
+
+        // Check environment overrides
+        if std::env::var("CRUCIBLE_KILN_PATH").is_ok() {
+            builder = builder.env_value("kiln_path", "CRUCIBLE_KILN_PATH");
+        }
+        if std::env::var("CRUCIBLE_EMBEDDING_PROVIDER").is_ok() {
+            builder = builder.env_value("embedding.provider", "CRUCIBLE_EMBEDDING_PROVIDER");
+        }
+        if std::env::var("CRUCIBLE_EMBEDDING_MODEL").is_ok() {
+            builder = builder.env_value("embedding.model", "CRUCIBLE_EMBEDDING_MODEL");
+        }
+        if std::env::var("CRUCIBLE_EMBEDDING_URL").is_ok() {
+            builder = builder.env_value("embedding.api_url", "CRUCIBLE_EMBEDDING_URL");
+        }
+
+        let source_map = builder.build();
+
+        // Create a simplified output with sources
+        let mut output = serde_json::Map::new();
+
+        // Add kiln_path
+        if let Some(source) = source_map.get("kiln_path") {
+            let mut item = serde_json::Map::new();
+            item.insert("value".to_string(), serde_json::Value::String(self.kiln_path.to_string_lossy().to_string()));
+            item.insert("source".to_string(), serde_json::Value::String(source.detail()));
+            item.insert("source_short".to_string(), serde_json::Value::String(source.short().to_string()));
+            output.insert("kiln_path".to_string(), serde_json::Value::Object(item));
+        }
+
+        // Add embedding section
+        let mut embedding_section = serde_json::Map::new();
+
+        // provider
+        if let Some(source) = source_map.get("embedding.provider") {
+            let mut item = serde_json::Map::new();
+            item.insert("value".to_string(), serde_json::Value::String(format!("{:?}", self.embedding.provider)));
+            item.insert("source".to_string(), serde_json::Value::String(source.detail()));
+            item.insert("source_short".to_string(), serde_json::Value::String(source.short().to_string()));
+            embedding_section.insert("provider".to_string(), serde_json::Value::Object(item));
+        }
+
+        // model
+        if let Some(ref model) = self.embedding.model {
+            if let Some(source) = source_map.get("embedding.model") {
+                let mut item = serde_json::Map::new();
+                item.insert("value".to_string(), serde_json::Value::String(model.clone()));
+                item.insert("source".to_string(), serde_json::Value::String(source.detail()));
+                item.insert("source_short".to_string(), serde_json::Value::String(source.short().to_string()));
+                embedding_section.insert("model".to_string(), serde_json::Value::Object(item));
+            }
+        }
+
+        output.insert("embedding".to_string(), serde_json::Value::Object(embedding_section));
+
+        // Add CLI section
+        let mut cli_section = serde_json::Map::new();
+        if let Some(source) = source_map.get("cli.verbose") {
+            let mut item = serde_json::Map::new();
+            item.insert("value".to_string(), serde_json::Value::Bool(self.cli.verbose));
+            item.insert("source".to_string(), serde_json::Value::String(source.detail()));
+            item.insert("source_short".to_string(), serde_json::Value::String(source.short().to_string()));
+            cli_section.insert("verbose".to_string(), serde_json::Value::Object(item));
+        }
+        output.insert("cli".to_string(), serde_json::Value::Object(cli_section));
+
+        serde_json::to_string_pretty(&output)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize config as JSON: {}", e))
+    }
+
+    /// Display the current configuration as TOML with source tracking
+    pub fn display_as_toml_with_sources(&self) -> anyhow::Result<String> {
+        use crate::value_source::{SourceMapBuilder, ValueSource};
+
+        // Build source map (same as JSON version)
+        let config_path = Self::default_config_path();
+        let config_path_str = config_path.to_string_lossy().to_string();
+        let mut builder = SourceMapBuilder::new().config_file(Some(config_path_str));
+
+        // Track default values
+        builder = builder
+            .default_value("kiln_path")
+            .default_value("embedding.provider")
+            .default_value("embedding.batch_size")
+            .default_value("acp.default_agent")
+            .default_value("chat.model")
+            .default_value("cli.verbose");
+
+        // Check environment overrides
+        if std::env::var("CRUCIBLE_KILN_PATH").is_ok() {
+            builder = builder.env_value("kiln_path", "CRUCIBLE_KILN_PATH");
+        }
+        if std::env::var("CRUCIBLE_EMBEDDING_PROVIDER").is_ok() {
+            builder = builder.env_value("embedding.provider", "CRUCIBLE_EMBEDDING_PROVIDER");
+        }
+        if std::env::var("CRUCIBLE_EMBEDDING_MODEL").is_ok() {
+            builder = builder.env_value("embedding.model", "CRUCIBLE_EMBEDDING_MODEL");
+        }
+        if std::env::var("CRUCIBLE_EMBEDDING_URL").is_ok() {
+            builder = builder.env_value("embedding.api_url", "CRUCIBLE_EMBEDDING_URL");
+        }
+
+        let source_map = builder.build();
+
+        // Generate TOML with inline comments for sources
+        let mut output = String::new();
+
+        // Add header comment
+        output.push_str("# Effective Configuration with Sources\n");
+        output.push_str("# Sources: file, environment, cli, default\n\n");
+
+        // kiln_path
+        let kiln_source = source_map.get("kiln_path").unwrap_or(&ValueSource::Default);
+        output.push_str(&format!(
+            "kiln_path = \"{}\"  # from: {}\n",
+            self.kiln_path.display(),
+            kiln_source.detail()
+        ));
+
+        // embedding section
+        output.push_str("\n[embedding]\n");
+        let provider_source = source_map.get("embedding.provider").unwrap_or(&ValueSource::Default);
+        output.push_str(&format!(
+            "provider = \"{:?}\"  # from: {}\n",
+            self.embedding.provider,
+            provider_source.detail()
+        ));
+
+        if let Some(ref model) = self.embedding.model {
+            let model_source = source_map.get("embedding.model").unwrap_or(&ValueSource::Default);
+            output.push_str(&format!(
+                "model = \"{}\"  # from: {}\n",
+                model,
+                model_source.detail()
+            ));
+        }
+
+        if let Some(ref api_url) = self.embedding.api_url {
+            let url_source = source_map.get("embedding.api_url").unwrap_or(&ValueSource::Default);
+            output.push_str(&format!(
+                "api_url = \"{}\"  # from: {}\n",
+                api_url,
+                url_source.detail()
+            ));
+        }
+
+        let batch_source = source_map.get("embedding.batch_size").unwrap_or(&ValueSource::Default);
+        output.push_str(&format!(
+            "batch_size = {}  # from: {}\n",
+            self.embedding.batch_size,
+            batch_source.detail()
+        ));
+
+        // ACP section
+        output.push_str("\n[acp]\n");
+        if let Some(ref agent) = self.acp.default_agent {
+            let agent_source = source_map.get("acp.default_agent").unwrap_or(&ValueSource::Default);
+            output.push_str(&format!(
+                "default_agent = \"{}\"  # from: {}\n",
+                agent,
+                agent_source.detail()
+            ));
+        }
+
+        output.push_str(&format!(
+            "enable_discovery = {}  # from: default\n",
+            self.acp.enable_discovery
+        ));
+
+        output.push_str(&format!(
+            "session_timeout_minutes = {}  # from: default\n",
+            self.acp.session_timeout_minutes
+        ));
+
+        // Chat section
+        output.push_str("\n[chat]\n");
+        if let Some(ref model) = self.chat.model {
+            let model_source = source_map.get("chat.model").unwrap_or(&ValueSource::Default);
+            output.push_str(&format!(
+                "model = \"{}\"  # from: {}\n",
+                model,
+                model_source.detail()
+            ));
+        }
+
+        output.push_str(&format!(
+            "enable_markdown = {}  # from: default\n",
+            self.chat.enable_markdown
+        ));
+
+        // CLI section
+        output.push_str("\n[cli]\n");
+        output.push_str(&format!(
+            "show_progress = {}  # from: default\n",
+            self.cli.show_progress
+        ));
+        output.push_str(&format!(
+            "confirm_destructive = {}  # from: default\n",
+            self.cli.confirm_destructive
+        ));
+
+        let verbose_source = source_map.get("cli.verbose").unwrap_or(&ValueSource::Default);
+        output.push_str(&format!(
+            "verbose = {}  # from: {}\n",
+            self.cli.verbose,
+            verbose_source.detail()
+        ));
+
+        Ok(output)
+    }
+
     /// Create a new config file with example values
     pub fn create_example(path: &std::path::Path) -> anyhow::Result<()> {
         let example = r#"# Crucible CLI Configuration

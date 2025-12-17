@@ -124,7 +124,7 @@ async fn test_unclosed_wikilink() {
     // Test that unclosed wikilinks don't cause parser to fail
     let content = "Unclosed link: [[broken";
 
-    let parsed = parse_note(content, "test.md").await.unwrap();
+    let _parsed = parse_note(content, "test.md").await.unwrap();
 
     // Should parse without error, even if wikilink isn't extracted
     // ParsedNote exists, which means it parsed successfully

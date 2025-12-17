@@ -59,6 +59,7 @@ impl Default for CliConfigBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     use std::fs;
     use tempfile::TempDir;
@@ -224,5 +225,136 @@ verbose = false
         assert!(contents.contains("[acp]"));
         assert!(contents.contains("[chat]"));
         assert!(contents.contains("[cli]"));
+    }
+
+    // Additional comprehensive tests for CLI config reading
+
+    #[test]
+    #[serial]
+    fn test_env_var_overrides_comprehensive() {
+        use std::env;
+
+        // Test kiln path override
+        env::set_var("CRUCIBLE_KILN_PATH", "/env/kiln");
+        let config = CliConfig::load(None, None, None).unwrap();
+        assert_eq!(config.kiln_path.to_str().unwrap(), "/env/kiln");
+        env::remove_var("CRUCIBLE_KILN_PATH");
+
+        // Test embedding URL override
+        env::set_var("CRUCIBLE_EMBEDDING_URL", "https://env-embed.com");
+        let config = CliConfig::load(None, None, None).unwrap();
+        assert_eq!(config.embedding.api_url, Some("https://env-embed.com".to_string()));
+        env::remove_var("CRUCIBLE_EMBEDDING_URL");
+
+        // Test embedding provider override
+        env::set_var("CRUCIBLE_EMBEDDING_PROVIDER", "openai");
+        let config = CliConfig::load(None, None, None).unwrap();
+        assert_eq!(config.embedding.provider, crucible_config::EmbeddingProviderType::OpenAI);
+        env::remove_var("CRUCIBLE_EMBEDDING_PROVIDER");
+
+        // Test embedding model override
+        env::set_var("CRUCIBLE_EMBEDDING_MODEL", "env-model");
+        let config = CliConfig::load(None, None, None).unwrap();
+        assert_eq!(config.embedding.model, Some("env-model".to_string()));
+        env::remove_var("CRUCIBLE_EMBEDDING_MODEL");
+
+        // Test max concurrent override
+        env::set_var("CRUCIBLE_EMBEDDING_MAX_CONCURRENT", "64");
+        let config = CliConfig::load(None, None, None).unwrap();
+        assert_eq!(config.embedding.max_concurrent, Some(64));
+        env::remove_var("CRUCIBLE_EMBEDDING_MAX_CONCURRENT");
+    }
+
+    #[test]
+    #[serial]
+    fn test_cli_flag_overrides_take_precedence() {
+        use std::env;
+
+        let temp = TempDir::new().unwrap();
+        let config_path = temp.path().join("config.toml");
+
+        fs::write(
+            &config_path,
+            r#"
+kiln_path = "/file/kiln"
+[embedding]
+api_url = "https://file-embed.com"
+model = "file-model"
+"#,
+        )
+        .unwrap();
+
+        // Set env vars
+        env::set_var("CRUCIBLE_EMBEDDING_URL", "https://env-embed.com");
+        env::set_var("CRUCIBLE_EMBEDDING_MODEL", "env-model");
+
+        // CLI flags should override both file and env
+        let config = CliConfig::load(
+            Some(config_path),
+            Some("https://cli-embed.com".to_string()),
+            Some("cli-model".to_string()),
+        ).unwrap();
+
+        assert_eq!(config.kiln_path.to_str().unwrap(), "/file/kiln"); // From file
+        assert_eq!(config.embedding.api_url, Some("https://cli-embed.com".to_string())); // CLI overrides
+        assert_eq!(config.embedding.model, Some("cli-model".to_string())); // CLI overrides
+
+        env::remove_var("CRUCIBLE_EMBEDDING_URL");
+        env::remove_var("CRUCIBLE_EMBEDDING_MODEL");
+    }
+
+    #[test]
+    fn test_config_load_preserves_defaults_when_missing() {
+        let config = CliConfig::default();
+
+        // Verify all important defaults
+        assert_eq!(config.chat_model(), "llama3.2");
+        assert_eq!(config.temperature(), 0.7);
+        assert_eq!(config.max_tokens(), 2048);
+        assert!(config.streaming());
+        assert_eq!(config.embedding.provider, crucible_config::EmbeddingProviderType::FastEmbed);
+        assert_eq!(config.embedding.batch_size, 16);
+    }
+
+    #[test]
+    #[serial]
+    fn test_partial_config_loads_with_defaults() {
+        let temp = TempDir::new().unwrap();
+        let config_path = temp.path().join("partial.toml");
+
+        // Only specify some fields
+        fs::write(
+            &config_path,
+            r#"
+kiln_path = "/partial/kiln"
+[embedding]
+provider = "openai"
+"#,
+        )
+        .unwrap();
+
+        let config = CliConfig::load(Some(config_path), None, None).unwrap();
+
+        // Specified fields
+        assert_eq!(config.kiln_path.to_str().unwrap(), "/partial/kiln");
+        assert_eq!(config.embedding.provider, crucible_config::EmbeddingProviderType::OpenAI);
+
+        // Default fields should still be present
+        assert_eq!(config.chat_model(), "llama3.2");
+        assert_eq!(config.temperature(), 0.7);
+        assert_eq!(config.embedding.batch_size, 16);
+    }
+
+    #[test]
+    fn test_config_file_not_found_uses_defaults() {
+        let temp = TempDir::new().unwrap();
+        let nonexistent = temp.path().join("nonexistent.toml");
+
+        // Should not error when file doesn't exist
+        let config = CliConfig::load(Some(nonexistent), None, None).unwrap();
+
+        // Should have all defaults
+        assert_eq!(config.chat_model(), "llama3.2");
+        assert_eq!(config.embedding.provider, crucible_config::EmbeddingProviderType::FastEmbed);
     }
 }

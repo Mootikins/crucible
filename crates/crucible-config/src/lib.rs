@@ -33,6 +33,7 @@ mod enrichment;
 mod includes;
 mod loader;
 mod profile;
+mod value_source;
 
 // Include test_utils when test-utils feature is enabled
 #[cfg(feature = "test-utils")]
@@ -48,6 +49,7 @@ pub use enrichment::*;
 pub use includes::{process_file_references, IncludeConfig, IncludeError};
 pub use loader::*;
 pub use profile::*;
+pub use value_source::*;
 
 // Export test utilities when feature is enabled
 #[cfg(feature = "test-utils")]
