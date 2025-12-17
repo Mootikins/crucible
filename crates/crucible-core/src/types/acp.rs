@@ -13,7 +13,7 @@
 //!
 //! ## Organization
 //!
-//! - **Session types**: SessionId, SessionConfig, ChatMode
+//! - **Session types**: SessionId, SessionConfig (uses mode_id string)
 //! - **Tool types**: ToolInvocation, ToolOutput, ToolCallInfo (see traits::tools for ToolDefinition)
 //! - **Stream types**: StreamChunk, StreamMetadata
 //! - **Filesystem types**: FileMetadata
@@ -22,6 +22,26 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use uuid::Uuid;
+
+// ============================================================================
+// ACP Schema Re-exports
+// ============================================================================
+
+/// Re-exports from agent-client-protocol-schema for ACP protocol types.
+///
+/// These types are the canonical definitions from the ACP protocol specification.
+/// They are used for interoperability with external agents and the protocol.
+pub mod schema {
+    // Mode types from ACP protocol
+    pub use agent_client_protocol_schema::{
+        SessionMode, SessionModeId, SessionModeState,
+    };
+
+    // Command types from ACP protocol
+    pub use agent_client_protocol_schema::{
+        AvailableCommand, AvailableCommandInput, AvailableCommandsUpdate,
+    };
+}
 
 // ============================================================================
 // Session Types
@@ -96,11 +116,11 @@ impl From<SessionId> for Uuid {
 /// # Example
 ///
 /// ```rust
-/// use crucible_core::types::acp::{SessionConfig, ChatMode};
 /// use std::path::PathBuf;
+/// use crucible_core::SessionConfig;
 ///
 /// let config = SessionConfig::new(PathBuf::from("/workspace"))
-///     .with_mode(ChatMode::Plan)
+///     .with_mode_id("plan")
 ///     .with_context_size(100_000);
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,7 +129,7 @@ pub struct SessionConfig {
     pub cwd: PathBuf,
 
     /// Chat mode (plan/act)
-    pub mode: ChatMode,
+    pub mode_id: String,
 
     /// Maximum context size in tokens
     pub context_size: usize,
@@ -133,7 +153,7 @@ impl SessionConfig {
     pub fn new(cwd: PathBuf) -> Self {
         Self {
             cwd,
-            mode: ChatMode::Plan,
+            mode_id: "plan".to_string(),
             context_size: 100_000,
             enable_enrichment: true,
             enrichment_count: 5,
@@ -142,8 +162,8 @@ impl SessionConfig {
     }
 
     /// Set the chat mode
-    pub fn with_mode(mut self, mode: ChatMode) -> Self {
-        self.mode = mode;
+    pub fn with_mode_id(mut self, mode_id: impl Into<String>) -> Self {
+        self.mode_id = mode_id.into();
         self
     }
 
@@ -178,61 +198,6 @@ impl Default for SessionConfig {
     }
 }
 
-/// Chat mode for ACP sessions
-///
-/// Determines the permission level for agent operations:
-/// - **Plan**: Read-only mode for exploration and planning
-/// - **Act**: Read-write mode for execution and modification
-///
-/// # Permission Model
-///
-/// | Operation | Plan Mode | Act Mode |
-/// |-----------|-----------|----------|
-/// | Read files | ✅ | ✅ |
-/// | Write files | ❌ | ✅ |
-/// | List files | ✅ | ✅ |
-/// | Execute tools | ✅ (read-only) | ✅ (all) |
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ChatMode {
-    /// Read-only mode (exploration, analysis, planning)
-    Plan,
-
-    /// Read-write mode (execution, modification, creation)
-    Act,
-}
-
-impl ChatMode {
-    /// Check if this mode allows write operations
-    pub fn can_write(&self) -> bool {
-        matches!(self, ChatMode::Act)
-    }
-
-    /// Check if this mode is read-only
-    pub fn is_read_only(&self) -> bool {
-        matches!(self, ChatMode::Plan)
-    }
-}
-
-impl std::fmt::Display for ChatMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ChatMode::Plan => write!(f, "plan"),
-            ChatMode::Act => write!(f, "act"),
-        }
-    }
-}
-
-impl std::str::FromStr for ChatMode {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "plan" => Ok(ChatMode::Plan),
-            "act" => Ok(ChatMode::Act),
-            _ => Err(format!("Invalid chat mode: {}", s)),
-        }
-    }
-}
 
 // ============================================================================
 // Tool Types
@@ -676,29 +641,15 @@ mod tests {
     #[test]
     fn test_session_config() {
         let config = SessionConfig::new(PathBuf::from("/workspace"))
-            .with_mode(ChatMode::Act)
+            .with_mode_id("act")
             .with_context_size(50_000)
             .with_enrichment(false);
 
-        assert_eq!(config.mode, ChatMode::Act);
+        assert_eq!(config.mode_id, "act");
         assert_eq!(config.context_size, 50_000);
         assert!(!config.enable_enrichment);
     }
 
-    #[test]
-    fn test_chat_mode() {
-        assert!(ChatMode::Act.can_write());
-        assert!(!ChatMode::Plan.can_write());
-        assert!(ChatMode::Plan.is_read_only());
-        assert!(!ChatMode::Act.is_read_only());
-
-        assert_eq!(ChatMode::Plan.to_string(), "plan");
-        assert_eq!(ChatMode::Act.to_string(), "act");
-
-        assert_eq!("plan".parse::<ChatMode>().unwrap(), ChatMode::Plan);
-        assert_eq!("act".parse::<ChatMode>().unwrap(), ChatMode::Act);
-        assert_eq!("ACT".parse::<ChatMode>().unwrap(), ChatMode::Act);
-    }
 
     #[test]
     fn test_tool_definition_from_traits() {
