@@ -98,6 +98,10 @@ futures = { workspace = true }
 crossterm = { workspace = true }
 ratatui = "0.29"
 
+# Markdown rendering with syntax highlighting
+termimad = "0.30"
+syntect = { version = "5.2", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig"] }
+
 # Diff rendering
 similar = "2.7"
 

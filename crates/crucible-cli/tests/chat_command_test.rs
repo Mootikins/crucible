@@ -53,7 +53,6 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
         true,                             // no_context (skip semantic search)
         true,                             // no_process (skip pipeline - this is key!)
         Some(3),                          // context_size
-        false,                            // use_tui
         false,                            // use_internal
         None,                             // provider_key
         8192,                             // max_context_tokens
@@ -137,7 +136,6 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
         true,  // no_context
         true,  // no_process
         None,  // context_size
-        false, // use_tui
         false, // use_internal
         None,  // provider_key
         8192,  // max_context_tokens
