@@ -308,9 +308,15 @@ impl TuiState {
         }
     }
 
-    pub fn poll_events(&mut self, ring: &Arc<EventRing<SessionEvent>>) {
+    /// Poll events from the ring buffer and process them.
+    ///
+    /// Returns the finalized assistant response content when AgentResponded is received,
+    /// allowing the runner to render it with markdown.
+    pub fn poll_events(&mut self, ring: &Arc<EventRing<SessionEvent>>) -> Option<String> {
         let events: Vec<_> = ring.range(self.last_seen_seq, ring.write_sequence()).collect();
         self.last_seen_seq = ring.write_sequence();
+        let mut finalized_content: Option<String> = None;
+
         for event in events {
             match &*event {
                 SessionEvent::TextDelta { delta, .. } => {
@@ -324,15 +330,19 @@ impl TuiState {
                     }
                 }
                 SessionEvent::AgentResponded { content, .. } => {
+                    // Finalize streaming buffer and return content for markdown rendering
                     if let Some(mut buf) = self.streaming.take() {
-                        let r = buf.finalize();
-                        if !r.is_empty() {
-                            self.print_output(&r);
+                        let remaining = buf.finalize();
+                        // Return the full accumulated content for markdown rendering
+                        finalized_content = Some(buf.all_content().to_string());
+                        if !remaining.is_empty() {
+                            // Note: remaining is the unflushed portion, but we want all content
+                            // for proper markdown rendering
                         }
                     } else {
-                        self.print_output(content);
+                        // No streaming - use the content directly
+                        finalized_content = Some(content.clone());
                     }
-                    self.print_output("\\n");
                 }
                 SessionEvent::ToolCalled { name, args } => {
                     self.pending_tools.push(ToolCallInfo {
@@ -357,6 +367,8 @@ impl TuiState {
                 _ => {}
             }
         }
+
+        finalized_content
     }
 }
 
