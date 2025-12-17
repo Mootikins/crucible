@@ -51,14 +51,14 @@
 - [x] Add `Session::is_streaming()` helper
 - [x] Add `Session::cancel()` for interrupting operations
 
-### 2.2 Markdown Rendering 🔄 IN PROGRESS
-- [ ] Add termimad + syntect dependencies
-- [ ] Create `tui/markdown.rs` with MarkdownRenderer
-- [ ] Auto-detect terminal theme (dark/light)
-- [ ] Render markdown structure (bold, italic, lists, blockquotes)
-- [ ] Syntax highlight code blocks
-- [ ] Integrate into TuiRunner::print_assistant_response()
-- [ ] Use in one-shot mode for consistency
+### 2.2 Markdown Rendering ✅ COMPLETE
+- [x] Add termimad + syntect dependencies
+- [x] Create `tui/markdown.rs` with MarkdownRenderer
+- [x] Auto-detect terminal theme (dark/light)
+- [x] Render markdown structure (bold, italic, lists, blockquotes)
+- [x] Syntax highlight code blocks
+- [x] Integrate into TuiRunner::print_assistant_response()
+- [x] Use in one-shot mode for consistency
 
 ### 2.3 Tool Call Visualization
 - [x] Display tool name when called
@@ -91,8 +91,8 @@
 
 ### 3.3 Testing
 - [x] Bridge tests (AgentEventBridge)
-- [ ] Unit tests for TuiState transitions
-- [ ] Unit tests for MarkdownRenderer
+- [x] Unit tests for TuiState transitions
+- [x] Unit tests for MarkdownRenderer (4 tests: creation, plain text, theme detection, code highlighting)
 - [ ] Integration test with mock Session
 
 ---
@@ -102,7 +102,7 @@
 - [x] `cru chat` launches TUI interface
 - [x] Messages display with streaming
 - [x] Mode switching works (Plan/Act/Auto)
-- [ ] Markdown renders correctly
+- [x] Markdown renders correctly (termimad + syntect)
 - [ ] Slash commands execute correctly
 - [x] Ctrl+C cancels and double Ctrl+C exits
 - [x] Tool calls show progress

@@ -259,18 +259,20 @@ pub async fn execute(
                     enricher.enrich(&query_text).await?
                 };
 
-                // Send message and stream response to stdout
+                // Send message and stream response, accumulate for markdown rendering
+                use crate::tui::MarkdownRenderer;
                 use crucible_core::traits::chat::AgentHandle;
                 use futures::StreamExt;
+
+                let renderer = MarkdownRenderer::new();
+                let mut response_content = String::new();
 
                 let mut stream = handle.send_message_stream(&prompt);
                 while let Some(result) = stream.next().await {
                     match result {
                         Ok(chunk) => {
                             if !chunk.done {
-                                print!("{}", chunk.delta);
-                                use std::io::Write;
-                                std::io::stdout().flush()?;
+                                response_content.push_str(&chunk.delta);
                             }
                         }
                         Err(e) => {
@@ -279,7 +281,10 @@ pub async fn execute(
                         }
                     }
                 }
-                println!(); // Final newline
+
+                // Render and print the complete response with markdown
+                let rendered = renderer.render(&response_content);
+                println!("{}", rendered);
             } else {
                 // Interactive mode with TUI
                 info!("Interactive chat mode (internal agent)");

@@ -10,7 +10,7 @@
 
 use crate::chat::bridge::AgentEventBridge;
 
-use crate::tui::{map_key_event, render_widget, InputAction, TuiState, WidgetState};
+use crate::tui::{map_key_event, render_widget, InputAction, MarkdownRenderer, TuiState, WidgetState};
 use anyhow::Result;
 use crossterm::{
     cursor,
@@ -19,7 +19,7 @@ use crossterm::{
     terminal::{self, disable_raw_mode, enable_raw_mode, size},
 };
 use crucible_core::traits::chat::AgentHandle;
-use std::io::{self, Stdout, Write};
+use std::io::{self, Write};
 use std::time::Duration;
 
 /// TUI runner that manages the terminal UI lifecycle.
@@ -29,8 +29,11 @@ use std::time::Duration;
 /// - Input event polling and key mapping
 /// - Session event polling from ring buffer
 /// - Widget rendering at ~60fps (bottom of terminal)
+/// - Markdown rendering for assistant responses
 pub struct TuiRunner {
     state: TuiState,
+    /// Markdown renderer with syntax highlighting
+    renderer: MarkdownRenderer,
     /// Terminal width
     width: u16,
     /// Terminal height
@@ -44,6 +47,7 @@ impl TuiRunner {
 
         Ok(Self {
             state: TuiState::new(mode_id),
+            renderer: MarkdownRenderer::new(),
             width,
             height,
         })
@@ -136,7 +140,10 @@ impl TuiRunner {
             }
 
             // 2. Poll ring buffer for new session events
-            self.state.poll_events(&bridge.ring);
+            // If a response was finalized, render it with markdown
+            if let Some(content) = self.state.poll_events(&bridge.ring) {
+                self.print_assistant_response(&content)?;
+            }
 
             // 3. Render the widget
             self.render_widget()?;
@@ -168,6 +175,43 @@ impl TuiRunner {
         // Move to message position and print
         write!(stdout, "\x1b[{};1H", message_row + 1)?; // +1 for ANSI 1-indexing
         writeln!(stdout, "\x1b[1mYou:\x1b[0m {}", message)?;
+
+        stdout.flush()?;
+        Ok(())
+    }
+
+    /// Print assistant response to stdout with markdown rendering.
+    ///
+    /// Renders the markdown content with syntax highlighting and prints
+    /// to terminal scrollback, above the widget area.
+    fn print_assistant_response(&mut self, content: &str) -> Result<()> {
+        let mut stdout = io::stdout();
+
+        // Render markdown content
+        let rendered = self.renderer.render(content);
+
+        // Count lines in rendered output (approximate)
+        let line_count = rendered.lines().count().max(1) as u16;
+        let lines_needed = line_count + 2; // +2 for header and blank line
+
+        // Calculate widget dimensions
+        let heights = crate::tui::calculate_heights(self.height, 1, 0);
+        let widget_height = heights.total();
+
+        // Move to bottom of terminal and scroll up by printing newlines
+        write!(stdout, "\x1b[{};1H", self.height)?;
+        for _ in 0..lines_needed {
+            writeln!(stdout)?;
+        }
+
+        // Calculate where response should appear (just above widget)
+        let response_row = self.height.saturating_sub(widget_height + lines_needed);
+
+        // Move to response position and print header + content
+        write!(stdout, "\x1b[{};1H", response_row + 1)?; // +1 for ANSI 1-indexing
+        writeln!(stdout, "\x1b[1mAssistant:\x1b[0m")?;
+        write!(stdout, "{}", rendered)?;
+        writeln!(stdout)?; // Blank line after response
 
         stdout.flush()?;
         Ok(())

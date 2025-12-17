@@ -7,6 +7,7 @@
 //! - Handles cancellation (Ctrl+C)
 
 pub mod input;
+pub mod markdown;
 pub mod render;
 pub mod runner;
 pub mod state;
@@ -14,6 +15,7 @@ pub mod streaming;
 pub mod widget;
 
 pub use input::{map_key_event, InputAction};
+pub use markdown::MarkdownRenderer;
 pub use render::render;
 pub use runner::TuiRunner;
 pub use state::TuiState;
