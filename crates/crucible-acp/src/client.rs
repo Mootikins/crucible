@@ -1426,7 +1426,7 @@ impl SessionManager for CrucibleAcpClient {
         );
         metadata.insert(
             "mode".to_string(),
-            serde_json::json!(format!("{:?}", config.mode)),
+            serde_json::json!(config.mode_id.as_str()),
         );
 
         // Track as active session
@@ -1525,7 +1525,7 @@ mod tests {
         // Should implement SessionManager trait
         let session_config = SessionConfig {
             cwd: PathBuf::from("/test/workspace"),
-            mode: crucible_core::types::acp::ChatMode::Plan,
+            mode_id: "plan".to_string(),
             context_size: 5,
             enable_enrichment: true,
             enrichment_count: 5,
@@ -1556,7 +1556,7 @@ mod tests {
 
         let session_config = SessionConfig {
             cwd: PathBuf::from("/test/workspace"),
-            mode: crucible_core::types::acp::ChatMode::Plan,
+            mode_id: "plan".to_string(),
             context_size: 5,
             enable_enrichment: true,
             enrichment_count: 5,
