@@ -9,7 +9,7 @@ use crate::config::CliConfig;
 pub async fn execute(cmd: ConfigCommands) -> Result<()> {
     match cmd {
         ConfigCommands::Init { path, force } => init(path, force).await,
-        ConfigCommands::Show { format } => show(format).await,
+        ConfigCommands::Show { format, sources } => show(format, sources).await,
         ConfigCommands::Dump { format } => dump(format).await,
     }
 }
@@ -50,18 +50,31 @@ async fn init(path: Option<PathBuf>, force: bool) -> Result<()> {
 }
 
 /// Show the current effective configuration
-async fn show(format: String) -> Result<()> {
+async fn show(format: String, sources: bool) -> Result<()> {
     // Load the current config (with all precedence applied)
     let config = CliConfig::load(None, None, None)?;
 
-    match format.as_str() {
-        "json" => {
-            let json = config.display_as_json()?;
-            println!("{}", json);
+    if sources {
+        match format.as_str() {
+            "json" => {
+                let json = config.display_as_json_with_sources()?;
+                println!("{}", json);
+            }
+            "toml" | _ => {
+                let toml = config.display_as_toml_with_sources()?;
+                println!("{}", toml);
+            }
         }
-        "toml" | _ => {
-            let toml = config.display_as_toml()?;
-            println!("{}", toml);
+    } else {
+        match format.as_str() {
+            "json" => {
+                let json = config.display_as_json()?;
+                println!("{}", json);
+            }
+            "toml" | _ => {
+                let toml = config.display_as_toml()?;
+                println!("{}", toml);
+            }
         }
     }
 

@@ -322,6 +322,10 @@ pub enum ConfigCommands {
         /// Output format (toml, json)
         #[arg(short = 'f', long, default_value = "toml")]
         format: String,
+
+        /// Show where each value came from (file, env, cli, default)
+        #[arg(long)]
+        sources: bool,
     },
 
     /// Dump default configuration to stdout (useful for creating example config)
