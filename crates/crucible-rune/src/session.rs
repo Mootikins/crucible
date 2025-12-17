@@ -534,6 +534,110 @@ impl Session {
         self.ring.iter()
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // TUI Helper Methods
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Get recent messages for display (filters MessageReceived + AgentResponded).
+    ///
+    /// Returns the most recent `limit` message events from the ring buffer,
+    /// ordered from oldest to newest.
+    pub fn recent_messages(&self, limit: usize) -> Vec<Arc<SessionEvent>> {
+        let messages: Vec<Arc<SessionEvent>> = self
+            .ring
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event.as_ref(),
+                    SessionEvent::MessageReceived { .. } | SessionEvent::AgentResponded { .. }
+                )
+            })
+            .collect();
+
+        // Return last `limit` messages
+        if messages.len() <= limit {
+            messages
+        } else {
+            messages[messages.len() - limit..].to_vec()
+        }
+    }
+
+    /// Get pending tool calls (ToolCalled without matching ToolCompleted).
+    ///
+    /// Returns tool calls that have been initiated but not yet completed.
+    /// Matches by tool name since events don't have call IDs.
+    pub fn pending_tools(&self) -> Vec<Arc<SessionEvent>> {
+        let mut called: Vec<Arc<SessionEvent>> = Vec::new();
+        let mut completed_names: Vec<String> = Vec::new();
+
+        // Scan through events to track called vs completed
+        for event in self.ring.iter() {
+            if let SessionEvent::ToolCalled { name, .. } = event.as_ref() {
+                called.push(event.clone());
+                // Remove from completed if it was marked (handles re-calls)
+                if let Some(pos) = completed_names.iter().position(|n| n == name) {
+                    completed_names.remove(pos);
+                }
+            } else if let SessionEvent::ToolCompleted { name, .. } = event.as_ref() {
+                completed_names.push(name.clone());
+            }
+        }
+
+        // Filter out tools that have been completed
+        called
+            .into_iter()
+            .filter(|event| {
+                if let SessionEvent::ToolCalled { name, .. } = event.as_ref() {
+                    !completed_names.contains(name)
+                } else {
+                    false
+                }
+            })
+            .collect()
+    }
+
+    /// Check if the session is currently streaming a response.
+    ///
+    /// Returns true if there are TextDelta events without a subsequent
+    /// AgentResponded event (meaning streaming is in progress).
+    pub fn is_streaming(&self) -> bool {
+        let mut has_text_delta = false;
+
+        // Collect events and scan from end to find the last relevant event
+        let events: Vec<_> = self.ring.iter().collect();
+        for event in events.iter().rev() {
+            match event.as_ref() {
+                SessionEvent::TextDelta { .. } => {
+                    has_text_delta = true;
+                }
+                SessionEvent::AgentResponded { .. } => {
+                    // If we see AgentResponded, streaming is done
+                    return false;
+                }
+                SessionEvent::MessageReceived { .. } => {
+                    // New message breaks the chain - check if we had deltas
+                    return has_text_delta;
+                }
+                _ => {}
+            }
+        }
+
+        has_text_delta
+    }
+
+    /// Cancel the current operation.
+    ///
+    /// Emits a cancellation event that handlers can observe. This does not
+    /// forcibly stop processing but signals that cancellation was requested.
+    pub fn cancel(&self) -> ReactorResult<()> {
+        let event = SessionEvent::Custom {
+            name: "cancelled".to_string(),
+            payload: serde_json::json!({"reason": "user requested cancellation"}),
+        };
+        self.ring.push(event);
+        Ok(())
+    }
+
     /// Get the current token count from the reactor context.
     pub async fn token_count(&self) -> usize {
         self.context.read().await.token_count()
@@ -2483,5 +2587,230 @@ mod tests {
 
         // Clean up
         std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    // ========================
+    // TUI Helper Method Tests
+    // ========================
+
+    #[tokio::test]
+    async fn test_recent_messages_returns_user_and_agent_events() {
+        let session = SessionBuilder::new("recent-messages-test").build();
+
+        // Push some events
+        session.ring().push(SessionEvent::MessageReceived {
+            content: "Hello".into(),
+            participant_id: "user".into(),
+        });
+        session.ring().push(SessionEvent::ToolCalled {
+            name: "search".into(),
+            args: json!({}),
+        });
+        session.ring().push(SessionEvent::AgentResponded {
+            content: "Hi there".into(),
+            tool_calls: vec![],
+        });
+        session.ring().push(SessionEvent::MessageReceived {
+            content: "Thanks".into(),
+            participant_id: "user".into(),
+        });
+
+        let messages = session.recent_messages(10);
+
+        // Should have 3 messages (2 MessageReceived + 1 AgentResponded)
+        assert_eq!(messages.len(), 3);
+
+        // Verify order (oldest to newest)
+        assert!(matches!(
+            messages[0].as_ref(),
+            SessionEvent::MessageReceived { content, .. } if content == "Hello"
+        ));
+        assert!(matches!(
+            messages[1].as_ref(),
+            SessionEvent::AgentResponded { content, .. } if content == "Hi there"
+        ));
+        assert!(matches!(
+            messages[2].as_ref(),
+            SessionEvent::MessageReceived { content, .. } if content == "Thanks"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_recent_messages_respects_limit() {
+        let session = SessionBuilder::new("messages-limit-test").build();
+
+        // Push 5 messages
+        for i in 0..5 {
+            session.ring().push(SessionEvent::MessageReceived {
+                content: format!("Message {}", i),
+                participant_id: "user".into(),
+            });
+        }
+
+        // Request only 2
+        let messages = session.recent_messages(2);
+
+        assert_eq!(messages.len(), 2);
+
+        // Should be the last 2 messages
+        assert!(matches!(
+            messages[0].as_ref(),
+            SessionEvent::MessageReceived { content, .. } if content == "Message 3"
+        ));
+        assert!(matches!(
+            messages[1].as_ref(),
+            SessionEvent::MessageReceived { content, .. } if content == "Message 4"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_pending_tools_returns_uncompleted() {
+        let session = SessionBuilder::new("pending-tools-test").build();
+
+        // Tool started but not completed
+        session.ring().push(SessionEvent::ToolCalled {
+            name: "search".into(),
+            args: json!({"query": "test"}),
+        });
+
+        let pending = session.pending_tools();
+        assert_eq!(pending.len(), 1);
+
+        // Complete the tool
+        session.ring().push(SessionEvent::ToolCompleted {
+            name: "search".into(),
+            result: "found".into(),
+            error: None,
+        });
+
+        let pending = session.pending_tools();
+        assert_eq!(pending.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_pending_tools_multiple() {
+        let session = SessionBuilder::new("pending-tools-multi-test").build();
+
+        // Start multiple tools
+        session.ring().push(SessionEvent::ToolCalled {
+            name: "search".into(),
+            args: json!({}),
+        });
+        session.ring().push(SessionEvent::ToolCalled {
+            name: "read_file".into(),
+            args: json!({"path": "/test"}),
+        });
+        session.ring().push(SessionEvent::ToolCalled {
+            name: "write_file".into(),
+            args: json!({}),
+        });
+
+        // Complete one
+        session.ring().push(SessionEvent::ToolCompleted {
+            name: "read_file".into(),
+            result: "contents".into(),
+            error: None,
+        });
+
+        let pending = session.pending_tools();
+        assert_eq!(pending.len(), 2);
+
+        // Check which tools are pending
+        let pending_names: Vec<String> = pending
+            .iter()
+            .filter_map(|e| {
+                if let SessionEvent::ToolCalled { name, .. } = e.as_ref() {
+                    Some(name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert!(pending_names.contains(&"search".to_string()));
+        assert!(pending_names.contains(&"write_file".to_string()));
+        assert!(!pending_names.contains(&"read_file".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_is_streaming_false_initially() {
+        let session = SessionBuilder::new("streaming-test").build();
+        assert!(!session.is_streaming());
+    }
+
+    #[tokio::test]
+    async fn test_is_streaming_true_during_deltas() {
+        let session = SessionBuilder::new("streaming-active-test").build();
+
+        // Send a message (triggers response)
+        session.ring().push(SessionEvent::MessageReceived {
+            content: "Hello".into(),
+            participant_id: "user".into(),
+        });
+
+        // Start streaming
+        session.ring().push(SessionEvent::TextDelta {
+            delta: "Hello ".into(),
+            seq: 1,
+        });
+
+        assert!(session.is_streaming());
+
+        // More deltas
+        session.ring().push(SessionEvent::TextDelta {
+            delta: "world".into(),
+            seq: 2,
+        });
+
+        assert!(session.is_streaming());
+    }
+
+    #[tokio::test]
+    async fn test_is_streaming_false_after_response() {
+        let session = SessionBuilder::new("streaming-done-test").build();
+
+        session.ring().push(SessionEvent::MessageReceived {
+            content: "Hello".into(),
+            participant_id: "user".into(),
+        });
+
+        session.ring().push(SessionEvent::TextDelta {
+            delta: "Hello ".into(),
+            seq: 1,
+        });
+
+        session.ring().push(SessionEvent::TextDelta {
+            delta: "world".into(),
+            seq: 2,
+        });
+
+        // Response completes the stream
+        session.ring().push(SessionEvent::AgentResponded {
+            content: "Hello world".into(),
+            tool_calls: vec![],
+        });
+
+        assert!(!session.is_streaming());
+    }
+
+    #[tokio::test]
+    async fn test_cancel_emits_event() {
+        let session = SessionBuilder::new("cancel-test").build();
+
+        let initial_count = session.event_count();
+
+        session.cancel().unwrap();
+
+        // Should have one more event
+        assert_eq!(session.event_count(), initial_count + 1);
+
+        // Check the event is a Custom cancellation
+        let events: Vec<_> = session.iter_events().collect();
+        let last = events.last().unwrap();
+
+        assert!(matches!(
+            last.as_ref(),
+            SessionEvent::Custom { name, .. } if name == "cancelled"
+        ));
     }
 }
