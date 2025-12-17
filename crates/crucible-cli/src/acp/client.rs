@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, info};
 
-use crate::chat::{AgentHandle, ChatError, ChatMode, ChatResult};
+use crate::chat::{AgentHandle, ChatError, ChatResult};
 use crucible_acp::{
     AgentInfo, ChatConfig, ChatSession, ContextConfig, CrucibleAcpClient as AcpClient,
     HistoryConfig, InProcessMcpHost, StreamConfig,
@@ -22,7 +22,7 @@ use crucible_core::traits::KnowledgeRepository;
 pub struct CrucibleAcpClient {
     session: Option<ChatSession>,
     agent: AgentInfo,
-    mode: ChatMode,
+    mode_id: String,
     config: ChatConfig,
     acp_config: AcpConfig,
     kiln_path: Option<PathBuf>,
@@ -66,16 +66,16 @@ impl CrucibleAcpClient {
             enrich_prompts: true, // Enable context enrichment by default
         };
 
-        let mode = if read_only {
-            ChatMode::Plan
+        let mode_id = if read_only {
+            "plan".to_string()
         } else {
-            ChatMode::Act
+            "act".to_string()
         };
 
         Self {
             session: None,
             agent,
-            mode,
+            mode_id,
             config,
             acp_config,
             kiln_path: None,
@@ -116,16 +116,16 @@ impl CrucibleAcpClient {
     /// * `read_only` - If true, deny all write operations
     /// * `config` - Custom chat configuration
     pub fn with_config(agent: AgentInfo, read_only: bool, config: ChatConfig) -> Self {
-        let mode = if read_only {
-            ChatMode::Plan
+        let mode_id = if read_only {
+            "plan".to_string()
         } else {
-            ChatMode::Act
+            "act".to_string()
         };
 
         Self {
             session: None,
             agent,
-            mode,
+            mode_id,
             config,
             acp_config: AcpConfig::default(),
             kiln_path: None,
@@ -259,7 +259,7 @@ impl CrucibleAcpClient {
     /// * `enriched_prompt` - The initial prompt (potentially enriched with context)
     pub async fn start_chat(&mut self, enriched_prompt: &str) -> Result<()> {
         info!("Starting chat session");
-        info!("Mode: {:?}", self.mode);
+        info!("Mode: {}", self.mode_id);
 
         // Send the initial prompt
         let (response, _tool_calls) = self.send_message_acp(enriched_prompt).await?;
@@ -308,24 +308,24 @@ impl CrucibleAcpClient {
         );
     }
 
-    /// Get the current chat mode
-    pub fn mode(&self) -> ChatMode {
-        self.mode
+    /// Get the current chat mode ID
+    pub fn mode_id(&self) -> &str {
+        &self.mode_id
     }
 
-    /// Set the chat mode
+    /// Set the chat mode by ID
     ///
-    /// Changes the agent's permission level (Plan/Act/AutoApprove).
+    /// Changes the agent's permission level (plan/act/auto).
     ///
     /// # Arguments
-    /// * `mode` - The new mode to set
+    /// * `mode_id` - The new mode ID to set ("plan", "act", "auto")
     ///
     /// # Note
     /// Currently updates local state only. Future versions may propagate
     /// to the ACP protocol when runtime mode changes are supported.
-    pub async fn set_mode(&mut self, mode: ChatMode) -> Result<()> {
-        info!("Changing mode from {:?} to {:?}", self.mode, mode);
-        self.mode = mode;
+    pub async fn set_mode_by_id(&mut self, mode_id: &str) -> Result<()> {
+        info!("Changing mode from {} to {}", self.mode_id, mode_id);
+        self.mode_id = mode_id.to_string();
         // TODO: Propagate to ACP protocol when supported
         Ok(())
     }
@@ -393,10 +393,14 @@ impl AgentHandle for CrucibleAcpClient {
         }))
     }
 
-    async fn set_mode(&mut self, mode: ChatMode) -> ChatResult<()> {
-        self.set_mode(mode)
+    async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {
+        self.set_mode_by_id(mode_id)
             .await
             .map_err(|e| ChatError::ModeChange(e.to_string()))
+    }
+
+    fn get_mode_id(&self) -> &str {
+        self.mode_id()
     }
 
     fn is_connected(&self) -> bool {

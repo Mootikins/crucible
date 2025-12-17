@@ -22,7 +22,8 @@
 
 use bitflags::bitflags;
 
-use super::chat::ChatMode;
+
+
 
 /// Platform-agnostic key code
 ///
@@ -197,19 +198,22 @@ pub enum ChatEvent {
 ///
 /// These are local commands like /clear and /exit that
 /// modify the session state without agent involvement.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+
 pub enum SessionAction {
     /// Clear conversation display
     Clear,
     /// Exit the session
     Exit,
     /// Set chat mode
-    SetMode(ChatMode),
+    SetMode(String),
     /// Toggle to next chat mode
     ToggleMode,
 }
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
     use std::collections::{HashMap, HashSet};
@@ -381,9 +385,9 @@ mod tests {
 
     #[test]
     fn test_session_action_with_mode() {
-        let a = SessionAction::SetMode(ChatMode::Plan);
+        let a = SessionAction::SetMode("plan".to_string());
         if let SessionAction::SetMode(mode) = a {
-            assert_eq!(mode, ChatMode::Plan);
+            assert_eq!(mode, "plan");
         } else {
             panic!("Expected SetMode");
         }
