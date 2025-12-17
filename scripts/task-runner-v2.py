@@ -125,8 +125,11 @@ AGENT_SYSTEM_PROMPT = """You are implementing Phase {phase_num} of a multi-phase
 
 ## Project: {title}
 
-## Testing
-Use `just test` - NOT `cargo test`.
+## Verification
+Run: `{verify_command}`
+{tdd_guidance}
+## Context Files
+{context_files_content}
 
 ## Phase {phase_num}: {phase_title}
 
@@ -140,11 +143,37 @@ Use `just test` - NOT `cargo test`.
 
 ### Task Specifications
 {task_specs}
+{conventions_section}
+## Quality Requirements
+
+### Scope Discipline
+- Complete ONLY the listed tasks for this phase
+- Do NOT anticipate or implement future phase work
+- If you notice something that needs future work, note it but don't implement it
+
+### Edge Case Testing
+For each implementation, write tests for:
+- Normal happy path
+- Boundary conditions
+- Invalid/malformed input
+- State interactions (e.g., what happens if X while Y is active?)
+
+### Bug Hunting
+Before declaring PHASE COMPLETE:
+1. Re-read your implementation
+2. Ask: "What inputs could break this?"
+3. Write a test for at least one edge case you identify
+
+### Code Review Checklist
+- [ ] All methods handle empty/null inputs
+- [ ] Mutable state is updated consistently
+- [ ] Byte/character position handling is correct after mutations
+- [ ] No panics on malformed input
 
 ## Completion Protocol
 
 Complete ALL tasks above, then:
-1. Run `just test` to verify all tests pass
+1. Run `{verify_command}` to verify all tests pass
 2. Output exactly: `PHASE {phase_num} COMPLETE`
 
 If blocked on ANY task:
@@ -276,10 +305,90 @@ def get_next_phase(parsed: dict) -> int | None:
     return None
 
 
-def generate_phase_prompt(parsed: dict, phase_num: int) -> str:
+def get_git_root(start_path: Path) -> Path:
+    """Get git repository root directory."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=str(start_path),
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            return Path(result.stdout.strip())
+    except:
+        pass
+    # Fallback: walk up to find .git
+    current = start_path
+    while current.parent != current:
+        if (current / ".git").exists():
+            return current
+        current = current.parent
+    return start_path
+
+
+def read_context_files(frontmatter: dict, base_path: Path) -> str:
+    """Read and format context files from frontmatter."""
+    context_files = frontmatter.get('context_files', [])
+    if not context_files:
+        return "(none specified)"
+
+    parts = []
+    git_root = get_git_root(base_path)
+
+    for file_path in context_files:
+        full_path = git_root / file_path
+        if full_path.exists():
+            try:
+                content = full_path.read_text()
+                # Truncate very long files
+                if len(content) > 5000:
+                    content = content[:5000] + "\n... (truncated)"
+                parts.append(f"### {file_path}\n```\n{content}\n```")
+            except Exception as e:
+                parts.append(f"### {file_path}\n(Error reading: {e})")
+        else:
+            parts.append(f"### {file_path}\n(File not found)")
+
+    return '\n\n'.join(parts)
+
+
+def extract_conventions(tasks_file: Path) -> str:
+    """Extract Conventions section from TASKS.md."""
+    content = tasks_file.read_text()
+
+    # Find Conventions section
+    match = re.search(r'^## Conventions\s*\n(.*?)(?=^## |\Z)', content, re.MULTILINE | re.DOTALL)
+    if match:
+        return f"\n## Conventions\n{match.group(1).strip()}\n"
+    return ""
+
+
+def generate_phase_prompt(parsed: dict, phase_num: int, tasks_file: Path) -> str:
     """Generate prompt for entire phase."""
     phase = parsed['phases'][phase_num]
     frontmatter = parsed['frontmatter']
+
+    # Get verify command and TDD setting
+    verify_command = frontmatter.get('verify', 'just test')
+    tdd_enabled = frontmatter.get('tdd', False)
+
+    tdd_guidance = ""
+    if tdd_enabled:
+        tdd_guidance = """
+### TDD Workflow (REQUIRED)
+1. Write failing test FIRST
+2. Run test, confirm it fails
+3. Implement minimal code to pass
+4. Run test, confirm it passes
+5. Refactor if needed
+"""
+
+    # Read context files
+    context_files_content = read_context_files(frontmatter, tasks_file.parent)
+
+    # Extract conventions
+    conventions_section = extract_conventions(tasks_file)
 
     # Completed summary from previous phases
     completed_summary_parts = []
@@ -317,11 +426,15 @@ def generate_phase_prompt(parsed: dict, phase_num: int) -> str:
     return AGENT_SYSTEM_PROMPT.format(
         phase_num=phase_num,
         title=frontmatter.get('title', 'Unknown'),
+        verify_command=verify_command,
+        tdd_guidance=tdd_guidance,
+        context_files_content=context_files_content,
         phase_title=phase['title'],
         phase_description=phase['description'].strip(),
         completed_summary=completed_summary,
         task_list=task_list,
-        task_specs=task_specs
+        task_specs=task_specs,
+        conventions_section=conventions_section,
     )
 
 
@@ -357,6 +470,8 @@ def run_agent_interactive(prompt: str, working_dir: Path, phase_num: int,
         claude_cmd = ["claude"]
         if allow_writes:
             claude_cmd.append("--dangerously-skip-permissions")
+        # Disable subagents for linear, predictable execution
+        claude_cmd.extend(["--disallowedTools", "Task"])
         claude_cmd.extend(["--print", "-p", prompt])
 
         with open(output_path, 'w') as outfile:
@@ -419,10 +534,8 @@ def main():
     print("="*60)
     print(f"Phases: {list(parsed['phases'].keys())}")
 
-    # Find working directory
-    working_dir = tasks_file.parent
-    while working_dir.name != "crucible" and working_dir.parent != working_dir:
-        working_dir = working_dir.parent
+    # Find working directory (git root)
+    working_dir = get_git_root(tasks_file.parent)
     print(f"Working dir: {working_dir}")
 
     # Setup export directory
@@ -467,7 +580,7 @@ def main():
         print(f"Phase {phase_num} already complete!")
         return
 
-    prompt = generate_phase_prompt(parsed, phase_num)
+    prompt = generate_phase_prompt(parsed, phase_num, tasks_file)
 
     # Initialize metrics
     metrics = RunMetrics(
