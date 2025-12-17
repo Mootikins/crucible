@@ -40,11 +40,13 @@ pub mod registry;
 pub mod storage;
 pub mod tools;
 
+
 // Re-export key traits
 pub use acp::{FilesystemHandler, SessionManager, StreamHandler, ToolBridge};
 pub use change_detection::{ChangeDetector, ContentHasher, HashLookupStorage};
+
 pub use chat::{
-    AgentHandle, ChatChunk, ChatContext, ChatError, ChatMode, ChatResponse, ChatResult,
+    AgentHandle, ChatChunk, ChatContext, ChatError, ChatResponse, ChatResult,
     ChatToolCall, CommandDescriptor, CommandHandler, SearchResult,
 };
 pub use context::ContextManager;

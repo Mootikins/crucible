@@ -29,6 +29,9 @@ tempfile = { workspace = true }
 # Enhanced async runtime
 tokio = { workspace = true, features = ["full", "tracing"] }
 
+# ACP schema types for mode/command definitions
+agent-client-protocol-schema = "0.6.3"
+
 # NOTE: crucible-parser dependency REMOVED - Dependency Inversion applied
 # Core now defines parser traits/types; parser crate depends on core
 # This breaks the circular dependency and follows SOLID principles

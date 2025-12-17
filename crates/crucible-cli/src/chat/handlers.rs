@@ -18,7 +18,9 @@ use colored::Colorize;
 use std::process::Command;
 use std::sync::Arc;
 
-use crucible_core::traits::chat::{ChatContext, ChatError, ChatMode, ChatResult, CommandHandler};
+use crucible_core::traits::chat::{
+    cycle_mode_id, ChatContext, ChatError, ChatResult, CommandHandler, mode_display_name,
+};
 
 /// Exit handler - terminates the chat session
 ///
@@ -51,13 +53,13 @@ impl CommandHandler for ExitHandler {
 pub struct ModeHandler;
 
 impl ModeHandler {
-    /// Parse mode from string argument
-    fn parse_mode(args: &str) -> ChatResult<ChatMode> {
+    /// Validate mode ID
+    fn validate_mode(args: &str) -> ChatResult<&'static str> {
         let mode_str = args.trim().to_lowercase();
         match mode_str.as_str() {
-            "plan" => Ok(ChatMode::Plan),
-            "act" => Ok(ChatMode::Act),
-            "auto" | "autoapprove" => Ok(ChatMode::AutoApprove),
+            "plan" => Ok("plan"),
+            "act" => Ok("act"),
+            "auto" | "autoapprove" => Ok("auto"),
             "" => Err(ChatError::InvalidInput(
                 "Mode required. Usage: /mode <plan|act|auto>".to_string(),
             )),
@@ -72,15 +74,15 @@ impl ModeHandler {
 #[async_trait]
 impl CommandHandler for ModeHandler {
     async fn execute(&self, args: &str, ctx: &mut dyn ChatContext) -> ChatResult<()> {
-        let new_mode = Self::parse_mode(args)?;
-        let current_mode = ctx.get_mode();
+        let new_mode_id = Self::validate_mode(args)?;
+        let current_mode_id = ctx.get_mode_id();
 
-        if new_mode == current_mode {
-            ctx.display_info(&format!("Already in {} mode", mode_name(new_mode)));
+        if new_mode_id == current_mode_id {
+            ctx.display_info(&format!("Already in {} mode", mode_display_name(new_mode_id)));
         } else {
             // Actually perform the mode change via context
             // This will also display the mode change notification
-            ctx.set_mode(new_mode).await?;
+            ctx.set_mode_str(new_mode_id).await?;
         }
 
         Ok(())
@@ -95,12 +97,12 @@ pub struct ModeCycleHandler;
 #[async_trait]
 impl CommandHandler for ModeCycleHandler {
     async fn execute(&self, _args: &str, ctx: &mut dyn ChatContext) -> ChatResult<()> {
-        let current_mode = ctx.get_mode();
-        let new_mode = current_mode.cycle_next();
+        let current_mode_id = ctx.get_mode_id();
+        let new_mode_id = cycle_mode_id(current_mode_id);
 
         // Actually perform the mode change via context
         // This will also display the mode change notification
-        ctx.set_mode(new_mode).await?;
+        ctx.set_mode_str(new_mode_id).await?;
 
         Ok(())
     }
@@ -122,16 +124,20 @@ impl SearchHandler {
         }
 
         let mut output = String::new();
-        output.push_str(&format!("{}\n", "Search Results:".bright_cyan().bold()));
+        output.push_str(&format!("{}
+", "Search Results:".bright_cyan().bold()));
 
         for (i, result) in results.iter().enumerate() {
             output.push_str(&format!(
-                "\n{}. {} {}\n",
+                "
+{}. {} {}
+",
                 i + 1,
                 result.title.bright_white().bold(),
                 format!("(similarity: {:.2})", result.similarity).dimmed()
             ));
-            output.push_str(&format!("   {}\n", result.snippet.dimmed()));
+            output.push_str(&format!("   {}
+", result.snippet.dimmed()));
         }
 
         output
@@ -173,7 +179,8 @@ impl HelpHandler {
         }
 
         let mut output = String::new();
-        output.push_str(&format!("{}\n", "Available Commands:".bright_cyan().bold()));
+        output.push_str(&format!("{}
+", "Available Commands:".bright_cyan().bold()));
 
         for cmd in commands {
             let hint = cmd
@@ -182,11 +189,14 @@ impl HelpHandler {
                 .unwrap_or_default();
 
             output.push_str(&format!(
-                "\n  /{}{}\n",
+                "
+  /{}{}
+",
                 cmd.name.bright_white().bold(),
                 hint.dimmed()
             ));
-            output.push_str(&format!("    {}\n", cmd.description.dimmed()));
+            output.push_str(&format!("    {}
+", cmd.description.dimmed()));
         }
 
         output
@@ -398,12 +408,14 @@ impl CommitHandler {
         let diff = Self::get_staged_diff().unwrap_or_default();
         let suggestions = Self::suggest_commit_message(&staged_files, &diff);
 
-        println!("{}", "\n📋 Staged Changes:".bright_cyan().bold());
+        println!("{}", "
+📋 Staged Changes:".bright_cyan().bold());
         for file in &staged_files {
             println!("  {}", file.dimmed());
         }
 
-        println!("\n{}", "💡 Suggested Commit Messages:".bright_cyan().bold());
+        println!("
+{}", "💡 Suggested Commit Messages:".bright_cyan().bold());
         for (i, suggestion) in suggestions.iter().enumerate() {
             println!("  {}. {}", i + 1, suggestion.bright_white());
         }
@@ -415,7 +427,8 @@ impl CommitHandler {
             suggestions[0].clone()
         };
 
-        println!("\n{}", format!("Committing: {}", commit_msg).bright_green());
+        println!("
+{}", format!("Committing: {}", commit_msg).bright_green());
         Self::run_git_command(&["commit", "-m", &commit_msg])?;
         println!("{}", "✅ Commit created successfully!".bright_green());
 
@@ -474,12 +487,14 @@ impl CommitHandler {
             return Ok(());
         }
 
-        println!("{}", "\n📊 Repository Status:".bright_cyan().bold());
+        println!("{}", "
+📊 Repository Status:".bright_cyan().bold());
         println!("{}", status);
 
         let staged_files = Self::get_staged_files()?;
         if staged_files.is_empty() {
-            println!("\n{}", "No staged changes.".bright_yellow());
+            println!("
+{}", "No staged changes.".bright_yellow());
             println!(
                 "{}",
                 "Use 'git add' to stage files, or run '/commit wip' to auto-stage.".dimmed()
@@ -490,18 +505,21 @@ impl CommitHandler {
         let diff = Self::get_staged_diff().unwrap_or_default();
         let suggestions = Self::suggest_commit_message(&staged_files, &diff);
 
-        println!("\n{}", "📋 Staged Files:".bright_cyan().bold());
+        println!("
+{}", "📋 Staged Files:".bright_cyan().bold());
         for file in &staged_files {
             println!("  {}", file.dimmed());
         }
 
-        println!("\n{}", "💡 Suggested Commit Messages:".bright_cyan().bold());
+        println!("
+{}", "💡 Suggested Commit Messages:".bright_cyan().bold());
         for (i, suggestion) in suggestions.iter().enumerate() {
             println!("  {}. {}", i + 1, suggestion.bright_white());
         }
 
         println!(
-            "\n{}",
+            "
+{}",
             "Run '/commit quick \"message\"' to commit with a specific message.".dimmed()
         );
         println!(
@@ -581,15 +599,6 @@ impl CommandHandler for CommitHandler {
     }
 }
 
-/// Helper function to get mode name as a string
-fn mode_name(mode: ChatMode) -> &'static str {
-    match mode {
-        ChatMode::Plan => "Plan",
-        ChatMode::Act => "Act",
-        ChatMode::AutoApprove => "AutoApprove",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -598,14 +607,14 @@ mod tests {
 
     // Mock ChatContext for testing
     struct MockContext {
-        mode: ChatMode,
+        mode_id: String,
         search_results: Vec<SearchResult>,
     }
 
     #[async_trait]
     impl ChatContext for MockContext {
-        fn get_mode(&self) -> ChatMode {
-            self.mode
+        fn get_mode_id(&self) -> &str {
+            &self.mode_id
         }
 
         async fn semantic_search(
@@ -624,7 +633,7 @@ mod tests {
         fn exit_requested(&self) -> bool {
             false
         }
-        async fn set_mode(&mut self, _mode: ChatMode) -> ChatResult<()> {
+        async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
             Ok(())
         }
         fn display_search_results(&self, _query: &str, _results: &[SearchResult]) {}
@@ -638,7 +647,7 @@ mod tests {
         let exit_flag = Arc::new(AtomicBool::new(false));
         let handler = ExitHandler::new(exit_flag.clone());
         let mut ctx = MockContext {
-            mode: ChatMode::Plan,
+            mode_id: "plan".to_string(),
             search_results: vec![],
         };
 
@@ -648,33 +657,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mode_handler_parses_valid_modes() {
-        assert!(matches!(
-            ModeHandler::parse_mode("plan"),
-            Ok(ChatMode::Plan)
-        ));
-        assert!(matches!(ModeHandler::parse_mode("act"), Ok(ChatMode::Act)));
-        assert!(matches!(
-            ModeHandler::parse_mode("auto"),
-            Ok(ChatMode::AutoApprove)
-        ));
-        assert!(matches!(
-            ModeHandler::parse_mode("autoapprove"),
-            Ok(ChatMode::AutoApprove)
-        ));
+    async fn test_mode_handler_validates_modes() {
+        assert_eq!(ModeHandler::validate_mode("plan").unwrap(), "plan");
+        assert_eq!(ModeHandler::validate_mode("act").unwrap(), "act");
+        assert_eq!(ModeHandler::validate_mode("auto").unwrap(), "auto");
+        assert_eq!(ModeHandler::validate_mode("autoapprove").unwrap(), "auto");
     }
 
     #[tokio::test]
     async fn test_mode_handler_rejects_invalid_mode() {
-        assert!(ModeHandler::parse_mode("invalid").is_err());
-        assert!(ModeHandler::parse_mode("").is_err());
+        assert!(ModeHandler::validate_mode("invalid").is_err());
+        assert!(ModeHandler::validate_mode("").is_err());
     }
 
     #[tokio::test]
     async fn test_mode_handler_executes() {
         let handler = ModeHandler;
         let mut ctx = MockContext {
-            mode: ChatMode::Plan,
+            mode_id: "plan".to_string(),
             search_results: vec![],
         };
 
@@ -686,7 +686,7 @@ mod tests {
     async fn test_mode_cycle_handler_executes() {
         let handler = ModeCycleHandler;
         let mut ctx = MockContext {
-            mode: ChatMode::Plan,
+            mode_id: "plan".to_string(),
             search_results: vec![],
         };
 
@@ -698,7 +698,7 @@ mod tests {
     async fn test_search_handler_requires_query() {
         let handler = SearchHandler;
         let mut ctx = MockContext {
-            mode: ChatMode::Plan,
+            mode_id: "plan".to_string(),
             search_results: vec![],
         };
 
@@ -710,7 +710,7 @@ mod tests {
     async fn test_search_handler_executes_with_query() {
         let handler = SearchHandler;
         let mut ctx = MockContext {
-            mode: ChatMode::Plan,
+            mode_id: "plan".to_string(),
             search_results: vec![SearchResult {
                 title: "Test Note".to_string(),
                 snippet: "Test content".to_string(),
@@ -726,7 +726,7 @@ mod tests {
     async fn test_help_handler_executes() {
         let handler = HelpHandler;
         let mut ctx = MockContext {
-            mode: ChatMode::Plan,
+            mode_id: "plan".to_string(),
             search_results: vec![],
         };
 
@@ -760,12 +760,5 @@ mod tests {
         assert!(output.contains("Note 2"));
         assert!(output.contains("Content 1"));
         assert!(output.contains("Content 2"));
-    }
-
-    #[test]
-    fn test_mode_name_mapping() {
-        assert_eq!(mode_name(ChatMode::Plan), "Plan");
-        assert_eq!(mode_name(ChatMode::Act), "Act");
-        assert_eq!(mode_name(ChatMode::AutoApprove), "AutoApprove");
     }
 }

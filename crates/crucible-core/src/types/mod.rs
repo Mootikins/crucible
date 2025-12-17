@@ -6,7 +6,7 @@
 //! ## Organization
 //!
 //! Domain types are currently defined in their respective modules:
-//! - ACP types: `acp` (SessionConfig, SessionId, ChatMode, ToolInvocation, etc.)
+//! - ACP types: `acp` (SessionConfig, SessionId, ToolInvocation, etc.)
 //! - Parser types: `parser::types` (ParsedNote, Wikilink, Tag, etc.)
 //! - Database types: `database` (Record, QueryResult, Node, Edge, Note, etc.)
 //! - Note types: `note` (NoteNode, ViewportState)
@@ -18,6 +18,7 @@
 pub mod acp;
 pub mod grammar;
 pub mod hashing;
+pub mod mode;
 
 // Re-export parser domain types
 pub use crate::parser::types::{
@@ -66,9 +67,18 @@ pub use crate::traits::change_detection::{ChangeSet, ChangeSummary};
 // Re-export ACP types
 // NOTE: ToolDescriptor and ToolExample removed - use ToolDefinition from traits::tools
 pub use crate::types::acp::{
-    ChatMode, ChunkType, FileDiff, FileMetadata, SessionConfig, SessionId, StreamChunk,
+    ChunkType, FileDiff, FileMetadata, SessionConfig, SessionId, StreamChunk,
     StreamMetadata, ToolCallInfo, ToolInvocation, ToolOutput,
 };
+
+// Re-export ACP schema types from agent-client-protocol-schema
+pub use crate::types::acp::schema::{
+    AvailableCommand, AvailableCommandInput, AvailableCommandsUpdate,
+    SessionMode, SessionModeId, SessionModeState,
+};
+
+// Re-export mode descriptor types
+pub use crate::types::mode::{default_internal_modes, ModeDescriptor};
 
 // Re-export trait types (these are associated with traits but used as data)
 pub use crate::traits::storage::{Record as StorageRecord, RecordId as StorageRecordId};
