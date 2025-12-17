@@ -1,4 +1,5 @@
 //! Chat Command - ACP-based Natural Language Interface
+
 //!
 //! Provides an interactive chat interface using the Agent Client Protocol.
 //! Supports toggleable plan (read-only) and act (write-enabled) modes.
@@ -8,7 +9,7 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 use crate::acp::{ContextEnricher, CrucibleAcpClient};
-use crate::chat::{ChatMode, ChatModeDisplay};
+use crucible_core::traits::chat::{mode_display_name, is_read_only};
 use crate::config::CliConfig;
 use crate::core_facade::KilnContext;
 use crate::factories;
@@ -46,13 +47,13 @@ pub async fn execute(
 ) -> Result<()> {
     // Determine initial mode
     let initial_mode = if read_only {
-        ChatMode::Plan
+        "plan"
     } else {
-        ChatMode::Act
+        "act"
     };
 
     info!("Starting chat command");
-    info!("Initial mode: {}", initial_mode.display_name());
+    info!("Initial mode: {}", mode_display_name(initial_mode));
 
     // Single-line status display for clean startup UX
     let mut status = StatusLine::new();
@@ -72,7 +73,7 @@ pub async fn execute(
         .with_type(agent_type)
         .with_agent_name_opt(agent_name.clone().or(default_agent_from_config))
         .with_provider_opt(provider_key)
-        .with_read_only(initial_mode.is_read_only())
+        .with_read_only(is_read_only(initial_mode))
         .with_max_context_tokens(max_context_tokens);
 
     // PARALLEL INITIALIZATION: Run storage init and agent creation concurrently
@@ -318,7 +319,7 @@ pub async fn execute(
 async fn run_interactive_session(
     core: Arc<KilnContext>,
     client: &mut CrucibleAcpClient,
-    initial_mode: ChatMode,
+    initial_mode: &str,
     no_context: bool,
     context_size: Option<usize>,
     _live_progress: Option<LiveProgress>,
@@ -343,7 +344,7 @@ async fn run_interactive_session(
 async fn run_interactive_session_internal(
     core: Arc<KilnContext>,
     handle: &mut crucible_agents::InternalAgentHandle,
-    initial_mode: ChatMode,
+    initial_mode: &str,
     no_context: bool,
     context_size: Option<usize>,
     _live_progress: Option<LiveProgress>,
