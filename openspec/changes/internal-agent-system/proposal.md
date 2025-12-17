@@ -142,3 +142,183 @@ The context stack embraces this - `reset` + concise summary often works better t
 - Context stack trait in `crucible-core/src/traits/context.rs`
 - Implemented by `CrucibleAgentHandle` for internal agents
 - ACP agents: context ops translate to session management (limited support)
+
+---
+
+## Amendment: ACP Capabilities Flow
+
+*Added to align with Agent Client Protocol spec for modes and slash commands*
+
+### Agent-Defined Capabilities
+
+The ACP spec defines that agents advertise their capabilities during session setup:
+
+**Session Modes** - Agents return `SessionModeState` in `NewSessionResponse`:
+```rust
+pub struct SessionModeState {
+    pub current_mode_id: SessionModeId,
+    pub available_modes: Vec<SessionMode>,
+}
+
+pub struct SessionMode {
+    pub id: SessionModeId,      // e.g., "plan", "code", "architect"
+    pub name: String,           // Human readable
+    pub description: Option<String>,
+}
+```
+
+**Slash Commands** - Agents send `AvailableCommandsUpdate` notification:
+```rust
+pub struct AvailableCommand {
+    pub name: String,              // e.g., "create_plan", "research"
+    pub description: String,
+    pub input: Option<AvailableCommandInput>,
+}
+```
+
+### Mode Registry
+
+New `ModeRegistry` mirrors the `SlashCommandRegistry` pattern:
+
+```rust
+pub struct ModeRegistry {
+    /// Reserved modes (client-defined, always available)
+    reserved: Vec<ModeDescriptor>,
+    /// Agent-provided modes
+    agent_modes: Option<SessionModeState>,
+    /// Current active mode
+    current_mode_id: SessionModeId,
+}
+
+impl ModeRegistry {
+    /// Get all available modes (reserved + agent)
+    pub fn list_all(&self) -> Vec<&ModeDescriptor>;
+
+    /// Set mode (validates against available modes)
+    pub fn set_mode(&mut self, mode_id: &SessionModeId) -> Result<()>;
+
+    /// Update from agent notification
+    pub fn update_from_agent(&mut self, state: SessionModeState);
+}
+```
+
+### Reserved Commands (Namespaced)
+
+Client-only commands that cannot be overridden by agents use `/crucible:` namespace when conflicts occur:
+
+| Command | Namespace | Description |
+|---------|-----------|-------------|
+| `/exit`, `/quit` | N/A (reserved) | Exit session |
+| `/help` | N/A (reserved) | Show merged command list |
+| `/search` | `/crucible:search` if conflict | Local semantic search |
+| `/context` | `/crucible:context` if conflict | Context stack operations |
+| `/clear` | `/crucible:clear` if conflict | Clear screen |
+
+**Conflict Resolution:**
+1. Agent registers command `/search`
+2. Client detects conflict with reserved command
+3. Client's `/search` becomes `/crucible:search`
+4. Agent's `/search` takes the bare name
+5. Help shows both: `/search` (agent) and `/crucible:search` (local)
+
+### AgentHandle Extensions
+
+Add capability methods to `AgentHandle` trait:
+
+```rust
+pub trait AgentHandle {
+    // Existing methods...
+
+    /// Get available modes (None if agent doesn't support modes)
+    fn get_modes(&self) -> Option<&SessionModeState>;
+
+    /// Set current mode
+    async fn set_mode(&mut self, mode_id: &SessionModeId) -> ChatResult<()>;
+
+    /// Called when agent changes mode autonomously
+    async fn on_mode_update(&mut self, mode_id: SessionModeId) -> ChatResult<()> {
+        Ok(()) // Default: ignore
+    }
+
+    /// Get available commands
+    fn get_commands(&self) -> &[AvailableCommand];
+
+    /// Called when agent updates available commands
+    async fn on_commands_update(&mut self, commands: Vec<AvailableCommand>) -> ChatResult<()>;
+}
+```
+
+### Internal Agent Default Modes
+
+`CrucibleAgentHandle` provides default modes matching current behavior:
+
+```rust
+impl CrucibleAgentHandle {
+    fn default_modes() -> SessionModeState {
+        SessionModeState {
+            current_mode_id: "plan".into(),
+            available_modes: vec![
+                SessionMode {
+                    id: "plan".into(),
+                    name: "Plan".to_string(),
+                    description: Some("Read-only mode, no file modifications".into()),
+                },
+                SessionMode {
+                    id: "act".into(),
+                    name: "Act".to_string(),
+                    description: Some("Write-enabled, requests permission".into()),
+                },
+                SessionMode {
+                    id: "auto".into(),
+                    name: "Auto".to_string(),
+                    description: Some("Auto-approve all operations".into()),
+                },
+            ],
+        }
+    }
+}
+```
+
+### TUI Integration
+
+TUI queries registries instead of hardcoding:
+
+```rust
+// Status line renders from mode registry
+let mode = session.mode_registry().current();
+render_status_line(mode.name, mode_color(mode.id));
+
+// Mode switching validates against registry
+if let Some(mode) = session.mode_registry().find(&mode_id) {
+    session.set_mode(&mode.id).await?;
+} else {
+    return Err(ChatError::InvalidMode(mode_id));
+}
+
+// Help shows merged command list
+let commands = session.command_registry().list_all();
+for cmd in commands {
+    println!("/{} - {}", cmd.name, cmd.description);
+}
+```
+
+### Data Flow
+
+```
+Agent Session Setup
+       │
+       ▼
+NewSessionResponse { modes: Some(SessionModeState) }
+       │
+       ▼
+ModeRegistry.update_from_agent(modes)
+       │
+       ▼
+session/update { available_commands_update }
+       │
+       ▼
+CommandRegistry.update_from_agent(commands)
+       │
+       ▼
+TUI queries registries for display & validation
+```
