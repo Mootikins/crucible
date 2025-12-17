@@ -42,16 +42,22 @@ pub fn map_key_event(event: &KeyEvent, state: &TuiState) -> InputAction {
             InputAction::Cancel
         }
 
+        // Ctrl+D exits immediately
+        (KeyCode::Char('d'), KeyModifiers::CONTROL) => InputAction::Exit,
+
         // ESC key also cancels (same behavior as single Ctrl+C)
         (KeyCode::Esc, _) => InputAction::Cancel,
 
         // Ctrl+J inserts newline
         (KeyCode::Char('j'), KeyModifiers::CONTROL) => InputAction::InsertNewline,
 
-        // Enter sends message if buffer non-empty
+        // Enter sends message if buffer non-empty, or handles /exit command
         (KeyCode::Enter, KeyModifiers::NONE) => {
-            if state.input_buffer.trim().is_empty() {
+            let trimmed = state.input_buffer.trim();
+            if trimmed.is_empty() {
                 InputAction::None
+            } else if trimmed == "/exit" || trimmed == "/quit" || trimmed == "/q" {
+                InputAction::Exit
             } else {
                 InputAction::SendMessage(state.input_buffer.clone())
             }

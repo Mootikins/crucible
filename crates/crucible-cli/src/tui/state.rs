@@ -298,6 +298,9 @@ impl TuiState {
             InputAction::Cancel => {
                 self.input_buffer.clear();
                 self.cursor_position = 0;
+                // Track Ctrl+C for double-press detection
+                self.ctrl_c_count += 1;
+                self.last_ctrl_c = Some(Instant::now());
                 None
             }
             InputAction::ScrollUp

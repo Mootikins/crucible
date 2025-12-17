@@ -156,25 +156,20 @@ impl TuiRunner {
     fn print_user_message(&mut self, message: &str) -> Result<()> {
         let mut stdout = io::stdout();
 
-        // We need 2 lines for the message (message + blank line)
-        let lines_needed = 2u16;
-
-        // Calculate widget dimensions
+        // Calculate widget position
         let heights = crate::tui::calculate_heights(self.height, 1, 0);
         let widget_height = heights.total();
+        let widget_top = self.height.saturating_sub(widget_height);
 
-        // Move to bottom of terminal and scroll up by printing newlines
-        write!(stdout, "\x1b[{};1H", self.height)?;
-        for _ in 0..lines_needed {
-            writeln!(stdout)?;
+        // Clear the widget area first (prevents ghost content)
+        for row in widget_top..=self.height {
+            write!(stdout, "\x1b[{};1H\x1b[2K", row)?;
         }
 
-        // Calculate where message should appear (just above widget)
-        let message_row = self.height.saturating_sub(widget_height + lines_needed);
-
-        // Move to message position and print
-        write!(stdout, "\x1b[{};1H", message_row + 1)?; // +1 for ANSI 1-indexing
-        writeln!(stdout, "\x1b[1mYou:\x1b[0m {}", message)?;
+        // Move to just above widget area, insert a line, print message
+        write!(stdout, "\x1b[{};1H", widget_top)?;
+        write!(stdout, "\x1b[L")?; // Insert line (scrolls content up)
+        write!(stdout, "\x1b[1mYou:\x1b[0m {}", message)?;
 
         stdout.flush()?;
         Ok(())
@@ -189,29 +184,31 @@ impl TuiRunner {
 
         // Render markdown content
         let rendered = self.renderer.render(content);
+        let lines: Vec<&str> = rendered.lines().collect();
+        let line_count = lines.len().max(1);
 
-        // Count lines in rendered output (approximate)
-        let line_count = rendered.lines().count().max(1) as u16;
-        let lines_needed = line_count + 2; // +2 for header and blank line
-
-        // Calculate widget dimensions
+        // Calculate widget position
         let heights = crate::tui::calculate_heights(self.height, 1, 0);
         let widget_height = heights.total();
+        let widget_top = self.height.saturating_sub(widget_height);
 
-        // Move to bottom of terminal and scroll up by printing newlines
-        write!(stdout, "\x1b[{};1H", self.height)?;
-        for _ in 0..lines_needed {
-            writeln!(stdout)?;
+        // Clear widget area first
+        for row in widget_top..=self.height {
+            write!(stdout, "\x1b[{};1H\x1b[2K", row)?;
         }
 
-        // Calculate where response should appear (just above widget)
-        let response_row = self.height.saturating_sub(widget_height + lines_needed);
+        // Insert lines for response (header + content)
+        write!(stdout, "\x1b[{};1H", widget_top)?;
+        for _ in 0..(line_count + 1) {
+            write!(stdout, "\x1b[L")?; // Insert line
+        }
 
-        // Move to response position and print header + content
-        write!(stdout, "\x1b[{};1H", response_row + 1)?; // +1 for ANSI 1-indexing
-        writeln!(stdout, "\x1b[1mAssistant:\x1b[0m")?;
-        write!(stdout, "{}", rendered)?;
-        writeln!(stdout)?; // Blank line after response
+        // Print header and content
+        write!(stdout, "\x1b[{};1H\x1b[1mAssistant:\x1b[0m", widget_top.saturating_sub(line_count as u16))?;
+        for (i, line) in lines.iter().enumerate() {
+            let row = widget_top.saturating_sub(line_count as u16) + 1 + i as u16;
+            write!(stdout, "\x1b[{};1H{}", row, line)?;
+        }
 
         stdout.flush()?;
         Ok(())
@@ -292,18 +289,19 @@ impl TuiRunner {
 
     /// Render the bottom widget.
     fn render_widget(&self) -> Result<()> {
-        let streaming_content = self
-            .state
-            .streaming
-            .as_ref()
-            .map(|s| s.content())
-            .unwrap_or("");
+        // Show simple indicator during streaming instead of raw content
+        // (full markdown-rendered response is printed when complete)
+        let streaming_indicator = if self.state.streaming.is_some() {
+            "Generating response..."
+        } else {
+            ""
+        };
 
         let widget_state = WidgetState {
             mode_id: &self.state.mode_id,
             input: &self.state.input_buffer,
             cursor_col: self.state.cursor_position,
-            streaming: streaming_content,
+            streaming: streaming_indicator,
             width: self.width,
             height: self.height,
         };
