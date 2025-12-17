@@ -9,11 +9,11 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 use crate::acp::{ContextEnricher, CrucibleAcpClient};
-use crucible_core::traits::chat::{mode_display_name, is_read_only};
 use crate::config::CliConfig;
 use crate::core_facade::KilnContext;
 use crate::factories;
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
+use crucible_core::traits::chat::{mode_display_name, is_read_only};
 use crucible_pipeline::NotePipeline;
 use crucible_watch::traits::{DebounceConfig, HandlerConfig, WatchConfig};
 use crucible_watch::{EventFilter, WatchMode};
@@ -28,7 +28,6 @@ use crucible_watch::{EventFilter, WatchMode};
 /// * `no_context` - If true, skip context enrichment
 /// * `no_process` - If true, skip auto-processing of files before context enrichment
 /// * `context_size` - Number of context results to include
-/// * `use_tui` - If true, use ratatui TUI instead of reedline
 /// * `use_internal` - If true, use internal LLM agent instead of ACP agent
 /// * `provider_key` - Optional LLM provider for internal agent
 /// * `max_context_tokens` - Maximum context window tokens for internal agent
@@ -40,7 +39,6 @@ pub async fn execute(
     no_context: bool,
     no_process: bool,
     context_size: Option<usize>,
-    use_tui: bool,
     use_internal: bool,
     provider_key: Option<String>,
     max_context_tokens: usize,
@@ -222,27 +220,21 @@ pub async fn execute(
                 // Cleanup
                 client.shutdown().await?;
             } else {
-                // Interactive mode
+                // Interactive mode with TUI
                 info!("Interactive chat mode");
 
-                if use_tui {
-                    // TUI removed - event architecture cleanup
-                    eprintln!("TUI mode not yet implemented. Use --query for one-shot mode or omit --tui for stub interactive mode.");
-                    return Ok(());
-                } else {
-                    // Use reedline-based session
-                    run_interactive_session(
-                        core,
-                        &mut client,
-                        initial_mode,
-                        no_context,
-                        context_size,
-                        live_progress,
-                    )
-                    .await?;
-                    // Cleanup
-                    client.shutdown().await?;
-                }
+                run_interactive_session(
+                    core,
+                    &mut client,
+                    initial_mode,
+                    no_context,
+                    context_size,
+                    live_progress,
+                )
+                .await?;
+
+                // Cleanup
+                client.shutdown().await?;
             }
         }
         factories::InitializedAgent::Internal(mut handle) => {
@@ -289,25 +281,18 @@ pub async fn execute(
                 }
                 println!(); // Final newline
             } else {
-                // Interactive mode
+                // Interactive mode with TUI
                 info!("Interactive chat mode (internal agent)");
 
-                if use_tui {
-                    // TUI removed - event architecture cleanup
-                    eprintln!("TUI mode not yet implemented. Use --query for one-shot mode or omit --tui for stub interactive mode.");
-                    return Ok(());
-                } else {
-                    // Use reedline-based session
-                    run_interactive_session_internal(
-                        core,
-                        &mut handle,
-                        initial_mode,
-                        no_context,
-                        context_size,
-                        live_progress,
-                    )
-                    .await?;
-                }
+                run_interactive_session_internal(
+                    core,
+                    &mut handle,
+                    initial_mode,
+                    no_context,
+                    context_size,
+                    live_progress,
+                )
+                .await?;
             }
         }
     }
