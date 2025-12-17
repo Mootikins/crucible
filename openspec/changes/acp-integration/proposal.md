@@ -69,3 +69,34 @@ This integration enables:
 - **Week 1**: ACP client, agent discovery, basic chat
 - **Week 2**: Context enrichment, tool integration, mode switching
 - **Estimated effort**: 1-2 weeks for working MVP
+
+---
+
+## Amendment: Capabilities from ACP Spec
+
+*See internal-agent-system proposal for full implementation details*
+
+### Session Modes
+
+ACP agents advertise modes via `NewSessionResponse.modes: SessionModeState`:
+- `current_mode_id` - Active mode
+- `available_modes` - List of `SessionMode { id, name, description }`
+
+Client calls `session/set_mode` to change modes. Agent can send `current_mode_update` notification to change autonomously.
+
+### Slash Commands
+
+ACP agents send `available_commands_update` notification with `Vec<AvailableCommand>`:
+- `name` - Command identifier (e.g., "create_plan")
+- `description` - Human-readable description
+- `input` - Optional input specification
+
+Commands are invoked by including `/command [args]` in prompt content.
+
+### Reserved Commands
+
+Client reserves certain commands that cannot be overridden:
+- `/exit`, `/quit`, `/help` - Always client-handled
+- Conflicting commands namespaced to `/crucible:*`
+
+See internal-agent-system proposal § "ACP Capabilities Flow" for registry design.
