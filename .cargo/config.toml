@@ -15,12 +15,25 @@
 #    from source or use alternative providers
 
 [target.'cfg(windows)']
-# Use dynamic C runtime (MD) - this is the default on Windows
-# This matches ONNX Runtime (ort_sys) and most other Windows dependencies
-# No explicit flags needed - Rust defaults to dynamic runtime
-
-# Note: If you need static runtime instead, uncomment the following:
-# rustflags = ["-C", "target-feature=+crt-static"]
+# Explicitly use dynamic C runtime (MD) to match ONNX Runtime (ort_sys)
+# This ensures all dependencies, including native ones built with cc crate,
+# use the same runtime library setting.
 #
-# However, this may cause issues with dependencies that expect dynamic runtime,
-# such as ort_sys (ONNX Runtime).
+# The cc crate (used by esaxx-rs) respects these environment variables:
+# - CFLAGS with /MD flag forces dynamic runtime for C code
+# - CXXFLAGS with /MD flag forces dynamic runtime for C++ code
+#
+# We explicitly disable static runtime linking to prevent mismatches
+rustflags = ["-C", "target-feature=-crt-static"]
+
+# Environment variables for cc crate to use dynamic runtime
+[env]
+# Force cc crate to use /MD (dynamic runtime) instead of /MT (static runtime)
+# This is critical for esaxx-rs and other native dependencies
+CFLAGS = "/MD"
+CXXFLAGS = "/MD"
+
+# Note: If you need static runtime instead (not recommended with ort_sys):
+# 1. Comment out the rustflags line above
+# 2. Change CFLAGS and CXXFLAGS to "/MT"
+# 3. This will likely cause linker errors with ort_sys (ONNX Runtime)
