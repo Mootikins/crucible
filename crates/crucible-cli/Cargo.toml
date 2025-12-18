@@ -133,6 +133,8 @@ scopeguard = "0.3"  # For RAII-style cleanup in tests
 
 # Additional dependencies for resource constraint testing
 rand = "0.8"
+# Unix-only resource constraint testing
+[target.'cfg(unix)'.dev-dependencies]
 nix = { version = "0.27", features = ["fs"] }
 
 # File locking for concurrent test serialization

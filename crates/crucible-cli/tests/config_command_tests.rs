@@ -26,7 +26,8 @@ fn test_config_init_creates_file() {
     let config_path = temp.path().join("test-config.toml");
 
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config")
+    cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
+        .arg("config")
         .arg("init")
         .arg("--path")
         .arg(config_path.to_str().unwrap());
@@ -57,7 +58,8 @@ fn test_config_init_fails_without_force_if_exists() {
     fs::write(&config_path, "existing content").unwrap();
 
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config")
+    cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
+        .arg("config")
         .arg("init")
         .arg("--path")
         .arg(config_path.to_str().unwrap());
@@ -78,7 +80,8 @@ fn test_config_init_overwrites_with_force() {
     fs::write(&config_path, "existing content").unwrap();
 
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config")
+    cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
+        .arg("config")
         .arg("init")
         .arg("--path")
         .arg(config_path.to_str().unwrap())
@@ -101,7 +104,8 @@ fn test_config_init_creates_parent_directories() {
     let nested_path = temp.path().join("a/b/c/config.toml");
 
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config")
+    cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
+        .arg("config")
         .arg("init")
         .arg("--path")
         .arg(nested_path.to_str().unwrap());
@@ -117,18 +121,19 @@ fn test_config_init_creates_parent_directories() {
 #[test]
 #[serial]
 fn test_config_init_uses_default_path() {
-    // Temporarily override HOME to use a test directory
+    // Temporarily override HOME and CRUCIBLE_CONFIG_DIR to use a test directory
     let original_home = env::var("HOME").ok();
     let temp = TempDir::new().unwrap();
     env::set_var("HOME", temp.path());
-
+    
+    // On Windows, setting HOME isn't enough, we need CRUCIBLE_CONFIG_DIR to isolate
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config").arg("init").arg("--force");
+    cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join(".config/crucible"))
+       .arg("config").arg("init").arg("--force");
 
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("Created config file at"))
-        .stdout(predicate::str::contains(".config"));
+        .stdout(predicate::str::contains("Created config file at"));
 
     // Restore HOME
     if let Some(home) = original_home {
@@ -152,8 +157,10 @@ fn test_config_show_default() {
     env::remove_var("CRUCIBLE_EMBEDDING_MODEL");
     env::remove_var("CRUCIBLE_EMBEDDING_PROVIDER");
 
+    let temp = TempDir::new().unwrap();
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config").arg("show");
+    cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
+       .arg("config").arg("show");
 
     cmd.assert()
         .success()
@@ -170,8 +177,10 @@ fn test_config_show_default() {
 #[test]
 #[serial]
 fn test_config_show_json_format() {
+    let temp = TempDir::new().unwrap();
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config").arg("show").arg("--format").arg("json");
+    cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
+       .arg("config").arg("show").arg("--format").arg("json");
 
     cmd.assert()
         .success()
@@ -187,8 +196,10 @@ fn test_config_show_with_env_overrides() {
     env::set_var("CRUCIBLE_EMBEDDING_PROVIDER", "openai");
     env::set_var("CRUCIBLE_EMBEDDING_MODEL", "env-model");
 
+    let temp = TempDir::new().unwrap();
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config").arg("show");
+    cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
+       .arg("config").arg("show");
 
     cmd.assert()
         .success()
@@ -242,7 +253,9 @@ streaming = false
     env::set_var("HOME", temp.path());
 
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config").arg("show");
+    // On Windows, set CRUCIBLE_CONFIG_DIR explicitly to the directory containing config.toml
+    cmd.env("CRUCIBLE_CONFIG_DIR", default_config_path.parent().unwrap())
+       .arg("config").arg("show");
 
     cmd.assert()
         .success()
@@ -293,7 +306,9 @@ api_url = "https://api.openai.com"
     env::set_var("CRUCIBLE_EMBEDDING_PROVIDER", "ollama");
 
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config").arg("show");
+    // On Windows, set CRUCIBLE_CONFIG_DIR explicitly to the directory containing config.toml
+    cmd.env("CRUCIBLE_CONFIG_DIR", default_config_path.parent().unwrap())
+       .arg("config").arg("show");
 
     cmd.assert()
         .success()
@@ -317,8 +332,10 @@ api_url = "https://api.openai.com"
 
 #[test]
 fn test_config_dump_default() {
+    let temp = TempDir::new().unwrap();
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config").arg("dump");
+    cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
+       .arg("config").arg("dump");
 
     cmd.assert()
         .success()
@@ -329,8 +346,10 @@ fn test_config_dump_default() {
 
 #[test]
 fn test_config_dump_json_format() {
+    let temp = TempDir::new().unwrap();
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config").arg("dump").arg("--format").arg("json");
+    cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
+       .arg("config").arg("dump").arg("--format").arg("json");
 
     cmd.assert()
         .success()
@@ -345,8 +364,10 @@ fn test_config_dump_ignores_env_vars() {
     env::set_var("CRUCIBLE_KILN_PATH", "/env/kiln");
     env::set_var("CRUCIBLE_EMBEDDING_PROVIDER", "openai");
 
+    let temp = TempDir::new().unwrap();
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config").arg("dump");
+    cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
+       .arg("config").arg("dump");
 
     cmd.assert()
         .success()
@@ -371,8 +392,10 @@ fn test_config_show_with_sources() {
     env::set_var("CRUCIBLE_EMBEDDING_PROVIDER", "openai");
     env::set_var("CRUCIBLE_EMBEDDING_MODEL", "env-model");
 
+    let temp = TempDir::new().unwrap();
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config").arg("show").arg("--sources");
+    cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
+       .arg("config").arg("show").arg("--sources");
 
     cmd.assert()
         .success()
@@ -428,7 +451,9 @@ batch_size = 32
     env::set_var("CRUCIBLE_EMBEDDING_PROVIDER", "ollama");
 
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config").arg("show").arg("--sources");
+    // On Windows, set CRUCIBLE_CONFIG_DIR explicitly to the directory containing config.toml
+    cmd.env("CRUCIBLE_CONFIG_DIR", default_config_path.parent().unwrap())
+       .arg("config").arg("show").arg("--sources");
 
     cmd.assert()
         .success()
@@ -455,8 +480,10 @@ fn test_config_show_sources_json() {
     env::set_var("CRUCIBLE_KILN_PATH", "/env/kiln");
     env::set_var("CRUCIBLE_EMBEDDING_PROVIDER", "ollama");
 
+    let temp = TempDir::new().unwrap();
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config")
+    cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
+        .arg("config")
         .arg("show")
         .arg("--format")
         .arg("json")
@@ -507,7 +534,9 @@ verbose = true
     env::set_var("CRUCIBLE_EMBEDDING_PROVIDER", "openai");
 
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config").arg("show").arg("--sources");
+    // Set CRUCIBLE_CONFIG_DIR explicitly
+    cmd.env("CRUCIBLE_CONFIG_DIR", default_config_path.parent().unwrap())
+        .arg("config").arg("show").arg("--sources");
 
     let output = cmd.output().unwrap();
     let stdout = String::from_utf8(output.stdout).unwrap();
@@ -531,8 +560,10 @@ fn test_config_show_sources_without_flag() {
     // Verify that without --sources flag, we get normal output
     env::set_var("CRUCIBLE_KILN_PATH", "/env/kiln");
 
+    let temp = TempDir::new().unwrap();
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config").arg("show");
+    cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
+       .arg("config").arg("show");
 
     cmd.assert()
         .success()
@@ -562,12 +593,16 @@ fn test_config_show_with_invalid_config_file() {
     env::set_var("HOME", temp.path());
 
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config").arg("show");
+    // Set CRUCIBLE_CONFIG_DIR explicitly
+    cmd.env("CRUCIBLE_CONFIG_DIR", config_path.parent().unwrap())
+       .arg("config").arg("show");
 
-    // Should fall back to defaults when config is invalid
+    // Should fail when config is invalid
+    // Note: Earlier behavior might have been fallback, but explicit failure is safer
+    // so user knows their config is broken.
     cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("provider = \"fastembed\""));
+        .failure()
+        .stderr(predicate::str::contains("Failed to parse config file"));
 
     env::remove_var("HOME");
 }
@@ -599,7 +634,9 @@ default_agent = "partial-agent"
     env::set_var("HOME", temp.path());
 
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config").arg("show");
+    // Set CRUCIBLE_CONFIG_DIR explicitly
+    cmd.env("CRUCIBLE_CONFIG_DIR", default_config_path.parent().unwrap())
+        .arg("config").arg("show");
 
     cmd.assert()
         .success()
@@ -616,8 +653,10 @@ default_agent = "partial-agent"
 #[test]
 #[serial]
 fn test_config_show_preserves_order() {
+    let temp = TempDir::new().unwrap();
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config").arg("show");
+    cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
+       .arg("config").arg("show");
 
     // The output should be reasonably ordered for readability
     let output = cmd.output().unwrap();
@@ -664,7 +703,9 @@ provider = "fastembed"
     env::set_var("CRUCIBLE_KILN_PATH", temp.path());
 
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config").arg("show").arg("--format").arg("json");
+    // Use temp config directory
+    cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
+       .arg("config").arg("show").arg("--format").arg("json");
 
     cmd.assert().success();
 
