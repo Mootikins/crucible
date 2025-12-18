@@ -170,6 +170,7 @@ fn test_database_path_unique_per_process() {
 }
 
 #[test]
+#[serial]
 fn test_database_path_derivation() {
     let temp = TempDir::new().unwrap();
     let kiln_path = temp.path().join("kiln");
@@ -271,6 +272,7 @@ batch_size = 32
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_openai_api_key_from_env() {
     std::env::set_var("OPENAI_API_KEY", "env-key");
 
@@ -281,6 +283,7 @@ fn test_openai_api_key_from_env() {
 }
 
 #[test]
+#[serial]
 fn test_anthropic_api_key_from_env() {
     std::env::set_var("ANTHROPIC_API_KEY", "env-key");
 
