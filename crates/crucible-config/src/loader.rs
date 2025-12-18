@@ -24,7 +24,9 @@ impl ConfigLoader {
     /// - Windows: `%APPDATA%\crucible\` (Roaming AppData)
     pub fn new() -> Self {
         // Use platform-appropriate config directory
-        let config_dir = if let Some(config_dir) = dirs::config_dir() {
+        let config_dir = if let Ok(override_dir) = std::env::var("CRUCIBLE_CONFIG_DIR") {
+            PathBuf::from(override_dir)
+        } else if let Some(config_dir) = dirs::config_dir() {
             config_dir.join("crucible")
         } else {
             // Fallback: Use home directory with .config subdirectory
