@@ -60,10 +60,7 @@ impl ParserHandler {
         Self {
             parser: CrucibleParser::new(),
             emitter,
-            supported_extensions: vec![
-                "md".to_string(),
-                "markdown".to_string(),
-            ],
+            supported_extensions: vec!["md".to_string(), "markdown".to_string()],
         }
     }
 
@@ -75,10 +72,7 @@ impl ParserHandler {
         Self {
             parser,
             emitter,
-            supported_extensions: vec![
-                "md".to_string(),
-                "markdown".to_string(),
-            ],
+            supported_extensions: vec!["md".to_string(), "markdown".to_string()],
         }
     }
 
@@ -109,7 +103,11 @@ impl ParserHandler {
     pub fn should_parse(&self, path: &Path) -> bool {
         path.extension()
             .and_then(|ext| ext.to_str())
-            .map(|ext| self.supported_extensions.iter().any(|e| e.eq_ignore_ascii_case(ext)))
+            .map(|ext| {
+                self.supported_extensions
+                    .iter()
+                    .any(|e| e.eq_ignore_ascii_case(ext))
+            })
             .unwrap_or(false)
     }
 
@@ -154,12 +152,15 @@ impl ParserHandler {
                 );
 
                 // Build NotePayload from parsed note
-                let payload = NotePayload::new(
-                    path.display().to_string(),
-                    parsed_note.title(),
-                )
-                .with_tags(parsed_note.tags.iter().map(|t| t.name.clone()).collect())
-                .with_wikilinks(parsed_note.wikilinks.iter().map(|w| w.target.clone()).collect());
+                let payload = NotePayload::new(path.display().to_string(), parsed_note.title())
+                    .with_tags(parsed_note.tags.iter().map(|t| t.name.clone()).collect())
+                    .with_wikilinks(
+                        parsed_note
+                            .wikilinks
+                            .iter()
+                            .map(|w| w.target.clone())
+                            .collect(),
+                    );
 
                 // Emit NoteParsed event with payload
                 let event = SessionEvent::NoteParsed {
@@ -250,7 +251,10 @@ mod tests {
     use tokio::fs;
 
     /// Helper to create a mock event emitter
-    fn create_mock_emitter() -> (Arc<MockEventEmitter<SessionEvent>>, Arc<dyn EventEmitter<Event = SessionEvent>>) {
+    fn create_mock_emitter() -> (
+        Arc<MockEventEmitter<SessionEvent>>,
+        Arc<dyn EventEmitter<Event = SessionEvent>>,
+    ) {
         let mock = Arc::new(MockEventEmitter::new());
         let emitter: Arc<dyn EventEmitter<Event = SessionEvent>> = mock.clone();
         (mock, emitter)
@@ -303,17 +307,28 @@ mod tests {
         // Create a temp directory with a markdown file
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.md");
-        fs::write(&file_path, "# Test Note\n\nSome content here.\n").await.unwrap();
+        fs::write(&file_path, "# Test Note\n\nSome content here.\n")
+            .await
+            .unwrap();
 
         // Handle the file change
         handler.handle_file_changed(&file_path).await;
 
         // Verify NoteParsed was emitted
         let events = mock.emitted_events();
-        assert_eq!(events.len(), 1, "Expected exactly 1 event, got {}", events.len());
+        assert_eq!(
+            events.len(),
+            1,
+            "Expected exactly 1 event, got {}",
+            events.len()
+        );
 
         match &events[0] {
-            SessionEvent::NoteParsed { path, block_count, payload } => {
+            SessionEvent::NoteParsed {
+                path,
+                block_count,
+                payload,
+            } => {
                 assert_eq!(path, &file_path);
                 assert!(*block_count > 0, "Expected at least 1 block");
                 assert!(payload.is_some(), "Expected payload to be present");
@@ -337,7 +352,10 @@ mod tests {
 
         // Verify no event was emitted
         let events = mock.emitted_events();
-        assert!(events.is_empty(), "Expected no events for non-markdown file");
+        assert!(
+            events.is_empty(),
+            "Expected no events for non-markdown file"
+        );
     }
 
     #[tokio::test]
@@ -364,7 +382,9 @@ mod tests {
         // Create a temp directory with a markdown file
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("dispatch_test.md");
-        fs::write(&file_path, "# Dispatch Test\n\nContent.\n").await.unwrap();
+        fs::write(&file_path, "# Dispatch Test\n\nContent.\n")
+            .await
+            .unwrap();
 
         // Create a FileChanged event
         let event = SessionEvent::FileChanged {
@@ -378,7 +398,9 @@ mod tests {
         // Verify NoteParsed was emitted
         let events = mock.emitted_events();
         assert!(
-            events.iter().any(|e| matches!(e, SessionEvent::NoteParsed { .. })),
+            events
+                .iter()
+                .any(|e| matches!(e, SessionEvent::NoteParsed { .. })),
             "FileChanged should trigger NoteParsed emission"
         );
     }
@@ -409,7 +431,10 @@ mod tests {
 
         // Verify no events were emitted
         let emitted = mock.emitted_events();
-        assert!(emitted.is_empty(), "Should not emit events for non-FileChanged events");
+        assert!(
+            emitted.is_empty(),
+            "Should not emit events for non-FileChanged events"
+        );
     }
 
     #[tokio::test]
