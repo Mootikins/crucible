@@ -27,7 +27,15 @@ release-cli:
 
 # Run all tests (summary only)
 test:
-    cargo test --workspace 2>&1 | awk '/^test result:/ {passed+=$4; failed+=$6} END {print "✓ PASSED:", passed, "✗ FAILED:", failed}'
+    if command -v cargo-nextest >/dev/null 2>&1; then \
+      cargo nextest run --workspace || { \
+        echo "nextest failed; falling back to cargo test" >&2; \
+        cargo test --workspace 2>&1 | awk '/^test result:/ {passed+=$4; failed+=$6} END {print \"✓ PASSED:\", passed, \"✗ FAILED:\", failed}'; \
+      }; \
+    else \
+      echo "cargo-nextest not found; using cargo test" >&2; \
+      cargo test --workspace 2>&1 | awk '/^test result:/ {passed+=$4; failed+=$6} END {print \"✓ PASSED:\", passed, \"✗ FAILED:\", failed}'; \
+    fi
 
 # Run all tests (full output)
 test-full:
