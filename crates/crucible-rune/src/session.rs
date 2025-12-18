@@ -102,7 +102,9 @@ fn estimate_event_tokens(event: &SessionEvent) -> usize {
         SessionEvent::TextDelta { delta, .. } => delta.len(),
         // Note events (small metadata)
         SessionEvent::NoteParsed { .. } => 50,
-        SessionEvent::NoteCreated { title, .. } => title.as_ref().map(|t| t.len()).unwrap_or(0) + 50,
+        SessionEvent::NoteCreated { title, .. } => {
+            title.as_ref().map(|t| t.len()).unwrap_or(0) + 50
+        }
         SessionEvent::NoteModified { .. } => 50,
         // MCP/Tool events
         SessionEvent::McpAttached { server, .. } => server.len() + 50,
@@ -233,11 +235,7 @@ impl SessionHandle {
     }
 
     /// Send a custom event.
-    pub async fn custom(
-        &self,
-        name: impl Into<String>,
-        payload: JsonValue,
-    ) -> ReactorResult<()> {
+    pub async fn custom(&self, name: impl Into<String>, payload: JsonValue) -> ReactorResult<()> {
         self.send(SessionEvent::Custom {
             name: name.into(),
             payload,
@@ -291,11 +289,7 @@ impl SessionHandle {
     /// Send a tool called event.
     ///
     /// This is a convenience method for sending `ToolCalled` events.
-    pub async fn tool_called(
-        &self,
-        name: impl Into<String>,
-        args: JsonValue,
-    ) -> ReactorResult<()> {
+    pub async fn tool_called(&self, name: impl Into<String>, args: JsonValue) -> ReactorResult<()> {
         self.send(SessionEvent::ToolCalled {
             name: name.into(),
             args,
@@ -779,9 +773,9 @@ impl Session {
         // Take the receiver (can only run once)
         let mut rx = {
             let mut rx_guard = self.event_rx.write().await;
-            rx_guard.take().ok_or_else(|| {
-                ReactorError::init_failed("Session event loop already running")
-            })?
+            rx_guard
+                .take()
+                .ok_or_else(|| ReactorError::init_failed("Session event loop already running"))?
         };
 
         // Process events
@@ -1155,9 +1149,9 @@ impl SessionBuilder {
     /// the session ID.
     pub fn build(self) -> Session {
         // Generate folder if not specified
-        let folder = self.folder.unwrap_or_else(|| {
-            PathBuf::from("Sessions").join(&self.session_id)
-        });
+        let folder = self
+            .folder
+            .unwrap_or_else(|| PathBuf::from("Sessions").join(&self.session_id));
 
         // Create session config
         let config = SessionConfig {
@@ -1169,9 +1163,9 @@ impl SessionBuilder {
         };
 
         // Use provided reactor or create default LinearReactor
-        let reactor: Arc<dyn Reactor> = self.reactor.unwrap_or_else(|| {
-            Arc::new(LinearReactor::with_defaults())
-        });
+        let reactor: Arc<dyn Reactor> = self
+            .reactor
+            .unwrap_or_else(|| Arc::new(LinearReactor::with_defaults()));
 
         Session::new(config, reactor, self.ring_capacity, self.channel_capacity)
     }
@@ -1500,9 +1494,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_ring_capacity() {
-        let session = SessionBuilder::new("test")
-            .with_ring_capacity(128)
-            .build();
+        let session = SessionBuilder::new("test").with_ring_capacity(128).build();
 
         // Ring capacity is rounded to next power of 2
         assert!(session.ring().capacity() >= 128);
@@ -1818,13 +1810,14 @@ mod tests {
 
         // Initial event count (SessionStarted from reactor)
         let initial_count = session.event_count();
-        assert!(initial_count >= 1, "Should have at least SessionStarted event");
+        assert!(
+            initial_count >= 1,
+            "Should have at least SessionStarted event"
+        );
 
         // Spawn the event loop in a background task
         let session_clone = Arc::clone(&session);
-        let event_loop = tokio::spawn(async move {
-            session_clone.run().await
-        });
+        let event_loop = tokio::spawn(async move { session_clone.run().await });
 
         // Give the event loop time to start
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
@@ -1832,7 +1825,10 @@ mod tests {
         // Send events via handle
         handle.message("First message").await.unwrap();
         handle.message("Second message").await.unwrap();
-        handle.custom("test_event", json!({"value": 42})).await.unwrap();
+        handle
+            .custom("test_event", json!({"value": 42}))
+            .await
+            .unwrap();
 
         // Give the event loop time to process
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
@@ -1958,9 +1954,7 @@ mod tests {
 
         // Spawn the event loop
         let session_clone = Arc::clone(&session);
-        let event_loop = tokio::spawn(async move {
-            session_clone.run().await
-        });
+        let event_loop = tokio::spawn(async move { session_clone.run().await });
 
         // Give the event loop time to start
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
@@ -2364,10 +2358,7 @@ mod tests {
         );
 
         // Verify tools used are mentioned
-        assert!(
-            content.contains("search"),
-            "Summary should list tools used"
-        );
+        assert!(content.contains("search"), "Summary should list tools used");
 
         // Clean up
         std::fs::remove_dir_all(&folder).unwrap();
@@ -2420,7 +2411,10 @@ mod tests {
         // Verify the new file is 001-context.md
         let expected_path = folder.join("001-context.md");
         assert_eq!(new_file, expected_path);
-        assert!(new_file.exists(), "New context file should exist at 001-context.md");
+        assert!(
+            new_file.exists(),
+            "New context file should exist at 001-context.md"
+        );
 
         // Read the new file content
         let content = std::fs::read_to_string(&new_file).unwrap();
