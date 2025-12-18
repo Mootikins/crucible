@@ -306,10 +306,23 @@ impl EmbeddingConfig {
 /// Get the default cache directory for embedding models following OS conventions
 ///
 /// Returns platform-specific directories:
-/// - Linux: ~/.local/share/crucible/embedding-models
+/// - Linux: ~/.local/share/crucible/embedding-models (XDG data directory)
 /// - macOS: ~/Library/Application Support/crucible/embedding-models
-/// - Windows: %LOCALAPPDATA%/crucible/embedding-models
+/// - Windows: %LOCALAPPDATA%/crucible/embedding-models (Local AppData, non-roaming)
 fn default_embedding_model_cache_dir() -> String {
+    // Use platform-appropriate data directory (cache/data, not config)
+    // On Windows: %LOCALAPPDATA% (Local AppData, non-roaming)
+    // On Linux: ~/.local/share (XDG data directory)
+    // On macOS: ~/Library/Application Support
+    if let Some(data_dir) = dirs::data_dir() {
+        return data_dir
+            .join("crucible")
+            .join("embedding-models")
+            .to_string_lossy()
+            .to_string();
+    }
+
+    // Fallback: Use home directory with platform-specific subdirectories
     let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
 
     #[cfg(target_os = "linux")]
@@ -334,20 +347,12 @@ fn default_embedding_model_cache_dir() -> String {
 
     #[cfg(target_os = "windows")]
     {
-        if let Some(app_data) = std::env::var_os("LOCALAPPDATA") {
-            std::path::PathBuf::from(app_data)
-                .join("crucible")
-                .join("embedding-models")
-                .to_string_lossy()
-                .to_string()
-        } else {
-            home.join("AppData")
-                .join("Local")
-                .join("crucible")
-                .join("embedding-models")
-                .to_string_lossy()
-                .to_string()
-        }
+        home.join("AppData")
+            .join("Local")
+            .join("crucible")
+            .join("embedding-models")
+            .to_string_lossy()
+            .to_string()
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]

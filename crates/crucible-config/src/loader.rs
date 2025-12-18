@@ -3,6 +3,7 @@
 use crate::{Config, ConfigError};
 use std::path::{Path, PathBuf};
 use tokio::fs;
+use dirs;
 
 #[cfg(feature = "toml")]
 use crate::includes::{merge_includes, process_file_references};
@@ -16,12 +17,29 @@ pub struct ConfigLoader {
 
 impl ConfigLoader {
     /// Create a new configuration loader.
+    ///
+    /// Uses platform-appropriate directories:
+    /// - Linux: `~/.config/crucible/` (XDG Base Directory)
+    /// - macOS: `~/Library/Application Support/crucible/`
+    /// - Windows: `%APPDATA%\crucible\` (Roaming AppData)
     pub fn new() -> Self {
+        // Use platform-appropriate config directory
+        let config_dir = if let Some(config_dir) = dirs::config_dir() {
+            config_dir.join("crucible")
+        } else {
+            // Fallback: Use home directory with .config subdirectory
+            if let Some(home) = dirs::home_dir() {
+                home.join(".config").join("crucible")
+            } else {
+                PathBuf::from("~/.config/crucible") // Last resort fallback
+            }
+        };
+
         Self {
             search_paths: vec![
                 PathBuf::from("./config"),
                 PathBuf::from("./"),
-                PathBuf::from("~/.config/crucible"),
+                config_dir,
             ],
             format: ConfigFormat::Auto,
         }
