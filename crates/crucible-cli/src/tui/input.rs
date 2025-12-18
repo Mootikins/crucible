@@ -16,6 +16,8 @@ pub enum InputAction {
     DeleteChar,
     MoveCursorLeft,
     MoveCursorRight,
+    MovePopupSelection(isize),
+    ConfirmPopup,
     ScrollUp,
     ScrollDown,
     PageUp,
@@ -67,12 +69,31 @@ pub fn map_key_event(event: &KeyEvent, state: &TuiState) -> InputAction {
         (KeyCode::BackTab, _) => InputAction::CycleMode,
 
         // Navigation
-        (KeyCode::Up, KeyModifiers::NONE) => InputAction::ScrollUp,
-        (KeyCode::Down, KeyModifiers::NONE) => InputAction::ScrollDown,
+        (KeyCode::Up, KeyModifiers::NONE) => InputAction::MovePopupSelection(-1),
+        (KeyCode::Down, KeyModifiers::NONE) => InputAction::MovePopupSelection(1),
+        (KeyCode::Char('p'), KeyModifiers::CONTROL) => InputAction::MovePopupSelection(-1),
+        (KeyCode::Char('n'), KeyModifiers::CONTROL) => InputAction::MovePopupSelection(1),
         (KeyCode::PageUp, _) => InputAction::PageUp,
         (KeyCode::PageDown, _) => InputAction::PageDown,
         (KeyCode::Left, KeyModifiers::NONE) => InputAction::MoveCursorLeft,
         (KeyCode::Right, KeyModifiers::NONE) => InputAction::MoveCursorRight,
+
+        // Popup confirm
+        (KeyCode::Enter, KeyModifiers::NONE) => {
+            let trimmed = state.input_buffer.trim();
+            if trimmed.starts_with('/') || trimmed.starts_with('@') {
+                InputAction::ConfirmPopup
+            } else if trimmed.is_empty() {
+                InputAction::None
+            } else if trimmed == "/exit" || trimmed == "/quit" || trimmed == "/q" {
+                InputAction::Exit
+            } else {
+                InputAction::SendMessage(state.input_buffer.clone())
+            }
+        }
+
+        // Tab confirms popup selection
+        (KeyCode::Tab, KeyModifiers::NONE) => InputAction::ConfirmPopup,
 
         // Editing
         (KeyCode::Backspace, _) => InputAction::DeleteChar,
@@ -85,7 +106,6 @@ pub fn map_key_event(event: &KeyEvent, state: &TuiState) -> InputAction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_map_key_enter_sends_message() {

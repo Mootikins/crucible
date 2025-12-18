@@ -10,7 +10,10 @@
 
 use crate::chat::bridge::AgentEventBridge;
 
-use crate::tui::{map_key_event, render_widget, InputAction, MarkdownRenderer, TuiState, WidgetState};
+use crate::tui::{
+    map_key_event, render_widget, DynamicPopupProvider, InputAction, MarkdownRenderer,
+    PopupProvider, TuiState, WidgetState,
+};
 use anyhow::Result;
 use crossterm::{
     cursor,
@@ -38,11 +41,15 @@ pub struct TuiRunner {
     width: u16,
     /// Terminal height
     height: u16,
+    popup_provider: std::sync::Arc<DynamicPopupProvider>,
 }
 
 impl TuiRunner {
     /// Create a new TUI runner with the given mode.
-    pub fn new(mode_id: &str) -> Result<Self> {
+    pub fn new(
+        mode_id: &str,
+        popup_provider: std::sync::Arc<DynamicPopupProvider>,
+    ) -> Result<Self> {
         let (width, height) = size().unwrap_or((80, 24));
 
         Ok(Self {
@@ -50,6 +57,7 @@ impl TuiRunner {
             renderer: MarkdownRenderer::new(),
             width,
             height,
+            popup_provider,
         })
     }
 
@@ -105,6 +113,8 @@ impl TuiRunner {
         bridge: &AgentEventBridge,
         agent: &mut A,
     ) -> Result<()> {
+        let mut popup_debounce =
+            crate::tui::popup::PopupDebounce::new(std::time::Duration::from_millis(50));
         loop {
             // 1. Poll terminal events (non-blocking, ~60fps)
             if event::poll(Duration::from_millis(16))? {
@@ -131,11 +141,30 @@ impl TuiRunner {
                         if self.state.should_exit {
                             break;
                         }
+
+                        // If popup is active and we got a confirm action, try to apply selection
+                        if matches!(action, InputAction::ConfirmPopup) {
+                            if let Some(token) = self.apply_popup_selection(agent)? {
+                                self.state.input_buffer = token;
+                                self.state.cursor_position = self.state.input_buffer.len();
+                            }
+                            self.state.popup = None;
+                        }
                     }
                     Event::Resize(width, height) => {
                         self.handle_resize(width, height)?;
                     }
                     _ => {}
+                }
+            }
+
+            // Refresh popup items on debounce if needed
+            if let Some(ref mut popup) = self.state.popup {
+                if popup_debounce.ready() {
+                    let items = self.popup_provider.provide(popup.kind, &popup.query);
+                    let selected = popup.selected.min(items.len().saturating_sub(1));
+                    popup.items = items;
+                    popup.selected = selected;
                 }
             }
 
@@ -175,6 +204,21 @@ impl TuiRunner {
         Ok(())
     }
 
+    /// Apply current popup selection; returns token to set in input if applicable.
+    fn apply_popup_selection<A: AgentHandle>(&mut self, _agent: &mut A) -> Result<Option<String>> {
+        if let Some(ref popup) = self.state.popup {
+            if popup.items.is_empty() {
+                return Ok(None);
+            }
+            let idx = popup.selected.min(popup.items.len() - 1);
+            let item = &popup.items[idx];
+            // For now, just return the token to place into the input buffer.
+            // Future: invoke agent switch/command execution directly.
+            return Ok(Some(item.token.clone()));
+        }
+        Ok(None)
+    }
+
     /// Print assistant response to stdout with markdown rendering.
     ///
     /// Renders the markdown content with syntax highlighting and prints
@@ -204,7 +248,11 @@ impl TuiRunner {
         }
 
         // Print header and content
-        write!(stdout, "\x1b[{};1H\x1b[1mAssistant:\x1b[0m", widget_top.saturating_sub(line_count as u16))?;
+        write!(
+            stdout,
+            "\x1b[{};1H\x1b[1mAssistant:\x1b[0m",
+            widget_top.saturating_sub(line_count as u16)
+        )?;
         for (i, line) in lines.iter().enumerate() {
             let row = widget_top.saturating_sub(line_count as u16) + 1 + i as u16;
             write!(stdout, "\x1b[{};1H{}", row, line)?;
@@ -402,7 +450,12 @@ mod tests {
 
         // Setup streaming state
         runner.state.streaming = Some(StreamingBuffer::new());
-        runner.state.streaming.as_mut().unwrap().append("partial content");
+        runner
+            .state
+            .streaming
+            .as_mut()
+            .unwrap()
+            .append("partial content");
         runner.state.input_buffer = "some input".to_string();
         runner.state.cursor_position = 10;
 
@@ -492,7 +545,12 @@ mod tests {
         runner.state.input_buffer = "test input".to_string();
         runner.state.cursor_position = 5;
         runner.state.streaming = Some(StreamingBuffer::new());
-        runner.state.streaming.as_mut().unwrap().append("streaming...");
+        runner
+            .state
+            .streaming
+            .as_mut()
+            .unwrap()
+            .append("streaming...");
 
         // Create widget state as runner would
         let streaming_content = runner
@@ -584,7 +642,12 @@ mod tests {
 
         // Set up streaming state
         runner.state.streaming = Some(StreamingBuffer::new());
-        runner.state.streaming.as_mut().unwrap().append("partial content");
+        runner
+            .state
+            .streaming
+            .as_mut()
+            .unwrap()
+            .append("partial content");
 
         // Manually simulate what handle_agent_error does (without stdout writes)
         // Since handle_agent_error writes to stdout, we test the state changes directly
@@ -611,7 +674,9 @@ mod tests {
         assert!(runner.state.status_error.is_some());
 
         // But cleared on SendMessage
-        runner.state.execute_action(InputAction::SendMessage("test".to_string()));
+        runner
+            .state
+            .execute_action(InputAction::SendMessage("test".to_string()));
         assert!(runner.state.status_error.is_none());
     }
 
