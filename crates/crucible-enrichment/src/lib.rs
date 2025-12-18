@@ -45,8 +45,8 @@
 //! - **types**: EnrichedNote and related types (public)
 //! - **service**: EnrichmentService implementation (private, use factory)
 
-pub mod types;
 pub mod event_handler;
+pub mod types;
 
 // Re-export enrichment types (domain types are public)
 pub use types::{

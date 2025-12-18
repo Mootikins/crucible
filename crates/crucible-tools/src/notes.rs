@@ -367,10 +367,7 @@ impl NoteTools {
         let recursive = params.recursive;
 
         // Security: Validate folder to prevent traversal attacks
-        let search_path = validate_folder_within_kiln(
-            &self.kiln_path,
-            folder.as_deref(),
-        )?;
+        let search_path = validate_folder_within_kiln(&self.kiln_path, folder.as_deref())?;
 
         if !search_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
@@ -471,7 +468,9 @@ impl NoteTools {
 }
 
 // Use shared utilities for frontmatter parsing and path validation
-use crate::utils::{parse_yaml_frontmatter, validate_path_within_kiln, validate_folder_within_kiln};
+use crate::utils::{
+    parse_yaml_frontmatter, validate_folder_within_kiln, validate_path_within_kiln,
+};
 
 /// Serialize frontmatter to YAML format with delimiters
 fn serialize_frontmatter_to_yaml(frontmatter: &serde_json::Value) -> Result<String, String> {
