@@ -33,9 +33,7 @@ use uuid::Uuid;
 /// They are used for interoperability with external agents and the protocol.
 pub mod schema {
     // Mode types from ACP protocol
-    pub use agent_client_protocol_schema::{
-        SessionMode, SessionModeId, SessionModeState,
-    };
+    pub use agent_client_protocol_schema::{SessionMode, SessionModeId, SessionModeState};
 
     // Command types from ACP protocol
     pub use agent_client_protocol_schema::{
@@ -197,7 +195,6 @@ impl Default for SessionConfig {
         Self::new(PathBuf::from("."))
     }
 }
-
 
 // ============================================================================
 // Tool Types
@@ -649,7 +646,6 @@ mod tests {
         assert_eq!(config.context_size, 50_000);
         assert!(!config.enable_enrichment);
     }
-
 
     #[test]
     fn test_tool_definition_from_traits() {

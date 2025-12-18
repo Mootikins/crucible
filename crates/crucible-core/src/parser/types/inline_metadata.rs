@@ -81,10 +81,7 @@ pub fn extract_inline_metadata(text: &str) -> Vec<InlineMetadata> {
             let value_str = cap[2].trim();
 
             // Split on comma to detect arrays
-            let values: Vec<String> = value_str
-                .split(',')
-                .map(|v| v.trim().to_string())
-                .collect();
+            let values: Vec<String> = value_str.split(',').map(|v| v.trim().to_string()).collect();
 
             InlineMetadata { key, values }
         })
@@ -106,7 +103,11 @@ mod tests {
         // Array value
         let meta = InlineMetadata::new_array(
             "tags",
-            vec!["rust".to_string(), "parsing".to_string(), "metadata".to_string()],
+            vec![
+                "rust".to_string(),
+                "parsing".to_string(),
+                "metadata".to_string(),
+            ],
         );
         assert_eq!(meta.key, "tags");
         assert_eq!(meta.values.len(), 3);
@@ -122,10 +123,8 @@ mod tests {
         assert!(!single.is_array());
 
         // Multiple values should be an array
-        let array = InlineMetadata::new_array(
-            "labels",
-            vec!["bug".to_string(), "urgent".to_string()],
-        );
+        let array =
+            InlineMetadata::new_array("labels", vec!["bug".to_string(), "urgent".to_string()]);
         assert!(array.is_array());
 
         // Edge case: empty values
@@ -140,10 +139,8 @@ mod tests {
         assert_eq!(single.as_string(), Some("Alice"));
 
         // Array - should return first value
-        let array = InlineMetadata::new_array(
-            "contributors",
-            vec!["Alice".to_string(), "Bob".to_string()],
-        );
+        let array =
+            InlineMetadata::new_array("contributors", vec!["Alice".to_string(), "Bob".to_string()]);
         assert_eq!(array.as_string(), Some("Alice"));
 
         // Empty values
@@ -160,10 +157,8 @@ mod tests {
         assert_eq!(vec[0], "high");
 
         // Multiple values
-        let array = InlineMetadata::new_array(
-            "tags",
-            vec!["rust".to_string(), "parser".to_string()],
-        );
+        let array =
+            InlineMetadata::new_array("tags", vec!["rust".to_string(), "parser".to_string()]);
         let vec = array.as_vec();
         assert_eq!(vec.len(), 2);
         assert_eq!(vec[0], "rust");

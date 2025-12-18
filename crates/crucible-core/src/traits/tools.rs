@@ -300,10 +300,9 @@ mod tests {
             match name {
                 "echo" => Ok(params),
                 "uppercase" => {
-                    let text = params
-                        .get("text")
-                        .and_then(|v| v.as_str())
-                        .ok_or_else(|| ToolError::InvalidParameters("Missing 'text' field".into()))?;
+                    let text = params.get("text").and_then(|v| v.as_str()).ok_or_else(|| {
+                        ToolError::InvalidParameters("Missing 'text' field".into())
+                    })?;
                     Ok(serde_json::json!({ "result": text.to_uppercase() }))
                 }
                 "fail" => Err(ToolError::ExecutionFailed("Intentional failure".into())),
@@ -334,7 +333,10 @@ mod tests {
     #[tokio::test]
     async fn test_mock_executor_uppercase() {
         let executor = MockExecutor {
-            tools: vec![ToolDefinition::new("uppercase", "Convert text to uppercase")],
+            tools: vec![ToolDefinition::new(
+                "uppercase",
+                "Convert text to uppercase",
+            )],
         };
         let ctx = ExecutionContext::new();
 
@@ -379,7 +381,9 @@ mod tests {
         let executor = MockExecutor { tools: vec![] };
         let ctx = ExecutionContext::new();
 
-        let result = executor.execute_tool("fail", serde_json::json!({}), &ctx).await;
+        let result = executor
+            .execute_tool("fail", serde_json::json!({}), &ctx)
+            .await;
 
         assert!(matches!(result, Err(ToolError::ExecutionFailed(_))));
     }

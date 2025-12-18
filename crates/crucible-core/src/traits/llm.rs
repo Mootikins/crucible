@@ -187,11 +187,7 @@ pub struct ToolCall {
 
 impl ToolCall {
     /// Create a new tool call
-    pub fn new(
-        id: impl Into<String>,
-        name: impl Into<String>,
-        arguments: String,
-    ) -> Self {
+    pub fn new(id: impl Into<String>, name: impl Into<String>, arguments: String) -> Self {
         Self {
             id: id.into(),
             r#type: "function".to_string(),
@@ -790,9 +786,10 @@ mod tests {
 
     #[test]
     fn test_chat_completion_request_builder() {
-        let request = ChatCompletionRequest::new("gpt-4".to_string(), vec![LlmMessage::user("Hello")])
-            .with_max_tokens(100)
-            .with_temperature(0.7);
+        let request =
+            ChatCompletionRequest::new("gpt-4".to_string(), vec![LlmMessage::user("Hello")])
+                .with_max_tokens(100)
+                .with_temperature(0.7);
 
         assert_eq!(request.max_tokens, Some(100));
         assert_eq!(request.temperature, Some(0.7));
@@ -839,14 +836,15 @@ mod tests {
     fn test_llm_tool_definition_from_tool_definition() {
         use crate::traits::tools::ToolDefinition;
 
-        let tool_def = ToolDefinition::new("read_file", "Read contents of a file")
-            .with_parameters(serde_json::json!({
+        let tool_def = ToolDefinition::new("read_file", "Read contents of a file").with_parameters(
+            serde_json::json!({
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "File path to read"}
                 },
                 "required": ["path"]
-            }));
+            }),
+        );
 
         let llm_tool: LlmToolDefinition = tool_def.into();
 

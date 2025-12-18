@@ -22,9 +22,6 @@
 
 use bitflags::bitflags;
 
-
-
-
 /// Platform-agnostic key code
 ///
 /// Represents a physical or logical key independent of the underlying

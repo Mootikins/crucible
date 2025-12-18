@@ -1940,7 +1940,12 @@ impl<E> MockEventEmitter<E> {
 
     /// Add a handler error to include in outcomes
     pub fn add_handler_error(&self, error: HandlerErrorInfo) {
-        self.state.lock().unwrap().behavior.handler_errors.push(error);
+        self.state
+            .lock()
+            .unwrap()
+            .behavior
+            .handler_errors
+            .push(error);
     }
 
     /// Clear all configured handler errors

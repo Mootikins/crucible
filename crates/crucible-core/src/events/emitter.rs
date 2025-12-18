@@ -436,8 +436,7 @@ mod tests {
         assert_eq!(outcome.error_count(), 0);
 
         let errors = vec![HandlerErrorInfo::new("h1", "failed")];
-        let outcome: EmitOutcome<String> =
-            EmitOutcome::with_errors("test".to_string(), errors);
+        let outcome: EmitOutcome<String> = EmitOutcome::with_errors("test".to_string(), errors);
         assert!(outcome.has_errors());
         assert_eq!(outcome.error_count(), 1);
 

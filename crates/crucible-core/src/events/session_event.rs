@@ -454,21 +454,33 @@ impl SessionEvent {
             Self::RelationStored { from_id, to_id, .. } => format!("{}:{}", from_id, to_id),
             Self::RelationDeleted { from_id, to_id, .. } => format!("{}:{}", from_id, to_id),
             Self::TagAssociated { entity_id, tag } => format!("{}#{}", entity_id, tag),
-            Self::EmbeddingRequested { entity_id, block_id, .. } => {
+            Self::EmbeddingRequested {
+                entity_id,
+                block_id,
+                ..
+            } => {
                 if let Some(block) = block_id {
                     format!("{}#{}", entity_id, block)
                 } else {
                     entity_id.clone()
                 }
             }
-            Self::EmbeddingStored { entity_id, block_id, .. } => {
+            Self::EmbeddingStored {
+                entity_id,
+                block_id,
+                ..
+            } => {
                 if let Some(block) = block_id {
                     format!("{}#{}", entity_id, block)
                 } else {
                     entity_id.clone()
                 }
             }
-            Self::EmbeddingFailed { entity_id, block_id, .. } => {
+            Self::EmbeddingFailed {
+                entity_id,
+                block_id,
+                ..
+            } => {
                 if let Some(block) = block_id {
                     format!("{}#{}", entity_id, block)
                 } else {
@@ -1344,10 +1356,7 @@ mod tests {
             config: SessionEventConfig::default()
         }
         .is_lifecycle_event());
-        assert!(SessionEvent::SessionEnded {
-            reason: "".into()
-        }
-        .is_lifecycle_event());
+        assert!(SessionEvent::SessionEnded { reason: "".into() }.is_lifecycle_event());
 
         // Agent events
         assert!(SessionEvent::AgentResponded {
@@ -1355,10 +1364,7 @@ mod tests {
             tool_calls: vec![]
         }
         .is_agent_event());
-        assert!(SessionEvent::AgentThinking {
-            thought: "".into()
-        }
-        .is_agent_event());
+        assert!(SessionEvent::AgentThinking { thought: "".into() }.is_agent_event());
 
         // Subagent events
         assert!(SessionEvent::SubagentSpawned {
@@ -1753,10 +1759,7 @@ mod tests {
         assert_eq!(config.session_id, "test-session");
         assert_eq!(config.folder, Some(PathBuf::from("/tmp/session")));
         assert_eq!(config.max_context_tokens, 50_000);
-        assert_eq!(
-            config.system_prompt,
-            Some("You are helpful.".to_string())
-        );
+        assert_eq!(config.system_prompt, Some("You are helpful.".to_string()));
     }
 
     #[test]

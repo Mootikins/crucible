@@ -98,7 +98,10 @@ pub trait AgentHandle: Send + Sync {
             }
         }
 
-        Ok(ChatResponse { content, tool_calls })
+        Ok(ChatResponse {
+            content,
+            tool_calls,
+        })
     }
 
     fn is_connected(&self) -> bool;
@@ -144,6 +147,15 @@ pub struct CommandDescriptor {
     pub name: String,
     pub description: String,
     pub input_hint: Option<String>,
+    /// Optional secondary selection options advertised by the agent (e.g., model choices)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secondary_options: Vec<CommandOption>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandOption {
+    pub label: String,
+    pub value: String,
 }
 
 #[async_trait]
@@ -235,15 +247,15 @@ mod tests {
         ) -> BoxStream<'a, ChatResult<ChatChunk>> {
             let chunks = self.chunks.clone();
             let total = chunks.len();
-            Box::pin(futures::stream::iter(
-                chunks.into_iter().enumerate().map(move |(i, delta)| {
+            Box::pin(futures::stream::iter(chunks.into_iter().enumerate().map(
+                move |(i, delta)| {
                     Ok(ChatChunk {
                         delta,
                         done: i == total - 1,
                         tool_calls: None,
                     })
-                }),
-            ))
+                },
+            )))
         }
 
         async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
@@ -278,4 +290,3 @@ mod tests {
         assert_eq!(cycle_mode_id("auto"), "plan");
     }
 }
-
