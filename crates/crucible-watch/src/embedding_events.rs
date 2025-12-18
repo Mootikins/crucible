@@ -185,10 +185,7 @@ impl Default for EmbeddingEventMetadata {
 /// This type is deprecated. Use `crucible_core::events::Priority` instead, which provides
 /// the same priority levels (`Low`, `Normal`, `High`, `Critical`) and integrates with
 /// the unified `SessionEvent` system.
-#[deprecated(
-    since = "0.1.0",
-    note = "Use crucible_core::events::Priority instead"
-)]
+#[deprecated(since = "0.1.0", note = "Use crucible_core::events::Priority instead")]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub enum EmbeddingEventPriority {
     /// Low priority - background processing
