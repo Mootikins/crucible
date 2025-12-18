@@ -227,7 +227,8 @@ impl AstConverter {
                     let checkbox_char = trimmed.chars().nth(1).unwrap();
                     if let Some(status) = CheckboxStatus::from_char(checkbox_char) {
                         // Extract the text after the checkbox (skip "[X] " or "[X]")
-                        let remaining = if trimmed.len() > 3 && trimmed.chars().nth(3) == Some(' ') {
+                        let remaining = if trimmed.len() > 3 && trimmed.chars().nth(3) == Some(' ')
+                        {
                             trimmed[4..].to_string()
                         } else if trimmed.len() > 3 {
                             trimmed[3..].to_string()
