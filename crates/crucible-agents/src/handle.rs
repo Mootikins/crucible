@@ -112,7 +112,9 @@ impl InternalAgentHandle {
     }
 
     /// Helper to convert LLM tool calls to chat tool calls
-    fn convert_tool_calls(llm_calls: &[LlmToolCall]) -> Vec<crucible_core::traits::chat::ChatToolCall> {
+    fn convert_tool_calls(
+        llm_calls: &[LlmToolCall],
+    ) -> Vec<crucible_core::traits::chat::ChatToolCall> {
         llm_calls
             .iter()
             .map(|tc| crucible_core::traits::chat::ChatToolCall {
@@ -295,7 +297,6 @@ impl AgentHandle for InternalAgentHandle {
         })
     }
 
-
     fn get_modes(&self) -> Option<&SessionModeState> {
         Some(&self.mode_state)
     }
@@ -306,14 +307,21 @@ impl AgentHandle for InternalAgentHandle {
 
     async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {
         // Validate mode exists in our advertised modes
-        let exists = self.mode_state.available_modes.iter()
+        let exists = self
+            .mode_state
+            .available_modes
+            .iter()
             .any(|m| m.id.0.as_ref() == mode_id);
 
         if !exists {
             return Err(ChatError::InvalidMode(format!(
                 "Unknown mode '{}'. Available: {:?}",
                 mode_id,
-                self.mode_state.available_modes.iter().map(|m| m.id.0.as_ref()).collect::<Vec<_>>()
+                self.mode_state
+                    .available_modes
+                    .iter()
+                    .map(|m| m.id.0.as_ref())
+                    .collect::<Vec<_>>()
             )));
         }
 
@@ -495,7 +503,8 @@ mod tests {
         assert!(collected.last().unwrap().done);
 
         // Content should be accumulated
-        let content: String = collected.iter()
+        let content: String = collected
+            .iter()
             .filter(|c| !c.done)
             .map(|c| c.delta.as_str())
             .collect();
@@ -532,19 +541,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_context_trimming() {
-        let chunks = vec![
-            ChatCompletionChunk {
-                index: 0,
-                delta: ChatMessageDelta {
-                    role: Some(MessageRole::Assistant),
-                    content: Some("Response".to_string()),
-                    function_call: None,
-                    tool_calls: None,
-                },
-                finish_reason: Some("stop".to_string()),
-                logprobs: None,
+        let chunks = vec![ChatCompletionChunk {
+            index: 0,
+            delta: ChatMessageDelta {
+                role: Some(MessageRole::Assistant),
+                content: Some("Response".to_string()),
+                function_call: None,
+                tool_calls: None,
             },
-        ];
+            finish_reason: Some("stop".to_string()),
+            logprobs: None,
+        }];
 
         let provider = Box::new(MockProvider::new(vec![chunks]));
         let context = Box::new(SlidingWindowContext::new(100));
@@ -690,7 +697,9 @@ mod tests {
             r#type: "function".to_string(),
             function: FunctionCall {
                 name: "complex_tool".to_string(),
-                arguments: r#"{"nested": {"a": 1, "b": [1, 2, 3]}, "flag": true, "null_val": null}"#.to_string(),
+                arguments:
+                    r#"{"nested": {"a": 1, "b": [1, 2, 3]}, "flag": true, "null_val": null}"#
+                        .to_string(),
             },
         }];
 
@@ -720,7 +729,10 @@ mod tests {
 
         let chat_calls = InternalAgentHandle::convert_tool_calls(&llm_calls);
 
-        assert_eq!(chat_calls[0].id, Some("unique-tool-call-id-12345".to_string()));
+        assert_eq!(
+            chat_calls[0].id,
+            Some("unique-tool-call-id-12345".to_string())
+        );
     }
 
     #[test]

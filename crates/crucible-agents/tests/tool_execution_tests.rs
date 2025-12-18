@@ -10,11 +10,13 @@ use crucible_agents::prompt::LayeredPromptBuilder;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::traits::llm::{
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ChatMessageDelta,
-    CompletionRequest, CompletionResponse, FunctionCall, FunctionCallDelta, LlmResult,
-    MessageRole, ProviderCapabilities, TextGenerationProvider, TextModelInfo,
-    ToolCall as LlmToolCall, ToolCallDelta,
+    CompletionRequest, CompletionResponse, FunctionCall, FunctionCallDelta, LlmResult, MessageRole,
+    ProviderCapabilities, TextGenerationProvider, TextModelInfo, ToolCall as LlmToolCall,
+    ToolCallDelta,
 };
-use crucible_core::traits::tools::{ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult};
+use crucible_core::traits::tools::{
+    ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult,
+};
 use futures::stream::{BoxStream, StreamExt};
 use serde_json::json;
 
@@ -63,7 +65,10 @@ impl MockProvider {
 
 #[async_trait]
 impl TextGenerationProvider for MockProvider {
-    async fn generate_completion(&self, _request: CompletionRequest) -> LlmResult<CompletionResponse> {
+    async fn generate_completion(
+        &self,
+        _request: CompletionRequest,
+    ) -> LlmResult<CompletionResponse> {
         unimplemented!()
     }
 
@@ -74,7 +79,10 @@ impl TextGenerationProvider for MockProvider {
         unimplemented!()
     }
 
-    async fn generate_chat_completion(&self, _request: ChatCompletionRequest) -> LlmResult<ChatCompletionResponse> {
+    async fn generate_chat_completion(
+        &self,
+        _request: ChatCompletionRequest,
+    ) -> LlmResult<ChatCompletionResponse> {
         unimplemented!()
     }
 
@@ -201,7 +209,9 @@ impl ToolExecutor for MockToolExecutor {
         _context: &ExecutionContext,
     ) -> ToolResult<serde_json::Value> {
         if self.fail_on_execute {
-            return Err(ToolError::ExecutionFailed("Mock tool execution failure".to_string()));
+            return Err(ToolError::ExecutionFailed(
+                "Mock tool execution failure".to_string(),
+            ));
         }
         if !self.tools.contains(&name.to_string()) {
             return Err(ToolError::NotFound(name.to_string()));
@@ -257,7 +267,11 @@ async fn test_tool_json_parse_error() {
     }
 
     let error_found = results.iter().any(|r| r.is_err());
-    assert!(error_found, "Expected error for invalid JSON, got: {:?}", results);
+    assert!(
+        error_found,
+        "Expected error for invalid JSON, got: {:?}",
+        results
+    );
 }
 
 #[tokio::test]
@@ -273,7 +287,11 @@ async fn test_tool_missing_executor() {
     }
 
     let error_found = results.iter().any(|r| r.is_err());
-    assert!(error_found, "Expected error for missing executor, got: {:?}", results);
+    assert!(
+        error_found,
+        "Expected error for missing executor, got: {:?}",
+        results
+    );
 }
 
 #[tokio::test]
@@ -290,7 +308,11 @@ async fn test_tool_not_found_error() {
     }
 
     let error_found = results.iter().any(|r| r.is_err());
-    assert!(error_found, "Expected error for tool not found, got: {:?}", results);
+    assert!(
+        error_found,
+        "Expected error for tool not found, got: {:?}",
+        results
+    );
 }
 
 #[tokio::test]
@@ -307,5 +329,9 @@ async fn test_tool_failure_adds_error_to_context() {
     }
 
     let error_found = results.iter().any(|r| r.is_err());
-    assert!(error_found, "Expected error for tool failure, got: {:?}", results);
+    assert!(
+        error_found,
+        "Expected error for tool failure, got: {:?}",
+        results
+    );
 }
