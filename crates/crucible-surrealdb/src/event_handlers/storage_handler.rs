@@ -271,7 +271,9 @@ impl StorageHandler {
     /// entities exist before downstream handlers process the same events.
     pub async fn handle_event(&self, event: &SessionEvent) {
         match event {
-            SessionEvent::NoteParsed { path, block_count, .. } => {
+            SessionEvent::NoteParsed {
+                path, block_count, ..
+            } => {
                 self.handle_note_parsed(path, *block_count).await;
             }
             SessionEvent::FileDeleted { path } => {
@@ -312,18 +314,17 @@ mod tests {
     use crate::test_utils::{apply_eav_graph_schema, EAVGraphStore, SurrealClient};
 
     /// Helper to create a mock event emitter as a SharedEventBus
-    fn create_mock_emitter() -> (Arc<MockEventEmitter<SessionEvent>>, SharedEventBus<SessionEvent>)
-    {
+    fn create_mock_emitter() -> (
+        Arc<MockEventEmitter<SessionEvent>>,
+        SharedEventBus<SessionEvent>,
+    ) {
         let mock = Arc::new(MockEventEmitter::new());
         let shared: SharedEventBus<SessionEvent> = mock.clone();
         (mock, shared)
     }
 
     #[cfg(feature = "test-utils")]
-    async fn setup_handler() -> (
-        StorageHandler,
-        Arc<MockEventEmitter<SessionEvent>>,
-    ) {
+    async fn setup_handler() -> (StorageHandler, Arc<MockEventEmitter<SessionEvent>>) {
         let client = SurrealClient::new_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = Arc::new(EAVGraphStore::new(client));
@@ -364,7 +365,9 @@ mod tests {
         );
 
         // Find the EntityStored event
-        let entity_stored = events.iter().find(|e| matches!(e, SessionEvent::EntityStored { .. }));
+        let entity_stored = events
+            .iter()
+            .find(|e| matches!(e, SessionEvent::EntityStored { .. }));
         assert!(
             entity_stored.is_some(),
             "Expected EntityStored event to be emitted. Events: {:?}",
@@ -372,7 +375,11 @@ mod tests {
         );
 
         // Verify the EntityStored event has the correct entity_id
-        if let Some(SessionEvent::EntityStored { entity_id, entity_type }) = entity_stored {
+        if let Some(SessionEvent::EntityStored {
+            entity_id,
+            entity_type,
+        }) = entity_stored
+        {
             assert_eq!(*entity_type, EventEntityType::Note);
             // Entity ID should be derived from path
             assert!(
@@ -394,7 +401,9 @@ mod tests {
 
         // Verify BlocksUpdated was emitted
         let events = mock.emitted_events();
-        let blocks_updated = events.iter().find(|e| matches!(e, SessionEvent::BlocksUpdated { .. }));
+        let blocks_updated = events
+            .iter()
+            .find(|e| matches!(e, SessionEvent::BlocksUpdated { .. }));
         assert!(
             blocks_updated.is_some(),
             "Expected BlocksUpdated event to be emitted. Events: {:?}",
@@ -402,7 +411,11 @@ mod tests {
         );
 
         // Verify the block count
-        if let Some(SessionEvent::BlocksUpdated { entity_id, block_count }) = blocks_updated {
+        if let Some(SessionEvent::BlocksUpdated {
+            entity_id,
+            block_count,
+        }) = blocks_updated
+        {
             assert_eq!(*block_count, 5);
             assert!(
                 entity_id.contains("test_note"),
@@ -437,7 +450,9 @@ mod tests {
 
         let events = mock.emitted_events();
         assert!(
-            events.iter().any(|e| matches!(e, SessionEvent::EntityStored { .. })),
+            events
+                .iter()
+                .any(|e| matches!(e, SessionEvent::EntityStored { .. })),
             "NoteParsed should trigger EntityStored emission"
         );
     }
