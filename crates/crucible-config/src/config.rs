@@ -1261,6 +1261,12 @@ verbose = false
     /// - macOS: `~/Library/Application Support/crucible/config.toml`
     /// - Windows: `%APPDATA%\crucible\config.toml` (Roaming AppData)
     pub fn default_config_path() -> std::path::PathBuf {
+        // Allow overriding config directory via environment variable
+        // This is crucial for test isolation and custom setups
+        if let Ok(config_dir) = std::env::var("CRUCIBLE_CONFIG_DIR") {
+            return std::path::PathBuf::from(config_dir).join("config.toml");
+        }
+
         // Use platform-appropriate config directory
         // dirs::config_dir() returns:
         // - Windows: %APPDATA% (Roaming AppData)
