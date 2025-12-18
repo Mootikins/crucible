@@ -7,8 +7,6 @@
 //! - Grep-based text search (case sensitivity, regex, scoping)
 //! - Semantic search (vector similarity, reranking)
 
-
-
 mod common;
 
 use common::setup_test_db_with_kiln;
@@ -249,7 +247,9 @@ async fn grep_code_blocks() {
 
     // Technical Documentation should contain code blocks
     assert!(
-        titles.iter().any(|t| t.contains("Technical") || t.contains("API")),
+        titles
+            .iter()
+            .any(|t| t.contains("Technical") || t.contains("API")),
         "Expected to find technical documentation with code blocks, got: {:?}",
         titles
     );
