@@ -229,14 +229,16 @@ pub async fn execute(
                 backend_options: Default::default(),
             };
 
-            watch.add_watch(target_path.to_path_buf(), watch_config).await?;
+            watch
+                .add_watch(target_path.to_path_buf(), watch_config)
+                .await?;
         }
         info!("Watch started on: {}", target_path.display());
 
+        println!("📡 Event-driven processing active. File changes will trigger the event cascade:");
         println!(
-            "📡 Event-driven processing active. File changes will trigger the event cascade:"
+            "   FileChanged -> NoteParsed -> EntityStored -> BlocksUpdated -> EmbeddingGenerated"
         );
-        println!("   FileChanged -> NoteParsed -> EntityStored -> BlocksUpdated -> EmbeddingGenerated");
 
         // Wait for Ctrl+C
         tokio::signal::ctrl_c().await?;

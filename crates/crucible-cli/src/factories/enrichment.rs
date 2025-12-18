@@ -69,18 +69,18 @@ pub async fn get_or_create_embedding_provider(
 
     // Create new provider - try unified config first
     trace!("Creating new embedding provider for key: {}", cache_key);
-    let embedding_config = if let Some((name, provider_config)) = config.effective_embedding_provider()
-    {
-        trace!("Using unified provider config: {}", name);
-        provider_config.to_embedding_provider_config()
-    } else {
-        // Fall back to legacy config
-        warn!(
-            "Using legacy [embedding] config. Consider migrating to [providers] format. \
+    let embedding_config =
+        if let Some((name, provider_config)) = config.effective_embedding_provider() {
+            trace!("Using unified provider config: {}", name);
+            provider_config.to_embedding_provider_config()
+        } else {
+            // Fall back to legacy config
+            warn!(
+                "Using legacy [embedding] config. Consider migrating to [providers] format. \
              See docs for migration guide."
-        );
-        config.embedding.to_provider_config()
-    };
+            );
+            config.embedding.to_provider_config()
+        };
 
     let llm_provider = crucible_llm::embeddings::create_provider(embedding_config).await?;
     let core_provider = crucible_llm::embeddings::CoreProviderAdapter::new(llm_provider);

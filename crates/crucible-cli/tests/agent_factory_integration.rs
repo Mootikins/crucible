@@ -46,8 +46,7 @@ async fn test_create_internal_agent_with_invalid_provider() {
     use crucible_cli::factories::create_internal_agent;
 
     let config = CliAppConfig::default();
-    let params = AgentInitParams::new()
-        .with_provider("nonexistent_provider");
+    let params = AgentInitParams::new().with_provider("nonexistent_provider");
 
     let result = create_internal_agent(&config, params).await;
 
@@ -91,9 +90,9 @@ fn test_builder_chaining_all_options() {
 fn test_builder_override_values() {
     let params = AgentInitParams::new()
         .with_type(AgentType::Acp)
-        .with_type(AgentType::Internal)  // Override
+        .with_type(AgentType::Internal) // Override
         .with_provider("openai")
-        .with_provider("ollama");  // Override
+        .with_provider("ollama"); // Override
 
     // Last value should win
     assert_eq!(params.agent_type, Some(AgentType::Internal));
@@ -114,7 +113,7 @@ fn test_optional_helper_methods() {
 fn test_optional_helper_with_none() {
     let params = AgentInitParams::new()
         .with_agent_name("initial")
-        .with_agent_name_opt(None);  // Should override to None
+        .with_agent_name_opt(None); // Should override to None
 
     assert_eq!(params.agent_name, None);
 }
@@ -122,13 +121,11 @@ fn test_optional_helper_with_none() {
 #[test]
 fn test_max_context_tokens_boundary_values() {
     // Zero tokens
-    let params_zero = AgentInitParams::new()
-        .with_max_context_tokens(0);
+    let params_zero = AgentInitParams::new().with_max_context_tokens(0);
     assert_eq!(params_zero.max_context_tokens, Some(0));
 
     // Large value (8M tokens - GPT-4 territory)
-    let params_large = AgentInitParams::new()
-        .with_max_context_tokens(8_000_000);
+    let params_large = AgentInitParams::new().with_max_context_tokens(8_000_000);
     assert_eq!(params_large.max_context_tokens, Some(8_000_000));
 }
 
@@ -139,8 +136,7 @@ fn test_read_only_toggle() {
     assert!(default_params.read_only);
 
     // Explicit false
-    let write_params = AgentInitParams::new()
-        .with_read_only(false);
+    let write_params = AgentInitParams::new().with_read_only(false);
     assert!(!write_params.read_only);
 
     // Toggle back and forth
@@ -153,16 +149,14 @@ fn test_read_only_toggle() {
 
 #[test]
 fn test_empty_string_agent_name() {
-    let params = AgentInitParams::new()
-        .with_agent_name("");
+    let params = AgentInitParams::new().with_agent_name("");
 
     assert_eq!(params.agent_name, Some("".to_string()));
 }
 
 #[test]
 fn test_empty_string_provider() {
-    let params = AgentInitParams::new()
-        .with_provider("");
+    let params = AgentInitParams::new().with_provider("");
 
     assert_eq!(params.provider_key, Some("".to_string()));
 }

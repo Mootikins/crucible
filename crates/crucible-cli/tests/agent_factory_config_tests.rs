@@ -5,13 +5,7 @@
 //! used to create internal agents with the correct settings.
 
 use crucible_cli::factories::{create_internal_agent, AgentInitParams};
-use crucible_config::{
-    CliAppConfig,
-    LlmProvider,
-    LlmConfig,
-    LlmProviderConfig,
-    LlmProviderType,
-};
+use crucible_config::{CliAppConfig, LlmConfig, LlmProvider, LlmProviderConfig, LlmProviderType};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -94,10 +88,7 @@ fn test_llm_config_with_single_ollama_provider() {
         },
     );
 
-    let config = create_config_with_named_providers(
-        Some("local".to_string()),
-        providers,
-    );
+    let config = create_config_with_named_providers(Some("local".to_string()), providers);
 
     assert!(config.llm.has_providers());
     assert_eq!(config.llm.provider_keys().len(), 1);
@@ -139,10 +130,7 @@ fn test_llm_config_with_multiple_providers() {
         },
     );
 
-    let config = create_config_with_named_providers(
-        Some("local-ollama".to_string()),
-        providers,
-    );
+    let config = create_config_with_named_providers(Some("local-ollama".to_string()), providers);
 
     assert!(config.llm.has_providers());
     assert_eq!(config.llm.provider_keys().len(), 2);
@@ -185,10 +173,7 @@ fn test_llm_config_invalid_default_provider() {
     );
 
     // Default points to non-existent provider
-    let config = create_config_with_named_providers(
-        Some("nonexistent".to_string()),
-        providers,
-    );
+    let config = create_config_with_named_providers(Some("nonexistent".to_string()), providers);
 
     assert!(config.llm.has_providers());
     assert!(config.llm.default_provider().is_none()); // Should return None
@@ -299,7 +284,8 @@ async fn test_create_internal_agent_with_default_config() {
                 err_str.contains("refused") ||
                 err_str.contains("no llm providers configured") || // Expected if no providers
                 err_str.contains("failed to create"),
-                "Unexpected error type: {}", e
+                "Unexpected error type: {}",
+                e
             );
         }
     }
@@ -308,8 +294,7 @@ async fn test_create_internal_agent_with_default_config() {
 #[tokio::test]
 async fn test_create_internal_agent_with_nonexistent_provider() {
     let config = create_test_config();
-    let params = AgentInitParams::new()
-        .with_provider("this-provider-does-not-exist");
+    let params = AgentInitParams::new().with_provider("this-provider-does-not-exist");
 
     let result = create_internal_agent(&config, params).await;
 
@@ -318,10 +303,11 @@ async fn test_create_internal_agent_with_nonexistent_provider() {
     if let Err(err) = result {
         let err_str = err.to_string();
         assert!(
-            err_str.contains("this-provider-does-not-exist") ||
-            err_str.contains("not found") ||
-            err_str.contains("Failed to create provider"),
-            "Error should mention the missing provider: {}", err_str
+            err_str.contains("this-provider-does-not-exist")
+                || err_str.contains("not found")
+                || err_str.contains("Failed to create provider"),
+            "Error should mention the missing provider: {}",
+            err_str
         );
     }
 }
@@ -347,10 +333,11 @@ async fn test_create_internal_agent_respects_custom_model() {
             // Should not fail due to config error
             let err_str = e.to_string().to_lowercase();
             assert!(
-                !err_str.contains("invalid") ||
-                err_str.contains("connection") ||
-                err_str.contains("network"),
-                "Should not fail with config error: {}", e
+                !err_str.contains("invalid")
+                    || err_str.contains("connection")
+                    || err_str.contains("network"),
+                "Should not fail with config error: {}",
+                e
             );
         }
     }
@@ -372,13 +359,9 @@ async fn test_create_internal_agent_with_named_provider() {
         },
     );
 
-    let config = create_config_with_named_providers(
-        Some("test-ollama".to_string()),
-        providers,
-    );
+    let config = create_config_with_named_providers(Some("test-ollama".to_string()), providers);
 
-    let params = AgentInitParams::new()
-        .with_provider("test-ollama");
+    let params = AgentInitParams::new().with_provider("test-ollama");
 
     let result = create_internal_agent(&config, params).await;
 
@@ -388,11 +371,12 @@ async fn test_create_internal_agent_with_named_provider() {
         Err(e) => {
             let err_str = e.to_string().to_lowercase();
             assert!(
-                err_str.contains("connection") ||
-                err_str.contains("network") ||
-                err_str.contains("refused") ||
-                err_str.contains("failed to create"),
-                "Should fail with connection error, not config error: {}", e
+                err_str.contains("connection")
+                    || err_str.contains("network")
+                    || err_str.contains("refused")
+                    || err_str.contains("failed to create"),
+                "Should fail with connection error, not config error: {}",
+                e
             );
         }
     }
@@ -436,10 +420,7 @@ fn test_model_name_from_named_provider() {
         },
     );
 
-    let config = create_config_with_named_providers(
-        Some("custom".to_string()),
-        providers,
-    );
+    let config = create_config_with_named_providers(Some("custom".to_string()), providers);
 
     let provider = config.llm.get_provider("custom").unwrap();
     assert_eq!(provider.model(), "custom-provider-model");
@@ -452,8 +433,7 @@ fn test_model_name_from_named_provider() {
 #[tokio::test]
 async fn test_agent_respects_max_context_tokens() {
     let config = create_test_config();
-    let params = AgentInitParams::new()
-        .with_max_context_tokens(8192);
+    let params = AgentInitParams::new().with_max_context_tokens(8192);
 
     // The agent should be created with the specified token limit
     // We can't directly test this without inspecting internal state,
@@ -465,7 +445,8 @@ async fn test_agent_respects_max_context_tokens() {
         let err_str = e.to_string().to_lowercase();
         assert!(
             !err_str.contains("token") || !err_str.contains("invalid"),
-            "Should not fail with token config error: {}", e
+            "Should not fail with token config error: {}",
+            e
         );
     }
 }
@@ -483,7 +464,8 @@ async fn test_agent_uses_default_max_context_tokens() {
         let err_str = e.to_string().to_lowercase();
         assert!(
             !err_str.contains("token") || !err_str.contains("required"),
-            "Should not require explicit token config: {}", e
+            "Should not require explicit token config: {}",
+            e
         );
     }
 }
@@ -662,10 +644,7 @@ fn test_realistic_ollama_config() {
         },
     );
 
-    let config = create_config_with_named_providers(
-        Some("local-llama".to_string()),
-        providers,
-    );
+    let config = create_config_with_named_providers(Some("local-llama".to_string()), providers);
 
     let (key, provider) = config.llm.default_provider().unwrap();
     assert_eq!(key, "local-llama");
@@ -690,10 +669,7 @@ fn test_realistic_openai_config() {
         },
     );
 
-    let config = create_config_with_named_providers(
-        Some("openai-gpt4".to_string()),
-        providers,
-    );
+    let config = create_config_with_named_providers(Some("openai-gpt4".to_string()), providers);
 
     let (key, provider) = config.llm.default_provider().unwrap();
     assert_eq!(key, "openai-gpt4");
@@ -750,10 +726,7 @@ fn test_realistic_multi_provider_config() {
         },
     );
 
-    let config = create_config_with_named_providers(
-        Some("dev".to_string()),
-        providers,
-    );
+    let config = create_config_with_named_providers(Some("dev".to_string()), providers);
 
     // Should have all three providers
     assert_eq!(config.llm.provider_keys().len(), 3);

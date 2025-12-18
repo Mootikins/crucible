@@ -5,7 +5,7 @@
 use crate::chat::diff::DiffRenderer;
 use crate::formatting::render_markdown;
 use colored::Colorize;
-use crucible_core::traits::chat::{mode_display_name, mode_description};
+use crucible_core::traits::chat::{mode_description, mode_display_name};
 use std::path::Path;
 
 /// Display utilities for chat interface
@@ -14,8 +14,11 @@ pub struct Display;
 impl Display {
     /// Display welcome banner with mode information and command help
     pub fn welcome_banner(mode_id: &str) {
-        println!("
-{}", "🤖 Crucible Chat".bright_blue().bold());
+        println!(
+            "
+{}",
+            "🤖 Crucible Chat".bright_blue().bold()
+        );
         println!("{}", "=================".bright_blue());
         println!(
             "Mode: {} {}",
@@ -59,8 +62,12 @@ impl Display {
 
     /// Display search results header
     pub fn search_results_header(_query: &str, count: usize) {
-        println!("{} Found {} results:
-", "●".bright_blue(), count);
+        println!(
+            "{} Found {} results:
+",
+            "●".bright_blue(),
+            count
+        );
     }
 
     /// Display a single search result
