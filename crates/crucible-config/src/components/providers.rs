@@ -144,11 +144,8 @@ impl ProvidersConfig {
 
     /// Find the first provider that supports embeddings
     pub fn first_embedding_provider(&self) -> Option<(&String, &ProviderConfig)> {
-        self.default_embedding_provider().or_else(|| {
-            self.providers
-                .iter()
-                .find(|(_, c)| c.supports_embeddings())
-        })
+        self.default_embedding_provider()
+            .or_else(|| self.providers.iter().find(|(_, c)| c.supports_embeddings()))
     }
 
     /// Find the first provider that supports chat
@@ -342,8 +339,8 @@ mod tests {
         assert!(config.validate().is_ok());
 
         // Invalid config (OpenAI without API key)
-        let config =
-            ProvidersConfig::new().with_provider("openai", ProviderConfig::new(BackendType::OpenAI));
+        let config = ProvidersConfig::new()
+            .with_provider("openai", ProviderConfig::new(BackendType::OpenAI));
         let result = config.validate();
         assert!(result.is_err());
         let errors = result.unwrap_err();
@@ -450,8 +447,7 @@ backend = "ollama"
         let config = ProvidersConfig::new()
             .with_provider(
                 "ollama",
-                ProviderConfig::new(BackendType::Ollama)
-                    .with_endpoint("http://localhost:11434"),
+                ProviderConfig::new(BackendType::Ollama).with_endpoint("http://localhost:11434"),
             )
             .with_provider("fastembed", ProviderConfig::new(BackendType::FastEmbed))
             .with_default_embedding("ollama")
