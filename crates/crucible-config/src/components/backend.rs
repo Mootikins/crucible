@@ -135,7 +135,7 @@ impl BackendType {
             Self::Anthropic => Some("claude-3-5-sonnet-20241022"),
             Self::Cohere => Some("command-r-plus"),
             Self::VertexAI => Some("gemini-1.5-pro"),
-            Self::Custom => None, // User must specify
+            Self::Custom => None,    // User must specify
             Self::FastEmbed => None, // No chat support
             Self::Burn => None,      // No chat support
             Self::LlamaCpp => None,  // No chat support (embedding-only)
@@ -146,13 +146,13 @@ impl BackendType {
     /// Get default max concurrent requests for this backend
     pub fn default_max_concurrent(&self) -> usize {
         match self {
-            Self::Ollama => 1,         // Single GPU, sequential
-            Self::Burn => 1,           // GPU-bound
-            Self::LlamaCpp => 1,       // GPU-bound
+            Self::Ollama => 1,                               // Single GPU, sequential
+            Self::Burn => 1,                                 // GPU-bound
+            Self::LlamaCpp => 1,                             // GPU-bound
             Self::FastEmbed => (num_cpus::get() / 2).max(1), // CPU-bound
             Self::OpenAI | Self::Anthropic | Self::Cohere | Self::VertexAI => 8, // Rate-limited
-            Self::Mock => 16,          // Testing
-            Self::Custom => 4,         // Conservative
+            Self::Mock => 16,                                // Testing
+            Self::Custom => 4,                               // Conservative
         }
     }
 

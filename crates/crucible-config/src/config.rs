@@ -907,9 +907,18 @@ impl CliAppConfig {
         // Add kiln_path
         if let Some(source) = source_map.get("kiln_path") {
             let mut item = serde_json::Map::new();
-            item.insert("value".to_string(), serde_json::Value::String(self.kiln_path.to_string_lossy().to_string()));
-            item.insert("source".to_string(), serde_json::Value::String(source.detail()));
-            item.insert("source_short".to_string(), serde_json::Value::String(source.short().to_string()));
+            item.insert(
+                "value".to_string(),
+                serde_json::Value::String(self.kiln_path.to_string_lossy().to_string()),
+            );
+            item.insert(
+                "source".to_string(),
+                serde_json::Value::String(source.detail()),
+            );
+            item.insert(
+                "source_short".to_string(),
+                serde_json::Value::String(source.short().to_string()),
+            );
             output.insert("kiln_path".to_string(), serde_json::Value::Object(item));
         }
 
@@ -919,9 +928,18 @@ impl CliAppConfig {
         // provider
         if let Some(source) = source_map.get("embedding.provider") {
             let mut item = serde_json::Map::new();
-            item.insert("value".to_string(), serde_json::Value::String(format!("{:?}", self.embedding.provider)));
-            item.insert("source".to_string(), serde_json::Value::String(source.detail()));
-            item.insert("source_short".to_string(), serde_json::Value::String(source.short().to_string()));
+            item.insert(
+                "value".to_string(),
+                serde_json::Value::String(format!("{:?}", self.embedding.provider)),
+            );
+            item.insert(
+                "source".to_string(),
+                serde_json::Value::String(source.detail()),
+            );
+            item.insert(
+                "source_short".to_string(),
+                serde_json::Value::String(source.short().to_string()),
+            );
             embedding_section.insert("provider".to_string(), serde_json::Value::Object(item));
         }
 
@@ -929,22 +947,43 @@ impl CliAppConfig {
         if let Some(ref model) = self.embedding.model {
             if let Some(source) = source_map.get("embedding.model") {
                 let mut item = serde_json::Map::new();
-                item.insert("value".to_string(), serde_json::Value::String(model.clone()));
-                item.insert("source".to_string(), serde_json::Value::String(source.detail()));
-                item.insert("source_short".to_string(), serde_json::Value::String(source.short().to_string()));
+                item.insert(
+                    "value".to_string(),
+                    serde_json::Value::String(model.clone()),
+                );
+                item.insert(
+                    "source".to_string(),
+                    serde_json::Value::String(source.detail()),
+                );
+                item.insert(
+                    "source_short".to_string(),
+                    serde_json::Value::String(source.short().to_string()),
+                );
                 embedding_section.insert("model".to_string(), serde_json::Value::Object(item));
             }
         }
 
-        output.insert("embedding".to_string(), serde_json::Value::Object(embedding_section));
+        output.insert(
+            "embedding".to_string(),
+            serde_json::Value::Object(embedding_section),
+        );
 
         // Add CLI section
         let mut cli_section = serde_json::Map::new();
         if let Some(source) = source_map.get("cli.verbose") {
             let mut item = serde_json::Map::new();
-            item.insert("value".to_string(), serde_json::Value::Bool(self.cli.verbose));
-            item.insert("source".to_string(), serde_json::Value::String(source.detail()));
-            item.insert("source_short".to_string(), serde_json::Value::String(source.short().to_string()));
+            item.insert(
+                "value".to_string(),
+                serde_json::Value::Bool(self.cli.verbose),
+            );
+            item.insert(
+                "source".to_string(),
+                serde_json::Value::String(source.detail()),
+            );
+            item.insert(
+                "source_short".to_string(),
+                serde_json::Value::String(source.short().to_string()),
+            );
             cli_section.insert("verbose".to_string(), serde_json::Value::Object(item));
         }
         output.insert("cli".to_string(), serde_json::Value::Object(cli_section));
@@ -1004,7 +1043,9 @@ impl CliAppConfig {
 
         // embedding section
         output.push_str("\n[embedding]\n");
-        let provider_source = source_map.get("embedding.provider").unwrap_or(&ValueSource::Default);
+        let provider_source = source_map
+            .get("embedding.provider")
+            .unwrap_or(&ValueSource::Default);
         output.push_str(&format!(
             "provider = \"{:?}\"  # from: {}\n",
             self.embedding.provider,
@@ -1012,7 +1053,9 @@ impl CliAppConfig {
         ));
 
         if let Some(ref model) = self.embedding.model {
-            let model_source = source_map.get("embedding.model").unwrap_or(&ValueSource::Default);
+            let model_source = source_map
+                .get("embedding.model")
+                .unwrap_or(&ValueSource::Default);
             output.push_str(&format!(
                 "model = \"{}\"  # from: {}\n",
                 model,
@@ -1021,7 +1064,9 @@ impl CliAppConfig {
         }
 
         if let Some(ref api_url) = self.embedding.api_url {
-            let url_source = source_map.get("embedding.api_url").unwrap_or(&ValueSource::Default);
+            let url_source = source_map
+                .get("embedding.api_url")
+                .unwrap_or(&ValueSource::Default);
             output.push_str(&format!(
                 "api_url = \"{}\"  # from: {}\n",
                 api_url,
@@ -1029,7 +1074,9 @@ impl CliAppConfig {
             ));
         }
 
-        let batch_source = source_map.get("embedding.batch_size").unwrap_or(&ValueSource::Default);
+        let batch_source = source_map
+            .get("embedding.batch_size")
+            .unwrap_or(&ValueSource::Default);
         output.push_str(&format!(
             "batch_size = {}  # from: {}\n",
             self.embedding.batch_size,
@@ -1039,7 +1086,9 @@ impl CliAppConfig {
         // ACP section
         output.push_str("\n[acp]\n");
         if let Some(ref agent) = self.acp.default_agent {
-            let agent_source = source_map.get("acp.default_agent").unwrap_or(&ValueSource::Default);
+            let agent_source = source_map
+                .get("acp.default_agent")
+                .unwrap_or(&ValueSource::Default);
             output.push_str(&format!(
                 "default_agent = \"{}\"  # from: {}\n",
                 agent,
@@ -1060,7 +1109,9 @@ impl CliAppConfig {
         // Chat section
         output.push_str("\n[chat]\n");
         if let Some(ref model) = self.chat.model {
-            let model_source = source_map.get("chat.model").unwrap_or(&ValueSource::Default);
+            let model_source = source_map
+                .get("chat.model")
+                .unwrap_or(&ValueSource::Default);
             output.push_str(&format!(
                 "model = \"{}\"  # from: {}\n",
                 model,
@@ -1084,7 +1135,9 @@ impl CliAppConfig {
             self.cli.confirm_destructive
         ));
 
-        let verbose_source = source_map.get("cli.verbose").unwrap_or(&ValueSource::Default);
+        let verbose_source = source_map
+            .get("cli.verbose")
+            .unwrap_or(&ValueSource::Default);
         output.push_str(&format!(
             "verbose = {}  # from: {}\n",
             self.cli.verbose,
@@ -1308,8 +1361,7 @@ verbose = false
     /// the user update their config file.
     pub fn migrate_legacy_config(&mut self) {
         // If new providers section is empty and legacy embedding is configured
-        if !self.providers.has_providers()
-            && self.embedding.provider != EmbeddingProviderType::None
+        if !self.providers.has_providers() && self.embedding.provider != EmbeddingProviderType::None
         {
             let provider_config =
                 crate::components::ProviderConfig::from_legacy_embedding(&self.embedding);

@@ -158,10 +158,11 @@ impl ProviderConfig {
 
     /// Get the effective embedding model (configured or backend default)
     pub fn embedding_model(&self) -> Option<String> {
-        self.models
-            .embedding
-            .clone()
-            .or_else(|| self.backend.default_embedding_model().map(|s| s.to_string()))
+        self.models.embedding.clone().or_else(|| {
+            self.backend
+                .default_embedding_model()
+                .map(|s| s.to_string())
+        })
     }
 
     /// Get the effective chat model (configured or backend default)
@@ -195,15 +196,12 @@ impl ProviderConfig {
 
     /// Resolve the API key
     pub fn api_key(&self) -> Option<String> {
-        self.api_key
-            .as_ref()
-            .and_then(|k| k.resolve())
-            .or_else(|| {
-                // Fallback to default env var for the backend
-                self.backend
-                    .default_api_key_env()
-                    .and_then(|env| std::env::var(env).ok())
-            })
+        self.api_key.as_ref().and_then(|k| k.resolve()).or_else(|| {
+            // Fallback to default env var for the backend
+            self.backend
+                .default_api_key_env()
+                .and_then(|env| std::env::var(env).ok())
+        })
     }
 
     /// Check if this provider supports embeddings
