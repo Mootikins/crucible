@@ -59,7 +59,9 @@ batch_size = 16
 
     // Test with CLI flags (highest priority)
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config")
+    // Use CRUCIBLE_CONFIG_DIR for isolation on Windows
+    cmd.env("CRUCIBLE_CONFIG_DIR", config_dir.join("crucible")) 
+        .arg("config")
         .arg("show")
         .arg("--format")
         .arg("toml")
@@ -79,7 +81,8 @@ batch_size = 16
 
     // Test with sources flag to verify tracking works
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config").arg("show").arg("--sources");
+    cmd.env("CRUCIBLE_CONFIG_DIR", config_dir.join("crucible"))
+       .arg("config").arg("show").arg("--sources");
 
     cmd.assert()
         .success()
@@ -129,7 +132,9 @@ session_timeout_minutes = 120
     env::set_var("CRUCIBLE_EMBEDDING_PROVIDER", "OpenAI");
 
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config").arg("show");
+    // Use CRUCIBLE_CONFIG_DIR for isolation
+    cmd.env("CRUCIBLE_CONFIG_DIR", config_dir.join("crucible"))
+       .arg("config").arg("show");
 
     cmd.assert()
         .success()
@@ -175,7 +180,9 @@ provider = "fastembed"
     env::set_var("CRUCIBLE_EMBEDDING_PROVIDER", "invalid-provider");
 
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config").arg("show");
+    // Use CRUCIBLE_CONFIG_DIR for isolation
+    cmd.env("CRUCIBLE_CONFIG_DIR", config_dir.join("crucible"))
+       .arg("config").arg("show");
 
     cmd.assert()
         .success()
@@ -189,6 +196,11 @@ fn test_json_format_with_sources() {
     clean_env_vars();
 
     // Note: Tests marked #[serial] ensure no race conditions
+    let temp = TempDir::new().unwrap(); // Need temp dir for isolation
+    let config_dir = temp.path().join(".config");
+    fs::create_dir_all(&config_dir).unwrap();
+    // We need a minimal config file or empty dir so it doesn't try global
+    // Actually just pointing to empty dir is enough if we rely on env vars
 
     // Test multiple overrides in JSON format
     env::set_var("CRUCIBLE_KILN_PATH", "/json-test/kiln");
@@ -196,7 +208,9 @@ fn test_json_format_with_sources() {
     env::set_var("CRUCIBLE_EMBEDDING_MODEL", "json-model");
 
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config")
+    // Use CRUCIBLE_CONFIG_DIR for isolation
+    cmd.env("CRUCIBLE_CONFIG_DIR", config_dir.join("crucible"))
+        .arg("config")
         .arg("show")
         .arg("--format")
         .arg("json")
