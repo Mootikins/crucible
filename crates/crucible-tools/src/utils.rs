@@ -108,28 +108,18 @@ pub fn validate_path_within_kiln(
     let full_path = kiln_path_obj.join(user_path);
 
     // Canonicalize the kiln path to handle symlinks in the base directory
-    let canonical_kiln = kiln_path_obj
-        .canonicalize()
-        .map_err(|e| {
-            rmcp::ErrorData::internal_error(
-                format!("Failed to canonicalize kiln path: {}", e),
-                None,
-            )
-        })?;
+    let canonical_kiln = kiln_path_obj.canonicalize().map_err(|e| {
+        rmcp::ErrorData::internal_error(format!("Failed to canonicalize kiln path: {}", e), None)
+    })?;
 
     // For the full path, we need to handle the case where it doesn't exist yet
     // (e.g., creating a new file). We'll canonicalize the parent and then append
     // the final component.
     let validated_path = if full_path.exists() {
         // If it exists, canonicalize it fully to prevent symlink escapes
-        let canonical_full = full_path
-            .canonicalize()
-            .map_err(|e| {
-                rmcp::ErrorData::internal_error(
-                    format!("Failed to canonicalize path: {}", e),
-                    None,
-                )
-            })?;
+        let canonical_full = full_path.canonicalize().map_err(|e| {
+            rmcp::ErrorData::internal_error(format!("Failed to canonicalize path: {}", e), None)
+        })?;
 
         // Verify the canonicalized path is still within kiln
         if !canonical_full.starts_with(&canonical_kiln) {
@@ -154,14 +144,12 @@ pub fn validate_path_within_kiln(
         }
 
         // Canonicalize the existing ancestor
-        let canonical_parent = current
-            .canonicalize()
-            .map_err(|e| {
-                rmcp::ErrorData::internal_error(
-                    format!("Failed to canonicalize parent path: {}", e),
-                    None,
-                )
-            })?;
+        let canonical_parent = current.canonicalize().map_err(|e| {
+            rmcp::ErrorData::internal_error(
+                format!("Failed to canonicalize parent path: {}", e),
+                None,
+            )
+        })?;
 
         // Verify the parent is within kiln
         if !canonical_parent.starts_with(&canonical_kiln) {
@@ -294,11 +282,7 @@ mod tests {
         let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
         // Test various absolute paths
-        let attacks = vec![
-            "/etc/passwd",
-            "/root/.ssh/id_rsa",
-            "/var/log/syslog",
-        ];
+        let attacks = vec!["/etc/passwd", "/root/.ssh/id_rsa", "/var/log/syslog"];
 
         for attack in attacks {
             let result = validate_path_within_kiln(&kiln_path, attack);
@@ -407,10 +391,7 @@ mod tests {
 
         // This should be allowed since both files are within kiln
         let result = validate_path_within_kiln(&kiln_path, "link_to_file.md");
-        assert!(
-            result.is_ok(),
-            "Should allow internal symlink within kiln"
-        );
+        assert!(result.is_ok(), "Should allow internal symlink within kiln");
     }
 
     #[test]
@@ -445,10 +426,7 @@ mod tests {
         let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
         let result = validate_folder_within_kiln(&kiln_path, Some("../etc"));
-        assert!(
-            result.is_err(),
-            "Should reject folder with path traversal"
-        );
+        assert!(result.is_err(), "Should reject folder with path traversal");
     }
 
     #[test]
@@ -487,11 +465,7 @@ mod tests {
         let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
         // Test Unicode filenames (should be allowed)
-        let unicode_paths = vec![
-            "日本語.md",
-            "émoji-📝.md",
-            "русский/файл.md",
-        ];
+        let unicode_paths = vec!["日本語.md", "émoji-📝.md", "русский/файл.md"];
 
         for path in unicode_paths {
             let result = validate_path_within_kiln(&kiln_path, path);

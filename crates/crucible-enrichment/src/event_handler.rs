@@ -278,7 +278,10 @@ mod tests {
         let service = Arc::new(MockEnrichmentService::new());
         let handler = EmbeddingHandler::new(service.clone());
 
-        assert!(Arc::ptr_eq(&handler.service, &(service as Arc<dyn EnrichmentService>)));
+        assert!(Arc::ptr_eq(
+            &handler.service,
+            &(service as Arc<dyn EnrichmentService>)
+        ));
     }
 
     #[tokio::test]
