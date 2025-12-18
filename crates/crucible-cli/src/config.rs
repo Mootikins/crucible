@@ -235,15 +235,20 @@ verbose = false
     fn test_env_var_overrides_comprehensive() {
         use std::env;
 
+        // Use a nonexistent config file to ensure we don't load the user's real config
+        let temp = TempDir::new().unwrap();
+        let config_path = temp.path().join("nonexistent_config.toml");
+        let config_path_opt = Some(config_path);
+
         // Test kiln path override
         env::set_var("CRUCIBLE_KILN_PATH", "/env/kiln");
-        let config = CliConfig::load(None, None, None).unwrap();
+        let config = CliConfig::load(config_path_opt.clone(), None, None).unwrap();
         assert_eq!(config.kiln_path.to_str().unwrap(), "/env/kiln");
         env::remove_var("CRUCIBLE_KILN_PATH");
 
         // Test embedding URL override
         env::set_var("CRUCIBLE_EMBEDDING_URL", "https://env-embed.com");
-        let config = CliConfig::load(None, None, None).unwrap();
+        let config = CliConfig::load(config_path_opt.clone(), None, None).unwrap();
         assert_eq!(
             config.embedding.api_url,
             Some("https://env-embed.com".to_string())
@@ -252,7 +257,7 @@ verbose = false
 
         // Test embedding provider override
         env::set_var("CRUCIBLE_EMBEDDING_PROVIDER", "openai");
-        let config = CliConfig::load(None, None, None).unwrap();
+        let config = CliConfig::load(config_path_opt.clone(), None, None).unwrap();
         assert_eq!(
             config.embedding.provider,
             crucible_config::EmbeddingProviderType::OpenAI
@@ -261,13 +266,13 @@ verbose = false
 
         // Test embedding model override
         env::set_var("CRUCIBLE_EMBEDDING_MODEL", "env-model");
-        let config = CliConfig::load(None, None, None).unwrap();
+        let config = CliConfig::load(config_path_opt.clone(), None, None).unwrap();
         assert_eq!(config.embedding.model, Some("env-model".to_string()));
         env::remove_var("CRUCIBLE_EMBEDDING_MODEL");
 
         // Test max concurrent override
         env::set_var("CRUCIBLE_EMBEDDING_MAX_CONCURRENT", "64");
-        let config = CliConfig::load(None, None, None).unwrap();
+        let config = CliConfig::load(config_path_opt.clone(), None, None).unwrap();
         assert_eq!(config.embedding.max_concurrent, Some(64));
         env::remove_var("CRUCIBLE_EMBEDDING_MAX_CONCURRENT");
     }
