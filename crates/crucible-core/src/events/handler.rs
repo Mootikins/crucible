@@ -162,7 +162,10 @@ impl<E> HandlerResult<E> {
 
     /// Check if processing should stop (Cancel, Cancelled, or FatalError).
     pub fn should_stop(&self) -> bool {
-        matches!(self, Self::Cancel | Self::Cancelled(_) | Self::FatalError(_))
+        matches!(
+            self,
+            Self::Cancel | Self::Cancelled(_) | Self::FatalError(_)
+        )
     }
 
     /// Get the event if available (Continue, Cancelled, or SoftError).
@@ -317,8 +320,7 @@ mod tests {
         let result: HandlerResult<String> = HandlerResult::cancelled("preserved".into());
         assert_eq!(result.event(), Some("preserved".into()));
 
-        let result: HandlerResult<String> =
-            HandlerResult::soft_error("test".into(), "error");
+        let result: HandlerResult<String> = HandlerResult::soft_error("test".into(), "error");
         assert_eq!(result.event(), Some("test".into()));
     }
 
@@ -364,8 +366,7 @@ mod tests {
         let result: HandlerResult<String> = HandlerResult::cancelled("test".into());
         assert_eq!(format!("{}", result), "Cancelled");
 
-        let result: HandlerResult<String> =
-            HandlerResult::soft_error("test".into(), "oops");
+        let result: HandlerResult<String> = HandlerResult::soft_error("test".into(), "oops");
         assert_eq!(format!("{}", result), "SoftError: oops");
     }
 

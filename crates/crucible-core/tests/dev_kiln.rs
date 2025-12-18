@@ -80,7 +80,8 @@ fn extract_wikilinks(content: &str) -> Vec<String> {
     // Match wikilinks (single line only - no newlines in target)
     let wikilink_re = regex::Regex::new(r"!?\[\[([^\]\n]+)\]\]").unwrap();
 
-    wikilink_re.captures_iter(&without_code)
+    wikilink_re
+        .captures_iter(&without_code)
         .map(|cap| {
             let full_link = cap.get(1).unwrap().as_str();
 
@@ -121,10 +122,7 @@ fn extract_code_references(content: &str) -> Vec<String> {
 /// Multi-kiln resolution is a future design consideration (see thoughts/backlog.md).
 fn resolve_wikilink(target: &str, dev_kiln_root: &Path) -> Option<PathBuf> {
     // Extract just the filename (ignore path prefixes like "Help/Config/")
-    let filename_part = target
-        .rsplit('/')
-        .next()
-        .unwrap_or(target);
+    let filename_part = target.rsplit('/').next().unwrap_or(target);
 
     // Try common extensions: .md (notes), .rn (Rune scripts)
     let extensions = [".md", ".rn"];
@@ -222,7 +220,11 @@ async fn dev_kiln_all_notes_parse() {
         let content = match tokio::fs::read_to_string(file_path).await {
             Ok(c) => c,
             Err(e) => {
-                failures.push(format!("{}: Failed to read file: {}", file_path.display(), e));
+                failures.push(format!(
+                    "{}: Failed to read file: {}",
+                    file_path.display(),
+                    e
+                ));
                 continue;
             }
         };
@@ -242,7 +244,10 @@ async fn dev_kiln_all_notes_parse() {
         );
     }
 
-    println!("✅ All {} markdown files parsed successfully", md_files.len());
+    println!(
+        "✅ All {} markdown files parsed successfully",
+        md_files.len()
+    );
 }
 
 // ============================================================================
@@ -261,7 +266,11 @@ async fn dev_kiln_frontmatter_has_required_fields() {
         let content = match tokio::fs::read_to_string(file_path).await {
             Ok(c) => c,
             Err(e) => {
-                failures.push(format!("{}: Failed to read file: {}", file_path.display(), e));
+                failures.push(format!(
+                    "{}: Failed to read file: {}",
+                    file_path.display(),
+                    e
+                ));
                 continue;
             }
         };
@@ -303,7 +312,10 @@ async fn dev_kiln_frontmatter_has_required_fields() {
         );
     }
 
-    println!("✅ All {} markdown files have required frontmatter", md_files.len());
+    println!(
+        "✅ All {} markdown files have required frontmatter",
+        md_files.len()
+    );
 }
 
 // ============================================================================
@@ -317,10 +329,24 @@ async fn dev_kiln_frontmatter_has_required_fields() {
 fn is_example_link(target: &str) -> bool {
     // Generic placeholder names
     let placeholders = [
-        "Note Name", "Other Note", "Note", "Another Idea", "Related Concept",
-        "link", "wikilinks", "broken", "...", "first", "second", "third",
-        "note with spaces", "note-with-dashes", "note_with_underscores", "note.with.dots",
-        "not a link", "` and `",
+        "Note Name",
+        "Other Note",
+        "Note",
+        "Another Idea",
+        "Related Concept",
+        "link",
+        "wikilinks",
+        "broken",
+        "...",
+        "first",
+        "second",
+        "third",
+        "note with spaces",
+        "note-with-dashes",
+        "note_with_underscores",
+        "note.with.dots",
+        "not a link",
+        "` and `",
     ];
     if placeholders.contains(&target) {
         return true;
@@ -328,29 +354,58 @@ fn is_example_link(target: &str) -> bool {
 
     // Zettelkasten/PKM examples (concepts, not actual notes)
     let zettelkasten_examples = [
-        "Deep Work", "Flow States", "Attention Residue", "Time Blocking",
-        "Deliberate Practice", "Pomodoro Technique", "Batching", "Multitasking Myth",
-        "Active Recall", "Forgetting Curve", "Interleaving", "Anki",
-        "Time Value of Money", "Investment Growth", "Learning Techniques Index",
-        "Deep Work by Cal Newport", "Flow by Mihaly Csikszentmihalyi",
-        "Creative Process", "Creative Constraints", "Morning Creative Sessions",
-        "Daily Routines", "Deep Work Practices", "Connection 1", "Connection 2",
-        "Book Notes", "Research Paper", "Productivity System", "Project Planning",
+        "Deep Work",
+        "Flow States",
+        "Attention Residue",
+        "Time Blocking",
+        "Deliberate Practice",
+        "Pomodoro Technique",
+        "Batching",
+        "Multitasking Myth",
+        "Active Recall",
+        "Forgetting Curve",
+        "Interleaving",
+        "Anki",
+        "Time Value of Money",
+        "Investment Growth",
+        "Learning Techniques Index",
+        "Deep Work by Cal Newport",
+        "Flow by Mihaly Csikszentmihalyi",
+        "Creative Process",
+        "Creative Constraints",
+        "Morning Creative Sessions",
+        "Daily Routines",
+        "Deep Work Practices",
+        "Connection 1",
+        "Connection 2",
+        "Book Notes",
+        "Research Paper",
+        "Productivity System",
+        "Project Planning",
     ];
     if zettelkasten_examples.contains(&target) {
         return true;
     }
 
     // Johnny Decimal examples (numbered organization)
-    if target.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+    if target
+        .chars()
+        .next()
+        .map(|c| c.is_ascii_digit())
+        .unwrap_or(false)
+    {
         return true; // Things like "21.01 Invoice Template", "11 Company Info"
     }
 
     // PARA examples (project structure)
     let para_examples = [
-        "Projects/Product Launch/Index", "Projects/Q4 Report/Index",
-        "Areas/Team Management/Index", "Areas/Health/Index",
-        "Projects/Current", "Notes/Ideas", "Reference/Index",
+        "Projects/Product Launch/Index",
+        "Projects/Q4 Report/Index",
+        "Areas/Team Management/Index",
+        "Areas/Health/Index",
+        "Projects/Current",
+        "Notes/Ideas",
+        "Reference/Index",
     ];
     if para_examples.contains(&target) {
         return true;
@@ -358,10 +413,20 @@ fn is_example_link(target: &str) -> bool {
 
     // Code/API examples in documentation
     let api_examples = [
-        "API Endpoints", "API Design", "API Best Practices", "Authentication Guide",
-        "Error Handling", "Error Codes", "Search Implementation", "Processing Pipeline",
-        "Parsing Examples", "Crucible Parser Usage", "mcp.servers",
-        "Folder/Subfolder/Note", "Premise One", "Premise Two",
+        "API Endpoints",
+        "API Design",
+        "API Best Practices",
+        "Authentication Guide",
+        "Error Handling",
+        "Error Codes",
+        "Search Implementation",
+        "Processing Pipeline",
+        "Parsing Examples",
+        "Crucible Parser Usage",
+        "mcp.servers",
+        "Folder/Subfolder/Note",
+        "Premise One",
+        "Premise Two",
     ];
     if api_examples.contains(&target) {
         return true;
@@ -385,7 +450,11 @@ async fn dev_kiln_all_wikilinks_resolve() {
         let content = match tokio::fs::read_to_string(file_path).await {
             Ok(c) => c,
             Err(e) => {
-                all_broken_links.push(format!("{}: Failed to read file: {}", file_path.display(), e));
+                all_broken_links.push(format!(
+                    "{}: Failed to read file: {}",
+                    file_path.display(),
+                    e
+                ));
                 continue;
             }
         };
@@ -436,8 +505,7 @@ async fn dev_kiln_all_wikilinks_resolve() {
 
     println!(
         "✅ Wikilink validation passed: {} resolved, {} examples skipped",
-        resolved_links,
-        skipped_examples
+        resolved_links, skipped_examples
     );
 }
 
@@ -464,7 +532,11 @@ async fn dev_kiln_code_references_exist() {
         let content = match tokio::fs::read_to_string(file_path).await {
             Ok(c) => c,
             Err(e) => {
-                failures.push(format!("{}: Failed to read file: {}", file_path.display(), e));
+                failures.push(format!(
+                    "{}: Failed to read file: {}",
+                    file_path.display(),
+                    e
+                ));
                 continue;
             }
         };
@@ -516,7 +588,11 @@ async fn dev_kiln_rune_scripts_valid_syntax() {
         let content = match tokio::fs::read_to_string(file_path).await {
             Ok(c) => c,
             Err(e) => {
-                failures.push(format!("{}: Failed to read file: {}", file_path.display(), e));
+                failures.push(format!(
+                    "{}: Failed to read file: {}",
+                    file_path.display(),
+                    e
+                ));
                 continue;
             }
         };

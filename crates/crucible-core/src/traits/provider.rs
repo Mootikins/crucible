@@ -126,7 +126,10 @@ impl UnifiedModelInfo {
     }
 
     /// Add capabilities
-    pub fn with_capabilities(mut self, capabilities: impl IntoIterator<Item = ModelCapability>) -> Self {
+    pub fn with_capabilities(
+        mut self,
+        capabilities: impl IntoIterator<Item = ModelCapability>,
+    ) -> Self {
         self.capabilities = capabilities.into_iter().collect();
         self
     }
@@ -493,8 +496,7 @@ mod tests {
 
     #[test]
     fn test_unified_model_info_chat() {
-        let model = UnifiedModelInfo::new("llama3.2", BackendType::Ollama)
-            .with_chat();
+        let model = UnifiedModelInfo::new("llama3.2", BackendType::Ollama).with_chat();
 
         assert!(model.supports_chat());
         assert!(!model.supports_embedding());
