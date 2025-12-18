@@ -53,7 +53,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::event_bus::EventBus;
-use crate::handler::{BoxedRingHandler, RingHandler, RingHandlerContext, RingHandlerError, RingHandlerResult};
+use crate::handler::{
+    BoxedRingHandler, RingHandler, RingHandlerContext, RingHandlerError, RingHandlerResult,
+};
 use crate::linear_reactor::LinearReactor;
 use crate::reactor::SessionEvent;
 
@@ -186,8 +188,8 @@ pub async fn wire_event_bus(
     let bus = Arc::new(RwLock::new(event_bus));
 
     // Create the ring handler
-    let handler = EventBusRingHandler::new(handler_name, Arc::clone(&bus))
-        .with_depends_on(depends_on);
+    let handler =
+        EventBusRingHandler::new(handler_name, Arc::clone(&bus)).with_depends_on(depends_on);
 
     // Add handler to reactor's chain
     reactor.add_handler(Box::new(handler)).await?;

@@ -339,15 +339,17 @@ async fn test_mcp_module_can_be_installed_in_executor() {
 
     let module = generate_mcp_server_module("mock", &tools, client).unwrap();
     let executor = RuneExecutor::with_modules(vec![module]);
-    assert!(executor.is_ok(), "Executor with MCP module should be created");
+    assert!(
+        executor.is_ok(),
+        "Executor with MCP module should be created"
+    );
 }
 
 #[tokio::test]
 async fn test_rune_script_can_call_mcp_tool() {
     // Create mock client that returns JSON
-    let client = Arc::new(
-        MockMcpClient::new().with_response("get_data", r#"{"value": 42}"#, false),
-    );
+    let client =
+        Arc::new(MockMcpClient::new().with_response("get_data", r#"{"value": 42}"#, false));
 
     let tools = vec![UpstreamTool {
         name: "get_data".to_string(),

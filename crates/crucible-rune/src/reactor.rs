@@ -581,12 +581,20 @@ pub fn event_to_session_event(event: crate::event_bus::Event) -> SessionEvent {
         },
         EventType::NoteParsed => SessionEvent::NoteParsed {
             path: std::path::PathBuf::from(&event.identifier),
-            block_count: event.payload.get("block_count").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+            block_count: event
+                .payload
+                .get("block_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as usize,
             payload: None, // Payload extracted from legacy event doesn't include NotePayload
         },
         EventType::NoteCreated => SessionEvent::NoteCreated {
             path: std::path::PathBuf::from(&event.identifier),
-            title: event.payload.get("title").and_then(|v| v.as_str()).map(String::from),
+            title: event
+                .payload
+                .get("title")
+                .and_then(|v| v.as_str())
+                .map(String::from),
         },
         EventType::NoteModified => SessionEvent::NoteModified {
             path: std::path::PathBuf::from(&event.identifier),
@@ -597,7 +605,11 @@ pub fn event_to_session_event(event: crate::event_bus::Event) -> SessionEvent {
         },
         EventType::McpAttached => SessionEvent::McpAttached {
             server: event.identifier,
-            tool_count: event.payload.get("tool_count").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+            tool_count: event
+                .payload
+                .get("tool_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as usize,
         },
         EventType::Custom => SessionEvent::Custom {
             name: event.identifier,
@@ -827,8 +839,8 @@ mod tests {
 
     #[test]
     fn test_tool_call() {
-        let call = ToolCall::new("read_file", json!({"path": "/tmp/test.txt"}))
-            .with_call_id("call_123");
+        let call =
+            ToolCall::new("read_file", json!({"path": "/tmp/test.txt"})).with_call_id("call_123");
 
         assert_eq!(call.name, "read_file");
         assert_eq!(call.args["path"], "/tmp/test.txt");
@@ -1410,10 +1422,7 @@ mod tests {
             config: SessionEventConfig::new("test")
         }
         .is_lifecycle_event());
-        assert!(SessionEvent::SessionEnded {
-            reason: "".into()
-        }
-        .is_lifecycle_event());
+        assert!(SessionEvent::SessionEnded { reason: "".into() }.is_lifecycle_event());
         assert!(!SessionEvent::MessageReceived {
             content: "".into(),
             participant_id: "".into()
@@ -1464,7 +1473,11 @@ mod tests {
         );
         let session_event: SessionEvent = event_to_session_event(bus_event);
         match session_event {
-            SessionEvent::NoteParsed { path, block_count, payload } => {
+            SessionEvent::NoteParsed {
+                path,
+                block_count,
+                payload,
+            } => {
                 assert_eq!(path, PathBuf::from("/notes/test.md"));
                 assert_eq!(block_count, 5);
                 assert!(payload.is_none()); // Legacy conversion doesn't include payload

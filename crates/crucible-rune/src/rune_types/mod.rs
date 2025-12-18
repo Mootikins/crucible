@@ -7,9 +7,7 @@
 mod recipe;
 mod session_event;
 
-pub use recipe::{
-    categorize_by_name_impl, crucible_module, RuneRecipe, RuneRecipeEnrichment,
-};
+pub use recipe::{categorize_by_name_impl, crucible_module, RuneRecipe, RuneRecipeEnrichment};
 pub use session_event::{
     module as session_event_module, RuneEventContext, RuneFileChangeKind, RuneNoteChangeType,
     RuneSessionEvent,

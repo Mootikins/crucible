@@ -171,7 +171,8 @@ pub fn json_to_rune(json: &JsonValue) -> VmResult<Value> {
             }
         }
         JsonValue::Object(obj) => {
-            let mut map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+            let mut map: std::collections::HashMap<String, Value> =
+                std::collections::HashMap::new();
             for (key, value) in obj {
                 let rune_value = vm_try!(json_to_rune(value));
                 map.insert(key.clone(), rune_value);
