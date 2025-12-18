@@ -155,7 +155,11 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(call_count.load(Ordering::SeqCst), 1, "First call should fetch");
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            1,
+            "First call should fetch"
+        );
         assert_eq!(models1.len(), 1);
         assert_eq!(models1[0].id, "model1");
 

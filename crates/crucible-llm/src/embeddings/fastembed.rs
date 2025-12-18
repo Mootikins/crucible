@@ -465,12 +465,12 @@ impl UnifiedProvider for FastEmbedProvider {
 impl CanEmbed for FastEmbedProvider {
     async fn embed(&self, text: &str) -> LlmResult<UnifiedEmbeddingResponse> {
         // Delegate to legacy impl and convert response type
-        let response = EmbeddingProvider::embed(self, text)
-            .await
-            .map_err(|e| crucible_core::traits::llm::LlmError::ProviderError {
+        let response = EmbeddingProvider::embed(self, text).await.map_err(|e| {
+            crucible_core::traits::llm::LlmError::ProviderError {
                 provider: "FastEmbed".to_string(),
                 message: e.to_string(),
-            })?;
+            }
+        })?;
 
         Ok(UnifiedEmbeddingResponse {
             embedding: response.embedding,

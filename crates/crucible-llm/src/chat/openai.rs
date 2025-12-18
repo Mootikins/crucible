@@ -45,7 +45,8 @@ impl TextGenerationProvider for OpenAIChatProvider {
         _request: CompletionRequest,
     ) -> LlmResult<CompletionResponse> {
         Err(LlmError::Unsupported(
-            "OpenAI provider only supports chat completions, not legacy text completions".to_string(),
+            "OpenAI provider only supports chat completions, not legacy text completions"
+                .to_string(),
         ))
     }
 
@@ -55,7 +56,8 @@ impl TextGenerationProvider for OpenAIChatProvider {
     ) -> BoxStream<'a, LlmResult<CompletionChunk>> {
         Box::pin(futures::stream::once(async {
             Err(LlmError::Unsupported(
-                "OpenAI provider only supports chat completions, not legacy text completions".to_string(),
+                "OpenAI provider only supports chat completions, not legacy text completions"
+                    .to_string(),
             ))
         }))
     }
