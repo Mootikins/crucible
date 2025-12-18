@@ -497,6 +497,12 @@ mod tests {
 
     #[test]
     fn test_provider_validation() {
+        // Ensure environment variables are clear for consistent validation
+        let env_vars = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "COHERE_API_KEY", "GOOGLE_API_KEY"];
+        for var in env_vars {
+            std::env::remove_var(var);
+        }
+
         // OpenAI without API key should fail
         let config = ProviderConfig::new(BackendType::OpenAI);
         assert!(config.validate().is_err());
