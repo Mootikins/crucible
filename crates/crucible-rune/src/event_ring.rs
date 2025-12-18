@@ -38,9 +38,9 @@
 //! }
 //! ```
 
+use parking_lot::RwLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use parking_lot::RwLock;
 
 /// Callback type for overflow events.
 ///
@@ -686,7 +686,10 @@ mod tests {
         }
 
         let flushed = flushed.lock().unwrap();
-        assert!(flushed.is_empty(), "Callback should not be called after clear");
+        assert!(
+            flushed.is_empty(),
+            "Callback should not be called after clear"
+        );
     }
 
     #[test]
@@ -715,9 +718,15 @@ mod tests {
         ring.push(4); // Would overwrite 0, but flushed_seq=0, so flush events first
 
         let flushed_after = flushed.lock().unwrap();
-        assert!(!flushed_after.is_empty(), "Overflow callback should have been called");
+        assert!(
+            !flushed_after.is_empty(),
+            "Overflow callback should have been called"
+        );
         // Should have flushed event 0 (the one about to be overwritten)
-        assert!(flushed_after.contains(&0), "Event 0 should have been flushed");
+        assert!(
+            flushed_after.contains(&0),
+            "Event 0 should have been flushed"
+        );
     }
 
     #[test]

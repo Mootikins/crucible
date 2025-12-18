@@ -60,10 +60,7 @@ pub enum DependencyError {
 
     /// A handler declares a dependency that doesn't exist.
     #[error("Handler '{handler}' depends on unknown handler '{dependency}'")]
-    UnknownDependency {
-        handler: String,
-        dependency: String,
-    },
+    UnknownDependency { handler: String, dependency: String },
 
     /// A handler with the same name already exists.
     #[error("Handler '{0}' already registered")]
@@ -119,14 +116,19 @@ impl DependencyGraph {
     ///
     /// Does NOT validate dependencies yet - call `validate()` or
     /// `execution_order()` after adding all handlers.
-    pub fn add(&mut self, name: impl Into<String>, depends_on: Vec<String>) -> DependencyResult<()> {
+    pub fn add(
+        &mut self,
+        name: impl Into<String>,
+        depends_on: Vec<String>,
+    ) -> DependencyResult<()> {
         let name = name.into();
 
         if self.nodes.contains_key(&name) {
             return Err(DependencyError::DuplicateHandler(name));
         }
 
-        self.nodes.insert(name.clone(), GraphNode::new(name, depends_on));
+        self.nodes
+            .insert(name.clone(), GraphNode::new(name, depends_on));
         self.cached_order = None; // Invalidate cache
 
         Ok(())
@@ -558,10 +560,7 @@ impl<E> std::fmt::Debug for HandlerGraph<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HandlerGraph")
             .field("handler_count", &self.handlers.len())
-            .field(
-                "handlers",
-                &self.handlers.keys().collect::<Vec<_>>(),
-            )
+            .field("handlers", &self.handlers.keys().collect::<Vec<_>>())
             .field("graph", &self.graph)
             .finish()
     }
@@ -619,7 +618,9 @@ mod tests {
         graph.add("A", vec![]).unwrap();
         graph.add("B", vec!["A".to_string()]).unwrap();
         graph.add("C", vec!["A".to_string()]).unwrap();
-        graph.add("D", vec!["B".to_string(), "C".to_string()]).unwrap();
+        graph
+            .add("D", vec!["B".to_string(), "C".to_string()])
+            .unwrap();
 
         let order = graph.execution_order().unwrap();
 
@@ -676,7 +677,9 @@ mod tests {
 
         // A -> B -> C -> D -> B (cycle through B, C, D)
         graph.add("A", vec![]).unwrap();
-        graph.add("B", vec!["A".to_string(), "D".to_string()]).unwrap();
+        graph
+            .add("B", vec!["A".to_string(), "D".to_string()])
+            .unwrap();
         graph.add("C", vec!["B".to_string()]).unwrap();
         graph.add("D", vec!["C".to_string()]).unwrap();
 
@@ -707,7 +710,11 @@ mod tests {
             Err(DependencyError::UnknownDependency { .. })
         ));
 
-        if let Err(DependencyError::UnknownDependency { handler, dependency }) = result {
+        if let Err(DependencyError::UnknownDependency {
+            handler,
+            dependency,
+        }) = result
+        {
             assert_eq!(handler, "A");
             assert_eq!(dependency, "nonexistent");
         }
@@ -758,7 +765,9 @@ mod tests {
 
         graph.add("A", vec![]).unwrap();
         graph.add("B", vec!["A".to_string()]).unwrap();
-        graph.add("C", vec!["A".to_string(), "B".to_string()]).unwrap();
+        graph
+            .add("C", vec!["A".to_string(), "B".to_string()])
+            .unwrap();
 
         assert_eq!(graph.dependencies_of("A"), Some(&[][..]));
         assert_eq!(graph.dependencies_of("B"), Some(&["A".to_string()][..]));
@@ -863,7 +872,9 @@ mod tests {
             let mut graph = DependencyGraph::new();
 
             // Add in random-ish order
-            graph.add("D", vec!["B".to_string(), "C".to_string()]).unwrap();
+            graph
+                .add("D", vec!["B".to_string(), "C".to_string()])
+                .unwrap();
             graph.add("A", vec![]).unwrap();
             graph.add("C", vec!["A".to_string()]).unwrap();
             graph.add("B", vec!["A".to_string()]).unwrap();
@@ -903,7 +914,9 @@ mod tests {
         //      log_end
 
         graph.add("log_start", vec![]).unwrap();
-        graph.add("validate", vec!["log_start".to_string()]).unwrap();
+        graph
+            .add("validate", vec!["log_start".to_string()])
+            .unwrap();
         graph.add("parse", vec!["log_start".to_string()]).unwrap();
         graph
             .add("execute", vec!["validate".to_string(), "parse".to_string()])

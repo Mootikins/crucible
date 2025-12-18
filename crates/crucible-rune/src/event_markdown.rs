@@ -104,35 +104,29 @@ impl EventToMarkdown for SessionEvent {
             SessionEvent::MessageReceived {
                 content,
                 participant_id,
-            } => {
-                format_message_received(participant_id, content)
-            }
+            } => format_message_received(participant_id, content),
 
             SessionEvent::AgentResponded {
                 content,
                 tool_calls,
-            } => {
-                format_agent_responded(content, tool_calls)
-            }
+            } => format_agent_responded(content, tool_calls),
 
-            SessionEvent::AgentThinking { thought } => {
-                format_agent_thinking(thought)
-            }
+            SessionEvent::AgentThinking { thought } => format_agent_thinking(thought),
 
-            SessionEvent::ToolCalled { name, args } => {
-                format_tool_called(name, args)
-            }
+            SessionEvent::ToolCalled { name, args } => format_tool_called(name, args),
 
             SessionEvent::ToolCompleted {
                 name,
                 result,
                 error,
-            } => {
-                format_tool_completed(name, result, error.as_deref())
-            }
+            } => format_tool_completed(name, result, error.as_deref()),
 
             SessionEvent::SessionStarted { config } => {
-                let folder = config.folder.as_ref().map(|p| p.as_path()).unwrap_or(std::path::Path::new(""));
+                let folder = config
+                    .folder
+                    .as_ref()
+                    .map(|p| p.as_path())
+                    .unwrap_or(std::path::Path::new(""));
                 format_session_started(&config.session_id, folder)
             }
 
@@ -140,27 +134,23 @@ impl EventToMarkdown for SessionEvent {
                 format_session_compacted(summary, new_file)
             }
 
-            SessionEvent::SessionEnded { reason } => {
-                format_session_ended(reason)
-            }
+            SessionEvent::SessionEnded { reason } => format_session_ended(reason),
 
-            SessionEvent::SubagentSpawned { id, prompt } => {
-                format_subagent_spawned(id, prompt)
-            }
+            SessionEvent::SubagentSpawned { id, prompt } => format_subagent_spawned(id, prompt),
 
-            SessionEvent::SubagentCompleted { id, result } => {
-                format_subagent_completed(id, result)
-            }
+            SessionEvent::SubagentCompleted { id, result } => format_subagent_completed(id, result),
 
-            SessionEvent::SubagentFailed { id, error } => {
-                format_subagent_failed(id, error)
-            }
+            SessionEvent::SubagentFailed { id, error } => format_subagent_failed(id, error),
 
             SessionEvent::TextDelta { delta, seq } => {
                 format!("**Seq:** {}\n\n```\n{}\n```\n", seq, delta)
             }
 
-            SessionEvent::NoteParsed { path, block_count, payload } => {
+            SessionEvent::NoteParsed {
+                path,
+                block_count,
+                payload,
+            } => {
                 let mut out = format!(
                     "**Path:** `{}`\n**Blocks:** {}\n",
                     path.display(),
@@ -192,17 +182,24 @@ impl EventToMarkdown for SessionEvent {
                 format!("**Server:** {}\n**Tools:** {}\n", server, tool_count)
             }
 
-            SessionEvent::ToolDiscovered { name, source, schema } => {
+            SessionEvent::ToolDiscovered {
+                name,
+                source,
+                schema,
+            } => {
                 let schema_str = schema
                     .as_ref()
-                    .map(|s| format!("\n```json\n{}\n```\n", serde_json::to_string_pretty(s).unwrap_or_default()))
+                    .map(|s| {
+                        format!(
+                            "\n```json\n{}\n```\n",
+                            serde_json::to_string_pretty(s).unwrap_or_default()
+                        )
+                    })
                     .unwrap_or_default();
                 format!("**Name:** {}\n**Source:** {:?}{}", name, source, schema_str)
             }
 
-            SessionEvent::Custom { name, payload } => {
-                format_custom_event(name, payload)
-            }
+            SessionEvent::Custom { name, payload } => format_custom_event(name, payload),
 
             // File events
             SessionEvent::FileChanged { path, kind } => {
@@ -212,30 +209,47 @@ impl EventToMarkdown for SessionEvent {
                 format!("**Path:** `{}`\n", path.display())
             }
             SessionEvent::FileMoved { from, to } => {
-                format!("**From:** `{}`\n**To:** `{}`\n", from.display(), to.display())
+                format!(
+                    "**From:** `{}`\n**To:** `{}`\n",
+                    from.display(),
+                    to.display()
+                )
             }
 
             // Storage events
-            SessionEvent::EntityStored { entity_id, entity_type } => {
+            SessionEvent::EntityStored {
+                entity_id,
+                entity_type,
+            } => {
                 format!("**Entity:** {:?}\n**ID:** {}\n", entity_type, entity_id)
             }
-            SessionEvent::EntityDeleted { entity_id, entity_type } => {
+            SessionEvent::EntityDeleted {
+                entity_id,
+                entity_type,
+            } => {
                 format!("**Entity:** {:?}\n**ID:** {}\n", entity_type, entity_id)
             }
-            SessionEvent::BlocksUpdated { entity_id, block_count } => {
-                format!(
-                    "**Entity:** {}\n**Blocks:** {}\n",
-                    entity_id,
-                    block_count
-                )
+            SessionEvent::BlocksUpdated {
+                entity_id,
+                block_count,
+            } => {
+                format!("**Entity:** {}\n**Blocks:** {}\n", entity_id, block_count)
             }
-            SessionEvent::RelationStored { from_id, to_id, relation_type } => {
+            SessionEvent::RelationStored {
+                from_id,
+                to_id,
+                relation_type,
+            } => {
                 format!(
                     "**From:** {}\n**To:** {}\n**Type:** {}\n",
                     from_id, to_id, relation_type
                 )
             }
-            SessionEvent::RelationDeleted { from_id, to_id, relation_type } => {
+            SessionEvent::RelationDeleted {
+                from_id,
+                to_id,
+                relation_type,
+            } => {
                 format!(
                     "**From:** {}\n**To:** {}\n**Type:** {}\n",
                     from_id, to_id, relation_type
@@ -246,16 +260,33 @@ impl EventToMarkdown for SessionEvent {
             }
 
             // Embedding events
-            SessionEvent::EmbeddingRequested { entity_id, priority, .. } => {
+            SessionEvent::EmbeddingRequested {
+                entity_id,
+                priority,
+                ..
+            } => {
                 format!("**Entity:** {}\n**Priority:** {:?}\n", entity_id, priority)
             }
-            SessionEvent::EmbeddingStored { entity_id, dimensions, .. } => {
-                format!("**Entity:** {}\n**Dimensions:** {}\n", entity_id, dimensions)
+            SessionEvent::EmbeddingStored {
+                entity_id,
+                dimensions,
+                ..
+            } => {
+                format!(
+                    "**Entity:** {}\n**Dimensions:** {}\n",
+                    entity_id, dimensions
+                )
             }
-            SessionEvent::EmbeddingFailed { entity_id, error, .. } => {
+            SessionEvent::EmbeddingFailed {
+                entity_id, error, ..
+            } => {
                 format!("**Entity:** {}\n**Error:** {}\n", entity_id, error)
             }
-            SessionEvent::EmbeddingBatchComplete { entity_id, count, duration_ms } => {
+            SessionEvent::EmbeddingBatchComplete {
+                entity_id,
+                count,
+                duration_ms,
+            } => {
                 format!(
                     "**Entity:** {}\n**Count:** {}\n**Duration:** {}ms\n",
                     entity_id, count, duration_ms
@@ -350,7 +381,10 @@ fn is_leap_year(year: i64) -> bool {
 /// Format MessageReceived event body.
 fn format_message_received(participant_id: &str, content: &str) -> String {
     let quoted_content = quote_content(content);
-    format!("**Participant:** {}\n\n{}\n", participant_id, quoted_content)
+    format!(
+        "**Participant:** {}\n\n{}\n",
+        participant_id, quoted_content
+    )
 }
 
 /// Format AgentResponded event body.
@@ -368,7 +402,10 @@ fn format_agent_responded(content: &str, tool_calls: &[ToolCall]) -> String {
         for call in tool_calls {
             let args_str = serde_json::to_string(&call.args).unwrap_or_default();
             if let Some(call_id) = &call.call_id {
-                body.push_str(&format!("- `{}` (id: {}): `{}`\n", call.name, call_id, args_str));
+                body.push_str(&format!(
+                    "- `{}` (id: {}): `{}`\n",
+                    call.name, call_id, args_str
+                ));
             } else {
                 body.push_str(&format!("- `{}`: `{}`\n", call.name, args_str));
             }
@@ -445,7 +482,10 @@ fn format_session_ended(reason: &str) -> String {
 /// Format SubagentSpawned event body.
 fn format_subagent_spawned(id: &str, prompt: &str) -> String {
     let quoted_prompt = quote_content(prompt);
-    format!("**Subagent ID:** `{}`\n\n**Prompt:**\n{}\n", id, quoted_prompt)
+    format!(
+        "**Subagent ID:** `{}`\n\n**Prompt:**\n{}\n",
+        id, quoted_prompt
+    )
 }
 
 /// Format SubagentCompleted event body.
@@ -583,35 +623,37 @@ fn parse_iso_timestamp(s: &str) -> MarkdownParseResult<u64> {
     // Format: YYYY-MM-DDTHH:MM:SS.mmm
     let parts: Vec<&str> = s.split('T').collect();
     if parts.len() != 2 {
-        return Err(MarkdownParseError::InvalidTimestamp(
-            format!("Expected 'T' separator in timestamp: {}", s),
-        ));
+        return Err(MarkdownParseError::InvalidTimestamp(format!(
+            "Expected 'T' separator in timestamp: {}",
+            s
+        )));
     }
 
     let date_parts: Vec<&str> = parts[0].split('-').collect();
     if date_parts.len() != 3 {
-        return Err(MarkdownParseError::InvalidTimestamp(
-            format!("Invalid date format: {}", parts[0]),
-        ));
+        return Err(MarkdownParseError::InvalidTimestamp(format!(
+            "Invalid date format: {}",
+            parts[0]
+        )));
     }
 
-    let year: i64 = date_parts[0]
-        .parse()
-        .map_err(|_| MarkdownParseError::InvalidTimestamp(format!("Invalid year: {}", date_parts[0])))?;
-    let month: u32 = date_parts[1]
-        .parse()
-        .map_err(|_| MarkdownParseError::InvalidTimestamp(format!("Invalid month: {}", date_parts[1])))?;
-    let day: u32 = date_parts[2]
-        .parse()
-        .map_err(|_| MarkdownParseError::InvalidTimestamp(format!("Invalid day: {}", date_parts[2])))?;
+    let year: i64 = date_parts[0].parse().map_err(|_| {
+        MarkdownParseError::InvalidTimestamp(format!("Invalid year: {}", date_parts[0]))
+    })?;
+    let month: u32 = date_parts[1].parse().map_err(|_| {
+        MarkdownParseError::InvalidTimestamp(format!("Invalid month: {}", date_parts[1]))
+    })?;
+    let day: u32 = date_parts[2].parse().map_err(|_| {
+        MarkdownParseError::InvalidTimestamp(format!("Invalid day: {}", date_parts[2]))
+    })?;
 
     // Time part may have .mmm for milliseconds
     let time_str = parts[1];
     let (time_part, millis) = if let Some(dot_pos) = time_str.find('.') {
         let ms_str = &time_str[dot_pos + 1..];
-        let ms: u64 = ms_str
-            .parse()
-            .map_err(|_| MarkdownParseError::InvalidTimestamp(format!("Invalid milliseconds: {}", ms_str)))?;
+        let ms: u64 = ms_str.parse().map_err(|_| {
+            MarkdownParseError::InvalidTimestamp(format!("Invalid milliseconds: {}", ms_str))
+        })?;
         (&time_str[..dot_pos], ms)
     } else {
         (time_str, 0u64)
@@ -619,20 +661,21 @@ fn parse_iso_timestamp(s: &str) -> MarkdownParseResult<u64> {
 
     let time_parts: Vec<&str> = time_part.split(':').collect();
     if time_parts.len() != 3 {
-        return Err(MarkdownParseError::InvalidTimestamp(
-            format!("Invalid time format: {}", time_part),
-        ));
+        return Err(MarkdownParseError::InvalidTimestamp(format!(
+            "Invalid time format: {}",
+            time_part
+        )));
     }
 
-    let hours: u64 = time_parts[0]
-        .parse()
-        .map_err(|_| MarkdownParseError::InvalidTimestamp(format!("Invalid hours: {}", time_parts[0])))?;
-    let minutes: u64 = time_parts[1]
-        .parse()
-        .map_err(|_| MarkdownParseError::InvalidTimestamp(format!("Invalid minutes: {}", time_parts[1])))?;
-    let seconds: u64 = time_parts[2]
-        .parse()
-        .map_err(|_| MarkdownParseError::InvalidTimestamp(format!("Invalid seconds: {}", time_parts[2])))?;
+    let hours: u64 = time_parts[0].parse().map_err(|_| {
+        MarkdownParseError::InvalidTimestamp(format!("Invalid hours: {}", time_parts[0]))
+    })?;
+    let minutes: u64 = time_parts[1].parse().map_err(|_| {
+        MarkdownParseError::InvalidTimestamp(format!("Invalid minutes: {}", time_parts[1]))
+    })?;
+    let seconds: u64 = time_parts[2].parse().map_err(|_| {
+        MarkdownParseError::InvalidTimestamp(format!("Invalid seconds: {}", time_parts[2]))
+    })?;
 
     // Convert to days since epoch
     let days = ymd_to_days(year, month, day);
@@ -681,7 +724,9 @@ impl MarkdownToEvent for SessionEvent {
         let lines: Vec<&str> = markdown.lines().collect();
 
         if lines.is_empty() {
-            return Err(MarkdownParseError::InvalidHeader("Empty markdown block".to_string()));
+            return Err(MarkdownParseError::InvalidHeader(
+                "Empty markdown block".to_string(),
+            ));
         }
 
         // Parse header (first line)
@@ -834,11 +879,7 @@ fn parse_subagent_spawned(body: &str) -> MarkdownParseResult<SessionEvent> {
 
     // Prompt is in a quoted section after **Prompt:**
     let prompt = if body.contains("**Prompt:**") {
-        let prompt_section = body
-            .split("**Prompt:**")
-            .nth(1)
-            .unwrap_or("")
-            .trim();
+        let prompt_section = body.split("**Prompt:**").nth(1).unwrap_or("").trim();
         extract_quoted_content(prompt_section)
     } else {
         String::new()
@@ -853,11 +894,7 @@ fn parse_subagent_completed(body: &str) -> MarkdownParseResult<SessionEvent> {
 
     // Result is in a quoted section after **Result:**
     let result = if body.contains("**Result:**") {
-        let result_section = body
-            .split("**Result:**")
-            .nth(1)
-            .unwrap_or("")
-            .trim();
+        let result_section = body.split("**Result:**").nth(1).unwrap_or("").trim();
         extract_quoted_content(result_section)
     } else {
         String::new()
@@ -962,11 +999,7 @@ fn extract_section_content(body: &str, label: &str) -> String {
 
 /// Extract result content (may be inline or in code block).
 fn extract_result_content(body: &str) -> String {
-    let after_result = body
-        .split("**Result:**")
-        .nth(1)
-        .unwrap_or("")
-        .trim();
+    let after_result = body.split("**Result:**").nth(1).unwrap_or("").trim();
 
     // Check for code block
     if after_result.starts_with("\n```") || after_result.starts_with("```") {
@@ -981,12 +1014,7 @@ fn extract_result_content(body: &str) -> String {
     }
 
     // Inline result on same line
-    after_result
-        .lines()
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_string()
+    after_result.lines().next().unwrap_or("").trim().to_string()
 }
 
 /// Extract a JSON block after a label.
@@ -1005,8 +1033,7 @@ fn extract_json_block(body: &str, label: &str) -> MarkdownParseResult<serde_json
         .collect::<Vec<_>>()
         .join("\n");
 
-    serde_json::from_str(&in_block)
-        .map_err(|e| MarkdownParseError::JsonParse(e.to_string()))
+    serde_json::from_str(&in_block).map_err(|e| MarkdownParseError::JsonParse(e.to_string()))
 }
 
 /// Parse tool calls section.
@@ -1016,10 +1043,7 @@ fn extract_json_block(body: &str, label: &str) -> MarkdownParseResult<serde_json
 fn parse_tool_calls_section(body: &str) -> MarkdownParseResult<Vec<ToolCall>> {
     let mut tool_calls = Vec::new();
 
-    let after_label = body
-        .split("**Tool Calls:**")
-        .nth(1)
-        .unwrap_or("");
+    let after_label = body.split("**Tool Calls:**").nth(1).unwrap_or("");
 
     for line in after_label.lines() {
         let trimmed = line.trim();
@@ -1055,7 +1079,9 @@ fn parse_tool_calls_section(body: &str) -> MarkdownParseResult<Vec<ToolCall>> {
             let id_start = after_name.find("(id:").unwrap() + 5; // Skip "(id: "
             let id_end = after_name[id_start..].find(')');
             if let Some(end_offset) = id_end {
-                let id = after_name[id_start..id_start + end_offset].trim().to_string();
+                let id = after_name[id_start..id_start + end_offset]
+                    .trim()
+                    .to_string();
                 (Some(id), &after_name[id_start + end_offset + 1..])
             } else {
                 (None, after_name)
@@ -1281,9 +1307,7 @@ mod tests {
     fn agent_responded_to_markdown() {
         let event = SessionEvent::AgentResponded {
             content: "I'll help you with that.".into(),
-            tool_calls: vec![
-                ToolCall::new("read_file", json!({"path": "/tmp/test.txt"})),
-            ],
+            tool_calls: vec![ToolCall::new("read_file", json!({"path": "/tmp/test.txt"}))],
         };
 
         let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
@@ -1300,8 +1324,7 @@ mod tests {
         let event = SessionEvent::AgentResponded {
             content: "".into(),
             tool_calls: vec![
-                ToolCall::new("search", json!({"query": "test"}))
-                    .with_call_id("call_123"),
+                ToolCall::new("search", json!({"query": "test"})).with_call_id("call_123")
             ],
         };
 

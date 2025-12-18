@@ -287,7 +287,11 @@ impl<E: Send + Sync> HandlerChain<E> {
     /// # Errors
     ///
     /// Returns `Err` if the dependency graph is invalid.
-    pub async fn process_uncached(&self, event: Arc<E>, seq: u64) -> DependencyResult<ChainResult<E>>
+    pub async fn process_uncached(
+        &self,
+        event: Arc<E>,
+        seq: u64,
+    ) -> DependencyResult<ChainResult<E>>
     where
         E: Clone,
     {
@@ -504,10 +508,12 @@ mod tests {
             _event: Arc<String>,
             _seq: u64,
         ) -> RingHandlerResult<()> {
-            Err(RingHandlerError::non_fatal("non_fatal", "intentional error"))
+            Err(RingHandlerError::non_fatal(
+                "non_fatal",
+                "intentional error",
+            ))
         }
     }
-
 
     #[tokio::test]
     async fn test_chain_empty() {
@@ -586,9 +592,7 @@ mod tests {
                 deps: &[],
             }))
             .unwrap();
-        chain
-            .add_handler(Box::new(CancelHandler))
-            .unwrap();
+        chain.add_handler(Box::new(CancelHandler)).unwrap();
         chain
             .add_handler(Box::new(EmitHandler {
                 name: "last",

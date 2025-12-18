@@ -469,7 +469,9 @@ fn estimate_event_tokens(event: &SessionEvent) -> usize {
         SessionEvent::TextDelta { delta, .. } => delta.len(),
         // Note events (small metadata)
         SessionEvent::NoteParsed { .. } => 50,
-        SessionEvent::NoteCreated { title, .. } => title.as_ref().map(|t| t.len()).unwrap_or(0) + 50,
+        SessionEvent::NoteCreated { title, .. } => {
+            title.as_ref().map(|t| t.len()).unwrap_or(0) + 50
+        }
         SessionEvent::NoteModified { .. } => 50,
         // MCP/Tool events
         SessionEvent::McpAttached { server, .. } => server.len() + 50,

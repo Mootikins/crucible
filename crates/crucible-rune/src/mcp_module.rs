@@ -153,7 +153,6 @@ macro_rules! register_mcp_tool {
             )
             .build()?;
     }};
-
 }
 
 // =============================================================================
@@ -470,17 +469,15 @@ mod tests {
     fn test_generate_module_with_tools() {
         use crate::mcp_gateway::ContentBlock;
 
-        let client = Arc::new(
-            MockMcpClient::new().with_response(
-                "echo",
-                ToolCallResult {
-                    content: vec![ContentBlock::Text {
-                        text: "echoed".to_string(),
-                    }],
-                    is_error: false,
-                },
-            ),
-        );
+        let client = Arc::new(MockMcpClient::new().with_response(
+            "echo",
+            ToolCallResult {
+                content: vec![ContentBlock::Text {
+                    text: "echoed".to_string(),
+                }],
+                is_error: false,
+            },
+        ));
 
         let tools = vec![UpstreamTool {
             name: "echo".to_string(),

@@ -312,11 +312,11 @@ impl RingHandler<SessionEvent> for PersistenceHandler {
                 self.last_persisted_seq.store(seq, Ordering::SeqCst);
 
                 // Store persistence metadata for other handlers
+                ctx.set_metadata("persist:bytes_written", serde_json::json!(bytes_written));
                 ctx.set_metadata(
-                    "persist:bytes_written",
-                    serde_json::json!(bytes_written),
+                    "persist:file_path",
+                    serde_json::json!(self.current_file_path()),
                 );
-                ctx.set_metadata("persist:file_path", serde_json::json!(self.current_file_path()));
 
                 tracing::trace!(
                     handler = %self.name,
@@ -358,7 +358,11 @@ impl RingHandler<SessionEvent> for PersistenceHandler {
         self.ensure_folder_exists().map_err(|e| {
             RingHandlerError::fatal(
                 &self.name,
-                format!("Failed to create session folder '{}': {}", self.folder.display(), e),
+                format!(
+                    "Failed to create session folder '{}': {}",
+                    self.folder.display(),
+                    e
+                ),
             )
         })?;
 
@@ -746,8 +750,7 @@ mod tests {
         assert!(!result.has_errors());
 
         // Verify persistence
-        let content =
-            std::fs::read_to_string(dir.path().join("000-context.md")).unwrap();
+        let content = std::fs::read_to_string(dir.path().join("000-context.md")).unwrap();
         assert!(content.contains("Test via chain"));
     }
 
@@ -838,22 +841,40 @@ mod tests {
 
         // Test various indices for proper zero-padding
         handler.file_index.store(0, Ordering::SeqCst);
-        assert!(handler.current_file_path().to_string_lossy().contains("000-context.md"));
+        assert!(handler
+            .current_file_path()
+            .to_string_lossy()
+            .contains("000-context.md"));
 
         handler.file_index.store(1, Ordering::SeqCst);
-        assert!(handler.current_file_path().to_string_lossy().contains("001-context.md"));
+        assert!(handler
+            .current_file_path()
+            .to_string_lossy()
+            .contains("001-context.md"));
 
         handler.file_index.store(10, Ordering::SeqCst);
-        assert!(handler.current_file_path().to_string_lossy().contains("010-context.md"));
+        assert!(handler
+            .current_file_path()
+            .to_string_lossy()
+            .contains("010-context.md"));
 
         handler.file_index.store(99, Ordering::SeqCst);
-        assert!(handler.current_file_path().to_string_lossy().contains("099-context.md"));
+        assert!(handler
+            .current_file_path()
+            .to_string_lossy()
+            .contains("099-context.md"));
 
         handler.file_index.store(100, Ordering::SeqCst);
-        assert!(handler.current_file_path().to_string_lossy().contains("100-context.md"));
+        assert!(handler
+            .current_file_path()
+            .to_string_lossy()
+            .contains("100-context.md"));
 
         handler.file_index.store(999, Ordering::SeqCst);
-        assert!(handler.current_file_path().to_string_lossy().contains("999-context.md"));
+        assert!(handler
+            .current_file_path()
+            .to_string_lossy()
+            .contains("999-context.md"));
     }
 
     #[test]
