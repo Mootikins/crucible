@@ -12,18 +12,16 @@ use common::mock_server::{
     ollama_response_chunks, ollama_response_single, ollama_response_with_tool_call,
 };
 use common::{collect_stream_content, collect_stream_with_error, collect_tool_calls};
-use crucible_llm::chat::OllamaChatProvider;
 use crucible_core::traits::{ChatCompletionRequest, LlmMessage, TextGenerationProvider};
+use crucible_llm::chat::OllamaChatProvider;
 
 // ============================================================================
 // Helper Functions
 // ============================================================================
 
 fn create_test_request(content: &str) -> ChatCompletionRequest {
-    let mut request = ChatCompletionRequest::new(
-        "llama3.2".to_string(),
-        vec![LlmMessage::user(content)],
-    );
+    let mut request =
+        ChatCompletionRequest::new("llama3.2".to_string(), vec![LlmMessage::user(content)]);
     request.max_tokens = Some(100);
     request.temperature = Some(0.7);
     request
@@ -43,7 +41,9 @@ async fn test_ollama_stream_success() {
     let request = create_test_request("Hi");
 
     let stream = provider.generate_chat_completion_stream(request);
-    let content = collect_stream_content(stream).await.expect("Stream should succeed");
+    let content = collect_stream_content(stream)
+        .await
+        .expect("Stream should succeed");
 
     assert_eq!(content, "Hello, world!");
 }
@@ -58,7 +58,9 @@ async fn test_ollama_stream_multiple_chunks() {
     let request = create_test_request("Hi");
 
     let stream = provider.generate_chat_completion_stream(request);
-    let content = collect_stream_content(stream).await.expect("Stream should succeed");
+    let content = collect_stream_content(stream)
+        .await
+        .expect("Stream should succeed");
 
     assert_eq!(content, "Hello, world!");
 }
@@ -236,9 +238,14 @@ async fn test_ollama_unicode_content() {
     let request = create_test_request("Say hi in multiple languages");
 
     let stream = provider.generate_chat_completion_stream(request);
-    let content = collect_stream_content(stream).await.expect("Stream should succeed");
+    let content = collect_stream_content(stream)
+        .await
+        .expect("Stream should succeed");
 
-    assert!(content.contains("世界"), "Should contain Chinese characters");
+    assert!(
+        content.contains("世界"),
+        "Should contain Chinese characters"
+    );
     assert!(content.contains("🌍"), "Should contain emoji");
 }
 

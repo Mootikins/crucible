@@ -553,12 +553,12 @@ impl UnifiedProvider for OllamaProvider {
 impl CanEmbed for OllamaProvider {
     async fn embed(&self, text: &str) -> LlmResult<UnifiedEmbeddingResponse> {
         // Delegate to legacy impl and convert response type
-        let response = EmbeddingProvider::embed(self, text)
-            .await
-            .map_err(|e| crucible_core::traits::llm::LlmError::ProviderError {
+        let response = EmbeddingProvider::embed(self, text).await.map_err(|e| {
+            crucible_core::traits::llm::LlmError::ProviderError {
                 provider: "Ollama".to_string(),
                 message: e.to_string(),
-            })?;
+            }
+        })?;
 
         Ok(UnifiedEmbeddingResponse {
             embedding: response.embedding,
@@ -849,8 +849,8 @@ mod tests {
         let provider = OllamaProvider::new(config).unwrap();
 
         // All empty strings should result in empty vec
-        let result = EmbeddingProvider::embed_batch(&provider, vec!["".to_string(), "".to_string()])
-            .await;
+        let result =
+            EmbeddingProvider::embed_batch(&provider, vec!["".to_string(), "".to_string()]).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 0);
     }

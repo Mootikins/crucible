@@ -109,8 +109,10 @@ impl UnifiedModelDiscovery {
         &self,
     ) -> Result<Vec<UnifiedModelInfo>, Box<dyn std::error::Error + Send + Sync>> {
         let discovered = self.local.discover_models().await.map_err(|e| {
-            let boxed: Box<dyn std::error::Error + Send + Sync> =
-                Box::new(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()));
+            let boxed: Box<dyn std::error::Error + Send + Sync> = Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ));
             boxed
         })?;
 
@@ -379,9 +381,6 @@ mod tests {
 
         // Should fail because path doesn't exist
         let result = LlamaCppTextProvider::from_discovered_model(&discovered);
-        assert!(
-            result.is_err(),
-            "Should fail for non-existent model path"
-        );
+        assert!(result.is_err(), "Should fail for non-existent model path");
     }
 }

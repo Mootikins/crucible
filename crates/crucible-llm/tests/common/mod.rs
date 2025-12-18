@@ -122,7 +122,9 @@ pub async fn assert_stream_yields_content(
     stream: BoxStream<'_, LlmResult<ChatCompletionChunk>>,
     expected: &str,
 ) {
-    let content = collect_stream_content(stream).await.expect("stream should succeed");
+    let content = collect_stream_content(stream)
+        .await
+        .expect("stream should succeed");
     assert_eq!(content, expected);
 }
 
@@ -152,18 +154,13 @@ mod tests {
 
     #[test]
     fn test_ndjson_stream_builder() {
-        let stream = ndjson_stream(&[
-            r#"{"done":false}"#,
-            r#"{"done":true}"#,
-        ]);
+        let stream = ndjson_stream(&[r#"{"done":false}"#, r#"{"done":true}"#]);
         assert_eq!(stream, "{\"done\":false}\n{\"done\":true}\n");
     }
 
     #[test]
     fn test_sse_stream_builder() {
-        let stream = sse_stream(&[
-            r#"{"choices":[]}"#,
-        ]);
+        let stream = sse_stream(&[r#"{"choices":[]}"#]);
         assert_eq!(stream, "data: {\"choices\":[]}\n\ndata: [DONE]\n\n");
     }
 }

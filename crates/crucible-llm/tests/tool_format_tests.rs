@@ -237,7 +237,10 @@ fn test_openai_tool_call_format() {
         id: openai_json["id"].as_str().unwrap().to_string(),
         r#type: openai_json["type"].as_str().unwrap().to_string(),
         function: FunctionCall {
-            name: openai_json["function"]["name"].as_str().unwrap().to_string(),
+            name: openai_json["function"]["name"]
+                .as_str()
+                .unwrap()
+                .to_string(),
             arguments: openai_json["function"]["arguments"]
                 .as_str()
                 .unwrap()
@@ -415,9 +418,9 @@ fn test_openai_out_of_order_index() {
     let mut calls: HashMap<u32, (String, String, String)> = HashMap::new();
 
     for delta in deltas {
-        let entry = calls.entry(delta.index).or_insert_with(|| {
-            (String::new(), String::new(), String::new())
-        });
+        let entry = calls
+            .entry(delta.index)
+            .or_insert_with(|| (String::new(), String::new(), String::new()));
 
         if let Some(id) = delta.id {
             entry.0.push_str(&id);
@@ -464,7 +467,11 @@ fn test_tool_call_id_preserved() {
     let original_id = "call_test_12345";
 
     // Create tool call
-    let tool_call = ToolCall::new(original_id, "test_function", r#"{"arg":"value"}"#.to_string());
+    let tool_call = ToolCall::new(
+        original_id,
+        "test_function",
+        r#"{"arg":"value"}"#.to_string(),
+    );
 
     // Verify ID is preserved exactly
     assert_eq!(tool_call.id, original_id);
