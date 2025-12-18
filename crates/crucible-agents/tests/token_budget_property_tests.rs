@@ -3,8 +3,8 @@
 //! Tests invariants around token budget management, overflow protection,
 //! and correction factor stability.
 
-use proptest::prelude::*;
 use crucible_agents::token::TokenBudget;
+use proptest::prelude::*;
 
 proptest! {
     /// Property: Adding tokens should never overflow (saturating_add)
@@ -242,8 +242,14 @@ mod edge_cases {
 
         // Factor should have changed after correction
         let new_factor = budget.correction_factor();
-        assert_ne!(initial_factor, new_factor, "Factor should change after correction");
-        assert!(new_factor > initial_factor, "Factor should increase when actual > estimated");
+        assert_ne!(
+            initial_factor, new_factor,
+            "Factor should change after correction"
+        );
+        assert!(
+            new_factor > initial_factor,
+            "Factor should increase when actual > estimated"
+        );
     }
 
     #[test]

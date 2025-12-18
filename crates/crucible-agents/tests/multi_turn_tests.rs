@@ -11,11 +11,13 @@ use crucible_agents::prompt::LayeredPromptBuilder;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::traits::llm::{
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ChatMessageDelta,
-    CompletionRequest, CompletionResponse, FunctionCall, FunctionCallDelta, LlmResult,
-    MessageRole, ProviderCapabilities, TextGenerationProvider, TextModelInfo,
-    ToolCall as LlmToolCall, ToolCallDelta,
+    CompletionRequest, CompletionResponse, FunctionCall, FunctionCallDelta, LlmResult, MessageRole,
+    ProviderCapabilities, TextGenerationProvider, TextModelInfo, ToolCall as LlmToolCall,
+    ToolCallDelta,
 };
-use crucible_core::traits::tools::{ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult};
+use crucible_core::traits::tools::{
+    ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult,
+};
 use futures::stream::{BoxStream, StreamExt};
 use serde_json::json;
 use std::sync::{Arc, Mutex};
@@ -90,7 +92,10 @@ impl MultiTurnMockProvider {
 
 #[async_trait]
 impl TextGenerationProvider for MultiTurnMockProvider {
-    async fn generate_completion(&self, _request: CompletionRequest) -> LlmResult<CompletionResponse> {
+    async fn generate_completion(
+        &self,
+        _request: CompletionRequest,
+    ) -> LlmResult<CompletionResponse> {
         unimplemented!()
     }
 
@@ -101,7 +106,10 @@ impl TextGenerationProvider for MultiTurnMockProvider {
         unimplemented!()
     }
 
-    async fn generate_chat_completion(&self, _request: ChatCompletionRequest) -> LlmResult<ChatCompletionResponse> {
+    async fn generate_chat_completion(
+        &self,
+        _request: ChatCompletionRequest,
+    ) -> LlmResult<ChatCompletionResponse> {
         unimplemented!()
     }
 
@@ -127,7 +135,10 @@ impl TextGenerationProvider for MultiTurnMockProvider {
                     logprobs: None,
                 }));
             }
-            MockResponse::ToolCall { tool_name, arguments } => {
+            MockResponse::ToolCall {
+                tool_name,
+                arguments,
+            } => {
                 // Tool call chunk
                 chunks.push(Ok(ChatCompletionChunk {
                     index: 0,
@@ -165,7 +176,11 @@ impl TextGenerationProvider for MultiTurnMockProvider {
                     chunks.push(Ok(ChatCompletionChunk {
                         index: 0,
                         delta: ChatMessageDelta {
-                            role: if idx == 0 { Some(MessageRole::Assistant) } else { None },
+                            role: if idx == 0 {
+                                Some(MessageRole::Assistant)
+                            } else {
+                                None
+                            },
                             content: None,
                             function_call: None,
                             tool_calls: Some(vec![ToolCallDelta {
@@ -268,7 +283,10 @@ impl ToolExecutor for LoggingToolExecutor {
         _context: &ExecutionContext,
     ) -> ToolResult<serde_json::Value> {
         // Log the execution
-        self.executions.lock().unwrap().push((name.to_string(), params.clone()));
+        self.executions
+            .lock()
+            .unwrap()
+            .push((name.to_string(), params.clone()));
 
         if !self.tools.contains(&name.to_string()) {
             return Err(ToolError::NotFound(name.to_string()));
