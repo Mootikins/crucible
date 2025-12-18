@@ -2537,6 +2537,7 @@ dependencies = [
  "notify-debouncer-mini",
  "nu-ansi-term",
  "once_cell",
+ "parking_lot 0.12.5",
  "predicates",
  "rand 0.8.5",
  "ratatui",
