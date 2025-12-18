@@ -5,11 +5,11 @@
 //!
 //! Requires the `test-utils` feature to be enabled.
 
-
-
 use crucible_core::parser::MarkdownParser;
-use crucible_surrealdb::test_utils::{apply_eav_graph_schema, EAVGraphStore, NoteIngestor, SurrealClient};
 use crucible_parser::CrucibleParser;
+use crucible_surrealdb::test_utils::{
+    apply_eav_graph_schema, EAVGraphStore, NoteIngestor, SurrealClient,
+};
 use std::path::PathBuf;
 use walkdir::WalkDir;
 
