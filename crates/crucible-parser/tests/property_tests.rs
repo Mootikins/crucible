@@ -46,9 +46,7 @@ fn frontmatter_content_strategy() -> impl Strategy<Value = String> {
 
 /// Strategy for generating markdown content with wikilinks
 fn markdown_with_wikilinks_strategy() -> impl Strategy<Value = String> {
-    wikilink_inner_strategy().prop_map(|inner| {
-        format!("Some text [[{}]] more text", inner)
-    })
+    wikilink_inner_strategy().prop_map(|inner| format!("Some text [[{}]] more text", inner))
 }
 
 /// Strategy for generating tag content
