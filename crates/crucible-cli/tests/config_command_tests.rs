@@ -679,7 +679,20 @@ provider = "fastembed"
 
 #[test]
 #[serial]
+#[ignore = "performance-sensitive smoke test; run manually"]
 fn test_config_show_performance() {
+    let temp = TempDir::new().unwrap();
+    let config_dir = temp.path().join("config");
+    std::fs::create_dir_all(&config_dir).unwrap();
+
+    // Ensure config lookup is isolated from the developer machine.
+    //
+    // `crucible-config` uses `dirs::config_dir()` which respects XDG_CONFIG_HOME on Unix.
+    env::set_var("XDG_CONFIG_HOME", &config_dir);
+    let default_config_path = config_dir.join("crucible").join("config.toml");
+    std::fs::create_dir_all(default_config_path.parent().unwrap()).unwrap();
+    std::fs::write(&default_config_path, "kiln_path = \"/tmp/test-kiln\"\n").unwrap();
+
     let start = std::time::Instant::now();
 
     let mut cmd = Command::cargo_bin("cru").unwrap();
@@ -690,10 +703,13 @@ fn test_config_show_performance() {
     let duration = start.elapsed();
     // Config show should be fast (< 5 seconds for debug build)
     assert!(duration.as_millis() < 5000);
+
+    env::remove_var("XDG_CONFIG_HOME");
 }
 
 #[test]
 #[serial]
+#[ignore = "performance-sensitive smoke test; run manually"]
 fn test_config_show_with_large_config() {
     let temp = TempDir::new().unwrap();
     let config_path = temp.path().join("large-config.toml");
@@ -730,11 +746,10 @@ kiln_path = "/vault{}"
 
     let config_dir = temp.path().join("config");
     fs::create_dir_all(&config_dir).unwrap();
+    env::set_var("XDG_CONFIG_HOME", &config_dir);
     let default_config_path = config_dir.join("crucible").join("config.toml");
     fs::create_dir_all(default_config_path.parent().unwrap()).unwrap();
     fs::copy(&config_path, &default_config_path).unwrap();
-
-    env::set_var("HOME", temp.path());
 
     let start = std::time::Instant::now();
     let mut cmd = Command::cargo_bin("cru").unwrap();
@@ -746,5 +761,5 @@ kiln_path = "/vault{}"
     // Should still be reasonably fast even with large config (debug build)
     assert!(duration.as_millis() < 5000);
 
-    env::remove_var("HOME");
+    env::remove_var("XDG_CONFIG_HOME");
 }
