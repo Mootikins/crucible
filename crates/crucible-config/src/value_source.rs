@@ -95,10 +95,7 @@ impl ValueSourceMap {
 
     /// Check if a value has a specific source
     pub fn has_source(&self, path: &str, source: &ValueSource) -> bool {
-        self.values
-            .get(path)
-            .map(|s| s == source)
-            .unwrap_or(false)
+        self.values.get(path).map(|s| s == source).unwrap_or(false)
     }
 
     /// Get all values from a specific source
@@ -111,7 +108,10 @@ impl ValueSourceMap {
     }
 
     /// Convert to a serializable map (for JSON output with sources)
-    pub fn to_serializable<T>(&self, get_value: impl Fn(&str) -> Option<T>) -> HashMap<String, ValueInfo<T>> {
+    pub fn to_serializable<T>(
+        &self,
+        get_value: impl Fn(&str) -> Option<T>,
+    ) -> HashMap<String, ValueInfo<T>> {
         self.values
             .iter()
             .filter_map(|(path, source)| {
