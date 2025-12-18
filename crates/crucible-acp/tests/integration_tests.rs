@@ -415,9 +415,14 @@ async fn test_client_full_handshake_workflow() {
     // - Client can send new_session
     // - Client can track connection state
 
+    #[cfg(windows)]
+    let (agent_path, agent_args) = (PathBuf::from("cmd"), Some(vec!["/C".to_string(), "echo".to_string(), "ok".to_string()]));
+    #[cfg(not(windows))]
+    let (agent_path, agent_args) = (PathBuf::from("echo"), None);
+
     let config = ClientConfig {
-        agent_path: PathBuf::from("echo"),
-        agent_args: None,
+        agent_path: agent_path.clone(),
+        agent_args,
         working_dir: None,
         env_vars: None,
         timeout_ms: Some(1000),
@@ -425,7 +430,7 @@ async fn test_client_full_handshake_workflow() {
     };
 
     // Verify ClientConfig is properly constructed
-    assert_eq!(config.agent_path, PathBuf::from("echo"));
+    assert_eq!(config.agent_path, agent_path);
     assert_eq!(config.timeout_ms, Some(1000));
 }
 
@@ -508,9 +513,14 @@ async fn test_mock_agent_error_simulation() {
 async fn test_agent_lifecycle_cleanup() {
     use std::path::PathBuf;
 
+    #[cfg(windows)]
+    let (cmd, args) = (PathBuf::from("cmd"), Some(vec!["/C".to_string(), "echo".to_string(), "ok".to_string()]));
+    #[cfg(not(windows))]
+    let (cmd, args) = (PathBuf::from("echo"), None);
+
     let config = ClientConfig {
-        agent_path: PathBuf::from("echo"),
-        agent_args: None,
+        agent_path: cmd,
+        agent_args: args,
         working_dir: None,
         env_vars: None,
         timeout_ms: Some(1000),
@@ -1101,10 +1111,16 @@ async fn integration_filesystem_path_validation() {
     use crucible_acp::filesystem::FileSystemConfig;
     use crucible_acp::FileSystemHandler;
     use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    let temp_dir1 = TempDir::new().unwrap();
+    let temp_dir2 = TempDir::new().unwrap();
+    let root1 = temp_dir1.path().canonicalize().unwrap();
+    let root2 = temp_dir2.path().canonicalize().unwrap();
 
     // Create handler with allowed roots
     let config = FileSystemConfig {
-        allowed_roots: vec![PathBuf::from("/tmp"), PathBuf::from("/var/data")],
+        allowed_roots: vec![root1.clone(), root2.clone()],
         allow_write: false,
         allow_create_dirs: false,
         max_read_size: 1024 * 1024,
@@ -1113,14 +1129,19 @@ async fn integration_filesystem_path_validation() {
     let handler = FileSystemHandler::new(config);
 
     // Test allowed paths
-    assert!(handler.is_path_allowed(&PathBuf::from("/tmp/test.txt")));
-    assert!(handler.is_path_allowed(&PathBuf::from("/tmp/subdir/file.txt")));
-    assert!(handler.is_path_allowed(&PathBuf::from("/var/data/file.txt")));
+    assert!(handler.is_path_allowed(&root1.join("test.txt")));
+    assert!(handler.is_path_allowed(&root1.join("subdir").join("file.txt")));
+    assert!(handler.is_path_allowed(&root2.join("file.txt")));
 
     // Test disallowed paths
+    let outside_dir = TempDir::new().unwrap();
+    let outside_path = outside_dir.path().join("secrets.txt");
+    assert!(!handler.is_path_allowed(&outside_path));
+    
+    #[cfg(unix)]
     assert!(!handler.is_path_allowed(&PathBuf::from("/etc/passwd")));
-    assert!(!handler.is_path_allowed(&PathBuf::from("/home/user/secrets.txt")));
-    assert!(!handler.is_path_allowed(&PathBuf::from("/root/config")));
+    #[cfg(windows)]
+    assert!(!handler.is_path_allowed(&PathBuf::from("C:\\Windows\\System32\\drivers\\etc\\hosts")));
 }
 
 /// Integration test: FileSystemHandler configuration variants
@@ -1129,30 +1150,34 @@ async fn integration_filesystem_configuration() {
     use crucible_acp::filesystem::FileSystemConfig;
     use crucible_acp::FileSystemHandler;
     use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let root = temp_dir.path().canonicalize().unwrap();
 
     // Test default (no access) configuration
     let handler_default = FileSystemHandler::new(FileSystemConfig::default());
-    assert!(!handler_default.is_path_allowed(&PathBuf::from("/tmp/test.txt")));
+    assert!(!handler_default.is_path_allowed(&root.join("test.txt")));
 
     // Test read-only configuration
     let config_readonly = FileSystemConfig {
-        allowed_roots: vec![PathBuf::from("/data")],
+        allowed_roots: vec![root.clone()],
         allow_write: false,
         allow_create_dirs: false,
         max_read_size: 10 * 1024 * 1024,
     };
     let handler_readonly = FileSystemHandler::new(config_readonly);
-    assert!(handler_readonly.is_path_allowed(&PathBuf::from("/data/file.txt")));
+    assert!(handler_readonly.is_path_allowed(&root.join("file.txt")));
 
     // Test read-write configuration
     let config_readwrite = FileSystemConfig {
-        allowed_roots: vec![PathBuf::from("/workspace")],
+        allowed_roots: vec![root.clone()],
         allow_write: true,
         allow_create_dirs: true,
         max_read_size: 50 * 1024 * 1024,
     };
     let handler_readwrite = FileSystemHandler::new(config_readwrite);
-    assert!(handler_readwrite.is_path_allowed(&PathBuf::from("/workspace/output.txt")));
+    assert!(handler_readwrite.is_path_allowed(&root.join("output.txt")));
 }
 
 /// Integration test: StreamHandler message formatting
