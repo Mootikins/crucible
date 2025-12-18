@@ -188,6 +188,6 @@ pub mod test_utils {
 
     #[cfg(feature = "embeddings")]
     pub use crate::kiln_integration::{
-        store_parsed_document, semantic_search, semantic_search_with_reranking
+        semantic_search, semantic_search_with_reranking, store_parsed_document,
     };
 }

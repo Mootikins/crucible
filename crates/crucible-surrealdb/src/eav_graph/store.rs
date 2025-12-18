@@ -1355,7 +1355,12 @@ impl EAVGraphStore {
         let names: Vec<String> = result
             .records
             .iter()
-            .filter_map(|r| r.data.get("name").and_then(|v| v.as_str()).map(String::from))
+            .filter_map(|r| {
+                r.data
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .map(String::from)
+            })
             .collect();
 
         Ok(names)
@@ -2387,7 +2392,10 @@ mod tests {
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client);
 
-        store.store_tag(create_tag("orphan", "orphan", None)).await.unwrap();
+        store
+            .store_tag(create_tag("orphan", "orphan", None))
+            .await
+            .unwrap();
 
         let result = store.collect_descendant_tag_names("orphan").await.unwrap();
         assert_eq!(result, vec!["orphan"]);
@@ -2399,9 +2407,22 @@ mod tests {
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client);
 
-        store.store_tag(create_tag("project", "project", None)).await.unwrap();
-        store.store_tag(create_tag("project/ai", "project/ai", Some("project"))).await.unwrap();
-        store.store_tag(create_tag("project/ai/nlp", "project/ai/nlp", Some("project/ai"))).await.unwrap();
+        store
+            .store_tag(create_tag("project", "project", None))
+            .await
+            .unwrap();
+        store
+            .store_tag(create_tag("project/ai", "project/ai", Some("project")))
+            .await
+            .unwrap();
+        store
+            .store_tag(create_tag(
+                "project/ai/nlp",
+                "project/ai/nlp",
+                Some("project/ai"),
+            ))
+            .await
+            .unwrap();
 
         let mut result = store.collect_descendant_tag_names("project").await.unwrap();
         result.sort();
@@ -2418,11 +2439,23 @@ mod tests {
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client);
 
-        store.store_tag(create_tag("project", "project", None)).await.unwrap();
-        store.store_tag(create_tag("project/ai", "project/ai", Some("project"))).await.unwrap();
-        store.store_tag(create_tag("project/web", "project/web", Some("project"))).await.unwrap();
+        store
+            .store_tag(create_tag("project", "project", None))
+            .await
+            .unwrap();
+        store
+            .store_tag(create_tag("project/ai", "project/ai", Some("project")))
+            .await
+            .unwrap();
+        store
+            .store_tag(create_tag("project/web", "project/web", Some("project")))
+            .await
+            .unwrap();
 
-        let result = store.collect_descendant_tag_names("project/ai").await.unwrap();
+        let result = store
+            .collect_descendant_tag_names("project/ai")
+            .await
+            .unwrap();
 
         assert!(result.contains(&"project/ai".to_string()));
         assert!(!result.contains(&"project/web".to_string()));
@@ -2435,7 +2468,10 @@ mod tests {
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client);
 
-        let result = store.collect_descendant_tag_names("nonexistent").await.unwrap();
+        let result = store
+            .collect_descendant_tag_names("nonexistent")
+            .await
+            .unwrap();
         assert!(result.is_empty());
     }
 
@@ -2456,7 +2492,10 @@ mod tests {
         let store = EAVGraphStore::new(client.clone());
 
         // Create tag
-        store.store_tag(create_tag("project", "project", None)).await.unwrap();
+        store
+            .store_tag(create_tag("project", "project", None))
+            .await
+            .unwrap();
 
         // Create entity and associate with tag
         let entity_id = RecordId::new("entities", "note:test1");
@@ -2464,7 +2503,10 @@ mod tests {
 
         store.upsert_entity(&entity).await.unwrap();
 
-        store.associate_tag(create_entity_tag("note:test1", "project")).await.unwrap();
+        store
+            .associate_tag(create_entity_tag("note:test1", "project"))
+            .await
+            .unwrap();
 
         let result = store.get_entities_by_tag("project").await.unwrap();
         assert_eq!(result.len(), 1);

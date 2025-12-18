@@ -134,7 +134,9 @@ impl<S: TaskStorage> TaskSync<S> {
         };
 
         let saved_file = self.storage.save_task_file(&file_record).await?;
-        let file_id = saved_file.id.unwrap_or_else(|| RecordId::new("task_files", &path_str));
+        let file_id = saved_file
+            .id
+            .unwrap_or_else(|| RecordId::new("task_files", &path_str));
 
         let mut result = SyncResult::empty();
 
@@ -179,8 +181,10 @@ impl<S: TaskStorage> TaskSync<S> {
         }
 
         // Build task_id -> status map
-        let status_map: HashMap<String, String> =
-            tasks.iter().map(|t| (t.task_id.clone(), t.status.clone())).collect();
+        let status_map: HashMap<String, String> = tasks
+            .iter()
+            .map(|t| (t.task_id.clone(), t.status.clone()))
+            .collect();
 
         // Read and update file
         let content = std::fs::read_to_string(path)?;
@@ -239,8 +243,10 @@ impl<S: TaskStorage> TaskSync<S> {
         // Compare states
         let mut conflicts = Vec::new();
 
-        let db_status_map: HashMap<String, String> =
-            db_tasks.iter().map(|t| (t.task_id.clone(), t.status.clone())).collect();
+        let db_status_map: HashMap<String, String> = db_tasks
+            .iter()
+            .map(|t| (t.task_id.clone(), t.status.clone()))
+            .collect();
 
         for task_item in &task_file.tasks {
             if let Some(db_status) = db_status_map.get(&task_item.id) {

@@ -6,8 +6,6 @@
 //!
 //! All tests use the test-kiln at `examples/test-kiln/` for realistic test data.
 
-
-
 mod common;
 
 use common::{setup_test_db_with_kiln, test_kiln_root};
@@ -45,7 +43,10 @@ async fn multi_criteria_tag_and_property() {
         "Should find entities with both tags and properties"
     );
 
-    eprintln!("Found {} entities with tags and properties", result.records.len());
+    eprintln!(
+        "Found {} entities with tags and properties",
+        result.records.len()
+    );
 }
 
 /// Test 1.2: Combine metadata + relationships
@@ -75,7 +76,10 @@ async fn multi_criteria_metadata_and_relationships() {
         "Should find entities with properties and links"
     );
 
-    eprintln!("Found {} entities with properties and links", result.records.len());
+    eprintln!(
+        "Found {} entities with properties and links",
+        result.records.len()
+    );
 }
 
 /// Test 1.3: Count entities with tags, properties, AND links
@@ -176,10 +180,10 @@ async fn multi_criteria_property_value() {
 async fn fuzzy_typo_tolerance() {
     // Arrange: Search with common typos
     let queries_with_typos = vec![
-        ("knowlege", "knowledge"),     // Missing 'd'
-        ("managment", "management"),   // Missing 'e'
+        ("knowlege", "knowledge"),          // Missing 'd'
+        ("managment", "management"),        // Missing 'e'
         ("documantation", "documentation"), // 'a' instead of 'e'
-        ("projct", "project"),         // Missing 'e'
+        ("projct", "project"),              // Missing 'e'
     ];
 
     // Expected: Each typo query should find documents with correct spelling
@@ -211,8 +215,7 @@ async fn fuzzy_typo_tolerance() {
         assert!(
             has_expected,
             "Test kiln should contain '{}' (correct spelling of '{}')",
-            expected,
-            typo
+            expected, typo
         );
     }
 
@@ -247,13 +250,7 @@ async fn fuzzy_phonetic() {
 #[tokio::test]
 async fn fuzzy_stemming() {
     // Arrange: Different forms of the same root word
-    let stem_variations = vec![
-        "manage",
-        "managed",
-        "managing",
-        "management",
-        "manager",
-    ];
+    let stem_variations = vec!["manage", "managed", "managing", "management", "manager"];
 
     let kiln_root = test_kiln_root();
 
@@ -371,8 +368,8 @@ async fn domain_academic_peer_reviewed() {
     let research_file = kiln_root.join("Research Methods.md");
 
     if research_file.exists() {
-        let content = std::fs::read_to_string(&research_file)
-            .expect("Failed to read Research Methods");
+        let content =
+            std::fs::read_to_string(&research_file).expect("Failed to read Research Methods");
 
         // Verify peer_reviewed exists in frontmatter
         assert!(
@@ -403,8 +400,7 @@ async fn domain_meeting_by_attendee() {
     let meeting_file = kiln_root.join("Meeting Notes.md");
 
     if meeting_file.exists() {
-        let content = std::fs::read_to_string(&meeting_file)
-            .expect("Failed to read Meeting Notes");
+        let content = std::fs::read_to_string(&meeting_file).expect("Failed to read Meeting Notes");
 
         assert!(
             content.contains(attendee),
@@ -436,8 +432,7 @@ async fn link_validation_find_all() {
 
     for entry in walkdir::WalkDir::new(&kiln_root) {
         if let Ok(entry) = entry {
-            if entry.file_type().is_file()
-                && entry.path().extension().map_or(false, |e| e == "md")
+            if entry.file_type().is_file() && entry.path().extension().map_or(false, |e| e == "md")
             {
                 if let Ok(content) = std::fs::read_to_string(entry.path()) {
                     total_wikilinks += wikilink_regex.find_iter(&content).count();
@@ -475,8 +470,7 @@ async fn link_validation_targets_exist() {
     // Collect all wikilink targets
     for entry in walkdir::WalkDir::new(&kiln_root) {
         if let Ok(entry) = entry {
-            if entry.file_type().is_file()
-                && entry.path().extension().map_or(false, |e| e == "md")
+            if entry.file_type().is_file() && entry.path().extension().map_or(false, |e| e == "md")
             {
                 // Add note name (without .md)
                 if let Some(stem) = entry.path().file_stem() {
@@ -512,9 +506,16 @@ async fn link_validation_targets_exist() {
 
     // Report broken links if found
     if !broken_links.is_empty() {
-        println!("Found {} broken links: {:?}", broken_links.len(), broken_links);
+        println!(
+            "Found {} broken links: {:?}",
+            broken_links.len(),
+            broken_links
+        );
     } else {
-        println!("All {} wikilink targets validated successfully", targets.len());
+        println!(
+            "All {} wikilink targets validated successfully",
+            targets.len()
+        );
     }
 
     // Verification passed - able to detect broken links
@@ -536,8 +537,7 @@ async fn link_validation_orphaned_pages() {
 
     for entry in walkdir::WalkDir::new(&kiln_root) {
         if let Ok(entry) = entry {
-            if entry.file_type().is_file()
-                && entry.path().extension().map_or(false, |e| e == "md")
+            if entry.file_type().is_file() && entry.path().extension().map_or(false, |e| e == "md")
             {
                 // Add note name
                 if let Some(stem) = entry.path().file_stem() {
@@ -594,8 +594,7 @@ async fn link_validation_density() {
 
     for entry in walkdir::WalkDir::new(&kiln_root) {
         if let Ok(entry) = entry {
-            if entry.file_type().is_file()
-                && entry.path().extension().map_or(false, |e| e == "md")
+            if entry.file_type().is_file() && entry.path().extension().map_or(false, |e| e == "md")
             {
                 if let Some(stem) = entry.path().file_stem() {
                     if let Ok(content) = std::fs::read_to_string(entry.path()) {
@@ -611,10 +610,7 @@ async fn link_validation_density() {
     link_counts.sort_by(|a, b| b.1.cmp(&a.1));
 
     // Knowledge Management Hub should be one of the most linked
-    assert!(
-        !link_counts.is_empty(),
-        "Should have link count data"
-    );
+    assert!(!link_counts.is_empty(), "Should have link count data");
 
     // Show top linked documents
     println!("Link density analysis:");
@@ -685,10 +681,7 @@ async fn crossref_bidirectional() {
     let result = client.query(sql, &[]).await.expect("Query failed");
 
     // Should have relations
-    assert!(
-        !result.records.is_empty(),
-        "Should have wikilink relations"
-    );
+    assert!(!result.records.is_empty(), "Should have wikilink relations");
 
     // Log links
     for record in &result.records {
@@ -722,10 +715,7 @@ async fn crossref_tag_coverage() {
     let result = client.query(sql, &[]).await.expect("Query failed");
 
     // Should have entities with tags
-    assert!(
-        !result.records.is_empty(),
-        "Should have entities with tags"
-    );
+    assert!(!result.records.is_empty(), "Should have entities with tags");
 
     eprintln!("Entities with tags: {}", result.records.len());
 }
