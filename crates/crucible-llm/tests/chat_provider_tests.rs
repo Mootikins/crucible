@@ -7,9 +7,8 @@ use chrono::Utc;
 use crucible_core::traits::{
     ChatCompletionChoice, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
     ChatMessageDelta, CompletionChoice, CompletionChunk, CompletionRequest, CompletionResponse,
-    LlmError, LlmMessage, LlmResult, LlmRequest, LlmToolDefinition, MessageRole,
-    ModelCapability, ModelStatus, ProviderCapabilities, TextGenerationProvider, TextModelInfo,
-    TokenUsage, ToolCall,
+    LlmError, LlmMessage, LlmRequest, LlmResult, LlmToolDefinition, MessageRole, ModelCapability,
+    ModelStatus, ProviderCapabilities, TextGenerationProvider, TextModelInfo, TokenUsage, ToolCall,
 };
 use futures::stream::{self, BoxStream};
 use serde_json::json;
@@ -55,7 +54,10 @@ impl MockTextProvider {
 
 #[async_trait]
 impl TextGenerationProvider for MockTextProvider {
-    async fn generate_completion(&self, request: CompletionRequest) -> LlmResult<CompletionResponse> {
+    async fn generate_completion(
+        &self,
+        request: CompletionRequest,
+    ) -> LlmResult<CompletionResponse> {
         Ok(CompletionResponse {
             choices: vec![CompletionChoice {
                 text: self.default_response.clone(),
@@ -192,10 +194,8 @@ async fn test_simple_chat_completion() {
     let provider = MockTextProvider::new();
     provider.set_chat_response("Hello", "Hello! How can I help you?");
 
-    let request = ChatCompletionRequest::new(
-        "mock-model".to_string(),
-        vec![LlmMessage::user("Hello")],
-    );
+    let request =
+        ChatCompletionRequest::new("mock-model".to_string(), vec![LlmMessage::user("Hello")]);
 
     // When: We request a chat completion
     let response = provider.generate_chat_completion(request).await.unwrap();
@@ -251,10 +251,8 @@ async fn test_token_usage_tracking() {
     // Given: A provider and a request
     let provider = MockTextProvider::new();
 
-    let request = ChatCompletionRequest::new(
-        "mock-model".to_string(),
-        vec![LlmMessage::user("Hello")],
-    );
+    let request =
+        ChatCompletionRequest::new("mock-model".to_string(), vec![LlmMessage::user("Hello")]);
 
     // When: We get a response
     let response = provider.generate_chat_completion(request).await.unwrap();

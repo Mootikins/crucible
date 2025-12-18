@@ -45,7 +45,10 @@ pub async fn ollama_mock_server_error(status_code: u16, error_body: &str) -> Moc
 }
 
 /// Start a mock Ollama server with a delayed response (for timeout testing)
-pub async fn ollama_mock_server_delayed(ndjson_body: &str, delay: std::time::Duration) -> MockServer {
+pub async fn ollama_mock_server_delayed(
+    ndjson_body: &str,
+    delay: std::time::Duration,
+) -> MockServer {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))
