@@ -171,10 +171,7 @@ fn test_config_show_default() {
 #[serial]
 fn test_config_show_json_format() {
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config")
-        .arg("show")
-        .arg("--format")
-        .arg("json");
+    cmd.arg("config").arg("show").arg("--format").arg("json");
 
     cmd.assert()
         .success()
@@ -304,9 +301,9 @@ api_url = "https://api.openai.com"
         .stdout(predicate::str::contains("kiln_path"))
         .stdout(predicate::str::contains("[embedding]"))
         // Environment overrides should work regardless of file loading
-        .stdout(predicate::str::contains("ollama"))  // From env
-        .stdout(predicate::str::contains("env-model"))  // From env
-        .stdout(predicate::str::contains("batch_size"));  // Should be present
+        .stdout(predicate::str::contains("ollama")) // From env
+        .stdout(predicate::str::contains("env-model")) // From env
+        .stdout(predicate::str::contains("batch_size")); // Should be present
 
     // Cleanup
     env::remove_var("HOME");
@@ -333,10 +330,7 @@ fn test_config_dump_default() {
 #[test]
 fn test_config_dump_json_format() {
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config")
-        .arg("dump")
-        .arg("--format")
-        .arg("json");
+    cmd.arg("config").arg("dump").arg("--format").arg("json");
 
     cmd.assert()
         .success()
@@ -357,7 +351,7 @@ fn test_config_dump_ignores_env_vars() {
     cmd.assert()
         .success()
         // Should show defaults, not env overrides
-        .stdout(predicate::str::contains("provider = \"fastembed\""))  // Default provider
+        .stdout(predicate::str::contains("provider = \"fastembed\"")) // Default provider
         .stdout(predicate::str::contains("kiln_path"));
 
     // Cleanup
@@ -382,10 +376,18 @@ fn test_config_show_with_sources() {
 
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("# Effective Configuration with Sources"))
-        .stdout(predicate::str::contains("kiln_path = \"/env/kiln\"  # from: environment (CRUCIBLE_KILN_PATH)"))
-        .stdout(predicate::str::contains("provider = \"OpenAI\"  # from: environment (CRUCIBLE_EMBEDDING_PROVIDER)"))
-        .stdout(predicate::str::contains("model = \"env-model\"  # from: environment (CRUCIBLE_EMBEDDING_MODEL)"))
+        .stdout(predicate::str::contains(
+            "# Effective Configuration with Sources",
+        ))
+        .stdout(predicate::str::contains(
+            "kiln_path = \"/env/kiln\"  # from: environment (CRUCIBLE_KILN_PATH)",
+        ))
+        .stdout(predicate::str::contains(
+            "provider = \"OpenAI\"  # from: environment (CRUCIBLE_EMBEDDING_PROVIDER)",
+        ))
+        .stdout(predicate::str::contains(
+            "model = \"env-model\"  # from: environment (CRUCIBLE_EMBEDDING_MODEL)",
+        ))
         .stdout(predicate::str::contains("batch_size = 16  # from: default"));
 
     // Cleanup
@@ -431,7 +433,9 @@ batch_size = 32
     cmd.assert()
         .success()
         // Check that source tracking is enabled
-        .stdout(predicate::str::contains("# Effective Configuration with Sources"))
+        .stdout(predicate::str::contains(
+            "# Effective Configuration with Sources",
+        ))
         .stdout(predicate::str::contains("# from:"))
         // Should show environment overrides
         .stdout(predicate::str::contains("environment (CRUCIBLE_"))
@@ -703,7 +707,7 @@ provider = "openai"
 model = "text-embedding-3-large"
 
 agent_directories = ["#
-    .to_string();
+        .to_string();
 
     // Add many agent directories
     for i in 0..100 {

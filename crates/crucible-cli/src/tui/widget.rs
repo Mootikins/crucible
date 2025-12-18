@@ -8,8 +8,6 @@
 //! - Upper separator
 //! - Streaming area (caps at ~1/3 terminal height)
 
-
-
 // ============================================================================
 // Dynamic Mode Support (Phase 6)
 // ============================================================================
@@ -41,7 +39,6 @@ pub fn mode_color(mode_id: &str) -> &'static str {
 }
 
 use std::io::{self, Write};
-
 
 /// Component heights for the widget layout
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -235,7 +232,10 @@ pub struct WidgetStateDynamic<'a> {
 /// # Arguments
 /// * `writer` - Output writer
 /// * `state` - Widget state with dynamic mode info
-pub fn render_widget_dynamic<W: Write>(writer: &mut W, state: &WidgetStateDynamic) -> io::Result<()> {
+pub fn render_widget_dynamic<W: Write>(
+    writer: &mut W,
+    state: &WidgetStateDynamic,
+) -> io::Result<()> {
     // Calculate heights
     let input_lines = if state.input.is_empty() {
         1
@@ -351,16 +351,10 @@ pub fn render_input_area<W: Write>(
     for (i, line) in lines.iter().enumerate() {
         if i == 0 {
             // First line has simple prompt
-            write!(
-                writer,
-                "> {}{}{}",
-                line,
-                ansi::CLEAR_LINE,
-                "\r\n"
-            )?;
+            write!(writer, "> {}{}{}", line, ansi::CLEAR_LINE, "\r\n")?;
         } else {
             // Continuation lines are indented
-            write!(writer, "  {}{}{}",line, ansi::CLEAR_LINE, "\r\n")?;
+            write!(writer, "  {}{}{}", line, ansi::CLEAR_LINE, "\r\n")?;
         }
     }
 
@@ -497,23 +491,37 @@ pub fn render_widget<W: Write>(writer: &mut W, state: &WidgetState) -> io::Resul
     writer.flush()
 }
 
-
 // ============================================================================
 // Help Rendering (Phase 6)
 // ============================================================================
 
-use crucible_core::traits::chat::CommandDescriptor;
+use crucible_core::traits::chat::{CommandDescriptor, CommandOption};
 
 /// Format a command descriptor for display in help output
 ///
 /// Shows the command name and description, with optional input hint.
 /// Handles namespaced commands (e.g., "crucible:search") by displaying them properly.
 pub fn format_help_command(desc: &CommandDescriptor) -> String {
-    if let Some(ref hint) = desc.input_hint {
-        format!("  /{} <{}> - {}", desc.name, hint, desc.description)
+    let hint = desc
+        .input_hint
+        .as_ref()
+        .map(|h| format!(" <{}>", h))
+        .unwrap_or_default();
+    let options_suffix = if desc.secondary_options.is_empty() {
+        String::new()
     } else {
-        format!("  /{} - {}", desc.name, desc.description)
-    }
+        let labels: Vec<_> = desc
+            .secondary_options
+            .iter()
+            .map(|o| o.label.as_str())
+            .collect();
+        format!(" [options: {}]", labels.join(", "))
+    };
+
+    format!(
+        "  /{}{} - {}{}",
+        desc.name, hint, desc.description, options_suffix
+    )
 }
 
 /// Render help text for a list of command descriptors
@@ -529,9 +537,8 @@ pub fn render_help_text(commands: &[CommandDescriptor], agent_name: Option<&str>
     output.push_str("==================\n\n");
 
     // Separate namespaced and regular commands
-    let (namespaced, regular): (Vec<_>, Vec<_>) = commands
-        .iter()
-        .partition(|c| c.name.contains(':'));
+    let (namespaced, regular): (Vec<_>, Vec<_>) =
+        commands.iter().partition(|c| c.name.contains(':'));
 
     // Client commands
     output.push_str("Client Commands:\n");
@@ -633,7 +640,6 @@ mod tests {
         assert!(output.contains("Act"), "Should contain mode name");
         assert!(output.contains(ansi::YELLOW), "Act mode should use yellow");
     }
-
 
     // 2.1.1: Test widget height calculation
     #[test]
@@ -741,7 +747,10 @@ mod tests {
 
         let output = String::from_utf8(buffer).unwrap();
         // ANSI row is 1-indexed, so row 20 becomes 21
-        assert!(output.contains("\x1b[21;1H"), "Should position cursor at row 21");
+        assert!(
+            output.contains("\x1b[21;1H"),
+            "Should position cursor at row 21"
+        );
         assert!(output.contains("\x1b[J"), "Should clear to end of screen");
     }
 
@@ -767,7 +776,10 @@ mod tests {
         render_status_line(&mut buffer, "plan", 80).unwrap();
         let output = String::from_utf8(buffer).unwrap();
 
-        assert!(output.contains("[Plan]"), "Should contain Plan mode indicator");
+        assert!(
+            output.contains("[Plan]"),
+            "Should contain Plan mode indicator"
+        );
         assert!(output.contains("Ready"), "Should contain Ready status");
         assert!(output.contains(ansi::CYAN), "Plan mode should use cyan");
         assert!(output.contains(ansi::DIM), "Should use dim styling");
@@ -779,7 +791,10 @@ mod tests {
         render_status_line(&mut buffer, "act", 80).unwrap();
         let output = String::from_utf8(buffer).unwrap();
 
-        assert!(output.contains("[Act]"), "Should contain Act mode indicator");
+        assert!(
+            output.contains("[Act]"),
+            "Should contain Act mode indicator"
+        );
         assert!(output.contains(ansi::YELLOW), "Act mode should use yellow");
     }
 
@@ -789,7 +804,10 @@ mod tests {
         render_status_line(&mut buffer, "auto", 80).unwrap();
         let output = String::from_utf8(buffer).unwrap();
 
-        assert!(output.contains("[Auto]"), "Should contain Auto mode indicator");
+        assert!(
+            output.contains("[Auto]"),
+            "Should contain Auto mode indicator"
+        );
         assert!(output.contains(ansi::RED), "Auto mode should use red");
     }
 
@@ -888,7 +906,10 @@ mod tests {
         let output = String::from_utf8(buffer).unwrap();
 
         assert!(output.contains("Streaming text"), "Should contain content");
-        assert!(output.contains(ansi::GREEN), "Should use green for streaming");
+        assert!(
+            output.contains(ansi::GREEN),
+            "Should use green for streaming"
+        );
     }
 
     #[test]
@@ -910,7 +931,10 @@ mod tests {
         let output = String::from_utf8(buffer).unwrap();
 
         // Should show truncation indicator and last 5 lines
-        assert!(output.contains("lines hidden"), "Should indicate hidden lines");
+        assert!(
+            output.contains("lines hidden"),
+            "Should indicate hidden lines"
+        );
         assert!(output.contains("L10"), "Should show last line");
         // First lines should be hidden
         assert!(!output.contains("L1\n"), "First line should be hidden");
@@ -966,7 +990,10 @@ mod tests {
         render_widget(&mut buffer, &state).unwrap();
         let output = String::from_utf8(buffer).unwrap();
 
-        assert!(output.contains("Response content"), "Should render streaming");
+        assert!(
+            output.contains("Response content"),
+            "Should render streaming"
+        );
         assert!(output.contains("My input"), "Should render input");
         assert!(output.contains("[Act]"), "Should render mode");
     }
@@ -1034,6 +1061,7 @@ mod tests {
             name: "exit".to_string(),
             description: "Exit the session".to_string(),
             input_hint: None,
+            secondary_options: Vec::new(),
         };
         let output = format_help_command(&desc);
         assert!(output.contains("/exit"));
@@ -1046,6 +1074,7 @@ mod tests {
             name: "search".to_string(),
             description: "Search knowledge base".to_string(),
             input_hint: Some("query".to_string()),
+            secondary_options: Vec::new(),
         };
         let output = format_help_command(&desc);
         assert!(output.contains("/search"));
@@ -1054,11 +1083,33 @@ mod tests {
     }
 
     #[test]
+    fn test_format_help_command_with_secondary_options() {
+        let desc = CommandDescriptor {
+            name: "models".to_string(),
+            description: "Select a model".to_string(),
+            input_hint: None,
+            secondary_options: vec![
+                CommandOption {
+                    label: "claude-3.5-sonnet".to_string(),
+                    value: "claude-3.5-sonnet".to_string(),
+                },
+                CommandOption {
+                    label: "claude-3-opus".to_string(),
+                    value: "claude-3-opus".to_string(),
+                },
+            ],
+        };
+        let output = format_help_command(&desc);
+        assert!(output.contains("options: claude-3.5-sonnet, claude-3-opus"));
+    }
+
+    #[test]
     fn test_format_help_command_namespaced() {
         let desc = CommandDescriptor {
             name: "crucible:search".to_string(),
             description: "Client search".to_string(),
             input_hint: Some("query".to_string()),
+            secondary_options: Vec::new(),
         };
         let output = format_help_command(&desc);
         assert!(output.contains("/crucible:search"));
@@ -1072,11 +1123,13 @@ mod tests {
                 name: "exit".to_string(),
                 description: "Exit".to_string(),
                 input_hint: None,
+                secondary_options: Vec::new(),
             },
             CommandDescriptor {
                 name: "help".to_string(),
                 description: "Show help".to_string(),
                 input_hint: None,
+                secondary_options: Vec::new(),
             },
         ];
         let output = render_help_text(&commands, None);
@@ -1093,11 +1146,13 @@ mod tests {
                 name: "search".to_string(),
                 description: "Agent search".to_string(),
                 input_hint: None,
+                secondary_options: Vec::new(),
             },
             CommandDescriptor {
                 name: "crucible:search".to_string(),
                 description: "Client search".to_string(),
                 input_hint: Some("query".to_string()),
+                secondary_options: Vec::new(),
             },
         ];
         let output = render_help_text(&commands, Some("TestAgent"));
@@ -1111,13 +1166,12 @@ mod tests {
 
     #[test]
     fn test_render_help_text_shows_hints() {
-        let commands = vec![
-            CommandDescriptor {
-                name: "search".to_string(),
-                description: "Search".to_string(),
-                input_hint: Some("query".to_string()),
-            },
-        ];
+        let commands = vec![CommandDescriptor {
+            name: "search".to_string(),
+            description: "Search".to_string(),
+            input_hint: Some("query".to_string()),
+            secondary_options: Vec::new(),
+        }];
         let output = render_help_text(&commands, None);
         assert!(output.contains("<query>"));
     }

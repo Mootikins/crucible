@@ -19,7 +19,7 @@ use std::process::Command;
 use std::sync::Arc;
 
 use crucible_core::traits::chat::{
-    cycle_mode_id, ChatContext, ChatError, ChatResult, CommandHandler, mode_display_name,
+    cycle_mode_id, mode_display_name, ChatContext, ChatError, ChatResult, CommandHandler,
 };
 
 /// Exit handler - terminates the chat session
@@ -78,7 +78,10 @@ impl CommandHandler for ModeHandler {
         let current_mode_id = ctx.get_mode_id();
 
         if new_mode_id == current_mode_id {
-            ctx.display_info(&format!("Already in {} mode", mode_display_name(new_mode_id)));
+            ctx.display_info(&format!(
+                "Already in {} mode",
+                mode_display_name(new_mode_id)
+            ));
         } else {
             // Actually perform the mode change via context
             // This will also display the mode change notification
@@ -124,8 +127,11 @@ impl SearchHandler {
         }
 
         let mut output = String::new();
-        output.push_str(&format!("{}
-", "Search Results:".bright_cyan().bold()));
+        output.push_str(&format!(
+            "{}
+",
+            "Search Results:".bright_cyan().bold()
+        ));
 
         for (i, result) in results.iter().enumerate() {
             output.push_str(&format!(
@@ -136,8 +142,11 @@ impl SearchHandler {
                 result.title.bright_white().bold(),
                 format!("(similarity: {:.2})", result.similarity).dimmed()
             ));
-            output.push_str(&format!("   {}
-", result.snippet.dimmed()));
+            output.push_str(&format!(
+                "   {}
+",
+                result.snippet.dimmed()
+            ));
         }
 
         output
@@ -179,24 +188,40 @@ impl HelpHandler {
         }
 
         let mut output = String::new();
-        output.push_str(&format!("{}
-", "Available Commands:".bright_cyan().bold()));
+        output.push_str(&format!(
+            "{}
+",
+            "Available Commands:".bright_cyan().bold()
+        ));
 
         for cmd in commands {
             let hint = cmd
                 .input_hint
                 .map(|h| format!(" <{}>", h))
                 .unwrap_or_default();
+            let options = if cmd.secondary_options.is_empty() {
+                String::new()
+            } else {
+                let labels: Vec<_> = cmd
+                    .secondary_options
+                    .iter()
+                    .map(|o| o.label.as_str())
+                    .collect();
+                format!(" [options: {}]", labels.join(", "))
+            };
 
             output.push_str(&format!(
                 "
   /{}{}
 ",
                 cmd.name.bright_white().bold(),
-                hint.dimmed()
+                format!("{}{}", hint, options).dimmed()
             ));
-            output.push_str(&format!("    {}
-", cmd.description.dimmed()));
+            output.push_str(&format!(
+                "    {}
+",
+                cmd.description.dimmed()
+            ));
         }
 
         output
@@ -408,14 +433,22 @@ impl CommitHandler {
         let diff = Self::get_staged_diff().unwrap_or_default();
         let suggestions = Self::suggest_commit_message(&staged_files, &diff);
 
-        println!("{}", "
-📋 Staged Changes:".bright_cyan().bold());
+        println!(
+            "{}",
+            "
+📋 Staged Changes:"
+                .bright_cyan()
+                .bold()
+        );
         for file in &staged_files {
             println!("  {}", file.dimmed());
         }
 
-        println!("
-{}", "💡 Suggested Commit Messages:".bright_cyan().bold());
+        println!(
+            "
+{}",
+            "💡 Suggested Commit Messages:".bright_cyan().bold()
+        );
         for (i, suggestion) in suggestions.iter().enumerate() {
             println!("  {}. {}", i + 1, suggestion.bright_white());
         }
@@ -427,8 +460,11 @@ impl CommitHandler {
             suggestions[0].clone()
         };
 
-        println!("
-{}", format!("Committing: {}", commit_msg).bright_green());
+        println!(
+            "
+{}",
+            format!("Committing: {}", commit_msg).bright_green()
+        );
         Self::run_git_command(&["commit", "-m", &commit_msg])?;
         println!("{}", "✅ Commit created successfully!".bright_green());
 
@@ -487,14 +523,22 @@ impl CommitHandler {
             return Ok(());
         }
 
-        println!("{}", "
-📊 Repository Status:".bright_cyan().bold());
+        println!(
+            "{}",
+            "
+📊 Repository Status:"
+                .bright_cyan()
+                .bold()
+        );
         println!("{}", status);
 
         let staged_files = Self::get_staged_files()?;
         if staged_files.is_empty() {
-            println!("
-{}", "No staged changes.".bright_yellow());
+            println!(
+                "
+{}",
+                "No staged changes.".bright_yellow()
+            );
             println!(
                 "{}",
                 "Use 'git add' to stage files, or run '/commit wip' to auto-stage.".dimmed()
@@ -505,14 +549,20 @@ impl CommitHandler {
         let diff = Self::get_staged_diff().unwrap_or_default();
         let suggestions = Self::suggest_commit_message(&staged_files, &diff);
 
-        println!("
-{}", "📋 Staged Files:".bright_cyan().bold());
+        println!(
+            "
+{}",
+            "📋 Staged Files:".bright_cyan().bold()
+        );
         for file in &staged_files {
             println!("  {}", file.dimmed());
         }
 
-        println!("
-{}", "💡 Suggested Commit Messages:".bright_cyan().bold());
+        println!(
+            "
+{}",
+            "💡 Suggested Commit Messages:".bright_cyan().bold()
+        );
         for (i, suggestion) in suggestions.iter().enumerate() {
             println!("  {}. {}", i + 1, suggestion.bright_white());
         }

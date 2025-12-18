@@ -13,7 +13,7 @@ use crate::config::CliConfig;
 use crate::core_facade::KilnContext;
 use crate::factories;
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
-use crucible_core::traits::chat::{mode_display_name, is_read_only};
+use crucible_core::traits::chat::{is_read_only, mode_display_name};
 use crucible_pipeline::NotePipeline;
 use crucible_watch::traits::{DebounceConfig, HandlerConfig, WatchConfig};
 use crucible_watch::{EventFilter, WatchMode};
@@ -44,11 +44,7 @@ pub async fn execute(
     max_context_tokens: usize,
 ) -> Result<()> {
     // Determine initial mode
-    let initial_mode = if read_only {
-        "plan"
-    } else {
-        "act"
-    };
+    let initial_mode = if read_only { "plan" } else { "act" };
 
     info!("Starting chat command");
     info!("Initial mode: {}", mode_display_name(initial_mode));

@@ -92,8 +92,7 @@ pub async fn initialize_event_system(config: &CliConfig) -> Result<EventSystemHa
 
     // 7.2.4: Register TagHandler
     debug!("Registering TagHandler (priority 110)");
-    let tag_handler =
-        adapters::create_tag_handler(storage_client.clone(), handler_emitter.clone());
+    let tag_handler = adapters::create_tag_handler(storage_client.clone(), handler_emitter.clone());
     let tag_handler_ref = register_tag_handler(&bus, tag_handler).await;
     handlers.push(tag_handler_ref);
 
@@ -132,7 +131,10 @@ pub async fn initialize_event_system(config: &CliConfig) -> Result<EventSystemHa
     // Start the watch manager
     {
         let mut watch = watch_manager.write().await;
-        watch.start().await.context("Failed to start WatchManager")?;
+        watch
+            .start()
+            .await
+            .context("Failed to start WatchManager")?;
     }
 
     info!(
@@ -430,7 +432,11 @@ async fn load_rune_handlers(bus: &Arc<RwLock<EventBus>>, kiln_path: &Path) {
     }
 
     if loaded_count > 0 {
-        info!("Loaded {} Rune handlers from {}", loaded_count, handlers_dir.display());
+        info!(
+            "Loaded {} Rune handlers from {}",
+            loaded_count,
+            handlers_dir.display()
+        );
     }
 }
 
