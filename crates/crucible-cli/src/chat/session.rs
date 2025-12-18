@@ -8,6 +8,8 @@
 //! during event architecture cleanup. Use --query for one-shot mode.
 
 use anyhow::Result;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 
 use crate::acp::ContextEnricher;
@@ -18,8 +20,10 @@ use crate::chat::slash_registry::{SlashCommandRegistry, SlashCommandRegistryBuil
 use crate::chat::{AgentHandle, ChatError, ChatResult};
 use crate::core_facade::KilnContext;
 use crate::tui::TuiRunner;
+use crate::tui::{DynamicPopupProvider, PopupProvider};
 use crucible_core::traits::registry::{Registry, RegistryBuilder};
 use crucible_rune::SessionBuilder;
+use walkdir::WalkDir;
 
 /// Default number of context results to include in enriched prompts
 pub const DEFAULT_CONTEXT_SIZE: usize = 5;
@@ -43,7 +47,11 @@ pub struct SessionConfig {
 
 impl SessionConfig {
     /// Create a new session configuration
-    pub fn new(initial_mode_id: impl Into<String>, context_enabled: bool, context_size: Option<usize>) -> Self {
+    pub fn new(
+        initial_mode_id: impl Into<String>,
+        context_enabled: bool,
+        context_size: Option<usize>,
+    ) -> Self {
         Self {
             initial_mode_id: initial_mode_id.into(),
             context_enabled,
@@ -186,7 +194,11 @@ impl ChatSession {
     /// # Returns
     ///
     /// Ok(()) if mode was set successfully, or ChatError::InvalidMode if mode does not exist
-    pub async fn set_mode<A: AgentHandle>(&mut self, mode_id: &str, agent: &mut A) -> ChatResult<()> {
+    pub async fn set_mode<A: AgentHandle>(
+        &mut self,
+        mode_id: &str,
+        agent: &mut A,
+    ) -> ChatResult<()> {
         // Validate mode exists in registry
         if !self.mode_registry.exists(mode_id) {
             return Err(ChatError::InvalidMode(mode_id.to_string()));
@@ -210,6 +222,53 @@ impl ChatSession {
     /// - User input → TuiRunner → AgentEventBridge → Agent
     /// - Agent response → TextDelta events → Ring → TuiRunner display
     pub async fn run<A: AgentHandle>(&mut self, agent: &mut A) -> Result<()> {
+        // Incorporate agent-provided commands into the registry (if any)
+        let agent_commands = agent.get_commands();
+        if !agent_commands.is_empty() {
+            self.command_registry = self
+                .command_registry
+                .with_agent_commands(agent_commands.to_vec());
+        }
+
+        // Build popup provider snapshot (commands now include agent commands)
+        let command_items = self.command_registry.list_all();
+        let popup_provider = std::sync::Arc::new(DynamicPopupProvider::new());
+        popup_provider.set_commands(command_items);
+
+        // Spawn background indexing for workspace files and kiln notes
+        let popup_provider_files = popup_provider.clone();
+        let popup_provider_notes = popup_provider.clone();
+        let popup_provider_agents = popup_provider.clone();
+        let workspace_root =
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let kiln_root = self.core.config().kiln_path.clone();
+
+        // Workspace files: prefer git ls-files; fallback to walkdir; skip hidden; cap entries
+        tokio::spawn(async move {
+            if let Ok(files) =
+                tokio::task::spawn_blocking(move || index_workspace_files(&workspace_root)).await
+            {
+                popup_provider_files.set_files(files);
+            }
+        });
+
+        // Kiln notes: scan for markdown files; emit note:<path> (single kiln)
+        tokio::spawn(async move {
+            if let Ok(notes) =
+                tokio::task::spawn_blocking(move || index_kiln_notes(&kiln_root)).await
+            {
+                popup_provider_notes.set_notes(notes);
+            }
+        });
+
+        // Agents: include configured default agent (best-effort)
+        if let Some(default_agent) = self.core.config().acp.default_agent.clone() {
+            popup_provider_agents.set_agents(vec![(
+                default_agent,
+                "Configured default agent".to_string(),
+            )]);
+        }
+
         // Create session for event ring management
         let session_folder = self.core.session_folder();
         let session = SessionBuilder::with_generated_id("chat")
@@ -221,9 +280,98 @@ impl ChatSession {
         let bridge = AgentEventBridge::new(session.handle(), ring);
 
         // Create and run TUI
-        let mut runner = TuiRunner::new(&self.config.initial_mode_id)?;
+        let mut runner = TuiRunner::new(&self.config.initial_mode_id, popup_provider.clone())?;
         runner.run(&bridge, agent).await
     }
+}
+
+fn index_workspace_files(root: &Path) -> Vec<String> {
+    const MAX_ENTRIES: usize = 2000;
+    // Try git ls-files to respect gitignore
+    if let Ok(output) = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["ls-files", "--cached", "--others", "--exclude-standard"])
+        .output()
+    {
+        if output.status.success() {
+            if let Ok(text) = String::from_utf8(output.stdout) {
+                let mut files: Vec<String> = text
+                    .lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .take(MAX_ENTRIES)
+                    .map(|s| s.replace('\\', "/"))
+                    .collect();
+                files.sort();
+                files.dedup();
+                return files;
+            }
+        }
+    }
+
+    let mut files = Vec::new();
+    for entry in WalkDir::new(root)
+        .into_iter()
+        .filter_entry(|e| !is_hidden_entry(e))
+        .filter_map(|e| e.ok())
+    {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        if files.len() >= MAX_ENTRIES {
+            break;
+        }
+        if let Ok(rel) = entry.path().strip_prefix(root) {
+            if let Some(path_str) = rel.to_str() {
+                files.push(path_str.replace('\\', "/"));
+            }
+        }
+    }
+    files.sort();
+    files.dedup();
+    files
+}
+
+fn index_kiln_notes(kiln_root: &Path) -> Vec<String> {
+    const MAX_ENTRIES: usize = 2000;
+    if !kiln_root.exists() {
+        return Vec::new();
+    }
+    let mut notes = Vec::new();
+    for entry in WalkDir::new(kiln_root)
+        .into_iter()
+        .filter_entry(|e| !is_hidden_entry(e))
+        .filter_map(|e| e.ok())
+    {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        if let Some(ext) = entry.path().extension() {
+            if ext != "md" {
+                continue;
+            }
+        } else {
+            continue;
+        }
+        if notes.len() >= MAX_ENTRIES {
+            break;
+        }
+        if let Ok(rel) = entry.path().strip_prefix(kiln_root) {
+            if let Some(path_str) = rel.to_str() {
+                notes.push(format!("note:{}", path_str.replace('\\', "/")));
+            }
+        }
+    }
+    notes.sort();
+    notes.dedup();
+    notes
+}
+
+fn is_hidden_entry(entry: &walkdir::DirEntry) -> bool {
+    entry
+        .path()
+        .components()
+        .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
 }
 
 #[cfg(test)]
@@ -259,14 +407,11 @@ mod tests {
         }
     }
 
-
     // TDD Test 1: Exit handler should signal exit via shared flag when executed through trait
     #[tokio::test]
     async fn test_exit_handler_via_trait() {
         use async_trait::async_trait;
-        use crucible_core::traits::chat::{
-            ChatContext, ChatResult, CommandHandler, SearchResult,
-        };
+        use crucible_core::traits::chat::{ChatContext, ChatResult, CommandHandler, SearchResult};
 
         // Simple mock context that does not need an agent
         struct SimpleMockContext;
@@ -410,7 +555,10 @@ mod tests {
         let mode_registry = ModeRegistry::new();
 
         assert!(mode_registry.is_empty(), "Mode registry should start empty");
-        assert!(!mode_registry.exists("plan"), "Empty registry should not have plan mode");
+        assert!(
+            !mode_registry.exists("plan"),
+            "Empty registry should not have plan mode"
+        );
     }
 
     #[test]
@@ -448,11 +596,34 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_index_workspace_files_skips_hidden() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("visible.txt"), "hi").unwrap();
+        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+        std::fs::write(dir.path().join(".git").join("ignored.txt"), "x").unwrap();
+        let files = index_workspace_files(dir.path());
+        assert!(files.contains(&"visible.txt".to_string()));
+        assert!(!files.iter().any(|f| f.contains(".git")));
+    }
+
+    #[test]
+    fn test_index_kiln_notes_md_only() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("note1.md"), "# Note").unwrap();
+        std::fs::write(dir.path().join("skip.txt"), "text").unwrap();
+        let notes = index_kiln_notes(dir.path());
+        assert!(notes.contains(&"note:note1.md".to_string()));
+        assert!(!notes.iter().any(|n| n.contains("skip.txt")));
+    }
+
     #[tokio::test]
     async fn test_initialization_queries_agent_modes() {
         use async_trait::async_trait;
         use crucible_core::traits::chat::{ChatChunk, ChatResult as CoreChatResult};
-        use crucible_core::types::acp::schema::{SessionMode, SessionModeId, SessionModeState, AvailableCommand};
+        use crucible_core::types::acp::schema::{
+            AvailableCommand, SessionMode, SessionModeId, SessionModeState,
+        };
         use futures::stream::BoxStream;
 
         struct MockAgentWithModes {
@@ -462,7 +633,10 @@ mod tests {
 
         #[async_trait]
         impl AgentHandle for MockAgentWithModes {
-            fn send_message_stream<'a>(&'a mut self, _message: &'a str) -> BoxStream<'a, CoreChatResult<ChatChunk>> {
+            fn send_message_stream<'a>(
+                &'a mut self,
+                _message: &'a str,
+            ) -> BoxStream<'a, CoreChatResult<ChatChunk>> {
                 Box::pin(futures::stream::empty())
             }
 
@@ -491,14 +665,12 @@ mod tests {
         let agent = MockAgentWithModes {
             mode_state: SessionModeState {
                 current_mode_id: SessionModeId(std::sync::Arc::from("custom")),
-                available_modes: vec![
-                    SessionMode {
-                        id: SessionModeId(std::sync::Arc::from("custom")),
-                        name: "Custom Mode".to_string(),
-                        description: Some("A custom agent mode".to_string()),
-                        meta: None,
-                    },
-                ],
+                available_modes: vec![SessionMode {
+                    id: SessionModeId(std::sync::Arc::from("custom")),
+                    name: "Custom Mode".to_string(),
+                    description: Some("A custom agent mode".to_string()),
+                    meta: None,
+                }],
                 meta: None,
             },
             mode_id: "custom".to_string(),
@@ -519,20 +691,21 @@ mod tests {
 
         let agent_state = SessionModeState {
             current_mode_id: SessionModeId(std::sync::Arc::from("agent-mode")),
-            available_modes: vec![
-                SessionMode {
-                    id: SessionModeId(std::sync::Arc::from("agent-mode")),
-                    name: "Agent Mode".to_string(),
-                    description: Some("Custom agent mode".to_string()),
-                    meta: None,
-                },
-            ],
+            available_modes: vec![SessionMode {
+                id: SessionModeId(std::sync::Arc::from("agent-mode")),
+                name: "Agent Mode".to_string(),
+                description: Some("Custom agent mode".to_string()),
+                meta: None,
+            }],
             meta: None,
         };
 
         mode_registry.update(agent_state);
 
-        assert!(!mode_registry.exists("plan"), "Should NOT have plan - only agent modes");
+        assert!(
+            !mode_registry.exists("plan"),
+            "Should NOT have plan - only agent modes"
+        );
         assert!(mode_registry.exists("agent-mode"), "Should have agent mode");
     }
 
@@ -548,7 +721,10 @@ mod tests {
 
         #[async_trait]
         impl AgentHandle for MockAgent {
-            fn send_message_stream<'a>(&'a mut self, _message: &'a str) -> BoxStream<'a, CoreChatResult<ChatChunk>> {
+            fn send_message_stream<'a>(
+                &'a mut self,
+                _message: &'a str,
+            ) -> BoxStream<'a, CoreChatResult<ChatChunk>> {
                 Box::pin(futures::stream::empty())
             }
 
@@ -585,7 +761,10 @@ mod tests {
     #[tokio::test]
     async fn test_set_mode_invalid_mode_returns_error() {
         let mode_registry = ModeRegistry::new();
-        assert!(!mode_registry.exists("invalid-mode"), "invalid-mode should not exist");
+        assert!(
+            !mode_registry.exists("invalid-mode"),
+            "invalid-mode should not exist"
+        );
     }
 
     #[tokio::test]
@@ -602,7 +781,10 @@ mod tests {
 
         #[async_trait]
         impl AgentHandle for MockAgentWithCounter {
-            fn send_message_stream<'a>(&'a mut self, _message: &'a str) -> BoxStream<'a, CoreChatResult<ChatChunk>> {
+            fn send_message_stream<'a>(
+                &'a mut self,
+                _message: &'a str,
+            ) -> BoxStream<'a, CoreChatResult<ChatChunk>> {
                 Box::pin(futures::stream::empty())
             }
 
@@ -633,6 +815,10 @@ mod tests {
             mode_registry.set_mode("act").unwrap();
         }
 
-        assert_eq!(counter.load(Ordering::SeqCst), 1, "Agent set_mode should be called once");
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            1,
+            "Agent set_mode should be called once"
+        );
     }
 }
