@@ -201,13 +201,17 @@ impl LlamaCppTextProvider {
         config: &crate::model_discovery::DiscoveryConfig,
     ) -> LlmResult<Vec<crate::model_discovery::DiscoveredModel>> {
         let discovery = crate::model_discovery::ModelDiscovery::new(config.clone());
-        discovery.discover_models().await.map_err(|e| {
-            LlmError::ConfigError(format!("Failed to discover models: {}", e))
-        })
+        discovery
+            .discover_models()
+            .await
+            .map_err(|e| LlmError::ConfigError(format!("Failed to discover models: {}", e)))
     }
 
     /// Synchronous model loading (runs in background thread)
-    fn load_model_sync(model_path: &std::path::Path, gpu_layers: i32) -> Result<LoadedState, String> {
+    fn load_model_sync(
+        model_path: &std::path::Path,
+        gpu_layers: i32,
+    ) -> Result<LoadedState, String> {
         tracing::info!("Loading GGUF model from {}", model_path.display());
 
         // Initialize llama.cpp backend
@@ -215,7 +219,11 @@ impl LlamaCppTextProvider {
             LlamaBackend::init().map_err(|e| format!("Failed to initialize llama.cpp: {}", e))?;
 
         // Build model params
-        let n_gpu_layers = if gpu_layers < 0 { 999 } else { gpu_layers as u32 };
+        let n_gpu_layers = if gpu_layers < 0 {
+            999
+        } else {
+            gpu_layers as u32
+        };
         let model_params = LlamaModelParams::default().with_n_gpu_layers(n_gpu_layers);
 
         // Load the model
@@ -249,13 +257,10 @@ impl LlamaCppTextProvider {
     fn ensure_loaded(&self) -> LlmResult<()> {
         // First check if already ready (fast path)
         {
-            let state = self
-                .state
-                .read()
-                .map_err(|e| LlmError::ProviderError {
-                    provider: "LlamaCpp".to_string(),
-                    message: format!("Lock poisoned: {}", e),
-                })?;
+            let state = self.state.read().map_err(|e| LlmError::ProviderError {
+                provider: "LlamaCpp".to_string(),
+                message: format!("Lock poisoned: {}", e),
+            })?;
 
             match &*state {
                 LoadState::Ready(_) => return Ok(()),
@@ -276,13 +281,10 @@ impl LlamaCppTextProvider {
         }
 
         // Acquire write lock to wait for loading
-        let mut state = self
-            .state
-            .write()
-            .map_err(|e| LlmError::ProviderError {
-                provider: "LlamaCpp".to_string(),
-                message: format!("Lock poisoned: {}", e),
-            })?;
+        let mut state = self.state.write().map_err(|e| LlmError::ProviderError {
+            provider: "LlamaCpp".to_string(),
+            message: format!("Lock poisoned: {}", e),
+        })?;
 
         // Check again after acquiring write lock
         match &*state {
@@ -342,13 +344,10 @@ impl LlamaCppTextProvider {
     {
         self.ensure_loaded()?;
 
-        let state = self
-            .state
-            .read()
-            .map_err(|e| LlmError::ProviderError {
-                provider: "LlamaCpp".to_string(),
-                message: format!("Lock poisoned: {}", e),
-            })?;
+        let state = self.state.read().map_err(|e| LlmError::ProviderError {
+            provider: "LlamaCpp".to_string(),
+            message: format!("Lock poisoned: {}", e),
+        })?;
 
         match &*state {
             LoadState::Ready(loaded) => f(loaded),
@@ -388,12 +387,13 @@ impl LlamaCppTextProvider {
                 .with_n_threads(self.n_threads)
                 .with_n_threads_batch(self.n_threads);
 
-            let mut ctx = model.new_context(backend, ctx_params).map_err(|e| {
-                LlmError::ProviderError {
-                    provider: "LlamaCpp".to_string(),
-                    message: format!("Failed to create context: {}", e),
-                }
-            })?;
+            let mut ctx =
+                model
+                    .new_context(backend, ctx_params)
+                    .map_err(|e| LlmError::ProviderError {
+                        provider: "LlamaCpp".to_string(),
+                        message: format!("Failed to create context: {}", e),
+                    })?;
 
             // Tokenize prompt
             let tokens = model.str_to_token(prompt, AddBos::Always).map_err(|e| {
@@ -418,10 +418,11 @@ impl LlamaCppTextProvider {
             }
 
             // Process prompt
-            ctx.decode(&mut batch).map_err(|e| LlmError::ProviderError {
-                provider: "LlamaCpp".to_string(),
-                message: format!("Decode failed: {}", e),
-            })?;
+            ctx.decode(&mut batch)
+                .map_err(|e| LlmError::ProviderError {
+                    provider: "LlamaCpp".to_string(),
+                    message: format!("Decode failed: {}", e),
+                })?;
 
             // Build sampler chain
             let mut samplers: Vec<LlamaSampler> = Vec::new();
@@ -441,10 +442,7 @@ impl LlamaCppTextProvider {
             // Add temperature
             if temperature > 0.0 {
                 samplers.push(LlamaSampler::temp(temperature));
-                samplers.push(LlamaSampler::top_p(
-                    self.config.top_p.unwrap_or(0.9),
-                    1,
-                ));
+                samplers.push(LlamaSampler::top_p(self.config.top_p.unwrap_or(0.9), 1));
                 samplers.push(LlamaSampler::top_k(self.config.top_k.unwrap_or(40)));
                 samplers.push(LlamaSampler::dist(42)); // Random sampling
             } else {
@@ -496,17 +494,18 @@ impl LlamaCppTextProvider {
 
                 // Prepare next decode
                 batch.clear();
-                batch.add(token, current_pos, &[0], true).map_err(|e| {
-                    LlmError::ProviderError {
+                batch
+                    .add(token, current_pos, &[0], true)
+                    .map_err(|e| LlmError::ProviderError {
                         provider: "LlamaCpp".to_string(),
                         message: format!("Failed to add token: {}", e),
-                    }
-                })?;
+                    })?;
 
-                ctx.decode(&mut batch).map_err(|e| LlmError::ProviderError {
-                    provider: "LlamaCpp".to_string(),
-                    message: format!("Decode failed: {}", e),
-                })?;
+                ctx.decode(&mut batch)
+                    .map_err(|e| LlmError::ProviderError {
+                        provider: "LlamaCpp".to_string(),
+                        message: format!("Decode failed: {}", e),
+                    })?;
 
                 current_pos += 1;
             }
@@ -524,7 +523,6 @@ impl LlamaCppTextProvider {
             Ok((output, prompt_tokens + completion_tokens))
         })
     }
-
 }
 
 impl Default for LlamaCppTextProvider {
@@ -651,7 +649,10 @@ impl TextGenerationProvider for LlamaCppTextProvider {
                 id: loaded.model_name.clone(),
                 name: loaded.model_name.clone(),
                 owner: Some("local".to_string()),
-                capabilities: vec![ModelCapability::TextCompletion, ModelCapability::ChatCompletion],
+                capabilities: vec![
+                    ModelCapability::TextCompletion,
+                    ModelCapability::ChatCompletion,
+                ],
                 max_context_length: Some(loaded.context_length as u32),
                 max_output_tokens: Some(DEFAULT_MAX_TOKENS),
                 input_price: None,

@@ -57,7 +57,10 @@ impl MockTextProvider {
 
 #[async_trait]
 impl TextGenerationProvider for MockTextProvider {
-    async fn generate_completion(&self, request: CompletionRequest) -> LlmResult<CompletionResponse> {
+    async fn generate_completion(
+        &self,
+        request: CompletionRequest,
+    ) -> LlmResult<CompletionResponse> {
         Ok(CompletionResponse {
             choices: vec![CompletionChoice {
                 text: self.default_response.clone(),
@@ -321,7 +324,8 @@ async fn test_agent_runtime_max_iterations() {
     let provider = MockTextProvider::new();
     let executor = MockToolExecutor::new();
 
-    let mut runtime = AgentRuntime::new(Box::new(provider), Box::new(executor)).with_max_iterations(5);
+    let mut runtime =
+        AgentRuntime::new(Box::new(provider), Box::new(executor)).with_max_iterations(5);
 
     // When: We run a conversation
     let messages = vec![LlmMessage::user("Test message")];

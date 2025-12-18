@@ -12,18 +12,16 @@ use common::mock_server::{
     openai_response_chunks, openai_response_single, openai_response_with_tool_call,
 };
 use common::{collect_stream_content, collect_stream_with_error, collect_tool_calls, sse_stream};
-use crucible_llm::chat::OpenAIChatProvider;
 use crucible_core::traits::{ChatCompletionRequest, LlmMessage, TextGenerationProvider};
+use crucible_llm::chat::OpenAIChatProvider;
 
 // ============================================================================
 // Helper Functions
 // ============================================================================
 
 fn create_test_request(content: &str) -> ChatCompletionRequest {
-    let mut request = ChatCompletionRequest::new(
-        "gpt-4".to_string(),
-        vec![LlmMessage::user(content)],
-    );
+    let mut request =
+        ChatCompletionRequest::new("gpt-4".to_string(), vec![LlmMessage::user(content)]);
     request.max_tokens = Some(100);
     request.temperature = Some(0.7);
     request
@@ -48,7 +46,9 @@ async fn test_openai_sse_done_marker() {
     let request = create_test_request("Hi");
 
     let stream = provider.generate_chat_completion_stream(request);
-    let content = collect_stream_content(stream).await.expect("Stream should complete cleanly");
+    let content = collect_stream_content(stream)
+        .await
+        .expect("Stream should complete cleanly");
 
     assert_eq!(content, "Hello!");
 }
@@ -79,7 +79,9 @@ data: [DONE]
     let request = create_test_request("Hi");
 
     let stream = provider.generate_chat_completion_stream(request);
-    let content = collect_stream_content(stream).await.expect("Should handle empty lines");
+    let content = collect_stream_content(stream)
+        .await
+        .expect("Should handle empty lines");
 
     assert_eq!(content, "Hi!");
 }
@@ -124,7 +126,9 @@ async fn test_openai_sse_buffer_boundary() {
     let request = create_test_request("Hi");
 
     let stream = provider.generate_chat_completion_stream(request);
-    let content = collect_stream_content(stream).await.expect("Should handle buffer splits");
+    let content = collect_stream_content(stream)
+        .await
+        .expect("Should handle buffer splits");
 
     assert_eq!(content, "Chunk one two");
 }
@@ -213,7 +217,8 @@ data: [DONE]
 /// Test HTTP 401 unauthorized error
 #[tokio::test]
 async fn test_openai_unauthorized() {
-    let error_body = r#"{"error": {"message": "Invalid API key", "type": "invalid_request_error"}}"#;
+    let error_body =
+        r#"{"error": {"message": "Invalid API key", "type": "invalid_request_error"}}"#;
     let server = openai_mock_server_error(401, error_body).await;
 
     let provider = OpenAIChatProvider::new(
@@ -298,7 +303,9 @@ data: [DONE]
     let request = create_test_request("Hi");
 
     let stream = provider.generate_chat_completion_stream(request);
-    let content = collect_stream_content(stream).await.expect("Should succeed");
+    let content = collect_stream_content(stream)
+        .await
+        .expect("Should succeed");
 
     // Empty content is valid
     assert!(content.is_empty() || content.len() >= 0);
@@ -319,7 +326,9 @@ async fn test_openai_unicode_content() {
     let request = create_test_request("Say hi globally");
 
     let stream = provider.generate_chat_completion_stream(request);
-    let content = collect_stream_content(stream).await.expect("Should handle Unicode");
+    let content = collect_stream_content(stream)
+        .await
+        .expect("Should handle Unicode");
 
     assert!(content.contains("世界"), "Should contain Chinese chars");
     assert!(content.contains("🚀"), "Should contain emoji");

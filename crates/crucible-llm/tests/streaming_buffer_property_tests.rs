@@ -576,7 +576,10 @@ mod edge_cases {
         // Split in the middle of a JSON object
         buffer.push_str(r#"{"message":{"role":"assi"#);
         let r1 = ndjson_buffer::process_buffer(&mut buffer);
-        assert!(r1.is_empty(), "Incomplete JSON line should not be processed");
+        assert!(
+            r1.is_empty(),
+            "Incomplete JSON line should not be processed"
+        );
 
         buffer.push_str(&format!("{}\n", r#"stant","content":"Hi"},"done":false}"#));
         let r2 = ndjson_buffer::process_buffer(&mut buffer);

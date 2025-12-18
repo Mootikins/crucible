@@ -76,9 +76,9 @@ pub use embeddings::{
     EmbeddingResult,   // Result type alias
 };
 
-pub use reranking::{RerankResult, Reranker, RerankerModelInfo};
 #[cfg(feature = "fastembed")]
 pub use reranking::FastEmbedReranker;
+pub use reranking::{RerankResult, Reranker, RerankerModelInfo};
 
 pub use text_generation::{
     create_text_provider,  // Factory function
@@ -135,6 +135,4 @@ pub use unified::{
 };
 
 // Re-export model discovery
-pub use model_discovery::{
-    DiscoveredModel, DiscoveryConfig, ModelCapability, ModelDiscovery,
-};
+pub use model_discovery::{DiscoveredModel, DiscoveryConfig, ModelCapability, ModelDiscovery};

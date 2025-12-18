@@ -230,7 +230,11 @@ impl ModelDiscovery {
             // Try to extract model information
             match self.extract_model_info(entry_path).await {
                 Ok(model) => {
-                    tracing::debug!("Discovered model: {} at {}", model.name, model.path.display());
+                    tracing::debug!(
+                        "Discovered model: {} at {}",
+                        model.name,
+                        model.path.display()
+                    );
                     models.push(model);
                 }
                 Err(e) => {
@@ -307,7 +311,8 @@ impl ModelDiscovery {
         metadata.capability = self.classify_capability(&metadata.architecture);
 
         // Extract embedding dimensions
-        if let Some(dim) = metadata_map.get("bert.embedding_length")
+        if let Some(dim) = metadata_map
+            .get("bert.embedding_length")
             .or_else(|| metadata_map.get("llama.embedding_length"))
             .or_else(|| metadata_map.get("nomic-bert.embedding_length"))
         {
@@ -338,9 +343,15 @@ impl ModelDiscovery {
         match architecture.as_deref() {
             Some(arch) => {
                 let arch_lower = arch.to_lowercase();
-                if arch_lower.contains("bert") || arch_lower.contains("embed") || arch_lower.contains("nomic") {
+                if arch_lower.contains("bert")
+                    || arch_lower.contains("embed")
+                    || arch_lower.contains("nomic")
+                {
                     ModelCapability::Embedding
-                } else if arch_lower.contains("llama") || arch_lower.contains("gpt") || arch_lower.contains("mistral") {
+                } else if arch_lower.contains("llama")
+                    || arch_lower.contains("gpt")
+                    || arch_lower.contains("mistral")
+                {
                     ModelCapability::TextGeneration
                 } else {
                     ModelCapability::Unknown
@@ -395,7 +406,12 @@ impl ModelDiscovery {
             // Try to extract publisher/model-slug
             let len = components.len();
             if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
-                return format!("{}/{}/{}", components[len - 3], components[len - 2], file_stem);
+                return format!(
+                    "{}/{}/{}",
+                    components[len - 3],
+                    components[len - 2],
+                    file_stem
+                );
             }
         }
 

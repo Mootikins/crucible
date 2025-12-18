@@ -311,7 +311,10 @@ mod tests {
     async fn test_mock_provider_grammar_based_response() {
         let provider = MockConstrainedProvider::new();
         // Match on content that actually appears in the l0_l1_tools grammar
-        provider.set_response("read | write | edit | ls | git | rg", r#"git(args="status")"#);
+        provider.set_response(
+            "read | write | edit | ls | git | rg",
+            r#"git(args="status")"#,
+        );
 
         let grammar = presets::l0_l1_tools();
         let request = ConstrainedRequest::gbnf("Show git status", grammar.as_str());

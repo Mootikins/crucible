@@ -31,10 +31,7 @@ fn find_gguf_model() -> Option<PathBuf> {
     let models_dir = get_models_dir();
 
     if !models_dir.exists() {
-        eprintln!(
-            "Models directory does not exist: {}",
-            models_dir.display()
-        );
+        eprintln!("Models directory does not exist: {}", models_dir.display());
         return None;
     }
 
@@ -131,7 +128,9 @@ fn test_model_discovery() {
             println!("  Size: {} MB", size);
 
             assert!(path.exists());
-            assert!(path.extension().is_some_and(|e| e.eq_ignore_ascii_case("gguf")));
+            assert!(path
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("gguf")));
         }
         None => {
             eprintln!("No GGUF model found in {}", get_models_dir().display());
@@ -180,7 +179,11 @@ fn test_llama_cpp_provider_creation() {
     println!("Creating provider with model: {}", model_path.display());
 
     let provider = LlamaCppTextProvider::new_with_model(model_path);
-    assert!(provider.is_ok(), "Failed to create provider: {:?}", provider.err());
+    assert!(
+        provider.is_ok(),
+        "Failed to create provider: {:?}",
+        provider.err()
+    );
 }
 
 #[tokio::test]
@@ -198,7 +201,7 @@ async fn test_llama_cpp_simple_generation() {
 
     let provider = LlamaCppTextProvider::new_with_config(LlamaCppTextConfig {
         model_path,
-        gpu_layers: Some(-1), // Use GPU if available
+        gpu_layers: Some(-1),    // Use GPU if available
         context_size: Some(512), // Small context for testing
         temperature: Some(0.7),
         ..Default::default()
@@ -288,10 +291,7 @@ async fn test_grammar_constrained_tool_call() {
         }
     };
 
-    println!(
-        "Testing tool call grammar with: {}",
-        model_path.display()
-    );
+    println!("Testing tool call grammar with: {}", model_path.display());
 
     let provider = LlamaCppTextProvider::new_with_config(LlamaCppTextConfig {
         model_path,
@@ -313,13 +313,7 @@ Available tools:
 User: Show me the contents of the README file
 Assistant:"#;
 
-    let result = provider.generate_text(
-        prompt,
-        Some(grammar.as_str()),
-        64,
-        0.7,
-        None,
-    );
+    let result = provider.generate_text(prompt, Some(grammar.as_str()), 64, 0.7, None);
 
     match result {
         Ok((text, _tokens)) => {
@@ -370,12 +364,9 @@ async fn test_can_constrain_generation_trait() {
 
     // Test via trait method
     let grammar = presets::yes_no();
-    let request = ConstrainedRequest::gbnf(
-        "Is water wet? Answer yes or no:",
-        grammar.as_str(),
-    )
-    .with_max_tokens(8)
-    .with_temperature(0.0);
+    let request = ConstrainedRequest::gbnf("Is water wet? Answer yes or no:", grammar.as_str())
+        .with_max_tokens(8)
+        .with_temperature(0.0);
 
     let response = provider.generate_constrained(request).await;
 
@@ -407,23 +398,21 @@ mod mock_tests {
 
         // Configure responses using content patterns from the grammars
         // l0_l1_tools contains "read | write | edit | ls | git | rg"
-        provider.set_response("read | write | edit | ls | git | rg", r#"read(path="src/main.rs")"#);
+        provider.set_response(
+            "read | write | edit | ls | git | rg",
+            r#"read(path="src/main.rs")"#,
+        );
         // yes_no contains '"yes" | "no"'
         provider.set_response(r#""yes" | "no""#, "yes");
 
         // Test L0+L1 tools grammar
-        let tool_request = ConstrainedRequest::gbnf(
-            "Read the main file",
-            presets::l0_l1_tools().as_str(),
-        );
+        let tool_request =
+            ConstrainedRequest::gbnf("Read the main file", presets::l0_l1_tools().as_str());
         let tool_response = provider.generate_constrained(tool_request).await.unwrap();
         assert_eq!(tool_response.text, r#"read(path="src/main.rs")"#);
 
         // Test yes/no grammar
-        let yn_request = ConstrainedRequest::gbnf(
-            "Is this a test?",
-            presets::yes_no().as_str(),
-        );
+        let yn_request = ConstrainedRequest::gbnf("Is this a test?", presets::yes_no().as_str());
         let yn_response = provider.generate_constrained(yn_request).await.unwrap();
         assert_eq!(yn_response.text, "yes");
     }
@@ -473,7 +462,10 @@ fn test_grammar_presets_valid() {
     let presets_list = [
         ("simple_tool_call", presets::simple_tool_call()),
         ("l0_l1_tools", presets::l0_l1_tools()),
-        ("l0_l1_tools_with_thinking", presets::l0_l1_tools_with_thinking()),
+        (
+            "l0_l1_tools_with_thinking",
+            presets::l0_l1_tools_with_thinking(),
+        ),
         ("tool_or_prose", presets::tool_or_prose()),
         ("yes_no", presets::yes_no()),
         ("json_object", presets::json_object()),

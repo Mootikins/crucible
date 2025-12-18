@@ -6,11 +6,11 @@
 
 use async_trait::async_trait;
 use crucible_config::BackendType;
-use crucible_core::traits::{
-    CanChat, CanEmbed, EmbeddingResponse as CoreEmbeddingResponse, ExtendedCapabilities, Provider,
-};
 use crucible_core::traits::llm::{
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, LlmResult,
+};
+use crucible_core::traits::{
+    CanChat, CanEmbed, EmbeddingResponse as CoreEmbeddingResponse, ExtendedCapabilities, Provider,
 };
 use futures::stream::BoxStream;
 use std::sync::Arc;
@@ -276,12 +276,14 @@ impl CanEmbed for UnifiedProvider {
     }
 
     async fn embed_batch(&self, texts: Vec<String>) -> LlmResult<Vec<CoreEmbeddingResponse>> {
-        let responses = self.embedding_provider.embed_batch(texts).await.map_err(|e| {
-            crucible_core::traits::llm::LlmError::ProviderError {
+        let responses = self
+            .embedding_provider
+            .embed_batch(texts)
+            .await
+            .map_err(|e| crucible_core::traits::llm::LlmError::ProviderError {
                 provider: self.name.clone(),
                 message: e.to_string(),
-            }
-        })?;
+            })?;
 
         Ok(responses
             .into_iter()
