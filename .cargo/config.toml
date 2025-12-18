@@ -1,0 +1,26 @@
+# Cargo configuration for Windows builds
+#
+# This file ensures consistent C runtime library linkage on Windows.
+# Without this, you may encounter linker errors like:
+#   error LNK2038: mismatch detected for 'RuntimeLibrary': 
+#   value 'MT_StaticRelease' doesn't match value 'MD_DynamicRelease'
+#
+# By default, Rust on Windows uses dynamic runtime (MD), which matches
+# most dependencies like ONNX Runtime (ort_sys). 
+#
+# If you encounter runtime mismatch errors:
+# 1. Clean and rebuild: `cargo clean && cargo build`
+# 2. Ensure all dependencies are rebuilt with consistent settings
+# 3. If the issue persists, you may need to rebuild problematic dependencies
+#    from source or use alternative providers
+
+[target.'cfg(windows)']
+# Use dynamic C runtime (MD) - this is the default on Windows
+# This matches ONNX Runtime (ort_sys) and most other Windows dependencies
+# No explicit flags needed - Rust defaults to dynamic runtime
+
+# Note: If you need static runtime instead, uncomment the following:
+# rustflags = ["-C", "target-feature=+crt-static"]
+#
+# However, this may cause issues with dependencies that expect dynamic runtime,
+# such as ort_sys (ONNX Runtime).

@@ -974,7 +974,22 @@ verbose = false
     }
 
     /// Get the default config file path
+    ///
+    /// Uses platform-appropriate directories:
+    /// - Linux: `~/.config/crucible/config.toml` (XDG Base Directory)
+    /// - macOS: `~/Library/Application Support/crucible/config.toml`
+    /// - Windows: `%APPDATA%\crucible\config.toml` (Roaming AppData)
     pub fn default_config_path() -> std::path::PathBuf {
+        // Use platform-appropriate config directory
+        // dirs::config_dir() returns:
+        // - Windows: %APPDATA% (Roaming AppData)
+        // - Linux: ~/.config (XDG Base Directory)
+        // - macOS: ~/Library/Application Support
+        if let Some(config_dir) = dirs::config_dir() {
+            return config_dir.join("crucible").join("config.toml");
+        }
+
+        // Fallback: Use home directory with .config subdirectory
         let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
         home.join(".config").join("crucible").join("config.toml")
     }
