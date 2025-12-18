@@ -15,6 +15,7 @@ use crucible_acp::{
 use crucible_config::AcpConfig;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
+use crucible_core::types::acp::schema::AvailableCommand;
 
 /// ACP Client wrapper for CLI
 ///
@@ -405,6 +406,14 @@ impl AgentHandle for CrucibleAcpClient {
 
     fn is_connected(&self) -> bool {
         self.is_connected()
+    }
+
+    fn get_commands(&self) -> &[AvailableCommand] {
+        if let Some(session) = &self.session {
+            session.available_commands()
+        } else {
+            &[]
+        }
     }
 }
 

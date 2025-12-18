@@ -30,9 +30,11 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crucible_core::traits::chat::CommandOption;
 use crucible_core::traits::chat::{CommandDescriptor, CommandHandler};
 use crucible_core::traits::registry::{Registry, RegistryBuilder};
 use crucible_core::types::acp::schema::AvailableCommand;
+use serde_json::Value;
 
 // ============================================================================
 // Reserved Commands (Phase 3)
@@ -130,9 +132,56 @@ impl SlashCommand {
                 name: name.into(),
                 description: description.into(),
                 input_hint,
+                secondary_options: Vec::new(),
             },
         }
     }
+}
+
+fn parse_secondary_options(meta: &Option<Value>) -> Vec<CommandOption> {
+    let mut options = Vec::new();
+    let value = match meta {
+        Some(v) => v,
+        None => return options,
+    };
+
+    let secondary = value
+        .get("secondary")
+        .or_else(|| value.get("secondaryOptions"))
+        .or_else(|| value.get("options"));
+
+    let items = match secondary {
+        Some(Value::Array(items)) => items,
+        _ => return options,
+    };
+
+    for item in items {
+        match item {
+            Value::String(s) => options.push(CommandOption {
+                label: s.clone(),
+                value: s.clone(),
+            }),
+            Value::Object(map) => {
+                let label = map
+                    .get("label")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| map.get("name").and_then(|v| v.as_str()))
+                    .unwrap_or_default()
+                    .to_string();
+                let value = map
+                    .get("value")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_else(|| label.as_str())
+                    .to_string();
+                if !label.is_empty() || !value.is_empty() {
+                    options.push(CommandOption { label, value });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    options
 }
 
 /// Immutable registry of slash commands
@@ -278,11 +327,12 @@ impl SlashCommandRegistry {
 
         // 3. Check for agent command
         if let Some(agent_cmd) = self.agent_commands.iter().find(|c| c.name == name) {
-            let input_hint = agent_cmd.input.as_ref().map(|input| {
-                match input {
-                    crucible_core::types::acp::schema::AvailableCommandInput::Unstructured { hint } => hint.clone(),
+            let input_hint = agent_cmd.input.as_ref().map(|input| match input {
+                crucible_core::types::acp::schema::AvailableCommandInput::Unstructured { hint } => {
+                    hint.clone()
                 }
             });
+            let secondary_options = parse_secondary_options(&agent_cmd.meta);
             return Some(CommandResolution {
                 name: name.to_string(),
                 source: CommandSource::Agent,
@@ -290,6 +340,7 @@ impl SlashCommandRegistry {
                     name: agent_cmd.name.clone(),
                     description: agent_cmd.description.clone(),
                     input_hint,
+                    secondary_options,
                 },
             });
         }
@@ -336,15 +387,17 @@ impl SlashCommandRegistry {
 
         // Add agent commands
         for agent_cmd in &self.agent_commands {
-            let input_hint = agent_cmd.input.as_ref().map(|input| {
-                match input {
-                    crucible_core::types::acp::schema::AvailableCommandInput::Unstructured { hint } => hint.clone(),
+            let input_hint = agent_cmd.input.as_ref().map(|input| match input {
+                crucible_core::types::acp::schema::AvailableCommandInput::Unstructured { hint } => {
+                    hint.clone()
                 }
             });
+            let secondary_options = parse_secondary_options(&agent_cmd.meta);
             all.push(CommandDescriptor {
                 name: agent_cmd.name.clone(),
                 description: agent_cmd.description.clone(),
                 input_hint,
+                secondary_options,
             });
         }
 
@@ -446,6 +499,7 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use crucible_core::traits::chat::{ChatContext, ChatResult};
+    use serde_json::json;
 
     // Mock handler for testing
     struct MockHandler;
@@ -522,6 +576,7 @@ mod tests {
             name: "web".to_string(),
             description: "Search web".to_string(),
             input_hint: None,
+            secondary_options: Vec::new(),
         }]);
 
         assert!(registry.is_dynamic("web"));
@@ -539,6 +594,7 @@ mod tests {
             name: "web".to_string(),
             description: "Search web".to_string(),
             input_hint: None,
+            secondary_options: Vec::new(),
         }]);
 
         let all = registry.list_all();
@@ -560,6 +616,7 @@ mod tests {
             name: "web".to_string(),
             description: "Search web".to_string(),
             input_hint: None,
+            secondary_options: Vec::new(),
         }]);
 
         // Original static command still accessible
@@ -793,5 +850,33 @@ mod tests {
         let resolution = registry.resolve("agent_only").unwrap();
         assert_eq!(resolution.source, CommandSource::Agent);
         assert_eq!(resolution.name, "agent_only");
+    }
+
+    #[test]
+    fn test_agent_command_secondary_options_from_meta() {
+        let handler = Arc::new(MockHandler);
+        let registry = SlashCommandRegistryBuilder::default()
+            .command("search", handler, "Client search")
+            .build();
+
+        let agent_commands = vec![AvailableCommand {
+            name: "models".to_string(),
+            description: "Select a model".to_string(),
+            input: None,
+            meta: Some(json!({
+                "secondary": ["claude-3.5-sonnet", "claude-3-opus"]
+            })),
+        }];
+
+        let registry = registry.with_agent_commands(agent_commands);
+        let resolution = registry
+            .resolve("models")
+            .expect("Should resolve agent command");
+        assert_eq!(resolution.source, CommandSource::Agent);
+        assert_eq!(resolution.descriptor.secondary_options.len(), 2);
+        assert_eq!(
+            resolution.descriptor.secondary_options[0].label,
+            "claude-3.5-sonnet"
+        );
     }
 }

@@ -2,7 +2,7 @@
 //!
 //! Tests the enrichment service creation, provider caching, and configuration handling.
 
-use crucible_config::{EmbeddingConfig, EmbeddingProviderType, CliAppConfig};
+use crucible_config::{CliAppConfig, EmbeddingConfig, EmbeddingProviderType};
 
 /// Test that default config creates valid cache key
 #[test]
@@ -17,7 +17,10 @@ fn test_cache_key_generation_default() {
     );
 
     // Should contain provider type
-    assert!(key.contains("FastEmbed"), "Key should contain provider type");
+    assert!(
+        key.contains("FastEmbed"),
+        "Key should contain provider type"
+    );
     // Should contain batch size
     assert!(key.contains("16"), "Key should contain batch size (16)");
 }
@@ -46,7 +49,10 @@ fn test_cache_key_uniqueness() {
         config2.embedding.batch_size
     );
 
-    assert_ne!(key1, key2, "Different configs should have different cache keys");
+    assert_ne!(
+        key1, key2,
+        "Different configs should have different cache keys"
+    );
 }
 
 /// Test that same configs produce identical cache keys
@@ -70,7 +76,10 @@ fn test_cache_key_consistency() {
         config.embedding.batch_size
     );
 
-    assert_eq!(key1, key2, "Same config should produce identical cache keys");
+    assert_eq!(
+        key1, key2,
+        "Same config should produce identical cache keys"
+    );
 }
 
 /// Test cache key with Ollama provider
@@ -94,8 +103,14 @@ fn test_cache_key_ollama_provider() {
     );
 
     assert!(key.contains("Ollama"), "Key should contain Ollama provider");
-    assert!(key.contains("nomic-embed-text"), "Key should contain model name");
-    assert!(key.contains("localhost:11434"), "Key should contain endpoint");
+    assert!(
+        key.contains("nomic-embed-text"),
+        "Key should contain model name"
+    );
+    assert!(
+        key.contains("localhost:11434"),
+        "Key should contain endpoint"
+    );
     assert!(key.contains("50"), "Key should contain batch size");
 }
 
@@ -120,7 +135,10 @@ fn test_cache_key_openai_provider() {
     );
 
     assert!(key.contains("OpenAI"), "Key should contain OpenAI provider");
-    assert!(key.contains("text-embedding-3-small"), "Key should contain model name");
+    assert!(
+        key.contains("text-embedding-3-small"),
+        "Key should contain model name"
+    );
 }
 
 /// Test EmbeddingConfig default values
@@ -224,11 +242,17 @@ fn test_api_url_configuration() {
 
     // Custom URL
     config.api_url = Some("http://custom-endpoint:8080".to_string());
-    assert_eq!(config.api_url, Some("http://custom-endpoint:8080".to_string()));
+    assert_eq!(
+        config.api_url,
+        Some("http://custom-endpoint:8080".to_string())
+    );
 
     // HTTPS URL
     config.api_url = Some("https://api.example.com/v1".to_string());
-    assert_eq!(config.api_url, Some("https://api.example.com/v1".to_string()));
+    assert_eq!(
+        config.api_url,
+        Some("https://api.example.com/v1".to_string())
+    );
 }
 
 /// Test that cache keys differ when batch size changes
@@ -256,7 +280,10 @@ fn test_cache_key_batch_size_sensitivity() {
         config2.embedding.batch_size
     );
 
-    assert_ne!(key1, key2, "Different batch sizes should produce different keys");
+    assert_ne!(
+        key1, key2,
+        "Different batch sizes should produce different keys"
+    );
 }
 
 /// Test cache key format stability
