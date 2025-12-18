@@ -171,10 +171,7 @@ pub async fn create_stdio_executor_with_env(
     }))
     .map_err(|e| McpError::Connection(format!("Failed to spawn process: {}", e)))?;
 
-    let client = ()
-        .serve(transport)
-        .await
-        .map_err(|e| McpError::Connection(e.to_string()))?;
+    let client = ().serve(transport).await.map_err(|e| McpError::Connection(e.to_string()))?;
 
     RmcpExecutor::from_service(client).await
 }

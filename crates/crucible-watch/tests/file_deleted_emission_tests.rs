@@ -334,10 +334,7 @@ async fn test_file_deleted_after_creation() {
 
     // Process Deleted event
     let deleted_event = FileEvent::new(FileEventKind::Deleted, test_file.clone());
-    handler
-        .handle(deleted_event)
-        .await
-        .expect("Handler failed");
+    handler.handle(deleted_event).await.expect("Handler failed");
 
     let emitted_events = emitter.emitted_events();
     assert_eq!(

@@ -345,7 +345,11 @@ impl ExtendedMcpServer {
         }
 
         // Also check if the result_event schema was modified (for backwards compat with old handlers)
-        if let SessionEvent::ToolDiscovered { schema: Some(schema), .. } = &result_event {
+        if let SessionEvent::ToolDiscovered {
+            schema: Some(schema),
+            ..
+        } = &result_event
+        {
             if let Some(obj) = schema.as_object() {
                 if let Some(category) = obj.get("category").and_then(|v| v.as_str()) {
                     enriched_tool.category = Some(category.to_string());

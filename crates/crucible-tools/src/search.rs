@@ -129,10 +129,7 @@ impl SearchTools {
         let limit = params.limit;
 
         // Security: Validate folder to prevent traversal attacks
-        let search_path = validate_folder_within_kiln(
-            &self.kiln_path,
-            folder.as_deref(),
-        )?;
+        let search_path = validate_folder_within_kiln(&self.kiln_path, folder.as_deref())?;
 
         if !search_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
