@@ -29,8 +29,8 @@ pub mod slash_registry;
 // Re-export core traits for convenience
 
 pub use crucible_core::traits::chat::{
-    AgentHandle, ChatChunk, ChatContext, ChatError, ChatResponse, ChatResult,
-    ChatToolCall, CommandDescriptor, CommandHandler, SearchResult,
+    AgentHandle, ChatChunk, ChatContext, ChatError, ChatResponse, ChatResult, ChatToolCall,
+    CommandDescriptor, CommandHandler, SearchResult,
 };
 
 // Re-export CLI implementations

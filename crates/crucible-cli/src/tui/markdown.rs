@@ -91,7 +91,8 @@ impl MarkdownRenderer {
             &self.light_theme
         };
 
-        let syntax = self.syntax_set
+        let syntax = self
+            .syntax_set
             .find_syntax_by_token(lang)
             .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
 

@@ -9,9 +9,7 @@
 use anyhow::Result;
 use tracing::{debug, info};
 
-use crucible_agents::{
-    InternalAgentHandle, LayeredPromptBuilder, SlidingWindowContext,
-};
+use crucible_agents::{InternalAgentHandle, LayeredPromptBuilder, SlidingWindowContext};
 use crucible_config::CliAppConfig;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::traits::tools::ToolExecutor;
@@ -144,7 +142,8 @@ pub async fn create_internal_agent(
             ..Default::default()
         };
 
-        text_generation::from_config_by_name(&full_config, provider_key).await
+        text_generation::from_config_by_name(&full_config, provider_key)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to create provider '{}': {}", provider_key, e))?
     } else {
         info!("Creating internal agent with default provider");
@@ -155,7 +154,8 @@ pub async fn create_internal_agent(
             ..Default::default()
         };
 
-        text_generation::from_config(&full_config).await
+        text_generation::from_config(&full_config)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to create default provider: {}", e))?
     };
 
@@ -170,7 +170,10 @@ pub async fn create_internal_agent(
     prompt_builder = prompt_builder.with_agents_md(&config.kiln_path);
 
     // Get model name from config
-    let model = config.chat.model.clone()
+    let model = config
+        .chat
+        .model
+        .clone()
         .unwrap_or_else(|| provider.default_model().to_string());
 
     Ok(InternalAgentHandle::new(
@@ -206,17 +209,16 @@ pub async fn create_agent(
             use crate::acp::{discover_agent, CrucibleAcpClient};
 
             // Discover agent
-            let agent_name = params.agent_name.or_else(|| config.acp.default_agent.clone());
+            let agent_name = params
+                .agent_name
+                .or_else(|| config.acp.default_agent.clone());
             let agent = discover_agent(agent_name.as_deref()).await?;
 
             debug!("Discovered agent: {}", agent.name);
 
             // Create ACP client
-            let client = CrucibleAcpClient::with_acp_config(
-                agent,
-                params.read_only,
-                config.acp.clone(),
-            );
+            let client =
+                CrucibleAcpClient::with_acp_config(agent, params.read_only, config.acp.clone());
 
             Ok(InitializedAgent::Acp(client))
         }
@@ -260,8 +262,7 @@ mod tests {
     async fn test_create_internal_agent_requires_valid_config() {
         // This test verifies that we get proper error messages for invalid configs
         let config = CliAppConfig::default();
-        let params = AgentInitParams::new()
-            .with_provider("nonexistent");
+        let params = AgentInitParams::new().with_provider("nonexistent");
 
         let result = create_internal_agent(&config, params).await;
         // Should fail with descriptive error about missing provider

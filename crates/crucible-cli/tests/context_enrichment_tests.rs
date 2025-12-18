@@ -107,7 +107,11 @@ fn test_context_size_override() {
     for &size in &custom_sizes {
         let provided = Some(size);
         let actual = provided.unwrap_or(5);
-        assert_eq!(actual, size, "Context size should be {} when provided", size);
+        assert_eq!(
+            actual, size,
+            "Context size should be {} when provided",
+            size
+        );
     }
 }
 
@@ -165,14 +169,17 @@ fn test_similarity_formatting() {
     let test_cases = [
         (0.999999f32, "1.00"),
         (0.123456f32, "0.12"),
-        (0.555f32, "0.55"),  // Note: 0.555 rounds to 0.56 with f32
+        (0.555f32, "0.55"), // Note: 0.555 rounds to 0.56 with f32
         (0.0f32, "0.00"),
         (1.0f32, "1.00"),
     ];
 
     for (similarity, _expected_contains) in &test_cases {
         let formatted = format!("(similarity: {:.2})", similarity);
-        assert!(formatted.contains("similarity:"), "Should contain 'similarity:'");
+        assert!(
+            formatted.contains("similarity:"),
+            "Should contain 'similarity:'"
+        );
         // Just verify it has some decimal format
         assert!(formatted.contains("."), "Should have decimal point");
     }
@@ -238,7 +245,10 @@ fn test_reranking_candidate_calculation() {
     let candidate_count: Option<usize> = None;
     let rerank_limit = candidate_count.unwrap_or(context_size * 3);
 
-    assert_eq!(rerank_limit, 15, "Should retrieve 3x candidates for reranking");
+    assert_eq!(
+        rerank_limit, 15,
+        "Should retrieve 3x candidates for reranking"
+    );
 }
 
 /// Test reranking with custom candidate count
@@ -301,9 +311,21 @@ fn test_full_enrichment_flow_simulation() {
 
     let query = "How do I implement linked thinking?";
     let mock_results = vec![
-        ("Linked Thinking Overview", 0.92f32, "Linked thinking is a methodology..."),
-        ("Creating Links", 0.87f32, "To create links, use [[wikilinks]]..."),
-        ("Graph Navigation", 0.81f32, "Navigate between connected notes..."),
+        (
+            "Linked Thinking Overview",
+            0.92f32,
+            "Linked thinking is a methodology...",
+        ),
+        (
+            "Creating Links",
+            0.87f32,
+            "To create links, use [[wikilinks]]...",
+        ),
+        (
+            "Graph Navigation",
+            0.81f32,
+            "Navigate between connected notes...",
+        ),
     ];
 
     // Step 1: Format context (what ContextEnricher does)
@@ -313,7 +335,10 @@ fn test_full_enrichment_flow_simulation() {
         .map(|(i, (title, similarity, snippet))| {
             format!(
                 "## Context #{}: {} (similarity: {:.2})\n\n{}\n",
-                i + 1, title, similarity, snippet
+                i + 1,
+                title,
+                similarity,
+                snippet
             )
         })
         .collect::<Vec<_>>()
@@ -347,10 +372,16 @@ fn test_no_context_flag_simulation() {
         query.to_string()
     } else {
         // Would normally enrich
-        format!("# Context from Knowledge Base\n\n...\n\n# User Query\n\n{}", query)
+        format!(
+            "# Context from Knowledge Base\n\n...\n\n# User Query\n\n{}",
+            query
+        )
     };
 
-    assert_eq!(prompt, query, "With no_context flag, query should pass through unchanged");
+    assert_eq!(
+        prompt, query,
+        "With no_context flag, query should pass through unchanged"
+    );
 }
 
 /// Test context flag behavior (simulated)
@@ -368,8 +399,14 @@ fn test_with_context_flag_simulation() {
         format!("# User Query\n\n{}", query)
     };
 
-    assert!(prompt.contains("# User Query"), "Enriched prompt should have header");
-    assert!(prompt.contains(query), "Enriched prompt should contain original query");
+    assert!(
+        prompt.contains("# User Query"),
+        "Enriched prompt should have header"
+    );
+    assert!(
+        prompt.contains(query),
+        "Enriched prompt should contain original query"
+    );
 }
 
 // =============================================================================
@@ -381,14 +418,19 @@ fn test_with_context_flag_simulation() {
 fn test_context_respects_size_limit() {
     let context_size = 3;
     let all_results = vec![
-        "Note 1", "Note 2", "Note 3", "Note 4", "Note 5",
-        "Note 6", "Note 7", "Note 8", "Note 9", "Note 10",
+        "Note 1", "Note 2", "Note 3", "Note 4", "Note 5", "Note 6", "Note 7", "Note 8", "Note 9",
+        "Note 10",
     ];
 
     // Take only context_size results
     let limited: Vec<_> = all_results.into_iter().take(context_size).collect();
 
-    assert_eq!(limited.len(), 3, "Should only take {} results", context_size);
+    assert_eq!(
+        limited.len(),
+        3,
+        "Should only take {} results",
+        context_size
+    );
     assert_eq!(limited[0], "Note 1");
     assert_eq!(limited[1], "Note 2");
     assert_eq!(limited[2], "Note 3");
@@ -405,7 +447,10 @@ fn test_large_snippets_included() {
         1, "Large Note", 0.9f32, large_snippet
     );
 
-    assert!(context.contains(&large_snippet), "Full snippet should be included");
+    assert!(
+        context.contains(&large_snippet),
+        "Full snippet should be included"
+    );
 }
 
 // =============================================================================
@@ -429,7 +474,10 @@ fn test_perfect_similarity() {
 
     let context = format!("(similarity: {:.2})", perfect_similarity);
 
-    assert!(context.contains("1.00"), "Should display perfect similarity");
+    assert!(
+        context.contains("1.00"),
+        "Should display perfect similarity"
+    );
 }
 
 /// Test title with markdown special characters
@@ -450,7 +498,11 @@ fn test_title_with_markdown_chars() {
         );
 
         // Title should be included as-is (no escaping needed for context display)
-        assert!(context.contains(title), "Title '{}' should be preserved", title);
+        assert!(
+            context.contains(title),
+            "Title '{}' should be preserved",
+            title
+        );
     }
 }
 
@@ -505,7 +557,10 @@ fn test_creates_valid_markdown() {
         .map(|(i, (title, similarity, snippet))| {
             format!(
                 "## Context #{}: {} (similarity: {:.2})\n\n{}\n",
-                i + 1, title, similarity, snippet
+                i + 1,
+                title,
+                similarity,
+                snippet
             )
         })
         .collect::<Vec<_>>()

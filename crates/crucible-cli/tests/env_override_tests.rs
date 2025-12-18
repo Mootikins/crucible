@@ -68,7 +68,9 @@ batch_size = 16
     cmd.assert()
         .success()
         // Should use CLI/CLI env override for kiln_path
-        .stdout(predicate::str::contains(temp.path().to_string_lossy().to_string()))
+        .stdout(predicate::str::contains(
+            temp.path().to_string_lossy().to_string(),
+        ))
         // Should use environment overrides (note: provider is lowercase in output)
         .stdout(predicate::str::contains("provider = \"openai\""))
         .stdout(predicate::str::contains("model = \"env-model\""))
@@ -77,9 +79,7 @@ batch_size = 16
 
     // Test with sources flag to verify tracking works
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("config")
-        .arg("show")
-        .arg("--sources");
+    cmd.arg("config").arg("show").arg("--sources");
 
     cmd.assert()
         .success()
@@ -210,4 +210,3 @@ fn test_json_format_with_sources() {
         .stdout(predicate::str::contains(r#""embedding""#))
         .stdout(predicate::str::contains(r#""cli""#));
 }
-
