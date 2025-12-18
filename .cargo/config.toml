@@ -19,21 +19,12 @@
 # This ensures all dependencies, including native ones built with cc crate,
 # use the same runtime library setting.
 #
-# The cc crate (used by esaxx-rs) respects these environment variables:
-# - CFLAGS with /MD flag forces dynamic runtime for C code
-# - CXXFLAGS with /MD flag forces dynamic runtime for C++ code
-#
-# We explicitly disable static runtime linking to prevent mismatches
+# We explicitly disable static runtime linking to prevent mismatches.
+# (When `crt-static` is disabled, `cc`-built dependencies will typically use
+# the dynamic runtime by default.)
 rustflags = ["-C", "target-feature=-crt-static"]
-
-# Environment variables for cc crate to use dynamic runtime
-[env]
-# Force cc crate to use /MD (dynamic runtime) instead of /MT (static runtime)
-# This is critical for esaxx-rs and other native dependencies
-CFLAGS = "/MD"
-CXXFLAGS = "/MD"
 
 # Note: If you need static runtime instead (not recommended with ort_sys):
 # 1. Comment out the rustflags line above
-# 2. Change CFLAGS and CXXFLAGS to "/MT"
+# 2. Ensure native dependencies use "/MT" consistently
 # 3. This will likely cause linker errors with ort_sys (ONNX Runtime)
