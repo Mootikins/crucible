@@ -768,8 +768,8 @@ mod tests {
         let storage = MockEntityStorage::new();
 
         // Test store_entity
-        let entity = Entity::new("note:test".to_string(), EntityType::Note)
-            .with_content_hash("abc123");
+        let entity =
+            Entity::new("note:test".to_string(), EntityType::Note).with_content_hash("abc123");
 
         let id = storage.store_entity(entity.clone()).await.unwrap();
         assert_eq!(id, "note:test");

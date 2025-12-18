@@ -183,7 +183,9 @@ impl TaskFile {
 
         // Extract frontmatter fields
         let title = frontmatter.as_ref().and_then(|fm| fm.get_string("title"));
-        let description = frontmatter.as_ref().and_then(|fm| fm.get_string("description"));
+        let description = frontmatter
+            .as_ref()
+            .and_then(|fm| fm.get_string("description"));
         let context_files = frontmatter
             .as_ref()
             .and_then(|fm| fm.get_array("context_files"))
@@ -233,8 +235,8 @@ impl TaskFile {
                 let content = caps[2].to_string();
 
                 // Parse checkbox status
-                let status = CheckboxStatus::from_char(status_char)
-                    .unwrap_or(CheckboxStatus::Pending);
+                let status =
+                    CheckboxStatus::from_char(status_char).unwrap_or(CheckboxStatus::Pending);
 
                 // Extract inline metadata
                 let metadata_vec = extract_inline_metadata(&content);
@@ -278,7 +280,10 @@ pub struct TaskGraph {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GraphError {
     /// Task depends on a non-existent task ID
-    MissingDependency { task_id: String, missing_dep: String },
+    MissingDependency {
+        task_id: String,
+        missing_dep: String,
+    },
     /// Dependency graph contains a cycle
     CycleDetected { cycle: Vec<String> },
 }
@@ -286,8 +291,15 @@ pub enum GraphError {
 impl std::fmt::Display for GraphError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            GraphError::MissingDependency { task_id, missing_dep } => {
-                write!(f, "Task '{}' depends on non-existent task '{}'", task_id, missing_dep)
+            GraphError::MissingDependency {
+                task_id,
+                missing_dep,
+            } => {
+                write!(
+                    f,
+                    "Task '{}' depends on non-existent task '{}'",
+                    task_id, missing_dep
+                )
             }
             GraphError::CycleDetected { cycle } => {
                 write!(f, "Dependency cycle detected: {}", cycle.join(" -> "))
@@ -351,7 +363,10 @@ impl TaskGraph {
 
     /// Get tasks that this task depends on
     pub fn dependencies_of(&self, id: &str) -> &[String] {
-        self.dependencies.get(id).map(|v| v.as_slice()).unwrap_or(&[])
+        self.dependencies
+            .get(id)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
     /// Get tasks that depend on this task
@@ -445,10 +460,8 @@ impl TaskGraph {
     /// Vector of task IDs that are ready to execute
     pub fn ready_tasks(&self, tasks: &[TaskItem]) -> Vec<String> {
         // Build a map of task ID to status for fast lookups
-        let status_map: HashMap<&str, CheckboxStatus> = tasks
-            .iter()
-            .map(|t| (t.id.as_str(), t.status))
-            .collect();
+        let status_map: HashMap<&str, CheckboxStatus> =
+            tasks.iter().map(|t| (t.id.as_str(), t.status)).collect();
 
         let mut ready = Vec::new();
 
@@ -486,10 +499,7 @@ mod tests {
     fn task_item_from_list_item() {
         // Test basic construction from parsed data
         let mut metadata = HashMap::new();
-        metadata.insert(
-            "id".to_string(),
-            InlineMetadata::new("id", "task-1"),
-        );
+        metadata.insert("id".to_string(), InlineMetadata::new("id", "task-1"));
         metadata.insert(
             "priority".to_string(),
             InlineMetadata::new("priority", "high"),
@@ -512,23 +522,13 @@ mod tests {
     fn task_item_deps_parsed_as_vec() {
         // Test that deps field is correctly parsed as array
         let mut metadata = HashMap::new();
-        metadata.insert(
-            "id".to_string(),
-            InlineMetadata::new("id", "task-3"),
-        );
+        metadata.insert("id".to_string(), InlineMetadata::new("id", "task-3"));
         metadata.insert(
             "deps".to_string(),
-            InlineMetadata::new_array(
-                "deps",
-                vec!["task-1".to_string(), "task-2".to_string()],
-            ),
+            InlineMetadata::new_array("deps", vec!["task-1".to_string(), "task-2".to_string()]),
         );
 
-        let task = TaskItem::new(
-            "Final task".to_string(),
-            CheckboxStatus::Pending,
-            metadata,
-        );
+        let task = TaskItem::new("Final task".to_string(), CheckboxStatus::Pending, metadata);
 
         assert_eq!(task.id, "task-3");
         assert_eq!(task.deps.len(), 2);
@@ -573,7 +573,10 @@ verify: cargo test
 
         assert_eq!(task_file.path, path);
         assert_eq!(task_file.title, Some("My Task List".to_string()));
-        assert_eq!(task_file.description, Some("Test tasks for the project".to_string()));
+        assert_eq!(
+            task_file.description,
+            Some("Test tasks for the project".to_string())
+        );
         assert_eq!(task_file.context_files.len(), 2);
         assert_eq!(task_file.context_files[0], "file1.rs");
         assert_eq!(task_file.context_files[1], "file2.rs");
@@ -631,7 +634,10 @@ Some other content...
 
         // Verify frontmatter
         assert_eq!(task_file.title, Some("Complete Task File".to_string()));
-        assert_eq!(task_file.description, Some("Full example with all features".to_string()));
+        assert_eq!(
+            task_file.description,
+            Some("Full example with all features".to_string())
+        );
         assert_eq!(task_file.context_files, vec!["src/main.rs"]);
         assert_eq!(task_file.verify, Some("just test".to_string()));
 
@@ -794,7 +800,11 @@ title: Minimal Task File
         let result = TaskGraph::from_tasks(&tasks);
         assert!(result.is_err());
 
-        if let Err(GraphError::MissingDependency { task_id, missing_dep }) = result {
+        if let Err(GraphError::MissingDependency {
+            task_id,
+            missing_dep,
+        }) = result
+        {
             assert_eq!(task_id, "task-2");
             assert_eq!(missing_dep, "task-nonexistent");
         } else {
@@ -930,15 +940,13 @@ title: Minimal Task File
     #[test]
     fn cycle_detection_self_reference() {
         // Task depends on itself -> error
-        let tasks = vec![
-            TaskItem::with_id(
-                "A".to_string(),
-                "Task A".to_string(),
-                CheckboxStatus::Pending,
-                vec!["A".to_string()],
-                HashMap::new(),
-            ),
-        ];
+        let tasks = vec![TaskItem::with_id(
+            "A".to_string(),
+            "Task A".to_string(),
+            CheckboxStatus::Pending,
+            vec!["A".to_string()],
+            HashMap::new(),
+        )];
 
         let graph = TaskGraph::from_tasks(&tasks).unwrap();
         let result = graph.topo_sort();
