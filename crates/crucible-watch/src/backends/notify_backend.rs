@@ -9,7 +9,9 @@ use crate::{
 // Import the WatcherFactory trait
 use async_trait::async_trait;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode};
-use notify_debouncer_full::{new_debouncer, DebounceEventResult, DebouncedEvent, Debouncer, FileIdMap};
+use notify_debouncer_full::{
+    new_debouncer, DebounceEventResult, DebouncedEvent, Debouncer, RecommendedCache,
+};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -19,7 +21,7 @@ use tracing::{debug, error, info, trace, warn};
 /// Notify-based file watcher with debouncing support.
 pub struct NotifyWatcher {
     /// Debounced file system watcher
-    debouncer: Option<Debouncer<RecommendedWatcher, FileIdMap>>,
+    debouncer: Option<Debouncer<RecommendedWatcher, RecommendedCache>>,
     /// Event sender
     event_sender: Option<mpsc::UnboundedSender<FileEvent>>,
     /// Active watches
@@ -50,7 +52,7 @@ impl NotifyWatcher {
         // Create debounced watcher
         let debouncer = new_debouncer(
             Duration::from_millis(100), // Default debounce time
-            None,                       // No file ID map for now
+            None,                       // Use default tick rate
             move |result: DebounceEventResult| match result {
                 Ok(events) => {
                     // Get the filter once per batch (read lock)
@@ -86,8 +88,6 @@ impl NotifyWatcher {
             },
         )
         .map_err(|e| Error::Watch(format!("Failed to create notify watcher: {}", e)))?;
-
-        // NoCache doesn't have add_root, so we skip it
 
         self.debouncer = Some(debouncer);
         self.event_sender = Some(event_sender);
