@@ -652,10 +652,7 @@ impl RuneEventContext {
 
     /// Take all emitted events.
     pub fn take_emitted(&mut self) -> Vec<SessionEvent> {
-        self.emitted
-            .drain(..)
-            .map(|e| e.into_inner())
-            .collect()
+        self.emitted.drain(..).map(|e| e.into_inner()).collect()
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -825,7 +822,10 @@ mod tests {
         let core_event: SessionEvent = rune_event.into();
 
         match core_event {
-            SessionEvent::MessageReceived { content, participant_id } => {
+            SessionEvent::MessageReceived {
+                content,
+                participant_id,
+            } => {
                 assert_eq!(content, "Test");
                 assert_eq!(participant_id, "user");
             }

@@ -277,9 +277,7 @@ async fn test_rune_handler_can_emit_events() {
 
     let ctx = RuneEventContext::new();
 
-    let output = vm
-        .call(["main"], (ctx,))
-        .expect("Script execution failed");
+    let output = vm.call(["main"], (ctx,)).expect("Script execution failed");
 
     let count: i64 = rune::from_value(output).expect("Failed to convert output");
     assert_eq!(count, 2, "Should have emitted 2 events");
@@ -302,15 +300,10 @@ async fn test_rune_context_metadata() {
 
     let ctx = RuneEventContext::new();
 
-    let output = vm
-        .call(["main"], (ctx,))
-        .expect("Script execution failed");
+    let output = vm.call(["main"], (ctx,)).expect("Script execution failed");
 
     let result: Option<String> = rune::from_value(output).expect("Failed");
-    assert!(
-        result.is_some(),
-        "Should have retrieved the metadata value"
-    );
+    assert!(result.is_some(), "Should have retrieved the metadata value");
 }
 
 #[tokio::test]
@@ -375,8 +368,5 @@ async fn test_rune_event_partial_eq() {
         result[0],
         "Events of same type should be equal (by event_type)"
     );
-    assert!(
-        !result[1],
-        "Events of different types should not be equal"
-    );
+    assert!(!result[1], "Events of different types should not be equal");
 }

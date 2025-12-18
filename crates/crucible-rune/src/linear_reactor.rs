@@ -200,10 +200,7 @@ impl LinearReactor {
     /// # Errors
     ///
     /// Returns an error if a handler with the same name already exists.
-    pub async fn add_handler(
-        &self,
-        handler: BoxedRingHandler<SessionEvent>,
-    ) -> ReactorResult<()> {
+    pub async fn add_handler(&self, handler: BoxedRingHandler<SessionEvent>) -> ReactorResult<()> {
         let mut chain = self.chain.write().await;
         chain
             .add_handler(handler)
@@ -217,7 +214,10 @@ impl LinearReactor {
     /// # Errors
     ///
     /// Returns an error if the handler doesn't exist.
-    pub async fn remove_handler(&self, name: &str) -> ReactorResult<BoxedRingHandler<SessionEvent>> {
+    pub async fn remove_handler(
+        &self,
+        name: &str,
+    ) -> ReactorResult<BoxedRingHandler<SessionEvent>> {
         let mut chain = self.chain.write().await;
         chain
             .remove_handler(name)
@@ -341,7 +341,10 @@ fn generate_compaction_summary(events: &[SessionEvent]) -> String {
 
     for event in events {
         match event {
-            SessionEvent::MessageReceived { content, participant_id } => {
+            SessionEvent::MessageReceived {
+                content,
+                participant_id,
+            } => {
                 message_count += 1;
                 // Capture first few message excerpts (truncated)
                 if message_excerpts.len() < 3 {
@@ -435,7 +438,9 @@ fn estimate_event_tokens(event: &SessionEvent) -> usize {
         SessionEvent::TextDelta { delta, .. } => delta.len(),
         // Note events (small metadata)
         SessionEvent::NoteParsed { .. } => 50,
-        SessionEvent::NoteCreated { title, .. } => title.as_ref().map(|t| t.len()).unwrap_or(0) + 50,
+        SessionEvent::NoteCreated { title, .. } => {
+            title.as_ref().map(|t| t.len()).unwrap_or(0) + 50
+        }
         SessionEvent::NoteModified { .. } => 50,
         // MCP/Tool events
         SessionEvent::McpAttached { server, .. } => server.len() + 50,
@@ -634,7 +639,12 @@ mod tests {
             event: Arc<SessionEvent>,
             seq: u64,
         ) -> RingHandlerResult<()> {
-            tracing::debug!(handler = self.name, seq = seq, "Processing event: {:?}", event);
+            tracing::debug!(
+                handler = self.name,
+                seq = seq,
+                "Processing event: {:?}",
+                event
+            );
             Ok(())
         }
     }
@@ -1238,10 +1248,7 @@ mod tests {
                     Some("You are a helpful assistant.".to_string())
                 );
             }
-            _ => panic!(
-                "Expected SessionStarted event, got {:?}",
-                event.as_ref()
-            ),
+            _ => panic!("Expected SessionStarted event, got {:?}", event.as_ref()),
         }
     }
 
