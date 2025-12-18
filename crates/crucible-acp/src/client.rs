@@ -356,7 +356,17 @@ impl CrucibleAcpClient {
         // If we already have a transport (e.g., from with_transport), skip spawning
         if self.has_transport() {
             return Ok(AgentProcess {
-                child: Command::new("true").spawn().unwrap(), // Dummy process
+                child: {
+                    #[cfg(target_os = "windows")]
+                    let mut cmd = Command::new("cmd");
+                    #[cfg(target_os = "windows")]
+                    cmd.args(["/C", "exit 0"]);
+
+                    #[cfg(not(target_os = "windows"))]
+                    let mut cmd = Command::new("true");
+
+                    cmd.spawn().unwrap()
+                }, // Dummy process
             });
         }
 
@@ -1492,6 +1502,53 @@ mod tests {
         assert_eq!(client.config().agent_path, PathBuf::from("/test/agent"));
     }
 
+    // Helper to get a simple command that runs and exits (like true/echo)
+    fn get_simple_command() -> (PathBuf, Option<Vec<String>>) {
+        #[cfg(windows)]
+        {
+            (PathBuf::from("cmd"), Some(vec!["/C".to_string(), "echo".to_string(), "ok".to_string()]))
+        }
+        #[cfg(not(windows))]
+        {
+            (PathBuf::from("echo"), Some(vec!["ok".to_string()]))
+        }
+    }
+
+    // Helper to get a command that echoes stdin to stdout (like cat)
+    fn get_cat_command() -> (PathBuf, Option<Vec<String>>) {
+        #[cfg(windows)]
+        {
+            // findstr can hang waiting for EOF. Use cmd hack to read one line and echo it.
+            // This works for tests sending single messages.
+            (
+                PathBuf::from("cmd"),
+                Some(vec![
+                    "/V".to_string(),
+                    "/C".to_string(),
+                    "set /p l= && echo !l!".to_string(),
+                ]),
+            )
+        }
+        #[cfg(not(windows))]
+        {
+            (PathBuf::from("cat"), None)
+        }
+    }
+
+    // Helper to get a command that sleeps (for timeout tests)
+    fn get_sleep_command() -> (PathBuf, Option<Vec<String>>) {
+        #[cfg(windows)]
+        {
+            // Use ping hack for sleep to avoid heavy PowerShell startup
+            // -n 6 pinging localhost approximates 5 seconds sleep
+            (PathBuf::from("cmd"), Some(vec!["/C".to_string(), "ping 127.0.0.1 -n 6 > nul".to_string()]))
+        }
+        #[cfg(not(windows))]
+        {
+            (PathBuf::from("sleep"), Some(vec!["5".to_string()]))
+        }
+    }
+
     #[test]
     fn streaming_state_merges_chunks_without_newlines() {
         let mut state = StreamingState::default();
@@ -1816,10 +1873,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_agent_process_spawning() {
-        // Use a simple echo script as test agent
+        // Use a simple command as test agent
+        let (cmd, args) = get_simple_command();
         let config = ClientConfig {
-            agent_path: PathBuf::from("echo"),
-            agent_args: None,
+            agent_path: cmd,
+            agent_args: args,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(5000),
@@ -1968,10 +2026,11 @@ mod tests {
             ClientCapabilities, ClientRequest, InitializeRequest, ProtocolVersion,
         };
 
-        // Use 'cat' as a simple echo agent for testing
+        // Use 'cat' equivalent as a simple echo agent for testing
+        let (cmd, args) = get_cat_command();
         let config = ClientConfig {
-            agent_path: PathBuf::from("cat"),
-            agent_args: None,
+            agent_path: cmd,
+            agent_args: args,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(1000),
@@ -2003,9 +2062,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_agent_response() {
+        let (cmd, args) = get_simple_command();
         let config = ClientConfig {
-            agent_path: PathBuf::from("echo"),
-            agent_args: None,
+            agent_path: cmd,
+            agent_args: args,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(500), // Short timeout
@@ -2027,9 +2087,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_agent_request() {
+        let (cmd, args) = get_cat_command();
         let config = ClientConfig {
-            agent_path: PathBuf::from("cat"),
-            agent_args: None,
+            agent_path: cmd,
+            agent_args: args,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(1000),
@@ -2056,9 +2117,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_timeout() {
+        let (cmd, args) = get_sleep_command();
         let config = ClientConfig {
-            agent_path: PathBuf::from("sleep"),
-            agent_args: None,
+            agent_path: cmd,
+            agent_args: args,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(100), // Very short timeout
@@ -2078,9 +2140,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_connection_state_tracking() {
+        let (cmd, args) = get_simple_command();
         let config = ClientConfig {
-            agent_path: PathBuf::from("cat"),
-            agent_args: None,
+            agent_path: cmd,
+            agent_args: args,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(1000),
@@ -2112,9 +2175,10 @@ mod tests {
             ClientCapabilities, ClientRequest, InitializeRequest, ProtocolVersion,
         };
 
+        let (cmd, args) = get_cat_command();
         let config = ClientConfig {
-            agent_path: PathBuf::from("cat"),
-            agent_args: None,
+            agent_path: cmd,
+            agent_args: args,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(2000),
@@ -2149,9 +2213,10 @@ mod tests {
     // RED: Test expects connect() to spawn agent and establish session
     #[tokio::test]
     async fn test_connect_spawns_and_establishes_session() {
+        let (cmd, args) = get_simple_command();
         let config = ClientConfig {
-            agent_path: PathBuf::from("cat"),
-            agent_args: None,
+            agent_path: cmd,
+            agent_args: args,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(5000),
@@ -2173,9 +2238,10 @@ mod tests {
     // RED: Test expects send_message() to work with simple JSON
     #[tokio::test]
     async fn test_send_message_with_json() {
+        let (cmd, args) = get_cat_command();
         let config = ClientConfig {
-            agent_path: PathBuf::from("cat"),
-            agent_args: None,
+            agent_path: cmd,
+            agent_args: args,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(1000),
@@ -2203,9 +2269,10 @@ mod tests {
     // RED: Test expects disconnect() to clean up resources
     #[tokio::test]
     async fn test_disconnect_cleanup() {
+        let (cmd, args) = get_simple_command();
         let config = ClientConfig {
-            agent_path: PathBuf::from("cat"),
-            agent_args: None,
+            agent_path: cmd,
+            agent_args: args,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(1000),
@@ -2235,9 +2302,10 @@ mod tests {
     // RED: Test expects full lifecycle: connect -> message -> disconnect
     #[tokio::test]
     async fn test_full_agent_lifecycle() {
+        let (cmd, args) = get_cat_command();
         let config = ClientConfig {
-            agent_path: PathBuf::from("cat"),
-            agent_args: None,
+            agent_path: cmd,
+            agent_args: args,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(2000),
@@ -2272,9 +2340,10 @@ mod tests {
     async fn test_protocol_initialize_handshake() {
         use agent_client_protocol::{ClientCapabilities, InitializeRequest, ProtocolVersion};
 
+        let (cmd, args) = get_cat_command();
         let config = ClientConfig {
-            agent_path: PathBuf::from("cat"),
-            agent_args: None,
+            agent_path: cmd,
+            agent_args: args,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(1000),
@@ -2305,9 +2374,10 @@ mod tests {
     async fn test_protocol_new_session() {
         use agent_client_protocol::NewSessionRequest;
 
+        let (cmd, args) = get_cat_command();
         let config = ClientConfig {
-            agent_path: PathBuf::from("cat"),
-            agent_args: None,
+            agent_path: cmd,
+            agent_args: args,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(1000),
@@ -2334,9 +2404,10 @@ mod tests {
     // Test that connect_with_handshake() method exists and attempts full handshake
     #[tokio::test]
     async fn test_connect_performs_protocol_handshake() {
+        let (cmd, args) = get_simple_command();
         let config = ClientConfig {
-            agent_path: PathBuf::from("cat"),
-            agent_args: None,
+            agent_path: cmd,
+            agent_args: args,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(2000),

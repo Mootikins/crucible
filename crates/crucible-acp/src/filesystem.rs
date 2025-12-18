@@ -280,7 +280,8 @@ mod tests {
     fn test_handler_creation() {
         let config = FileSystemConfig::default();
         let handler = FileSystemHandler::new(config);
-        assert!(!handler.is_path_allowed(Path::new("/some/path")));
+        // With empty allowed_roots, nothing should be allowed
+        assert!(!handler.is_path_allowed(Path::new("some_path")));
     }
 
     #[test]
@@ -295,7 +296,7 @@ mod tests {
     #[test]
     fn test_path_validation() {
         let temp_dir = TempDir::new().unwrap();
-        let allowed_root = temp_dir.path().to_path_buf();
+        let allowed_root = temp_dir.path().canonicalize().unwrap();
 
         let config = FileSystemConfig {
             allowed_roots: vec![allowed_root.clone()],
@@ -310,7 +311,8 @@ mod tests {
         assert!(handler.is_path_allowed(&allowed_path));
 
         // Path outside allowed root should not be allowed
-        let disallowed_path = PathBuf::from("/tmp/outside/test.txt");
+        let outside_dir = TempDir::new().unwrap();
+        let disallowed_path = outside_dir.path().join("test.txt");
         assert!(!handler.is_path_allowed(&disallowed_path));
 
         // Parent directory traversal should not be allowed
@@ -321,7 +323,7 @@ mod tests {
     #[tokio::test]
     async fn test_read_file() {
         let temp_dir = TempDir::new().unwrap();
-        let allowed_root = temp_dir.path().to_path_buf();
+        let allowed_root = temp_dir.path().canonicalize().unwrap();
 
         // Create a test file
         let test_file = allowed_root.join("test.txt");
@@ -345,7 +347,7 @@ mod tests {
     #[tokio::test]
     async fn test_read_file_permission_denied() {
         let temp_dir = TempDir::new().unwrap();
-        let allowed_root = temp_dir.path().to_path_buf();
+        let allowed_root = temp_dir.path().canonicalize().unwrap();
 
         let config = FileSystemConfig {
             allowed_roots: vec![allowed_root],
@@ -356,7 +358,11 @@ mod tests {
         let handler = FileSystemHandler::new(config);
 
         // Try to read a file outside allowed root
-        let disallowed_path = PathBuf::from("/tmp/outside/test.txt");
+        let outside_dir = TempDir::new().unwrap();
+        let disallowed_path = outside_dir.path().join("test.txt");
+        // Create the file so it exists (otherwise we might get NotFound instead of PermissionDenied)
+        fs::write(&disallowed_path, "secret").unwrap();
+
         let result = handler.read_file(&disallowed_path).await;
         assert!(result.is_err());
 
@@ -369,7 +375,7 @@ mod tests {
     #[tokio::test]
     async fn test_read_file_size_limit() {
         let temp_dir = TempDir::new().unwrap();
-        let allowed_root = temp_dir.path().to_path_buf();
+        let allowed_root = temp_dir.path().canonicalize().unwrap();
 
         // Create a file that exceeds the limit
         let test_file = allowed_root.join("large.txt");
@@ -392,7 +398,7 @@ mod tests {
     #[tokio::test]
     async fn test_read_nonexistent_file() {
         let temp_dir = TempDir::new().unwrap();
-        let allowed_root = temp_dir.path().to_path_buf();
+        let allowed_root = temp_dir.path().canonicalize().unwrap();
 
         let config = FileSystemConfig {
             allowed_roots: vec![allowed_root.clone()],
@@ -416,7 +422,7 @@ mod tests {
     #[tokio::test]
     async fn test_write_file() {
         let temp_dir = TempDir::new().unwrap();
-        let allowed_root = temp_dir.path().to_path_buf();
+        let allowed_root = temp_dir.path().canonicalize().unwrap();
 
         let config = FileSystemConfig {
             allowed_roots: vec![allowed_root.clone()],
@@ -440,7 +446,7 @@ mod tests {
     #[tokio::test]
     async fn test_write_file_disabled() {
         let temp_dir = TempDir::new().unwrap();
-        let allowed_root = temp_dir.path().to_path_buf();
+        let allowed_root = temp_dir.path().canonicalize().unwrap();
 
         let config = FileSystemConfig {
             allowed_roots: vec![allowed_root.clone()],
@@ -464,7 +470,7 @@ mod tests {
     #[tokio::test]
     async fn test_write_file_permission_denied() {
         let temp_dir = TempDir::new().unwrap();
-        let allowed_root = temp_dir.path().to_path_buf();
+        let allowed_root = temp_dir.path().canonicalize().unwrap();
 
         let config = FileSystemConfig {
             allowed_roots: vec![allowed_root],
@@ -475,7 +481,8 @@ mod tests {
         let handler = FileSystemHandler::new(config);
 
         // Try to write outside allowed root
-        let disallowed_path = PathBuf::from("/tmp/outside/test.txt");
+        let outside_dir = TempDir::new().unwrap();
+        let disallowed_path = outside_dir.path().join("test.txt");
         let result = handler.write_file(&disallowed_path, "content").await;
         assert!(result.is_err());
 
@@ -488,7 +495,7 @@ mod tests {
     #[tokio::test]
     async fn test_write_file_create_dirs() {
         let temp_dir = TempDir::new().unwrap();
-        let allowed_root = temp_dir.path().to_path_buf();
+        let allowed_root = temp_dir.path().canonicalize().unwrap();
 
         let config = FileSystemConfig {
             allowed_roots: vec![allowed_root.clone()],
@@ -499,7 +506,7 @@ mod tests {
         let handler = FileSystemHandler::new(config);
 
         // Should be able to write to a nested path, creating directories
-        let nested_file = allowed_root.join("dir1/dir2/file.txt");
+        let nested_file = allowed_root.join("dir1").join("dir2").join("file.txt");
         let result = handler.write_file(&nested_file, "content").await;
         assert!(result.is_ok());
 
@@ -511,7 +518,7 @@ mod tests {
     #[tokio::test]
     async fn test_write_file_no_create_dirs() {
         let temp_dir = TempDir::new().unwrap();
-        let allowed_root = temp_dir.path().to_path_buf();
+        let allowed_root = temp_dir.path().canonicalize().unwrap();
 
         let config = FileSystemConfig {
             allowed_roots: vec![allowed_root.clone()],
@@ -522,7 +529,7 @@ mod tests {
         let handler = FileSystemHandler::new(config);
 
         // Should fail because parent directory doesn't exist
-        let nested_file = allowed_root.join("nonexistent/file.txt");
+        let nested_file = allowed_root.join("nonexistent").join("file.txt");
         let result = handler.write_file(&nested_file, "content").await;
         assert!(result.is_err());
     }

@@ -186,9 +186,14 @@ Note: Some agents require both the base CLI and a bridge package.
 /// For `npx` commands, we skip the slow --version check since npx itself
 /// handles package resolution.
 pub async fn is_agent_available(command: &str) -> bool {
-    // Phase 1: Fast PATH lookup using `which`
+    // Phase 1: Fast PATH lookup using `which` (Unix) or `where` (Windows)
     // This is ~1ms vs ~300ms+ for spawning the actual command
-    let which_result = Command::new("which").arg(command).output().await;
+    #[cfg(windows)]
+    let which_cmd = "where";
+    #[cfg(not(windows))]
+    let which_cmd = "which";
+
+    let which_result = Command::new(which_cmd).arg(command).output().await;
 
     match which_result {
         Ok(output) if output.status.success() => {
@@ -247,8 +252,11 @@ mod tests {
 
         assert!(!result);
         // Should complete in <100ms since we only call `which`
+        // Should complete quickly, but Windows process updates can be slow
+        // especially in CI or under load. 1000ms is generous but differentiates
+        // from the 2000ms timeout
         assert!(
-            elapsed.as_millis() < 100,
+            elapsed.as_millis() < 1000,
             "Fast path rejection took too long: {:?}",
             elapsed
         );
@@ -256,9 +264,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_is_agent_available_common_command() {
-        // Test with `true` - a simple command that exists and succeeds
-        let result = is_agent_available("true").await;
-        assert!(result, "Command 'true' should be available on Unix");
+        // Test with `cargo` - guaranteed to exist when running tests and supports --version
+        let result = is_agent_available("cargo").await;
+        assert!(result, "Command 'cargo' should be available");
     }
 
     #[tokio::test]
