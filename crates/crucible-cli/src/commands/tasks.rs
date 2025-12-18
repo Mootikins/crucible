@@ -48,10 +48,7 @@ pub enum TasksSubcommand {
     /// Mark task as done
     Done { id: String },
     /// Mark task as blocked
-    Blocked {
-        id: String,
-        reason: Option<String>,
-    },
+    Blocked { id: String, reason: Option<String> },
 }
 
 /// Load a task file from the given path
@@ -63,8 +60,7 @@ pub enum TasksSubcommand {
 /// The parsed TaskFile or an error if loading/parsing fails
 fn load_task_file(path: &Path) -> Result<TaskFile, TaskError> {
     let content = std::fs::read_to_string(path)?;
-    TaskFile::from_markdown(path.to_path_buf(), &content)
-        .map_err(TaskError::ParseError)
+    TaskFile::from_markdown(path.to_path_buf(), &content).map_err(TaskError::ParseError)
 }
 
 /// Write task status changes back to the file
@@ -220,8 +216,8 @@ pub async fn execute(_config: CliConfig, file: PathBuf, command: TasksSubcommand
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use std::io::Write;
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
     // Helper to create a test config
@@ -294,9 +290,13 @@ title: Test Tasks
 "#;
         let task_path = create_test_task_file(&temp_dir, "TASKS.md", content);
         let config = test_config();
-        let result = execute(config, task_path, TasksSubcommand::Pick {
-            id: "task-1".to_string(),
-        })
+        let result = execute(
+            config,
+            task_path,
+            TasksSubcommand::Pick {
+                id: "task-1".to_string(),
+            },
+        )
         .await;
         assert!(result.is_ok());
     }
@@ -312,9 +312,13 @@ title: Test Tasks
 "#;
         let task_path = create_test_task_file(&temp_dir, "TASKS.md", content);
         let config = test_config();
-        let result = execute(config, task_path, TasksSubcommand::Done {
-            id: "task-1".to_string(),
-        })
+        let result = execute(
+            config,
+            task_path,
+            TasksSubcommand::Done {
+                id: "task-1".to_string(),
+            },
+        )
         .await;
         assert!(result.is_ok());
     }
@@ -392,7 +396,10 @@ description: Tasks loaded from explicit path
         let task_file = load_task_file(&task_path).unwrap();
 
         assert_eq!(task_file.title, Some("Custom Path Tasks".to_string()));
-        assert_eq!(task_file.description, Some("Tasks loaded from explicit path".to_string()));
+        assert_eq!(
+            task_file.description,
+            Some("Tasks loaded from explicit path".to_string())
+        );
         assert_eq!(task_file.tasks.len(), 3);
         assert_eq!(task_file.tasks[0].id, "a");
         assert_eq!(task_file.tasks[1].id, "b");
@@ -497,11 +504,23 @@ verify: cargo test --package crucible-cli
 
         // Verify all fields
         assert_eq!(task_file.title, Some("Complete Task File".to_string()));
-        assert_eq!(task_file.description, Some("Full example with all frontmatter fields".to_string()));
+        assert_eq!(
+            task_file.description,
+            Some("Full example with all frontmatter fields".to_string())
+        );
         assert_eq!(task_file.context_files.len(), 2);
-        assert_eq!(task_file.context_files[0], "crates/crucible-core/src/parser/types/task.rs");
-        assert_eq!(task_file.context_files[1], "crates/crucible-cli/src/commands/tasks.rs");
-        assert_eq!(task_file.verify, Some("cargo test --package crucible-cli".to_string()));
+        assert_eq!(
+            task_file.context_files[0],
+            "crates/crucible-core/src/parser/types/task.rs"
+        );
+        assert_eq!(
+            task_file.context_files[1],
+            "crates/crucible-cli/src/commands/tasks.rs"
+        );
+        assert_eq!(
+            task_file.verify,
+            Some("cargo test --package crucible-cli".to_string())
+        );
         assert_eq!(task_file.tasks.len(), 2);
     }
 
@@ -653,9 +672,13 @@ title: Pick Test
         let task_path = create_test_task_file(&temp_dir, "TASKS.md", content);
         let config = test_config();
 
-        let result = execute(config, task_path, TasksSubcommand::Pick {
-            id: "task-1".to_string(),
-        })
+        let result = execute(
+            config,
+            task_path,
+            TasksSubcommand::Pick {
+                id: "task-1".to_string(),
+            },
+        )
         .await;
 
         assert!(result.is_ok());
@@ -677,9 +700,13 @@ title: Pick Test
         let task_path = create_test_task_file(&temp_dir, "TASKS.md", content);
         let config = test_config();
 
-        let result = execute(config, task_path, TasksSubcommand::Pick {
-            id: "nonexistent".to_string(),
-        })
+        let result = execute(
+            config,
+            task_path,
+            TasksSubcommand::Pick {
+                id: "nonexistent".to_string(),
+            },
+        )
         .await;
 
         assert!(result.is_err());
@@ -701,14 +728,22 @@ title: Pick Test
         let task_path = create_test_task_file(&temp_dir, "TASKS.md", content);
         let config = test_config();
 
-        let result = execute(config, task_path, TasksSubcommand::Pick {
-            id: "task-1".to_string(),
-        })
+        let result = execute(
+            config,
+            task_path,
+            TasksSubcommand::Pick {
+                id: "task-1".to_string(),
+            },
+        )
         .await;
 
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("task-1") || err.to_string().contains("done") || err.to_string().contains("Already"));
+        assert!(
+            err.to_string().contains("task-1")
+                || err.to_string().contains("done")
+                || err.to_string().contains("Already")
+        );
     }
 
     // Task 3.2.4 tests: `cru tasks done <id>` implementation
@@ -727,9 +762,13 @@ title: Done Test
         let task_path = create_test_task_file(&temp_dir, "TASKS.md", content);
         let config = test_config();
 
-        let result = execute(config, task_path, TasksSubcommand::Done {
-            id: "task-1".to_string(),
-        })
+        let result = execute(
+            config,
+            task_path,
+            TasksSubcommand::Done {
+                id: "task-1".to_string(),
+            },
+        )
         .await;
 
         assert!(result.is_ok());
@@ -749,9 +788,13 @@ title: Done Test
         let task_path = create_test_task_file(&temp_dir, "TASKS.md", content);
         let config = test_config();
 
-        let result = execute(config, task_path, TasksSubcommand::Done {
-            id: "nonexistent".to_string(),
-        })
+        let result = execute(
+            config,
+            task_path,
+            TasksSubcommand::Done {
+                id: "nonexistent".to_string(),
+            },
+        )
         .await;
 
         assert!(result.is_err());
@@ -775,10 +818,14 @@ title: Blocked Test
         let task_path = create_test_task_file(&temp_dir, "TASKS.md", content);
         let config = test_config();
 
-        let result = execute(config, task_path, TasksSubcommand::Blocked {
-            id: "task-1".to_string(),
-            reason: None,
-        })
+        let result = execute(
+            config,
+            task_path,
+            TasksSubcommand::Blocked {
+                id: "task-1".to_string(),
+                reason: None,
+            },
+        )
         .await;
 
         assert!(result.is_ok());
@@ -798,10 +845,14 @@ title: Blocked Test
         let task_path = create_test_task_file(&temp_dir, "TASKS.md", content);
         let config = test_config();
 
-        let result = execute(config, task_path, TasksSubcommand::Blocked {
-            id: "task-1".to_string(),
-            reason: Some("waiting for API approval".to_string()),
-        })
+        let result = execute(
+            config,
+            task_path,
+            TasksSubcommand::Blocked {
+                id: "task-1".to_string(),
+                reason: Some("waiting for API approval".to_string()),
+            },
+        )
         .await;
 
         assert!(result.is_ok());
@@ -821,10 +872,14 @@ title: Blocked Test
         let task_path = create_test_task_file(&temp_dir, "TASKS.md", content);
         let config = test_config();
 
-        let result = execute(config, task_path, TasksSubcommand::Blocked {
-            id: "nonexistent".to_string(),
-            reason: None,
-        })
+        let result = execute(
+            config,
+            task_path,
+            TasksSubcommand::Blocked {
+                id: "nonexistent".to_string(),
+                reason: None,
+            },
+        )
         .await;
 
         assert!(result.is_err());
@@ -849,9 +904,13 @@ title: Write Test
         let config = test_config();
 
         // Mark task-1 as done
-        let result = execute(config.clone(), task_path.clone(), TasksSubcommand::Done {
-            id: "task-1".to_string(),
-        })
+        let result = execute(
+            config.clone(),
+            task_path.clone(),
+            TasksSubcommand::Done {
+                id: "task-1".to_string(),
+            },
+        )
         .await;
         assert!(result.is_ok());
 
@@ -891,9 +950,13 @@ Some descriptive text that should be preserved.
         let config = test_config();
 
         // Mark task-1 as in-progress
-        let result = execute(config.clone(), task_path.clone(), TasksSubcommand::Pick {
-            id: "task-1".to_string(),
-        })
+        let result = execute(
+            config.clone(),
+            task_path.clone(),
+            TasksSubcommand::Pick {
+                id: "task-1".to_string(),
+            },
+        )
         .await;
         assert!(result.is_ok());
 
@@ -938,24 +1001,36 @@ title: Multi-Update Test
         let config = test_config();
 
         // Mark task-a as in-progress
-        execute(config.clone(), task_path.clone(), TasksSubcommand::Pick {
-            id: "a".to_string(),
-        })
+        execute(
+            config.clone(),
+            task_path.clone(),
+            TasksSubcommand::Pick {
+                id: "a".to_string(),
+            },
+        )
         .await
         .unwrap();
 
         // Mark task-a as done
-        execute(config.clone(), task_path.clone(), TasksSubcommand::Done {
-            id: "a".to_string(),
-        })
+        execute(
+            config.clone(),
+            task_path.clone(),
+            TasksSubcommand::Done {
+                id: "a".to_string(),
+            },
+        )
         .await
         .unwrap();
 
         // Mark task-b as blocked
-        execute(config.clone(), task_path.clone(), TasksSubcommand::Blocked {
-            id: "b".to_string(),
-            reason: None,
-        })
+        execute(
+            config.clone(),
+            task_path.clone(),
+            TasksSubcommand::Blocked {
+                id: "b".to_string(),
+                reason: None,
+            },
+        )
         .await
         .unwrap();
 
@@ -992,9 +1067,13 @@ title: Blank Line Test
         let task_path = create_test_task_file(&temp_dir, "TASKS.md", content);
         let config = test_config();
 
-        execute(config, task_path.clone(), TasksSubcommand::Done {
-            id: "task-1".to_string(),
-        })
+        execute(
+            config,
+            task_path.clone(),
+            TasksSubcommand::Done {
+                id: "task-1".to_string(),
+            },
+        )
         .await
         .unwrap();
 
@@ -1022,9 +1101,13 @@ title: Indentation Test
         let task_path = create_test_task_file(&temp_dir, "TASKS.md", content);
         let config = test_config();
 
-        execute(config, task_path.clone(), TasksSubcommand::Pick {
-            id: "task-1".to_string(),
-        })
+        execute(
+            config,
+            task_path.clone(),
+            TasksSubcommand::Pick {
+                id: "task-1".to_string(),
+            },
+        )
         .await
         .unwrap();
 
@@ -1056,9 +1139,13 @@ title: Comments Test
         let task_path = create_test_task_file(&temp_dir, "TASKS.md", content);
         let config = test_config();
 
-        execute(config, task_path.clone(), TasksSubcommand::Done {
-            id: "task-1".to_string(),
-        })
+        execute(
+            config,
+            task_path.clone(),
+            TasksSubcommand::Done {
+                id: "task-1".to_string(),
+            },
+        )
         .await
         .unwrap();
 

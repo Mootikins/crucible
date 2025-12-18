@@ -80,9 +80,7 @@ impl AgentEventBridge {
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use crucible_core::traits::chat::{
-        AgentHandle, ChatChunk, ChatResult,
-    };
+    use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatResult};
     use futures::stream::{self, BoxStream};
 
     /// Mock agent that returns predefined chunks for testing.
@@ -180,13 +178,19 @@ mod tests {
         let bridge = AgentEventBridge::new(session.handle(), ring.clone());
         let mut agent = MockAgent::single("Response");
 
-        bridge.send_message("Hello agent", &mut agent).await.unwrap();
+        bridge
+            .send_message("Hello agent", &mut agent)
+            .await
+            .unwrap();
 
         let events: Vec<_> = ring.iter().collect();
         let first = events.first().expect("Should have events");
 
         match first.as_ref() {
-            SessionEvent::MessageReceived { content, participant_id } => {
+            SessionEvent::MessageReceived {
+                content,
+                participant_id,
+            } => {
                 assert_eq!(content, "Hello agent");
                 assert_eq!(participant_id, "user");
             }
@@ -207,11 +211,7 @@ mod tests {
 
         let ring = session.ring().clone();
         let bridge = AgentEventBridge::new(session.handle(), ring.clone());
-        let mut agent = MockAgent::new(vec![
-            "Hello ".into(),
-            "beautiful ".into(),
-            "world!".into(),
-        ]);
+        let mut agent = MockAgent::new(vec!["Hello ".into(), "beautiful ".into(), "world!".into()]);
 
         bridge.send_message("Hi", &mut agent).await.unwrap();
 
@@ -256,7 +256,10 @@ mod tests {
         let last = events.last().expect("Should have events");
 
         match last.as_ref() {
-            SessionEvent::AgentResponded { content, tool_calls } => {
+            SessionEvent::AgentResponded {
+                content,
+                tool_calls,
+            } => {
                 assert_eq!(content, "Hello world!");
                 assert!(tool_calls.is_empty());
             }
@@ -284,9 +287,18 @@ mod tests {
         let events: Vec<_> = ring.iter().collect();
 
         assert_eq!(events.len(), 4);
-        assert!(matches!(events[0].as_ref(), SessionEvent::MessageReceived { .. }));
-        assert!(matches!(events[1].as_ref(), SessionEvent::TextDelta { delta, .. } if delta == "A"));
-        assert!(matches!(events[2].as_ref(), SessionEvent::TextDelta { delta, .. } if delta == "B"));
-        assert!(matches!(events[3].as_ref(), SessionEvent::AgentResponded { content, .. } if content == "AB"));
+        assert!(matches!(
+            events[0].as_ref(),
+            SessionEvent::MessageReceived { .. }
+        ));
+        assert!(
+            matches!(events[1].as_ref(), SessionEvent::TextDelta { delta, .. } if delta == "A")
+        );
+        assert!(
+            matches!(events[2].as_ref(), SessionEvent::TextDelta { delta, .. } if delta == "B")
+        );
+        assert!(
+            matches!(events[3].as_ref(), SessionEvent::AgentResponded { content, .. } if content == "AB")
+        );
     }
 }

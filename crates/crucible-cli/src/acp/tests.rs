@@ -337,8 +337,6 @@ mod client_tests {
 
     #[test]
     fn test_client_mode_tracking() {
-        
-
         let agent = AgentInfo {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
@@ -364,7 +362,6 @@ mod client_tests {
     #[tokio::test]
     async fn test_client_set_mode() {
         use crate::chat::AgentHandle;
-        
 
         let agent = AgentInfo {
             name: "test".to_string(),
@@ -389,7 +386,6 @@ mod client_tests {
     #[tokio::test]
     async fn test_client_set_mode_idempotent() {
         use crate::chat::AgentHandle;
-        
 
         let agent = AgentInfo {
             name: "test".to_string(),

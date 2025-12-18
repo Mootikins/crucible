@@ -476,7 +476,10 @@ mod tests {
 
         // Stream in blank line - should NOT flush
         let result = buf.append("line1\n\nline2\n");
-        assert!(result.is_none(), "Should not flush paragraph break inside code block");
+        assert!(
+            result.is_none(),
+            "Should not flush paragraph break inside code block"
+        );
         assert!(buf.in_code_block);
 
         // Stream in closing fence

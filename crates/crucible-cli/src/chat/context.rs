@@ -6,9 +6,7 @@
 use async_trait::async_trait;
 use std::sync::Arc;
 
-use crucible_core::traits::chat::{
-    AgentHandle, ChatContext, ChatError, ChatResult, SearchResult,
-};
+use crucible_core::traits::chat::{AgentHandle, ChatContext, ChatError, ChatResult, SearchResult};
 
 use crate::chat::display::Display;
 use crate::chat::slash_registry::SlashCommandRegistry;
@@ -153,8 +151,10 @@ impl<'a> ChatContext for CliChatContext<'a> {
     }
 
     fn display_help(&self) {
-        println!("
-Available Commands:");
+        println!(
+            "
+Available Commands:"
+        );
         println!("{}", "=".repeat(40));
 
         // List all commands from registry
@@ -165,8 +165,21 @@ Available Commands:");
                 .as_ref()
                 .map(|h| format!(" <{}>", h))
                 .unwrap_or_default();
+            let options = if cmd.secondary_options.is_empty() {
+                String::new()
+            } else {
+                let labels: Vec<_> = cmd
+                    .secondary_options
+                    .iter()
+                    .map(|o| o.label.as_str())
+                    .collect();
+                format!(" [options: {}]", labels.join(", "))
+            };
 
-            println!("  /{}{:20} - {}", cmd.name, hint, cmd.description);
+            println!(
+                "  /{}{:20} - {}{}",
+                cmd.name, hint, cmd.description, options
+            );
         }
 
         println!();
@@ -195,7 +208,8 @@ mod tests {
         fn send_message_stream<'a>(
             &'a mut self,
             _message: &'a str,
-        ) -> futures::stream::BoxStream<'a, ChatResult<crucible_core::traits::chat::ChatChunk>> {
+        ) -> futures::stream::BoxStream<'a, ChatResult<crucible_core::traits::chat::ChatChunk>>
+        {
             use futures::stream;
             Box::pin(stream::iter(vec![
                 Ok(crucible_core::traits::chat::ChatChunk {

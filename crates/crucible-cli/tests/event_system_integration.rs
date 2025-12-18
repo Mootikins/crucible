@@ -258,7 +258,10 @@ async fn test_event_system_initializes() {
         }
         Ok(Err(e)) => {
             // Initialization failed - may be expected if dependencies missing
-            println!("Event system initialization failed (may be expected): {}", e);
+            println!(
+                "Event system initialization failed (may be expected): {}",
+                e
+            );
         }
         Err(_) => {
             panic!("Event system initialization timed out");
