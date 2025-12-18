@@ -138,17 +138,11 @@ pub type RingHandlerResult<T> = Result<T, RingHandlerError>;
 pub enum RingHandlerError {
     /// Handler failed but processing should continue (fail-open).
     #[error("Handler '{handler}' failed: {message}")]
-    NonFatal {
-        handler: String,
-        message: String,
-    },
+    NonFatal { handler: String, message: String },
 
     /// Handler failed and processing should stop.
     #[error("Handler '{handler}' fatal error: {message}")]
-    Fatal {
-        handler: String,
-        message: String,
-    },
+    Fatal { handler: String, message: String },
 }
 
 impl RingHandlerError {
@@ -383,7 +377,9 @@ mod tests {
 
         #[async_trait]
         impl RingHandler<()> for NoDepsHandler {
-            fn name(&self) -> &str { "no_deps" }
+            fn name(&self) -> &str {
+                "no_deps"
+            }
 
             async fn handle(
                 &self,
