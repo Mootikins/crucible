@@ -114,6 +114,7 @@ notify-debouncer-mini = "0.7"
 
 # Concurrency
 parking_lot = { workspace = true }
+nucleo = "0.5.0"
 
 [dev-dependencies]
 crucible-config = { path = "../crucible-config", features = ["test-utils"] }
