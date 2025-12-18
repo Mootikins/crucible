@@ -53,9 +53,9 @@ fn load_agent_registry(config: &CliConfig) -> AgentCardRegistry {
 pub fn collect_agent_directories(config: &CliConfig) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
-    // 1. Global default: ~/.config/crucible/agents/
-    if let Some(home) = dirs::home_dir() {
-        let global_agents = home.join(".config").join("crucible").join("agents");
+    // 1. Global default: ~/.config/crucible/agents/ (or %APPDATA%\crucible\agents\ on Windows)
+    if let Some(config_dir) = dirs::config_dir() {
+        let global_agents = config_dir.join("crucible").join("agents");
         dirs.push(global_agents);
     }
 

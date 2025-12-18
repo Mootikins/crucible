@@ -49,6 +49,8 @@ cru
 cru --help
 ```
 
+**Windows Users:** See [Windows Configuration Guide](docs/WINDOWS-CONFIGURATION.md) for Windows-specific setup and troubleshooting, including C runtime library configuration.
+
 ## Using Crucible
 
 The Crucible CLI (`cru`) provides the primary interface for interacting with your knowledge base.

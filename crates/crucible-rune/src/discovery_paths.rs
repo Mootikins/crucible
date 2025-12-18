@@ -2,7 +2,8 @@
 //!
 //! This module provides a consistent pattern for discovering Rune scripts
 //! across multiple directories with support for:
-//! - Global defaults (~/.crucible/<type>/)
+//! - Global defaults (uses platform-appropriate directory: ~/.config/crucible/<type>/ on Linux,
+//!   %APPDATA%\crucible\<type>\ on Windows (Roaming, syncs), ~/Library/Application Support/crucible/<type>/ on macOS)
 //! - Kiln-specific paths (KILN/.crucible/<type>/)
 //! - Additional paths from configuration
 //! - Option to disable defaults
@@ -45,8 +46,13 @@ impl DiscoveryPaths {
     /// Create new discovery paths for a resource type
     ///
     /// Default paths are:
-    /// - `~/.crucible/<type_name>/` (global)
+    /// - `~/.crucible/<type_name>/` (global, uses platform data directory)
     /// - `KILN/.crucible/<type_name>/` (kiln-specific, if provided)
+    ///
+    /// Platform-specific global paths:
+    /// - Linux: `~/.config/crucible/<type_name>/` (XDG config directory - these are configuration, not data)
+    /// - macOS: `~/Library/Application Support/crucible/<type_name>/`
+    /// - Windows: `%APPDATA%\crucible\<type_name>\` (Roaming AppData, syncs across machines)
     ///
     /// # Arguments
     /// * `type_name` - The resource type (e.g., "tools", "hooks", "events")
@@ -55,9 +61,49 @@ impl DiscoveryPaths {
         let type_name = type_name.into();
         let mut defaults = vec![];
 
-        // Global default: ~/.crucible/<type_name>/
-        if let Some(home) = dirs::home_dir() {
-            defaults.push(home.join(".crucible").join(&type_name));
+        // Global default: Use platform-appropriate directory
+        // Tools/hooks/events are treated as configuration (runtime concerns, not data)
+        // On Windows: Use Roaming AppData (%APPDATA%) so user scripts sync across machines
+        // On Linux: Use XDG config directory (~/.config/) - these are configuration, not data
+        // On macOS: Use Application Support (current convention)
+        #[cfg(target_os = "windows")]
+        {
+            // Windows: Use Roaming AppData for user-created scripts (they should sync)
+            if let Some(config_dir) = dirs::config_dir() {
+                defaults.push(config_dir.join("crucible").join(&type_name));
+            } else if let Some(home) = dirs::home_dir() {
+                defaults.push(home.join(".crucible").join(&type_name));
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            // Linux: Use XDG config directory (~/.config/) - these are configuration, not data
+            if let Some(config_dir) = dirs::config_dir() {
+                defaults.push(config_dir.join("crucible").join(&type_name));
+            } else if let Some(home) = dirs::home_dir() {
+                defaults.push(home.join(".crucible").join(&type_name));
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            // macOS: Use Application Support (keep as-is)
+            if let Some(data_dir) = dirs::data_dir() {
+                defaults.push(data_dir.join("crucible").join(&type_name));
+            } else if let Some(home) = dirs::home_dir() {
+                defaults.push(home.join(".crucible").join(&type_name));
+            }
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        {
+            // Fallback for other platforms: Use config directory
+            if let Some(config_dir) = dirs::config_dir() {
+                defaults.push(config_dir.join("crucible").join(&type_name));
+            } else if let Some(home) = dirs::home_dir() {
+                defaults.push(home.join(".crucible").join(&type_name));
+            }
         }
 
         // Kiln-specific: KILN/.crucible/<type_name>/
