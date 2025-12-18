@@ -28,7 +28,7 @@ release-cli:
 # Run all tests (summary only)
 test:
     if command -v cargo-nextest >/dev/null 2>&1; then \
-      cargo nextest run --workspace --failure-output immediate-final --status-level fail --final-status-level fail || { \
+      cargo nextest run --workspace --show-progress none --status-level none --final-status-level none --success-output never --failure-output immediate-final || { \
         echo "nextest failed; falling back to cargo test" >&2; \
         cargo test --workspace 2>&1 | awk '/^test result:/ {passed+=$4; failed+=$6} END {print \"✓ PASSED:\", passed, \"✗ FAILED:\", failed}'; \
       }; \
