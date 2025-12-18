@@ -87,6 +87,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_config_load_with_valid_toml() {
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("valid.toml");
@@ -243,13 +244,19 @@ verbose = false
         // Test embedding URL override
         env::set_var("CRUCIBLE_EMBEDDING_URL", "https://env-embed.com");
         let config = CliConfig::load(None, None, None).unwrap();
-        assert_eq!(config.embedding.api_url, Some("https://env-embed.com".to_string()));
+        assert_eq!(
+            config.embedding.api_url,
+            Some("https://env-embed.com".to_string())
+        );
         env::remove_var("CRUCIBLE_EMBEDDING_URL");
 
         // Test embedding provider override
         env::set_var("CRUCIBLE_EMBEDDING_PROVIDER", "openai");
         let config = CliConfig::load(None, None, None).unwrap();
-        assert_eq!(config.embedding.provider, crucible_config::EmbeddingProviderType::OpenAI);
+        assert_eq!(
+            config.embedding.provider,
+            crucible_config::EmbeddingProviderType::OpenAI
+        );
         env::remove_var("CRUCIBLE_EMBEDDING_PROVIDER");
 
         // Test embedding model override
@@ -293,10 +300,14 @@ model = "file-model"
             Some(config_path),
             Some("https://cli-embed.com".to_string()),
             Some("cli-model".to_string()),
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(config.kiln_path.to_str().unwrap(), "/file/kiln"); // From file
-        assert_eq!(config.embedding.api_url, Some("https://cli-embed.com".to_string())); // CLI overrides
+        assert_eq!(
+            config.embedding.api_url,
+            Some("https://cli-embed.com".to_string())
+        ); // CLI overrides
         assert_eq!(config.embedding.model, Some("cli-model".to_string())); // CLI overrides
 
         env::remove_var("CRUCIBLE_EMBEDDING_URL");
@@ -312,7 +323,10 @@ model = "file-model"
         assert_eq!(config.temperature(), 0.7);
         assert_eq!(config.max_tokens(), 2048);
         assert!(config.streaming());
-        assert_eq!(config.embedding.provider, crucible_config::EmbeddingProviderType::FastEmbed);
+        assert_eq!(
+            config.embedding.provider,
+            crucible_config::EmbeddingProviderType::FastEmbed
+        );
         assert_eq!(config.embedding.batch_size, 16);
     }
 
@@ -337,7 +351,10 @@ provider = "openai"
 
         // Specified fields
         assert_eq!(config.kiln_path.to_str().unwrap(), "/partial/kiln");
-        assert_eq!(config.embedding.provider, crucible_config::EmbeddingProviderType::OpenAI);
+        assert_eq!(
+            config.embedding.provider,
+            crucible_config::EmbeddingProviderType::OpenAI
+        );
 
         // Default fields should still be present
         assert_eq!(config.chat_model(), "llama3.2");
@@ -355,6 +372,9 @@ provider = "openai"
 
         // Should have all defaults
         assert_eq!(config.chat_model(), "llama3.2");
-        assert_eq!(config.embedding.provider, crucible_config::EmbeddingProviderType::FastEmbed);
+        assert_eq!(
+            config.embedding.provider,
+            crucible_config::EmbeddingProviderType::FastEmbed
+        );
     }
 }
