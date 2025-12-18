@@ -51,6 +51,10 @@ pub use traits::{
 
 // Re-export key types used across module boundaries
 pub use types::{
+    // ACP schema types from agent-client-protocol-schema
+    AvailableCommand,
+    AvailableCommandInput,
+    AvailableCommandsUpdate,
     // Hashing types
     BlockHash,
     BlockHashInfo,
@@ -58,7 +62,6 @@ pub use types::{
     ChangeSet,
     ChangeSummary,
     // ACP types
-    
     ChunkType,
     // Storage trait types (from traits/storage.rs)
     // Note: Parser types (ParsedNote, Wikilink, Tag, etc.) are exported from parser:: module below
@@ -68,23 +71,19 @@ pub use types::{
     FileMetadata,
     HashAlgorithm,
     HashError,
+    // Mode descriptor types
+    ModeDescriptor,
     SessionConfig,
     SessionId,
+    SessionMode,
+    SessionModeId,
+    SessionModeState,
     StreamChunk,
     StreamMetadata,
     ToolDefinition,
     ToolExample,
     ToolInvocation,
     ToolOutput,
-    // ACP schema types from agent-client-protocol-schema
-    AvailableCommand,
-    AvailableCommandInput,
-    AvailableCommandsUpdate,
-    SessionMode,
-    SessionModeId,
-    SessionModeState,
-    // Mode descriptor types
-    ModeDescriptor,
 };
 
 pub use database::{
@@ -187,16 +186,37 @@ pub use sink::{
 
 // Re-export event system types
 pub use events::{
-    // Emitter types
-    EmitOutcome, EmitResult, EventEmitter, EventError, HandlerErrorInfo, NoOpEmitter,
-    SharedEventBus,
     // Subscriber types
-    box_handler, BoxedHandlerFn, EventBus, EventFilter, EventSubscriber, HandlerFuture,
-    HandlerResult, SubscriptionError, SubscriptionId, SubscriptionIdGenerator, SubscriptionInfo,
-    SubscriptionResult,
+    box_handler,
+    BoxedHandlerFn,
+    // Emitter types
+    EmitOutcome,
+    EmitResult,
     // Session event types
-    EntityType, FileChangeKind, NoteChangeType, NotePayload, Priority, SessionEvent,
-    SessionEventConfig, ToolCall, ToolSource,
+    EntityType,
+    EventBus,
+    EventEmitter,
+    EventError,
+    EventFilter,
+    EventSubscriber,
+    FileChangeKind,
+    HandlerErrorInfo,
+    HandlerFuture,
+    HandlerResult,
+    NoOpEmitter,
+    NoteChangeType,
+    NotePayload,
+    Priority,
+    SessionEvent,
+    SessionEventConfig,
+    SharedEventBus,
+    SubscriptionError,
+    SubscriptionId,
+    SubscriptionIdGenerator,
+    SubscriptionInfo,
+    SubscriptionResult,
+    ToolCall,
+    ToolSource,
 };
 
 #[derive(Debug, thiserror::Error)]

@@ -84,13 +84,13 @@ pub use types::{
     // Additional content types
     Table,
     Tag,
-    // Task types
-    TaskItem,
-    TaskStatus,
     // Task file type
     TaskFile,
     // Task graph type
     TaskGraph,
+    // Task types
+    TaskItem,
+    TaskStatus,
     // Link and tag types
     Wikilink,
 };

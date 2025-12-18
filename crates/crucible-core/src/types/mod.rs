@@ -67,14 +67,14 @@ pub use crate::traits::change_detection::{ChangeSet, ChangeSummary};
 // Re-export ACP types
 // NOTE: ToolDescriptor and ToolExample removed - use ToolDefinition from traits::tools
 pub use crate::types::acp::{
-    ChunkType, FileDiff, FileMetadata, SessionConfig, SessionId, StreamChunk,
-    StreamMetadata, ToolCallInfo, ToolInvocation, ToolOutput,
+    ChunkType, FileDiff, FileMetadata, SessionConfig, SessionId, StreamChunk, StreamMetadata,
+    ToolCallInfo, ToolInvocation, ToolOutput,
 };
 
 // Re-export ACP schema types from agent-client-protocol-schema
 pub use crate::types::acp::schema::{
-    AvailableCommand, AvailableCommandInput, AvailableCommandsUpdate,
-    SessionMode, SessionModeId, SessionModeState,
+    AvailableCommand, AvailableCommandInput, AvailableCommandsUpdate, SessionMode, SessionModeId,
+    SessionModeState,
 };
 
 // Re-export mode descriptor types

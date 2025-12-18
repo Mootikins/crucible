@@ -185,7 +185,10 @@ mod tests {
 
         assert_eq!(descriptor.id, "plan");
         assert_eq!(descriptor.name, "Plan Mode");
-        assert_eq!(descriptor.description, Some("Read-only exploration mode".to_string()));
+        assert_eq!(
+            descriptor.description,
+            Some("Read-only exploration mode".to_string())
+        );
         assert_eq!(descriptor.icon, None);
         assert_eq!(descriptor.color, None);
     }
@@ -208,10 +211,8 @@ mod tests {
 
     #[test]
     fn test_mode_descriptor_equality() {
-        let mode1 = ModeDescriptor::new("plan", "Plan Mode")
-            .with_icon("📖");
-        let mode2 = ModeDescriptor::new("plan", "Plan Mode")
-            .with_icon("📖");
+        let mode1 = ModeDescriptor::new("plan", "Plan Mode").with_icon("📖");
+        let mode2 = ModeDescriptor::new("plan", "Plan Mode").with_icon("📖");
         let mode3 = ModeDescriptor::new("act", "Act Mode");
 
         assert_eq!(mode1, mode2);
@@ -252,15 +253,27 @@ mod tests {
         let state = default_internal_modes();
 
         for mode in &state.available_modes {
-            assert!(!mode.name.is_empty(), "Mode {} should have a name", mode.id.0);
-            assert!(mode.description.is_some(), "Mode {} should have a description", mode.id.0);
+            assert!(
+                !mode.name.is_empty(),
+                "Mode {} should have a name",
+                mode.id.0
+            );
+            assert!(
+                mode.description.is_some(),
+                "Mode {} should have a description",
+                mode.id.0
+            );
         }
     }
 
     #[test]
     fn test_default_internal_modes_mode_ids() {
         let state = default_internal_modes();
-        let ids: Vec<_> = state.available_modes.iter().map(|m| m.id.0.as_ref()).collect();
+        let ids: Vec<_> = state
+            .available_modes
+            .iter()
+            .map(|m| m.id.0.as_ref())
+            .collect();
 
         assert!(ids.contains(&"plan"));
         assert!(ids.contains(&"act"));

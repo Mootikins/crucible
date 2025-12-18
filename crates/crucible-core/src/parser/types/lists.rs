@@ -527,7 +527,10 @@ mod tests {
 
     #[test]
     fn checkbox_status_from_char_space_is_pending() {
-        assert_eq!(CheckboxStatus::from_char(' '), Some(CheckboxStatus::Pending));
+        assert_eq!(
+            CheckboxStatus::from_char(' '),
+            Some(CheckboxStatus::Pending)
+        );
     }
 
     #[test]
@@ -538,17 +541,26 @@ mod tests {
 
     #[test]
     fn checkbox_status_from_char_slash_is_in_progress() {
-        assert_eq!(CheckboxStatus::from_char('/'), Some(CheckboxStatus::InProgress));
+        assert_eq!(
+            CheckboxStatus::from_char('/'),
+            Some(CheckboxStatus::InProgress)
+        );
     }
 
     #[test]
     fn checkbox_status_from_char_dash_is_cancelled() {
-        assert_eq!(CheckboxStatus::from_char('-'), Some(CheckboxStatus::Cancelled));
+        assert_eq!(
+            CheckboxStatus::from_char('-'),
+            Some(CheckboxStatus::Cancelled)
+        );
     }
 
     #[test]
     fn checkbox_status_from_char_bang_is_blocked() {
-        assert_eq!(CheckboxStatus::from_char('!'), Some(CheckboxStatus::Blocked));
+        assert_eq!(
+            CheckboxStatus::from_char('!'),
+            Some(CheckboxStatus::Blocked)
+        );
     }
 
     #[test]
