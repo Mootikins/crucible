@@ -9,7 +9,7 @@ use crate::{
 // Import the WatcherFactory trait
 use async_trait::async_trait;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode};
-use notify_debouncer_full::{new_debouncer, DebounceEventResult, DebouncedEvent, Debouncer};
+use notify_debouncer_full::{new_debouncer, DebounceEventResult, DebouncedEvent, Debouncer, FileIdMap};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -19,7 +19,7 @@ use tracing::{debug, error, info, trace, warn};
 /// Notify-based file watcher with debouncing support.
 pub struct NotifyWatcher {
     /// Debounced file system watcher
-    debouncer: Option<Debouncer<RecommendedWatcher, notify_debouncer_full::NoCache>>,
+    debouncer: Option<Debouncer<RecommendedWatcher, FileIdMap>>,
     /// Event sender
     event_sender: Option<mpsc::UnboundedSender<FileEvent>>,
     /// Active watches
