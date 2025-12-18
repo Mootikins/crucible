@@ -15,6 +15,7 @@ use crate::{
     HistoryConfig, HistoryMessage, PromptEnricher, Result, StreamConfig, ToolCallInfo,
     ToolExecutor, ToolRegistry,
 };
+use agent_client_protocol::AvailableCommand;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -519,6 +520,15 @@ impl ChatSession {
     /// Get the session ID
     pub fn session_id(&self) -> &str {
         &self.metadata.id
+    }
+
+    /// Get the latest agent-provided slash commands (if any were advertised)
+    pub fn available_commands(&self) -> &[AvailableCommand] {
+        if let Some(client) = &self.agent_client {
+            client.available_commands()
+        } else {
+            &[]
+        }
     }
 }
 
