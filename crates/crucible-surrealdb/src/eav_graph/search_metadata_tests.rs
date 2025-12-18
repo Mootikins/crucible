@@ -125,9 +125,9 @@ mod tests {
         );
 
         assert!(
-            found_ids
-                .iter()
-                .any(|id| id.contains("Project") || id.contains("Management") || id.contains("project")),
+            found_ids.iter().any(|id| id.contains("Project")
+                || id.contains("Management")
+                || id.contains("project")),
             "Found document should be related to project management, found IDs: {:?}",
             found_ids
         );

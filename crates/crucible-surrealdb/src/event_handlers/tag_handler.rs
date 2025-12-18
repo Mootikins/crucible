@@ -147,10 +147,15 @@ impl TagHandler {
     /// to ensure entities exist before associating tags.
     pub async fn handle_event(&self, event: &SessionEvent) {
         match event {
-            SessionEvent::NoteParsed { path, block_count, .. } => {
+            SessionEvent::NoteParsed {
+                path, block_count, ..
+            } => {
                 self.handle_note_parsed(path, *block_count).await;
             }
-            SessionEvent::EntityDeleted { entity_id, entity_type } => {
+            SessionEvent::EntityDeleted {
+                entity_id,
+                entity_type,
+            } => {
                 self.handle_entity_deleted(entity_id, entity_type).await;
             }
             _ => {
@@ -187,18 +192,17 @@ mod tests {
     use crate::test_utils::{apply_eav_graph_schema, EAVGraphStore, SurrealClient};
 
     /// Helper to create a mock event emitter as a SharedEventBus
-    fn create_mock_emitter() -> (Arc<MockEventEmitter<SessionEvent>>, SharedEventBus<SessionEvent>)
-    {
+    fn create_mock_emitter() -> (
+        Arc<MockEventEmitter<SessionEvent>>,
+        SharedEventBus<SessionEvent>,
+    ) {
         let mock = Arc::new(MockEventEmitter::new());
         let shared: SharedEventBus<SessionEvent> = mock.clone();
         (mock, shared)
     }
 
     #[cfg(feature = "test-utils")]
-    async fn setup_handler() -> (
-        TagHandler,
-        Arc<MockEventEmitter<SessionEvent>>,
-    ) {
+    async fn setup_handler() -> (TagHandler, Arc<MockEventEmitter<SessionEvent>>) {
         let client = SurrealClient::new_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = Arc::new(EAVGraphStore::new(client));
@@ -213,7 +217,11 @@ mod tests {
         let (handler, mock) = setup_handler().await;
 
         // Associate tags with an entity
-        let tags = vec!["rust".to_string(), "programming".to_string(), "tutorial".to_string()];
+        let tags = vec![
+            "rust".to_string(),
+            "programming".to_string(),
+            "tutorial".to_string(),
+        ];
         handler.associate_tags("note_example_md", &tags).await;
 
         // Verify TagAssociated events were emitted

@@ -11,8 +11,6 @@
 //! - Block Links with Hashes
 //! - Backlinks
 
-
-
 mod common;
 
 use common::{setup_test_db_with_kiln, test_kiln_root};
@@ -180,8 +178,7 @@ async fn wikilink_unique_names() {
 
     for entry in walkdir::WalkDir::new(&kiln_root) {
         if let Ok(entry) = entry {
-            if entry.file_type().is_file()
-                && entry.path().extension().map_or(false, |e| e == "md")
+            if entry.file_type().is_file() && entry.path().extension().map_or(false, |e| e == "md")
             {
                 if let Some(stem) = entry.path().file_stem() {
                     let name = stem.to_string_lossy().to_string();
@@ -278,8 +275,7 @@ async fn heading_case_sensitivity() {
 
     // Assert: Different case should be different headings
     assert_ne!(
-        link1.heading_ref,
-        link2.heading_ref,
+        link1.heading_ref, link2.heading_ref,
         "Heading refs should be case-sensitive"
     );
 
@@ -303,10 +299,7 @@ async fn heading_broken_ref() {
     let wikilink = Wikilink::parse("Note#NonexistentHeading", 0, false);
 
     assert_eq!(wikilink.target, "Note");
-    assert_eq!(
-        wikilink.heading_ref,
-        Some("NonexistentHeading".to_string())
-    );
+    assert_eq!(wikilink.heading_ref, Some("NonexistentHeading".to_string()));
 
     // The database stores this heading_ref in metadata.
     // Whether the heading exists in the target note is a query-time check.
@@ -344,11 +337,7 @@ async fn block_ref_stored() {
 
     // Parse the wikilink
     use crucible_core::parser::Wikilink;
-    let wikilink = Wikilink::parse(
-        &format!("{}#^{}", target, block_id),
-        0,
-        false,
-    );
+    let wikilink = Wikilink::parse(&format!("{}#^{}", target, block_id), 0, false);
 
     assert_eq!(wikilink.target, target);
     assert_eq!(wikilink.block_ref, Some(block_id.to_string()));
@@ -453,7 +442,10 @@ async fn block_cas_lookup() {
         SELECT id, block_type, content FROM blocks LIMIT 1
     "#;
 
-    let result = client.query(get_block_sql, &[]).await.expect("Query failed");
+    let result = client
+        .query(get_block_sql, &[])
+        .await
+        .expect("Query failed");
 
     // Assert: Blocks should exist in database
     assert!(
@@ -487,8 +479,7 @@ async fn block_hash_mismatch() {
 
     // Assert: Hashes should differ
     assert_ne!(
-        original_hash,
-        modified_hash,
+        original_hash, modified_hash,
         "Content change should produce different hash"
     );
 

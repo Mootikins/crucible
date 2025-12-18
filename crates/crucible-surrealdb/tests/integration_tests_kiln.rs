@@ -5,8 +5,6 @@
 //!
 //! All tests use the test-kiln at `examples/test-kiln/` for realistic test data.
 
-
-
 mod common;
 
 use common::{count_kiln_files, setup_test_db_with_kiln, test_kiln_root, TestKilnConfig};
@@ -67,8 +65,7 @@ async fn consistency_tags() {
 
     for entry in walkdir::WalkDir::new(&kiln_root) {
         if let Ok(entry) = entry {
-            if entry.file_type().is_file()
-                && entry.path().extension().map_or(false, |e| e == "md")
+            if entry.file_type().is_file() && entry.path().extension().map_or(false, |e| e == "md")
             {
                 if let Ok(content) = std::fs::read_to_string(entry.path()) {
                     if let Some(cap) = tag_regex.captures(&content) {
@@ -92,7 +89,11 @@ async fn consistency_tags() {
         "Test kiln should have tags in frontmatter"
     );
 
-    println!("Found {} unique tags across {} files", file_tags.len(), file_count);
+    println!(
+        "Found {} unique tags across {} files",
+        file_tags.len(),
+        file_count
+    );
 
     // Database validation will be implemented later
     // TODO: After ingestion, verify database has same tags
@@ -114,22 +115,28 @@ async fn consistency_dates() {
 
     for entry in walkdir::WalkDir::new(&kiln_root) {
         if let Ok(entry) = entry {
-            if entry.file_type().is_file()
-                && entry.path().extension().map_or(false, |e| e == "md")
+            if entry.file_type().is_file() && entry.path().extension().map_or(false, |e| e == "md")
             {
                 if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                    let created = created_regex.captures(&content)
+                    let created = created_regex
+                        .captures(&content)
                         .and_then(|c| c.get(1))
                         .map(|m| m.as_str().to_string());
 
-                    let modified = modified_regex.captures(&content)
+                    let modified = modified_regex
+                        .captures(&content)
                         .and_then(|c| c.get(1))
                         .map(|m| m.as_str().to_string());
 
                     if let (Some(c), Some(m)) = (created, modified) {
                         if c > m {
                             date_issues.push((
-                                entry.path().file_name().unwrap().to_string_lossy().to_string(),
+                                entry
+                                    .path()
+                                    .file_name()
+                                    .unwrap()
+                                    .to_string_lossy()
+                                    .to_string(),
                                 c,
                                 m,
                             ));
@@ -171,10 +178,11 @@ async fn consistency_related_docs() {
 
     for entry in walkdir::WalkDir::new(&kiln_root) {
         if let Ok(entry) = entry {
-            if entry.file_type().is_file()
-                && entry.path().extension().map_or(false, |e| e == "md")
+            if entry.file_type().is_file() && entry.path().extension().map_or(false, |e| e == "md")
             {
-                let title = entry.path().file_stem()
+                let title = entry
+                    .path()
+                    .file_stem()
                     .map(|s| s.to_string_lossy().to_string())
                     .unwrap_or_default();
 
@@ -183,7 +191,8 @@ async fn consistency_related_docs() {
                 if let Ok(content) = std::fs::read_to_string(entry.path()) {
                     if let Some(cap) = related_regex.captures(&content) {
                         if let Some(related_str) = cap.get(1) {
-                            let related: Vec<String> = related_str.as_str()
+                            let related: Vec<String> = related_str
+                                .as_str()
                                 .split(',')
                                 .map(|s| {
                                     // Strip quotes and wikilink brackets
@@ -494,10 +503,7 @@ async fn index_tags() {
     let result = client.query(sql, &[]).await.expect("Query failed");
 
     // Should have tags stored
-    assert!(
-        !result.records.is_empty(),
-        "Should have tags in database"
-    );
+    assert!(!result.records.is_empty(), "Should have tags in database");
 
     eprintln!("Found {} tags", result.records.len());
 }
