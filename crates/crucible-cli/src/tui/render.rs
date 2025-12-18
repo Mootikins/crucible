@@ -6,8 +6,6 @@
 //! This module renders only the bottom widget (streaming area, input, status).
 //! Completed messages are printed to terminal scrollback, not rendered here.
 
-
-
 use crate::tui::state::TuiState;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -26,18 +24,42 @@ use ratatui::{
 ///
 /// Completed messages go to terminal scrollback, not rendered here.
 pub fn render(frame: &mut Frame, state: &TuiState) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
+    let popup_height = state
+        .popup
+        .as_ref()
+        .map(|p| p.items.len().min(5) as u16)
+        .unwrap_or(0);
+
+    let constraints = if popup_height > 0 {
+        vec![
+            Constraint::Min(3),               // Streaming area
+            Constraint::Length(popup_height), // Popup
+            Constraint::Length(3),            // Input area
+            Constraint::Length(1),            // Status bar
+        ]
+    } else {
+        vec![
             Constraint::Min(3),    // Streaming area
             Constraint::Length(3), // Input area
             Constraint::Length(1), // Status bar
-        ])
+        ]
+    };
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
         .split(frame.area());
 
-    render_streaming(frame, chunks[0], state);
-    render_input(frame, chunks[1], state);
-    render_status(frame, chunks[2], state);
+    let mut idx = 0;
+    render_streaming(frame, chunks[idx], state);
+    idx += 1;
+    if popup_height > 0 {
+        render_popup(frame, chunks[idx], state);
+        idx += 1;
+    }
+    render_input(frame, chunks[idx], state);
+    idx += 1;
+    render_status(frame, chunks[idx], state);
 }
 
 /// Render the streaming response area
@@ -90,8 +112,8 @@ fn render_input(frame: &mut Frame, area: Rect, state: &TuiState) {
         Span::raw(&state.input_buffer),
     ]);
 
-    let input = Paragraph::new(input_line)
-        .block(Block::default().borders(Borders::ALL).title("Input"));
+    let input =
+        Paragraph::new(input_line).block(Block::default().borders(Borders::ALL).title("Input"));
 
     frame.render_widget(input, area);
 
@@ -99,6 +121,64 @@ fn render_input(frame: &mut Frame, area: Rect, state: &TuiState) {
     let cursor_x = area.x + mode_str.len() as u16 + 4 + state.cursor_position as u16;
     let cursor_y = area.y + 1;
     frame.set_cursor_position((cursor_x, cursor_y));
+}
+
+fn render_popup(frame: &mut Frame, area: Rect, state: &TuiState) {
+    let Some(ref popup) = state.popup else {
+        return;
+    };
+    let lines: Vec<Line> = popup
+        .items
+        .iter()
+        .enumerate()
+        .map(|(idx, item)| {
+            let mut spans = Vec::new();
+            let marker = if idx == popup.selected { ">" } else { " " };
+            spans.push(Span::styled(
+                marker,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+
+            let kind_label = match item.kind {
+                crate::tui::state::PopupItemKind::Command => "[cmd]",
+                crate::tui::state::PopupItemKind::Agent => "[agent]",
+                crate::tui::state::PopupItemKind::File => "[file]",
+                crate::tui::state::PopupItemKind::Note => "[note]",
+            };
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(
+                kind_label,
+                Style::default().fg(Color::Magenta),
+            ));
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(
+                &item.title,
+                if idx == popup.selected {
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+                } else {
+                    Style::default().fg(Color::White)
+                },
+            ));
+            if !item.subtitle.is_empty() {
+                spans.push(Span::raw(" "));
+                spans.push(Span::styled(
+                    &item.subtitle,
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+            Line::from(spans)
+        })
+        .collect();
+
+    let popup_widget = Paragraph::new(lines)
+        .block(Block::default().borders(Borders::ALL).title("Select"))
+        .wrap(Wrap { trim: true });
+
+    frame.render_widget(popup_widget, area);
 }
 
 fn render_status(frame: &mut Frame, area: Rect, state: &TuiState) {
