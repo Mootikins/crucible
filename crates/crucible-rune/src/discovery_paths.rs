@@ -318,11 +318,40 @@ mod tests {
         assert_eq!(paths.type_name(), "tools");
         assert!(paths.uses_defaults());
 
-        // Should have at least the global default if home dir exists
-        if dirs::home_dir().is_some() {
+        // Should have the platform global default if a base dir exists.
+        let expected = {
+            #[cfg(target_os = "windows")]
+            {
+                dirs::config_dir()
+                    .map(|d| d.join("crucible").join("tools"))
+                    .or_else(|| dirs::home_dir().map(|h| h.join(".crucible").join("tools")))
+            }
+
+            #[cfg(target_os = "linux")]
+            {
+                dirs::config_dir()
+                    .map(|d| d.join("crucible").join("tools"))
+                    .or_else(|| dirs::home_dir().map(|h| h.join(".crucible").join("tools")))
+            }
+
+            #[cfg(target_os = "macos")]
+            {
+                dirs::data_dir()
+                    .map(|d| d.join("crucible").join("tools"))
+                    .or_else(|| dirs::home_dir().map(|h| h.join(".crucible").join("tools")))
+            }
+
+            #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+            {
+                dirs::config_dir()
+                    .map(|d| d.join("crucible").join("tools"))
+                    .or_else(|| dirs::home_dir().map(|h| h.join(".crucible").join("tools")))
+            }
+        };
+
+        if let Some(expected) = expected {
             assert!(!paths.default_paths().is_empty());
-            let first = &paths.default_paths()[0];
-            assert!(first.ends_with(".crucible/tools"));
+            assert_eq!(&paths.default_paths()[0], &expected);
         }
     }
 
