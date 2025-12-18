@@ -28,8 +28,8 @@ use crate::session::AcpSession;
 use crate::streaming::humanize_tool_title;
 use crate::{AcpError, Result};
 use agent_client_protocol::{
-    ContentBlock, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    SessionNotification, SessionUpdate, ToolCallContent,
+    AvailableCommand, ContentBlock, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, SessionNotification, SessionUpdate, ToolCallContent,
 };
 use crucible_core::traits::acp::{AcpResult, SessionManager};
 use crucible_core::types::acp::{FileDiff, SessionConfig, SessionId, ToolCallInfo};
@@ -187,6 +187,8 @@ pub struct CrucibleAcpClient {
     boxed_writer: Option<BoxedWriter>,
     /// Type-erased reader for in-process transports (e.g., ThreadedMockAgent)
     boxed_reader: Option<BoxedReader>,
+    /// Latest available slash commands advertised by the agent
+    available_commands: Vec<AvailableCommand>,
 }
 
 // Manual Debug implementation since Child doesn't implement Debug
@@ -200,6 +202,7 @@ impl std::fmt::Debug for CrucibleAcpClient {
             .field("agent_stdout", &self.agent_stdout.is_some())
             .field("boxed_writer", &self.boxed_writer.is_some())
             .field("boxed_reader", &self.boxed_reader.is_some())
+            .field("available_commands", &self.available_commands.len())
             .finish()
     }
 }
@@ -232,7 +235,13 @@ impl CrucibleAcpClient {
             agent_stdout: None,
             boxed_writer: None,
             boxed_reader: None,
+            available_commands: Vec::new(),
         }
+    }
+
+    /// Get the latest slash commands advertised by the agent
+    pub fn available_commands(&self) -> &[AvailableCommand] {
+        &self.available_commands
     }
 
     /// Create a client with a pre-connected in-process transport
@@ -268,6 +277,7 @@ impl CrucibleAcpClient {
             agent_stdout: None,
             boxed_writer: Some(writer),
             boxed_reader: Some(reader),
+            available_commands: Vec::new(),
         }
     }
 
@@ -1036,7 +1046,11 @@ impl CrucibleAcpClient {
         ))
     }
 
-    fn apply_session_update(&self, notification: SessionNotification, state: &mut StreamingState) {
+    fn apply_session_update(
+        &mut self,
+        notification: SessionNotification,
+        state: &mut StreamingState,
+    ) {
         match notification.update {
             SessionUpdate::AgentMessageChunk(chunk) => match chunk.content {
                 ContentBlock::Text(text_block) => {
@@ -1121,6 +1135,13 @@ impl CrucibleAcpClient {
                     }
                     self.record_tool_call(info, state);
                 }
+            }
+            SessionUpdate::AvailableCommandsUpdate(update) => {
+                tracing::info!(
+                    "Received {} available command(s) from agent",
+                    update.available_commands.len()
+                );
+                self.available_commands = update.available_commands;
             }
             other => {
                 tracing::debug!("Ignoring update type: {:?}", other);
@@ -1634,6 +1655,53 @@ mod tests {
             .expect("Should parse prompt response");
         assert!(result.is_some());
         assert_eq!(result.unwrap().stop_reason, StopReason::EndTurn);
+    }
+
+    #[tokio::test]
+    async fn process_streaming_message_tracks_available_commands() {
+        let config = ClientConfig {
+            agent_path: PathBuf::from("/tmp/test-agent"),
+            agent_args: None,
+            working_dir: None,
+            env_vars: None,
+            timeout_ms: Some(1000),
+            max_retries: Some(1),
+        };
+        let mut client = CrucibleAcpClient::new(config);
+        let mut state = StreamingState::default();
+
+        let payload = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {
+                "sessionId": "session-123",
+                "update": {
+                    "sessionUpdate": "available_commands_update",
+                    "availableCommands": [
+                        {
+                            "name": "models",
+                            "description": "Choose a model",
+                            "input": null,
+                            "meta": {
+                                "secondary": ["claude-3.5-sonnet", "claude-3-opus"]
+                            }
+                        }
+                    ]
+                }
+            }
+        });
+
+        let result = client
+            .process_streaming_message(&payload, 1, &mut state)
+            .await
+            .expect("Should parse notification");
+
+        assert!(
+            result.is_none(),
+            "Notifications should not return prompt response"
+        );
+        assert_eq!(client.available_commands.len(), 1);
+        assert_eq!(client.available_commands[0].name, "models");
     }
 
     #[test]

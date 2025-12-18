@@ -374,6 +374,10 @@ impl TuiRunner {
 mod tests {
     use super::*;
 
+    fn test_popup_provider() -> std::sync::Arc<DynamicPopupProvider> {
+        std::sync::Arc::new(DynamicPopupProvider::new())
+    }
+
     // 4.1.1 & 4.1.2: Verify TuiRunner has no alternate screen dependency
     #[test]
     fn test_tui_runner_creates_state() {
@@ -389,7 +393,7 @@ mod tests {
     fn test_runner_stores_dimensions() {
         // TuiRunner should store width/height for widget rendering
         // Note: In CI, size() may fail so we use defaults
-        let runner = TuiRunner::new("plan").unwrap();
+        let runner = TuiRunner::new("plan", test_popup_provider()).unwrap();
         // Should have reasonable default dimensions
         assert!(runner.width > 0);
         assert!(runner.height > 0);
@@ -416,7 +420,7 @@ mod tests {
     // 4.2.3: Test handle_resize updates dimensions
     #[test]
     fn test_handle_resize_updates_dimensions() {
-        let mut runner = TuiRunner::new("plan").unwrap();
+        let mut runner = TuiRunner::new("plan", test_popup_provider()).unwrap();
         let original_width = runner.width;
         let original_height = runner.height;
 
@@ -446,7 +450,7 @@ mod tests {
     fn test_cancel_streaming_clears_state() {
         use crate::tui::StreamingBuffer;
 
-        let mut runner = TuiRunner::new("plan").unwrap();
+        let mut runner = TuiRunner::new("plan", test_popup_provider()).unwrap();
 
         // Setup streaming state
         runner.state.streaming = Some(StreamingBuffer::new());
@@ -541,7 +545,7 @@ mod tests {
     fn test_widget_state_from_runner() {
         use crate::tui::StreamingBuffer;
 
-        let mut runner = TuiRunner::new("act").unwrap();
+        let mut runner = TuiRunner::new("act", test_popup_provider()).unwrap();
         runner.state.input_buffer = "test input".to_string();
         runner.state.cursor_position = 5;
         runner.state.streaming = Some(StreamingBuffer::new());
@@ -599,7 +603,7 @@ mod tests {
     // Edge case: Multiple resize events
     #[test]
     fn test_multiple_resizes() {
-        let mut runner = TuiRunner::new("plan").unwrap();
+        let mut runner = TuiRunner::new("plan", test_popup_provider()).unwrap();
 
         // Simulate multiple resizes
         runner.width = 80;
@@ -621,7 +625,7 @@ mod tests {
     // Edge case: Very small terminal
     #[test]
     fn test_very_small_terminal() {
-        let mut runner = TuiRunner::new("plan").unwrap();
+        let mut runner = TuiRunner::new("plan", test_popup_provider()).unwrap();
 
         // Terminal smaller than minimum widget height
         runner.width = 20;
@@ -638,7 +642,7 @@ mod tests {
     fn test_handle_agent_error_sets_status_error() {
         use crate::tui::StreamingBuffer;
 
-        let mut runner = TuiRunner::new("plan").unwrap();
+        let mut runner = TuiRunner::new("plan", test_popup_provider()).unwrap();
 
         // Set up streaming state
         runner.state.streaming = Some(StreamingBuffer::new());
@@ -664,7 +668,7 @@ mod tests {
 
     #[test]
     fn test_status_error_preserved_until_new_message() {
-        let mut runner = TuiRunner::new("plan").unwrap();
+        let mut runner = TuiRunner::new("plan", test_popup_provider()).unwrap();
 
         // Set an error
         runner.state.status_error = Some("Connection failed".to_string());
@@ -682,7 +686,7 @@ mod tests {
 
     #[test]
     fn test_handle_agent_error_with_empty_streaming() {
-        let mut runner = TuiRunner::new("plan").unwrap();
+        let mut runner = TuiRunner::new("plan", test_popup_provider()).unwrap();
 
         // No streaming in progress
         assert!(runner.state.streaming.is_none());
