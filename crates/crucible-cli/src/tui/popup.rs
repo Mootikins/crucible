@@ -1,6 +1,9 @@
 use crate::tui::state::{PopupItem, PopupItemKind, PopupKind};
 use crucible_core::traits::chat::CommandDescriptor;
+use nucleo::pattern::{CaseMatching, Normalization};
+use nucleo::{Config, Matcher, Nucleo, Utf32String};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 /// Provider abstraction so the popup can be fed from CLI or exposed to Rune.
@@ -23,24 +26,13 @@ impl StaticPopupProvider {
     }
 }
 
-fn score_match(haystack: &str, needle: &str) -> Option<i32> {
-    if needle.is_empty() {
-        return Some(0);
-    }
-    let hay = haystack.to_lowercase();
-    let nee = needle.to_lowercase();
-    if let Some(pos) = hay.find(&nee) {
-        // Prefix > substring; shorter paths slightly favored
-        let base = if pos == 0 { 1000 } else { 500 };
-        let len_penalty = (hay.len().saturating_sub(nee.len())) as i32;
-        Some(base - len_penalty.min(400))
-    } else {
-        None
-    }
-}
-
 impl PopupProvider for StaticPopupProvider {
     fn provide(&self, kind: PopupKind, query: &str) -> Vec<PopupItem> {
+        let query = query.split_whitespace().next().unwrap_or("").trim();
+        let mut matcher = Matcher::new(Config::DEFAULT.match_paths());
+        let mut pattern = nucleo::pattern::MultiPattern::new(1);
+        pattern.reparse(0, query, CaseMatching::Ignore, Normalization::Smart, false);
+
         let mut out = Vec::new();
         match kind {
             PopupKind::Command => {
@@ -51,13 +43,15 @@ impl PopupProvider for StaticPopupProvider {
                         .as_ref()
                         .map(|h| format!("{} — {}", cmd.description, h))
                         .unwrap_or_else(|| cmd.description.clone());
-                    if let Some(score) = score_match(&title, query) {
+                    let match_col = Utf32String::from(cmd.name.as_str());
+                    let score = pattern.score(std::slice::from_ref(&match_col), &mut matcher);
+                    if let Some(score) = score {
                         out.push(PopupItem {
                             kind: PopupItemKind::Command,
                             title,
                             subtitle,
                             token: format!("/{} ", cmd.name),
-                            score,
+                            score: score.min(i32::MAX as u32) as i32,
                             available: true,
                         });
                     }
@@ -65,37 +59,43 @@ impl PopupProvider for StaticPopupProvider {
             }
             PopupKind::AgentOrFile => {
                 for (id, desc) in &self.agents {
-                    if let Some(score) = score_match(id, query) {
+                    let match_col = Utf32String::from(id.as_str());
+                    let score = pattern.score(std::slice::from_ref(&match_col), &mut matcher);
+                    if let Some(score) = score {
                         out.push(PopupItem {
                             kind: PopupItemKind::Agent,
                             title: format!("@{}", id),
                             subtitle: desc.clone(),
                             token: format!("@{}", id),
-                            score,
+                            score: score.min(i32::MAX as u32) as i32,
                             available: true,
                         });
                     }
                 }
                 for file in &self.files {
-                    if let Some(score) = score_match(file, query) {
+                    let match_col = Utf32String::from(file.as_str());
+                    let score = pattern.score(std::slice::from_ref(&match_col), &mut matcher);
+                    if let Some(score) = score {
                         out.push(PopupItem {
                             kind: PopupItemKind::File,
                             title: file.clone(),
                             subtitle: String::from("workspace"),
                             token: file.clone(),
-                            score,
+                            score: score.min(i32::MAX as u32) as i32,
                             available: true,
                         });
                     }
                 }
                 for note in &self.notes {
-                    if let Some(score) = score_match(note, query) {
+                    let match_col = Utf32String::from(note.as_str());
+                    let score = pattern.score(std::slice::from_ref(&match_col), &mut matcher);
+                    if let Some(score) = score {
                         out.push(PopupItem {
                             kind: PopupItemKind::Note,
                             title: note.clone(),
                             subtitle: String::from("note"),
                             token: note.clone(),
-                            score,
+                            score: score.min(i32::MAX as u32) as i32,
                             available: true,
                         });
                     }
@@ -106,6 +106,29 @@ impl PopupProvider for StaticPopupProvider {
         out.sort_by(|a, b| b.score.cmp(&a.score));
         out.truncate(20);
         out
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PopupCandidate {
+    kind: PopupItemKind,
+    title: String,
+    subtitle: String,
+    token: String,
+    available: bool,
+    match_col: Utf32String,
+}
+
+impl PopupCandidate {
+    fn to_item(&self, score: u32) -> PopupItem {
+        PopupItem {
+            kind: self.kind.clone(),
+            title: self.title.clone(),
+            subtitle: self.subtitle.clone(),
+            token: self.token.clone(),
+            score: score.min(i32::MAX as u32) as i32,
+            available: self.available,
+        }
     }
 }
 
@@ -135,14 +158,37 @@ impl PopupDebounce {
 }
 
 /// Thread-safe provider that can be updated dynamically (Arc<RwLock> friendly)
-#[derive(Default)]
 pub struct DynamicPopupProvider {
     inner: parking_lot::RwLock<StaticPopupProvider>,
+    commands_version: AtomicU64,
+    agents_version: AtomicU64,
+    files_version: AtomicU64,
+    notes_version: AtomicU64,
+    command_matcher: parking_lot::Mutex<PopupMatcherCache>,
+    agent_file_matcher: parking_lot::Mutex<PopupMatcherCache>,
 }
 
 impl DynamicPopupProvider {
     pub fn new() -> Self {
-        Self::default()
+        let notify: Arc<dyn Fn() + Sync + Send> = Arc::new(|| {});
+        let config_commands = Config::DEFAULT;
+        let config_paths = Config::DEFAULT.match_paths();
+
+        Self {
+            inner: parking_lot::RwLock::new(StaticPopupProvider::default()),
+            commands_version: AtomicU64::new(1),
+            agents_version: AtomicU64::new(1),
+            files_version: AtomicU64::new(1),
+            notes_version: AtomicU64::new(1),
+            command_matcher: parking_lot::Mutex::new(PopupMatcherCache::new(
+                Nucleo::new(config_commands.clone(), notify.clone(), None, 1),
+                Matcher::new(config_commands),
+            )),
+            agent_file_matcher: parking_lot::Mutex::new(PopupMatcherCache::new(
+                Nucleo::new(config_paths.clone(), notify, None, 1),
+                Matcher::new(config_paths),
+            )),
+        }
     }
 
     pub fn snapshot(&self) -> StaticPopupProvider {
@@ -151,25 +197,193 @@ impl DynamicPopupProvider {
 
     pub fn set_commands(&self, commands: Vec<CommandDescriptor>) {
         self.inner.write().commands = commands;
+        self.commands_version.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn set_agents(&self, agents: Vec<(String, String)>) {
         self.inner.write().agents = agents;
+        self.agents_version.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn set_files(&self, files: Vec<String>) {
         self.inner.write().files = files;
+        self.files_version.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn set_notes(&self, notes: Vec<String>) {
         self.inner.write().notes = notes;
+        self.notes_version.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CacheKind {
+    Command,
+    AgentOrFile,
+}
+
+struct PopupMatcherCache {
+    nucleo: Nucleo<PopupCandidate>,
+    score_matcher: Matcher,
+    last_query: String,
+    last_versions: (u64, u64, u64, u64), // commands, agents, files, notes
+}
+
+impl PopupMatcherCache {
+    fn new(nucleo: Nucleo<PopupCandidate>, score_matcher: Matcher) -> Self {
+        Self {
+            nucleo,
+            score_matcher,
+            last_query: String::new(),
+            last_versions: (0, 0, 0, 0),
+        }
+    }
+
+    fn needs_rebuild(&self, kind: CacheKind, versions: (u64, u64, u64, u64)) -> bool {
+        match kind {
+            CacheKind::Command => versions.0 != self.last_versions.0,
+            CacheKind::AgentOrFile => versions.1 != self.last_versions.1
+                || versions.2 != self.last_versions.2
+                || versions.3 != self.last_versions.3,
+        }
+    }
+
+    fn maybe_rebuild(
+        &mut self,
+        kind: CacheKind,
+        versions: (u64, u64, u64, u64),
+        data: StaticPopupProvider,
+    ) {
+        if !self.needs_rebuild(kind, versions) {
+            return;
+        }
+
+        self.last_versions = versions;
+        self.last_query.clear();
+        self.nucleo.restart(true);
+        let injector = self.nucleo.injector();
+
+        match kind {
+            CacheKind::Command => {
+                for cmd in data.commands {
+                    let name = cmd.name;
+                    let description = cmd.description;
+                    let input_hint = cmd.input_hint;
+                    let title = format!("/{}", name);
+                    let subtitle = input_hint
+                        .as_ref()
+                        .map(|h| format!("{} — {}", description, h))
+                        .unwrap_or_else(|| description.clone());
+                    let cand = PopupCandidate {
+                        kind: PopupItemKind::Command,
+                        match_col: Utf32String::from(name.as_str()),
+                        title,
+                        subtitle,
+                        token: format!("/{} ", name),
+                        available: true,
+                    };
+                    injector.push(cand, |c, cols| cols[0] = c.match_col.clone());
+                }
+            }
+            CacheKind::AgentOrFile => {
+                for (id, desc) in data.agents {
+                    let cand = PopupCandidate {
+                        kind: PopupItemKind::Agent,
+                        match_col: Utf32String::from(id.as_str()),
+                        title: format!("@{}", id),
+                        subtitle: desc,
+                        token: format!("@{}", id),
+                        available: true,
+                    };
+                    injector.push(cand, |c, cols| cols[0] = c.match_col.clone());
+                }
+                for file in data.files {
+                    let cand = PopupCandidate {
+                        kind: PopupItemKind::File,
+                        match_col: Utf32String::from(file.as_str()),
+                        title: file.clone(),
+                        subtitle: String::from("workspace"),
+                        token: file,
+                        available: true,
+                    };
+                    injector.push(cand, |c, cols| cols[0] = c.match_col.clone());
+                }
+                for note in data.notes {
+                    let cand = PopupCandidate {
+                        kind: PopupItemKind::Note,
+                        match_col: Utf32String::from(note.as_str()),
+                        title: note.clone(),
+                        subtitle: String::from("note"),
+                        token: note,
+                        available: true,
+                    };
+                    injector.push(cand, |c, cols| cols[0] = c.match_col.clone());
+                }
+            }
+        }
+    }
+
+    fn provide(&mut self, query: &str) -> Vec<PopupItem> {
+        let query = query.trim();
+        let append = !self.last_query.is_empty()
+            && query.len() >= self.last_query.len()
+            && query.starts_with(&self.last_query);
+        self.nucleo.pattern.reparse(
+            0,
+            query,
+            CaseMatching::Ignore,
+            Normalization::Smart,
+            append,
+        );
+        self.last_query.clear();
+        self.last_query.push_str(query);
+
+        // Wait a bit for the worker to finish; if it's still running we'll use the last snapshot.
+        let _ = self.nucleo.tick(10);
+        let snap = self.nucleo.snapshot();
+        let pat = snap.pattern();
+
+        let limit = 20u32;
+        let end = snap.matched_item_count().min(limit);
+        let mut out = Vec::new();
+        for item in snap.matched_items(0..end) {
+            let score = pat.score(item.matcher_columns, &mut self.score_matcher).unwrap_or(0);
+            out.push(item.data.to_item(score));
+        }
+        out.sort_by(|a, b| b.score.cmp(&a.score));
+        out.truncate(20);
+        out
     }
 }
 
 impl PopupProvider for DynamicPopupProvider {
     fn provide(&self, kind: PopupKind, query: &str) -> Vec<PopupItem> {
-        let snap = self.inner.read().clone();
-        snap.provide(kind, query)
+        let query = query.split_whitespace().next().unwrap_or("").trim();
+        let versions = (
+            self.commands_version.load(Ordering::Relaxed),
+            self.agents_version.load(Ordering::Relaxed),
+            self.files_version.load(Ordering::Relaxed),
+            self.notes_version.load(Ordering::Relaxed),
+        );
+
+        match kind {
+            PopupKind::Command => {
+                let mut cache = self.command_matcher.lock();
+                if cache.needs_rebuild(CacheKind::Command, versions) {
+                    let data = self.inner.read().clone();
+                    cache.maybe_rebuild(CacheKind::Command, versions, data);
+                }
+                cache.provide(query)
+            }
+            PopupKind::AgentOrFile => {
+                let mut cache = self.agent_file_matcher.lock();
+                if cache.needs_rebuild(CacheKind::AgentOrFile, versions) {
+                    let data = self.inner.read().clone();
+                    cache.maybe_rebuild(CacheKind::AgentOrFile, versions, data);
+                }
+                cache.provide(query)
+            }
+        }
     }
 }
 
@@ -203,6 +417,21 @@ mod tests {
     }
 
     #[test]
+    fn test_provider_commands_fuzzy_subsequence_match() {
+        let mut provider = StaticPopupProvider::new();
+        provider.commands = vec![CommandDescriptor {
+            name: "search".into(),
+            description: "Search".into(),
+            input_hint: None,
+            secondary_options: vec![],
+        }];
+
+        let items = provider.provide(PopupKind::Command, "srch");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "/search");
+    }
+
+    #[test]
     fn test_provider_agents_files_notes() {
         let mut provider = StaticPopupProvider::new();
         provider.agents = vec![("dev-agent".into(), "Developer".into())];
@@ -220,6 +449,17 @@ mod tests {
         let notes = provider.provide(PopupKind::AgentOrFile, "foo");
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].kind, PopupItemKind::Note);
+    }
+
+    #[test]
+    fn test_provider_files_fuzzy_subsequence_match() {
+        let mut provider = StaticPopupProvider::new();
+        provider.files = vec!["src/main.rs".into()];
+
+        let items = provider.provide(PopupKind::AgentOrFile, "srs");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].kind, PopupItemKind::File);
+        assert_eq!(items[0].title, "src/main.rs");
     }
 
     #[test]
