@@ -41,7 +41,9 @@ pub use content::{CodeBlock, Heading, NoteContent, Paragraph};
 pub use frontmatter::{Frontmatter, FrontmatterFormat};
 pub use inline_metadata::{extract_inline_metadata, InlineMetadata};
 pub use links::{FootnoteDefinition, FootnoteMap, FootnoteReference, InlineLink, Tag, Wikilink};
-pub use lists::{CheckboxStatus, ListBlock, ListItem, ListMarkerStyle, ListStats, ListType, TaskStatus};
+pub use lists::{
+    CheckboxStatus, ListBlock, ListItem, ListMarkerStyle, ListStats, ListType, TaskStatus,
+};
 pub use parsed_note::{ParsedNote, ParsedNoteBuilder, ParsedNoteMetadata};
 pub use task::{TaskFile, TaskGraph, TaskItem};
 
