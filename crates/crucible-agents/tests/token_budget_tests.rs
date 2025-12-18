@@ -85,7 +85,10 @@ fn test_budget_smaller_than_system_prompt() {
     context.trim_to_budget(10);
 
     // System prompt should be preserved even though it exceeds budget
-    assert_eq!(context.get_system_prompt(), Some(large_system_prompt.as_str()));
+    assert_eq!(
+        context.get_system_prompt(),
+        Some(large_system_prompt.as_str())
+    );
 
     // Message should be removed to try to meet budget
     assert_eq!(context.message_count(), 0);
