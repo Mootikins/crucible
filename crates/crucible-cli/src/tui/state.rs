@@ -290,6 +290,7 @@ impl TuiState {
             ctrl_c_count: 0,
             last_ctrl_c: None,
             status_error: None,
+            popup: None,
             output_fn: Some(Box::new(output_fn)),
         }
     }

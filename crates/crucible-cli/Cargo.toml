@@ -112,6 +112,9 @@ uuid = { workspace = true, features = ["v4", "serde"] }
 notify = { workspace = true }
 notify-debouncer-mini = "0.7"
 
+# Concurrency
+parking_lot = { workspace = true }
+
 [dev-dependencies]
 crucible-config = { path = "../crucible-config", features = ["test-utils"] }
 # MCP client for testing examples

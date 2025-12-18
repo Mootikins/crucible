@@ -368,10 +368,13 @@ fn index_kiln_notes(kiln_root: &Path) -> Vec<String> {
 }
 
 fn is_hidden_entry(entry: &walkdir::DirEntry) -> bool {
-    entry
-        .path()
-        .components()
-        .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
+    // Don't filter the root directory (depth 0)
+    // Only check non-root entries for hidden names
+    entry.depth() > 0
+        && entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with('.')
 }
 
 #[cfg(test)]
@@ -599,12 +602,20 @@ mod tests {
     #[test]
     fn test_index_workspace_files_skips_hidden() {
         let dir = tempfile::tempdir().unwrap();
+        // Initialize git repo so git ls-files works predictably
+        std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(dir.path())
+            .status()
+            .ok();
+        // Add gitignore to exclude hidden directories
+        std::fs::write(dir.path().join(".gitignore"), ".*\n").unwrap();
         std::fs::write(dir.path().join("visible.txt"), "hi").unwrap();
-        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
-        std::fs::write(dir.path().join(".git").join("ignored.txt"), "x").unwrap();
+        std::fs::create_dir_all(dir.path().join(".hidden")).unwrap();
+        std::fs::write(dir.path().join(".hidden").join("ignored.txt"), "x").unwrap();
         let files = index_workspace_files(dir.path());
         assert!(files.contains(&"visible.txt".to_string()));
-        assert!(!files.iter().any(|f| f.contains(".git")));
+        assert!(!files.iter().any(|f| f.contains(".hidden")));
     }
 
     #[test]
