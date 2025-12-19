@@ -707,7 +707,10 @@ mod tests {
         let overflow = runner.viewport.handle_resize(80, 6);
 
         // Should have overflowed some messages
-        assert!(!overflow.is_empty(), "Small terminal should trigger overflow");
+        assert!(
+            !overflow.is_empty(),
+            "Small terminal should trigger overflow"
+        );
     }
 
     // Phase 6: Agent error handling tests

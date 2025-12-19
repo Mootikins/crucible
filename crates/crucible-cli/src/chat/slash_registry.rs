@@ -346,9 +346,9 @@ impl SlashCommandRegistry {
         // 3. Check for agent command
         if let Some(agent_cmd) = self.agent_commands.iter().find(|c| c.name == name) {
             let input_hint = agent_cmd.input.as_ref().and_then(|input| match input {
-                crucible_core::types::acp::schema::AvailableCommandInput::Unstructured(unstructured) => {
-                    Some(unstructured.hint.clone())
-                }
+                crucible_core::types::acp::schema::AvailableCommandInput::Unstructured(
+                    unstructured,
+                ) => Some(unstructured.hint.clone()),
                 _ => None,
             });
             let secondary_options = parse_secondary_options(&agent_cmd.meta);
@@ -407,9 +407,9 @@ impl SlashCommandRegistry {
         // Add agent commands
         for agent_cmd in &self.agent_commands {
             let input_hint = agent_cmd.input.as_ref().and_then(|input| match input {
-                crucible_core::types::acp::schema::AvailableCommandInput::Unstructured(unstructured) => {
-                    Some(unstructured.hint.clone())
-                }
+                crucible_core::types::acp::schema::AvailableCommandInput::Unstructured(
+                    unstructured,
+                ) => Some(unstructured.hint.clone()),
                 _ => None,
             });
             let secondary_options = parse_secondary_options(&agent_cmd.meta);

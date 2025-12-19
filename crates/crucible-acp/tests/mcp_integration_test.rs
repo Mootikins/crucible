@@ -36,7 +36,8 @@ async fn test_mcp_server_configuration_in_handshake() {
             }
         ],
         "_meta": null
-    })).expect("Failed to create NewSessionRequest");
+    }))
+    .expect("Failed to create NewSessionRequest");
 
     // Verify the structure is correct
     assert_eq!(
@@ -47,8 +48,15 @@ async fn test_mcp_server_configuration_in_handshake() {
 
     match &session_request.mcp_servers[0] {
         McpServer::Stdio(stdio) => {
-            assert_eq!(&stdio.name, "crucible", "MCP server name should be 'crucible'");
-            assert_eq!(&stdio.command, &PathBuf::from("cru"), "Command should be 'cru'");
+            assert_eq!(
+                &stdio.name, "crucible",
+                "MCP server name should be 'crucible'"
+            );
+            assert_eq!(
+                &stdio.command,
+                &PathBuf::from("cru"),
+                "Command should be 'cru'"
+            );
             assert_eq!(stdio.args.len(), 1, "Should have one arg");
             assert_eq!(stdio.args[0], "mcp", "Arg should be 'mcp'");
             assert_eq!(
@@ -105,8 +113,7 @@ async fn test_connect_with_handshake_includes_mcp_servers() {
 
     // Verify the McpServer can be constructed with this path
     let mcp_server = McpServer::Stdio(
-        McpServerStdio::new("crucible", cru_path.clone())
-            .args(vec!["mcp".to_string()])
+        McpServerStdio::new("crucible", cru_path.clone()).args(vec!["mcp".to_string()]),
     );
 
     // Verify it can be added to a NewSessionRequest
@@ -114,7 +121,8 @@ async fn test_connect_with_handshake_includes_mcp_servers() {
         "cwd": "/test",
         "mcpServers": [mcp_server],
         "_meta": null
-    })).expect("Failed to create NewSessionRequest");
+    }))
+    .expect("Failed to create NewSessionRequest");
 
     assert_eq!(request.mcp_servers.len(), 1);
 }
@@ -128,18 +136,20 @@ async fn test_mcp_server_with_env_variables() {
             "name": "RUST_LOG",
             "value": "debug",
             "_meta": null
-        })).expect("Failed to create EnvVariable"),
+        }))
+        .expect("Failed to create EnvVariable"),
         serde_json::from_value::<EnvVariable>(json!({
             "name": "KILN_PATH",
             "value": "/path/to/kiln",
             "_meta": null
-        })).expect("Failed to create EnvVariable"),
+        }))
+        .expect("Failed to create EnvVariable"),
     ];
 
     let mcp_server = McpServer::Stdio(
         McpServerStdio::new("crucible", "cru")
             .args(vec!["mcp".to_string()])
-            .env(env_vars.clone())
+            .env(env_vars.clone()),
     );
 
     // Verify environment variables are preserved
@@ -159,7 +169,8 @@ async fn test_mcp_server_with_env_variables() {
         "cwd": "/test",
         "mcpServers": [mcp_server],
         "_meta": null
-    })).expect("Failed to create NewSessionRequest");
+    }))
+    .expect("Failed to create NewSessionRequest");
 
     let serialized = serde_json::to_string(&request).unwrap();
     assert!(serialized.contains("RUST_LOG"));
@@ -170,21 +181,20 @@ async fn test_mcp_server_with_env_variables() {
 #[tokio::test]
 async fn test_multiple_mcp_servers() {
     // Verify that the protocol supports multiple MCP servers
-    let crucible_server = McpServer::Stdio(
-        McpServerStdio::new("crucible", "cru")
-            .args(vec!["mcp".to_string()])
-    );
+    let crucible_server =
+        McpServer::Stdio(McpServerStdio::new("crucible", "cru").args(vec!["mcp".to_string()]));
 
     let another_server = McpServer::Stdio(
         McpServerStdio::new("another-tool", "/usr/bin/other-mcp-server")
-            .args(vec!["--mode".to_string(), "stdio".to_string()])
+            .args(vec!["--mode".to_string(), "stdio".to_string()]),
     );
 
     let request: NewSessionRequest = serde_json::from_value(json!({
         "cwd": "/test",
         "mcpServers": [crucible_server, another_server],
         "_meta": null
-    })).expect("Failed to create NewSessionRequest");
+    }))
+    .expect("Failed to create NewSessionRequest");
 
     assert_eq!(request.mcp_servers.len(), 2);
 
@@ -198,10 +208,8 @@ async fn test_multiple_mcp_servers() {
 #[tokio::test]
 async fn test_mcp_server_schema_compliance() {
     // Create an MCP server configuration
-    let mcp_server = McpServer::Stdio(
-        McpServerStdio::new("crucible", "cru")
-            .args(vec!["mcp".to_string()])
-    );
+    let mcp_server =
+        McpServer::Stdio(McpServerStdio::new("crucible", "cru").args(vec!["mcp".to_string()]));
 
     // Serialize and verify JSON structure
     let serialized = serde_json::to_value(&mcp_server).unwrap();

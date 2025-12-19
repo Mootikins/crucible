@@ -2,8 +2,8 @@ use crate::tui::state::{PopupItem, PopupItemKind, PopupKind};
 use crucible_core::traits::chat::CommandDescriptor;
 use nucleo::pattern::{CaseMatching, Normalization};
 use nucleo::{Config, Matcher, Nucleo, Utf32String};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// Provider abstraction so the popup can be fed from CLI or exposed to Rune.
@@ -242,9 +242,11 @@ impl PopupMatcherCache {
     fn needs_rebuild(&self, kind: CacheKind, versions: (u64, u64, u64, u64)) -> bool {
         match kind {
             CacheKind::Command => versions.0 != self.last_versions.0,
-            CacheKind::AgentOrFile => versions.1 != self.last_versions.1
-                || versions.2 != self.last_versions.2
-                || versions.3 != self.last_versions.3,
+            CacheKind::AgentOrFile => {
+                versions.1 != self.last_versions.1
+                    || versions.2 != self.last_versions.2
+                    || versions.3 != self.last_versions.3
+            }
         }
     }
 
@@ -328,13 +330,9 @@ impl PopupMatcherCache {
         let append = !self.last_query.is_empty()
             && query.len() >= self.last_query.len()
             && query.starts_with(&self.last_query);
-        self.nucleo.pattern.reparse(
-            0,
-            query,
-            CaseMatching::Ignore,
-            Normalization::Smart,
-            append,
-        );
+        self.nucleo
+            .pattern
+            .reparse(0, query, CaseMatching::Ignore, Normalization::Smart, append);
         self.last_query.clear();
         self.last_query.push_str(query);
 
@@ -347,7 +345,9 @@ impl PopupMatcherCache {
         let end = snap.matched_item_count().min(limit);
         let mut out = Vec::new();
         for item in snap.matched_items(0..end) {
-            let score = pat.score(item.matcher_columns, &mut self.score_matcher).unwrap_or(0);
+            let score = pat
+                .score(item.matcher_columns, &mut self.score_matcher)
+                .unwrap_or(0);
             out.push(item.data.to_item(score));
         }
         out.sort_by(|a, b| b.score.cmp(&a.score));
