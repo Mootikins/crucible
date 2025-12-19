@@ -12,7 +12,7 @@
 //! cargo test -p crucible-acp --test integration -- --ignored --nocapture opencode
 //! ```
 
-use agent_client_protocol::{ContentBlock, PromptRequest, SessionId};
+use agent_client_protocol::PromptRequest;
 use crucible_acp::client::{ClientConfig, CrucibleAcpClient};
 use std::path::PathBuf;
 use std::process::Command;
@@ -85,11 +85,11 @@ async fn test_opencode_streaming_returns_content() {
     eprintln!("Session established: {}", session.id());
 
     // Send a simple prompt
-    let prompt_request = PromptRequest {
-        session_id: SessionId::from(session.id().to_string()),
-        prompt: vec![ContentBlock::from("say hello".to_string())],
-        meta: None,
-    };
+    let prompt_request: PromptRequest = serde_json::from_value(serde_json::json!({
+        "sessionId": session.id().to_string(),
+        "prompt": [{"text": "say hello"}],
+        "_meta": null
+    })).expect("Failed to create PromptRequest");
 
     eprintln!("Sending prompt: 'say hello'");
 
@@ -385,11 +385,11 @@ async fn test_opencode_with_sse_mcp() {
     eprintln!("Session established: {}", session.id());
 
     // Send a simple prompt
-    let prompt_request = PromptRequest {
-        session_id: SessionId::from(session.id().to_string()),
-        prompt: vec![ContentBlock::from("say hello".to_string())],
-        meta: None,
-    };
+    let prompt_request: PromptRequest = serde_json::from_value(serde_json::json!({
+        "sessionId": session.id().to_string(),
+        "prompt": [{"text": "say hello"}],
+        "_meta": null
+    })).expect("Failed to create PromptRequest");
 
     eprintln!("Sending prompt: 'say hello'");
 

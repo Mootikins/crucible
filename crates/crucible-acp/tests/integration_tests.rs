@@ -374,12 +374,13 @@ async fn test_mock_agent_protocol_handshake() {
     let agent = MockAgent::new(MockAgentConfig::default());
 
     // Send initialize request
-    let init_request = ClientRequest::InitializeRequest(InitializeRequest {
-        protocol_version: ProtocolVersion::default(),
-        client_info: None,
-        client_capabilities: ClientCapabilities::default(),
-        meta: None,
-    });
+    let init_request_inner: InitializeRequest = serde_json::from_value(serde_json::json!({
+        "protocolVersion": 1,
+        "clientInfo": null,
+        "clientCapabilities": {},
+        "_meta": null
+    })).expect("Failed to create InitializeRequest");
+    let init_request = ClientRequest::InitializeRequest(init_request_inner);
 
     let init_result = agent.handle_request(init_request).await;
     assert!(
@@ -388,11 +389,12 @@ async fn test_mock_agent_protocol_handshake() {
     );
 
     // Send new session request
-    let session_request = ClientRequest::NewSessionRequest(NewSessionRequest {
-        cwd: PathBuf::from("/test"),
-        mcp_servers: vec![],
-        meta: None,
-    });
+    let session_request_inner: NewSessionRequest = serde_json::from_value(serde_json::json!({
+        "cwd": "/test",
+        "mcpServers": [],
+        "_meta": null
+    })).expect("Failed to create NewSessionRequest");
+    let session_request = ClientRequest::NewSessionRequest(session_request_inner);
 
     let session_result = agent.handle_request(session_request).await;
     assert!(
@@ -467,12 +469,13 @@ async fn test_mock_agent_custom_responses() {
     let agent = MockAgent::new(config);
 
     // Send request
-    let request = ClientRequest::InitializeRequest(InitializeRequest {
-        protocol_version: ProtocolVersion::default(),
-        client_info: None,
-        client_capabilities: ClientCapabilities::default(),
-        meta: None,
-    });
+    let request_inner: InitializeRequest = serde_json::from_value(serde_json::json!({
+        "protocolVersion": 1,
+        "clientInfo": null,
+        "clientCapabilities": {},
+        "_meta": null
+    })).expect("Failed to create InitializeRequest");
+    let request = ClientRequest::InitializeRequest(request_inner);
 
     let result = agent.handle_request(request).await;
     assert!(result.is_ok(), "Should handle request with custom response");
@@ -494,12 +497,13 @@ async fn test_mock_agent_error_simulation() {
     let agent = MockAgent::new(config);
 
     // Send request - should get an error
-    let request = ClientRequest::InitializeRequest(InitializeRequest {
-        protocol_version: ProtocolVersion::default(),
-        client_info: None,
-        client_capabilities: ClientCapabilities::default(),
-        meta: None,
-    });
+    let request_inner: InitializeRequest = serde_json::from_value(serde_json::json!({
+        "protocolVersion": 1,
+        "clientInfo": null,
+        "clientCapabilities": {},
+        "_meta": null
+    })).expect("Failed to create InitializeRequest");
+    let request = ClientRequest::InitializeRequest(request_inner);
 
     let result = agent.handle_request(request).await;
     assert!(
@@ -557,17 +561,16 @@ async fn test_agent_lifecycle_cleanup() {
 /// Baseline test: Protocol message serialization
 #[tokio::test]
 async fn baseline_protocol_message_serialization() {
-    use agent_client_protocol::{ClientCapabilities, ProtocolVersion};
     use agent_client_protocol::{ClientRequest, InitializeRequest, NewSessionRequest};
-    use std::path::PathBuf;
 
     // Test InitializeRequest serialization
-    let init_req = ClientRequest::InitializeRequest(InitializeRequest {
-        protocol_version: ProtocolVersion::default(),
-        client_info: None,
-        client_capabilities: ClientCapabilities::default(),
-        meta: None,
-    });
+    let init_req_inner: InitializeRequest = serde_json::from_value(serde_json::json!({
+        "protocolVersion": 1,
+        "clientInfo": null,
+        "clientCapabilities": {},
+        "_meta": null
+    })).expect("Failed to create InitializeRequest");
+    let init_req = ClientRequest::InitializeRequest(init_req_inner);
 
     let serialized = serde_json::to_string(&init_req);
     assert!(serialized.is_ok(), "InitializeRequest should serialize");
@@ -576,11 +579,12 @@ async fn baseline_protocol_message_serialization() {
     assert!(deserialized.is_ok(), "InitializeRequest should deserialize");
 
     // Test NewSessionRequest serialization
-    let session_req = ClientRequest::NewSessionRequest(NewSessionRequest {
-        cwd: PathBuf::from("/test"),
-        mcp_servers: vec![],
-        meta: None,
-    });
+    let session_req_inner: NewSessionRequest = serde_json::from_value(serde_json::json!({
+        "cwd": "/test",
+        "mcpServers": [],
+        "_meta": null
+    })).expect("Failed to create NewSessionRequest");
+    let session_req = ClientRequest::NewSessionRequest(session_req_inner);
 
     let serialized = serde_json::to_string(&session_req);
     assert!(serialized.is_ok(), "NewSessionRequest should serialize");
@@ -844,22 +848,24 @@ async fn e2e_complete_protocol_flow() {
     let agent = MockAgent::new(MockAgentConfig::default());
 
     // Step 1: Initialize
-    let init_request = ClientRequest::InitializeRequest(InitializeRequest {
-        protocol_version: ProtocolVersion::default(),
-        client_info: None,
-        client_capabilities: ClientCapabilities::default(),
-        meta: None,
-    });
+    let init_request_inner: InitializeRequest = serde_json::from_value(serde_json::json!({
+        "protocolVersion": 1,
+        "clientInfo": null,
+        "clientCapabilities": {},
+        "_meta": null
+    })).expect("Failed to create InitializeRequest");
+    let init_request = ClientRequest::InitializeRequest(init_request_inner);
 
     let init_result = agent.handle_request(init_request).await;
     assert!(init_result.is_ok(), "Initialize should succeed");
 
     // Step 2: Create session
-    let session_request = ClientRequest::NewSessionRequest(NewSessionRequest {
-        cwd: PathBuf::from("/test"),
-        mcp_servers: vec![],
-        meta: None,
-    });
+    let session_request_inner: NewSessionRequest = serde_json::from_value(serde_json::json!({
+        "cwd": "/test",
+        "mcpServers": [],
+        "_meta": null
+    })).expect("Failed to create NewSessionRequest");
+    let session_request = ClientRequest::NewSessionRequest(session_request_inner);
 
     let session_result = agent.handle_request(session_request).await;
     assert!(session_result.is_ok(), "New session should succeed");
@@ -881,21 +887,23 @@ async fn e2e_multiple_session_creation() {
     let agent = MockAgent::new(MockAgentConfig::default());
 
     // Initialize once
-    let init_req = ClientRequest::InitializeRequest(InitializeRequest {
-        protocol_version: ProtocolVersion::default(),
-        client_info: None,
-        client_capabilities: ClientCapabilities::default(),
-        meta: None,
-    });
+    let init_req_inner: InitializeRequest = serde_json::from_value(serde_json::json!({
+        "protocolVersion": 1,
+        "clientInfo": null,
+        "clientCapabilities": {},
+        "_meta": null
+    })).expect("Failed to create InitializeRequest");
+    let init_req = ClientRequest::InitializeRequest(init_req_inner);
     agent.handle_request(init_req).await.unwrap();
 
     // Create multiple sessions
     for i in 1..=5 {
-        let session_req = ClientRequest::NewSessionRequest(NewSessionRequest {
-            cwd: PathBuf::from(format!("/test/session-{}", i)),
-            mcp_servers: vec![],
-            meta: None,
-        });
+        let session_req_inner: NewSessionRequest = serde_json::from_value(serde_json::json!({
+            "cwd": format!("/test/session-{}", i),
+            "mcpServers": [],
+            "_meta": null
+        })).expect("Failed to create NewSessionRequest");
+        let session_req = ClientRequest::NewSessionRequest(session_req_inner);
 
         let result = agent.handle_request(session_req).await;
         assert!(result.is_ok(), "Session {} should succeed", i);
@@ -920,12 +928,13 @@ async fn e2e_protocol_error_handling() {
     let agent = MockAgent::new(config);
 
     // Try to initialize - should fail
-    let init_request = ClientRequest::InitializeRequest(InitializeRequest {
-        protocol_version: ProtocolVersion::default(),
-        client_info: None,
-        client_capabilities: ClientCapabilities::default(),
-        meta: None,
-    });
+    let init_request_inner: InitializeRequest = serde_json::from_value(serde_json::json!({
+        "protocolVersion": 1,
+        "clientInfo": null,
+        "clientCapabilities": {},
+        "_meta": null
+    })).expect("Failed to create InitializeRequest");
+    let init_request = ClientRequest::InitializeRequest(init_request_inner);
 
     let result = agent.handle_request(init_request).await;
     assert!(
@@ -955,12 +964,13 @@ async fn e2e_delay_simulation() {
 
     // Send request and measure time
     let start = Instant::now();
-    let init_request = ClientRequest::InitializeRequest(InitializeRequest {
-        protocol_version: ProtocolVersion::default(),
-        client_info: None,
-        client_capabilities: ClientCapabilities::default(),
-        meta: None,
-    });
+    let init_request_inner: InitializeRequest = serde_json::from_value(serde_json::json!({
+        "protocolVersion": 1,
+        "clientInfo": null,
+        "clientCapabilities": {},
+        "_meta": null
+    })).expect("Failed to create InitializeRequest");
+    let init_request = ClientRequest::InitializeRequest(init_request_inner);
 
     let result = agent.handle_request(init_request).await;
     let elapsed = start.elapsed();
@@ -985,21 +995,23 @@ async fn e2e_session_state_persistence() {
     let agent = MockAgent::new(MockAgentConfig::default());
 
     // Initialize
-    let init = ClientRequest::InitializeRequest(InitializeRequest {
-        protocol_version: ProtocolVersion::default(),
-        client_info: None,
-        client_capabilities: ClientCapabilities::default(),
-        meta: None,
-    });
+    let init_inner: InitializeRequest = serde_json::from_value(serde_json::json!({
+        "protocolVersion": 1,
+        "clientInfo": null,
+        "clientCapabilities": {},
+        "_meta": null
+    })).expect("Failed to create InitializeRequest");
+    let init = ClientRequest::InitializeRequest(init_inner);
     agent.handle_request(init).await.unwrap();
 
     // Create multiple sessions
     for i in 1..=3 {
-        let session_req = ClientRequest::NewSessionRequest(NewSessionRequest {
-            cwd: PathBuf::from(format!("/test/session-{}", i)),
-            mcp_servers: vec![],
-            meta: None,
-        });
+        let session_req_inner: NewSessionRequest = serde_json::from_value(serde_json::json!({
+            "cwd": format!("/test/session-{}", i),
+            "mcpServers": [],
+            "_meta": null
+        })).expect("Failed to create NewSessionRequest");
+        let session_req = ClientRequest::NewSessionRequest(session_req_inner);
 
         let result = agent.handle_request(session_req).await;
         assert!(result.is_ok(), "Session {} creation should succeed", i);
@@ -1045,12 +1057,13 @@ async fn e2e_custom_response_handling() {
     let agent = MockAgent::new(config);
 
     // Send initialize request
-    let init_request = ClientRequest::InitializeRequest(InitializeRequest {
-        protocol_version: ProtocolVersion::default(),
-        client_info: None,
-        client_capabilities: ClientCapabilities::default(),
-        meta: None,
-    });
+    let init_request_inner: InitializeRequest = serde_json::from_value(serde_json::json!({
+        "protocolVersion": 1,
+        "clientInfo": null,
+        "clientCapabilities": {},
+        "_meta": null
+    })).expect("Failed to create InitializeRequest");
+    let init_request = ClientRequest::InitializeRequest(init_request_inner);
 
     let result = agent.handle_request(init_request).await;
     assert!(result.is_ok(), "Should handle custom response correctly");
@@ -1070,12 +1083,13 @@ async fn e2e_concurrent_request_handling() {
     let agent = Arc::new(MockAgent::new(MockAgentConfig::default()));
 
     // Initialize once
-    let init = ClientRequest::InitializeRequest(InitializeRequest {
-        protocol_version: ProtocolVersion::default(),
-        client_info: None,
-        client_capabilities: ClientCapabilities::default(),
-        meta: None,
-    });
+    let init_inner: InitializeRequest = serde_json::from_value(serde_json::json!({
+        "protocolVersion": 1,
+        "clientInfo": null,
+        "clientCapabilities": {},
+        "_meta": null
+    })).expect("Failed to create InitializeRequest");
+    let init = ClientRequest::InitializeRequest(init_inner);
     agent.handle_request(init).await.unwrap();
 
     // Spawn multiple concurrent session creation requests
@@ -1149,7 +1163,6 @@ async fn integration_filesystem_path_validation() {
 async fn integration_filesystem_configuration() {
     use crucible_acp::filesystem::FileSystemConfig;
     use crucible_acp::FileSystemHandler;
-    use std::path::PathBuf;
     use tempfile::TempDir;
 
     let temp_dir = TempDir::new().unwrap();
