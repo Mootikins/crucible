@@ -101,9 +101,7 @@ impl LatexExtension {
             let latex_content = cap.get(1).unwrap().as_str();
 
             // Basic LaTeX validation
-            if let Err(error) = self.validate_latex_syntax(latex_content) {
-                return Err(error);
-            }
+            self.validate_latex_syntax(latex_content)?;
 
             // Add the LaTeX expression to note content
             doc_content

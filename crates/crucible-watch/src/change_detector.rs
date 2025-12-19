@@ -31,7 +31,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
 use async_trait::async_trait;
-use chrono;
 use tokio::sync::RwLock;
 use tracing::{debug, info, trace, warn};
 

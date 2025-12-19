@@ -1,13 +1,13 @@
 //! Unified MCP Server exposing all Crucible tools via stdio transport
 //!
-//! This module combines NoteTools, SearchTools, and KilnTools into a single
+//! This module combines `NoteTools`, `SearchTools`, and `KilnTools` into a single
 //! MCP server that agents can discover via the ACP protocol.
 //!
 //! ## Architecture
 //!
 //! The `CrucibleMcpServer` uses the single-router delegation pattern:
-//! - Single `#[tool_router]` on CrucibleMcpServer provides unified MCP interface
-//! - Tool methods delegate to organized business logic in NoteTools, SearchTools, KilnTools
+//! - Single `#[tool_router]` on `CrucibleMcpServer` provides unified MCP interface
+//! - Tool methods delegate to organized business logic in `NoteTools`, `SearchTools`, `KilnTools`
 //! - Maintains modular organization while providing single server endpoint
 //!
 //! This pattern allows:
@@ -34,9 +34,9 @@ use crate::search::{PropertySearchParams, SemanticSearchParams, TextSearchParams
 /// Unified MCP server exposing all Crucible tools
 ///
 /// This server aggregates tools from three categories:
-/// - **NoteTools** (6 tools): CRUD operations on notes
-/// - **SearchTools** (3 tools): Semantic, text, and property search
-/// - **KilnTools** (3 tools): Kiln metadata and statistics
+/// - **`NoteTools`** (6 tools): CRUD operations on notes
+/// - **`SearchTools`** (3 tools): Semantic, text, and property search
+/// - **`KilnTools`** (3 tools): Kiln metadata and statistics
 #[derive(Clone)]
 pub struct CrucibleMcpServer {
     note_tools: NoteTools,
@@ -73,6 +73,7 @@ impl CrucibleMcpServer {
     /// # Returns
     ///
     /// A vector of tool definitions including name, description, and input schema
+    #[must_use] 
     pub fn list_tools(&self) -> Vec<rmcp::model::Tool> {
         self.tool_router.list_all()
     }
@@ -82,6 +83,7 @@ impl CrucibleMcpServer {
     /// # Returns
     ///
     /// The count of available tools (expected: 12)
+    #[must_use] 
     pub fn tool_count(&self) -> usize {
         self.tool_router.list_all().len()
     }

@@ -1,7 +1,6 @@
 //! Configuration loading utilities for various file formats.
 
 use crate::{Config, ConfigError};
-use dirs;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 

@@ -478,7 +478,7 @@ impl ConfigValidator {
         }
 
         // Validate watch profiles
-        for (_name, profile) in &config.watch_profiles {
+        for profile in config.watch_profiles.values() {
             Self::validate_watch_profile(profile)?;
         }
 

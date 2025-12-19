@@ -79,7 +79,7 @@ fn write_task_file(path: &Path, task_file: &TaskFile) -> Result<(), TaskError> {
     let status_map: std::collections::HashMap<&str, CheckboxStatus> = task_file
         .tasks
         .iter()
-        .map(|t| (t.id.as_str(), t.status.clone()))
+        .map(|t| (t.id.as_str(), t.status))
         .collect();
 
     // Regex to match checkbox lines with id field

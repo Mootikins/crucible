@@ -116,13 +116,7 @@ impl BackendRegistry {
             WatchBackend::Editor,
         ];
 
-        for backend in priorities {
-            if self.is_available(backend) {
-                return Some(backend);
-            }
-        }
-
-        None
+        priorities.into_iter().find(|&backend| self.is_available(backend))
     }
 }
 

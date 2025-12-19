@@ -226,7 +226,7 @@ impl ASTBlock {
     pub fn is_code_language(&self, language: &str) -> bool {
         matches!(self.block_type, ASTBlockType::Code)
             && matches!(&self.metadata, ASTBlockMetadata::Code { language: lang, .. }
-                if lang.as_ref().map_or(false, |l| l == language))
+                if lang.as_ref().is_some_and(|l| l == language))
     }
 
     /// Check if this block is a specific callout type

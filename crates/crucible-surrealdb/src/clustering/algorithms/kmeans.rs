@@ -11,6 +11,12 @@ pub struct KMeansClusteringAlgorithm {
     metadata: AlgorithmMetadata,
 }
 
+impl Default for KMeansClusteringAlgorithm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KMeansClusteringAlgorithm {
     pub fn new() -> Self {
         let mut default_params = HashMap::new();
@@ -153,6 +159,12 @@ impl ClusteringAlgorithm for KMeansClusteringAlgorithm {
 /// Factory for creating K-Means clustering algorithm instances
 #[derive(Debug)]
 pub struct KMeansAlgorithmFactory;
+
+impl Default for KMeansAlgorithmFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl KMeansAlgorithmFactory {
     pub fn new() -> Self {

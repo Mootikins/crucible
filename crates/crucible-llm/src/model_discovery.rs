@@ -49,12 +49,14 @@ use walkdir::WalkDir;
 
 /// Model capability types
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum ModelCapability {
     /// Embedding model (produces vector representations)
     Embedding,
     /// Text generation model (produces text completions)
     TextGeneration,
     /// Multi-modal or unknown capability
+    #[default]
     Unknown,
 }
 
@@ -463,11 +465,6 @@ struct ModelMetadata {
     quantization: Option<String>,
 }
 
-impl Default for ModelCapability {
-    fn default() -> Self {
-        ModelCapability::Unknown
-    }
-}
 
 #[cfg(test)]
 mod tests {

@@ -95,7 +95,7 @@ impl MarkdownParser for MarkdownItParser {
         // Read file content
         let content = tokio::fs::read_to_string(path)
             .await
-            .map_err(|e| ParserError::Io(e))?;
+            .map_err(ParserError::Io)?;
 
         // Check file size limit
         if let Some(max_size) = self.max_file_size {

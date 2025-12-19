@@ -77,6 +77,7 @@ impl RmcpExecutor {
     }
 
     /// Get server information
+    #[must_use] 
     pub fn server_info(&self) -> Option<&McpServerInfo> {
         self.server_info.as_ref()
     }
@@ -155,10 +156,10 @@ pub async fn create_stdio_executor_with_env(
 ) -> Result<RmcpExecutor, McpError> {
     info!("Creating stdio executor: {} {:?}", command, args);
 
-    let args_owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    let args_owned: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
     let env_owned: Vec<(String, String)> = env
         .iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
         .collect();
 
     let transport = TokioChildProcess::new(Command::new(command).configure(move |cmd| {
@@ -169,7 +170,7 @@ pub async fn create_stdio_executor_with_env(
             cmd.env(key, value);
         }
     }))
-    .map_err(|e| McpError::Connection(format!("Failed to spawn process: {}", e)))?;
+    .map_err(|e| McpError::Connection(format!("Failed to spawn process: {e}")))?;
 
     let client = ().serve(transport).await.map_err(|e| McpError::Connection(e.to_string()))?;
 

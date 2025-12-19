@@ -109,8 +109,7 @@ impl UnifiedModelDiscovery {
         &self,
     ) -> Result<Vec<UnifiedModelInfo>, Box<dyn std::error::Error + Send + Sync>> {
         let discovered = self.local.discover_models().await.map_err(|e| {
-            let boxed: Box<dyn std::error::Error + Send + Sync> = Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            let boxed: Box<dyn std::error::Error + Send + Sync> = Box::new(std::io::Error::other(
                 e.to_string(),
             ));
             boxed

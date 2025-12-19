@@ -8,18 +8,30 @@ use std::collections::HashMap;
 /// Source of a configuration value
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValueSource {
-    /// Value came from the configuration file
-    File { path: Option<String> },
-    /// Value came from an environment variable
-    Environment { var: String },
+    /// Value came from the configuration file.
+    File {
+        /// Path to the configuration file.
+        path: Option<String>,
+    },
+    /// Value came from an environment variable.
+    Environment {
+        /// Name of the environment variable.
+        var: String,
+    },
     /// Value came from a CLI argument
     Cli,
     /// Value is the system default
     Default,
-    /// Value was overridden by a profile
-    Profile { name: String },
-    /// Value was included from another file
-    Included { file: String },
+    /// Value was overridden by a profile.
+    Profile {
+        /// Name of the profile.
+        name: String,
+    },
+    /// Value was included from another file.
+    Included {
+        /// Path to the included file.
+        file: String,
+    },
 }
 
 impl ValueSource {

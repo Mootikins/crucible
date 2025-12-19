@@ -48,6 +48,7 @@ impl Default for ParserBackend {
 
 /// Configuration for pipeline behavior
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct NotePipelineConfig {
     /// Which markdown parser to use
     pub parser: ParserBackend,
@@ -57,15 +58,6 @@ pub struct NotePipelineConfig {
     pub force_reprocess: bool,
 }
 
-impl Default for NotePipelineConfig {
-    fn default() -> Self {
-        Self {
-            parser: ParserBackend::default(),
-            skip_enrichment: false,
-            force_reprocess: false,
-        }
-    }
-}
 
 /// The main pipeline orchestrator
 ///
@@ -253,7 +245,7 @@ impl NotePipeline {
         let mut changed_block_ids = Vec::with_capacity(changed_count);
 
         // Add modified sections
-        for (_idx, section) in diff.changed_sections.iter().enumerate() {
+        for section in diff.changed_sections.iter() {
             changed_block_ids.push(format!("modified_section_{}", section.section_index));
         }
 

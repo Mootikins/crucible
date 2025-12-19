@@ -1,9 +1,9 @@
 //! Extended MCP Server with Just and Rune tools
 //!
 //! This server combines:
-//! - **CrucibleMcpServer** (12 tools): Note, Search, and Kiln operations
-//! - **JustTools** (dynamic): Recipes from justfile in PWD
-//! - **RuneTools** (dynamic): Scripts from configured runes/ directories
+//! - **`CrucibleMcpServer`** (12 tools): Note, Search, and Kiln operations
+//! - **`JustTools`** (dynamic): Recipes from justfile in PWD
+//! - **`RuneTools`** (dynamic): Scripts from configured runes/ directories
 //!
 //! All responses are formatted with TOON for token efficiency.
 //!
@@ -42,8 +42,8 @@ use tracing::{debug, info, warn};
 /// Extended MCP server exposing all Crucible tools plus Just and Rune
 ///
 /// This server aggregates tools from multiple sources:
-/// - **Kiln tools** (12): NoteTools, SearchTools, KilnTools via CrucibleMcpServer
-/// - **Clustering tools** (3): MoC detection and document clustering tools
+/// - **Kiln tools** (12): `NoteTools`, `SearchTools`, `KilnTools` via `CrucibleMcpServer`
+/// - **Clustering tools** (3): `MoC` detection and document clustering tools
 /// - **Just tools** (dynamic): Recipes from justfile prefixed with `just_`
 /// - **Rune tools** (dynamic): Scripts from runes/ directories prefixed with `rune_`
 /// - **Upstream MCP tools** (dynamic): Tools from external MCP servers via gateway
@@ -58,7 +58,7 @@ pub struct ExtendedMcpServer {
     just_tools: Arc<JustTools>,
     /// Rune script registry
     rune_registry: Arc<RuneToolRegistry>,
-    /// Event handler for recipe enrichment (DEPRECATED: use event_bus with tool:discovered hook)
+    /// Event handler for recipe enrichment (DEPRECATED: use `event_bus` with tool:discovered hook)
     #[allow(dead_code)]
     event_handler: Option<Arc<EventHandler>>,
     /// Event pipeline for filtering tool output (Rune plugins)
@@ -225,26 +225,31 @@ impl ExtendedMcpServer {
     }
 
     /// Get reference to the kiln server
+    #[must_use] 
     pub fn kiln_server(&self) -> &CrucibleMcpServer {
         &self.kiln_server
     }
 
     /// Get reference to clustering tools
+    #[must_use] 
     pub fn clustering_tools(&self) -> &ClusteringTools {
         &self.clustering_tools
     }
 
     /// Get reference to Just tools
+    #[must_use] 
     pub fn just_tools(&self) -> &JustTools {
         &self.just_tools
     }
 
     /// Get reference to Rune registry
+    #[must_use] 
     pub fn rune_registry(&self) -> &RuneToolRegistry {
         &self.rune_registry
     }
 
     /// Get reference to the event bus
+    #[must_use] 
     pub fn event_bus(&self) -> Arc<RwLock<EventBus>> {
         Arc::clone(&self.event_bus)
     }
@@ -258,6 +263,7 @@ impl ExtendedMcpServer {
     ///
     /// This allows adding upstream MCP server connections after creation.
     /// The manager should be configured to use the same event bus as this server.
+    #[must_use] 
     pub fn with_upstream_clients(mut self, clients: Arc<McpGatewayManager>) -> Self {
         self.upstream_clients = Some(clients);
         self
@@ -337,10 +343,10 @@ impl ExtendedMcpServer {
         if let Some(tags) = ctx.get("tags").and_then(|v| v.as_array()) {
             enriched_tool.tags = tags
                 .iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .filter_map(|v| v.as_str().map(std::string::ToString::to_string))
                 .collect();
         }
-        if let Some(priority) = ctx.get("priority").and_then(|v| v.as_i64()) {
+        if let Some(priority) = ctx.get("priority").and_then(serde_json::Value::as_i64) {
             enriched_tool.priority = Some(priority as i32);
         }
 
@@ -357,10 +363,10 @@ impl ExtendedMcpServer {
                 if let Some(tags) = obj.get("tags").and_then(|v| v.as_array()) {
                     enriched_tool.tags = tags
                         .iter()
-                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .filter_map(|v| v.as_str().map(std::string::ToString::to_string))
                         .collect();
                 }
-                if let Some(priority) = obj.get("priority").and_then(|v| v.as_i64()) {
+                if let Some(priority) = obj.get("priority").and_then(serde_json::Value::as_i64) {
                     enriched_tool.priority = Some(priority as i32);
                 }
             }
@@ -371,11 +377,11 @@ impl ExtendedMcpServer {
 
     /// Enrich Just tools via Rune event handlers (DEPRECATED - kept for backward compatibility)
     ///
-    /// This method is kept for backward compatibility with the old EventHandler system.
-    /// New code should use the tool:discovered hook via emit_tool_discovered().
+    /// This method is kept for backward compatibility with the old `EventHandler` system.
+    /// New code should use the tool:discovered hook via `emit_tool_discovered()`.
     ///
-    /// Converts McpTools to EnrichedRecipes, processes through handlers,
-    /// then updates the McpTools with enrichment data.
+    /// Converts `McpTools` to `EnrichedRecipes`, processes through handlers,
+    /// then updates the `McpTools` with enrichment data.
     #[allow(dead_code)]
     async fn enrich_just_tools(
         &self,
@@ -426,7 +432,7 @@ impl ExtendedMcpServer {
         tools
     }
 
-    /// Convert crucible_just::McpTool to rmcp::model::Tool
+    /// Convert `crucible_just::McpTool` to `rmcp::model::Tool`
     ///
     /// If enrichment data is present (category, tags), it's appended to the description.
     fn mcp_tool_from_just(&self, jt: &crucible_just::McpTool) -> Tool {
@@ -437,7 +443,7 @@ impl ExtendedMcpServer {
 
         // Append category if present
         if let Some(ref category) = jt.category {
-            description = format!("{} [{}]", description, category);
+            description = format!("{description} [{category}]");
         }
 
         // Append tags if present
@@ -445,10 +451,10 @@ impl ExtendedMcpServer {
             let tags_str = jt
                 .tags
                 .iter()
-                .map(|t| format!("#{}", t))
+                .map(|t| format!("#{t}"))
                 .collect::<Vec<_>>()
                 .join(" ");
-            description = format!("{} {}", description, tags_str);
+            description = format!("{description} {tags_str}");
         }
 
         Tool {
@@ -463,7 +469,7 @@ impl ExtendedMcpServer {
         }
     }
 
-    /// Convert crucible_rune::RuneTool to rmcp::model::Tool
+    /// Convert `crucible_rune::RuneTool` to `rmcp::model::Tool`
     fn mcp_tool_from_rune(&self, rt: &crucible_rune::RuneTool) -> Tool {
         let schema = rt.input_schema.as_object().cloned().unwrap_or_default();
         Tool {
@@ -478,13 +484,13 @@ impl ExtendedMcpServer {
         }
     }
 
-    /// Convert crucible_rune::mcp_gateway::UpstreamTool to rmcp::model::Tool
+    /// Convert `crucible_rune::mcp_gateway::UpstreamTool` to `rmcp::model::Tool`
     fn mcp_tool_from_upstream(&self, ut: &crucible_rune::mcp_gateway::UpstreamTool) -> Tool {
         let schema = ut.input_schema.as_object().cloned().unwrap_or_default();
         Tool {
             name: ut.prefixed_name.clone().into(),
             title: None,
-            description: ut.description.clone().map(|s| s.into()),
+            description: ut.description.clone().map(std::convert::Into::into),
             input_schema: Arc::new(schema),
             output_schema: None,
             annotations: None,
@@ -525,16 +531,19 @@ impl ExtendedMcpServer {
     }
 
     /// Check if a tool name is handled by Just
+    #[must_use] 
     pub fn is_just_tool(name: &str) -> bool {
         name.starts_with("just_")
     }
 
     /// Check if a tool name is handled by Rune
+    #[must_use] 
     pub fn is_rune_tool(name: &str) -> bool {
         name.starts_with("rune_")
     }
 
     /// Check if a tool name is handled by Clustering
+    #[must_use] 
     pub fn is_clustering_tool(name: &str) -> bool {
         matches!(
             name,
@@ -547,6 +556,7 @@ impl ExtendedMcpServer {
     /// Upstream tools have a prefix from their upstream config.
     /// Common prefixes: gh_, fs_, slack_, etc.
     /// We detect them by checking if they're NOT kiln/just/rune/clustering tools.
+    #[must_use] 
     pub fn is_upstream_tool(name: &str) -> bool {
         // If it's a known prefix, it's not upstream
         if Self::is_just_tool(name) || Self::is_rune_tool(name) || Self::is_clustering_tool(name) {
@@ -596,7 +606,7 @@ impl ExtendedMcpServer {
             // Check if execution was cancelled via context
             if ctx.is_cancelled() {
                 return Err(rmcp::ErrorData::internal_error(
-                    format!("Just recipe '{}' execution cancelled by hook", recipe_name),
+                    format!("Just recipe '{recipe_name}' execution cancelled by hook"),
                     None,
                 ));
             }
@@ -707,7 +717,7 @@ impl ExtendedMcpServer {
                 }
 
                 Err(rmcp::ErrorData::internal_error(
-                    format!("Just recipe '{}' failed: {}", recipe_name, e),
+                    format!("Just recipe '{recipe_name}' failed: {e}"),
                     None,
                 ))
             }
@@ -728,26 +738,26 @@ impl ExtendedMcpServer {
         // Execute the appropriate clustering tool and convert to JSON
         let result = match name {
             "detect_mocs" => {
-                let min_score = arguments.get("min_score").and_then(|v| v.as_f64());
+                let min_score = arguments.get("min_score").and_then(serde_json::Value::as_f64);
 
                 let mocs = self
                     .clustering_tools
                     .detect_mocs(min_score)
                     .await
                     .map_err(|e| {
-                        rmcp::ErrorData::internal_error(format!("detect_mocs failed: {}", e), None)
+                        rmcp::ErrorData::internal_error(format!("detect_mocs failed: {e}"), None)
                     })?;
                 json!(mocs)
             }
             "cluster_documents" => {
-                let min_similarity = arguments.get("min_similarity").and_then(|v| v.as_f64());
+                let min_similarity = arguments.get("min_similarity").and_then(serde_json::Value::as_f64);
                 let min_cluster_size = arguments
                     .get("min_cluster_size")
-                    .and_then(|v| v.as_u64())
+                    .and_then(serde_json::Value::as_u64)
                     .map(|v| v as usize);
-                let link_weight = arguments.get("link_weight").and_then(|v| v.as_f64());
-                let tag_weight = arguments.get("tag_weight").and_then(|v| v.as_f64());
-                let title_weight = arguments.get("title_weight").and_then(|v| v.as_f64());
+                let link_weight = arguments.get("link_weight").and_then(serde_json::Value::as_f64);
+                let tag_weight = arguments.get("tag_weight").and_then(serde_json::Value::as_f64);
+                let title_weight = arguments.get("title_weight").and_then(serde_json::Value::as_f64);
 
                 let clusters = self
                     .clustering_tools
@@ -761,7 +771,7 @@ impl ExtendedMcpServer {
                     .await
                     .map_err(|e| {
                         rmcp::ErrorData::internal_error(
-                            format!("cluster_documents failed: {}", e),
+                            format!("cluster_documents failed: {e}"),
                             None,
                         )
                     })?;
@@ -774,7 +784,7 @@ impl ExtendedMcpServer {
                     .await
                     .map_err(|e| {
                         rmcp::ErrorData::internal_error(
-                            format!("get_document_stats failed: {}", e),
+                            format!("get_document_stats failed: {e}"),
                             None,
                         )
                     })?;
@@ -782,7 +792,7 @@ impl ExtendedMcpServer {
             }
             _ => {
                 return Err(rmcp::ErrorData::internal_error(
-                    format!("Unknown clustering tool: {}", name),
+                    format!("Unknown clustering tool: {name}"),
                     None,
                 ));
             }
@@ -823,7 +833,7 @@ impl ExtendedMcpServer {
             // Check if execution was cancelled via context
             if ctx.is_cancelled() {
                 return Err(rmcp::ErrorData::internal_error(
-                    format!("Rune tool '{}' execution cancelled by hook", name),
+                    format!("Rune tool '{name}' execution cancelled by hook"),
                     None,
                 ));
             }
@@ -859,7 +869,7 @@ impl ExtendedMcpServer {
 
                     // Return result directly - only use TOON for structured data
                     match &result.result {
-                        Some(Value::Object(_)) | Some(Value::Array(_)) => {
+                        Some(Value::Object(_) | Value::Array(_)) => {
                             // Structured data - use TOON
                             Ok(toon_success_smart(result.result.unwrap_or(Value::Null)))
                         }
@@ -897,7 +907,7 @@ impl ExtendedMcpServer {
 
                     // Error - return as error message
                     Err(rmcp::ErrorData::internal_error(
-                        format!("Rune tool '{}' failed: {}", name, error_msg),
+                        format!("Rune tool '{name}' failed: {error_msg}"),
                         None,
                     ))
                 }
@@ -916,7 +926,7 @@ impl ExtendedMcpServer {
                 }
 
                 Err(rmcp::ErrorData::internal_error(
-                    format!("Rune tool '{}' failed: {}", name, e),
+                    format!("Rune tool '{name}' failed: {e}"),
                     None,
                 ))
             }
@@ -976,16 +986,16 @@ impl ExtendedMcpServer {
                 }
             }
             Err(e) => Err(rmcp::ErrorData::internal_error(
-                format!("Upstream tool '{}' failed: {}", name, e),
+                format!("Upstream tool '{name}' failed: {e}"),
                 None,
             )),
         }
     }
 }
 
-/// Wrapper to make ExtendedMcpServer implement Clone (required by rmcp)
+/// Wrapper to make `ExtendedMcpServer` implement Clone (required by rmcp)
 ///
-/// Since ExtendedMcpServer contains Arc fields, we wrap it in Arc for cloning.
+/// Since `ExtendedMcpServer` contains Arc fields, we wrap it in Arc for cloning.
 #[derive(Clone)]
 pub struct ExtendedMcpService {
     inner: Arc<ExtendedMcpServer>,
@@ -994,7 +1004,7 @@ pub struct ExtendedMcpService {
 }
 
 impl ExtendedMcpService {
-    /// Create from an ExtendedMcpServer
+    /// Create from an `ExtendedMcpServer`
     pub async fn new(server: ExtendedMcpServer) -> Self {
         let tools = server.list_all_tools().await;
         Self {
@@ -1010,6 +1020,7 @@ impl ExtendedMcpService {
     }
 
     /// Get inner server reference
+    #[must_use] 
     pub fn server(&self) -> &ExtendedMcpServer {
         &self.inner
     }
@@ -1089,8 +1100,7 @@ impl ServerHandler for ExtendedMcpService {
         let arguments = request
             .arguments
             .clone()
-            .map(|m| Value::Object(m))
-            .unwrap_or(Value::Null);
+            .map_or(Value::Null, Value::Object);
 
         debug!("Calling tool: {} with args: {:?}", name, arguments);
 

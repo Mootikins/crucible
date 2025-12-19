@@ -301,7 +301,7 @@ impl CommitHandler {
     /// Check if we're in a git repository
     fn is_git_repo() -> bool {
         Command::new("git")
-            .args(&["rev-parse", "--git-dir"])
+            .args(["rev-parse", "--git-dir"])
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false)
@@ -377,7 +377,7 @@ impl CommitHandler {
         // Generate description from file names
         if files.len() == 1 {
             let file = &files[0];
-            let name = file.split('/').last().unwrap_or(file);
+            let name = file.split('/').next_back().unwrap_or(file);
             description = format!("update {}", name);
         } else if files.len() <= 3 {
             description = format!("update {} files", files.len());
@@ -603,7 +603,7 @@ impl CommitHandler {
                 "wip: {}",
                 staged_files[0]
                     .split('/')
-                    .last()
+                    .next_back()
                     .unwrap_or(&staged_files[0])
             )
         } else {

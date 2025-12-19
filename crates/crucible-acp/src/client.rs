@@ -1203,7 +1203,7 @@ impl CrucibleAcpClient {
             .arguments
             .as_ref()
             .map(|args| serde_json::to_string(args).unwrap_or_else(|_| "<invalid>".to_string()))
-            .unwrap_or_else(|| "".to_string());
+            .unwrap_or_default();
 
         let formatted_args = if args_str.is_empty() {
             "()".to_string()

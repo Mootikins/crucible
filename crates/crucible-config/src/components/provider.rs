@@ -332,7 +332,7 @@ impl ProviderConfig {
                     base_url: self
                         .endpoint()
                         .unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
-                    timeout_seconds: self.timeout_secs as u64,
+                    timeout_seconds: self.timeout_secs,
                     retry_attempts: 3,
                     dimensions: 0,
                     headers: std::collections::HashMap::new(),
@@ -346,7 +346,7 @@ impl ProviderConfig {
                     base_url: self
                         .endpoint()
                         .unwrap_or_else(|| "http://localhost:11434".to_string()),
-                    timeout_seconds: self.timeout_secs as u64,
+                    timeout_seconds: self.timeout_secs,
                     retry_attempts: 3,
                     dimensions: 0,
                     batch_size: self.batch_size() as u32,

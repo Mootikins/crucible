@@ -20,7 +20,7 @@ use crate::chat::slash_registry::{SlashCommandRegistry, SlashCommandRegistryBuil
 use crate::chat::{AgentHandle, ChatError, ChatResult};
 use crate::core_facade::KilnContext;
 use crate::tui::TuiRunner;
-use crate::tui::{DynamicPopupProvider, PopupProvider};
+use crate::tui::DynamicPopupProvider;
 use crucible_core::traits::registry::{Registry, RegistryBuilder};
 use crucible_rune::SessionBuilder;
 use walkdir::WalkDir;

@@ -390,7 +390,7 @@ impl MessageChannelInfrastructure {
                         256,                       // Mock dimensions
                     );
 
-                    if let Err(_) = embedding_result_tx.send(result) {
+                    if embedding_result_tx.send(result).is_err() {
                         debug!("Failed to send batch timeout result - no receiver");
                         break;
                     }
@@ -431,7 +431,7 @@ impl MessageChannelInfrastructure {
                 let result =
                     EmbeddingEventResult::success(event.id, Duration::from_millis(50), 256);
 
-                if let Err(_) = embedding_result_tx.send(result) {
+                if embedding_result_tx.send(result).is_err() {
                     debug!("Failed to send remaining batch result");
                     break;
                 }
@@ -482,7 +482,7 @@ impl MessageChannelInfrastructure {
                 256,                       // Mock dimensions
             );
 
-            if let Err(_) = self.embedding_result_tx.send(result) {
+            if self.embedding_result_tx.send(result).is_err() {
                 debug!("Failed to send batch result - no receiver");
                 break;
             }

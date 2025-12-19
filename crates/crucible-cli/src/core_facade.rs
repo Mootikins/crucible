@@ -117,7 +117,7 @@ impl KilnContext {
                 // Extract a title from the doc_id
                 let title = doc_id
                     .split('/')
-                    .last()
+                    .next_back()
                     .unwrap_or(&doc_id)
                     .trim_end_matches(".md")
                     .to_string();
@@ -170,7 +170,7 @@ impl KilnContext {
             .map(|(doc_id, similarity)| {
                 let title = doc_id
                     .split('/')
-                    .last()
+                    .next_back()
                     .unwrap_or(&doc_id)
                     .trim_end_matches(".md")
                     .to_string();
