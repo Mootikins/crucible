@@ -59,7 +59,7 @@ impl TaskItem {
             .get("id")
             .and_then(|m| m.as_string())
             .map(|s| s.to_string())
-            .unwrap_or_else(|| Self::generate_id());
+            .unwrap_or_else(Self::generate_id);
 
         // Extract dependencies from metadata
         let deps = metadata

@@ -82,7 +82,7 @@ use std::sync::Arc;
 pub fn create_default_enrichment_service(
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
 ) -> anyhow::Result<Arc<dyn EnrichmentService>> {
-    let merkle_builder = HybridMerkleTreeBuilder::default();
+    let merkle_builder = HybridMerkleTreeBuilder;
 
     let service = if let Some(provider) = embedding_provider {
         service::DefaultEnrichmentService::new(merkle_builder, provider)

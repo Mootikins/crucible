@@ -201,11 +201,7 @@ impl<E> EventRing<E> {
         }
 
         // Calculate the range of events that need flushing
-        let oldest_valid = if current > self.capacity as u64 {
-            current - self.capacity as u64
-        } else {
-            0
-        };
+        let oldest_valid = current.saturating_sub(self.capacity as u64);
 
         // Start from where we left off flushing
         let start = flushed.max(oldest_valid);
@@ -282,11 +278,7 @@ impl<E> EventRing<E> {
             return 0;
         }
 
-        let oldest_valid = if current > self.capacity as u64 {
-            current - self.capacity as u64
-        } else {
-            0
-        };
+        let oldest_valid = current.saturating_sub(self.capacity as u64);
 
         let start = flushed.max(oldest_valid);
         let events: Vec<_> = self.range(start, current).collect();
@@ -371,11 +363,7 @@ impl<E> EventRing<E> {
         let current = self.write_seq.load(Ordering::SeqCst);
         if current == 0 {
             0
-        } else if current <= self.capacity as u64 {
-            0
-        } else {
-            current - self.capacity as u64
-        }
+        } else { current.saturating_sub(self.capacity as u64) }
     }
 
     /// Get the newest valid sequence number.

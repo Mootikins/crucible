@@ -98,6 +98,12 @@ pub struct EditorWatcher {
 }
 
 #[allow(dead_code)]
+impl Default for EditorWatcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EditorWatcher {
     /// Create a new editor watcher.
     pub fn new() -> Self {
@@ -184,7 +190,7 @@ impl EditorWatcher {
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
-            let metadata = std::fs::metadata(path).map_err(|e| Error::Io(e))?;
+            let metadata = std::fs::metadata(path).map_err(Error::Io)?;
             Ok(Some(metadata.ino()))
         }
 
@@ -198,7 +204,7 @@ impl EditorWatcher {
 
     /// Update inode-based file state.
     async fn update_inode_state(&self, path: &PathBuf, state: &mut InodeState) -> Result<bool> {
-        let metadata = std::fs::metadata(path).map_err(|e| Error::Io(e))?;
+        let metadata = std::fs::metadata(path).map_err(Error::Io)?;
 
         let modified_time = metadata.modified().ok();
         let size = Some(metadata.len());
@@ -309,7 +315,7 @@ impl EditorWatcher {
                 });
 
             let previous_inode = file_state.inode;
-            let changed = Self::update_inode_state_static(&watch_path, &mut file_state).await?;
+            let changed = Self::update_inode_state_static(&watch_path, file_state).await?;
 
             if changed {
                 if previous_inode.is_none() {
@@ -333,7 +339,7 @@ impl EditorWatcher {
         watch_path: &PathBuf,
         file_state: &mut InodeState,
     ) -> Result<bool> {
-        let metadata = std::fs::metadata(watch_path).map_err(|e| Error::Io(e))?;
+        let metadata = std::fs::metadata(watch_path).map_err(Error::Io)?;
 
         let new_modified = metadata.modified().ok();
         let new_size = Some(metadata.len());
@@ -402,7 +408,7 @@ impl EditorWatcher {
 
         let previous_inode = file_state.inode;
         let changed = self
-            .update_inode_state(&watch_path, &mut file_state)
+            .update_inode_state(&watch_path, file_state)
             .await?;
 
         if changed {
@@ -595,6 +601,12 @@ impl FileWatcher for EditorWatcher {
 /// Factory for creating editor-based watchers.
 pub struct EditorFactory {
     capabilities: BackendCapabilities,
+}
+
+impl Default for EditorFactory {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl EditorFactory {

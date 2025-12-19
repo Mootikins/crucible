@@ -80,9 +80,7 @@ pub(crate) fn clean_relative_path(path: &Path) -> Option<PathBuf> {
         match component {
             Component::CurDir => {}
             Component::ParentDir => {
-                if stack.pop().is_none() {
-                    return None;
-                }
+                stack.pop()?;
             }
             Component::Normal(part) => stack.push(PathBuf::from(part)),
             Component::Prefix(_) | Component::RootDir => return None,
@@ -137,11 +135,9 @@ pub(crate) fn parse_timestamp(
         fallback_two.and_then(|v| v.as_str()),
     ];
 
-    for candidate in candidates {
-        if let Some(ts) = candidate {
-            if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(ts) {
-                return parsed.with_timezone(&chrono::Utc);
-            }
+    for ts in candidates.into_iter().flatten() {
+        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(ts) {
+            return parsed.with_timezone(&chrono::Utc);
         }
     }
 
