@@ -90,7 +90,10 @@ mod tests {
         assert_eq!(config.default_agent, Some("opencode-local".to_string()));
         assert_eq!(config.agents.len(), 2);
 
-        let opencode_local = config.agents.get("opencode-local").expect("should have profile");
+        let opencode_local = config
+            .agents
+            .get("opencode-local")
+            .expect("should have profile");
         assert_eq!(
             opencode_local.env.get("LOCAL_ENDPOINT"),
             Some(&"http://localhost:11434/v1".to_string())
@@ -100,7 +103,10 @@ mod tests {
             Some(&"ollama/llama3.2".to_string())
         );
 
-        let claude_proxy = config.agents.get("claude-proxy").expect("should have profile");
+        let claude_proxy = config
+            .agents
+            .get("claude-proxy")
+            .expect("should have profile");
         assert_eq!(claude_proxy.extends, Some("claude".to_string()));
         assert_eq!(
             claude_proxy.env.get("ANTHROPIC_BASE_URL"),
@@ -119,9 +125,15 @@ mod tests {
 
         let config: AcpConfig = toml::from_str(toml).expect("should parse");
 
-        let profile = config.agents.get("custom-agent").expect("should have profile");
+        let profile = config
+            .agents
+            .get("custom-agent")
+            .expect("should have profile");
         assert_eq!(profile.command, Some("/usr/local/bin/my-agent".to_string()));
-        assert_eq!(profile.args, Some(vec!["--mode".to_string(), "acp".to_string()]));
+        assert_eq!(
+            profile.args,
+            Some(vec!["--mode".to_string(), "acp".to_string()])
+        );
         assert_eq!(profile.env.get("MY_API_KEY"), Some(&"secret".to_string()));
     }
 
