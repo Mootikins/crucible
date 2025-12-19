@@ -381,33 +381,20 @@ fn is_hidden_entry(entry: &walkdir::DirEntry) -> bool {
 mod tests {
     use super::*;
     use crucible_core::types::acp::schema::{SessionMode, SessionModeId, SessionModeState};
+    use serde_json::json;
 
     // Helper to create a standard mode state with plan/act/auto modes
     fn default_mode_state() -> SessionModeState {
-        SessionModeState {
-            current_mode_id: SessionModeId(std::sync::Arc::from("plan")),
-            available_modes: vec![
-                SessionMode {
-                    id: SessionModeId(std::sync::Arc::from("plan")),
-                    name: "Plan".to_string(),
-                    description: Some("Read-only exploration mode".to_string()),
-                    meta: None,
-                },
-                SessionMode {
-                    id: SessionModeId(std::sync::Arc::from("act")),
-                    name: "Act".to_string(),
-                    description: Some("Write-enabled execution mode".to_string()),
-                    meta: None,
-                },
-                SessionMode {
-                    id: SessionModeId(std::sync::Arc::from("auto")),
-                    name: "Auto".to_string(),
-                    description: Some("Auto-approve all operations".to_string()),
-                    meta: None,
-                },
+        serde_json::from_value(json!({
+            "currentModeId": "plan",
+            "availableModes": [
+                {"id": "plan", "name": "Plan", "description": "Read-only exploration mode", "_meta": null},
+                {"id": "act", "name": "Act", "description": "Write-enabled execution mode", "_meta": null},
+                {"id": "auto", "name": "Auto", "description": "Auto-approve all operations", "_meta": null},
             ],
-            meta: None,
-        }
+            "_meta": null,
+        }))
+        .expect("Failed to create test SessionModeState")
     }
 
     // TDD Test 1: Exit handler should signal exit via shared flag when executed through trait
@@ -674,16 +661,17 @@ mod tests {
         }
 
         let agent = MockAgentWithModes {
-            mode_state: SessionModeState {
-                current_mode_id: SessionModeId(std::sync::Arc::from("custom")),
-                available_modes: vec![SessionMode {
-                    id: SessionModeId(std::sync::Arc::from("custom")),
-                    name: "Custom Mode".to_string(),
-                    description: Some("A custom agent mode".to_string()),
-                    meta: None,
+            mode_state: serde_json::from_value(json!({
+                "currentModeId": "custom",
+                "availableModes": [{
+                    "id": "custom",
+                    "name": "Custom Mode",
+                    "description": "A custom agent mode",
+                    "_meta": null,
                 }],
-                meta: None,
-            },
+                "_meta": null,
+            }))
+            .expect("Failed to create test SessionModeState"),
             mode_id: "custom".to_string(),
         };
 
@@ -700,16 +688,17 @@ mod tests {
 
         let mut mode_registry = ModeRegistry::new();
 
-        let agent_state = SessionModeState {
-            current_mode_id: SessionModeId(std::sync::Arc::from("agent-mode")),
-            available_modes: vec![SessionMode {
-                id: SessionModeId(std::sync::Arc::from("agent-mode")),
-                name: "Agent Mode".to_string(),
-                description: Some("Custom agent mode".to_string()),
-                meta: None,
+        let agent_state: SessionModeState = serde_json::from_value(json!({
+            "currentModeId": "agent-mode",
+            "availableModes": [{
+                "id": "agent-mode",
+                "name": "Agent Mode",
+                "description": "Custom agent mode",
+                "_meta": null,
             }],
-            meta: None,
-        };
+            "_meta": null,
+        }))
+        .expect("Failed to create test SessionModeState");
 
         mode_registry.update(agent_state);
 
