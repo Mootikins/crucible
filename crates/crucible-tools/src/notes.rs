@@ -94,7 +94,7 @@ fn default_true() -> bool {
 
 impl NoteTools {
     #[allow(missing_docs)]
-    #[must_use] 
+    #[must_use]
     pub fn new(kiln_path: String) -> Self {
         Self { kiln_path }
     }

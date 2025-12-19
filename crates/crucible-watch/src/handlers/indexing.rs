@@ -206,11 +206,10 @@ impl IndexingHandler {
         trigger_event: crate::events::FileEventKind,
     ) -> Result<()> {
         // Check for deduplication if enabled
-        if self.embedding_config.enable_deduplication
-            && self.should_deduplicate_event(path).await {
-                debug!("Deduplicating embedding event for: {}", path.display());
-                return Ok(());
-            }
+        if self.embedding_config.enable_deduplication && self.should_deduplicate_event(path).await {
+            debug!("Deduplicating embedding event for: {}", path.display());
+            return Ok(());
+        }
 
         // Extract content for embedding
         let content = self.extract_content_for_embedding(parsed_doc);
