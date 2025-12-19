@@ -9,6 +9,16 @@ use serde::Deserialize;
 use std::path::Path;
 use walkdir::WalkDir;
 
+/// Custom schema for optional JSON object (used for frontmatter fields).
+/// serde_json::Value produces an empty schema that llama.cpp can't handle.
+/// Returns schema for "object or null" to preserve Option<T> semantics.
+fn optional_json_object_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    // Create a schema that represents "any JSON object or null"
+    let mut map = serde_json::Map::new();
+    map.insert("type".to_owned(), serde_json::json!(["object", "null"]));
+    map.into()
+}
+
 #[derive(Clone)]
 #[allow(missing_docs)]
 pub struct NoteTools {
@@ -29,7 +39,8 @@ fn ensure_md_suffix(path: String) -> String {
 pub struct CreateNoteParams {
     path: String,
     content: String,
-    #[serde(default)]
+    /// Optional YAML frontmatter to include at the beginning of the note
+    #[schemars(schema_with = "optional_json_object_schema")]
     frontmatter: Option<serde_json::Value>,
 }
 
@@ -37,9 +48,9 @@ pub struct CreateNoteParams {
 #[derive(Deserialize, JsonSchema)]
 pub struct ReadNoteParams {
     path: String,
-    #[serde(default)]
+    /// Optional 1-indexed line number to start reading from
     start_line: Option<usize>,
-    #[serde(default)]
+    /// Optional 1-indexed line number to stop reading at (inclusive)
     end_line: Option<usize>,
 }
 
@@ -53,9 +64,10 @@ pub struct ReadMetadataParams {
 #[derive(Deserialize, JsonSchema)]
 pub struct UpdateNoteParams {
     path: String,
-    #[serde(default)]
+    /// New content for the note (if None, content is preserved)
     content: Option<String>,
-    #[serde(default)]
+    /// New frontmatter for the note (if None, frontmatter is preserved)
+    #[schemars(schema_with = "optional_json_object_schema")]
     frontmatter: Option<serde_json::Value>,
 }
 
@@ -68,7 +80,7 @@ pub struct DeleteNoteParams {
 /// Parameters for listing notes
 #[derive(Deserialize, JsonSchema)]
 pub struct ListNotesParams {
-    #[serde(default)]
+    /// Optional folder to search within (relative to kiln root)
     folder: Option<String>,
     #[serde(default)]
     include_frontmatter: bool,
