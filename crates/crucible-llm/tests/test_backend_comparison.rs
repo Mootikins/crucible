@@ -53,6 +53,7 @@ mod fastembed_tests {
     use crucible_llm::embeddings::{create_provider, EmbeddingConfig};
 
     #[tokio::test]
+    #[ignore = "Downloads ONNX models (~100MB)"]
     async fn test_fastembed_basic() {
         let config = EmbeddingConfig::fastembed(None, None, None);
         let provider = create_provider(config).await.unwrap();
@@ -70,6 +71,7 @@ mod fastembed_tests {
     }
 
     #[tokio::test]
+    #[ignore = "Downloads ONNX models (~100MB)"]
     async fn test_fastembed_semantic_similarity() {
         let config = EmbeddingConfig::fastembed(None, None, None);
         let provider = create_provider(config).await.unwrap();
@@ -120,6 +122,7 @@ mod fastembed_tests {
     }
 
     #[tokio::test]
+    #[ignore = "Downloads ONNX models (~100MB)"]
     async fn test_fastembed_batch() {
         let config = EmbeddingConfig::fastembed(None, None, None);
         let provider = create_provider(config).await.unwrap();
