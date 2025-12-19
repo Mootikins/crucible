@@ -1,7 +1,7 @@
 //! Integration tests for the hook system
 
 use crucible_rune::{
-    DiscoveryPaths, Event, EventBus, EventType, HookManager, HookRegistry, Handler,
+    DiscoveryPaths, Event, EventBus, EventType, Handler, HookManager, HookRegistry,
 };
 use serde_json::json;
 use std::fs;
@@ -80,12 +80,19 @@ pub fn just_only(ctx, event) {
     // Test matching event
     let just_event = Event::tool_after("just_test", json!({}));
     let (result, _, _) = bus.emit(just_event);
-    assert_eq!(result.payload["just_processed"], json!(true), "just_* should be processed");
+    assert_eq!(
+        result.payload["just_processed"],
+        json!(true),
+        "just_* should be processed"
+    );
 
     // Test non-matching event
     let rune_event = Event::tool_after("rune_tool", json!({}));
     let (result, _, _) = bus.emit(rune_event);
-    assert!(result.payload.get("just_processed").is_none(), "rune_* should not be processed");
+    assert!(
+        result.payload.get("just_processed").is_none(),
+        "rune_* should not be processed"
+    );
 }
 
 /// Test hook priority ordering
@@ -140,7 +147,11 @@ pub fn third_hook(ctx, event) {
     let (result, _, errors) = bus.emit(event);
 
     assert!(errors.is_empty(), "Expected no errors: {:?}", errors);
-    assert_eq!(result.payload["order"], json!("123"), "Hooks should run in priority order");
+    assert_eq!(
+        result.payload["order"],
+        json!("123"),
+        "Hooks should run in priority order"
+    );
 }
 
 /// Test that hook errors don't break the pipeline (fail-open)
@@ -184,7 +195,11 @@ pub fn succeeding_hook(ctx, event) {
     assert!(!errors.is_empty(), "First hook should have failed");
 
     // But second hook should have run
-    assert_eq!(result.payload["success"], json!(true), "Second hook should still run");
+    assert_eq!(
+        result.payload["success"],
+        json!(true),
+        "Second hook should still run"
+    );
 }
 
 /// Test mixing built-in and Rune hooks
@@ -252,9 +267,21 @@ pub fn rune_processor(ctx, event) {
     let (result, _, errors) = bus.emit(event);
 
     assert!(errors.is_empty());
-    assert_eq!(result.payload["builtin_first"], json!(true), "Built-in first hook should run");
-    assert_eq!(result.payload["rune_processed"], json!(true), "Rune hook should run");
-    assert_eq!(result.payload["builtin_last"], json!(true), "Built-in last hook should run");
+    assert_eq!(
+        result.payload["builtin_first"],
+        json!(true),
+        "Built-in first hook should run"
+    );
+    assert_eq!(
+        result.payload["rune_processed"],
+        json!(true),
+        "Rune hook should run"
+    );
+    assert_eq!(
+        result.payload["builtin_last"],
+        json!(true),
+        "Built-in last hook should run"
+    );
 }
 
 /// Test hook manager thread safety
@@ -320,15 +347,10 @@ pub fn context_reader(ctx, event) {
 
     // Add a handler that sets context before the Rune hook
     bus.register(
-        Handler::new(
-            "context_setter",
-            EventType::ToolAfter,
-            "*",
-            |ctx, event| {
-                ctx.set("request_id", json!("req-123"));
-                Ok(event)
-            },
-        )
+        Handler::new("context_setter", EventType::ToolAfter, "*", |ctx, event| {
+            ctx.set("request_id", json!("req-123"));
+            Ok(event)
+        })
         .with_priority(1), // Run first
     );
 

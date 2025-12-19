@@ -435,14 +435,13 @@ impl ChatSession {
             // Create a proper PromptRequest
             let prompt_request = PromptRequest::new(
                 SessionId::from(session.id().to_string()),
-                vec![ContentBlock::from(prompt.to_string())]
+                vec![ContentBlock::from(prompt.to_string())],
             );
 
             // Send prompt with streaming and accumulate content
             // Request ID is generated internally by send_prompt_with_streaming
-            let (content, tool_calls, _stop_reason) = client
-                .send_prompt_with_streaming(prompt_request)
-                .await?;
+            let (content, tool_calls, _stop_reason) =
+                client.send_prompt_with_streaming(prompt_request).await?;
 
             tracing::debug!(
                 "Accumulated {} bytes of content from agent, {} tool calls",

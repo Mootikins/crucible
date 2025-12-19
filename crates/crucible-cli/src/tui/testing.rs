@@ -204,9 +204,7 @@ mod tests {
 
     #[test]
     fn test_builder_with_input() {
-        let state = TestStateBuilder::new("act")
-            .with_input("/help")
-            .build();
+        let state = TestStateBuilder::new("act").with_input("/help").build();
         assert_eq!(state.input_buffer, "/help");
         assert_eq!(state.cursor_position, 5);
     }
@@ -214,10 +212,13 @@ mod tests {
     #[test]
     fn test_builder_with_popup() {
         let state = TestStateBuilder::new("plan")
-            .with_popup_items(PopupKind::Command, vec![
-                PopupItem::command("help", "Show help"),
-                PopupItem::command("exit", "Exit"),
-            ])
+            .with_popup_items(
+                PopupKind::Command,
+                vec![
+                    PopupItem::command("help", "Show help"),
+                    PopupItem::command("exit", "Exit"),
+                ],
+            )
             .with_popup_selected(1)
             .build();
 

@@ -498,7 +498,12 @@ mod tests {
     #[test]
     fn test_provider_validation() {
         // Ensure environment variables are clear for consistent validation
-        let env_vars = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "COHERE_API_KEY", "GOOGLE_API_KEY"];
+        let env_vars = [
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "COHERE_API_KEY",
+            "GOOGLE_API_KEY",
+        ];
         for var in env_vars {
             std::env::remove_var(var);
         }

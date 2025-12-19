@@ -750,9 +750,14 @@ mod tests {
     /// Don't use `#[serde(default)]` on `Option<T>` - serde already treats missing Options as None.
     fn check_schema_compatible(json: &str) -> Result<(), String> {
         if json.contains(r#""default":null"#) || json.contains(r#""default": null"#) {
-            return Err("Schema contains 'default: null' - remove #[serde(default)] from Option<T> fields".into());
+            return Err(
+                "Schema contains 'default: null' - remove #[serde(default)] from Option<T> fields"
+                    .into(),
+            );
         }
-        if json.contains(r#""additionalProperties":true"#) || json.contains(r#""additionalProperties": true"#) {
+        if json.contains(r#""additionalProperties":true"#)
+            || json.contains(r#""additionalProperties": true"#)
+        {
             return Err("Schema contains 'additionalProperties: true' - use #[schemars(schema_with = \"...\")] for serde_json::Value fields".into());
         }
         Ok(())
@@ -771,15 +776,42 @@ mod tests {
         };
 
         let schemas: &[(&str, String)] = &[
-            ("TextSearchParams", serde_json::to_string(&schemars::schema_for!(TextSearchParams)).unwrap()),
-            ("SemanticSearchParams", serde_json::to_string(&schemars::schema_for!(SemanticSearchParams)).unwrap()),
-            ("PropertySearchParams", serde_json::to_string(&schemars::schema_for!(PropertySearchParams)).unwrap()),
-            ("CreateNoteParams", serde_json::to_string(&schemars::schema_for!(CreateNoteParams)).unwrap()),
-            ("ReadNoteParams", serde_json::to_string(&schemars::schema_for!(ReadNoteParams)).unwrap()),
-            ("ReadMetadataParams", serde_json::to_string(&schemars::schema_for!(ReadMetadataParams)).unwrap()),
-            ("UpdateNoteParams", serde_json::to_string(&schemars::schema_for!(UpdateNoteParams)).unwrap()),
-            ("DeleteNoteParams", serde_json::to_string(&schemars::schema_for!(DeleteNoteParams)).unwrap()),
-            ("ListNotesParams", serde_json::to_string(&schemars::schema_for!(ListNotesParams)).unwrap()),
+            (
+                "TextSearchParams",
+                serde_json::to_string(&schemars::schema_for!(TextSearchParams)).unwrap(),
+            ),
+            (
+                "SemanticSearchParams",
+                serde_json::to_string(&schemars::schema_for!(SemanticSearchParams)).unwrap(),
+            ),
+            (
+                "PropertySearchParams",
+                serde_json::to_string(&schemars::schema_for!(PropertySearchParams)).unwrap(),
+            ),
+            (
+                "CreateNoteParams",
+                serde_json::to_string(&schemars::schema_for!(CreateNoteParams)).unwrap(),
+            ),
+            (
+                "ReadNoteParams",
+                serde_json::to_string(&schemars::schema_for!(ReadNoteParams)).unwrap(),
+            ),
+            (
+                "ReadMetadataParams",
+                serde_json::to_string(&schemars::schema_for!(ReadMetadataParams)).unwrap(),
+            ),
+            (
+                "UpdateNoteParams",
+                serde_json::to_string(&schemars::schema_for!(UpdateNoteParams)).unwrap(),
+            ),
+            (
+                "DeleteNoteParams",
+                serde_json::to_string(&schemars::schema_for!(DeleteNoteParams)).unwrap(),
+            ),
+            (
+                "ListNotesParams",
+                serde_json::to_string(&schemars::schema_for!(ListNotesParams)).unwrap(),
+            ),
         ];
 
         let mut errors = Vec::new();
@@ -789,6 +821,10 @@ mod tests {
             }
         }
 
-        assert!(errors.is_empty(), "Schema compatibility issues:\n{}", errors.join("\n"));
+        assert!(
+            errors.is_empty(),
+            "Schema compatibility issues:\n{}",
+            errors.join("\n")
+        );
     }
 }

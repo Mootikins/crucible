@@ -459,7 +459,10 @@ mod env_passthrough_tests {
     fn test_client_config_includes_env_vars_from_agent() {
         // Given an agent with env_vars
         let mut env_vars = HashMap::new();
-        env_vars.insert("LOCAL_ENDPOINT".to_string(), "http://localhost:11434".to_string());
+        env_vars.insert(
+            "LOCAL_ENDPOINT".to_string(),
+            "http://localhost:11434".to_string(),
+        );
         env_vars.insert("OPENAI_API_KEY".to_string(), "test-key".to_string());
 
         let agent = AgentInfo {
@@ -478,12 +481,12 @@ mod env_passthrough_tests {
         assert_eq!(env_vec.len(), 2);
 
         // Verify both env vars are present (order doesn't matter)
-        let has_endpoint = env_vec.iter().any(|(k, v)| {
-            k == "LOCAL_ENDPOINT" && v == "http://localhost:11434"
-        });
-        let has_api_key = env_vec.iter().any(|(k, v)| {
-            k == "OPENAI_API_KEY" && v == "test-key"
-        });
+        let has_endpoint = env_vec
+            .iter()
+            .any(|(k, v)| k == "LOCAL_ENDPOINT" && v == "http://localhost:11434");
+        let has_api_key = env_vec
+            .iter()
+            .any(|(k, v)| k == "OPENAI_API_KEY" && v == "test-key");
 
         assert!(has_endpoint, "Should include LOCAL_ENDPOINT");
         assert!(has_api_key, "Should include OPENAI_API_KEY");

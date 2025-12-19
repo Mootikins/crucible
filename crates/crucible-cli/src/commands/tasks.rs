@@ -416,13 +416,13 @@ description: Tasks loaded from explicit path
         assert!(result.is_err());
         let err = result.unwrap_err();
         // Should be a TaskError with appropriate message
-    let err_str = err.to_string();
-    assert!(
-        err_str.contains("TASKS.md")
-            || err_str.contains("No such file")
-            || err_str.contains("cannot find the file")
-            || err_str.contains("cannot find the path")
-    );
+        let err_str = err.to_string();
+        assert!(
+            err_str.contains("TASKS.md")
+                || err_str.contains("No such file")
+                || err_str.contains("cannot find the file")
+                || err_str.contains("cannot find the path")
+        );
     }
 
     // Task 3.1.3 tests: Verify frontmatter fields are correctly parsed and accessible

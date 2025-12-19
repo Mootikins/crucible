@@ -226,7 +226,8 @@ impl MockStdioAgent {
                 "name": "API Key",
                 "description": "Authenticate using an API key",
                 "_meta": null
-            })).expect("Failed to create AuthMethod");
+            }))
+            .expect("Failed to create AuthMethod");
             vec![auth_method]
         } else {
             vec![]
@@ -247,7 +248,8 @@ impl MockStdioAgent {
                 "_meta": null
             },
             "_meta": null
-        })).expect("Failed to create InitializeResponse");
+        }))
+        .expect("Failed to create InitializeResponse");
 
         // Serialize to JSON value
         let mut result = serde_json::to_value(&response).unwrap();
@@ -286,7 +288,8 @@ impl MockStdioAgent {
             "sessionId": session_id,
             "modes": null,
             "_meta": null
-        })).expect("Failed to create NewSessionResponse");
+        }))
+        .expect("Failed to create NewSessionResponse");
 
         // Serialize response to JSON value (respects serde attributes)
         let result = serde_json::to_value(&response).unwrap();
@@ -309,7 +312,8 @@ impl MockStdioAgent {
         let response: PromptResponse = serde_json::from_value(json!({
             "stopReason": "end_turn",
             "_meta": null
-        })).expect("Failed to create PromptResponse");
+        }))
+        .expect("Failed to create PromptResponse");
 
         // Wrap in JSON-RPC 2.0 response format
         json!({

@@ -379,7 +379,8 @@ async fn test_mock_agent_protocol_handshake() {
         "clientInfo": null,
         "clientCapabilities": {},
         "_meta": null
-    })).expect("Failed to create InitializeRequest");
+    }))
+    .expect("Failed to create InitializeRequest");
     let init_request = ClientRequest::InitializeRequest(init_request_inner);
 
     let init_result = agent.handle_request(init_request).await;
@@ -393,7 +394,8 @@ async fn test_mock_agent_protocol_handshake() {
         "cwd": "/test",
         "mcpServers": [],
         "_meta": null
-    })).expect("Failed to create NewSessionRequest");
+    }))
+    .expect("Failed to create NewSessionRequest");
     let session_request = ClientRequest::NewSessionRequest(session_request_inner);
 
     let session_result = agent.handle_request(session_request).await;
@@ -418,7 +420,10 @@ async fn test_client_full_handshake_workflow() {
     // - Client can track connection state
 
     #[cfg(windows)]
-    let (agent_path, agent_args) = (PathBuf::from("cmd"), Some(vec!["/C".to_string(), "echo".to_string(), "ok".to_string()]));
+    let (agent_path, agent_args) = (
+        PathBuf::from("cmd"),
+        Some(vec!["/C".to_string(), "echo".to_string(), "ok".to_string()]),
+    );
     #[cfg(not(windows))]
     let (agent_path, agent_args) = (PathBuf::from("echo"), None);
 
@@ -474,7 +479,8 @@ async fn test_mock_agent_custom_responses() {
         "clientInfo": null,
         "clientCapabilities": {},
         "_meta": null
-    })).expect("Failed to create InitializeRequest");
+    }))
+    .expect("Failed to create InitializeRequest");
     let request = ClientRequest::InitializeRequest(request_inner);
 
     let result = agent.handle_request(request).await;
@@ -502,7 +508,8 @@ async fn test_mock_agent_error_simulation() {
         "clientInfo": null,
         "clientCapabilities": {},
         "_meta": null
-    })).expect("Failed to create InitializeRequest");
+    }))
+    .expect("Failed to create InitializeRequest");
     let request = ClientRequest::InitializeRequest(request_inner);
 
     let result = agent.handle_request(request).await;
@@ -518,7 +525,10 @@ async fn test_agent_lifecycle_cleanup() {
     use std::path::PathBuf;
 
     #[cfg(windows)]
-    let (cmd, args) = (PathBuf::from("cmd"), Some(vec!["/C".to_string(), "echo".to_string(), "ok".to_string()]));
+    let (cmd, args) = (
+        PathBuf::from("cmd"),
+        Some(vec!["/C".to_string(), "echo".to_string(), "ok".to_string()]),
+    );
     #[cfg(not(windows))]
     let (cmd, args) = (PathBuf::from("echo"), None);
 
@@ -569,7 +579,8 @@ async fn baseline_protocol_message_serialization() {
         "clientInfo": null,
         "clientCapabilities": {},
         "_meta": null
-    })).expect("Failed to create InitializeRequest");
+    }))
+    .expect("Failed to create InitializeRequest");
     let init_req = ClientRequest::InitializeRequest(init_req_inner);
 
     let serialized = serde_json::to_string(&init_req);
@@ -583,7 +594,8 @@ async fn baseline_protocol_message_serialization() {
         "cwd": "/test",
         "mcpServers": [],
         "_meta": null
-    })).expect("Failed to create NewSessionRequest");
+    }))
+    .expect("Failed to create NewSessionRequest");
     let session_req = ClientRequest::NewSessionRequest(session_req_inner);
 
     let serialized = serde_json::to_string(&session_req);
@@ -853,7 +865,8 @@ async fn e2e_complete_protocol_flow() {
         "clientInfo": null,
         "clientCapabilities": {},
         "_meta": null
-    })).expect("Failed to create InitializeRequest");
+    }))
+    .expect("Failed to create InitializeRequest");
     let init_request = ClientRequest::InitializeRequest(init_request_inner);
 
     let init_result = agent.handle_request(init_request).await;
@@ -864,7 +877,8 @@ async fn e2e_complete_protocol_flow() {
         "cwd": "/test",
         "mcpServers": [],
         "_meta": null
-    })).expect("Failed to create NewSessionRequest");
+    }))
+    .expect("Failed to create NewSessionRequest");
     let session_request = ClientRequest::NewSessionRequest(session_request_inner);
 
     let session_result = agent.handle_request(session_request).await;
@@ -892,7 +906,8 @@ async fn e2e_multiple_session_creation() {
         "clientInfo": null,
         "clientCapabilities": {},
         "_meta": null
-    })).expect("Failed to create InitializeRequest");
+    }))
+    .expect("Failed to create InitializeRequest");
     let init_req = ClientRequest::InitializeRequest(init_req_inner);
     agent.handle_request(init_req).await.unwrap();
 
@@ -902,7 +917,8 @@ async fn e2e_multiple_session_creation() {
             "cwd": format!("/test/session-{}", i),
             "mcpServers": [],
             "_meta": null
-        })).expect("Failed to create NewSessionRequest");
+        }))
+        .expect("Failed to create NewSessionRequest");
         let session_req = ClientRequest::NewSessionRequest(session_req_inner);
 
         let result = agent.handle_request(session_req).await;
@@ -933,7 +949,8 @@ async fn e2e_protocol_error_handling() {
         "clientInfo": null,
         "clientCapabilities": {},
         "_meta": null
-    })).expect("Failed to create InitializeRequest");
+    }))
+    .expect("Failed to create InitializeRequest");
     let init_request = ClientRequest::InitializeRequest(init_request_inner);
 
     let result = agent.handle_request(init_request).await;
@@ -969,7 +986,8 @@ async fn e2e_delay_simulation() {
         "clientInfo": null,
         "clientCapabilities": {},
         "_meta": null
-    })).expect("Failed to create InitializeRequest");
+    }))
+    .expect("Failed to create InitializeRequest");
     let init_request = ClientRequest::InitializeRequest(init_request_inner);
 
     let result = agent.handle_request(init_request).await;
@@ -1000,7 +1018,8 @@ async fn e2e_session_state_persistence() {
         "clientInfo": null,
         "clientCapabilities": {},
         "_meta": null
-    })).expect("Failed to create InitializeRequest");
+    }))
+    .expect("Failed to create InitializeRequest");
     let init = ClientRequest::InitializeRequest(init_inner);
     agent.handle_request(init).await.unwrap();
 
@@ -1010,7 +1029,8 @@ async fn e2e_session_state_persistence() {
             "cwd": format!("/test/session-{}", i),
             "mcpServers": [],
             "_meta": null
-        })).expect("Failed to create NewSessionRequest");
+        }))
+        .expect("Failed to create NewSessionRequest");
         let session_req = ClientRequest::NewSessionRequest(session_req_inner);
 
         let result = agent.handle_request(session_req).await;
@@ -1062,7 +1082,8 @@ async fn e2e_custom_response_handling() {
         "clientInfo": null,
         "clientCapabilities": {},
         "_meta": null
-    })).expect("Failed to create InitializeRequest");
+    }))
+    .expect("Failed to create InitializeRequest");
     let init_request = ClientRequest::InitializeRequest(init_request_inner);
 
     let result = agent.handle_request(init_request).await;
@@ -1088,7 +1109,8 @@ async fn e2e_concurrent_request_handling() {
         "clientInfo": null,
         "clientCapabilities": {},
         "_meta": null
-    })).expect("Failed to create InitializeRequest");
+    }))
+    .expect("Failed to create InitializeRequest");
     let init = ClientRequest::InitializeRequest(init_inner);
     agent.handle_request(init).await.unwrap();
 
@@ -1151,7 +1173,7 @@ async fn integration_filesystem_path_validation() {
     let outside_dir = TempDir::new().unwrap();
     let outside_path = outside_dir.path().join("secrets.txt");
     assert!(!handler.is_path_allowed(&outside_path));
-    
+
     #[cfg(unix)]
     assert!(!handler.is_path_allowed(&PathBuf::from("/etc/passwd")));
     #[cfg(windows)]
