@@ -500,7 +500,7 @@ mod tests {
         // Create test documents
         fs::write(
             vault_path.join("index.md"),
-            r#"---
+            r"---
 tags: [moc, index]
 ---
 
@@ -515,14 +515,14 @@ tags: [moc, index]
 
 ## Daily Notes
 - [[2024-01-01]]
-"#,
+",
         )
         .await
         .unwrap();
 
         fs::write(
             vault_path.join("project-alpha.md"),
-            r#"---
+            r"---
 tags: [project, active]
 ---
 
@@ -531,14 +531,14 @@ tags: [project, active]
 A test project.
 
 Related: [[project-beta]]
-"#,
+",
         )
         .await
         .unwrap();
 
         fs::write(
             vault_path.join("project-beta.md"),
-            r#"---
+            r"---
 tags: [project]
 ---
 
@@ -547,17 +547,17 @@ tags: [project]
 Another project.
 
 See also: [[index]]
-"#,
+",
         )
         .await
         .unwrap();
 
         fs::write(
             vault_path.join("research-topic.md"),
-            r#"# Research Topic
+            r"# Research Topic
 
 Some research notes.
-"#,
+",
         )
         .await
         .unwrap();

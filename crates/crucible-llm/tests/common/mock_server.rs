@@ -2,7 +2,7 @@
 //!
 //! Uses wiremock to create mock servers that simulate Ollama and OpenAI APIs.
 
-use wiremock::matchers::{body_json_schema, header, method, path};
+use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Start a mock Ollama server that returns the given NDJSON response

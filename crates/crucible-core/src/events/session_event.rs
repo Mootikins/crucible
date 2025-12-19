@@ -1717,7 +1717,7 @@ mod tests {
 
         // Test Clone and Copy
         let kind = FileChangeKind::Created;
-        let cloned = kind.clone();
+        let cloned = kind;
         let copied = kind;
         assert_eq!(kind, cloned);
         assert_eq!(kind, copied);
@@ -1808,7 +1808,7 @@ mod tests {
 
         // Test Clone and Copy
         let entity_type = EntityType::Task;
-        let cloned = entity_type.clone();
+        let cloned = entity_type;
         let copied = entity_type;
         assert_eq!(entity_type, cloned);
         assert_eq!(entity_type, copied);
@@ -1855,7 +1855,7 @@ mod tests {
 
         // Test Clone and Copy
         let priority = Priority::High;
-        let cloned = priority.clone();
+        let cloned = priority;
         let copied = priority;
         assert_eq!(priority, cloned);
         assert_eq!(priority, copied);

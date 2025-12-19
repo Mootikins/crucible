@@ -490,7 +490,7 @@ pub fn render_widget<W: Write>(writer: &mut W, state: &WidgetState) -> io::Resul
 // Help Rendering (Phase 6)
 // ============================================================================
 
-use crucible_core::traits::chat::CommandDescriptor;
+use crucible_core::traits::chat::{CommandDescriptor, CommandOption};
 
 /// Format a command descriptor for display in help output
 ///

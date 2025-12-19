@@ -255,14 +255,12 @@ mod tests {
             let result = validate_path_within_kiln(&kiln_path, attack);
             assert!(
                 result.is_err(),
-                "Should reject path traversal attack: {}",
-                attack
+                "Should reject path traversal attack: {attack}"
             );
             if let Err(e) = result {
                 assert!(
                     e.message.contains("Path traversal"),
-                    "Error should mention path traversal for: {}",
-                    attack
+                    "Error should mention path traversal for: {attack}"
                 );
             }
         }
@@ -280,14 +278,12 @@ mod tests {
             let result = validate_path_within_kiln(&kiln_path, attack);
             assert!(
                 result.is_err(),
-                "Should reject absolute path attack: {}",
-                attack
+                "Should reject absolute path attack: {attack}"
             );
             if let Err(e) = result {
                 assert!(
                     e.message.contains("Absolute paths are not allowed"),
-                    "Error should mention absolute paths for: {}",
-                    attack
+                    "Error should mention absolute paths for: {attack}"
                 );
             }
         }
@@ -311,7 +307,7 @@ mod tests {
 
         for path in valid_paths {
             let result = validate_path_within_kiln(&kiln_path, path);
-            assert!(result.is_ok(), "Should accept valid path: {}", path);
+            assert!(result.is_ok(), "Should accept valid path: {path}");
         }
     }
 
@@ -461,7 +457,7 @@ mod tests {
 
         for path in unicode_paths {
             let result = validate_path_within_kiln(&kiln_path, path);
-            assert!(result.is_ok(), "Should accept Unicode path: {}", path);
+            assert!(result.is_ok(), "Should accept Unicode path: {path}");
         }
     }
 
@@ -483,8 +479,7 @@ mod tests {
             let result = validate_path_within_kiln(&kiln_path, path);
             assert!(
                 result.is_ok(),
-                "Should accept valid special characters: {}",
-                path
+                "Should accept valid special characters: {path}"
             );
         }
     }

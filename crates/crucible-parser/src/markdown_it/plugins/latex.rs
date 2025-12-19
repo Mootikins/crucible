@@ -217,7 +217,7 @@ mod tests {
         let exprs = parse_latex("This has $x^2$ inline math");
         assert_eq!(exprs.len(), 1);
         assert_eq!(exprs[0].0, "x^2");
-        assert_eq!(exprs[0].1, false); // inline
+        assert!(!exprs[0].1); // inline
     }
 
     #[test]
@@ -225,7 +225,7 @@ mod tests {
         let exprs = parse_latex("Block math: $$E = mc^2$$");
         assert_eq!(exprs.len(), 1);
         assert_eq!(exprs[0].0, "E = mc^2");
-        assert_eq!(exprs[0].1, true); // block
+        assert!(exprs[0].1); // block
     }
 
     #[test]
@@ -233,9 +233,9 @@ mod tests {
         let exprs = parse_latex("Inline $a + b$ and block $$\\int_0^1 x dx$$");
         assert_eq!(exprs.len(), 2);
         assert_eq!(exprs[0].0, "a + b");
-        assert_eq!(exprs[0].1, false);
+        assert!(!exprs[0].1);
         assert_eq!(exprs[1].0, "\\int_0^1 x dx");
-        assert_eq!(exprs[1].1, true);
+        assert!(exprs[1].1);
     }
 
     #[test]

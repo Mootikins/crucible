@@ -342,7 +342,7 @@ mod tests {
 
         assert_eq!(content.headings.len(), 1);
         assert_eq!(content.headings[0].text, "Heading");
-        assert!(content.paragraphs.len() >= 1);
+        assert!(!content.paragraphs.is_empty());
     }
 
     #[test]

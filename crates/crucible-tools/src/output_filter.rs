@@ -372,7 +372,7 @@ mod tests {
 
     #[test]
     fn test_cargo_test_filter() {
-        let input = r#"
+        let input = r"
    Compiling myproject v0.1.0
     Finished test target(s) in 2.34s
      Running unittests src/lib.rs
@@ -385,7 +385,7 @@ test bar::test_three ... ok
 test bar::test_forty_two ... ok
 
 test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
-"#;
+";
 
         let filtered = filter_test_output(input).unwrap();
 
@@ -397,7 +397,7 @@ test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 
     #[test]
     fn test_cargo_test_with_failures() {
-        let input = r#"
+        let input = r"
 running 5 tests
 test foo::test_one ... ok
 test foo::test_two ... FAILED
@@ -418,7 +418,7 @@ failures:
     foo::test_four
 
 test result: FAILED. 3 passed; 2 failed; 0 ignored
-"#;
+";
 
         let filtered = filter_test_output(input).unwrap();
 
@@ -431,7 +431,7 @@ test result: FAILED. 3 passed; 2 failed; 0 ignored
 
     #[test]
     fn test_pytest_filter() {
-        let input = r#"
+        let input = r"
 ============================= test session starts ==============================
 platform linux -- Python 3.10.0, pytest-7.0.0
 collected 25 items
@@ -443,7 +443,7 @@ test_module.py::test_three PASSED
 test_module.py::test_twenty_five PASSED
 
 ============================== 25 passed in 1.23s ==============================
-"#;
+";
 
         let filtered = filter_test_output(input).unwrap();
 
@@ -454,7 +454,7 @@ test_module.py::test_twenty_five PASSED
 
     #[test]
     fn test_jest_filter() {
-        let input = r#"
+        let input = r"
  PASS  src/components/Button.test.js
  PASS  src/components/Input.test.js
  FAIL  src/components/Form.test.js
@@ -466,7 +466,7 @@ Test Suites: 1 failed, 2 passed, 3 total
 Tests:       1 failed, 15 passed, 16 total
 Snapshots:   0 total
 Time:        2.34 s
-"#;
+";
 
         let filtered = filter_test_output(input).unwrap();
 
@@ -482,7 +482,7 @@ Time:        2.34 s
 
     #[test]
     fn test_go_test_filter() {
-        let input = r#"
+        let input = r"
 === RUN   TestFoo
 --- PASS: TestFoo (0.00s)
 === RUN   TestBar
@@ -493,7 +493,7 @@ Time:        2.34 s
 FAIL
 exit status 1
 FAIL    github.com/user/project    0.123s
-"#;
+";
 
         let filtered = filter_test_output(input).unwrap();
 
@@ -501,8 +501,7 @@ FAIL    github.com/user/project    0.123s
         // Go output can have tabs or spaces between FAIL and package name
         assert!(
             filtered.contains("FAIL") && filtered.contains("github.com/user/project"),
-            "Should contain FAIL and package name. Got: {}",
-            filtered
+            "Should contain FAIL and package name. Got: {filtered}"
         );
         assert!(!filtered.contains("=== RUN   TestFoo"));
     }
@@ -515,7 +514,7 @@ FAIL    github.com/user/project    0.123s
 
     #[test]
     fn test_rspec_filter() {
-        let input = r#"
+        let input = r"
 Randomized with seed 12345
 
 .........F..........
@@ -529,7 +528,7 @@ Failures:
 
 Finished in 0.12345 seconds (files took 0.5 seconds to load)
 20 examples, 1 failure
-"#;
+";
 
         let filtered = filter_test_output(input).unwrap();
 

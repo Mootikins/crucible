@@ -115,7 +115,7 @@ impl ChangeDetectionStore for MockChangeDetectionStore {
             return Err(ChangeDetectionError::Storage(state.error_message.clone()));
         }
 
-        Ok(state.file_states.keys().map(|s| PathBuf::from(s)).collect())
+        Ok(state.file_states.keys().map(PathBuf::from).collect())
     }
 }
 
@@ -418,7 +418,7 @@ Some text in section 2.
             // Verify embeddings were generated
             let enriched = &stored_notes[0];
             assert!(
-                enriched.embeddings.len() > 0,
+                !enriched.embeddings.is_empty(),
                 "Should have generated embeddings"
             );
         }

@@ -201,7 +201,7 @@ mod tests {
 
         // Should find at least 2 documents (one with each tag)
         assert!(
-            result_or.records.len() >= 1,
+            !result_or.records.is_empty(),
             "Should find at least 1 document with #meeting OR #project-management"
         );
     }

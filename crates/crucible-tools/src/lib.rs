@@ -31,7 +31,7 @@
 
 #![warn(missing_docs)]
 #![warn(clippy::all)]
-#![deny(clippy::pedantic)]
+#![warn(clippy::pedantic)]
 
 pub mod clustering;
 pub mod extended_mcp_server;

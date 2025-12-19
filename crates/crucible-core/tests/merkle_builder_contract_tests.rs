@@ -192,8 +192,8 @@ fn contract_builder_works_with_generic_services() {
     let note = ParsedNoteBuilder::new(PathBuf::from("generic.md")).build();
     let tree = service.process(&note);
 
-    // Note has content, so block_count should reflect that
-    assert!(tree.block_count >= 0);
+    // Note has content, so block_count should be non-zero
+    assert!(tree.block_count > 0);
 }
 
 /// Contract: Different builders can be used interchangeably

@@ -443,7 +443,7 @@ impl NotePipelineOrchestrator for NotePipeline {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+
     use crucible_core::processing::InMemoryChangeDetectionStore;
     use crucible_merkle::InMemoryMerkleStore;
     use std::io::Write;

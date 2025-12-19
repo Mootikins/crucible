@@ -11,7 +11,7 @@ use common::mock_server::{
     openai_mock_server, openai_mock_server_any_key, openai_mock_server_error,
     openai_response_chunks, openai_response_single, openai_response_with_tool_call,
 };
-use common::{collect_stream_content, collect_stream_with_error, collect_tool_calls, sse_stream};
+use common::{collect_stream_content, collect_stream_with_error, collect_tool_calls};
 use crucible_core::traits::{ChatCompletionRequest, LlmMessage, TextGenerationProvider};
 use crucible_llm::chat::OpenAIChatProvider;
 
@@ -307,8 +307,8 @@ data: [DONE]
         .await
         .expect("Should succeed");
 
-    // Empty content is valid
-    assert!(content.is_empty() || content.len() >= 0);
+    // Empty content is valid - just verify we got a result
+    let _ = content;
 }
 
 /// Test Unicode content in SSE stream

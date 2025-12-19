@@ -7,7 +7,7 @@ use chrono::Utc;
 use crucible_core::traits::{
     ChatCompletionChoice, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
     ChatMessageDelta, CompletionChoice, CompletionChunk, CompletionRequest, CompletionResponse,
-    LlmError, LlmMessage, LlmRequest, LlmResult, LlmToolDefinition, MessageRole, ModelCapability,
+    LlmMessage, LlmRequest, LlmResult, LlmToolDefinition, MessageRole, ModelCapability,
     ModelStatus, ProviderCapabilities, TextGenerationProvider, TextModelInfo, TokenUsage, ToolCall,
 };
 use futures::stream::{self, BoxStream};

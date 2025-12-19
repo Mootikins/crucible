@@ -7,8 +7,7 @@
 
 mod common;
 
-use common::{count_kiln_files, setup_test_db_with_kiln, test_kiln_root, TestKilnConfig};
-use std::path::PathBuf;
+use common::{count_kiln_files, setup_test_db_with_kiln, test_kiln_root};
 use std::time::{Duration, Instant};
 
 // ============================================================================
@@ -63,18 +62,15 @@ async fn consistency_tags() {
     let mut file_tags: std::collections::HashSet<String> = std::collections::HashSet::new();
     let tag_regex = regex::Regex::new(r"tags:\s*\[([^\]]+)\]").unwrap();
 
-    for entry in walkdir::WalkDir::new(&kiln_root) {
-        if let Ok(entry) = entry {
-            if entry.file_type().is_file() && entry.path().extension().map_or(false, |e| e == "md")
-            {
-                if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                    if let Some(cap) = tag_regex.captures(&content) {
-                        if let Some(tags_str) = cap.get(1) {
-                            for tag in tags_str.as_str().split(',') {
-                                let tag = tag.trim().trim_matches('"').trim_matches('\'');
-                                if !tag.is_empty() {
-                                    file_tags.insert(tag.to_string());
-                                }
+    for entry in walkdir::WalkDir::new(&kiln_root).into_iter().flatten() {
+        if entry.file_type().is_file() && entry.path().extension().is_some_and(|e| e == "md") {
+            if let Ok(content) = std::fs::read_to_string(entry.path()) {
+                if let Some(cap) = tag_regex.captures(&content) {
+                    if let Some(tags_str) = cap.get(1) {
+                        for tag in tags_str.as_str().split(',') {
+                            let tag = tag.trim().trim_matches('"').trim_matches('\'');
+                            if !tag.is_empty() {
+                                file_tags.insert(tag.to_string());
                             }
                         }
                     }
@@ -113,34 +109,31 @@ async fn consistency_dates() {
 
     let mut date_issues = Vec::new();
 
-    for entry in walkdir::WalkDir::new(&kiln_root) {
-        if let Ok(entry) = entry {
-            if entry.file_type().is_file() && entry.path().extension().map_or(false, |e| e == "md")
-            {
-                if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                    let created = created_regex
-                        .captures(&content)
-                        .and_then(|c| c.get(1))
-                        .map(|m| m.as_str().to_string());
+    for entry in walkdir::WalkDir::new(&kiln_root).into_iter().flatten() {
+        if entry.file_type().is_file() && entry.path().extension().is_some_and(|e| e == "md") {
+            if let Ok(content) = std::fs::read_to_string(entry.path()) {
+                let created = created_regex
+                    .captures(&content)
+                    .and_then(|c| c.get(1))
+                    .map(|m| m.as_str().to_string());
 
-                    let modified = modified_regex
-                        .captures(&content)
-                        .and_then(|c| c.get(1))
-                        .map(|m| m.as_str().to_string());
+                let modified = modified_regex
+                    .captures(&content)
+                    .and_then(|c| c.get(1))
+                    .map(|m| m.as_str().to_string());
 
-                    if let (Some(c), Some(m)) = (created, modified) {
-                        if c > m {
-                            date_issues.push((
-                                entry
-                                    .path()
-                                    .file_name()
-                                    .unwrap()
-                                    .to_string_lossy()
-                                    .to_string(),
-                                c,
-                                m,
-                            ));
-                        }
+                if let (Some(c), Some(m)) = (created, modified) {
+                    if c > m {
+                        date_issues.push((
+                            entry
+                                .path()
+                                .file_name()
+                                .unwrap()
+                                .to_string_lossy()
+                                .to_string(),
+                            c,
+                            m,
+                        ));
                     }
                 }
             }
@@ -178,8 +171,7 @@ async fn consistency_related_docs() {
 
     for entry in walkdir::WalkDir::new(&kiln_root) {
         if let Ok(entry) = entry {
-            if entry.file_type().is_file() && entry.path().extension().map_or(false, |e| e == "md")
-            {
+            if entry.file_type().is_file() && entry.path().extension().is_some_and(|e| e == "md") {
                 let title = entry
                     .path()
                     .file_stem()

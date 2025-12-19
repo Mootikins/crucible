@@ -1143,7 +1143,7 @@ mod tests {
             MerkleNode {
                 hash: root_hash.clone(),
                 node_type: NodeType::Internal {
-                    left_hash: leaf_hashes.get(0).unwrap_or(&"".to_string()).clone(),
+                    left_hash: leaf_hashes.first().unwrap_or(&"".to_string()).clone(),
                     right_hash: leaf_hashes.get(1).unwrap_or(&"".to_string()).clone(),
                     left_index: 0,
                     right_index: leaf_hashes.len().saturating_sub(1),
@@ -1361,7 +1361,7 @@ mod tests {
         assert_eq!(stats.largest_block_size, 0);
 
         // Store some blocks
-        let blocks: Vec<_> = (0..3).map(|i| create_test_block(i)).collect();
+        let blocks: Vec<_> = (0..3).map(create_test_block).collect();
         let total_size: u64 = blocks.iter().map(|(_, data)| data.len() as u64).sum();
 
         for (hash, data) in &blocks {
@@ -1443,9 +1443,8 @@ mod tests {
         storage.store_block(&hash1, &data1).await.unwrap();
         storage.store_block(&hash2, &data2).await.unwrap();
 
-        // Trigger manual cleanup
-        let evicted_count = storage.trigger_cleanup().await.unwrap();
-        assert!(evicted_count >= 0);
+        // Trigger manual cleanup - verify it succeeds
+        let _evicted_count = storage.trigger_cleanup().await.unwrap();
     }
 
     #[tokio::test]

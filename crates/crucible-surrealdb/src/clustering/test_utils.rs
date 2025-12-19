@@ -637,7 +637,7 @@ pub fn measure_clustering_quality(
     };
 
     // For recall, we need to count how many expected items were found
-    let recall = if ground_truth.len() > 0 {
+    let recall = if !ground_truth.is_empty() {
         correct_assignments as f64 / ground_truth.len() as f64
     } else {
         1.0
@@ -680,7 +680,7 @@ pub fn generate_embeddings(documents: &mut [DocumentInfo], dimensions: usize) {
             tag.hash(&mut hasher);
         }
 
-        let seed = hasher.finish() as u64;
+        let seed = hasher.finish();
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
 
         let mut embedding = Vec::with_capacity(dimensions);
@@ -958,7 +958,7 @@ mod tests {
 
             // Check embedding values are in valid range
             for &val in embedding {
-                assert!(val >= -1.0 && val <= 1.0);
+                assert!((-1.0..=1.0).contains(&val));
             }
         }
 

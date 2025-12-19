@@ -176,17 +176,14 @@ async fn wikilink_unique_names() {
     let mut note_names: std::collections::HashMap<String, Vec<PathBuf>> =
         std::collections::HashMap::new();
 
-    for entry in walkdir::WalkDir::new(&kiln_root) {
-        if let Ok(entry) = entry {
-            if entry.file_type().is_file() && entry.path().extension().map_or(false, |e| e == "md")
-            {
-                if let Some(stem) = entry.path().file_stem() {
-                    let name = stem.to_string_lossy().to_string();
-                    note_names
-                        .entry(name)
-                        .or_default()
-                        .push(entry.path().to_path_buf());
-                }
+    for entry in walkdir::WalkDir::new(&kiln_root).into_iter().flatten() {
+        if entry.file_type().is_file() && entry.path().extension().is_some_and(|e| e == "md") {
+            if let Some(stem) = entry.path().file_stem() {
+                let name = stem.to_string_lossy().to_string();
+                note_names
+                    .entry(name)
+                    .or_default()
+                    .push(entry.path().to_path_buf());
             }
         }
     }
@@ -401,7 +398,7 @@ async fn block_hash_validation() {
     let block_content = "This is a test paragraph for content-addressed storage.";
 
     // Act: Compute BLAKE3 hash
-    use blake3::Hash;
+
     let hash = blake3::hash(block_content.as_bytes());
     let hash_hex = hash.to_hex();
 

@@ -686,7 +686,7 @@ mod tests {
         let parsed = create_test_parsed_note();
 
         let embeddings = service
-            .generate_embeddings(&parsed, &vec!["block_1".to_string()])
+            .generate_embeddings(&parsed, &["block_1".to_string()])
             .await
             .unwrap();
 

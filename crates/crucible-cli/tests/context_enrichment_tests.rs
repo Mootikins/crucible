@@ -130,7 +130,7 @@ fn test_context_size_zero() {
 /// Test multiple context entries are numbered correctly
 #[test]
 fn test_multiple_context_numbering() {
-    let results = vec![
+    let results = [
         ("Note A", 0.9f32, "Content A"),
         ("Note B", 0.8f32, "Content B"),
         ("Note C", 0.7f32, "Content C"),
@@ -310,7 +310,7 @@ fn test_full_enrichment_flow_simulation() {
     // Simulate what ContextEnricher.enrich() does
 
     let query = "How do I implement linked thinking?";
-    let mock_results = vec![
+    let mock_results = [
         (
             "Linked Thinking Overview",
             0.92f32,
@@ -541,7 +541,7 @@ fn test_valid_context_sizes() {
     for size in valid_sizes {
         // No panic means valid
         let _calculated: usize = size;
-        assert!(size >= 1 && size <= 100, "Size {} should be valid", size);
+        assert!((1..=100).contains(&size), "Size {} should be valid", size);
     }
 }
 
@@ -549,7 +549,7 @@ fn test_valid_context_sizes() {
 #[test]
 fn test_creates_valid_markdown() {
     let query = "test";
-    let results = vec![("Note", 0.9f32, "Content")];
+    let results = [("Note", 0.9f32, "Content")];
 
     let context: String = results
         .iter()

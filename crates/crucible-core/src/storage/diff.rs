@@ -1140,7 +1140,7 @@ mod tests {
         let similarity = detector
             .calculate_content_similarity("abc123", "def456", &hasher)
             .unwrap();
-        assert!(similarity >= 0.0 && similarity <= 1.0);
+        assert!((0.0..=1.0).contains(&similarity));
     }
 
     #[test]

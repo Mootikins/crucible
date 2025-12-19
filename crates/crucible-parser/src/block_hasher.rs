@@ -225,7 +225,7 @@ impl SerializableMetadata {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{ASTBlockType, ListType};
+    use crate::types::ASTBlockType;
 
     #[tokio::test]
     async fn test_simple_block_hasher() {

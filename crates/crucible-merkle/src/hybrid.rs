@@ -682,7 +682,7 @@ mod tests {
                     (None, None) => true,
                     _ => false,
                 })
-                .expect(&format!("Section {:?} not found", heading_text))
+                .unwrap_or_else(|| panic!("Section {:?} not found", heading_text))
         };
 
         let root_idx = find_section(None);
@@ -858,7 +858,7 @@ mod tests {
 
         // Should have virtual sections
         let virtual_sections = tree.virtual_sections.as_ref().unwrap();
-        assert!(virtual_sections.len() > 0);
+        assert!(!virtual_sections.is_empty());
         assert!(virtual_sections.len() < tree.real_section_count());
 
         // Verify section count methods

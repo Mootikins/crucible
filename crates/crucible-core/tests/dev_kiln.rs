@@ -42,7 +42,7 @@ fn find_markdown_files() -> Vec<PathBuf> {
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
-        .filter(|e| e.path().extension().map_or(false, |ext| ext == "md"))
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
         .map(|e| e.path().to_path_buf())
         .collect()
 }
@@ -54,7 +54,7 @@ fn find_rune_files() -> Vec<PathBuf> {
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
-        .filter(|e| e.path().extension().map_or(false, |ext| ext == "rn"))
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "rn"))
         .map(|e| e.path().to_path_buf())
         .collect()
 }
@@ -131,13 +131,11 @@ fn resolve_wikilink(target: &str, dev_kiln_root: &Path) -> Option<PathBuf> {
         let target_filename = format!("{}{}", filename_part, ext).to_lowercase();
 
         // Search for filename anywhere in dev-kiln (case-insensitive)
-        for entry in WalkDir::new(dev_kiln_root) {
-            if let Ok(entry) = entry {
-                if entry.file_type().is_file() {
-                    if let Some(filename) = entry.path().file_name() {
-                        if filename.to_string_lossy().to_lowercase() == target_filename {
-                            return Some(entry.path().to_path_buf());
-                        }
+        for entry in WalkDir::new(dev_kiln_root).into_iter().flatten() {
+            if entry.file_type().is_file() {
+                if let Some(filename) = entry.path().file_name() {
+                    if filename.to_string_lossy().to_lowercase() == target_filename {
+                        return Some(entry.path().to_path_buf());
                     }
                 }
             }

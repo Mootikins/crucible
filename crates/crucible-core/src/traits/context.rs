@@ -67,7 +67,7 @@ mod tests {
 
         // Simple token estimator: ~4 chars per token
         fn estimate_tokens(&self, text: &str) -> usize {
-            (text.len() + 3) / 4
+            text.len().div_ceil(4)
         }
     }
 

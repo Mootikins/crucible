@@ -335,7 +335,7 @@ mod tests {
         let result = toon_success(json!([1, 2, 3]));
         assert!(!result.content.is_empty());
         let text = result.content[0].as_text().unwrap();
-        assert!(text.text.contains("1"));
+        assert!(text.text.contains('1'));
     }
 
     #[test]

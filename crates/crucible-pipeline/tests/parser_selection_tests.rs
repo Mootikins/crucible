@@ -7,13 +7,8 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use chrono::Utc;
-use crucible_core::enrichment::{
-    BlockEmbedding, EnrichedNote, EnrichmentService, InferredRelation,
-};
-use crucible_core::processing::{
-    ChangeDetectionError, ChangeDetectionResult, ChangeDetectionStore, FileState,
-};
+use crucible_core::enrichment::{EnrichedNote, EnrichmentService};
+use crucible_core::processing::{ChangeDetectionResult, ChangeDetectionStore, FileState};
 use crucible_core::test_support::mocks::MockEnrichmentService;
 use crucible_core::EnrichedNoteStore;
 use crucible_merkle::{HybridMerkleTree, MerkleStore, StorageError, TreeMetadata};
@@ -21,7 +16,6 @@ use crucible_pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use tempfile::TempDir;
 
 mod common;
 use common::create_test_file;
@@ -68,7 +62,7 @@ impl ChangeDetectionStore for MockChangeDetectionStore {
 
     async fn list_tracked_files(&self) -> ChangeDetectionResult<Vec<PathBuf>> {
         let state = self.state.lock().unwrap();
-        Ok(state.keys().map(|s| PathBuf::from(s)).collect())
+        Ok(state.keys().map(PathBuf::from).collect())
     }
 }
 

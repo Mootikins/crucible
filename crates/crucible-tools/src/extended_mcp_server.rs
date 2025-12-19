@@ -1178,7 +1178,7 @@ mod tests {
             Ok(vec![vec![0.1; 384]; texts.len()])
         }
 
-        fn model_name(&self) -> &str {
+        fn model_name(&self) -> &'static str {
             "mock-model"
         }
 
@@ -1594,18 +1594,15 @@ mod tests {
         let desc = test_tool.description.as_ref().unwrap().as_ref();
         assert!(
             desc.contains("[testing]"),
-            "Description should contain category: {}",
-            desc
+            "Description should contain category: {desc}"
         );
         assert!(
             desc.contains("#ci"),
-            "Description should contain tags: {}",
-            desc
+            "Description should contain tags: {desc}"
         );
         assert!(
             desc.contains("#quick"),
-            "Description should contain tags: {}",
-            desc
+            "Description should contain tags: {desc}"
         );
     }
 

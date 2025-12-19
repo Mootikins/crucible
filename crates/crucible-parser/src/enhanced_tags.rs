@@ -483,7 +483,7 @@ b. [x] Another letter
         assert!(errors.is_empty());
 
         // Should create multiple lists due to type changes
-        assert!(doc_content.lists.len() >= 1);
+        assert!(!doc_content.lists.is_empty());
 
         let total_items: usize = doc_content.lists.iter().map(|l| l.items.len()).sum();
         assert_eq!(total_items, 7);
@@ -604,7 +604,7 @@ Regular paragraph text.
 
         // Should parse successfully without throwing errors
         // Malformed checkboxes might be skipped or handled gracefully
-        assert!(doc_content.lists.len() >= 1);
+        assert!(!doc_content.lists.is_empty());
 
         // Valid items should be parsed
         let total_items: usize = doc_content.lists.iter().map(|l| l.items.len()).sum();
@@ -627,7 +627,7 @@ Regular paragraph text.
         assert!(errors.is_empty());
 
         // Should handle empty/whitespace content gracefully
-        assert!(doc_content.lists.len() >= 1);
+        assert!(!doc_content.lists.is_empty());
     }
 
     #[tokio::test]

@@ -310,7 +310,6 @@ impl TaskHistory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_core::parser::InlineMetadata;
 
     // Task 4.1.1 tests
 

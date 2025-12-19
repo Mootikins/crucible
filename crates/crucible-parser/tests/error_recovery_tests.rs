@@ -106,7 +106,9 @@ async fn test_mixed_line_endings() {
 }
 
 #[tokio::test]
+#[allow(clippy::invisible_characters)]
 async fn test_unicode_edge_cases() {
+    // This test intentionally includes zero-width characters
     let content = r#"# 日本語 Heading
 
 emoji test: 🚀 📝 ✨

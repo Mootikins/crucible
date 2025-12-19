@@ -3,7 +3,6 @@
 //! These tests use the examples/test-kiln/ directory to validate clustering
 //! algorithms against realistic knowledge base structures.
 
-use super::test_utils::*;
 use super::*;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -141,7 +140,7 @@ async fn test_heuristic_clustering_on_test_kiln() {
 
     if let Some(cluster) = hub_cluster {
         assert!(
-            cluster.documents.len() >= 1,
+            !cluster.documents.is_empty(),
             "Hub cluster should not be empty"
         );
         assert!(
@@ -267,8 +266,8 @@ async fn test_moc_detection_configuration() {
         .await
         .expect("Clustering should succeed");
 
-    // Should detect more MoCs with lower thresholds
-    assert!(result.warnings.len() >= 0, "Should collect any warnings");
+    // Warnings are collected (may or may not have any)
+    let _warnings = &result.warnings;
 
     // Print any warnings for diagnostics
     for warning in &result.warnings {
