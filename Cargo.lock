@@ -2532,6 +2532,7 @@ dependencies = [
  "fs2",
  "futures",
  "indicatif 0.18.3",
+ "insta",
  "markdown-it",
  "mockall",
  "nix 0.27.1",
@@ -6126,6 +6127,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "879f10e63c20629ecabbb64a8010319738c66a5cd0c29b02d63d272b03751d01"
 dependencies = [
  "generic-array 0.14.7",
+]
+
+[[package]]
+name = "insta"
+version = "1.45.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b76866be74d68b1595eb8060cb9191dca9c021db2316558e52ddc5d55d41b66c"
+dependencies = [
+ "console 0.15.11",
+ "once_cell",
+ "regex",
+ "similar",
+ "tempfile",
 ]
 
 [[package]]
