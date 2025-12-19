@@ -135,56 +135,49 @@ impl Default for ModeRegistry {
 mod tests {
     use super::*;
     use crucible_core::types::{SessionMode, SessionModeId};
+    use serde_json::json;
     use std::sync::Arc;
+
+    // Helper to create SessionMode (workaround for non_exhaustive)
+    fn test_session_mode(
+        id: &str,
+        name: &str,
+        description: Option<&str>,
+    ) -> SessionMode {
+        serde_json::from_value(json!({
+            "id": id,
+            "name": name,
+            "description": description,
+            "_meta": null,
+        }))
+        .expect("Failed to create test SessionMode")
+    }
 
     // Helper to create a test SessionModeState
     fn test_agent_mode_state() -> SessionModeState {
-        SessionModeState {
-            current_mode_id: SessionModeId(Arc::from("plan")),
-            available_modes: vec![
-                SessionMode {
-                    id: SessionModeId(Arc::from("plan")),
-                    name: "Plan".to_string(),
-                    description: Some("Read-only exploration mode".to_string()),
-                    meta: None,
-                },
-                SessionMode {
-                    id: SessionModeId(Arc::from("act")),
-                    name: "Act".to_string(),
-                    description: Some("Write-enabled execution mode".to_string()),
-                    meta: None,
-                },
-                SessionMode {
-                    id: SessionModeId(Arc::from("auto")),
-                    name: "Auto".to_string(),
-                    description: Some("Auto-approve all operations".to_string()),
-                    meta: None,
-                },
+        serde_json::from_value(json!({
+            "currentModeId": "plan",
+            "availableModes": [
+                {"id": "plan", "name": "Plan", "description": "Read-only exploration mode", "_meta": null},
+                {"id": "act", "name": "Act", "description": "Write-enabled execution mode", "_meta": null},
+                {"id": "auto", "name": "Auto", "description": "Auto-approve all operations", "_meta": null},
             ],
-            meta: None,
-        }
+            "_meta": null,
+        }))
+        .expect("Failed to create test SessionModeState")
     }
 
     // Helper to create a custom agent mode state
     fn custom_agent_mode_state() -> SessionModeState {
-        SessionModeState {
-            current_mode_id: SessionModeId(Arc::from("custom")),
-            available_modes: vec![
-                SessionMode {
-                    id: SessionModeId(Arc::from("custom")),
-                    name: "Custom Mode".to_string(),
-                    description: Some("Custom agent mode".to_string()),
-                    meta: None,
-                },
-                SessionMode {
-                    id: SessionModeId(Arc::from("special")),
-                    name: "Special".to_string(),
-                    description: None,
-                    meta: None,
-                },
+        serde_json::from_value(json!({
+            "currentModeId": "custom",
+            "availableModes": [
+                {"id": "custom", "name": "Custom Mode", "description": "Custom agent mode", "_meta": null},
+                {"id": "special", "name": "Special", "description": null, "_meta": null},
             ],
-            meta: None,
-        }
+            "_meta": null,
+        }))
+        .expect("Failed to create custom SessionModeState")
     }
 
     // 3.1.1: Simplified registry tests
