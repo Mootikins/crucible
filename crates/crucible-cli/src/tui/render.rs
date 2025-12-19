@@ -15,6 +15,9 @@ use ratatui::{
     Frame,
 };
 
+/// Maximum number of popup items to display
+const MAX_POPUP_ITEMS: usize = 5;
+
 /// Render the TUI widget to the terminal
 ///
 /// This renders only the bottom widget area:
@@ -24,10 +27,12 @@ use ratatui::{
 ///
 /// Completed messages go to terminal scrollback, not rendered here.
 pub fn render(frame: &mut Frame, state: &TuiState) {
+    // Calculate popup height: items + 2 for borders
     let popup_height = state
         .popup
         .as_ref()
-        .map(|p| p.items.len().min(5) as u16)
+        .filter(|p| !p.items.is_empty())
+        .map(|p| (p.items.len().min(MAX_POPUP_ITEMS) + 2) as u16)
         .unwrap_or(0);
 
     let constraints = if popup_height > 0 {
@@ -127,9 +132,11 @@ fn render_popup(frame: &mut Frame, area: Rect, state: &TuiState) {
     let Some(ref popup) = state.popup else {
         return;
     };
+    // Only render up to MAX_POPUP_ITEMS
     let lines: Vec<Line> = popup
         .items
         .iter()
+        .take(MAX_POPUP_ITEMS)
         .enumerate()
         .map(|(idx, item)| {
             let mut spans = Vec::new();
