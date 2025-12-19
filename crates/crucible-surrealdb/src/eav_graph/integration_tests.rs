@@ -64,12 +64,7 @@ mod tests {
         let latex_count = blocks
             .records
             .iter()
-            .filter(|rec| {
-                rec.data
-                    .get("block_type")
-                    .and_then(|v| v.as_str())
-                    .map_or(false, |t| t == "latex")
-            })
+            .filter(|rec| rec.data.get("block_type").and_then(|v| v.as_str()) == Some("latex"))
             .count();
 
         assert!(
@@ -83,10 +78,7 @@ mod tests {
             .records
             .iter()
             .filter(|rec| {
-                rec.data
-                    .get("block_type")
-                    .and_then(|v| v.as_str())
-                    .map_or(false, |t| t == "latex")
+                (rec.data.get("block_type").and_then(|v| v.as_str()) == Some("latex"))
                     && rec
                         .data
                         .get("metadata")
@@ -105,10 +97,7 @@ mod tests {
             .records
             .iter()
             .filter(|rec| {
-                rec.data
-                    .get("block_type")
-                    .and_then(|v| v.as_str())
-                    .map_or(false, |t| t == "latex")
+                (rec.data.get("block_type").and_then(|v| v.as_str()) == Some("latex"))
                     && rec
                         .data
                         .get("metadata")
@@ -264,12 +253,7 @@ mod tests {
         for block_type in &["heading", "paragraph", "code", "list", "callout", "latex"] {
             let count = blocks
                 .iter()
-                .filter(|b| {
-                    b.data
-                        .get("block_type")
-                        .and_then(|v| v.as_str())
-                        .map_or(false, |t| t == *block_type)
-                })
+                .filter(|b| b.data.get("block_type").and_then(|v| v.as_str()) == Some(*block_type))
                 .count();
             println!("{}: {} blocks", block_type, count);
         }
@@ -279,12 +263,7 @@ mod tests {
         // 1. Headings - check level metadata
         let headings: Vec<_> = blocks
             .iter()
-            .filter(|b| {
-                b.data
-                    .get("block_type")
-                    .and_then(|v| v.as_str())
-                    .map_or(false, |t| t == "heading")
-            })
+            .filter(|b| b.data.get("block_type").and_then(|v| v.as_str()) == Some("heading"))
             .collect();
         assert!(!headings.is_empty(), "Should have heading blocks");
 
@@ -294,7 +273,7 @@ mod tests {
                 h.data
                     .get("content")
                     .and_then(|v| v.as_str())
-                    .map_or(false, |c| c.contains("Introduction"))
+                    .is_some_and(|c| c.contains("Introduction"))
             })
             .expect("Should have Introduction heading");
         assert_eq!(
@@ -309,12 +288,7 @@ mod tests {
         // 2. Code blocks - check language metadata
         let code_blocks: Vec<_> = blocks
             .iter()
-            .filter(|b| {
-                b.data
-                    .get("block_type")
-                    .and_then(|v| v.as_str())
-                    .map_or(false, |t| t == "code")
-            })
+            .filter(|b| b.data.get("block_type").and_then(|v| v.as_str()) == Some("code"))
             .collect();
         assert!(!code_blocks.is_empty(), "Should have code blocks");
 
@@ -324,7 +298,7 @@ mod tests {
                 c.data
                     .get("content")
                     .and_then(|v| v.as_str())
-                    .map_or(false, |content| content.contains("println"))
+                    .is_some_and(|content| content.contains("println"))
             })
             .expect("Should have Rust code block");
         assert_eq!(
@@ -340,24 +314,14 @@ mod tests {
         // 3. Lists - check type metadata and task status
         let lists: Vec<_> = blocks
             .iter()
-            .filter(|b| {
-                b.data
-                    .get("block_type")
-                    .and_then(|v| v.as_str())
-                    .map_or(false, |t| t == "list")
-            })
+            .filter(|b| b.data.get("block_type").and_then(|v| v.as_str()) == Some("list"))
             .collect();
         assert!(!lists.is_empty(), "Should have list blocks");
 
         // 4. Callouts - check callout_type metadata
         let callouts: Vec<_> = blocks
             .iter()
-            .filter(|b| {
-                b.data
-                    .get("block_type")
-                    .and_then(|v| v.as_str())
-                    .map_or(false, |t| t == "callout")
-            })
+            .filter(|b| b.data.get("block_type").and_then(|v| v.as_str()) == Some("callout"))
             .collect();
         assert!(!callouts.is_empty(), "Should have callout blocks");
 
@@ -375,12 +339,7 @@ mod tests {
         // 5. LaTeX - check inline flag metadata
         let latex_blocks: Vec<_> = blocks
             .iter()
-            .filter(|b| {
-                b.data
-                    .get("block_type")
-                    .and_then(|v| v.as_str())
-                    .map_or(false, |t| t == "latex")
-            })
+            .filter(|b| b.data.get("block_type").and_then(|v| v.as_str()) == Some("latex"))
             .collect();
         assert!(
             latex_blocks.len() >= 2,
@@ -403,7 +362,7 @@ mod tests {
                 .data
                 .get("content")
                 .and_then(|v| v.as_str())
-                .map_or(false, |c| c.contains("mc^2")),
+                .is_some_and(|c| c.contains("mc^2")),
             "Inline LaTeX should contain mc^2"
         );
 
@@ -422,7 +381,7 @@ mod tests {
                 .data
                 .get("content")
                 .and_then(|v| v.as_str())
-                .map_or(false, |c| c.contains("\\int")),
+                .is_some_and(|c| c.contains("\\int")),
             "Display LaTeX should contain \\int"
         );
 

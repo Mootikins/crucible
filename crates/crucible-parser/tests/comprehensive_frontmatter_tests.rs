@@ -187,9 +187,9 @@ async fn test_performance_characteristics() {
         // Small frontmatter
         ("---\ntitle: test\n---\n# Content", "small_frontmatter"),
         // Medium content
-        (&medium_content.as_str(), "medium_content"),
+        (medium_content.as_str(), "medium_content"),
         // Large content
-        (&large_content.as_str(), "large_content"),
+        (large_content.as_str(), "large_content"),
     ];
 
     for (content, case_name) in test_cases {
