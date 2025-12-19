@@ -136,6 +136,24 @@ impl SlashCommand {
             },
         }
     }
+
+    /// Create a new slash command with secondary options
+    pub fn new_with_options(
+        handler: Arc<dyn CommandHandler>,
+        name: impl Into<String>,
+        description: impl Into<String>,
+        options: Vec<CommandOption>,
+    ) -> Self {
+        Self {
+            handler,
+            descriptor: CommandDescriptor {
+                name: name.into(),
+                description: description.into(),
+                input_hint: None,
+                secondary_options: options,
+            },
+        }
+    }
 }
 
 fn parse_secondary_options(meta: &Option<serde_json::Map<String, Value>>) -> Vec<CommandOption> {
@@ -471,6 +489,20 @@ impl SlashCommandRegistryBuilder {
         self.commands.insert(name_str, cmd);
         self
     }
+
+    /// Register a command with secondary options for autocomplete
+    pub fn command_with_options(
+        mut self,
+        name: impl Into<String>,
+        handler: Arc<dyn CommandHandler>,
+        description: impl Into<String>,
+        options: Vec<CommandOption>,
+    ) -> Self {
+        let name_str = name.into();
+        let cmd = SlashCommand::new_with_options(handler, name_str.clone(), description, options);
+        self.commands.insert(name_str, cmd);
+        self
+    }
 }
 
 impl RegistryBuilder for SlashCommandRegistryBuilder {
@@ -511,6 +543,21 @@ mod tests {
         async fn execute(&self, _args: &str, _ctx: &mut dyn ChatContext) -> ChatResult<()> {
             Ok(())
         }
+    }
+
+    // Helper to create AvailableCommand (workaround for non_exhaustive)
+    fn test_available_command(
+        name: &str,
+        description: &str,
+        meta: Option<serde_json::Value>,
+    ) -> AvailableCommand {
+        serde_json::from_value(json!({
+            "name": name,
+            "description": description,
+            "input": null,
+            "_meta": meta,
+        }))
+        .expect("Failed to create test AvailableCommand")
     }
 
     #[test]
@@ -678,12 +725,7 @@ mod tests {
             .build();
 
         // Agent registers "search" command
-        let agent_commands = vec![AvailableCommand {
-            name: "search".to_string(),
-            description: "Agent search".to_string(),
-            input: None,
-            meta: None,
-        }];
+        let agent_commands = vec![test_available_command("search", "Agent search", None)];
 
         let registry = registry.with_agent_commands(agent_commands);
 
@@ -702,12 +744,7 @@ mod tests {
             .build();
 
         // Agent registers "foo" command (no conflict)
-        let agent_commands = vec![AvailableCommand {
-            name: "foo".to_string(),
-            description: "Agent foo".to_string(),
-            input: None,
-            meta: None,
-        }];
+        let agent_commands = vec![test_available_command("foo", "Agent foo", None)];
 
         let registry = registry.with_agent_commands(agent_commands);
 
@@ -727,24 +764,9 @@ mod tests {
 
         // Agent tries to register unshadowable commands
         let agent_commands = vec![
-            AvailableCommand {
-                name: "exit".to_string(),
-                description: "Agent exit".to_string(),
-                input: None,
-                meta: None,
-            },
-            AvailableCommand {
-                name: "quit".to_string(),
-                description: "Agent quit".to_string(),
-                input: None,
-                meta: None,
-            },
-            AvailableCommand {
-                name: "help".to_string(),
-                description: "Agent help".to_string(),
-                input: None,
-                meta: None,
-            },
+            test_available_command("exit", "Agent exit", None),
+            test_available_command("quit", "Agent quit", None),
+            test_available_command("help", "Agent help", None),
         ];
 
         let registry = registry.with_agent_commands(agent_commands);
@@ -764,12 +786,7 @@ mod tests {
             .build();
 
         // Agent registers "search"
-        let agent_commands = vec![AvailableCommand {
-            name: "search".to_string(),
-            description: "Agent search".to_string(),
-            input: None,
-            meta: None,
-        }];
+        let agent_commands = vec![test_available_command("search", "Agent search", None)];
 
         let registry = registry.with_agent_commands(agent_commands);
 
@@ -787,12 +804,7 @@ mod tests {
             .build();
 
         // Agent registers "search"
-        let agent_commands = vec![AvailableCommand {
-            name: "search".to_string(),
-            description: "Agent search".to_string(),
-            input: None,
-            meta: None,
-        }];
+        let agent_commands = vec![test_available_command("search", "Agent search", None)];
 
         let registry = registry.with_agent_commands(agent_commands);
 
@@ -810,12 +822,7 @@ mod tests {
             .build();
 
         // Agent registers "exit"
-        let agent_commands = vec![AvailableCommand {
-            name: "exit".to_string(),
-            description: "Agent exit".to_string(),
-            input: None,
-            meta: None,
-        }];
+        let agent_commands = vec![test_available_command("exit", "Agent exit", None)];
 
         let registry = registry.with_agent_commands(agent_commands);
 
@@ -840,12 +847,11 @@ mod tests {
         let registry = SlashCommandRegistryBuilder::default().build();
 
         // Agent provides a command with no client equivalent
-        let agent_commands = vec![AvailableCommand {
-            name: "agent_only".to_string(),
-            description: "Agent only command".to_string(),
-            input: None,
-            meta: None,
-        }];
+        let agent_commands = vec![test_available_command(
+            "agent_only",
+            "Agent only command",
+            None,
+        )];
 
         let registry = registry.with_agent_commands(agent_commands);
 
@@ -861,14 +867,13 @@ mod tests {
             .command("search", handler, "Client search")
             .build();
 
-        let agent_commands = vec![AvailableCommand {
-            name: "models".to_string(),
-            description: "Select a model".to_string(),
-            input: None,
-            meta: Some(json!({
+        let agent_commands = vec![test_available_command(
+            "models",
+            "Select a model",
+            Some(json!({
                 "secondary": ["claude-3.5-sonnet", "claude-3-opus"]
             })),
-        }];
+        )];
 
         let registry = registry.with_agent_commands(agent_commands);
         let resolution = registry
@@ -880,5 +885,28 @@ mod tests {
             resolution.descriptor.secondary_options[0].label,
             "claude-3.5-sonnet"
         );
+    }
+
+    #[test]
+    fn test_command_with_options_sets_secondary() {
+        let handler = Arc::new(MockHandler);
+        let options = vec![
+            CommandOption {
+                label: "model-a".into(),
+                value: "model-a".into(),
+            },
+            CommandOption {
+                label: "model-b".into(),
+                value: "model-b".into(),
+            },
+        ];
+        let registry = SlashCommandRegistryBuilder::default()
+            .command_with_options("models", handler, "Switch model", options)
+            .build();
+
+        let desc = registry.resolve("models").unwrap().descriptor;
+        assert_eq!(desc.secondary_options.len(), 2);
+        assert_eq!(desc.secondary_options[0].label, "model-a");
+        assert_eq!(desc.secondary_options[1].label, "model-b");
     }
 }
