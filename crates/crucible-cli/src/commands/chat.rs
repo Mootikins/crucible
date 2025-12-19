@@ -89,11 +89,24 @@ pub async fn execute(
     // Create agent initialization params
     let agent_params = factories::AgentInitParams::new()
         .with_type(agent_type)
-        .with_agent_name_opt(agent_name.clone().or(default_agent_from_config))
+        .with_agent_name_opt(agent_name.clone().or(default_agent_from_config.clone()))
         .with_provider_opt(provider_key)
         .with_read_only(is_read_only(initial_mode))
         .with_max_context_tokens(max_context_tokens)
         .with_env_overrides(parsed_env);
+
+    // Fetch available models for OpenCode before creating agent
+    let available_models = if agent_type == factories::AgentType::Acp {
+        let effective_agent = agent_name.clone().or(default_agent_from_config);
+        if effective_agent.as_deref() == Some("opencode") {
+            status.update("Fetching available models from OpenCode...");
+            crate::acp::models::fetch_opencode_models().await.ok()
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     // PARALLEL INITIALIZATION: Run storage init and agent creation concurrently
     let init_msg = if use_internal {
@@ -251,6 +264,7 @@ pub async fn execute(
                     no_context,
                     context_size,
                     live_progress,
+                    available_models,
                 )
                 .await?;
 
@@ -317,6 +331,7 @@ pub async fn execute(
                     no_context,
                     context_size,
                     live_progress,
+                    available_models,
                 )
                 .await?;
             }
@@ -334,6 +349,7 @@ async fn run_interactive_session(
     no_context: bool,
     context_size: Option<usize>,
     _live_progress: Option<LiveProgress>,
+    available_models: Option<Vec<String>>,
 ) -> Result<()> {
     use crate::chat::{ChatSession, SessionConfig};
 
@@ -345,7 +361,7 @@ async fn run_interactive_session(
     );
 
     // Create session orchestrator
-    let mut session = ChatSession::new(session_config, core);
+    let mut session = ChatSession::new(session_config, core, available_models);
 
     // Run interactive session
     session.run(client).await
@@ -359,6 +375,7 @@ async fn run_interactive_session_internal(
     no_context: bool,
     context_size: Option<usize>,
     _live_progress: Option<LiveProgress>,
+    available_models: Option<Vec<String>>,
 ) -> Result<()> {
     use crate::chat::{ChatSession, SessionConfig};
 
@@ -370,7 +387,7 @@ async fn run_interactive_session_internal(
     );
 
     // Create session orchestrator
-    let mut session = ChatSession::new(session_config, core);
+    let mut session = ChatSession::new(session_config, core, available_models);
 
     // Run interactive session with internal agent
     session.run(handle).await
