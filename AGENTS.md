@@ -189,7 +189,7 @@ Run `just` to see all available commands.
 - **Rust**: Use `snake_case` for functions/variables, `PascalCase` for types
 - **Error Handling**: Use `Result<T, E>` with proper error context
 - **Documentation**: Add doc comments for public items
-- **Testing**: Write tests for new functionality, use TDD where appropriate
+- **Testing**: Write tests for new functionality, use TDD
 
 ### Feature Flags
 
@@ -211,6 +211,7 @@ test-utils = []                    # Mock providers for testing
 - Use `#[cfg(feature = "test-utils")]` for mock providers
 - Test error conditions and edge cases
 - Use descriptive test names that explain the scenario
+- use `just test` to save on context
 
 ### Quality Checklist
 
