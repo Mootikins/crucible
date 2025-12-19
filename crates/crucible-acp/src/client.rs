@@ -21,8 +21,13 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+
+/// Global request ID counter for JSON-RPC requests.
+/// Shared between send_request and send_prompt_with_streaming to ensure unique IDs.
+static REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 
 use crate::session::AcpSession;
 use crate::streaming::humanize_tool_title;
@@ -570,7 +575,7 @@ impl CrucibleAcpClient {
     ///
     /// Returns an error if any step of the handshake fails
     pub async fn connect_with_handshake(&mut self) -> Result<AcpSession> {
-        use agent_client_protocol::{ClientCapabilities, InitializeRequest, NewSessionRequest};
+        use agent_client_protocol::{InitializeRequest, NewSessionRequest};
 
         // 1. Spawn agent process
         let _process = self.spawn_agent().await?;
@@ -578,40 +583,34 @@ impl CrucibleAcpClient {
         // 2. Send InitializeRequest
         // Use protocol version 1 instead of default (0) for opencode compatibility
         // Based on ACP spec: https://agentclientprotocol.com/protocol/initialization
-        let init_request = InitializeRequest {
-            protocol_version: 1u16.into(), // Uses From<u16> for ProtocolVersion
-            client_info: None,
-            client_capabilities: ClientCapabilities::default(),
-            meta: None,
-        };
+        let init_request = InitializeRequest::new(1u16.into());
 
         let _init_response = self.initialize(init_request).await?;
 
         // 3. Send NewSessionRequest with MCP server configuration
-        use agent_client_protocol::McpServer;
+        use agent_client_protocol::{McpServer, McpServerStdio};
 
         // Configure Crucible MCP server via stdio transport
         // The agent will spawn `cru mcp` which starts the MCP server
-        let crucible_mcp_server = McpServer::Stdio {
-            name: "crucible".to_string(),
-            command: std::env::current_exe()
-                .unwrap_or_else(|_| PathBuf::from("cru"))
-                .parent()
-                .map(|p| p.join("cru"))
-                .unwrap_or_else(|| PathBuf::from("cru")),
-            args: vec!["mcp".to_string()],
-            env: vec![],
-        };
+        let cru_command = std::env::current_exe()
+            .unwrap_or_else(|_| PathBuf::from("cru"))
+            .parent()
+            .map(|p| p.join("cru"))
+            .unwrap_or_else(|| PathBuf::from("cru"));
 
-        let session_request = NewSessionRequest {
-            cwd: self
-                .config
-                .working_dir
-                .clone()
-                .unwrap_or_else(|| PathBuf::from("/")),
-            mcp_servers: vec![crucible_mcp_server],
-            meta: None,
-        };
+        let crucible_mcp_server = McpServer::Stdio(
+            McpServerStdio::new("crucible", cru_command)
+                .args(vec!["mcp".to_string()])
+        );
+
+        let cwd = self
+            .config
+            .working_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("/"));
+
+        let session_request = NewSessionRequest::new(cwd)
+            .mcp_servers(vec![crucible_mcp_server]);
 
         let session_response = self.create_new_session(session_request).await?;
 
@@ -646,7 +645,7 @@ impl CrucibleAcpClient {
     /// Returns an error if any step of the handshake fails
     pub async fn connect_with_sse_mcp(&mut self, sse_url: &str) -> Result<AcpSession> {
         use agent_client_protocol::{
-            ClientCapabilities, InitializeRequest, McpServer, NewSessionRequest,
+            InitializeRequest, McpServer, McpServerSse, NewSessionRequest,
         };
 
         tracing::info!("Connecting to agent with SSE MCP server at {}", sse_url);
@@ -655,33 +654,25 @@ impl CrucibleAcpClient {
         let _process = self.spawn_agent().await?;
 
         // 2. Send InitializeRequest
-        let init_request = InitializeRequest {
-            protocol_version: 1u16.into(),
-            client_info: None,
-            client_capabilities: ClientCapabilities::default(),
-            meta: None,
-        };
+        let init_request = InitializeRequest::new(1u16.into());
 
         let _init_response = self.initialize(init_request).await?;
 
         // 3. Send NewSessionRequest with SSE MCP server
-        let crucible_mcp_server = McpServer::Sse {
-            name: "crucible".to_string(),
-            url: sse_url.to_string(),
-            headers: vec![],
-        };
+        let crucible_mcp_server = McpServer::Sse(
+            McpServerSse::new("crucible", sse_url)
+        );
 
         tracing::debug!("Configuring MCP server: {:?}", crucible_mcp_server);
 
-        let session_request = NewSessionRequest {
-            cwd: self
-                .config
-                .working_dir
-                .clone()
-                .unwrap_or_else(|| PathBuf::from("/")),
-            mcp_servers: vec![crucible_mcp_server],
-            meta: None,
-        };
+        let cwd = self
+            .config
+            .working_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("/"));
+
+        let session_request = NewSessionRequest::new(cwd)
+            .mcp_servers(vec![crucible_mcp_server]);
 
         let session_response = self.create_new_session(session_request).await?;
 
@@ -783,7 +774,7 @@ impl CrucibleAcpClient {
         // Handle read result
         match read_result {
             Ok(0) => Err(AcpError::Connection("Agent closed connection".to_string())),
-            Ok(_) => Ok(line.trim_end().to_string()),
+            Ok(_bytes_read) => Ok(line.trim_end().to_string()),
             Err(e) => Err(AcpError::Connection(format!(
                 "Failed to read from agent: {}",
                 e
@@ -833,11 +824,17 @@ impl CrucibleAcpClient {
             agent_client_protocol::ClientRequest::ExtMethodRequest(req) => {
                 ("ext", serde_json::to_value(req)?)
             }
+            // Handle any new variants that may be added in future versions
+            _ => {
+                return Err(AcpError::Session(format!(
+                    "Unsupported ClientRequest variant: {:?}",
+                    std::any::type_name_of_val(&request)
+                )))
+            }
         };
 
-        // Generate a unique request ID
-        static REQUEST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-        let id = REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        // Generate a unique request ID using the global counter
+        let id = REQUEST_ID.fetch_add(1, Ordering::SeqCst);
 
         // Wrap in JSON-RPC 2.0 format
         let json_request = json!({
@@ -880,13 +877,15 @@ impl CrucibleAcpClient {
     pub async fn send_prompt_with_streaming(
         &mut self,
         request: agent_client_protocol::PromptRequest,
-        request_id: u64,
     ) -> Result<(
         String,
         Vec<ToolCallInfo>,
         agent_client_protocol::PromptResponse,
     )> {
         use serde_json::json;
+
+        // Use the global REQUEST_ID counter (shared with send_request) to avoid ID collisions
+        let request_id = REQUEST_ID.fetch_add(1, Ordering::SeqCst);
 
         tracing::info!("Starting streaming request with ID {}", request_id);
 
@@ -985,7 +984,9 @@ impl CrucibleAcpClient {
             if method_name == "session/update" {
                 if let Some(params) = response.get("params") {
                     match serde_json::from_value::<SessionNotification>(params.clone()) {
-                        Ok(notification) => self.apply_session_update(notification, state),
+                        Ok(notification) => {
+                            self.apply_session_update(notification, state);
+                        }
                         Err(e) => {
                             tracing::warn!("Failed to parse SessionNotification: {}", e);
                             tracing::debug!("Raw params: {}", params);
@@ -1082,7 +1083,7 @@ impl CrucibleAcpClient {
                     .content
                     .iter()
                     .filter_map(|c| match c {
-                        ToolCallContent::Diff { diff } => Some(FileDiff::from_contents(
+                        ToolCallContent::Diff(diff) => Some(FileDiff::from_contents(
                             diff.path.to_string_lossy().to_string(),
                             diff.old_text.clone(),
                             diff.new_text.clone(),
@@ -1091,7 +1092,7 @@ impl CrucibleAcpClient {
                     })
                     .collect();
                 let mut info = ToolCallInfo::new(tool_call.title.clone())
-                    .with_id(tool_call.id.to_string())
+                    .with_id(tool_call.tool_call_id.to_string())
                     .with_diffs(diffs);
                 if let Some(args) = tool_call.raw_input.clone() {
                     info = info.with_arguments(args);
@@ -1099,7 +1100,7 @@ impl CrucibleAcpClient {
                 self.record_tool_call(info, state);
             }
             SessionUpdate::ToolCallUpdate(update) => {
-                tracing::debug!("Tool call update: {:?}", update.id);
+                tracing::debug!("Tool call update: {:?}", update.tool_call_id);
                 // Check if update has interesting fields (title, raw_input, or content with diffs)
                 let has_content_diffs = update
                     .fields
@@ -1107,7 +1108,7 @@ impl CrucibleAcpClient {
                     .as_ref()
                     .map(|c| {
                         c.iter()
-                            .any(|item| matches!(item, ToolCallContent::Diff { .. }))
+                            .any(|item| matches!(item, ToolCallContent::Diff(_)))
                     })
                     .unwrap_or(false);
 
@@ -1115,7 +1116,7 @@ impl CrucibleAcpClient {
                     || update.fields.raw_input.is_some()
                     || has_content_diffs
                 {
-                    let id = update.id.to_string();
+                    let id = update.tool_call_id.to_string();
                     let title = update
                         .fields
                         .title
@@ -1130,7 +1131,7 @@ impl CrucibleAcpClient {
                         .iter()
                         .flatten()
                         .filter_map(|c| match c {
-                            ToolCallContent::Diff { diff } => Some(FileDiff::from_contents(
+                            ToolCallContent::Diff(diff) => Some(FileDiff::from_contents(
                                 diff.path.to_string_lossy().to_string(),
                                 diff.old_text.clone(),
                                 diff.new_text.clone(),
@@ -1164,18 +1165,17 @@ impl CrucibleAcpClient {
         request_id: u64,
         request: RequestPermissionRequest,
     ) -> Result<()> {
+        use agent_client_protocol::SelectedPermissionOutcome;
+
         let outcome = if let Some(first_option) = request.options.first() {
-            RequestPermissionOutcome::Selected {
-                option_id: first_option.id.clone(),
-            }
+            RequestPermissionOutcome::Selected(
+                SelectedPermissionOutcome::new(first_option.option_id.clone())
+            )
         } else {
             RequestPermissionOutcome::Cancelled
         };
 
-        let response = RequestPermissionResponse {
-            outcome,
-            meta: None,
-        };
+        let response = RequestPermissionResponse::new(outcome);
 
         let result_value = serde_json::to_value(response)?;
         let json_response = serde_json::json!({
@@ -1500,6 +1500,41 @@ mod tests {
         };
         let client = CrucibleAcpClient::new(config);
         assert_eq!(client.config().agent_path, PathBuf::from("/test/agent"));
+    }
+
+    #[test]
+    fn test_parse_opencode_agent_message_chunk() {
+        // This is the exact format OpenCode sends
+        let json = r#"{
+            "sessionId": "ses_test",
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {"type": "text", "text": "hello"}
+            }
+        }"#;
+
+        let result: std::result::Result<SessionNotification, serde_json::Error> =
+            serde_json::from_str(json);
+        match &result {
+            Ok(notif) => {
+                println!("Parsed notification successfully");
+                match &notif.update {
+                    SessionUpdate::AgentMessageChunk(chunk) => {
+                        match &chunk.content {
+                            ContentBlock::Text(text) => {
+                                assert_eq!(text.text, "hello");
+                                println!("Got text: {}", text.text);
+                            }
+                            other => panic!("Expected Text content, got {:?}", other),
+                        }
+                    }
+                    other => panic!("Expected AgentMessageChunk, got {:?}", other),
+                }
+            }
+            Err(e) => {
+                panic!("Failed to parse: {}", e);
+            }
+        }
     }
 
     // Helper to get a simple command that runs and exits (like true/echo)
@@ -2022,9 +2057,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_stdio_message_exchange() {
-        use agent_client_protocol::{
-            ClientCapabilities, ClientRequest, InitializeRequest, ProtocolVersion,
-        };
+        use agent_client_protocol::{ClientRequest, InitializeRequest};
 
         // Use 'cat' equivalent as a simple echo agent for testing
         let (cmd, args) = get_cat_command();
@@ -2043,12 +2076,8 @@ mod tests {
         assert!(process.is_ok(), "Should spawn cat process");
 
         // Create a simple initialize request
-        let request = ClientRequest::InitializeRequest(InitializeRequest {
-            protocol_version: ProtocolVersion::default(),
-            client_info: None,
-            client_capabilities: ClientCapabilities::default(),
-            meta: None,
-        });
+        let request =
+            ClientRequest::InitializeRequest(InitializeRequest::new(1u16.into()));
 
         // Send the request - cat will echo it back
         // This will succeed in sending/receiving but may fail on parsing
@@ -2171,9 +2200,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_full_request_response_cycle() {
-        use agent_client_protocol::{
-            ClientCapabilities, ClientRequest, InitializeRequest, ProtocolVersion,
-        };
+        use agent_client_protocol::{ClientRequest, InitializeRequest};
 
         let (cmd, args) = get_cat_command();
         let config = ClientConfig {
@@ -2194,12 +2221,8 @@ mod tests {
         assert!(client.is_connected(), "Should be marked as connected");
 
         // Create initialize request
-        let request = ClientRequest::InitializeRequest(InitializeRequest {
-            protocol_version: ProtocolVersion::default(),
-            client_info: None,
-            client_capabilities: ClientCapabilities::default(),
-            meta: None,
-        });
+        let request =
+            ClientRequest::InitializeRequest(InitializeRequest::new(1u16.into()));
 
         // Send request - cat will echo it back
         // May succeed or fail depending on JSON parsing
@@ -2338,7 +2361,7 @@ mod tests {
     // Test that initialize() method exists and sends messages
     #[tokio::test]
     async fn test_protocol_initialize_handshake() {
-        use agent_client_protocol::{ClientCapabilities, InitializeRequest, ProtocolVersion};
+        use agent_client_protocol::InitializeRequest;
 
         let (cmd, args) = get_cat_command();
         let config = ClientConfig {
@@ -2355,12 +2378,7 @@ mod tests {
         let _process = client.spawn_agent().await.unwrap();
 
         // Send initialize request
-        let init_request = InitializeRequest {
-            protocol_version: ProtocolVersion::default(),
-            client_info: None,
-            client_capabilities: ClientCapabilities::default(),
-            meta: None,
-        };
+        let init_request = InitializeRequest::new(1u16.into());
 
         let result = client.initialize(init_request).await;
 
@@ -2389,11 +2407,7 @@ mod tests {
         let _process = client.spawn_agent().await.unwrap();
 
         // Create new session request
-        let session_request = NewSessionRequest {
-            cwd: PathBuf::from("/test"),
-            mcp_servers: vec![],
-            meta: None,
-        };
+        let session_request = NewSessionRequest::new(PathBuf::from("/test"));
 
         let result = client.create_new_session(session_request).await;
 

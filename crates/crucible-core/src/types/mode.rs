@@ -117,30 +117,17 @@ impl From<&SessionMode> for ModeDescriptor {
 /// assert_eq!(modes.available_modes.len(), 3);
 /// ```
 pub fn default_internal_modes() -> SessionModeState {
-    SessionModeState {
-        current_mode_id: SessionModeId(Arc::from("plan")),
-        available_modes: vec![
-            SessionMode {
-                id: SessionModeId(Arc::from("plan")),
-                name: "Plan".to_string(),
-                description: Some("Read-only exploration mode".to_string()),
-                meta: None,
-            },
-            SessionMode {
-                id: SessionModeId(Arc::from("act")),
-                name: "Act".to_string(),
-                description: Some("Write-enabled execution mode".to_string()),
-                meta: None,
-            },
-            SessionMode {
-                id: SessionModeId(Arc::from("auto")),
-                name: "Auto".to_string(),
-                description: Some("Auto-approve all operations".to_string()),
-                meta: None,
-            },
+    SessionModeState::new(
+        SessionModeId::new("plan"),
+        vec![
+            SessionMode::new(SessionModeId::new("plan"), "Plan".to_string())
+                .description("Read-only exploration mode".to_string()),
+            SessionMode::new(SessionModeId::new("act"), "Act".to_string())
+                .description("Write-enabled execution mode".to_string()),
+            SessionMode::new(SessionModeId::new("auto"), "Auto".to_string())
+                .description("Auto-approve all operations".to_string()),
         ],
-        meta: None,
-    }
+    )
 }
 
 #[cfg(test)]

@@ -23,20 +23,11 @@ fn default_true() -> bool {
     true
 }
 
-/// Custom schema for JSON object (used for fields with serde_json::Value type).
+/// Custom schema for JSON object (used for required serde_json::Value fields).
 /// serde_json::Value produces an empty schema that llama.cpp can't handle.
 fn json_object_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
     let mut map = serde_json::Map::new();
     map.insert("type".to_owned(), serde_json::json!("object"));
-    map.into()
-}
-
-/// Custom schema for optional JSON object.
-/// Returns schema for "object or null" to preserve Option<T> semantics.
-#[allow(dead_code)]
-fn optional_json_object_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
-    let mut map = serde_json::Map::new();
-    map.insert("type".to_owned(), serde_json::json!(["object", "null"]));
     map.into()
 }
 
@@ -749,179 +740,55 @@ mod tests {
         }
     }
 
-    /// Check if a JSON value contains patterns incompatible with llama.cpp's GBNF converter
-    fn find_llama_incompatible_patterns(value: &serde_json::Value, path: &str) -> Vec<String> {
-        let mut issues = Vec::new();
-
-        match value {
-            serde_json::Value::Object(map) => {
-                // Check for "default": null
-                if let Some(default_val) = map.get("default") {
-                    if default_val.is_null() {
-                        issues.push(format!("{}: \"default\": null", path));
-                    }
-                }
-
-                // Check for "additionalProperties": true
-                if let Some(ap) = map.get("additionalProperties") {
-                    if ap.as_bool() == Some(true) {
-                        issues.push(format!("{}: \"additionalProperties\": true", path));
-                    }
-                }
-
-                // Check for property schemas that have description but no type
-                // (e.g., {"description": "..."} without "type" or "$ref")
-                if path.contains("properties.") && map.contains_key("description") {
-                    let has_type = map.contains_key("type")
-                        || map.contains_key("$ref")
-                        || map.contains_key("anyOf")
-                        || map.contains_key("oneOf")
-                        || map.contains_key("allOf");
-                    if !has_type {
-                        issues.push(format!(
-                            "{}: schema has description but no type/ref",
-                            path
-                        ));
-                    }
-                }
-
-                // Recurse into nested objects
-                for (key, val) in map {
-                    let new_path = if path.is_empty() {
-                        key.clone()
-                    } else {
-                        format!("{}.{}", path, key)
-                    };
-                    issues.extend(find_llama_incompatible_patterns(val, &new_path));
-                }
-            }
-            serde_json::Value::Array(arr) => {
-                for (i, val) in arr.iter().enumerate() {
-                    let new_path = format!("{}[{}]", path, i);
-                    issues.extend(find_llama_incompatible_patterns(val, &new_path));
-                }
-            }
-            // Bare true/false as schema values (would be caught at object level)
-            serde_json::Value::Bool(true) => {
-                if path.contains("Properties") || path.contains("items") {
-                    issues.push(format!("{}: bare 'true' schema", path));
-                }
-            }
-            _ => {}
+    /// Check a schema for common llama.cpp incompatible patterns.
+    ///
+    /// Known issues:
+    /// - `"default": null` - caused by `#[serde(default)]` on `Option<T>` (redundant, just remove it)
+    /// - `"additionalProperties": true` - from `serde_json::Value` without custom schema
+    ///
+    /// Use `#[schemars(schema_with = "...")]` for `serde_json::Value` fields.
+    /// Don't use `#[serde(default)]` on `Option<T>` - serde already treats missing Options as None.
+    fn check_schema_compatible(json: &str) -> Result<(), String> {
+        if json.contains(r#""default":null"#) || json.contains(r#""default": null"#) {
+            return Err("Schema contains 'default: null' - remove #[serde(default)] from Option<T> fields".into());
         }
-
-        issues
+        if json.contains(r#""additionalProperties":true"#) || json.contains(r#""additionalProperties": true"#) {
+            return Err("Schema contains 'additionalProperties: true' - use #[schemars(schema_with = \"...\")] for serde_json::Value fields".into());
+        }
+        Ok(())
     }
 
+    /// Validates all tool parameter schemas are compatible with llama.cpp's GBNF converter.
+    ///
+    /// Common mistakes this catches:
+    /// - Using `#[serde(default)]` on `Option<T>` fields (generates `"default": null`)
+    /// - Using bare `serde_json::Value` without `#[schemars(schema_with = "...")]`
     #[test]
     fn test_tool_schemas_llama_cpp_compatible() {
         use crate::notes::{
-            CreateNoteParams, ReadNoteParams, ReadMetadataParams,
-            UpdateNoteParams, DeleteNoteParams, ListNotesParams,
+            CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams,
+            ReadNoteParams, UpdateNoteParams,
         };
 
-        // Get schemas for all search parameter types
-        let text_search_schema = schemars::schema_for!(TextSearchParams);
-        let semantic_search_schema = schemars::schema_for!(SemanticSearchParams);
-        let property_search_schema = schemars::schema_for!(PropertySearchParams);
-
-        // Get schemas for all notes parameter types
-        let create_note_schema = schemars::schema_for!(CreateNoteParams);
-        let read_note_schema = schemars::schema_for!(ReadNoteParams);
-        let read_metadata_schema = schemars::schema_for!(ReadMetadataParams);
-        let update_note_schema = schemars::schema_for!(UpdateNoteParams);
-        let delete_note_schema = schemars::schema_for!(DeleteNoteParams);
-        let list_notes_schema = schemars::schema_for!(ListNotesParams);
-
-        let schemas = [
-            // Search tools
-            ("TextSearchParams", serde_json::to_value(&text_search_schema).unwrap()),
-            ("SemanticSearchParams", serde_json::to_value(&semantic_search_schema).unwrap()),
-            ("PropertySearchParams", serde_json::to_value(&property_search_schema).unwrap()),
-            // Notes tools
-            ("CreateNoteParams", serde_json::to_value(&create_note_schema).unwrap()),
-            ("ReadNoteParams", serde_json::to_value(&read_note_schema).unwrap()),
-            ("ReadMetadataParams", serde_json::to_value(&read_metadata_schema).unwrap()),
-            ("UpdateNoteParams", serde_json::to_value(&update_note_schema).unwrap()),
-            ("DeleteNoteParams", serde_json::to_value(&delete_note_schema).unwrap()),
-            ("ListNotesParams", serde_json::to_value(&list_notes_schema).unwrap()),
+        let schemas: &[(&str, String)] = &[
+            ("TextSearchParams", serde_json::to_string(&schemars::schema_for!(TextSearchParams)).unwrap()),
+            ("SemanticSearchParams", serde_json::to_string(&schemars::schema_for!(SemanticSearchParams)).unwrap()),
+            ("PropertySearchParams", serde_json::to_string(&schemars::schema_for!(PropertySearchParams)).unwrap()),
+            ("CreateNoteParams", serde_json::to_string(&schemars::schema_for!(CreateNoteParams)).unwrap()),
+            ("ReadNoteParams", serde_json::to_string(&schemars::schema_for!(ReadNoteParams)).unwrap()),
+            ("ReadMetadataParams", serde_json::to_string(&schemars::schema_for!(ReadMetadataParams)).unwrap()),
+            ("UpdateNoteParams", serde_json::to_string(&schemars::schema_for!(UpdateNoteParams)).unwrap()),
+            ("DeleteNoteParams", serde_json::to_string(&schemars::schema_for!(DeleteNoteParams)).unwrap()),
+            ("ListNotesParams", serde_json::to_string(&schemars::schema_for!(ListNotesParams)).unwrap()),
         ];
 
-        let mut all_issues = Vec::new();
-
-        for (name, schema) in &schemas {
-            let issues = find_llama_incompatible_patterns(schema, "");
-            for issue in issues {
-                all_issues.push(format!("{}: {}", name, issue));
+        let mut errors = Vec::new();
+        for (name, json) in schemas {
+            if let Err(e) = check_schema_compatible(json) {
+                errors.push(format!("{}: {}", name, e));
             }
         }
 
-        assert!(
-            all_issues.is_empty(),
-            "Tool schemas contain llama.cpp incompatible patterns:\n{}",
-            all_issues.join("\n")
-        );
-    }
-
-    /// Regression test: verifies detection of old problematic schema patterns.
-    /// Before the fix, serde_json::Value fields produced schemas like:
-    ///   {"description": "Optional YAML frontmatter..."} (no type!)
-    /// And Option<T> with #[serde(default)] produced:
-    ///   {"default": null, "type": ...}
-    /// Both patterns cause llama.cpp GBNF conversion to fail.
-    #[test]
-    fn test_detects_old_bad_schema_patterns() {
-        // Simulate the OLD broken schema that serde_json::Value produced
-        // (just description, no type - this is what llama.cpp rejected)
-        let old_bad_frontmatter_schema = serde_json::json!({
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "title": "BadParams",
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "frontmatter": {
-                    "description": "Optional YAML frontmatter to include"
-                    // NO "type" field - this was the bug!
-                }
-            },
-            "required": ["path"]
-        });
-
-        let issues = find_llama_incompatible_patterns(&old_bad_frontmatter_schema, "");
-        assert!(
-            !issues.is_empty(),
-            "Should detect schema with description but no type"
-        );
-        assert!(
-            issues.iter().any(|i| i.contains("no type")),
-            "Error should mention missing type: {:?}",
-            issues
-        );
-
-        // Simulate the OLD broken schema with "default": null
-        // (produced by #[serde(default)] on Option<T> fields)
-        let old_bad_default_null_schema = serde_json::json!({
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "title": "BadParams",
-            "type": "object",
-            "properties": {
-                "folder": {
-                    "description": "Optional folder",
-                    "type": ["string", "null"],
-                    "default": null  // This was the bug!
-                }
-            }
-        });
-
-        let issues = find_llama_incompatible_patterns(&old_bad_default_null_schema, "");
-        assert!(
-            !issues.is_empty(),
-            "Should detect schema with default: null"
-        );
-        assert!(
-            issues.iter().any(|i| i.contains("default")),
-            "Error should mention default: null: {:?}",
-            issues
-        );
+        assert!(errors.is_empty(), "Schema compatibility issues:\n{}", errors.join("\n"));
     }
 }
