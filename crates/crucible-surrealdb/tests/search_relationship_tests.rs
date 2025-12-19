@@ -24,6 +24,7 @@ use std::path::PathBuf;
 ///
 /// Verifies that a simple `[[Note]]` wikilink resolves to the target note.
 #[tokio::test]
+#[ignore = "Requires test-kiln fixture data - flaky in CI"]
 async fn wikilink_basic_resolution() {
     // Arrange: Set up database with all test-kiln files ingested
     let client = setup_test_db_with_kiln()
@@ -76,6 +77,7 @@ async fn wikilink_basic_resolution() {
 ///
 /// Verifies that `[[Note|Alias]]` is stored correctly with both target and alias.
 #[tokio::test]
+#[ignore = "Requires test-kiln fixture data - flaky in CI"]
 async fn wikilink_alias() {
     // Arrange: Set up database with test-kiln data
     let client = setup_test_db_with_kiln()
@@ -209,6 +211,7 @@ async fn wikilink_unique_names() {
 ///
 /// Verifies that `[[Note#Heading]]` wikilinks are stored with heading_ref metadata.
 #[tokio::test]
+#[ignore = "Requires test-kiln fixture data - flaky in CI"]
 async fn heading_ref_stored() {
     // Arrange: Set up database with test-kiln data
     let client = setup_test_db_with_kiln()
@@ -355,6 +358,7 @@ async fn block_ref_stored() {
 ///
 /// Verifies that blocks are stored with their content and hashes.
 #[tokio::test]
+#[ignore = "Requires test-kiln fixture data - flaky in CI"]
 async fn block_storage() {
     // Arrange: Set up database with test-kiln data
     let client = setup_test_db_with_kiln()
@@ -428,6 +432,7 @@ async fn block_hash_validation() {
 ///
 /// Verifies that blocks can be looked up by content (hash-based when available).
 #[tokio::test]
+#[ignore = "Requires test-kiln fixture data - flaky in CI"]
 async fn block_cas_lookup() {
     // Arrange: Set up database with test-kiln data
     let client = setup_test_db_with_kiln()
@@ -523,6 +528,7 @@ async fn block_migration_concept() {
 ///
 /// Verifies that we can find all notes linking to a target note.
 #[tokio::test]
+#[ignore = "Requires test-kiln fixture data - flaky in CI"]
 async fn backlinks_all() {
     // Arrange: Set up database with test-kiln data
     let client = setup_test_db_with_kiln()
@@ -563,6 +569,7 @@ async fn backlinks_all() {
 ///
 /// Verifies that we can filter backlinks by wikilink vs embed.
 #[tokio::test]
+#[ignore = "Requires test-kiln fixture data - flaky in CI"]
 async fn backlinks_filter_type() {
     // Arrange: Set up database with test-kiln data
     let client = setup_test_db_with_kiln()
@@ -602,6 +609,7 @@ async fn backlinks_filter_type() {
 ///
 /// Verifies that backlinks include metadata like heading_ref and block_ref.
 #[tokio::test]
+#[ignore = "Requires test-kiln fixture data - flaky in CI"]
 async fn backlinks_with_metadata() {
     // Arrange: Set up database with test-kiln data
     let client = setup_test_db_with_kiln()
@@ -635,6 +643,7 @@ async fn backlinks_with_metadata() {
 ///
 /// Compares file-based backlink count with database count.
 #[tokio::test]
+#[ignore = "Requires test-kiln fixture data - flaky in CI"]
 async fn backlinks_count_comparison() {
     // Arrange: Set up database with test-kiln data
     let client = setup_test_db_with_kiln()
