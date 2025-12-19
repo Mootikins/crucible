@@ -110,7 +110,8 @@ impl NotifyWatcher {
             EventKind::Remove(_) => FileEventKind::Deleted,
             EventKind::Other => {
                 // Check if this is a move event
-                if let (Some(from), Some(to)) = (event.event.paths.first(), event.event.paths.get(1))
+                if let (Some(from), Some(to)) =
+                    (event.event.paths.first(), event.event.paths.get(1))
                 {
                     FileEventKind::Moved {
                         from: from.clone(),
