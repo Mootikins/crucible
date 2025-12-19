@@ -98,7 +98,7 @@ impl AstConverter {
             }
             .to_string();
             // Build raw_content from marker and marker_len
-            let raw_content: String = std::iter::repeat(hr.marker).take(hr.marker_len).collect();
+            let raw_content: String = std::iter::repeat_n(hr.marker, hr.marker_len).collect();
             content
                 .horizontal_rules
                 .push(HorizontalRule::new(raw_content, style, offset));

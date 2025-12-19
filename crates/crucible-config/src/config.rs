@@ -2063,10 +2063,12 @@ max_tokens = 4096
             },
         );
 
-        let mut config = CliAppConfig::default();
-        config.llm = crate::components::LlmConfig {
-            default: Some("local".to_string()),
-            providers,
+        let config = CliAppConfig {
+            llm: crate::components::LlmConfig {
+                default: Some("local".to_string()),
+                providers,
+            },
+            ..Default::default()
         };
 
         let effective = config.effective_llm_provider().unwrap();

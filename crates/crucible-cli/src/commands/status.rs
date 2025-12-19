@@ -133,7 +133,7 @@ async fn get_path_status(_parser: &StorageAwareParser, path: &Path) -> Result<St
         storage_backend: "InMemory".to_string(),
         total_blocks: total_blocks as u64,
         total_trees: total_trees as u64,
-        storage_size_bytes: metadata.len() as u64,
+        storage_size_bytes: metadata.len(),
         deduplication_ratio: 1.0, // Calculate based on savings vs total
         last_activity: SystemTime::now(),
         backend_specific: serde_json::json!({

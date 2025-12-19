@@ -9,20 +9,19 @@
 //! ```
 
 use anyhow::Result;
-use crucible_core::events::{FileChangeKind, SessionEvent};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 use walkdir::WalkDir;
 
 use crate::config::CliConfig;
 use crate::event_system::initialize_event_system;
 use crate::{factories, output};
 use crucible_watch::traits::{DebounceConfig, HandlerConfig, WatchConfig};
-use crucible_watch::{EventFilter, FileEvent, FileEventKind, WatchMode};
+use crucible_watch::{EventFilter, WatchMode};
 
 /// Execute the process command
 ///
@@ -46,9 +45,7 @@ pub async fn execute(
     info!("Starting process command");
 
     // Determine target path
-    let target_path = path
-        .as_ref()
-        .map(|p| p.as_path())
+    let target_path = path.as_deref()
         .unwrap_or(config.kiln_path.as_path());
 
     info!("Processing path: {}", target_path.display());

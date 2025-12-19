@@ -683,7 +683,7 @@ impl FileScanner {
                 result.total_considered += 1;
 
                 // Report progress periodically
-                if result.total_considered % 100 == 0 {
+                if result.total_considered.is_multiple_of(100) {
                     self.progress_reporter
                         .report_progress(result.total_considered, None, Some(&path))
                         .await;

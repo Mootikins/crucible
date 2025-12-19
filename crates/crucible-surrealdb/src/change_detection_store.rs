@@ -167,7 +167,7 @@ impl ChangeDetectionStore for SurrealChangeDetectionStore {
 
     async fn store_file_state(&self, path: &Path, state: FileState) -> ChangeDetectionResult<()> {
         let record = FileStateRecord::from_file_state(path, &state)
-            .map_err(|e| ChangeDetectionError::InvalidPath(e))?;
+            .map_err(ChangeDetectionError::InvalidPath)?;
 
         trace!(
             "Storing file state for {}: hash={}",

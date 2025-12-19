@@ -248,7 +248,7 @@ fn read_file_as_value(path: &Path) -> Result<toml::Value, IncludeError> {
     })?;
 
     // If it's a TOML file, parse it as structured data
-    if path.extension().map_or(false, |ext| ext == "toml") {
+    if path.extension().is_some_and(|ext| ext == "toml") {
         let value: toml::Value = toml::from_str(&content).map_err(|e| IncludeError::Parse {
             path: path.to_path_buf(),
             error: e.to_string(),

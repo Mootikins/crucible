@@ -278,7 +278,7 @@ impl EAVGraphStore {
             let parent_ref = block
                 .parent_block_id
                 .as_ref()
-                .map(|parent| thing_value(parent))
+                .map(thing_value)
                 .unwrap_or(serde_json::Value::Null);
 
             self.client
@@ -1472,7 +1472,7 @@ impl CoreTagStorage for EAVGraphStore {
         if let Some(record_id_str) = data.get("record_id_str").and_then(|v| v.as_str()) {
             // Parse "project" or "tags:project" format
             let id_part = if record_id_str.contains(':') {
-                record_id_str.split(':').last().unwrap_or(record_id_str)
+                record_id_str.split(':').next_back().unwrap_or(record_id_str)
             } else {
                 record_id_str
             };
@@ -1528,7 +1528,7 @@ impl CoreTagStorage for EAVGraphStore {
                 // Extract record_id_str and convert it to a RecordId for the id field
                 if let Some(record_id_str) = data.get("record_id_str").and_then(|v| v.as_str()) {
                     let id_part = if record_id_str.contains(':') {
-                        record_id_str.split(':').last().unwrap_or(record_id_str)
+                        record_id_str.split(':').next_back().unwrap_or(record_id_str)
                     } else {
                         record_id_str
                     };

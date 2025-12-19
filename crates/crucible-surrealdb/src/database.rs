@@ -348,10 +348,10 @@ impl SurrealEmbeddingDatabase {
 
         // Apply limit and offset
         if let Some(offset) = query.offset {
-            results = results.into_iter().skip(offset as usize).collect();
+            results = results.into_iter().skip(offset).collect();
         }
         if let Some(limit) = query.limit {
-            results.truncate(limit as usize);
+            results.truncate(limit);
         }
 
         Ok(results)
