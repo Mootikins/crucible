@@ -433,19 +433,15 @@ impl ChatSession {
             use agent_client_protocol::{ContentBlock, PromptRequest, SessionId};
 
             // Create a proper PromptRequest
-            let prompt_request = PromptRequest {
-                session_id: SessionId::from(session.id().to_string()),
-                prompt: vec![ContentBlock::from(prompt.to_string())],
-                meta: None,
-            };
-
-            // Generate unique request ID
-            static REQUEST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-            let request_id = REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let prompt_request = PromptRequest::new(
+                SessionId::from(session.id().to_string()),
+                vec![ContentBlock::from(prompt.to_string())]
+            );
 
             // Send prompt with streaming and accumulate content
+            // Request ID is generated internally by send_prompt_with_streaming
             let (content, tool_calls, _stop_reason) = client
-                .send_prompt_with_streaming(prompt_request, request_id)
+                .send_prompt_with_streaming(prompt_request)
                 .await?;
 
             tracing::debug!(

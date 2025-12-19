@@ -44,6 +44,9 @@ pub struct AgentInitParams {
     pub max_context_tokens: Option<usize>,
     /// Tool executor for internal agents
     pub tool_executor: Option<Box<dyn ToolExecutor>>,
+    /// Environment variable overrides for ACP agents
+    /// These are merged with any env vars from config profiles
+    pub env_overrides: std::collections::HashMap<String, String>,
 }
 
 impl AgentInitParams {
@@ -55,6 +58,7 @@ impl AgentInitParams {
             read_only: true,
             max_context_tokens: None,
             tool_executor: None,
+            env_overrides: std::collections::HashMap::new(),
         }
     }
 
@@ -97,6 +101,18 @@ impl AgentInitParams {
     /// Set provider from Option (convenient for CLI flags)
     pub fn with_provider_opt(mut self, key: Option<String>) -> Self {
         self.provider_key = key;
+        self
+    }
+
+    /// Set environment variable overrides for ACP agents
+    ///
+    /// These will be merged with any env vars from config profiles,
+    /// with CLI overrides taking precedence.
+    pub fn with_env_overrides(
+        mut self,
+        env: std::collections::HashMap<String, String>,
+    ) -> Self {
+        self.env_overrides = env;
         self
     }
 }
@@ -212,9 +228,25 @@ pub async fn create_agent(
             let agent_name = params
                 .agent_name
                 .or_else(|| config.acp.default_agent.clone());
-            let agent = discover_agent(agent_name.as_deref()).await?;
+            let mut agent = discover_agent(agent_name.as_deref()).await?;
 
             debug!("Discovered agent: {}", agent.name);
+
+            // Merge config profile env vars first (lower priority)
+            if let Some(profile) = config.acp.agents.get(&agent.name) {
+                if !profile.env.is_empty() {
+                    let keys: Vec<_> = profile.env.keys().collect();
+                    info!("Applying config profile env vars: {:?}", keys);
+                    agent.env_vars.extend(profile.env.clone());
+                }
+            }
+
+            // Merge CLI env overrides (highest priority - overwrites config)
+            if !params.env_overrides.is_empty() {
+                let keys: Vec<_> = params.env_overrides.keys().collect();
+                info!("Applying CLI env overrides: {:?}", keys);
+                agent.env_vars.extend(params.env_overrides);
+            }
 
             // Create ACP client
             let client =
@@ -274,5 +306,34 @@ mod tests {
         assert_eq!(AgentType::Acp, AgentType::Acp);
         assert_eq!(AgentType::Internal, AgentType::Internal);
         assert_ne!(AgentType::Acp, AgentType::Internal);
+    }
+
+    #[test]
+    fn test_agent_init_params_with_env_overrides() {
+        use std::collections::HashMap;
+
+        let mut env = HashMap::new();
+        env.insert("LOCAL_ENDPOINT".to_string(), "http://localhost:11434".to_string());
+        env.insert("ANTHROPIC_MODEL".to_string(), "claude-3-opus".to_string());
+
+        let params = AgentInitParams::new()
+            .with_type(AgentType::Acp)
+            .with_env_overrides(env.clone());
+
+        assert_eq!(params.env_overrides.len(), 2);
+        assert_eq!(
+            params.env_overrides.get("LOCAL_ENDPOINT"),
+            Some(&"http://localhost:11434".to_string())
+        );
+        assert_eq!(
+            params.env_overrides.get("ANTHROPIC_MODEL"),
+            Some(&"claude-3-opus".to_string())
+        );
+    }
+
+    #[test]
+    fn test_agent_init_params_default_has_empty_env_overrides() {
+        let params = AgentInitParams::default();
+        assert!(params.env_overrides.is_empty());
     }
 }

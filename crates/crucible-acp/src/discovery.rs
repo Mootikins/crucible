@@ -4,8 +4,10 @@
 //! Uses parallel probing for fast agent discovery.
 
 use anyhow::{anyhow, Result};
+use crucible_config::{AcpConfig, AgentProfile};
 use futures::future::join_all;
 use once_cell::sync::Lazy;
+use std::collections::HashMap;
 use std::sync::Mutex;
 use tokio::process::Command;
 use tracing::{debug, info, trace, warn};
@@ -22,6 +24,8 @@ pub struct AgentInfo {
     pub name: String,
     pub command: String,
     pub args: Vec<String>,
+    /// Environment variables to pass to the agent process
+    pub env_vars: HashMap<String, String>,
 }
 
 /// Known ACP-compatible agents (name, command, args)
@@ -65,6 +69,7 @@ pub async fn discover_agent(preferred: Option<&str>) -> Result<AgentInfo> {
                     name: name.to_string(),
                     command: cmd.to_string(),
                     args: args.iter().map(|s| s.to_string()).collect(),
+                    env_vars: HashMap::new(),
                 };
                 // Cache the result
                 *AGENT_CACHE.lock().unwrap() = Some(agent.clone());
@@ -100,6 +105,7 @@ pub async fn discover_agent(preferred: Option<&str>) -> Result<AgentInfo> {
                 name: name.to_string(),
                 command: cmd.to_string(),
                 args: args.iter().map(|s| s.to_string()).collect(),
+                env_vars: HashMap::new(),
             };
             // Cache the result
             *AGENT_CACHE.lock().unwrap() = Some(agent.clone());
@@ -239,6 +245,77 @@ pub async fn is_agent_available(command: &str) -> bool {
     }
 }
 
+/// Resolve an agent from config profiles or built-in agents
+///
+/// This function looks up an agent by name, checking:
+/// 1. Custom profiles in config.agents
+/// 2. Built-in KNOWN_AGENTS
+///
+/// For custom profiles, it can extend a built-in agent (using `extends`)
+/// or define a completely custom agent (using `command` and `args`).
+///
+/// # Arguments
+/// * `name` - Agent name to resolve
+/// * `config` - ACP configuration containing agent profiles
+///
+/// # Returns
+/// AgentInfo with merged configuration
+pub fn resolve_agent_from_config(name: &str, config: &AcpConfig) -> Result<AgentInfo> {
+    // Check for custom profile first
+    if let Some(profile) = config.agents.get(name) {
+        return resolve_profile(name, profile);
+    }
+
+    // Fall back to built-in agent
+    if let Some((_, cmd, args)) = KNOWN_AGENTS.iter().find(|(n, _, _)| *n == name) {
+        return Ok(AgentInfo {
+            name: name.to_string(),
+            command: cmd.to_string(),
+            args: args.iter().map(|s| s.to_string()).collect(),
+            env_vars: HashMap::new(),
+        });
+    }
+
+    Err(anyhow!(
+        "Unknown agent '{}'. Use --agent with a known agent name or define it in config.",
+        name
+    ))
+}
+
+/// Resolve a custom agent profile
+fn resolve_profile(name: &str, profile: &AgentProfile) -> Result<AgentInfo> {
+    // If profile has custom command, use it directly
+    if let Some(cmd) = &profile.command {
+        return Ok(AgentInfo {
+            name: name.to_string(),
+            command: cmd.clone(),
+            args: profile.args.clone().unwrap_or_default(),
+            env_vars: profile.env.clone(),
+        });
+    }
+
+    // Otherwise, look up base agent (from extends or profile name)
+    let base_name = profile.extends.as_deref().unwrap_or(name);
+
+    if let Some((_, cmd, args)) = KNOWN_AGENTS.iter().find(|(n, _, _)| *n == base_name) {
+        Ok(AgentInfo {
+            name: name.to_string(),
+            command: cmd.to_string(),
+            args: profile
+                .args
+                .clone()
+                .unwrap_or_else(|| args.iter().map(|s| s.to_string()).collect()),
+            env_vars: profile.env.clone(),
+        })
+    } else {
+        Err(anyhow!(
+            "Agent profile '{}' extends unknown agent '{}'. Define command/args or use a known base agent.",
+            name,
+            base_name
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,6 +357,7 @@ mod tests {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
             args: vec!["arg1".to_string()],
+            env_vars: HashMap::new(),
         });
 
         // Cache should now have the agent
@@ -299,6 +377,7 @@ mod tests {
             name: "cached-agent".to_string(),
             command: "cached-cmd".to_string(),
             args: vec![],
+            env_vars: HashMap::new(),
         });
 
         // Discovery should return cached agent without probing
@@ -366,5 +445,116 @@ mod tests {
         let names: Vec<_> = KNOWN_AGENTS.iter().map(|(n, _, _)| *n).collect();
         assert!(names.contains(&"opencode"));
         assert!(names.contains(&"claude"));
+    }
+
+    #[test]
+    fn test_agent_info_has_env_vars() {
+        // AgentInfo should support environment variables
+        let mut env_vars = std::collections::HashMap::new();
+        env_vars.insert("LOCAL_ENDPOINT".to_string(), "http://localhost:11434".to_string());
+
+        let agent = AgentInfo {
+            name: "opencode".to_string(),
+            command: "opencode".to_string(),
+            args: vec!["acp".to_string()],
+            env_vars,
+        };
+
+        assert_eq!(agent.env_vars.get("LOCAL_ENDPOINT"), Some(&"http://localhost:11434".to_string()));
+    }
+
+    #[test]
+    fn test_agent_info_default_empty_env_vars() {
+        // Default AgentInfo should have empty env_vars
+        let agent = AgentInfo {
+            name: "test".to_string(),
+            command: "test".to_string(),
+            args: vec![],
+            env_vars: std::collections::HashMap::new(),
+        };
+
+        assert!(agent.env_vars.is_empty());
+    }
+
+    #[test]
+    fn test_resolve_agent_from_config_profile() {
+        use crucible_config::{AcpConfig, AgentProfile};
+        use std::collections::HashMap;
+
+        // Create a config with a custom profile
+        let mut agents = HashMap::new();
+        let mut env = HashMap::new();
+        env.insert("LOCAL_ENDPOINT".to_string(), "http://localhost:11434/v1".to_string());
+        agents.insert("opencode-local".to_string(), AgentProfile {
+            extends: Some("opencode".to_string()),
+            command: None,
+            args: None,
+            env,
+        });
+
+        let config = AcpConfig {
+            default_agent: Some("opencode-local".to_string()),
+            agents,
+            ..Default::default()
+        };
+
+        // Resolve should find the profile and merge with built-in agent
+        let agent = resolve_agent_from_config("opencode-local", &config).expect("should resolve");
+
+        assert_eq!(agent.name, "opencode-local");
+        assert_eq!(agent.command, "opencode"); // From built-in
+        assert_eq!(agent.args, vec!["acp".to_string()]); // From built-in
+        assert_eq!(agent.env_vars.get("LOCAL_ENDPOINT"), Some(&"http://localhost:11434/v1".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_agent_custom_command_overrides_builtin() {
+        use crucible_config::{AcpConfig, AgentProfile};
+        use std::collections::HashMap;
+
+        let mut agents = HashMap::new();
+        agents.insert("my-agent".to_string(), AgentProfile {
+            extends: None,
+            command: Some("/usr/local/bin/my-agent".to_string()),
+            args: Some(vec!["--mode".to_string(), "acp".to_string()]),
+            env: HashMap::new(),
+        });
+
+        let config = AcpConfig {
+            agents,
+            ..Default::default()
+        };
+
+        let agent = resolve_agent_from_config("my-agent", &config).expect("should resolve");
+
+        assert_eq!(agent.name, "my-agent");
+        assert_eq!(agent.command, "/usr/local/bin/my-agent");
+        assert_eq!(agent.args, vec!["--mode".to_string(), "acp".to_string()]);
+    }
+
+    #[test]
+    fn test_resolve_agent_falls_back_to_builtin() {
+        use crucible_config::AcpConfig;
+
+        let config = AcpConfig::default();
+
+        // Resolving a built-in agent name should work
+        let agent = resolve_agent_from_config("opencode", &config).expect("should resolve");
+
+        assert_eq!(agent.name, "opencode");
+        assert_eq!(agent.command, "opencode");
+        assert_eq!(agent.args, vec!["acp".to_string()]);
+        assert!(agent.env_vars.is_empty());
+    }
+
+    #[test]
+    fn test_resolve_agent_unknown_returns_error() {
+        use crucible_config::AcpConfig;
+
+        let config = AcpConfig::default();
+
+        // Unknown agent should fail
+        let result = resolve_agent_from_config("unknown-agent", &config);
+        assert!(result.is_err());
     }
 }

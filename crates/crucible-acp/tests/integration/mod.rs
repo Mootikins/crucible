@@ -13,6 +13,7 @@ mod support;
 mod claude_acp_integration;
 mod mock_agent_framework;
 mod opencode_integration;
+mod opencode_streaming;
 mod streaming_chat;
 
 // Re-export support for use in test modules

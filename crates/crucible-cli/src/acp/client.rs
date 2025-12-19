@@ -136,6 +136,47 @@ impl CrucibleAcpClient {
         }
     }
 
+    /// Build the ACP client configuration from the agent info
+    ///
+    /// This method converts the AgentInfo into a ClientConfig suitable for
+    /// spawning the ACP agent process. Environment variables from the agent
+    /// are passed through to the subprocess.
+    pub fn build_client_config(&self) -> crucible_acp::client::ClientConfig {
+        let agent_path = PathBuf::from(&self.agent.command);
+        let agent_args = if self.agent.args.is_empty() {
+            None
+        } else {
+            Some(self.agent.args.clone())
+        };
+
+        // Convert env_vars HashMap to Vec<(String, String)> for ClientConfig
+        let env_vars = if self.agent.env_vars.is_empty() {
+            None
+        } else {
+            Some(
+                self.agent
+                    .env_vars
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+            )
+        };
+
+        // Convert streaming timeout from minutes to milliseconds
+        // The lower-level client multiplies timeout_ms by 10 for overall streaming timeout
+        // So we divide by 10 here: minutes * 60 * 1000 / 10 = minutes * 6000
+        let timeout_ms = self.acp_config.streaming_timeout_minutes * 6000;
+
+        crucible_acp::client::ClientConfig {
+            agent_path,
+            agent_args,
+            working_dir: None,
+            env_vars,
+            timeout_ms: Some(timeout_ms),
+            max_retries: None,
+        }
+    }
+
     /// Spawn and connect to the agent
     ///
     /// Performs the full ACP protocol handshake. If MCP dependencies are configured,
@@ -147,31 +188,19 @@ impl CrucibleAcpClient {
             self.agent.name, self.agent.command
         );
 
-        // Create the ACP client with the agent command path and args
-        let agent_path = PathBuf::from(&self.agent.command);
-        let agent_args = if self.agent.args.is_empty() {
-            None
-        } else {
-            Some(self.agent.args.clone())
-        };
-
-        // Convert streaming timeout from minutes to milliseconds
-        // The lower-level client multiplies timeout_ms by 10 for overall streaming timeout
-        // So we divide by 10 here: minutes * 60 * 1000 / 10 = minutes * 6000
-        let timeout_ms = self.acp_config.streaming_timeout_minutes * 6000;
+        let client_config = self.build_client_config();
         info!(
             "Streaming timeout configured: {} minutes ({} ms base)",
-            self.acp_config.streaming_timeout_minutes, timeout_ms
+            self.acp_config.streaming_timeout_minutes,
+            client_config.timeout_ms.unwrap_or(0)
         );
 
-        let client_config = crucible_acp::client::ClientConfig {
-            agent_path,
-            agent_args,
-            working_dir: None,
-            env_vars: None,
-            timeout_ms: Some(timeout_ms),
-            max_retries: None,
-        };
+        // Log env vars being passed (without values for security)
+        if let Some(ref env_vars) = client_config.env_vars {
+            let keys: Vec<_> = env_vars.iter().map(|(k, _)| k.as_str()).collect();
+            info!("Passing environment variables to agent: {:?}", keys);
+        }
+
         let acp_client = AcpClient::new(client_config);
 
         // Create ChatSession with the ACP client

@@ -30,7 +30,7 @@ tempfile = { workspace = true }
 tokio = { workspace = true, features = ["full", "tracing"] }
 
 # ACP schema types for mode/command definitions
-agent-client-protocol-schema = "0.6.3"
+agent-client-protocol-schema = "0.10.5"
 
 # NOTE: crucible-parser dependency REMOVED - Dependency Inversion applied
 # Core now defines parser traits/types; parser crate depends on core

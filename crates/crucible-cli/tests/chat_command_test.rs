@@ -56,6 +56,7 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
         false,                            // use_internal
         None,                             // provider_key
         8192,                             // max_context_tokens
+        vec![],                           // env_overrides
     )
     .await;
 
@@ -132,13 +133,14 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
         config,
         None, // No agent name - will try to discover
         Some("test query".to_string()),
-        true,  // read_only
-        true,  // no_context
-        true,  // no_process
-        None,  // context_size
-        false, // use_internal
-        None,  // provider_key
-        8192,  // max_context_tokens
+        true,   // read_only
+        true,   // no_context
+        true,   // no_process
+        None,   // context_size
+        false,  // use_internal
+        None,   // provider_key
+        8192,   // max_context_tokens
+        vec![], // env_overrides
     )
     .await;
 

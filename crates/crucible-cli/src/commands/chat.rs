@@ -31,6 +31,7 @@ use crucible_watch::{EventFilter, WatchMode};
 /// * `use_internal` - If true, use internal LLM agent instead of ACP agent
 /// * `provider_key` - Optional LLM provider for internal agent
 /// * `max_context_tokens` - Maximum context window tokens for internal agent
+/// * `env_overrides` - Environment variables to pass to ACP agent (KEY=VALUE pairs)
 pub async fn execute(
     config: CliConfig,
     agent_name: Option<String>,
@@ -42,6 +43,7 @@ pub async fn execute(
     use_internal: bool,
     provider_key: Option<String>,
     max_context_tokens: usize,
+    env_overrides: Vec<String>,
 ) -> Result<()> {
     // Determine initial mode
     let initial_mode = if read_only { "plan" } else { "act" };
@@ -62,13 +64,36 @@ pub async fn execute(
         factories::AgentType::Acp
     };
 
+    // Parse env overrides from CLI (KEY=VALUE format)
+    let parsed_env: std::collections::HashMap<String, String> = env_overrides
+        .iter()
+        .filter_map(|s| {
+            let mut parts = s.splitn(2, '=');
+            match (parts.next(), parts.next()) {
+                (Some(key), Some(value)) if !key.is_empty() => {
+                    Some((key.to_string(), value.to_string()))
+                }
+                _ => {
+                    warn!("Invalid env format '{}', expected KEY=VALUE", s);
+                    None
+                }
+            }
+        })
+        .collect();
+
+    if !parsed_env.is_empty() {
+        let keys: Vec<_> = parsed_env.keys().collect();
+        info!("CLI env overrides: {:?}", keys);
+    }
+
     // Create agent initialization params
     let agent_params = factories::AgentInitParams::new()
         .with_type(agent_type)
         .with_agent_name_opt(agent_name.clone().or(default_agent_from_config))
         .with_provider_opt(provider_key)
         .with_read_only(is_read_only(initial_mode))
-        .with_max_context_tokens(max_context_tokens);
+        .with_max_context_tokens(max_context_tokens)
+        .with_env_overrides(parsed_env);
 
     // PARALLEL INITIALIZATION: Run storage init and agent creation concurrently
     let init_msg = if use_internal {

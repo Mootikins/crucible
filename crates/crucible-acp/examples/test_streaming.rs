@@ -49,7 +49,7 @@ async fn main() {
         meta: None,
     };
 
-    let result = client.send_prompt_with_streaming(prompt_request, 1).await;
+    let result = client.send_prompt_with_streaming(prompt_request).await;
 
     match result {
         Ok((content, tool_calls, response)) => {
