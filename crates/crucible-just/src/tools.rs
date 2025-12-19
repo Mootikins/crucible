@@ -222,6 +222,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "Requires `just` binary to be installed"]
     async fn test_just_tools_list_tools() {
         let root = repo_root();
         if root.join("justfile").exists() {
