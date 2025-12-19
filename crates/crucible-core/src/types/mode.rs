@@ -4,7 +4,6 @@
 //! `ModeDescriptor` wraps ACP's `SessionMode` with additional display information.
 
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 use crate::types::acp::schema::{SessionMode, SessionModeId, SessionModeState};
 
@@ -133,6 +132,18 @@ pub fn default_internal_modes() -> SessionModeState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    // Helper to create SessionMode (workaround for non_exhaustive)
+    fn test_session_mode(id: &str, name: &str, description: Option<&str>) -> SessionMode {
+        serde_json::from_value(json!({
+            "id": id,
+            "name": name,
+            "description": description,
+            "_meta": null,
+        }))
+        .expect("Failed to create test SessionMode")
+    }
 
     #[test]
     fn test_mode_descriptor_new() {
@@ -161,12 +172,7 @@ mod tests {
 
     #[test]
     fn test_mode_descriptor_from_session_mode() {
-        let session_mode = SessionMode {
-            id: SessionModeId(Arc::from("plan")),
-            name: "Plan Mode".to_string(),
-            description: Some("Read-only exploration mode".to_string()),
-            meta: None,
-        };
+        let session_mode = test_session_mode("plan", "Plan Mode", Some("Read-only exploration mode"));
 
         let descriptor: ModeDescriptor = session_mode.into();
 
@@ -182,12 +188,7 @@ mod tests {
 
     #[test]
     fn test_mode_descriptor_from_session_mode_ref() {
-        let session_mode = SessionMode {
-            id: SessionModeId(Arc::from("act")),
-            name: "Act Mode".to_string(),
-            description: None,
-            meta: None,
-        };
+        let session_mode = test_session_mode("act", "Act Mode", None);
 
         let descriptor: ModeDescriptor = (&session_mode).into();
 
