@@ -139,11 +139,7 @@ mod tests {
     use std::sync::Arc;
 
     // Helper to create SessionMode (workaround for non_exhaustive)
-    fn test_session_mode(
-        id: &str,
-        name: &str,
-        description: Option<&str>,
-    ) -> SessionMode {
+    fn test_session_mode(id: &str, name: &str, description: Option<&str>) -> SessionMode {
         serde_json::from_value(json!({
             "id": id,
             "name": name,

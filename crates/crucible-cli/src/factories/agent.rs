@@ -108,10 +108,7 @@ impl AgentInitParams {
     ///
     /// These will be merged with any env vars from config profiles,
     /// with CLI overrides taking precedence.
-    pub fn with_env_overrides(
-        mut self,
-        env: std::collections::HashMap<String, String>,
-    ) -> Self {
+    pub fn with_env_overrides(mut self, env: std::collections::HashMap<String, String>) -> Self {
         self.env_overrides = env;
         self
     }
@@ -121,7 +118,8 @@ impl AgentInitParams {
     /// This adds the OPENCODE_MODEL environment variable, which tells OpenCode
     /// which model to use. Preserves any existing environment overrides.
     pub fn with_model(mut self, model_id: impl Into<String>) -> Self {
-        self.env_overrides.insert("OPENCODE_MODEL".to_string(), model_id.into());
+        self.env_overrides
+            .insert("OPENCODE_MODEL".to_string(), model_id.into());
         self
     }
 }
@@ -318,8 +316,14 @@ mod tests {
             .with_env_overrides(env)
             .with_model("test-model");
 
-        assert_eq!(params.env_overrides.get("EXISTING_VAR"), Some(&"value".to_string()));
-        assert_eq!(params.env_overrides.get("OPENCODE_MODEL"), Some(&"test-model".to_string()));
+        assert_eq!(
+            params.env_overrides.get("EXISTING_VAR"),
+            Some(&"value".to_string())
+        );
+        assert_eq!(
+            params.env_overrides.get("OPENCODE_MODEL"),
+            Some(&"test-model".to_string())
+        );
     }
 
     #[tokio::test]
@@ -345,7 +349,10 @@ mod tests {
         use std::collections::HashMap;
 
         let mut env = HashMap::new();
-        env.insert("LOCAL_ENDPOINT".to_string(), "http://localhost:11434".to_string());
+        env.insert(
+            "LOCAL_ENDPOINT".to_string(),
+            "http://localhost:11434".to_string(),
+        );
         env.insert("ANTHROPIC_MODEL".to_string(), "claude-3-opus".to_string());
 
         let params = AgentInitParams::new()

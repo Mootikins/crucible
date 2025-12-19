@@ -398,11 +398,7 @@ fn index_kiln_notes(kiln_root: &Path) -> Vec<String> {
 fn is_hidden_entry(entry: &walkdir::DirEntry) -> bool {
     // Don't filter the root directory (depth 0)
     // Only check non-root entries for hidden names
-    entry.depth() > 0
-        && entry
-            .file_name()
-            .to_string_lossy()
-            .starts_with('.')
+    entry.depth() > 0 && entry.file_name().to_string_lossy().starts_with('.')
 }
 
 #[cfg(test)]
