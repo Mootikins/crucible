@@ -130,6 +130,7 @@ toml = { workspace = true }
 blake3 = "1.5"  # For hash verification tests
 serial_test = "3.2"  # For preventing parallel test execution with shared env vars
 scopeguard = "0.3"  # For RAII-style cleanup in tests
+insta = { version = "1.40", features = ["filters"] }  # Snapshot testing for TUI
 
 # Additional dependencies for resource constraint testing
 rand = "0.8"
