@@ -221,28 +221,33 @@ impl MockStdioAgent {
 
         // Determine auth methods based on behavior
         let auth_methods = if self.config.requires_auth {
-            vec![AuthMethod {
-                id: AuthMethodId("api_key".into()),
-                name: "API Key".to_string(),
-                description: Some("Authenticate using an API key".to_string()),
-                meta: None,
-            }]
+            let auth_method: AuthMethod = serde_json::from_value(json!({
+                "id": "api_key",
+                "name": "API Key",
+                "description": "Authenticate using an API key",
+                "_meta": null
+            })).expect("Failed to create AuthMethod");
+            vec![auth_method]
         } else {
             vec![]
         };
 
         // Construct proper InitializeResponse using ACP types
-        let response = InitializeResponse {
-            protocol_version: ProtocolVersion::from(self.config.protocol_version),
-            agent_capabilities: AgentCapabilities::default(),
-            auth_methods,
-            agent_info: Some(Implementation {
-                name: name.to_string(),
-                version: version.to_string(),
-                title: None,
-            }),
-            meta: None,
-        };
+        // Serialize auth_methods first for JSON construction
+        let auth_methods_json = serde_json::to_value(&auth_methods).unwrap();
+
+        let response: InitializeResponse = serde_json::from_value(json!({
+            "protocolVersion": self.config.protocol_version,
+            "agentCapabilities": {},
+            "authMethods": auth_methods_json,
+            "agentInfo": {
+                "name": name,
+                "version": version,
+                "title": null,
+                "_meta": null
+            },
+            "_meta": null
+        })).expect("Failed to create InitializeResponse");
 
         // Serialize to JSON value
         let mut result = serde_json::to_value(&response).unwrap();
@@ -277,11 +282,11 @@ impl MockStdioAgent {
         self.session_id = Some(session_id.clone());
 
         // Construct proper NewSessionResponse using ACP types
-        let response = NewSessionResponse {
-            session_id: SessionId::from(session_id),
-            modes: None,
-            meta: None,
-        };
+        let response: NewSessionResponse = serde_json::from_value(json!({
+            "sessionId": session_id,
+            "modes": null,
+            "_meta": null
+        })).expect("Failed to create NewSessionResponse");
 
         // Serialize response to JSON value (respects serde attributes)
         let result = serde_json::to_value(&response).unwrap();
@@ -301,10 +306,10 @@ impl MockStdioAgent {
         }
 
         // Construct proper PromptResponse using ACP types
-        let response = PromptResponse {
-            stop_reason: StopReason::EndTurn,
-            meta: None,
-        };
+        let response: PromptResponse = serde_json::from_value(json!({
+            "stopReason": "end_turn",
+            "_meta": null
+        })).expect("Failed to create PromptResponse");
 
         // Wrap in JSON-RPC 2.0 response format
         json!({
