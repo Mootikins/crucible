@@ -21,7 +21,7 @@ use crate::{AcpError, Result};
 use agent_client_protocol::ClientRequest;
 
 /// Configuration for the mock agent
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MockAgentConfig {
     /// Predefined responses for specific methods
     pub responses: HashMap<String, Value>,
@@ -34,17 +34,6 @@ pub struct MockAgentConfig {
 
     /// Whether to simulate errors
     pub simulate_errors: bool,
-}
-
-impl Default for MockAgentConfig {
-    fn default() -> Self {
-        Self {
-            responses: HashMap::new(),
-            simulate_delay: false,
-            delay_ms: 0,
-            simulate_errors: false,
-        }
-    }
 }
 
 /// Mock agent for testing
