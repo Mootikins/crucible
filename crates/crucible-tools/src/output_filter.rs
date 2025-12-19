@@ -29,7 +29,7 @@ use tracing::debug;
 ///
 /// Returns `Some(filtered)` if the output was filtered, `None` if it should
 /// pass through unchanged (not recognized as test output).
-#[must_use] 
+#[must_use]
 pub fn filter_test_output(output: &str) -> Option<String> {
     // Detect which test framework produced this output
     if is_cargo_test(output) {

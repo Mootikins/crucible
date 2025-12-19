@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 /// let frontmatter = parse_yaml_frontmatter(content);
 /// assert!(frontmatter.is_some());
 /// ```
-#[must_use] 
+#[must_use]
 pub fn parse_yaml_frontmatter(content: &str) -> Option<serde_json::Value> {
     // Check if starts with ---
     if !content.starts_with("---\n") && !content.starts_with("---\r\n") {
@@ -83,9 +83,7 @@ pub fn validate_path_within_kiln(
     let user_path_obj = Path::new(user_path);
     if user_path_obj.is_absolute() {
         return Err(rmcp::ErrorData::invalid_params(
-            format!(
-                "Absolute paths are not allowed for security reasons: {user_path}"
-            ),
+            format!("Absolute paths are not allowed for security reasons: {user_path}"),
             None,
         ));
     }
@@ -94,9 +92,7 @@ pub fn validate_path_within_kiln(
     for component in user_path_obj.components() {
         if let std::path::Component::ParentDir = component {
             return Err(rmcp::ErrorData::invalid_params(
-                format!(
-                    "Path traversal is not allowed for security reasons: {user_path}"
-                ),
+                format!("Path traversal is not allowed for security reasons: {user_path}"),
                 None,
             ));
         }
@@ -123,9 +119,7 @@ pub fn validate_path_within_kiln(
         // Verify the canonicalized path is still within kiln
         if !canonical_full.starts_with(&canonical_kiln) {
             return Err(rmcp::ErrorData::invalid_params(
-                format!(
-                    "Path escapes kiln directory (symlink attack?): {user_path}"
-                ),
+                format!("Path escapes kiln directory (symlink attack?): {user_path}"),
                 None,
             ));
         }

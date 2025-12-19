@@ -39,15 +39,13 @@ pub enum ContentBlock {
 }
 
 /// Result of a tool call
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ToolCallResult {
     /// Content blocks returned by the tool
     pub content: Vec<ContentBlock>,
     /// Whether the tool execution resulted in an error
     pub is_error: bool,
 }
-
 
 impl ToolCallResult {
     /// Create a successful text result
