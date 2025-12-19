@@ -3,7 +3,7 @@
 //! These tests verify the contract that all MerkleTreeBuilder implementations
 //! must satisfy, following the Tower-style dependency inversion pattern.
 
-use crucible_core::parser::{ParsedNote, ParsedNoteBuilder};
+use crucible_core::parser::{ParsedNote, ParsedNoteBuilder, ParsedNoteMetadata};
 use crucible_core::MerkleTreeBuilder;
 use std::path::PathBuf;
 
@@ -189,10 +189,17 @@ fn contract_builder_works_with_generic_services() {
     let builder = GenericBuilder;
     let service = GenericService::new(builder);
 
-    let note = ParsedNoteBuilder::new(PathBuf::from("generic.md")).build();
+    let metadata = ParsedNoteMetadata {
+        paragraph_count: 2,
+        heading_count: 1,
+        ..Default::default()
+    };
+    let note = ParsedNoteBuilder::new(PathBuf::from("generic.md"))
+        .with_metadata(metadata)
+        .build();
     let tree = service.process(&note);
 
-    // Note has content, so block_count should be non-zero
+    // Note has metadata with paragraphs and headings
     assert!(tree.block_count > 0);
 }
 
