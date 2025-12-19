@@ -214,7 +214,7 @@ impl LiveProgress {
                             print!("{} {}", "⟳".cyan(), status);
                         } else {
                             // Complete - print success and done
-                            print!("{} {}", "✓".green(), "Indexing complete");
+                            print!("{} Indexing complete", "✓".green());
                         }
 
                         // Restore cursor position

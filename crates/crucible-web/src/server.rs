@@ -90,11 +90,11 @@ pub async fn start_server(config: WebConfig) -> Result<()> {
     // Start server
     let listener = tokio::net::TcpListener::bind(addr)
         .await
-        .map_err(|e| WebError::Io(e))?;
+        .map_err(WebError::Io)?;
 
     axum::serve(listener, app)
         .await
-        .map_err(|e| WebError::Io(e))?;
+        .map_err(WebError::Io)?;
 
     Ok(())
 }

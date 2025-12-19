@@ -18,13 +18,13 @@ fn default_limit() -> usize {
     10
 }
 
-/// Default value for case_insensitive
+/// Default value for `case_insensitive`
 fn default_true() -> bool {
     true
 }
 
-/// Custom schema for JSON object (used for required serde_json::Value fields).
-/// serde_json::Value produces an empty schema that llama.cpp can't handle.
+/// Custom schema for JSON object (used for required `serde_json::Value` fields).
+/// `serde_json::Value` produces an empty schema that llama.cpp can't handle.
 fn json_object_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
     let mut map = serde_json::Map::new();
     map.insert("type".to_owned(), serde_json::json!("object"));
@@ -168,12 +168,12 @@ impl SearchTools {
             .build()
             .filter_map(Result::ok)
         {
-            if !entry.file_type().map_or(false, |ft| ft.is_file()) {
+            if !entry.file_type().is_some_and(|ft| ft.is_file()) {
                 continue;
             }
 
             let path = entry.path();
-            if path.extension().map_or(true, |ext| ext != "md") {
+            if path.extension().is_none_or(|ext| ext != "md") {
                 continue;
             }
 
@@ -247,9 +247,9 @@ impl SearchTools {
         for entry in WalkDir::new(&self.kiln_path)
             .follow_links(false)
             .into_iter()
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .filter(|e| e.file_type().is_file())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "md"))
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
         {
             // Read file and parse frontmatter
             let content = match std::fs::read_to_string(entry.path()) {
@@ -264,7 +264,7 @@ impl SearchTools {
 
             // Check if all search properties match
             let matches_all = search_props.iter().all(|(key, search_value)| {
-                frontmatter.get(key).map_or(false, |prop_value| {
+                frontmatter.get(key).is_some_and(|prop_value| {
                     // Handle array values as OR logic
                     if let Some(search_array) = search_value.as_array() {
                         // Property value must match any of the search values

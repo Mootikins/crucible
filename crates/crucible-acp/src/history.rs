@@ -172,7 +172,7 @@ impl ConversationHistory {
 /// a proper tokenizer for the specific model being used.
 fn estimate_tokens(text: &str) -> usize {
     // Rough approximation: ~4 characters per token
-    (text.len() + 3) / 4
+    text.len().div_ceil(4)
 }
 
 #[cfg(test)]

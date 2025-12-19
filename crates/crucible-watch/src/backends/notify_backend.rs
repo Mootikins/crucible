@@ -32,6 +32,12 @@ pub struct NotifyWatcher {
     filter: Arc<RwLock<Option<EventFilter>>>,
 }
 
+impl Default for NotifyWatcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NotifyWatcher {
     /// Create a new notify-based watcher.
     pub fn new() -> Self {
@@ -104,7 +110,7 @@ impl NotifyWatcher {
             EventKind::Remove(_) => FileEventKind::Deleted,
             EventKind::Other => {
                 // Check if this is a move event
-                if let (Some(from), Some(to)) = (event.event.paths.get(0), event.event.paths.get(1))
+                if let (Some(from), Some(to)) = (event.event.paths.first(), event.event.paths.get(1))
                 {
                     FileEventKind::Moved {
                         from: from.clone(),
@@ -219,7 +225,7 @@ impl FileWatcher for NotifyWatcher {
         debug!("Removing watch for: {}", handle.path.display());
 
         // Find and remove watch by path
-        for (_id, watch_handle) in &self.watches {
+        for watch_handle in self.watches.values() {
             if watch_handle.path == handle.path {
                 // This is the watch to remove
                 if let Some(ref mut debouncer) = self.debouncer {
@@ -255,6 +261,12 @@ impl FileWatcher for NotifyWatcher {
 /// Factory for creating notify-based watchers.
 pub struct NotifyFactory {
     capabilities: BackendCapabilities,
+}
+
+impl Default for NotifyFactory {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NotifyFactory {

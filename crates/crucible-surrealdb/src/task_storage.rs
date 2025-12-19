@@ -142,7 +142,7 @@ impl TaskStorage for MockTaskStorage {
         let mut saved = task.clone();
         saved.id = Some(crate::schema_types::RecordId::new(
             "tasks",
-            &format!("{}:{}", task.task_file.id, task.task_id),
+            format!("{}:{}", task.task_file.id, task.task_id),
         ));
         tasks.push(saved.clone());
 
@@ -192,7 +192,7 @@ impl TaskStorage for MockTaskStorage {
 
         // Record history (no locks held during await)
         let task_ref =
-            crate::schema_types::RecordId::new("tasks", &format!("{}:{}", file_path, task_id));
+            crate::schema_types::RecordId::new("tasks", format!("{}:{}", file_path, task_id));
         let history = TaskHistory::new(task_ref, &old_status, status, actor);
         let history = if let Some(r) = reason {
             history.with_reason(r)
@@ -254,7 +254,7 @@ impl TaskStorage for MockTaskStorage {
         let mut saved = history.clone();
         saved.id = Some(crate::schema_types::RecordId::new(
             "task_history",
-            &format!("{}", hist.len()),
+            format!("{}", hist.len()),
         ));
         hist.push(saved.clone());
 

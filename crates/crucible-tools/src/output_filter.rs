@@ -20,7 +20,7 @@
 //! - **pytest** (Python): `====== 10 passed in 0.12s ======`
 //! - **Jest** (JavaScript): `Tests: 10 passed, 2 failed`
 //! - **Go test**: `PASS` / `FAIL` with package summaries
-//! - **RSpec** (Ruby): `10 examples, 0 failures`
+//! - **`RSpec`** (Ruby): `10 examples, 0 failures`
 //! - **Mix test** (Elixir): `10 tests, 0 failures`
 
 use tracing::debug;
@@ -29,6 +29,7 @@ use tracing::debug;
 ///
 /// Returns `Some(filtered)` if the output was filtered, `None` if it should
 /// pass through unchanged (not recognized as test output).
+#[must_use] 
 pub fn filter_test_output(output: &str) -> Option<String> {
     // Detect which test framework produced this output
     if is_cargo_test(output) {
@@ -74,7 +75,7 @@ fn is_go_test(output: &str) -> bool {
         || output.contains("\nFAIL\t")
 }
 
-/// Check if output looks like RSpec or Mix test
+/// Check if output looks like `RSpec` or Mix test
 fn is_rspec_or_mix(output: &str) -> bool {
     (output.contains(" examples,") && output.contains(" failure"))
         || (output.contains(" tests,") && output.contains(" failure"))
@@ -128,7 +129,7 @@ fn filter_cargo_test(output: &str) -> String {
         summary_lines.push("\nFailures:".to_string());
         for line in failure_lines.iter().take(20) {
             // Limit failure output
-            summary_lines.push(format!("  {}", line));
+            summary_lines.push(format!("  {line}"));
         }
         if failure_lines.len() > 20 {
             summary_lines.push(format!("  ... and {} more", failure_lines.len() - 20));
@@ -160,7 +161,7 @@ fn filter_pytest(output: &str) -> String {
 
         // End of failures section (next === line that's not FAILURES)
         if in_failures
-            && line.starts_with("=")
+            && line.starts_with('=')
             && !line.contains("FAILURES")
             && !line.contains("ERRORS")
         {
@@ -176,7 +177,7 @@ fn filter_pytest(output: &str) -> String {
         }
 
         // Summary line with pass/fail counts
-        if line.starts_with("=")
+        if line.starts_with('=')
             && (line.contains("passed") || line.contains("failed") || line.contains("error"))
         {
             summary_lines.push(line.to_string());
@@ -290,7 +291,7 @@ fn filter_go_test(output: &str) -> String {
     summary_lines.join("\n")
 }
 
-/// Filter RSpec or Elixir mix test output
+/// Filter `RSpec` or Elixir mix test output
 fn filter_rspec_mix(output: &str) -> String {
     let mut summary_lines = Vec::new();
     let mut in_failures = false;

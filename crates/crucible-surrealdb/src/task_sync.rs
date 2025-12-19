@@ -158,7 +158,7 @@ impl<S: TaskStorage> TaskSync<S> {
         // Find deleted tasks (in DB but not in file)
         let current_ids: std::collections::HashSet<_> =
             task_file.tasks.iter().map(|t| &t.id).collect();
-        for (id, _) in &existing_map {
+        for id in existing_map.keys() {
             if !current_ids.contains(id) {
                 result.deleted.push(id.clone());
                 // Note: We don't actually delete from DB - just track it

@@ -417,7 +417,7 @@ async fn load_rune_handlers(bus: &Arc<RwLock<EventBus>>, kiln_path: &Path) {
     let mut loaded_count = 0;
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().map_or(false, |ext| ext == "rn") {
+        if path.extension().is_some_and(|ext| ext == "rn") {
             match load_single_rune_handler(&path).await {
                 Ok(handler) => {
                     bus.write().await.register(handler);

@@ -64,7 +64,7 @@ fn callout_regex() -> &'static Regex {
 impl BlockRule for CalloutScanner {
     fn check(state: &mut BlockState) -> Option<()> {
         let line = state.get_line(state.line);
-        if callout_regex().is_match(&line) {
+        if callout_regex().is_match(line) {
             Some(())
         } else {
             None
@@ -76,7 +76,7 @@ impl BlockRule for CalloutScanner {
         let first_line = state.get_line(start_line);
 
         // Parse the first line to extract type and title
-        let caps = callout_regex().captures(&first_line)?;
+        let caps = callout_regex().captures(first_line)?;
         let callout_type = caps.get(1)?.as_str().to_string();
         let title = caps.get(2).map(|m| m.as_str().trim().to_string());
 
@@ -90,7 +90,7 @@ impl BlockRule for CalloutScanner {
         // Use state.line_max which is the proper bound for iteration
         while current_line < state.line_max {
             let line = state.get_line(current_line);
-            let line_str = &*line;
+            let line_str = line;
 
             // Check if line starts with >
             if let Some(stripped) = line_str.strip_prefix('>') {
@@ -104,7 +104,7 @@ impl BlockRule for CalloutScanner {
                 if current_line + 1 < state.line_max {
                     let next_line = state.get_line(current_line + 1);
                     // Continue only if next line starts with > but is NOT a new callout
-                    if next_line.starts_with('>') && !callout_regex().is_match(&next_line) {
+                    if next_line.starts_with('>') && !callout_regex().is_match(next_line) {
                         // Skip empty line but continue callout
                         content_lines.push(String::new());
                         current_line += 1;

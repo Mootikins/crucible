@@ -126,7 +126,7 @@ async fn list(config: &CliConfig, tag: Option<String>, format: String) -> Result
         }
         _ => {
             // Table format
-            println!("{:<25} {:<10} {}", "NAME", "VERSION", "DESCRIPTION");
+            println!("{:<25} {:<10} DESCRIPTION", "NAME", "VERSION");
             println!("{}", "-".repeat(70));
             for card in cards {
                 let desc = if card.description.len() > 35 {
@@ -230,7 +230,7 @@ async fn validate(config: &CliConfig, verbose: bool) -> Result<()> {
 
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "md") {
+            if path.extension().is_some_and(|e| e == "md") {
                 total_files += 1;
                 let mut warnings = Vec::new();
 

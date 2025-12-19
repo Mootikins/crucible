@@ -214,7 +214,7 @@ impl Environment {
     }
 
     /// Parse environment from string.
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "development" | "dev" | "debug" => Some(Self::Development),
             "test" | "testing" => Some(Self::Test),

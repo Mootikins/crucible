@@ -146,7 +146,7 @@ pub async fn quick_sync_check(
     let deleted_files: Vec<PathBuf> = stored_states
         .keys()
         .filter(|p| !seen_paths.contains(*p))
-        .map(|p| PathBuf::from(p))
+        .map(PathBuf::from)
         .collect();
 
     let check_duration = start.elapsed();

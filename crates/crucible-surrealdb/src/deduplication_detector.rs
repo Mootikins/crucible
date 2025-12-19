@@ -211,9 +211,7 @@ impl<S: DeduplicationStorage> DeduplicationStorage for DeduplicationDetector<S> 
         let duplicate_blocks = total_block_instances.saturating_sub(total_unique_blocks);
 
         // Calculate storage saved by deduplication
-        let storage_saved = duplicate_stats
-            .iter()
-            .map(|(_hash, count)| {
+        let storage_saved = duplicate_stats.values().map(|count| {
                 // Estimate block size - could be improved with actual content queries
                 let block_size = self.average_block_size;
                 block_size * (count - 1)

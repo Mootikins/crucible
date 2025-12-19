@@ -392,7 +392,7 @@ impl BurnProvider {
         let mut tokenizer = Tokenizer::new(BPE::default());
 
         // Add basic pre-tokenizer
-        tokenizer.with_pre_tokenizer(Whitespace::default());
+        tokenizer.with_pre_tokenizer(Whitespace);
 
         // Add BERT-style post-processor
         tokenizer.with_post_processor(BertProcessing::new(

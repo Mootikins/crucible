@@ -7,7 +7,7 @@
 use crate::text_generation::*;
 use async_trait::async_trait;
 use chrono::Utc;
-use crucible_core::traits::llm::{LlmError, LlmResult};
+use crucible_core::traits::llm::LlmResult;
 use futures::stream::{self, BoxStream};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

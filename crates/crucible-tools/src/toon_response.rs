@@ -25,6 +25,7 @@ use rmcp::model::{CallToolResult, Content};
 ///
 /// Converts the JSON value to TOON format for token efficiency.
 /// Falls back to JSON if TOON encoding fails.
+#[must_use] 
 pub fn toon_success(value: serde_json::Value) -> CallToolResult {
     let formatted = tq::format_tool_response(&value);
     CallToolResult::success(vec![Content::text(formatted)])
@@ -33,6 +34,7 @@ pub fn toon_success(value: serde_json::Value) -> CallToolResult {
 /// Create a successful tool response with smart TOON formatting
 ///
 /// Extracts long content fields (like file content) into readable blocks.
+#[must_use] 
 pub fn toon_success_smart(value: serde_json::Value) -> CallToolResult {
     let formatted = tq::format_tool_response_smart(&value);
     CallToolResult::success(vec![Content::text(formatted)])
@@ -41,15 +43,17 @@ pub fn toon_success_smart(value: serde_json::Value) -> CallToolResult {
 /// Create a successful tool response with tool-type-aware formatting
 ///
 /// Uses the tool name to determine optimal formatting strategy.
+#[must_use] 
 pub fn toon_success_for_tool(tool_name: &str, value: serde_json::Value) -> CallToolResult {
     let tool_type = tq::ToolType::from_name(tool_name);
     let formatted = tq::format_tool_response_with(&value, tool_type);
     CallToolResult::success(vec![Content::text(formatted)])
 }
 
-/// Convert an existing Content::json response to TOON format
+/// Convert an existing `Content::json` response to TOON format
 ///
 /// Useful for migrating existing tool implementations.
+#[must_use] 
 pub fn content_to_toon(content: &Content) -> Content {
     if let Some(text_content) = content.as_text() {
         // Try to parse as JSON and convert to TOON

@@ -12,6 +12,7 @@ pub struct KilnTools {
 
 impl KilnTools {
     #[allow(missing_docs)]
+    #[must_use] 
     pub fn new(kiln_path: String) -> Self {
         Self { kiln_path }
     }
@@ -40,7 +41,7 @@ impl KilnTools {
                         total_files += 1;
                         total_size += metadata.len();
 
-                        if entry.path().extension().map_or(false, |ext| ext == "md") {
+                        if entry.path().extension().is_some_and(|ext| ext == "md") {
                             md_files += 1;
                         }
                     }
@@ -91,7 +92,7 @@ impl KilnTools {
                         total_files += 1;
                         total_size += metadata.len();
 
-                        if entry.path().extension().map_or(false, |ext| ext == "md") {
+                        if entry.path().extension().is_some_and(|ext| ext == "md") {
                             md_files += 1;
                         }
                     }

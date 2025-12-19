@@ -777,12 +777,10 @@ impl<'a> NoteIngestor<'a> {
             } else {
                 "internal_embed"
             }
+        } else if self.is_external_url(&wikilink.target) {
+            "external_link"
         } else {
-            if self.is_external_url(&wikilink.target) {
-                "external_link"
-            } else {
-                "internal_link"
-            }
+            "internal_link"
         }
     }
 
@@ -1377,7 +1375,7 @@ impl<'a> NoteIngestor<'a> {
         }
 
         // Fall back to extension-based detection for general URLs
-        if let Some(extension) = target_lower.split('.').last() {
+        if let Some(extension) = target_lower.split('.').next_back() {
             match extension {
                 // Image formats
                 "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp" | "bmp" | "ico" | "avif"
@@ -1425,7 +1423,7 @@ impl<'a> NoteIngestor<'a> {
 
         // Check if there's actually a dot (i.e., a real extension)
         if target_lower.contains('.') {
-            if let Some(extension) = target_lower.split('.').last() {
+            if let Some(extension) = target_lower.split('.').next_back() {
                 // Special handling for ambiguous extensions based on filename context
                 if extension == "webm" && target_lower.contains("audio") {
                     return "audio";
@@ -2041,7 +2039,7 @@ impl<'a> NoteIngestor<'a> {
         metadata.insert("media_type".to_string(), serde_json::json!("image"));
 
         // Extract image format information
-        if let Some(extension) = target.to_lowercase().split('.').last() {
+        if let Some(extension) = target.to_lowercase().split('.').next_back() {
             metadata.insert("image_format".to_string(), serde_json::json!(extension));
 
             // Add format-specific hints
@@ -2137,7 +2135,7 @@ impl<'a> NoteIngestor<'a> {
             );
 
             // Extract video format information
-            if let Some(extension) = target_lower.split('.').last() {
+            if let Some(extension) = target_lower.split('.').next_back() {
                 metadata.insert("video_format".to_string(), serde_json::json!(extension));
 
                 match extension {
@@ -2207,7 +2205,7 @@ impl<'a> NoteIngestor<'a> {
             );
 
             // Extract audio format information
-            if let Some(extension) = target_lower.split('.').last() {
+            if let Some(extension) = target_lower.split('.').next_back() {
                 metadata.insert("audio_format".to_string(), serde_json::json!(extension));
 
                 match extension {
@@ -2277,7 +2275,7 @@ impl<'a> NoteIngestor<'a> {
         metadata.insert("scrollable".to_string(), serde_json::json!(true));
 
         // Extract potential metadata from filename
-        if let Some(filename) = target.split('/').last() {
+        if let Some(filename) = target.split('/').next_back() {
             if filename.to_lowercase().contains("slide")
                 || filename.to_lowercase().contains("presentation")
             {
@@ -2395,7 +2393,7 @@ impl<'a> NoteIngestor<'a> {
         );
 
         // Extract format information
-        if let Some(extension) = target.to_lowercase().split('.').last() {
+        if let Some(extension) = target.to_lowercase().split('.').next_back() {
             match extension {
                 "md" => {
                     metadata.insert("format".to_string(), serde_json::json!("markdown"));

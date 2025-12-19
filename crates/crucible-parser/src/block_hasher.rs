@@ -101,14 +101,14 @@ impl SimpleBlockHasher {
                     next_level.push(crate::types::BlockHash::new(combined_hash));
                 } else {
                     // Odd number of nodes, promote the last one
-                    next_level.push(chunk[0].clone());
+                    next_level.push(chunk[0]);
                 }
             }
 
             current_level = next_level;
         }
 
-        Ok(current_level[0].clone())
+        Ok(current_level[0])
     }
 }
 

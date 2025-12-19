@@ -10,7 +10,7 @@ use std::path::Path;
 use walkdir::WalkDir;
 
 /// Custom schema for optional JSON object (used for frontmatter fields).
-/// serde_json::Value produces an empty schema that llama.cpp can't handle.
+/// `serde_json::Value` produces an empty schema that llama.cpp can't handle.
 /// Returns schema for "object or null" to preserve Option<T> semantics.
 fn optional_json_object_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
     // Create a schema that represents "any JSON object or null"
@@ -30,7 +30,7 @@ fn ensure_md_suffix(path: String) -> String {
     if pb.extension().is_some() {
         path
     } else {
-        format!("{}.md", path)
+        format!("{path}.md")
     }
 }
 
@@ -94,6 +94,7 @@ fn default_true() -> bool {
 
 impl NoteTools {
     #[allow(missing_docs)]
+    #[must_use] 
     pub fn new(kiln_path: String) -> Self {
         Self { kiln_path }
     }
@@ -118,7 +119,7 @@ impl NoteTools {
         let final_content = if let Some(fm) = frontmatter {
             let fm_str = serialize_frontmatter_to_yaml(&fm)
                 .map_err(|e| rmcp::ErrorData::internal_error(e, None))?;
-            format!("{}{}", fm_str, content)
+            format!("{fm_str}{content}")
         } else {
             content
         };
@@ -151,7 +152,7 @@ impl NoteTools {
 
         if !full_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
-                format!("File not found: {}", path),
+                format!("File not found: {path}"),
                 None,
             ));
         }
@@ -207,7 +208,7 @@ impl NoteTools {
 
         if !full_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
-                format!("File not found: {}", path),
+                format!("File not found: {path}"),
                 None,
             ));
         }
@@ -268,7 +269,7 @@ impl NoteTools {
 
         if !full_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
-                format!("File not found: {}", path),
+                format!("File not found: {path}"),
                 None,
             ));
         }
@@ -314,7 +315,7 @@ impl NoteTools {
         let final_file_content = if let Some(fm) = final_frontmatter {
             let fm_str = serialize_frontmatter_to_yaml(&fm)
                 .map_err(|e| rmcp::ErrorData::internal_error(e, None))?;
-            format!("{}{}", fm_str, final_content)
+            format!("{fm_str}{final_content}")
         } else {
             final_content
         };
@@ -348,7 +349,7 @@ impl NoteTools {
 
         if !full_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
-                format!("File not found: {}", path),
+                format!("File not found: {path}"),
                 None,
             ));
         }
@@ -395,9 +396,9 @@ impl NoteTools {
             for entry in WalkDir::new(&search_path)
                 .follow_links(false)
                 .into_iter()
-                .filter_map(|e| e.ok())
+                .filter_map(std::result::Result::ok)
                 .filter(|e| e.file_type().is_file())
-                .filter(|e| e.path().extension().map_or(false, |ext| ext == "md"))
+                .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
             {
                 let path = entry.path();
                 if let Ok(relative_path) = path.strip_prefix(&self.kiln_path) {
@@ -410,7 +411,7 @@ impl NoteTools {
 
                     let mut note_json = serde_json::json!({
                         "path": relative_path.to_string_lossy(),
-                        "size": metadata.as_ref().map(|m| m.len()).unwrap_or(0),
+                        "size": metadata.as_ref().map_or(0, std::fs::Metadata::len),
                         "modified": modified
                     });
 
@@ -437,7 +438,7 @@ impl NoteTools {
                 })?;
                 let path = entry.path();
 
-                if path.is_file() && path.extension().map_or(false, |ext| ext == "md") {
+                if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
                     if let Ok(relative_path) = path.strip_prefix(&self.kiln_path) {
                         let metadata = entry.metadata().ok();
                         let modified = metadata
@@ -448,7 +449,7 @@ impl NoteTools {
 
                         let mut note_json = serde_json::json!({
                             "path": relative_path.to_string_lossy(),
-                            "size": metadata.as_ref().map(|m| m.len()).unwrap_or(0),
+                            "size": metadata.as_ref().map_or(0, std::fs::Metadata::len),
                             "modified": modified
                         });
 
@@ -495,10 +496,10 @@ fn serialize_frontmatter_to_yaml(frontmatter: &serde_json::Value) -> Result<Stri
 
     // Serialize to YAML
     let yaml_str = serde_yaml::to_string(frontmatter)
-        .map_err(|e| format!("Failed to serialize frontmatter: {}", e))?;
+        .map_err(|e| format!("Failed to serialize frontmatter: {e}"))?;
 
     // Add delimiters
-    Ok(format!("---\n{}---\n", yaml_str))
+    Ok(format!("---\n{yaml_str}---\n"))
 }
 
 /// Extract content without frontmatter

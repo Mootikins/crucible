@@ -109,7 +109,7 @@ pub async fn lookup_file_hash(
         .map_err(|e| anyhow!("Failed to lookup file hash for '{}': {}", relative_path, e))?;
 
     if let Some(record) = result.records.first() {
-        let stored_hash = convert_record_to_stored_hash(&record)?;
+        let stored_hash = convert_record_to_stored_hash(record)?;
         debug!(
             "Found hash for {}: {} (record: {})",
             relative_path,
@@ -237,7 +237,7 @@ async fn lookup_file_hashes_batch_internal(
         .records
         .iter()
         .map(|record| {
-            let stored_hash = convert_record_to_stored_hash(&record)?;
+            let stored_hash = convert_record_to_stored_hash(record)?;
             let path = stored_hash.relative_path.clone();
             found_files.insert(path.clone(), stored_hash);
             Ok::<String, anyhow::Error>(path)
@@ -707,7 +707,7 @@ pub async fn lookup_file_hashes_batch_cached(
         database_round_trips: if uncached_paths.is_empty() {
             0
         } else {
-            (uncached_paths.len() + config.max_batch_size - 1) / config.max_batch_size
+            uncached_paths.len().div_ceil(config.max_batch_size)
         },
     })
 }
