@@ -63,12 +63,12 @@ async fn test_prompt_with_streaming_response() {
         .expect("Should complete handshake");
 
     // Create a PromptRequest
-    use agent_client_protocol::{ContentBlock, PromptRequest, SessionId};
-    let prompt_request = PromptRequest {
-        session_id: SessionId::from(session.id().to_string()),
-        prompt: vec![ContentBlock::from("What is 2+2?".to_string())],
-        meta: None,
-    };
+    use agent_client_protocol::PromptRequest;
+    let prompt_request: PromptRequest = serde_json::from_value(serde_json::json!({
+        "sessionId": session.id().to_string(),
+        "prompt": [{"text": "What is 2+2?"}],
+        "_meta": null
+    })).expect("Failed to create PromptRequest");
 
     // Send prompt with streaming (request ID is generated internally)
     let result = client.send_prompt_with_streaming(prompt_request).await;
