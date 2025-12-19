@@ -324,7 +324,7 @@ impl CanChat for UnifiedProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+
     use crucible_config::BackendType;
 
     // Note: Full integration tests would require mock providers

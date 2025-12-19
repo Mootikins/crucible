@@ -100,7 +100,7 @@ fn test_tool_call_invalid_json_arguments() {
 
 #[test]
 fn test_multiple_tool_calls() {
-    let tool_calls = vec![
+    let tool_calls = [
         ToolCall {
             id: "call_1".to_string(),
             r#type: "function".to_string(),

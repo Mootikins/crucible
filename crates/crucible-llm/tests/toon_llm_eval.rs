@@ -26,7 +26,7 @@ use std::time::Duration;
 use toon_eval::{
     all_fixtures, build_prompt, build_query_prompt, fixtures_by_complexity, query_fixtures,
     validate_json_output, validate_toon_output, Complexity, ConversionDirection, EvalReport,
-    PromptConfig, QueryFixture, TestResult,
+    PromptConfig, TestResult,
 };
 
 /// Get Ollama base URL from environment
@@ -385,7 +385,7 @@ async fn test_toon_tabular_arrays() {
                 fixture.id,
                 &fixture.json,
                 ConversionDirection::JsonToToon,
-                &config,
+                config,
             )
             .await;
 
@@ -646,7 +646,7 @@ async fn test_toon_query_comprehension() {
             println!("  Fixture: {} - {}", fixture.id, fixture.description);
 
             for question in &fixture.questions {
-                let prompt = build_query_prompt(&config, fixture.toon, question.question);
+                let prompt = build_query_prompt(config, fixture.toon, question.question);
 
                 let response = match call_ollama(&prompt).await {
                     Ok(r) => r,

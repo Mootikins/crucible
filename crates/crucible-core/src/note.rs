@@ -69,7 +69,7 @@ mod tests {
         assert!(doc.parent_id.is_none());
         assert!(doc.children.is_empty());
         assert!(doc.properties.is_empty());
-        assert_eq!(doc.collapsed, false);
+        assert!(!doc.collapsed);
         assert_eq!(doc.position, 0);
         assert_eq!(doc.created_at, doc.updated_at);
     }

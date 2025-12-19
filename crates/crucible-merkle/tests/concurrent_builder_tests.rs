@@ -103,7 +103,7 @@ async fn test_builder_cloning_for_concurrency() {
 
     // Each task gets its own clone
     for i in 0..20 {
-        let builder = original_builder.clone();
+        let builder = original_builder;
         tasks.spawn(async move {
             let note = ParsedNoteBuilder::new(PathBuf::from(format!("clone{}.md", i))).build();
             (i, builder.from_document(&note))
@@ -192,7 +192,7 @@ fn test_builder_zero_cost_with_many_clones() {
     let builder = HybridMerkleTreeBuilder;
 
     // Clone the builder 1000 times
-    let clones: Vec<_> = (0..1000).map(|_| builder.clone()).collect();
+    let clones: Vec<_> = (0..1000).map(|_| builder).collect();
 
     // Each clone should be zero-sized
     for clone in clones {

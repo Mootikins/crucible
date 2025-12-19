@@ -12,8 +12,6 @@
 //! Note: GPU tests are marked with `#[serial]` to prevent Vulkan context contention
 //! when running tests in parallel.
 
-use serial_test::serial;
-
 /// Test texts for semantic similarity comparison
 const TEST_TEXTS: &[&str] = &[
     // Similar pairs (cat theme)

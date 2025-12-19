@@ -217,7 +217,7 @@ impl ServerHandler for CrucibleMcpServer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
+
     use std::sync::Arc;
     use tempfile::TempDir;
 
@@ -259,7 +259,7 @@ mod tests {
             Ok(vec![vec![0.1; 384]; _texts.len()])
         }
 
-        fn model_name(&self) -> &str {
+        fn model_name(&self) -> &'static str {
             "mock-model"
         }
 

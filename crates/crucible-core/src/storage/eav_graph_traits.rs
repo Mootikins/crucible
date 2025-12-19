@@ -1350,7 +1350,7 @@ mod tests {
                 .values()
                 .filter(|r| {
                     r.from_entity_id == entity_id
-                        && relation_type.map_or(true, |rt| r.relation_type == rt)
+                        && relation_type.is_none_or(|rt| r.relation_type == rt)
                 })
                 .cloned()
                 .collect())
@@ -1367,7 +1367,7 @@ mod tests {
                 .values()
                 .filter(|r| {
                     r.to_entity_id.as_ref() == Some(&entity_id.to_string())
-                        && relation_type.map_or(true, |rt| r.relation_type == rt)
+                        && relation_type.is_none_or(|rt| r.relation_type == rt)
                 })
                 .cloned()
                 .collect())

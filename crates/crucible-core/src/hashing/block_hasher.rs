@@ -1592,19 +1592,17 @@ mod tests {
         // Check first block
         assert_eq!(hashed_blocks[0].index, 0);
         assert_eq!(hashed_blocks[0].offset, 0);
-        assert!(hashed_blocks[0].is_last == false);
+        assert!(!hashed_blocks[0].is_last);
         assert_eq!(hashed_blocks[0].data, blocks[0].content.as_bytes());
 
         // Check second block
         assert_eq!(hashed_blocks[1].index, 1);
         assert_eq!(hashed_blocks[1].offset, 15);
-        assert!(hashed_blocks[1].is_last == true);
+        assert!(hashed_blocks[1].is_last);
         assert_eq!(hashed_blocks[1].data, blocks[1].content.as_bytes());
 
         // Verify hashes are correct
-        for (_i, (hashed_block, original_block)) in
-            hashed_blocks.iter().zip(blocks.iter()).enumerate()
-        {
+        for (hashed_block, original_block) in hashed_blocks.iter().zip(blocks.iter()) {
             let expected_hash = hasher.hash_ast_block(original_block).await.unwrap();
             assert_eq!(hashed_block.hash, expected_hash.to_hex());
         }

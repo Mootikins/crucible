@@ -151,7 +151,7 @@ proptest! {
     #[test]
     fn tag_format_valid(tag in tag_strategy()) {
         // Valid tags should start with a letter and contain only allowed characters
-        prop_assert!(tag.chars().next().map_or(true, |c| c.is_ascii_alphabetic()),
+        prop_assert!(tag.chars().next().is_none_or(|c| c.is_ascii_alphabetic()),
             "Tags should start with a letter: {}", tag);
     }
 
@@ -174,7 +174,7 @@ mod edge_cases {
     fn wikilink_empty_input() {
         use crucible_core::parser::Wikilink;
         let result = Wikilink::parse("", 0, false);
-        assert!(result.target.is_empty() || result.target == "");
+        assert!(result.target.is_empty() || result.target.is_empty());
     }
 
     #[test]

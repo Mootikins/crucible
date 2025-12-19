@@ -3,9 +3,8 @@
 //! This module tests that the BlockExtractor correctly assigns parent_block_id
 //! and depth to blocks based on heading hierarchy.
 
-use crucible_parser::types::ParsedNote;
 use crucible_parser::{BlockExtractor, MarkdownParser};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[tokio::test]
 async fn test_single_heading_with_paragraph() {
@@ -34,7 +33,7 @@ This is another paragraph under the same heading.
 
     // Find paragraph blocks
     let paragraphs: Vec<_> = blocks.iter().filter(|b| !b.is_heading()).collect();
-    assert!(paragraphs.len() >= 1, "Expected at least one paragraph");
+    assert!(!paragraphs.is_empty(), "Expected at least one paragraph");
 
     // All paragraphs should have the heading as parent
     for para in paragraphs {

@@ -359,7 +359,7 @@ mod tests {
         // Verify EntityStored was emitted
         let events = mock.emitted_events();
         assert!(
-            events.len() >= 1,
+            !events.is_empty(),
             "Expected at least 1 event, got {}",
             events.len()
         );

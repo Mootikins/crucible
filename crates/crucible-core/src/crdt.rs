@@ -48,13 +48,15 @@ mod tests {
     #[test]
     fn test_crdt_manager_new() {
         let manager = CrdtManager::new();
-        assert!(manager.get_document().client_id() >= 0);
+        // client_id is a u64, just verify it exists
+        let _client_id = manager.get_document().client_id();
     }
 
     #[test]
     fn test_crdt_manager_default() {
         let manager = CrdtManager::default();
-        assert!(manager.get_document().client_id() >= 0);
+        // client_id is a u64, just verify it exists
+        let _client_id = manager.get_document().client_id();
     }
 
     #[test]

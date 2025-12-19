@@ -11,9 +11,8 @@ use crucible_agents::prompt::LayeredPromptBuilder;
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::traits::llm::{
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ChatMessageDelta,
-    CompletionRequest, CompletionResponse, FunctionCall, FunctionCallDelta, LlmResult, MessageRole,
-    ProviderCapabilities, TextGenerationProvider, TextModelInfo, ToolCall as LlmToolCall,
-    ToolCallDelta,
+    CompletionRequest, CompletionResponse, FunctionCallDelta, LlmResult, MessageRole,
+    ProviderCapabilities, TextGenerationProvider, TextModelInfo, ToolCallDelta,
 };
 use crucible_core::traits::tools::{
     ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult,

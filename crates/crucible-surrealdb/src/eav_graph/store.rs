@@ -335,7 +335,7 @@ impl EAVGraphStore {
         let block_ref = embedding
             .block_id
             .as_ref()
-            .map(|b| thing_value(b))
+            .map(thing_value)
             .unwrap_or(serde_json::Value::Null);
 
         let params = json!({

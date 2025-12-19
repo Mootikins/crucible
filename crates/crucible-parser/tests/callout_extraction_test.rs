@@ -61,7 +61,7 @@ mod tests {
         ];
 
         for input in malformed_cases {
-            if let Some(_) = re.captures(input) {
+            if re.captures(input).is_some() {
                 panic!("Regex should not have matched malformed input: {}", input);
             }
         }

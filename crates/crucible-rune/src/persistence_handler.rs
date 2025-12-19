@@ -625,7 +625,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let handler = PersistenceHandler::new(dir.path().to_path_buf());
 
-        let events = vec![
+        let events = [
             Arc::new(SessionEvent::MessageReceived {
                 content: "First".into(),
                 participant_id: "user".into(),

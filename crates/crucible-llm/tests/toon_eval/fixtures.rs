@@ -119,7 +119,7 @@ fn primitives_fixtures() -> Vec<Fixture> {
             json: json!({
                 "integer": 42,
                 "negative": -17,
-                "decimal": 3.14159,
+                "decimal": std::f64::consts::PI,
                 "zero": 0
             }),
             expected_toon: None, // Order may vary

@@ -140,9 +140,7 @@ for each block of content that meets the minimum word threshold.
 #[tokio::test]
 #[ignore = "Integration test requiring full event system with tracing"]
 async fn test_event_cascade_timing() {
-    use crucible_core::events::SessionEvent;
-    use crucible_rune::EventType;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::AtomicUsize;
 
     // Setup: Create temp kiln directory
     let temp_dir = TempDir::new().expect("Failed to create temp dir");

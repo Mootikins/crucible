@@ -2968,7 +2968,7 @@ async fn test_embed_performance_edge_cases() {
             .and_then(|v| v.as_i64())
             .unwrap();
         assert!(
-            complexity >= 3 && complexity <= 11,
+            (3..=11).contains(&complexity),
             "Complexity should be reasonable: {}",
             complexity
         );
@@ -3599,7 +3599,7 @@ async fn test_embed_backward_compatibility() {
         Some("existing-note")
     );
     assert!(
-        !wikilink_relation.metadata.get("embed_type").is_some(),
+        wikilink_relation.metadata.get("embed_type").is_none(),
         "Regular wikilink should not have embed metadata"
     );
     assert!(
