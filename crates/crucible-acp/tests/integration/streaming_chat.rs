@@ -68,7 +68,8 @@ async fn test_prompt_with_streaming_response() {
         "sessionId": session.id().to_string(),
         "prompt": [{"text": "What is 2+2?"}],
         "_meta": null
-    })).expect("Failed to create PromptRequest");
+    }))
+    .expect("Failed to create PromptRequest");
 
     // Send prompt with streaming (request ID is generated internally)
     let result = client.send_prompt_with_streaming(prompt_request).await;
