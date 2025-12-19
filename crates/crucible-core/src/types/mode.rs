@@ -172,7 +172,8 @@ mod tests {
 
     #[test]
     fn test_mode_descriptor_from_session_mode() {
-        let session_mode = test_session_mode("plan", "Plan Mode", Some("Read-only exploration mode"));
+        let session_mode =
+            test_session_mode("plan", "Plan Mode", Some("Read-only exploration mode"));
 
         let descriptor: ModeDescriptor = session_mode.into();
 

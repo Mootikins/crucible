@@ -89,7 +89,8 @@ async fn test_opencode_streaming_returns_content() {
         "sessionId": session.id().to_string(),
         "prompt": [{"text": "say hello"}],
         "_meta": null
-    })).expect("Failed to create PromptRequest");
+    }))
+    .expect("Failed to create PromptRequest");
 
     eprintln!("Sending prompt: 'say hello'");
 
@@ -389,7 +390,8 @@ async fn test_opencode_with_sse_mcp() {
         "sessionId": session.id().to_string(),
         "prompt": [{"text": "say hello"}],
         "_meta": null
-    })).expect("Failed to create PromptRequest");
+    }))
+    .expect("Failed to create PromptRequest");
 
     eprintln!("Sending prompt: 'say hello'");
 
@@ -470,37 +472,46 @@ async fn test_opencode_no_mcp() {
     };
 
     // 1. Initialize
-    send(&mut stdin, &serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {"protocolVersion": 1, "clientCapabilities": {}}
-    }));
+    send(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocolVersion": 1, "clientCapabilities": {}}
+        }),
+    );
     let _init_response = read_line(&mut reader);
     eprintln!("Initialize: OK");
 
     // 2. Create session with NO MCP servers (should work!)
-    send(&mut stdin, &serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "session/new",
-        "params": {"cwd": "/tmp", "mcpServers": []}
-    }));
+    send(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "session/new",
+            "params": {"cwd": "/tmp", "mcpServers": []}
+        }),
+    );
     let session_response = read_line(&mut reader);
     let session_json: serde_json::Value = serde_json::from_str(&session_response).unwrap();
     let session_id = session_json["result"]["sessionId"].as_str().unwrap();
     eprintln!("Session (no MCP): {}", session_id);
 
     // 3. Send prompt
-    send(&mut stdin, &serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 3,
-        "method": "session/prompt",
-        "params": {
-            "sessionId": session_id,
-            "prompt": [{"type": "text", "text": "say hello"}]
-        }
-    }));
+    send(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "session/prompt",
+            "params": {
+                "sessionId": session_id,
+                "prompt": [{"type": "text", "text": "say hello"}]
+            }
+        }),
+    );
 
     // 4. Read response
     eprintln!("\n--- NO MCP Response ---");
@@ -659,12 +670,15 @@ async fn test_opencode_raw_sse_mcp() {
     };
 
     // Initialize
-    send(&mut stdin, &serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {"protocolVersion": 1, "clientCapabilities": {}}
-    }));
+    send(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocolVersion": 1, "clientCapabilities": {}}
+        }),
+    );
     let _init = read_line(&mut reader);
     eprintln!("Initialize: OK");
 
@@ -707,32 +721,44 @@ async fn test_opencode_raw_sse_mcp() {
         "cwd": "/tmp",
         "mcpServers": [format3.clone()]
     });
-    eprintln!("Format 3 (empty array): {}", serde_json::to_string(&session_params).unwrap());
+    eprintln!(
+        "Format 3 (empty array): {}",
+        serde_json::to_string(&session_params).unwrap()
+    );
 
-    send(&mut stdin, &serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "session/new",
-        "params": session_params
-    }));
+    send(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "session/new",
+            "params": session_params
+        }),
+    );
 
     let session_response = read_line(&mut reader);
-    eprintln!("Session response: {}", &session_response[..session_response.len().min(200)]);
+    eprintln!(
+        "Session response: {}",
+        &session_response[..session_response.len().min(200)]
+    );
 
     let session_json: serde_json::Value = serde_json::from_str(&session_response).unwrap();
     let session_id = session_json["result"]["sessionId"].as_str().unwrap();
     eprintln!("Session (SSE MCP): {}", session_id);
 
     // Send prompt
-    send(&mut stdin, &serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 3,
-        "method": "session/prompt",
-        "params": {
-            "sessionId": session_id,
-            "prompt": [{"type": "text", "text": "say hello"}]
-        }
-    }));
+    send(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "session/prompt",
+            "params": {
+                "sessionId": session_id,
+                "prompt": [{"type": "text", "text": "say hello"}]
+            }
+        }),
+    );
 
     // Read response
     eprintln!("\n--- RAW SSE MCP Response ---");
@@ -747,7 +773,11 @@ async fn test_opencode_raw_sse_mcp() {
             continue;
         }
 
-        eprintln!("[+{:.3}s] Line: {} bytes", start.elapsed().as_secs_f64(), line.len());
+        eprintln!(
+            "[+{:.3}s] Line: {} bytes",
+            start.elapsed().as_secs_f64(),
+            line.len()
+        );
 
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
             let update_type = json["params"]["update"]["sessionUpdate"].as_str();

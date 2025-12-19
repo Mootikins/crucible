@@ -142,9 +142,7 @@ fn popup_item_note(path: &str, subtitle: &str) -> PopupItem {
 #[test]
 fn popup_hidden_when_none() {
     let mut terminal = test_terminal();
-    let state = TestStateBuilder::new("plan")
-        .with_input("/help")
-        .build(); // popup: None
+    let state = TestStateBuilder::new("plan").with_input("/help").build(); // popup: None
 
     terminal.draw(|f| render(f, &state)).unwrap();
     assert_snapshot!("popup_hidden", terminal.backend());

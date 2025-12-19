@@ -60,7 +60,7 @@ batch_size = 16
     // Test with CLI flags (highest priority)
     let mut cmd = Command::cargo_bin("cru").unwrap();
     // Use CRUCIBLE_CONFIG_DIR for isolation on Windows
-    cmd.env("CRUCIBLE_CONFIG_DIR", config_dir.join("crucible")) 
+    cmd.env("CRUCIBLE_CONFIG_DIR", config_dir.join("crucible"))
         .arg("config")
         .arg("show")
         .arg("--format")
@@ -82,7 +82,9 @@ batch_size = 16
     // Test with sources flag to verify tracking works
     let mut cmd = Command::cargo_bin("cru").unwrap();
     cmd.env("CRUCIBLE_CONFIG_DIR", config_dir.join("crucible"))
-       .arg("config").arg("show").arg("--sources");
+        .arg("config")
+        .arg("show")
+        .arg("--sources");
 
     cmd.assert()
         .success()
@@ -134,7 +136,8 @@ session_timeout_minutes = 120
     let mut cmd = Command::cargo_bin("cru").unwrap();
     // Use CRUCIBLE_CONFIG_DIR for isolation
     cmd.env("CRUCIBLE_CONFIG_DIR", config_dir.join("crucible"))
-       .arg("config").arg("show");
+        .arg("config")
+        .arg("show");
 
     cmd.assert()
         .success()
@@ -182,7 +185,8 @@ provider = "fastembed"
     let mut cmd = Command::cargo_bin("cru").unwrap();
     // Use CRUCIBLE_CONFIG_DIR for isolation
     cmd.env("CRUCIBLE_CONFIG_DIR", config_dir.join("crucible"))
-       .arg("config").arg("show");
+        .arg("config")
+        .arg("show");
 
     cmd.assert()
         .success()

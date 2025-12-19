@@ -599,8 +599,7 @@ impl CrucibleAcpClient {
             .unwrap_or_else(|| PathBuf::from("cru"));
 
         let crucible_mcp_server = McpServer::Stdio(
-            McpServerStdio::new("crucible", cru_command)
-                .args(vec!["mcp".to_string()])
+            McpServerStdio::new("crucible", cru_command).args(vec!["mcp".to_string()]),
         );
 
         let cwd = self
@@ -609,8 +608,7 @@ impl CrucibleAcpClient {
             .clone()
             .unwrap_or_else(|| PathBuf::from("/"));
 
-        let session_request = NewSessionRequest::new(cwd)
-            .mcp_servers(vec![crucible_mcp_server]);
+        let session_request = NewSessionRequest::new(cwd).mcp_servers(vec![crucible_mcp_server]);
 
         let session_response = self.create_new_session(session_request).await?;
 
@@ -659,9 +657,7 @@ impl CrucibleAcpClient {
         let _init_response = self.initialize(init_request).await?;
 
         // 3. Send NewSessionRequest with SSE MCP server
-        let crucible_mcp_server = McpServer::Sse(
-            McpServerSse::new("crucible", sse_url)
-        );
+        let crucible_mcp_server = McpServer::Sse(McpServerSse::new("crucible", sse_url));
 
         tracing::debug!("Configuring MCP server: {:?}", crucible_mcp_server);
 
@@ -671,8 +667,7 @@ impl CrucibleAcpClient {
             .clone()
             .unwrap_or_else(|| PathBuf::from("/"));
 
-        let session_request = NewSessionRequest::new(cwd)
-            .mcp_servers(vec![crucible_mcp_server]);
+        let session_request = NewSessionRequest::new(cwd).mcp_servers(vec![crucible_mcp_server]);
 
         let session_response = self.create_new_session(session_request).await?;
 
@@ -1168,9 +1163,9 @@ impl CrucibleAcpClient {
         use agent_client_protocol::SelectedPermissionOutcome;
 
         let outcome = if let Some(first_option) = request.options.first() {
-            RequestPermissionOutcome::Selected(
-                SelectedPermissionOutcome::new(first_option.option_id.clone())
-            )
+            RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                first_option.option_id.clone(),
+            ))
         } else {
             RequestPermissionOutcome::Cancelled
         };
@@ -1519,15 +1514,13 @@ mod tests {
             Ok(notif) => {
                 println!("Parsed notification successfully");
                 match &notif.update {
-                    SessionUpdate::AgentMessageChunk(chunk) => {
-                        match &chunk.content {
-                            ContentBlock::Text(text) => {
-                                assert_eq!(text.text, "hello");
-                                println!("Got text: {}", text.text);
-                            }
-                            other => panic!("Expected Text content, got {:?}", other),
+                    SessionUpdate::AgentMessageChunk(chunk) => match &chunk.content {
+                        ContentBlock::Text(text) => {
+                            assert_eq!(text.text, "hello");
+                            println!("Got text: {}", text.text);
                         }
-                    }
+                        other => panic!("Expected Text content, got {:?}", other),
+                    },
                     other => panic!("Expected AgentMessageChunk, got {:?}", other),
                 }
             }
@@ -1541,7 +1534,10 @@ mod tests {
     fn get_simple_command() -> (PathBuf, Option<Vec<String>>) {
         #[cfg(windows)]
         {
-            (PathBuf::from("cmd"), Some(vec!["/C".to_string(), "echo".to_string(), "ok".to_string()]))
+            (
+                PathBuf::from("cmd"),
+                Some(vec!["/C".to_string(), "echo".to_string(), "ok".to_string()]),
+            )
         }
         #[cfg(not(windows))]
         {
@@ -1576,7 +1572,13 @@ mod tests {
         {
             // Use ping hack for sleep to avoid heavy PowerShell startup
             // -n 6 pinging localhost approximates 5 seconds sleep
-            (PathBuf::from("cmd"), Some(vec!["/C".to_string(), "ping 127.0.0.1 -n 6 > nul".to_string()]))
+            (
+                PathBuf::from("cmd"),
+                Some(vec![
+                    "/C".to_string(),
+                    "ping 127.0.0.1 -n 6 > nul".to_string(),
+                ]),
+            )
         }
         #[cfg(not(windows))]
         {
@@ -2076,8 +2078,7 @@ mod tests {
         assert!(process.is_ok(), "Should spawn cat process");
 
         // Create a simple initialize request
-        let request =
-            ClientRequest::InitializeRequest(InitializeRequest::new(1u16.into()));
+        let request = ClientRequest::InitializeRequest(InitializeRequest::new(1u16.into()));
 
         // Send the request - cat will echo it back
         // This will succeed in sending/receiving but may fail on parsing
@@ -2221,8 +2222,7 @@ mod tests {
         assert!(client.is_connected(), "Should be marked as connected");
 
         // Create initialize request
-        let request =
-            ClientRequest::InitializeRequest(InitializeRequest::new(1u16.into()));
+        let request = ClientRequest::InitializeRequest(InitializeRequest::new(1u16.into()));
 
         // Send request - cat will echo it back
         // May succeed or fail depending on JSON parsing

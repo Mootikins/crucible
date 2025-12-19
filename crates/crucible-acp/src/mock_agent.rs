@@ -176,8 +176,7 @@ mod tests {
         let agent = MockAgent::default();
 
         // Create an initialize request
-        let request =
-            ClientRequest::InitializeRequest(InitializeRequest::new(1u16.into()));
+        let request = ClientRequest::InitializeRequest(InitializeRequest::new(1u16.into()));
 
         // This should succeed and not error
         let result = agent.handle_request(request).await;
@@ -193,9 +192,8 @@ mod tests {
         let agent = MockAgent::default();
 
         // Create a new session request
-        let request = ClientRequest::NewSessionRequest(
-            NewSessionRequest::new(PathBuf::from("/test"))
-        );
+        let request =
+            ClientRequest::NewSessionRequest(NewSessionRequest::new(PathBuf::from("/test")));
 
         // Should handle session creation
         let result = agent.handle_request(request).await;
@@ -212,8 +210,7 @@ mod tests {
         config.simulate_errors = true;
         let agent = MockAgent::new(config);
 
-        let request =
-            ClientRequest::InitializeRequest(InitializeRequest::new(1u16.into()));
+        let request = ClientRequest::InitializeRequest(InitializeRequest::new(1u16.into()));
 
         let result = agent.handle_request(request).await;
         assert!(result.is_err(), "Should simulate errors when configured");
@@ -226,8 +223,7 @@ mod tests {
         config.delay_ms = 50;
         let agent = MockAgent::new(config);
 
-        let request =
-            ClientRequest::InitializeRequest(InitializeRequest::new(1u16.into()));
+        let request = ClientRequest::InitializeRequest(InitializeRequest::new(1u16.into()));
 
         let start = std::time::Instant::now();
         let _result = agent.handle_request(request).await;

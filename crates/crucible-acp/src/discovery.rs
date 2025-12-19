@@ -451,7 +451,10 @@ mod tests {
     fn test_agent_info_has_env_vars() {
         // AgentInfo should support environment variables
         let mut env_vars = std::collections::HashMap::new();
-        env_vars.insert("LOCAL_ENDPOINT".to_string(), "http://localhost:11434".to_string());
+        env_vars.insert(
+            "LOCAL_ENDPOINT".to_string(),
+            "http://localhost:11434".to_string(),
+        );
 
         let agent = AgentInfo {
             name: "opencode".to_string(),
@@ -460,7 +463,10 @@ mod tests {
             env_vars,
         };
 
-        assert_eq!(agent.env_vars.get("LOCAL_ENDPOINT"), Some(&"http://localhost:11434".to_string()));
+        assert_eq!(
+            agent.env_vars.get("LOCAL_ENDPOINT"),
+            Some(&"http://localhost:11434".to_string())
+        );
     }
 
     #[test]
@@ -484,13 +490,19 @@ mod tests {
         // Create a config with a custom profile
         let mut agents = HashMap::new();
         let mut env = HashMap::new();
-        env.insert("LOCAL_ENDPOINT".to_string(), "http://localhost:11434/v1".to_string());
-        agents.insert("opencode-local".to_string(), AgentProfile {
-            extends: Some("opencode".to_string()),
-            command: None,
-            args: None,
-            env,
-        });
+        env.insert(
+            "LOCAL_ENDPOINT".to_string(),
+            "http://localhost:11434/v1".to_string(),
+        );
+        agents.insert(
+            "opencode-local".to_string(),
+            AgentProfile {
+                extends: Some("opencode".to_string()),
+                command: None,
+                args: None,
+                env,
+            },
+        );
 
         let config = AcpConfig {
             default_agent: Some("opencode-local".to_string()),
@@ -504,7 +516,10 @@ mod tests {
         assert_eq!(agent.name, "opencode-local");
         assert_eq!(agent.command, "opencode"); // From built-in
         assert_eq!(agent.args, vec!["acp".to_string()]); // From built-in
-        assert_eq!(agent.env_vars.get("LOCAL_ENDPOINT"), Some(&"http://localhost:11434/v1".to_string()));
+        assert_eq!(
+            agent.env_vars.get("LOCAL_ENDPOINT"),
+            Some(&"http://localhost:11434/v1".to_string())
+        );
     }
 
     #[test]
@@ -513,12 +528,15 @@ mod tests {
         use std::collections::HashMap;
 
         let mut agents = HashMap::new();
-        agents.insert("my-agent".to_string(), AgentProfile {
-            extends: None,
-            command: Some("/usr/local/bin/my-agent".to_string()),
-            args: Some(vec!["--mode".to_string(), "acp".to_string()]),
-            env: HashMap::new(),
-        });
+        agents.insert(
+            "my-agent".to_string(),
+            AgentProfile {
+                extends: None,
+                command: Some("/usr/local/bin/my-agent".to_string()),
+                args: Some(vec!["--mode".to_string(), "acp".to_string()]),
+                env: HashMap::new(),
+            },
+        );
 
         let config = AcpConfig {
             agents,

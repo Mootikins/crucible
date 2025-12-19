@@ -64,7 +64,11 @@ mod tests {
         let models = parse_opencode_models(output);
         assert_eq!(
             models,
-            vec!["anthropic/claude-sonnet-4", "openai/gpt-4o", "ollama/llama3.2"]
+            vec![
+                "anthropic/claude-sonnet-4",
+                "openai/gpt-4o",
+                "ollama/llama3.2"
+            ]
         );
     }
 

@@ -41,9 +41,9 @@ use agent_client_protocol::{
     ExtNotification, ExtRequest, ExtResponse, KillTerminalCommandRequest,
     KillTerminalCommandResponse, ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest,
     ReleaseTerminalResponse, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, Result as AcpResult, SelectedPermissionOutcome, SessionNotification, TerminalOutputRequest,
-    TerminalOutputResponse, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
-    WriteTextFileRequest, WriteTextFileResponse,
+    RequestPermissionResponse, Result as AcpResult, SelectedPermissionOutcome, SessionNotification,
+    TerminalOutputRequest, TerminalOutputResponse, WaitForTerminalExitRequest,
+    WaitForTerminalExitResponse, WriteTextFileRequest, WriteTextFileResponse,
 };
 
 use crate::{AcpError as CrucibleAcpError, Result};
@@ -151,10 +151,13 @@ impl Client for CrucibleClient {
         } else {
             // In act mode, select the first option (usually "allow" or "approve")
             if let Some(first_option) = args.options.first() {
-                tracing::info!("Permission granted: selecting option {}", first_option.option_id);
-                RequestPermissionOutcome::Selected(
-                    SelectedPermissionOutcome::new(first_option.option_id.clone())
-                )
+                tracing::info!(
+                    "Permission granted: selecting option {}",
+                    first_option.option_id
+                );
+                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                    first_option.option_id.clone(),
+                ))
             } else {
                 // No options provided, cancel
                 tracing::warn!("No permission options provided, cancelling");
@@ -414,7 +417,7 @@ mod tests {
         let client = CrucibleClient::new(temp.path().to_path_buf(), false);
         let result = client
             .read_text_file(
-                ReadTextFileRequest::new(SessionId::from("test"), test_file) // Use absolute path
+                ReadTextFileRequest::new(SessionId::from("test"), test_file), // Use absolute path
             )
             .await;
 
@@ -429,9 +432,11 @@ mod tests {
         let new_file = temp.path().join("new.txt");
 
         let result = client
-            .write_text_file(
-                WriteTextFileRequest::new(SessionId::from("test"), new_file.clone(), "new content".to_string())
-            )
+            .write_text_file(WriteTextFileRequest::new(
+                SessionId::from("test"),
+                new_file.clone(),
+                "new content".to_string(),
+            ))
             .await;
 
         assert!(result.is_ok());
@@ -446,9 +451,11 @@ mod tests {
         let client = CrucibleClient::new(temp.path().to_path_buf(), true);
 
         let result = client
-            .write_text_file(
-                WriteTextFileRequest::new(SessionId::from("test"), PathBuf::from("blocked.txt"), "should fail".to_string())
-            )
+            .write_text_file(WriteTextFileRequest::new(
+                SessionId::from("test"),
+                PathBuf::from("blocked.txt"),
+                "should fail".to_string(),
+            ))
             .await;
 
         assert!(result.is_err());
@@ -457,19 +464,26 @@ mod tests {
     #[tokio::test]
     async fn test_permission_request() {
         use agent_client_protocol::{
-            PermissionOption, PermissionOptionKind, ToolCallId, ToolCallUpdate, ToolCallUpdateFields,
+            PermissionOption, PermissionOptionKind, ToolCallId, ToolCallUpdate,
+            ToolCallUpdateFields,
         };
 
         let temp = TempDir::new().unwrap();
         let client = CrucibleClient::new(temp.path().to_path_buf(), false);
 
         let tool_call = ToolCallUpdate::new(ToolCallId::from("1"), ToolCallUpdateFields::default());
-        let option = PermissionOption::new("allow", "Allow".to_string(), PermissionOptionKind::AllowOnce);
+        let option = PermissionOption::new(
+            "allow",
+            "Allow".to_string(),
+            PermissionOptionKind::AllowOnce,
+        );
 
         let result = client
-            .request_permission(
-                RequestPermissionRequest::new(SessionId::from("test"), tool_call, vec![option])
-            )
+            .request_permission(RequestPermissionRequest::new(
+                SessionId::from("test"),
+                tool_call,
+                vec![option],
+            ))
             .await;
 
         assert!(result.is_ok());
@@ -493,9 +507,11 @@ mod tests {
         let new_file = temp.path().join("new.txt");
 
         let _ = client
-            .write_text_file(
-                WriteTextFileRequest::new(SessionId::from("test"), new_file.clone(), "new content".to_string())
-            )
+            .write_text_file(WriteTextFileRequest::new(
+                SessionId::from("test"),
+                new_file.clone(),
+                "new content".to_string(),
+            ))
             .await;
 
         let info = client.last_write_info().expect("Should have write info");
@@ -517,9 +533,11 @@ mod tests {
 
         // Write new content
         let _ = client
-            .write_text_file(
-                WriteTextFileRequest::new(SessionId::from("test"), existing_file.clone(), "updated content".to_string())
-            )
+            .write_text_file(WriteTextFileRequest::new(
+                SessionId::from("test"),
+                existing_file.clone(),
+                "updated content".to_string(),
+            ))
             .await;
 
         let info = client.last_write_info().expect("Should have write info");
@@ -536,9 +554,11 @@ mod tests {
 
         // Write a file
         let _ = client
-            .write_text_file(
-                WriteTextFileRequest::new(SessionId::from("test"), new_file, "content".to_string())
-            )
+            .write_text_file(WriteTextFileRequest::new(
+                SessionId::from("test"),
+                new_file,
+                "content".to_string(),
+            ))
             .await;
 
         // Verify write info exists
@@ -560,9 +580,11 @@ mod tests {
 
         // First write
         let _ = client
-            .write_text_file(
-                WriteTextFileRequest::new(SessionId::from("test"), file1.clone(), "content1".to_string())
-            )
+            .write_text_file(WriteTextFileRequest::new(
+                SessionId::from("test"),
+                file1.clone(),
+                "content1".to_string(),
+            ))
             .await;
 
         let info1 = client.last_write_info().expect("Should have write info");
@@ -570,9 +592,11 @@ mod tests {
 
         // Second write should replace first
         let _ = client
-            .write_text_file(
-                WriteTextFileRequest::new(SessionId::from("test"), file2.clone(), "content2".to_string())
-            )
+            .write_text_file(WriteTextFileRequest::new(
+                SessionId::from("test"),
+                file2.clone(),
+                "content2".to_string(),
+            ))
             .await;
 
         let info2 = client.last_write_info().expect("Should have write info");
