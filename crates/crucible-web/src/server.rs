@@ -92,9 +92,7 @@ pub async fn start_server(config: WebConfig) -> Result<()> {
         .await
         .map_err(WebError::Io)?;
 
-    axum::serve(listener, app)
-        .await
-        .map_err(WebError::Io)?;
+    axum::serve(listener, app).await.map_err(WebError::Io)?;
 
     Ok(())
 }

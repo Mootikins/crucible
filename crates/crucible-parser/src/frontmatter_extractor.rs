@@ -428,10 +428,9 @@ impl FrontmatterExtractor {
             }
 
             // Check for section headers
-            if trimmed.starts_with('[')
-                && !trimmed.ends_with(']') {
-                    warnings.push(format!("Line {}: Unclosed section header", line_num + 1));
-                }
+            if trimmed.starts_with('[') && !trimmed.ends_with(']') {
+                warnings.push(format!("Line {}: Unclosed section header", line_num + 1));
+            }
 
             // Basic equals sign check for key-value pairs
             if trimmed.contains('=') && !trimmed.starts_with('[') {

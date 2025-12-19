@@ -1472,7 +1472,10 @@ impl CoreTagStorage for EAVGraphStore {
         if let Some(record_id_str) = data.get("record_id_str").and_then(|v| v.as_str()) {
             // Parse "project" or "tags:project" format
             let id_part = if record_id_str.contains(':') {
-                record_id_str.split(':').next_back().unwrap_or(record_id_str)
+                record_id_str
+                    .split(':')
+                    .next_back()
+                    .unwrap_or(record_id_str)
             } else {
                 record_id_str
             };
@@ -1528,7 +1531,10 @@ impl CoreTagStorage for EAVGraphStore {
                 // Extract record_id_str and convert it to a RecordId for the id field
                 if let Some(record_id_str) = data.get("record_id_str").and_then(|v| v.as_str()) {
                     let id_part = if record_id_str.contains(':') {
-                        record_id_str.split(':').next_back().unwrap_or(record_id_str)
+                        record_id_str
+                            .split(':')
+                            .next_back()
+                            .unwrap_or(record_id_str)
                     } else {
                         record_id_str
                     };

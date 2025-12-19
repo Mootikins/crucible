@@ -225,31 +225,31 @@ impl ExtendedMcpServer {
     }
 
     /// Get reference to the kiln server
-    #[must_use] 
+    #[must_use]
     pub fn kiln_server(&self) -> &CrucibleMcpServer {
         &self.kiln_server
     }
 
     /// Get reference to clustering tools
-    #[must_use] 
+    #[must_use]
     pub fn clustering_tools(&self) -> &ClusteringTools {
         &self.clustering_tools
     }
 
     /// Get reference to Just tools
-    #[must_use] 
+    #[must_use]
     pub fn just_tools(&self) -> &JustTools {
         &self.just_tools
     }
 
     /// Get reference to Rune registry
-    #[must_use] 
+    #[must_use]
     pub fn rune_registry(&self) -> &RuneToolRegistry {
         &self.rune_registry
     }
 
     /// Get reference to the event bus
-    #[must_use] 
+    #[must_use]
     pub fn event_bus(&self) -> Arc<RwLock<EventBus>> {
         Arc::clone(&self.event_bus)
     }
@@ -263,7 +263,7 @@ impl ExtendedMcpServer {
     ///
     /// This allows adding upstream MCP server connections after creation.
     /// The manager should be configured to use the same event bus as this server.
-    #[must_use] 
+    #[must_use]
     pub fn with_upstream_clients(mut self, clients: Arc<McpGatewayManager>) -> Self {
         self.upstream_clients = Some(clients);
         self
@@ -531,19 +531,19 @@ impl ExtendedMcpServer {
     }
 
     /// Check if a tool name is handled by Just
-    #[must_use] 
+    #[must_use]
     pub fn is_just_tool(name: &str) -> bool {
         name.starts_with("just_")
     }
 
     /// Check if a tool name is handled by Rune
-    #[must_use] 
+    #[must_use]
     pub fn is_rune_tool(name: &str) -> bool {
         name.starts_with("rune_")
     }
 
     /// Check if a tool name is handled by Clustering
-    #[must_use] 
+    #[must_use]
     pub fn is_clustering_tool(name: &str) -> bool {
         matches!(
             name,
@@ -556,7 +556,7 @@ impl ExtendedMcpServer {
     /// Upstream tools have a prefix from their upstream config.
     /// Common prefixes: gh_, fs_, slack_, etc.
     /// We detect them by checking if they're NOT kiln/just/rune/clustering tools.
-    #[must_use] 
+    #[must_use]
     pub fn is_upstream_tool(name: &str) -> bool {
         // If it's a known prefix, it's not upstream
         if Self::is_just_tool(name) || Self::is_rune_tool(name) || Self::is_clustering_tool(name) {
@@ -738,7 +738,9 @@ impl ExtendedMcpServer {
         // Execute the appropriate clustering tool and convert to JSON
         let result = match name {
             "detect_mocs" => {
-                let min_score = arguments.get("min_score").and_then(serde_json::Value::as_f64);
+                let min_score = arguments
+                    .get("min_score")
+                    .and_then(serde_json::Value::as_f64);
 
                 let mocs = self
                     .clustering_tools
@@ -750,14 +752,22 @@ impl ExtendedMcpServer {
                 json!(mocs)
             }
             "cluster_documents" => {
-                let min_similarity = arguments.get("min_similarity").and_then(serde_json::Value::as_f64);
+                let min_similarity = arguments
+                    .get("min_similarity")
+                    .and_then(serde_json::Value::as_f64);
                 let min_cluster_size = arguments
                     .get("min_cluster_size")
                     .and_then(serde_json::Value::as_u64)
                     .map(|v| v as usize);
-                let link_weight = arguments.get("link_weight").and_then(serde_json::Value::as_f64);
-                let tag_weight = arguments.get("tag_weight").and_then(serde_json::Value::as_f64);
-                let title_weight = arguments.get("title_weight").and_then(serde_json::Value::as_f64);
+                let link_weight = arguments
+                    .get("link_weight")
+                    .and_then(serde_json::Value::as_f64);
+                let tag_weight = arguments
+                    .get("tag_weight")
+                    .and_then(serde_json::Value::as_f64);
+                let title_weight = arguments
+                    .get("title_weight")
+                    .and_then(serde_json::Value::as_f64);
 
                 let clusters = self
                     .clustering_tools
@@ -1020,7 +1030,7 @@ impl ExtendedMcpService {
     }
 
     /// Get inner server reference
-    #[must_use] 
+    #[must_use]
     pub fn server(&self) -> &ExtendedMcpServer {
         &self.inner
     }
@@ -1097,10 +1107,7 @@ impl ServerHandler for ExtendedMcpService {
         context: RequestContext<rmcp::RoleServer>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let name = request.name.as_ref();
-        let arguments = request
-            .arguments
-            .clone()
-            .map_or(Value::Null, Value::Object);
+        let arguments = request.arguments.clone().map_or(Value::Null, Value::Object);
 
         debug!("Calling tool: {} with args: {:?}", name, arguments);
 

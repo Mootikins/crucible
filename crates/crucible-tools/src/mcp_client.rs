@@ -77,7 +77,7 @@ impl RmcpExecutor {
     }
 
     /// Get server information
-    #[must_use] 
+    #[must_use]
     pub fn server_info(&self) -> Option<&McpServerInfo> {
         self.server_info.as_ref()
     }

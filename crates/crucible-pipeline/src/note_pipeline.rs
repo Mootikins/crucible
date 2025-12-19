@@ -47,8 +47,7 @@ impl Default for ParserBackend {
 }
 
 /// Configuration for pipeline behavior
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct NotePipelineConfig {
     /// Which markdown parser to use
     pub parser: ParserBackend,
@@ -57,7 +56,6 @@ pub struct NotePipelineConfig {
     /// Force full reprocessing even if file hash matches
     pub force_reprocess: bool,
 }
-
 
 /// The main pipeline orchestrator
 ///
