@@ -11,8 +11,8 @@
 use crate::chat::bridge::AgentEventBridge;
 
 use crate::tui::{
-    map_key_event, render_widget, DynamicPopupProvider, InputAction, MarkdownRenderer,
-    PopupProvider, TuiState, WidgetState,
+    map_key_event, render_widget, viewport::ViewportState, DynamicPopupProvider, InputAction,
+    MarkdownRenderer, PopupProvider, TuiState, WidgetState,
 };
 use anyhow::Result;
 use crossterm::{
@@ -35,6 +35,8 @@ use std::time::Duration;
 /// - Markdown rendering for assistant responses
 pub struct TuiRunner {
     state: TuiState,
+    /// Viewport state for content management
+    viewport: ViewportState,
     /// Markdown renderer with syntax highlighting
     renderer: MarkdownRenderer,
     /// Terminal width
@@ -54,6 +56,7 @@ impl TuiRunner {
 
         Ok(Self {
             state: TuiState::new(mode_id),
+            viewport: ViewportState::new(width, height),
             renderer: MarkdownRenderer::new(),
             width,
             height,
@@ -201,6 +204,10 @@ impl TuiRunner {
         write!(stdout, "\x1b[1mYou:\x1b[0m {}", message)?;
 
         stdout.flush()?;
+
+        // Track in viewport (for overflow management)
+        self.viewport.push_user_message(message);
+
         Ok(())
     }
 
@@ -259,6 +266,10 @@ impl TuiRunner {
         }
 
         stdout.flush()?;
+
+        // Track in viewport (for overflow management)
+        self.viewport.push_assistant_message(content, true);
+
         Ok(())
     }
 
@@ -267,6 +278,13 @@ impl TuiRunner {
         // Update stored dimensions
         self.width = width;
         self.height = height;
+
+        // Let viewport handle resize and emit any overflow
+        let overflow = self.viewport.handle_resize(width, height);
+        for block in overflow {
+            // Print to scrollback (using existing format)
+            println!("{}", block.format_for_scrollback());
+        }
 
         // Enforce minimum height (4 lines for widget)
         // If terminal is too small, we still try to render what we can
@@ -634,6 +652,62 @@ mod tests {
         // Should not panic, just store the values
         assert_eq!(runner.width, 20);
         assert_eq!(runner.height, 3);
+    }
+
+    // Phase 8: Viewport integration tests
+
+    #[test]
+    fn test_viewport_created_with_runner() {
+        let runner = TuiRunner::new("plan", test_popup_provider()).unwrap();
+        assert_eq!(runner.viewport.width(), runner.width);
+        assert_eq!(runner.viewport.height(), runner.height);
+    }
+
+    #[test]
+    fn test_viewport_resize_updates_dimensions() {
+        let mut runner = TuiRunner::new("plan", test_popup_provider()).unwrap();
+
+        // Simulate resize (directly update viewport)
+        let _overflow = runner.viewport.handle_resize(100, 50);
+
+        assert_eq!(runner.viewport.width(), 100);
+        assert_eq!(runner.viewport.height(), 50);
+    }
+
+    #[test]
+    fn test_user_message_tracked_in_viewport() {
+        let mut runner = TuiRunner::new("plan", test_popup_provider()).unwrap();
+
+        // Directly push to viewport (simulating what print_user_message does)
+        runner.viewport.push_user_message("Hello");
+
+        assert_eq!(runner.viewport.content_count(), 1);
+    }
+
+    #[test]
+    fn test_assistant_message_tracked_in_viewport() {
+        let mut runner = TuiRunner::new("plan", test_popup_provider()).unwrap();
+
+        // Directly push to viewport (simulating what print_assistant_response does)
+        runner.viewport.push_assistant_message("Response", true);
+
+        assert_eq!(runner.viewport.content_count(), 1);
+    }
+
+    #[test]
+    fn test_viewport_overflow_on_resize() {
+        let mut runner = TuiRunner::new("plan", test_popup_provider()).unwrap();
+
+        // Add multiple messages
+        for i in 0..10 {
+            runner.viewport.push_user_message(format!("Message {}", i));
+        }
+
+        // Resize to very small terminal
+        let overflow = runner.viewport.handle_resize(80, 6);
+
+        // Should have overflowed some messages
+        assert!(!overflow.is_empty(), "Small terminal should trigger overflow");
     }
 
     // Phase 6: Agent error handling tests
