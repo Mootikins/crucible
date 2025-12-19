@@ -3,8 +3,8 @@ name = "tq"
 version = "0.1.0"
 edition = "2021"
 description = "TOON Query - jq-like tool for TOON format"
-license = "MIT"
-repository = "https://github.com/moot/crucible"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Mootikins/crucible"
 keywords = ["toon", "json", "jq", "query", "cli"]
 categories = ["command-line-utilities", "encoding"]
 

@@ -1,6 +1,11 @@
 # Crucible
 
+[![CI](https://github.com/Mootikins/crucible/actions/workflows/ci.yml/badge.svg)](https://github.com/Mootikins/crucible/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
+
 > A plaintext-first knowledge management system for metadata-rich knowledge graphs
+
+> **Note:** Crucible is in active development. APIs and storage formats may change without notice. Not recommended for production use yet. Contributions welcome!
 
 Crucible is a high-performance knowledge management system built around a simple principle: **wikilinks define the knowledge graph, and applications explore it through a unified core API.** By combining portable markdown files with block-level embeddings, graph traversal, and semantic search, Crucible provides powerful context discovery for AI agents and personal knowledge management.
 
@@ -183,8 +188,30 @@ See `examples/test-kiln/README - Test Kiln Structure.md` for full details.
 - **Incremental Processing**: Hash-based change detection for efficient updates
 - **Comprehensive Testing**: Full test coverage across core, CLI, and integration layers
 
+## Roadmap
+
+Crucible is in active development. Current focus areas:
+
+- **Stabilizing core APIs** - Parser, storage, and LLM provider interfaces
+- **CLI polish** - Better error messages, TUI improvements
+- **Documentation** - User guide, architecture docs
+
+Not currently planned:
+- Crates.io publishing
+- GUI/desktop application
+- Mobile support
+
+See [GitHub Issues](https://github.com/Mootikins/crucible/issues) for detailed tracking.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
+
 ## License
 
-Copyright (c) 2024 Crucible. All Rights Reserved.
+Licensed under either of
 
-This software is proprietary and may not be used, reproduced, or distributed without permission from Crucible.
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
