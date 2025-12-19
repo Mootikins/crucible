@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 /// let frontmatter = parse_yaml_frontmatter(content);
 /// assert!(frontmatter.is_some());
 /// ```
+#[must_use] 
 pub fn parse_yaml_frontmatter(content: &str) -> Option<serde_json::Value> {
     // Check if starts with ---
     if !content.starts_with("---\n") && !content.starts_with("---\r\n") {
@@ -59,7 +60,7 @@ pub fn parse_yaml_frontmatter(content: &str) -> Option<serde_json::Value> {
 ///
 /// # Returns
 ///
-/// Returns the canonicalized full path if valid, or an ErrorData if the path
+/// Returns the canonicalized full path if valid, or an `ErrorData` if the path
 /// is invalid or attempts to escape the kiln directory.
 ///
 /// # Example
@@ -83,8 +84,7 @@ pub fn validate_path_within_kiln(
     if user_path_obj.is_absolute() {
         return Err(rmcp::ErrorData::invalid_params(
             format!(
-                "Absolute paths are not allowed for security reasons: {}",
-                user_path
+                "Absolute paths are not allowed for security reasons: {user_path}"
             ),
             None,
         ));
@@ -95,8 +95,7 @@ pub fn validate_path_within_kiln(
         if let std::path::Component::ParentDir = component {
             return Err(rmcp::ErrorData::invalid_params(
                 format!(
-                    "Path traversal is not allowed for security reasons: {}",
-                    user_path
+                    "Path traversal is not allowed for security reasons: {user_path}"
                 ),
                 None,
             ));
@@ -109,7 +108,7 @@ pub fn validate_path_within_kiln(
 
     // Canonicalize the kiln path to handle symlinks in the base directory
     let canonical_kiln = kiln_path_obj.canonicalize().map_err(|e| {
-        rmcp::ErrorData::internal_error(format!("Failed to canonicalize kiln path: {}", e), None)
+        rmcp::ErrorData::internal_error(format!("Failed to canonicalize kiln path: {e}"), None)
     })?;
 
     // For the full path, we need to handle the case where it doesn't exist yet
@@ -118,15 +117,14 @@ pub fn validate_path_within_kiln(
     let validated_path = if full_path.exists() {
         // If it exists, canonicalize it fully to prevent symlink escapes
         let canonical_full = full_path.canonicalize().map_err(|e| {
-            rmcp::ErrorData::internal_error(format!("Failed to canonicalize path: {}", e), None)
+            rmcp::ErrorData::internal_error(format!("Failed to canonicalize path: {e}"), None)
         })?;
 
         // Verify the canonicalized path is still within kiln
         if !canonical_full.starts_with(&canonical_kiln) {
             return Err(rmcp::ErrorData::invalid_params(
                 format!(
-                    "Path escapes kiln directory (symlink attack?): {}",
-                    user_path
+                    "Path escapes kiln directory (symlink attack?): {user_path}"
                 ),
                 None,
             ));
@@ -146,7 +144,7 @@ pub fn validate_path_within_kiln(
         // Canonicalize the existing ancestor
         let canonical_parent = current.canonicalize().map_err(|e| {
             rmcp::ErrorData::internal_error(
-                format!("Failed to canonicalize parent path: {}", e),
+                format!("Failed to canonicalize parent path: {e}"),
                 None,
             )
         })?;
@@ -154,7 +152,7 @@ pub fn validate_path_within_kiln(
         // Verify the parent is within kiln
         if !canonical_parent.starts_with(&canonical_kiln) {
             return Err(rmcp::ErrorData::invalid_params(
-                format!("Path escapes kiln directory: {}", user_path),
+                format!("Path escapes kiln directory: {user_path}"),
                 None,
             ));
         }
@@ -168,12 +166,12 @@ pub fn validate_path_within_kiln(
 
 /// Validates an optional folder parameter for search operations
 ///
-/// This is a convenience wrapper around validate_path_within_kiln for
+/// This is a convenience wrapper around `validate_path_within_kiln` for
 /// handling optional folder parameters.
 ///
 /// # Security
 ///
-/// Uses the same security validations as validate_path_within_kiln.
+/// Uses the same security validations as `validate_path_within_kiln`.
 ///
 /// # Arguments
 ///
@@ -182,7 +180,7 @@ pub fn validate_path_within_kiln(
 ///
 /// # Returns
 ///
-/// Returns the validated path (kiln_path if folder is None, or validated folder path)
+/// Returns the validated path (`kiln_path` if folder is None, or validated folder path)
 ///
 /// # Example
 ///

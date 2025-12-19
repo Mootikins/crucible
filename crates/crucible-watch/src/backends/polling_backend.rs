@@ -56,6 +56,12 @@ pub struct PollingWatcher {
 }
 
 #[allow(dead_code)]
+impl Default for PollingWatcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PollingWatcher {
     /// Create a new polling watcher.
     pub fn new() -> Self {
@@ -243,7 +249,7 @@ impl PollingWatcher {
 
     /// Check for changes in a specific path.
     async fn check_path_changes(&self, path: &PathBuf, watch_state: &mut WatchState) -> Result<()> {
-        let metadata = std::fs::metadata(path).map_err(|e| Error::Io(e))?;
+        let metadata = std::fs::metadata(path).map_err(Error::Io)?;
 
         let modified_time = metadata.modified().ok();
         let size = Some(metadata.len());
@@ -314,9 +320,9 @@ impl PollingWatcher {
                 return Ok(());
             }
 
-            let mut entries = tokio::fs::read_dir(dir).await.map_err(|e| Error::Io(e))?;
+            let mut entries = tokio::fs::read_dir(dir).await.map_err(Error::Io)?;
 
-            while let Some(entry) = entries.next_entry().await.map_err(|e| Error::Io(e))? {
+            while let Some(entry) = entries.next_entry().await.map_err(Error::Io)? {
                 let path = entry.path();
 
                 if path.is_dir() {
@@ -451,6 +457,12 @@ impl Drop for PollingWatcher {
 /// Factory for creating polling-based watchers.
 pub struct PollingFactory {
     capabilities: BackendCapabilities,
+}
+
+impl Default for PollingFactory {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PollingFactory {

@@ -442,22 +442,22 @@ impl<S: DeduplicationStorage> DeduplicationReportGenerator<S> {
 
         summary_table.add_row(Row::from(vec![
             Cell::new("Total Blocks").add_attribute(Attribute::Bold),
-            Cell::new(&report.summary.total_blocks.to_string()),
+            Cell::new(report.summary.total_blocks.to_string()),
         ]));
 
         summary_table.add_row(Row::from(vec![
             Cell::new("Unique Blocks").add_attribute(Attribute::Bold),
-            Cell::new(&report.summary.unique_blocks.to_string()),
+            Cell::new(report.summary.unique_blocks.to_string()),
         ]));
 
         summary_table.add_row(Row::from(vec![
             Cell::new("Duplicate Blocks").add_attribute(Attribute::Bold),
-            Cell::new(&report.summary.duplicate_blocks.to_string()),
+            Cell::new(report.summary.duplicate_blocks.to_string()),
         ]));
 
         summary_table.add_row(Row::from(vec![
             Cell::new("Deduplication Ratio").add_attribute(Attribute::Bold),
-            Cell::new(&format!(
+            Cell::new(format!(
                 "{:.1}%",
                 report.summary.deduplication_ratio_percent
             ))
@@ -471,12 +471,12 @@ impl<S: DeduplicationStorage> DeduplicationReportGenerator<S> {
 
         summary_table.add_row(Row::from(vec![
             Cell::new("Storage Saved").add_attribute(Attribute::Bold),
-            Cell::new(&format!("{:.2} MB", report.summary.storage_saved_mb)),
+            Cell::new(format!("{:.2} MB", report.summary.storage_saved_mb)),
         ]));
 
         summary_table.add_row(Row::from(vec![
             Cell::new("Efficiency Score").add_attribute(Attribute::Bold),
-            Cell::new(&format!("{}/100", report.summary.storage_efficiency_score))
+            Cell::new(format!("{}/100", report.summary.storage_efficiency_score))
                 .add_attribute(Attribute::Bold)
                 .fg(if report.summary.storage_efficiency_score > 70 {
                     Color::Green
@@ -502,10 +502,10 @@ impl<S: DeduplicationStorage> DeduplicationReportGenerator<S> {
 
             for duplicate in &report.top_duplicates {
                 dup_table.add_row(Row::from(vec![
-                    Cell::new(&duplicate.occurrence_count.to_string()),
+                    Cell::new(duplicate.occurrence_count.to_string()),
                     Cell::new(&duplicate.block_type),
-                    Cell::new(&format!("{} bytes", duplicate.estimated_block_size)),
-                    Cell::new(&format!("{} bytes", duplicate.storage_saved)),
+                    Cell::new(format!("{} bytes", duplicate.estimated_block_size)),
+                    Cell::new(format!("{} bytes", duplicate.storage_saved)),
                     Cell::new(&duplicate.content_preview),
                 ]));
             }
