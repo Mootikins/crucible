@@ -8,7 +8,7 @@
 //! during event architecture cleanup. Use --query for one-shot mode.
 
 use anyhow::Result;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 
