@@ -25,6 +25,7 @@ mod agent_tests {
             name: "test-agent".to_string(),
             command: "test-cmd".to_string(),
             args: vec![],
+            env_vars: std::collections::HashMap::new(),
         };
 
         assert_eq!(agent.name, "test-agent");
@@ -37,6 +38,7 @@ mod agent_tests {
             name: "test-agent".to_string(),
             command: "test-cmd".to_string(),
             args: vec![],
+            env_vars: std::collections::HashMap::new(),
         };
 
         let cloned = agent.clone();
@@ -50,6 +52,7 @@ mod agent_tests {
             name: "test-agent".to_string(),
             command: "test-cmd".to_string(),
             args: vec![],
+            env_vars: std::collections::HashMap::new(),
         };
 
         let debug_str = format!("{:?}", agent);
@@ -155,6 +158,7 @@ mod client_tests {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
             args: vec![],
+            env_vars: std::collections::HashMap::new(),
         };
 
         let client = CrucibleAcpClient::new(agent, true);
@@ -171,6 +175,7 @@ mod client_tests {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
             args: vec![],
+            env_vars: std::collections::HashMap::new(),
         };
 
         let client = CrucibleAcpClient::new(agent, true);
@@ -183,6 +188,7 @@ mod client_tests {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
             args: vec![],
+            env_vars: std::collections::HashMap::new(),
         };
 
         let client = CrucibleAcpClient::new(agent, false);
@@ -195,6 +201,7 @@ mod client_tests {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
             args: vec![],
+            env_vars: std::collections::HashMap::new(),
         };
 
         let config = ChatConfig {
@@ -226,6 +233,7 @@ mod client_tests {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
             args: vec![],
+            env_vars: std::collections::HashMap::new(),
         };
 
         let client = CrucibleAcpClient::new(agent, false);
@@ -242,6 +250,7 @@ mod client_tests {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
             args: vec![],
+            env_vars: std::collections::HashMap::new(),
         };
 
         let client = CrucibleAcpClient::new(agent, false);
@@ -255,6 +264,7 @@ mod client_tests {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
             args: vec![],
+            env_vars: std::collections::HashMap::new(),
         };
 
         let client = CrucibleAcpClient::new(agent, false);
@@ -270,6 +280,7 @@ mod client_tests {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
             args: vec![],
+            env_vars: std::collections::HashMap::new(),
         };
 
         let mut client = CrucibleAcpClient::new(agent, false);
@@ -283,6 +294,7 @@ mod client_tests {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
             args: vec![],
+            env_vars: std::collections::HashMap::new(),
         };
 
         let mut client = CrucibleAcpClient::new(agent, false);
@@ -298,6 +310,7 @@ mod client_tests {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
             args: vec![],
+            env_vars: std::collections::HashMap::new(),
         };
 
         let mut client = CrucibleAcpClient::new(agent, false);
@@ -319,6 +332,7 @@ mod client_tests {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
             args: vec![],
+            env_vars: std::collections::HashMap::new(),
         };
 
         let mut client = CrucibleAcpClient::new(agent, false);
@@ -341,6 +355,7 @@ mod client_tests {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
             args: vec![],
+            env_vars: std::collections::HashMap::new(),
         };
 
         let client = CrucibleAcpClient::new(agent, true);
@@ -352,6 +367,7 @@ mod client_tests {
                 name: "test".to_string(),
                 command: "test-cmd".to_string(),
                 args: vec![],
+                env_vars: std::collections::HashMap::new(),
             },
             false,
         );
@@ -367,6 +383,7 @@ mod client_tests {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
             args: vec![],
+            env_vars: std::collections::HashMap::new(),
         };
 
         let mut client = CrucibleAcpClient::new(agent, false);
@@ -391,6 +408,7 @@ mod client_tests {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
             args: vec![],
+            env_vars: std::collections::HashMap::new(),
         };
 
         let mut client = CrucibleAcpClient::new(agent, false);
@@ -411,6 +429,7 @@ mod client_tests {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
             args: vec![],
+            env_vars: std::collections::HashMap::new(),
         };
 
         let mut client = CrucibleAcpClient::new(agent, false);
@@ -428,5 +447,63 @@ mod client_tests {
         // send_message should fail (not connected) but be callable through trait
         let result = AgentHandle::send_message(&mut client, "test").await;
         assert!(result.is_err());
+    }
+}
+
+#[cfg(test)]
+mod env_passthrough_tests {
+    use super::super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_client_config_includes_env_vars_from_agent() {
+        // Given an agent with env_vars
+        let mut env_vars = HashMap::new();
+        env_vars.insert("LOCAL_ENDPOINT".to_string(), "http://localhost:11434".to_string());
+        env_vars.insert("OPENAI_API_KEY".to_string(), "test-key".to_string());
+
+        let agent = AgentInfo {
+            name: "test-agent".to_string(),
+            command: "test-cmd".to_string(),
+            args: vec![],
+            env_vars,
+        };
+
+        // When we build the client config
+        let client = CrucibleAcpClient::new(agent, false);
+        let config = client.build_client_config();
+
+        // Then the config should include the env vars
+        let env_vec = config.env_vars.expect("env_vars should be Some");
+        assert_eq!(env_vec.len(), 2);
+
+        // Verify both env vars are present (order doesn't matter)
+        let has_endpoint = env_vec.iter().any(|(k, v)| {
+            k == "LOCAL_ENDPOINT" && v == "http://localhost:11434"
+        });
+        let has_api_key = env_vec.iter().any(|(k, v)| {
+            k == "OPENAI_API_KEY" && v == "test-key"
+        });
+
+        assert!(has_endpoint, "Should include LOCAL_ENDPOINT");
+        assert!(has_api_key, "Should include OPENAI_API_KEY");
+    }
+
+    #[test]
+    fn test_client_config_with_empty_env_vars() {
+        // Given an agent with no env_vars
+        let agent = AgentInfo {
+            name: "test-agent".to_string(),
+            command: "test-cmd".to_string(),
+            args: vec![],
+            env_vars: HashMap::new(),
+        };
+
+        // When we build the client config
+        let client = CrucibleAcpClient::new(agent, false);
+        let config = client.build_client_config();
+
+        // Then env_vars should be None (not empty Vec)
+        assert!(config.env_vars.is_none(), "Empty env_vars should be None");
     }
 }

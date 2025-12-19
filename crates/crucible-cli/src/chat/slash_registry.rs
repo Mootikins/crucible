@@ -138,17 +138,17 @@ impl SlashCommand {
     }
 }
 
-fn parse_secondary_options(meta: &Option<Value>) -> Vec<CommandOption> {
+fn parse_secondary_options(meta: &Option<serde_json::Map<String, Value>>) -> Vec<CommandOption> {
     let mut options = Vec::new();
-    let value = match meta {
-        Some(v) => v,
+    let map = match meta {
+        Some(m) => m,
         None => return options,
     };
 
-    let secondary = value
+    let secondary = map
         .get("secondary")
-        .or_else(|| value.get("secondaryOptions"))
-        .or_else(|| value.get("options"));
+        .or_else(|| map.get("secondaryOptions"))
+        .or_else(|| map.get("options"));
 
     let items = match secondary {
         Some(Value::Array(items)) => items,
@@ -327,10 +327,11 @@ impl SlashCommandRegistry {
 
         // 3. Check for agent command
         if let Some(agent_cmd) = self.agent_commands.iter().find(|c| c.name == name) {
-            let input_hint = agent_cmd.input.as_ref().map(|input| match input {
-                crucible_core::types::acp::schema::AvailableCommandInput::Unstructured { hint } => {
-                    hint.clone()
+            let input_hint = agent_cmd.input.as_ref().and_then(|input| match input {
+                crucible_core::types::acp::schema::AvailableCommandInput::Unstructured(unstructured) => {
+                    Some(unstructured.hint.clone())
                 }
+                _ => None,
             });
             let secondary_options = parse_secondary_options(&agent_cmd.meta);
             return Some(CommandResolution {
@@ -387,10 +388,11 @@ impl SlashCommandRegistry {
 
         // Add agent commands
         for agent_cmd in &self.agent_commands {
-            let input_hint = agent_cmd.input.as_ref().map(|input| match input {
-                crucible_core::types::acp::schema::AvailableCommandInput::Unstructured { hint } => {
-                    hint.clone()
+            let input_hint = agent_cmd.input.as_ref().and_then(|input| match input {
+                crucible_core::types::acp::schema::AvailableCommandInput::Unstructured(unstructured) => {
+                    Some(unstructured.hint.clone())
                 }
+                _ => None,
             });
             let secondary_options = parse_secondary_options(&agent_cmd.meta);
             all.push(CommandDescriptor {

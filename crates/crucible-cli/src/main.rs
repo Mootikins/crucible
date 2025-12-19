@@ -246,6 +246,7 @@ async fn main() -> Result<()> {
         Some(Commands::Chat {
             query,
             agent,
+            env,
             internal,
             provider,
             max_context,
@@ -264,6 +265,7 @@ async fn main() -> Result<()> {
                 internal,
                 provider,
                 max_context,
+                env, // Pass env vars to agent spawning
             )
             .await?
         }
@@ -383,6 +385,7 @@ async fn main() -> Result<()> {
                 false,          // internal = false (use ACP agent by default)
                 None,           // No provider specified
                 16384,          // default max_context = 16384
+                vec![],         // No env overrides
             )
             .await?
         }

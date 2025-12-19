@@ -70,8 +70,8 @@ async fn test_prompt_with_streaming_response() {
         meta: None,
     };
 
-    // Send prompt with streaming
-    let result = client.send_prompt_with_streaming(prompt_request, 1).await;
+    // Send prompt with streaming (request ID is generated internally)
+    let result = client.send_prompt_with_streaming(prompt_request).await;
 
     assert!(
         result.is_ok(),
