@@ -323,7 +323,7 @@ pub fn render_separator<W: Write>(writer: &mut W, width: u16) -> io::Result<()> 
     for _ in 0..width {
         write!(writer, "─")?;
     }
-    write!(writer, "{}{}", ansi::RESET, "\r\n")
+    write!(writer, "{}\r\n", ansi::RESET)
 }
 
 /// Render the input area
@@ -351,10 +351,10 @@ pub fn render_input_area<W: Write>(
     for (i, line) in lines.iter().enumerate() {
         if i == 0 {
             // First line has simple prompt
-            write!(writer, "> {}{}{}", line, ansi::CLEAR_LINE, "\r\n")?;
+            write!(writer, "> {}{}\r\n", line, ansi::CLEAR_LINE)?;
         } else {
             // Continuation lines are indented
-            write!(writer, "  {}{}{}", line, ansi::CLEAR_LINE, "\r\n")?;
+            write!(writer, "  {}{}\r\n", line, ansi::CLEAR_LINE)?;
         }
     }
 
@@ -383,11 +383,7 @@ pub fn render_streaming_area<W: Write>(
     let line_count = lines.len();
 
     // Show last N lines if content exceeds max
-    let start_idx = if line_count > max_lines as usize {
-        line_count - max_lines as usize
-    } else {
-        0
-    };
+    let start_idx = line_count.saturating_sub(max_lines as usize);
 
     // Add streaming indicator on first line
     for (i, line) in lines.iter().skip(start_idx).enumerate() {
@@ -395,11 +391,10 @@ pub fn render_streaming_area<W: Write>(
             // Indicate truncation
             write!(
                 writer,
-                "{}... ({} lines hidden){}{}",
+                "{}... ({} lines hidden){}\r\n",
                 ansi::DIM,
                 start_idx,
-                ansi::RESET,
-                "\r\n"
+                ansi::RESET
             )?;
         }
         write!(
@@ -495,7 +490,7 @@ pub fn render_widget<W: Write>(writer: &mut W, state: &WidgetState) -> io::Resul
 // Help Rendering (Phase 6)
 // ============================================================================
 
-use crucible_core::traits::chat::{CommandDescriptor, CommandOption};
+use crucible_core::traits::chat::CommandDescriptor;
 
 /// Format a command descriptor for display in help output
 ///
@@ -544,7 +539,7 @@ pub fn render_help_text(commands: &[CommandDescriptor], agent_name: Option<&str>
     output.push_str("Client Commands:\n");
     for desc in regular.iter().filter(|c| !c.name.contains(':')) {
         output.push_str(&format_help_command(desc));
-        output.push_str("\n");
+        output.push('\n');
     }
 
     // Namespaced client commands (if any)
@@ -552,7 +547,7 @@ pub fn render_help_text(commands: &[CommandDescriptor], agent_name: Option<&str>
         output.push_str("\nNamespaced Commands (use crucible: prefix):\n");
         for desc in &namespaced {
             output.push_str(&format_help_command(desc));
-            output.push_str("\n");
+            output.push('\n');
         }
     }
 

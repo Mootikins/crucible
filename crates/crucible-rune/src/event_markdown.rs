@@ -123,9 +123,7 @@ impl EventToMarkdown for SessionEvent {
 
             SessionEvent::SessionStarted { config } => {
                 let folder = config
-                    .folder
-                    .as_ref()
-                    .map(|p| p.as_path())
+                    .folder.as_deref()
                     .unwrap_or(std::path::Path::new(""));
                 format_session_started(&config.session_id, folder)
             }

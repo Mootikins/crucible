@@ -168,6 +168,12 @@ pub struct DynamicPopupProvider {
     agent_file_matcher: parking_lot::Mutex<PopupMatcherCache>,
 }
 
+impl Default for DynamicPopupProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DynamicPopupProvider {
     pub fn new() -> Self {
         let notify: Arc<dyn Fn() + Sync + Send> = Arc::new(|| {});

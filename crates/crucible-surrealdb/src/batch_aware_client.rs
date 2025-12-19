@@ -254,7 +254,7 @@ impl BatchAwareRead for BatchAwareSurrealClient {
     async fn flush_files(&self, file_paths: &[&Path]) -> Result<FlushResult> {
         if let Some(processor) = &self.event_processor {
             // Convert references to owned paths for the processor
-            let path_refs: Vec<&Path> = file_paths.iter().copied().collect();
+            let path_refs: Vec<&Path> = file_paths.to_vec();
             processor.flush_for_files(&path_refs).await
         } else {
             Ok(FlushResult {

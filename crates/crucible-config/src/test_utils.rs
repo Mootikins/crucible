@@ -29,10 +29,10 @@ impl TestConfigBuilder {
         self.config.profile = Some(profile_name.clone());
 
         // If the profile doesn't exist yet, create a basic one
-        if !self.config.profiles.contains_key(&profile_name) {
-            let profile = ProfileConfig::new(profile_name.clone(), Environment::Test);
-            self.config.profiles.insert(profile_name, profile);
-        }
+        self.config
+            .profiles
+            .entry(profile_name)
+            .or_insert_with_key(|name| ProfileConfig::new(name.clone(), Environment::Test));
 
         self
     }
