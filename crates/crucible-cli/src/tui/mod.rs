@@ -13,6 +13,9 @@ pub mod render;
 pub mod runner;
 pub mod state;
 pub mod streaming;
+#[cfg(test)]
+pub mod testing;
+pub mod viewport;
 pub mod widget;
 
 pub use input::{map_key_event, InputAction};
