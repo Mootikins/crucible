@@ -6,6 +6,7 @@
 
 pub mod client;
 pub mod context;
+pub mod models;
 
 #[cfg(test)]
 mod tests;
