@@ -65,6 +65,9 @@ pub enum ChatError {
 
     #[error("Invalid command: {0}")]
     InvalidCommand(String),
+
+    #[error("Operation not supported: {0}")]
+    NotSupported(String),
 }
 
 /// Chunk from streaming response
@@ -175,6 +178,16 @@ pub trait ChatContext: Send {
     fn display_help(&self);
     fn display_error(&self, message: &str);
     fn display_info(&self, message: &str);
+
+    /// Switch the agent to a different model (triggers reconnection for ACP agents)
+    async fn switch_model(&mut self, _model_id: &str) -> ChatResult<()> {
+        Err(ChatError::NotSupported("switch_model".into()))
+    }
+
+    /// Get the currently active model (if known)
+    fn current_model(&self) -> Option<&str> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
