@@ -649,6 +649,63 @@ impl CommandHandler for CommitHandler {
     }
 }
 
+/// Models handler - list and switch between available models
+///
+/// Displays available models from an ACP agent (e.g., OpenCode) and allows
+/// switching to a different model via context.switch_model().
+pub struct ModelsHandler {
+    /// Available model IDs (e.g., "anthropic/claude-sonnet-4")
+    models: Vec<String>,
+    /// Currently active model (if known)
+    current_model: Arc<std::sync::RwLock<Option<String>>>,
+}
+
+impl ModelsHandler {
+    /// Create a new models handler
+    pub fn new(models: Vec<String>, current_model: Option<String>) -> Self {
+        Self {
+            models,
+            current_model: Arc::new(std::sync::RwLock::new(current_model)),
+        }
+    }
+}
+
+#[async_trait]
+impl CommandHandler for ModelsHandler {
+    async fn execute(&self, args: &str, ctx: &mut dyn ChatContext) -> ChatResult<()> {
+        let args = args.trim();
+
+        if args.is_empty() {
+            // List all models with current indicator
+            println!("\n{}", "Available Models:".bright_cyan().bold());
+            let current = self.current_model.read().unwrap();
+
+            for model in &self.models {
+                if let Some(cur) = current.as_ref() {
+                    if cur == model {
+                        println!("  {} {}", "✓".green().bold(), model.bright_white().bold());
+                        continue;
+                    }
+                }
+                println!("    {}", model.white());
+            }
+            println!();
+            Ok(())
+        } else {
+            // Switch to specified model
+            if !self.models.contains(&args.to_string()) {
+                return Err(ChatError::InvalidInput(format!(
+                    "Model not found: {}. Use /models to see available models.",
+                    args
+                )));
+            }
+
+            ctx.switch_model(args).await?;
+            Ok(())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -810,5 +867,60 @@ mod tests {
         assert!(output.contains("Note 2"));
         assert!(output.contains("Content 1"));
         assert!(output.contains("Content 2"));
+    }
+
+    // ModelsHandler Tests (Task 2)
+
+    #[tokio::test]
+    async fn test_models_handler_list() {
+        let handler = ModelsHandler::new(
+            vec!["anthropic/claude-sonnet-4".into(), "openai/gpt-4o".into()],
+            None,
+        );
+        let mut ctx = MockContext {
+            mode_id: "plan".to_string(),
+            search_results: vec![],
+        };
+        handler.execute("", &mut ctx).await.unwrap();
+        // Should have printed model list (visual output, hard to test)
+    }
+
+    #[tokio::test]
+    async fn test_models_handler_shows_current() {
+        let handler = ModelsHandler::new(
+            vec!["model-a".into(), "model-b".into()],
+            Some("model-a".into()),
+        );
+        let mut ctx = MockContext {
+            mode_id: "plan".to_string(),
+            search_results: vec![],
+        };
+        // Just verify it doesn't crash - output has ✓ next to model-a
+        handler.execute("", &mut ctx).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_models_handler_switch() {
+        let handler = ModelsHandler::new(vec!["model-a".into()], None);
+        let mut ctx = MockContext {
+            mode_id: "plan".to_string(),
+            search_results: vec![],
+        };
+        // Default switch_model returns NotSupported - should get error
+        let result = handler.execute("model-a", &mut ctx).await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ChatError::NotSupported(_)));
+    }
+
+    #[tokio::test]
+    async fn test_models_handler_invalid_model() {
+        let handler = ModelsHandler::new(vec!["model-a".into()], None);
+        let mut ctx = MockContext {
+            mode_id: "plan".to_string(),
+            search_results: vec![],
+        };
+        let result = handler.execute("nonexistent", &mut ctx).await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ChatError::InvalidInput(_)));
     }
 }
