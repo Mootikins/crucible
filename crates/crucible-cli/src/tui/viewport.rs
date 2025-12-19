@@ -229,7 +229,9 @@ pub struct ViewportState {
 impl ViewportState {
     /// Create a new viewport state with given dimensions
     pub fn new(width: u16, height: u16) -> Self {
-        let content_zone_height = height.saturating_sub(INPUT_HEIGHT).saturating_sub(STATUS_HEIGHT);
+        let content_zone_height = height
+            .saturating_sub(INPUT_HEIGHT)
+            .saturating_sub(STATUS_HEIGHT);
         Self {
             content_buffer: VecDeque::new(),
             next_id: 1,
@@ -326,7 +328,9 @@ impl ViewportState {
         }
 
         // Keep popping from front while we have more than 1 message AND total height exceeds zone
-        while self.content_buffer.len() > 1 && self.total_content_height() > self.content_zone_height {
+        while self.content_buffer.len() > 1
+            && self.total_content_height() > self.content_zone_height
+        {
             if let Some(block) = self.content_buffer.pop_front() {
                 overflow.push(block);
             }
@@ -404,7 +408,10 @@ impl ViewportState {
                 }
             }
             LayoutMode::BottomAnchored => {
-                let input_y = self.height.saturating_sub(INPUT_HEIGHT).saturating_sub(STATUS_HEIGHT);
+                let input_y = self
+                    .height
+                    .saturating_sub(INPUT_HEIGHT)
+                    .saturating_sub(STATUS_HEIGHT);
                 let status_y = self.height.saturating_sub(STATUS_HEIGHT);
 
                 let content = Rect {
@@ -451,7 +458,9 @@ impl ViewportState {
         self.height = height;
 
         // Recalculate content zone
-        self.content_zone_height = height.saturating_sub(INPUT_HEIGHT).saturating_sub(STATUS_HEIGHT);
+        self.content_zone_height = height
+            .saturating_sub(INPUT_HEIGHT)
+            .saturating_sub(STATUS_HEIGHT);
 
         // Invalidate all cached heights
         for block in &mut self.content_buffer {
@@ -514,8 +523,7 @@ impl ViewportState {
 
     fn render_status_placeholder(&self, frame: &mut Frame, area: Rect) {
         // Placeholder - actual status comes from TuiState
-        let status = Paragraph::new("Ready")
-            .style(Style::default().fg(Color::DarkGray));
+        let status = Paragraph::new("Ready").style(Style::default().fg(Color::DarkGray));
         frame.render_widget(status, area);
     }
 }
@@ -612,8 +620,10 @@ mod tests {
         fn multiline_content_height_counts_all_lines() {
             // Message with embedded newlines
             // "Line1\nLine2\nLine3" should count as 3+ lines
-            let mut block =
-                ContentBlock::new(1, ContentKind::UserMessage("Line1\nLine2\nLine3".to_string()));
+            let mut block = ContentBlock::new(
+                1,
+                ContentKind::UserMessage("Line1\nLine2\nLine3".to_string()),
+            );
             // "You: Line1" = 10 chars, fits in width 80
             // "Line2" = 5 chars, fits in width 80
             // "Line3" = 5 chars, fits in width 80
@@ -816,7 +826,7 @@ mod tests {
         fn input_follows_content_top_down() {
             // 2 lines of content -> input.y == 2
             let mut viewport = ViewportState::new(80, 24);
-            viewport.push_user_message("First");  // 1 line
+            viewport.push_user_message("First"); // 1 line
             viewport.push_user_message("Second"); // 1 line
 
             let zones = viewport.layout_zones();
@@ -920,34 +930,38 @@ mod tests {
 
             // Verify caches are populated
             for block in viewport.content_blocks() {
-                assert!(block.has_cached_height(), "Cache should be populated before resize");
+                assert!(
+                    block.has_cached_height(),
+                    "Cache should be populated before resize"
+                );
             }
 
             // Store the old cached values to verify they change
-            let old_cached: Vec<_> = viewport.content_blocks()
-                .map(|b| b.cached_height)
-                .collect();
+            let old_cached: Vec<_> = viewport.content_blocks().map(|b| b.cached_height).collect();
 
             // Resize to different width
-            viewport.handle_resize(50, 24);  // Narrower width will cause rewrap
+            viewport.handle_resize(50, 24); // Narrower width will cause rewrap
 
             // After resize, caches should be recalculated with new width
             // The cached widths should now be 50, not 80
             for block in viewport.content_blocks() {
-                assert!(block.has_cached_height(), "Cache should be repopulated after resize");
+                assert!(
+                    block.has_cached_height(),
+                    "Cache should be repopulated after resize"
+                );
                 // If we had access to cached_height, we'd verify width == 50
                 // but since it's private, we just verify the cache exists
             }
 
             // Verify the cached values actually changed (recalculated, not just kept)
-            let new_cached: Vec<_> = viewport.content_blocks()
-                .map(|b| b.cached_height)
-                .collect();
+            let new_cached: Vec<_> = viewport.content_blocks().map(|b| b.cached_height).collect();
 
             // At least one cache should have changed due to different width
             // (unless all messages are empty, which they're not)
-            assert_ne!(old_cached, new_cached,
-                "Cache values should change when width changes");
+            assert_ne!(
+                old_cached, new_cached,
+                "Cache values should change when width changes"
+            );
         }
 
         #[test]
@@ -964,7 +978,10 @@ mod tests {
             let overflow = viewport.handle_resize(80, 8);
 
             // Should have overflowed some messages
-            assert!(!overflow.is_empty(), "Smaller terminal should trigger overflow");
+            assert!(
+                !overflow.is_empty(),
+                "Smaller terminal should trigger overflow"
+            );
         }
 
         #[test]
@@ -981,7 +998,10 @@ mod tests {
             let overflow = viewport.handle_resize(100, 50);
 
             // Should not overflow
-            assert!(overflow.is_empty(), "Larger terminal should not trigger overflow");
+            assert!(
+                overflow.is_empty(),
+                "Larger terminal should not trigger overflow"
+            );
             assert_eq!(viewport.content_count(), 3, "All messages should remain");
         }
 
@@ -1026,7 +1046,10 @@ mod tests {
 
             // Should now wrap to more lines
             let height_narrow = viewport.total_content_height();
-            assert!(height_narrow > height_wide, "Should wrap to more lines when narrower");
+            assert!(
+                height_narrow > height_wide,
+                "Should wrap to more lines when narrower"
+            );
 
             // Add more messages to potentially trigger overflow
             viewport.push_user_message("Another message");
@@ -1039,8 +1062,10 @@ mod tests {
 
             // With narrow width and small height, should overflow
             // (exact number depends on wrapping, but should be > 0)
-            assert!(!overflow.is_empty() || viewport.content_count() >= 1,
-                "Should either overflow or keep minimum 1 message");
+            assert!(
+                !overflow.is_empty() || viewport.content_count() >= 1,
+                "Should either overflow or keep minimum 1 message"
+            );
         }
     }
 

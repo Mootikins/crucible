@@ -1,9 +1,9 @@
 //! Configuration loading utilities for various file formats.
 
 use crate::{Config, ConfigError};
+use dirs;
 use std::path::{Path, PathBuf};
 use tokio::fs;
-use dirs;
 
 #[cfg(feature = "toml")]
 use crate::includes::{merge_includes, process_file_references};
@@ -38,11 +38,7 @@ impl ConfigLoader {
         };
 
         Self {
-            search_paths: vec![
-                PathBuf::from("./config"),
-                PathBuf::from("./"),
-                config_dir,
-            ],
+            search_paths: vec![PathBuf::from("./config"), PathBuf::from("./"), config_dir],
             format: ConfigFormat::Auto,
         }
     }
