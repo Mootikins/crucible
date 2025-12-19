@@ -126,7 +126,6 @@ pub static SHA256_CONTENT_HASHER: std::sync::LazyLock<SHA256Hasher> =
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     // Test vectors from RFC 6231 for SHA256
     const TEST_VECTORS: &[(&[u8], &str)] = &[

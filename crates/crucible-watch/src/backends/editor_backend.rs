@@ -304,7 +304,7 @@ impl EditorWatcher {
                 .ok_or_else(|| Error::WatchNotFound(watch_id.to_string()))?;
 
             // Update or create inode state
-            let mut file_state = watch_state
+            let file_state = watch_state
                 .file_states
                 .entry(watch_path.clone())
                 .or_insert_with(|| InodeState {
@@ -396,7 +396,7 @@ impl EditorWatcher {
         }
 
         // Update or create inode state
-        let mut file_state = watch_state
+        let file_state = watch_state
             .file_states
             .entry(watch_path.clone())
             .or_insert_with(|| InodeState {

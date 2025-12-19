@@ -364,7 +364,7 @@ mod tests {
             Ok(vec![vec![0.1; 384]; _texts.len()])
         }
 
-        fn model_name(&self) -> &str {
+        fn model_name(&self) -> &'static str {
             "mock-model"
         }
 
@@ -817,7 +817,7 @@ mod tests {
         let mut errors = Vec::new();
         for (name, json) in schemas {
             if let Err(e) = check_schema_compatible(json) {
-                errors.push(format!("{}: {}", name, e));
+                errors.push(format!("{name}: {e}"));
             }
         }
 
