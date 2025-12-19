@@ -154,7 +154,7 @@ async fn test_in_process_mcp_sse_endpoint_is_reachable() {
 /// Test that McpServer::Sse can be constructed with the host's URL
 #[tokio::test]
 async fn test_mcp_server_sse_variant_with_host_url() {
-    use agent_client_protocol::McpServer;
+    use agent_client_protocol::{McpServer, McpServerSse};
 
     let temp = TempDir::new().unwrap();
     let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
@@ -170,11 +170,9 @@ async fn test_mcp_server_sse_variant_with_host_url() {
     let url = host.sse_url();
 
     // Construct McpServer::Sse with the host's URL (this is what connect_with_sse_mcp does)
-    let mcp_server = McpServer::Sse {
-        name: "crucible".to_string(),
-        url: url.clone(),
-        headers: vec![],
-    };
+    let mcp_server = McpServer::Sse(
+        McpServerSse::new("crucible", url.clone())
+    );
 
     // Verify it serializes correctly for the ACP protocol
     let serialized = serde_json::to_value(&mcp_server).expect("Should serialize");
@@ -189,7 +187,8 @@ async fn test_mcp_server_sse_variant_with_host_url() {
 /// Test that the ACP NewSessionRequest can include SSE MCP server
 #[tokio::test]
 async fn test_new_session_request_with_sse_mcp() {
-    use agent_client_protocol::{McpServer, NewSessionRequest};
+    use agent_client_protocol::{McpServer, McpServerSse, NewSessionRequest};
+    use serde_json::json;
 
     let temp = TempDir::new().unwrap();
     let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
@@ -205,30 +204,24 @@ async fn test_new_session_request_with_sse_mcp() {
     let url = host.sse_url();
 
     // This mirrors what connect_with_sse_mcp does
-    let mcp_server = McpServer::Sse {
-        name: "crucible".to_string(),
-        url: url.clone(),
-        headers: vec![],
-    };
+    let mcp_server = McpServer::Sse(
+        McpServerSse::new("crucible", url.clone())
+    );
 
-    let request = NewSessionRequest {
-        cwd: PathBuf::from("/test"),
-        mcp_servers: vec![mcp_server],
-        meta: None,
-    };
+    let request: NewSessionRequest = serde_json::from_value(json!({
+        "cwd": "/test",
+        "mcpServers": [mcp_server],
+        "_meta": null
+    })).expect("Failed to create NewSessionRequest");
 
     // Verify the request structure
     assert_eq!(request.mcp_servers.len(), 1);
 
     match &request.mcp_servers[0] {
-        McpServer::Sse {
-            name,
-            url: server_url,
-            headers,
-        } => {
-            assert_eq!(name, "crucible");
-            assert_eq!(server_url, &url);
-            assert!(headers.is_empty());
+        McpServer::Sse(sse) => {
+            assert_eq!(&sse.name, "crucible");
+            assert_eq!(&sse.url, &url);
+            assert!(sse.headers.is_empty());
         }
         _ => panic!("Expected McpServer::Sse variant"),
     }
