@@ -277,7 +277,7 @@ fn error_type_name(error: &ToonError) -> &'static str {
 /// Sanitize endpoint URL for display (hide credentials, internal hostnames)
 fn sanitize_endpoint(endpoint: &str) -> String {
     // Replace any credentials
-    let sanitized = endpoint.replace(|c: char| c == '@', "[at]").to_string();
+    let sanitized = endpoint.replace('@', "[at]").to_string();
 
     // Just show the host pattern
     if let Some(host_start) = sanitized.find("://") {

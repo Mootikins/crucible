@@ -5,7 +5,7 @@
 
 use crate::tui::state::TuiState;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Actions that can be performed from keyboard input
 #[derive(Debug, Clone, PartialEq, Eq)]

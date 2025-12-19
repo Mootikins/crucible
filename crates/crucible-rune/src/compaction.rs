@@ -762,7 +762,7 @@ mod tests {
         let tokens = estimate_event_tokens(&event);
 
         // ~40 chars / 4 = 10, + 10 overhead = 20
-        assert!(tokens >= 10 && tokens <= 30);
+        assert!((10..=30).contains(&tokens));
 
         let event = SessionEvent::SessionStarted {
             config: crate::reactor::SessionEventConfig::new("test"),
