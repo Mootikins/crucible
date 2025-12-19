@@ -98,13 +98,17 @@ pub struct ChatSession {
 
 impl ChatSession {
     /// Create a new chat session
-    pub fn new(config: SessionConfig, core: Arc<KilnContext>) -> Self {
+    pub fn new(
+        config: SessionConfig,
+        core: Arc<KilnContext>,
+        available_models: Option<Vec<String>>,
+    ) -> Self {
         let context_size = config.context_size.unwrap_or(5);
         let enricher = ContextEnricher::new(core.clone(), Some(context_size));
 
         // Build the command registry with all static commands
         let exit_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let command_registry = SlashCommandRegistryBuilder::default()
+        let mut registry_builder = SlashCommandRegistryBuilder::default()
             .command(
                 "exit",
                 Arc::new(handlers::ExitHandler::new(exit_flag.clone())),
@@ -151,8 +155,32 @@ impl ChatSession {
                 Arc::new(handlers::CommitHandler),
                 "Smart git commit workflow (smart/quick/review/wip)",
                 Some("mode [message]".to_string()),
-            )
-            .build();
+            );
+
+        // Register /models command if models are available (e.g., from OpenCode)
+        if let Some(models) = available_models {
+            use crucible_core::traits::chat::CommandOption;
+
+            let handler = Arc::new(handlers::ModelsHandler::new(models.clone(), None));
+
+            // Convert model IDs to CommandOptions for autocomplete
+            let options: Vec<CommandOption> = models
+                .iter()
+                .map(|m| CommandOption {
+                    label: m.clone(),
+                    value: m.clone(),
+                })
+                .collect();
+
+            registry_builder = registry_builder.command_with_options(
+                "models",
+                handler,
+                "List or switch between available models",
+                options,
+            );
+        }
+
+        let command_registry = registry_builder.build();
 
         // Initialize mode registry with defaults
         let mode_registry = ModeRegistry::new();
