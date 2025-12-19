@@ -363,7 +363,9 @@ impl<E> EventRing<E> {
         let current = self.write_seq.load(Ordering::SeqCst);
         if current == 0 {
             0
-        } else { current.saturating_sub(self.capacity as u64) }
+        } else {
+            current.saturating_sub(self.capacity as u64)
+        }
     }
 
     /// Get the newest valid sequence number.

@@ -48,8 +48,7 @@ use tokio::sync::RwLock;
 use walkdir::WalkDir;
 
 /// Model capability types
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum ModelCapability {
     /// Embedding model (produces vector representations)
     Embedding,
@@ -464,7 +463,6 @@ struct ModelMetadata {
     parameter_count: Option<u64>,
     quantization: Option<String>,
 }
-
 
 #[cfg(test)]
 mod tests {

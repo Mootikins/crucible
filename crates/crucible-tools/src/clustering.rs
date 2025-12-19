@@ -63,7 +63,7 @@ pub struct ClusteringTools {
 
 impl ClusteringTools {
     /// Create new clustering tools instance
-    #[must_use] 
+    #[must_use]
     pub fn new(kiln_path: PathBuf) -> Self {
         Self { kiln_path }
     }
@@ -76,9 +76,7 @@ impl ClusteringTools {
         for entry in WalkDir::new(&self.kiln_path)
             .into_iter()
             .filter_map(std::result::Result::ok)
-            .filter(|e| {
-                e.file_type().is_file() && e.path().extension().is_some_and(|s| s == "md")
-            })
+            .filter(|e| e.file_type().is_file() && e.path().extension().is_some_and(|s| s == "md"))
         {
             let path = entry.path();
             let relative_path = path

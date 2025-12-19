@@ -23,15 +23,13 @@ use crate::types::{
 /// - Callout blocks
 /// - Extensible plugin architecture
 /// Configuration for block-level processing
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct BlockProcessingConfig {
     /// Whether to enable block-level processing (Phase 2 optimize-data-flow)
     pub enabled: bool,
     /// Configuration for block extraction
     pub extraction_config: ExtractionConfig,
 }
-
 
 impl BlockProcessingConfig {
     /// Create a new block processing configuration
@@ -324,7 +322,8 @@ impl MarkdownParser for CrucibleParser {
         let (frontmatter_raw, content, frontmatter_format) = self.parse_frontmatter(content);
 
         // Parse frontmatter into Frontmatter struct if present
-        let frontmatter = frontmatter_raw.map(|fm_raw| crate::types::Frontmatter::new(fm_raw, frontmatter_format));
+        let frontmatter = frontmatter_raw
+            .map(|fm_raw| crate::types::Frontmatter::new(fm_raw, frontmatter_format));
 
         // Create initial note content
         let mut document_content = NoteContent {

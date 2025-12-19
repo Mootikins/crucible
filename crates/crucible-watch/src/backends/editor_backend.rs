@@ -407,9 +407,7 @@ impl EditorWatcher {
             });
 
         let previous_inode = file_state.inode;
-        let changed = self
-            .update_inode_state(&watch_path, file_state)
-            .await?;
+        let changed = self.update_inode_state(&watch_path, file_state).await?;
 
         if changed {
             if previous_inode.is_none() {

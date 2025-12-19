@@ -73,7 +73,7 @@ impl CrucibleMcpServer {
     /// # Returns
     ///
     /// A vector of tool definitions including name, description, and input schema
-    #[must_use] 
+    #[must_use]
     pub fn list_tools(&self) -> Vec<rmcp::model::Tool> {
         self.tool_router.list_all()
     }
@@ -83,7 +83,7 @@ impl CrucibleMcpServer {
     /// # Returns
     ///
     /// The count of available tools (expected: 12)
-    #[must_use] 
+    #[must_use]
     pub fn tool_count(&self) -> usize {
         self.tool_router.list_all().len()
     }

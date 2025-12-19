@@ -339,7 +339,8 @@ impl TuiState {
             InputAction::DeleteChar => {
                 if self.cursor_position > 0 {
                     let prev_boundary = self.input_buffer[..self.cursor_position]
-                        .char_indices().next_back()
+                        .char_indices()
+                        .next_back()
                         .map(|(i, _)| i)
                         .unwrap_or(0);
                     self.input_buffer.remove(prev_boundary);
@@ -351,7 +352,8 @@ impl TuiState {
             InputAction::MoveCursorLeft => {
                 if self.cursor_position > 0 {
                     self.cursor_position = self.input_buffer[..self.cursor_position]
-                        .char_indices().next_back()
+                        .char_indices()
+                        .next_back()
                         .map(|(i, _)| i)
                         .unwrap_or(0);
                 }

@@ -45,8 +45,7 @@ pub async fn execute(
     info!("Starting process command");
 
     // Determine target path
-    let target_path = path.as_deref()
-        .unwrap_or(config.kiln_path.as_path());
+    let target_path = path.as_deref().unwrap_or(config.kiln_path.as_path());
 
     info!("Processing path: {}", target_path.display());
     info!("Force reprocess: {}", force);
