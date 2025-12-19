@@ -11,6 +11,12 @@ pub struct HeuristicClusteringAlgorithm {
     metadata: AlgorithmMetadata,
 }
 
+impl Default for HeuristicClusteringAlgorithm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HeuristicClusteringAlgorithm {
     pub fn new() -> Self {
         let mut default_params = HashMap::new();
@@ -208,7 +214,7 @@ impl ClusteringAlgorithm for HeuristicClusteringAlgorithm {
                 ClusteringError::Config("min_similarity must be a number".to_string())
             })?;
 
-            if min_sim < 0.0 || min_sim > 1.0 {
+            if !(0.0..=1.0).contains(&min_sim) {
                 return Err(ClusteringError::Config(
                     "min_similarity must be between 0.0 and 1.0".to_string(),
                 ));
@@ -243,6 +249,12 @@ impl ClusteringAlgorithm for HeuristicClusteringAlgorithm {
 /// Factory for creating heuristic clustering algorithm instances
 #[derive(Debug)]
 pub struct HeuristicAlgorithmFactory;
+
+impl Default for HeuristicAlgorithmFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl HeuristicAlgorithmFactory {
     pub fn new() -> Self {

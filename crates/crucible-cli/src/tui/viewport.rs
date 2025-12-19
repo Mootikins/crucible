@@ -12,7 +12,7 @@
 
 use ratatui::{
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
@@ -134,7 +134,7 @@ impl ContentBlock {
                     let line_height = if width == 0 {
                         1 // Avoid division by zero
                     } else {
-                        (line_len + width - 1) / width // Ceiling division
+                        line_len.div_ceil(width) // Ceiling division
                     };
                     height = height.saturating_add(line_height.max(1));
                 }

@@ -516,6 +516,7 @@ impl BurnEmbedConfig {
         "nomic-embed-text".to_string()
     }
 
+    /// Get default model directory path.
     pub fn default_model_dir() -> String {
         dirs::home_dir()
             .unwrap_or_default()

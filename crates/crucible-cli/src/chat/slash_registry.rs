@@ -189,7 +189,7 @@ fn parse_secondary_options(meta: &Option<serde_json::Map<String, Value>>) -> Vec
                 let value = map
                     .get("value")
                     .and_then(|v| v.as_str())
-                    .unwrap_or_else(|| label.as_str())
+                    .unwrap_or(label.as_str())
                     .to_string();
                 if !label.is_empty() || !value.is_empty() {
                     options.push(CommandOption { label, value });

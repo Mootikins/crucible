@@ -767,7 +767,7 @@ impl DatabaseTransactionConsumer {
 
             // Attempt transaction with retry logic
             loop {
-                let _result = match timeout(
+                match timeout(
                     self.config.transaction_timeout,
                     self.execute_transaction(&batchable_tx.transaction),
                 )

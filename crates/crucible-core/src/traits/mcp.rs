@@ -40,6 +40,7 @@ pub enum ContentBlock {
 
 /// Result of a tool call
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct ToolCallResult {
     /// Content blocks returned by the tool
     pub content: Vec<ContentBlock>,
@@ -47,14 +48,6 @@ pub struct ToolCallResult {
     pub is_error: bool,
 }
 
-impl Default for ToolCallResult {
-    fn default() -> Self {
-        Self {
-            content: Vec::new(),
-            is_error: false,
-        }
-    }
-}
 
 impl ToolCallResult {
     /// Create a successful text result

@@ -954,14 +954,14 @@ impl ContentAddressedStorageSurrealDB {
                     .and_then(|v| v.as_str())
                     .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                     .map(|dt| dt.with_timezone(&chrono::Utc))
-                    .unwrap_or_else(|| chrono::Utc::now()),
+                    .unwrap_or_else(chrono::Utc::now),
                 updated_at: record
                     .data
                     .get("updated_at")
                     .and_then(|v| v.as_str())
                     .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                     .map(|dt| dt.with_timezone(&chrono::Utc))
-                    .unwrap_or_else(|| chrono::Utc::now()),
+                    .unwrap_or_else(chrono::Utc::now),
             };
             blocks.push(block_record);
         }
@@ -1074,14 +1074,14 @@ impl ContentAddressedStorageSurrealDB {
                     .and_then(|v| v.as_str())
                     .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                     .map(|dt| dt.with_timezone(&chrono::Utc))
-                    .unwrap_or_else(|| chrono::Utc::now()),
+                    .unwrap_or_else(chrono::Utc::now),
                 updated_at: record
                     .data
                     .get("updated_at")
                     .and_then(|v| v.as_str())
                     .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                     .map(|dt| dt.with_timezone(&chrono::Utc))
-                    .unwrap_or_else(|| chrono::Utc::now()),
+                    .unwrap_or_else(chrono::Utc::now),
             };
             Ok(Some(block_record))
         } else {
@@ -1126,7 +1126,7 @@ impl ContentAddressedStorageSurrealDB {
 
                 hash_to_documents
                     .entry(hash_str)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(doc_id_str);
             }
         }
@@ -1212,14 +1212,14 @@ impl ContentAddressedStorageSurrealDB {
                         .and_then(|v| v.as_str())
                         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                         .map(|dt| dt.with_timezone(&chrono::Utc))
-                        .unwrap_or_else(|| chrono::Utc::now()),
+                        .unwrap_or_else(chrono::Utc::now),
                     updated_at: record
                         .data
                         .get("updated_at")
                         .and_then(|v| v.as_str())
                         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                         .map(|dt| dt.with_timezone(&chrono::Utc))
-                        .unwrap_or_else(|| chrono::Utc::now()),
+                        .unwrap_or_else(chrono::Utc::now),
                 };
 
                 hash_to_block.insert(block_hash.to_string(), block_record);

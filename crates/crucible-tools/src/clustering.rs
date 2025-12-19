@@ -1,6 +1,6 @@
 //! Clustering tools for Crucible knowledge bases
 //!
-//! This module provides MCP tools for detecting Maps of Content (MoCs) and
+//! This module provides MCP tools for detecting Maps of Content (`MoCs`) and
 //! clustering documents using various algorithms.
 
 use anyhow::{Context, Result};
@@ -34,7 +34,7 @@ pub struct Document {
 pub struct MocCandidate {
     /// The document path
     pub path: String,
-    /// MoC score (0.0 - 1.0)
+    /// `MoC` score (0.0 - 1.0)
     pub score: f64,
     /// Reasons for detection
     pub reasons: Vec<String>,
@@ -63,6 +63,7 @@ pub struct ClusteringTools {
 
 impl ClusteringTools {
     /// Create new clustering tools instance
+    #[must_use] 
     pub fn new(kiln_path: PathBuf) -> Self {
         Self { kiln_path }
     }
@@ -74,9 +75,9 @@ impl ClusteringTools {
         // Walk through all markdown files
         for entry in WalkDir::new(&self.kiln_path)
             .into_iter()
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .filter(|e| {
-                e.file_type().is_file() && e.path().extension().map(|s| s == "md").unwrap_or(false)
+                e.file_type().is_file() && e.path().extension().is_some_and(|s| s == "md")
             })
         {
             let path = entry.path();
@@ -87,7 +88,7 @@ impl ClusteringTools {
             // Read file content
             let content = fs::read_to_string(path)
                 .await
-                .with_context(|| format!("Failed to read file: {:?}", path))?;
+                .with_context(|| format!("Failed to read file: {path:?}"))?;
 
             // Parse frontmatter and extract basic info
             let (title, tags, links) = self.parse_document(&content);
@@ -169,7 +170,7 @@ impl ClusteringTools {
         (title, tags, links)
     }
 
-    /// Convert to crucible-surrealdb DocumentInfo format
+    /// Convert to crucible-surrealdb `DocumentInfo` format
     fn to_document_infos(&self, documents: &[Document]) -> Vec<crucible_surrealdb::DocumentInfo> {
         // Build a link mapping for inbound links
         let mut link_map: HashMap<String, Vec<String>> = HashMap::new();

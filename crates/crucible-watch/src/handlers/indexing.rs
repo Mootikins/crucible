@@ -206,12 +206,11 @@ impl IndexingHandler {
         trigger_event: crate::events::FileEventKind,
     ) -> Result<()> {
         // Check for deduplication if enabled
-        if self.embedding_config.enable_deduplication {
-            if self.should_deduplicate_event(path).await {
+        if self.embedding_config.enable_deduplication
+            && self.should_deduplicate_event(path).await {
                 debug!("Deduplicating embedding event for: {}", path.display());
                 return Ok(());
             }
-        }
 
         // Extract content for embedding
         let content = self.extract_content_for_embedding(parsed_doc);
@@ -746,7 +745,7 @@ impl EventHandler for IndexingHandler {
             crate::events::FileEventKind::Deleted => self.remove_file_index(&event.path).await,
             crate::events::FileEventKind::Moved { ref from, ref to } => {
                 // Handle move as delete + create operation
-                self.handle_file_move(&from, &to).await
+                self.handle_file_move(from, to).await
             }
             crate::events::FileEventKind::Batch(ref events) => {
                 self.handle_batch_events(events).await
