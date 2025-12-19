@@ -1331,6 +1331,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "Requires `just` binary to be installed"]
     async fn test_tool_events_emitted() {
         use crucible_rune::event_bus::{EventType, Handler};
         use serde_json::json;
@@ -1473,6 +1474,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "Requires `just` binary to be installed"]
     async fn test_tool_discovered_event_emitted() {
         use crucible_rune::event_bus::{EventType, Handler};
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1534,6 +1536,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "Requires `just` binary to be installed"]
     async fn test_recipe_enrichment_via_hook() {
         use crucible_rune::event_bus::{EventType, Handler};
 
