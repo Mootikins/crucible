@@ -45,6 +45,7 @@ mod tests {
     use std::env;
 
     #[test]
+    #[ignore = "Requires `just` binary to be installed"]
     fn test_load_justfile_sync() {
         // This test requires `just` to be installed and a justfile in the repo root
         let repo_root = env::var("CARGO_MANIFEST_DIR")
