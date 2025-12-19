@@ -115,6 +115,15 @@ impl AgentInitParams {
         self.env_overrides = env;
         self
     }
+
+    /// Set the model for an ACP agent (typically OpenCode)
+    ///
+    /// This adds the OPENCODE_MODEL environment variable, which tells OpenCode
+    /// which model to use. Preserves any existing environment overrides.
+    pub fn with_model(mut self, model_id: impl Into<String>) -> Self {
+        self.env_overrides.insert("OPENCODE_MODEL".to_string(), model_id.into());
+        self
+    }
 }
 
 impl Default for AgentInitParams {
@@ -288,6 +297,29 @@ mod tests {
         assert_eq!(params.provider_key, None);
         assert!(params.read_only);
         assert_eq!(params.max_context_tokens, None);
+    }
+
+    #[test]
+    fn test_params_with_model_injects_env_var() {
+        let params = AgentInitParams::default();
+        let modified = params.with_model("anthropic/claude-sonnet-4");
+        assert_eq!(
+            modified.env_overrides.get("OPENCODE_MODEL"),
+            Some(&"anthropic/claude-sonnet-4".to_string())
+        );
+    }
+
+    #[test]
+    fn test_params_with_model_preserves_other_env_vars() {
+        let mut env = std::collections::HashMap::new();
+        env.insert("EXISTING_VAR".to_string(), "value".to_string());
+
+        let params = AgentInitParams::default()
+            .with_env_overrides(env)
+            .with_model("test-model");
+
+        assert_eq!(params.env_overrides.get("EXISTING_VAR"), Some(&"value".to_string()));
+        assert_eq!(params.env_overrides.get("OPENCODE_MODEL"), Some(&"test-model".to_string()));
     }
 
     #[tokio::test]
