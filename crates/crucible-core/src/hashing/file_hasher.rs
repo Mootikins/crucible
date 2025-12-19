@@ -297,7 +297,6 @@ mod tests {
     use super::*;
     use std::io::Write;
     use tempfile::NamedTempFile;
-    use tokio::fs;
 
     #[tokio::test]
     async fn test_hash_file_blake3() {

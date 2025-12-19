@@ -161,66 +161,6 @@ impl EmbeddingProvider for MockEmbeddingProvider {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_mock_provider_basic() {
-        let provider = MockEmbeddingProvider::new();
-        let result = provider.embed("test text").await.unwrap();
-
-        assert_eq!(result.embedding.len(), 768);
-        assert_eq!(result.model, "mock-test-model");
-    }
-
-    #[tokio::test]
-    async fn test_mock_provider_custom_dimensions() {
-        let provider = MockEmbeddingProvider::with_dimensions(512);
-        let result = provider.embed("test text").await.unwrap();
-
-        assert_eq!(result.embedding.len(), 512);
-    }
-
-    #[tokio::test]
-    async fn test_mock_provider_deterministic() {
-        let provider = MockEmbeddingProvider::new();
-        let text = "deterministic test";
-
-        let result1 = provider.embed(text).await.unwrap();
-        let result2 = provider.embed(text).await.unwrap();
-
-        assert_eq!(result1.embedding, result2.embedding);
-    }
-
-    #[tokio::test]
-    async fn test_mock_provider_different_texts() {
-        let provider = MockEmbeddingProvider::new();
-
-        let result1 = provider.embed("text1").await.unwrap();
-        let result2 = provider.embed("text2").await.unwrap();
-
-        assert_ne!(result1.embedding, result2.embedding);
-    }
-
-    #[tokio::test]
-    async fn test_mock_provider_batch() {
-        let provider = MockEmbeddingProvider::new();
-        let texts = vec![
-            "text1".to_string(),
-            "text2".to_string(),
-            "text3".to_string(),
-        ];
-
-        let results = provider.embed_batch(texts).await.unwrap();
-
-        assert_eq!(results.len(), 3);
-        for result in results {
-            assert_eq!(result.embedding.len(), 768);
-        }
-    }
-}
-
 /// Pre-generated deterministic fixture data for testing
 ///
 /// This structure contains pre-computed embedding vectors that should be
@@ -569,5 +509,65 @@ impl EmbeddingProvider for FixtureBasedMockProvider {
         );
 
         Ok(models)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_mock_provider_basic() {
+        let provider = MockEmbeddingProvider::new();
+        let result = provider.embed("test text").await.unwrap();
+
+        assert_eq!(result.embedding.len(), 768);
+        assert_eq!(result.model, "mock-test-model");
+    }
+
+    #[tokio::test]
+    async fn test_mock_provider_custom_dimensions() {
+        let provider = MockEmbeddingProvider::with_dimensions(512);
+        let result = provider.embed("test text").await.unwrap();
+
+        assert_eq!(result.embedding.len(), 512);
+    }
+
+    #[tokio::test]
+    async fn test_mock_provider_deterministic() {
+        let provider = MockEmbeddingProvider::new();
+        let text = "deterministic test";
+
+        let result1 = provider.embed(text).await.unwrap();
+        let result2 = provider.embed(text).await.unwrap();
+
+        assert_eq!(result1.embedding, result2.embedding);
+    }
+
+    #[tokio::test]
+    async fn test_mock_provider_different_texts() {
+        let provider = MockEmbeddingProvider::new();
+
+        let result1 = provider.embed("text1").await.unwrap();
+        let result2 = provider.embed("text2").await.unwrap();
+
+        assert_ne!(result1.embedding, result2.embedding);
+    }
+
+    #[tokio::test]
+    async fn test_mock_provider_batch() {
+        let provider = MockEmbeddingProvider::new();
+        let texts = vec![
+            "text1".to_string(),
+            "text2".to_string(),
+            "text3".to_string(),
+        ];
+
+        let results = provider.embed_batch(texts).await.unwrap();
+
+        assert_eq!(results.len(), 3);
+        for result in results {
+            assert_eq!(result.embedding.len(), 768);
+        }
     }
 }

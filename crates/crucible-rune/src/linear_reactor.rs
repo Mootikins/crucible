@@ -618,7 +618,7 @@ impl Reactor for LinearReactor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event_bus::{Event, EventType};
+
     use crate::handler::{RingHandler, RingHandlerContext, RingHandlerResult};
     use serde_json::json;
 

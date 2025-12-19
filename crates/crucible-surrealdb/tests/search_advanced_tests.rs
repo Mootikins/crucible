@@ -9,8 +9,6 @@
 mod common;
 
 use common::{setup_test_db_with_kiln, test_kiln_root};
-use std::path::PathBuf;
-use std::time::Instant;
 
 // ============================================================================
 // Section 1: Multi-Criteria Queries (5 tests)
@@ -229,7 +227,7 @@ async fn fuzzy_typo_tolerance() {
 #[tokio::test]
 async fn fuzzy_phonetic() {
     // Arrange: Words that sound similar
-    let phonetic_pairs = vec![
+    let phonetic_pairs = [
         ("color", "colour"),
         ("organize", "organise"),
         ("analyze", "analyse"),
@@ -342,7 +340,7 @@ async fn domain_technical_code_blocks() {
 #[tokio::test]
 async fn domain_business_project_status() {
     // Arrange: Search for projects with different statuses
-    let statuses = vec!["active", "completed", "on-hold", "planning"];
+    let statuses = ["active", "completed", "on-hold", "planning"];
 
     // Expected: Should find projects matching each status
     // Project Management has status: active
@@ -430,13 +428,10 @@ async fn link_validation_find_all() {
     let mut total_wikilinks = 0;
     let wikilink_regex = regex::Regex::new(r"\[\[([^\]]+)\]\]").unwrap();
 
-    for entry in walkdir::WalkDir::new(&kiln_root) {
-        if let Ok(entry) = entry {
-            if entry.file_type().is_file() && entry.path().extension().map_or(false, |e| e == "md")
-            {
-                if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                    total_wikilinks += wikilink_regex.find_iter(&content).count();
-                }
+    for entry in walkdir::WalkDir::new(&kiln_root).into_iter().flatten() {
+        if entry.file_type().is_file() && entry.path().extension().is_some_and(|e| e == "md") {
+            if let Ok(content) = std::fs::read_to_string(entry.path()) {
+                total_wikilinks += wikilink_regex.find_iter(&content).count();
             }
         }
     }
@@ -470,8 +465,7 @@ async fn link_validation_targets_exist() {
     // Collect all wikilink targets
     for entry in walkdir::WalkDir::new(&kiln_root) {
         if let Ok(entry) = entry {
-            if entry.file_type().is_file() && entry.path().extension().map_or(false, |e| e == "md")
-            {
+            if entry.file_type().is_file() && entry.path().extension().is_some_and(|e| e == "md") {
                 // Add note name (without .md)
                 if let Some(stem) = entry.path().file_stem() {
                     note_names.insert(stem.to_string_lossy().to_string());
@@ -537,8 +531,7 @@ async fn link_validation_orphaned_pages() {
 
     for entry in walkdir::WalkDir::new(&kiln_root) {
         if let Ok(entry) = entry {
-            if entry.file_type().is_file() && entry.path().extension().map_or(false, |e| e == "md")
-            {
+            if entry.file_type().is_file() && entry.path().extension().is_some_and(|e| e == "md") {
                 // Add note name
                 if let Some(stem) = entry.path().file_stem() {
                     all_notes.push(stem.to_string_lossy().to_string());
@@ -592,15 +585,12 @@ async fn link_validation_density() {
 
     let mut link_counts: Vec<(String, usize)> = Vec::new();
 
-    for entry in walkdir::WalkDir::new(&kiln_root) {
-        if let Ok(entry) = entry {
-            if entry.file_type().is_file() && entry.path().extension().map_or(false, |e| e == "md")
-            {
-                if let Some(stem) = entry.path().file_stem() {
-                    if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                        let count = wikilink_regex.find_iter(&content).count();
-                        link_counts.push((stem.to_string_lossy().to_string(), count));
-                    }
+    for entry in walkdir::WalkDir::new(&kiln_root).into_iter().flatten() {
+        if entry.file_type().is_file() && entry.path().extension().is_some_and(|e| e == "md") {
+            if let Some(stem) = entry.path().file_stem() {
+                if let Ok(content) = std::fs::read_to_string(entry.path()) {
+                    let count = wikilink_regex.find_iter(&content).count();
+                    link_counts.push((stem.to_string_lossy().to_string(), count));
                 }
             }
         }
