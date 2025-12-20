@@ -16,7 +16,7 @@ path = "find_markdown_panic.rs"
 [dependencies]
 crucible-core = { path = "../crates/crucible-core" }
 crucible-enrichment = { path = "../crates/crucible-enrichment" }
-md5 = "0.7"
+md5 = "0.8"
 markdown-it = "0.6.1"
 
 [dev-dependencies]
