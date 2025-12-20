@@ -3637,6 +3637,7 @@ async fn test_embed_backward_compatibility() {
 }
 
 #[tokio::test]
+#[ignore = "Performance-sensitive test - flaky in CI due to variable runner speeds"]
 async fn test_embed_performance_with_large_documents() {
     use crucible_core::parser::Wikilink;
     use crucible_core::storage::RelationStorage;
