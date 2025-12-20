@@ -232,8 +232,10 @@ impl MerklePersistence {
                 version: SECTION_FORMAT_VERSION,
                 data: section.clone(),
             };
-            let section_data = bincode::serialize(&versioned)
-                .map_err(|e| DbError::Internal(format!("Failed to serialize section: {}", e)))?;
+            let section_data =
+                bincode::serde::encode_to_vec(&versioned, bincode::config::standard()).map_err(
+                    |e| DbError::Internal(format!("Failed to serialize section: {}", e)),
+                )?;
 
             let start_block = cumulative_blocks;
             let end_block = cumulative_blocks + section.block_count;
@@ -364,10 +366,11 @@ impl MerklePersistence {
         let sections: Result<Vec<SectionNode>, _> = section_records
             .iter()
             .map(|record| {
-                let versioned: VersionedSection = bincode::deserialize(&record.section_data)
-                    .map_err(|e| {
-                        DbError::Internal(format!("Failed to deserialize section: {}", e))
-                    })?;
+                let (versioned, _): (VersionedSection, _) = bincode::serde::decode_from_slice(
+                    &record.section_data,
+                    bincode::config::standard(),
+                )
+                .map_err(|e| DbError::Internal(format!("Failed to deserialize section: {}", e)))?;
 
                 // Check version and migrate if needed
                 if versioned.version != SECTION_FORMAT_VERSION {
@@ -549,8 +552,10 @@ impl MerklePersistence {
                 version: SECTION_FORMAT_VERSION,
                 data: section.clone(),
             };
-            let section_data = bincode::serialize(&versioned)
-                .map_err(|e| DbError::Internal(format!("Failed to serialize section: {}", e)))?;
+            let section_data =
+                bincode::serde::encode_to_vec(&versioned, bincode::config::standard()).map_err(
+                    |e| DbError::Internal(format!("Failed to serialize section: {}", e)),
+                )?;
 
             let (start_block, end_block) = block_ranges[index];
 
