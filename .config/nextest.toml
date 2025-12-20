@@ -1,0 +1,50 @@
+# Nextest configuration for crucible test suite
+# See: https://nexte.st/book/configuration.html
+
+[store]
+dir = "target/nextest"
+
+# Default profile - runs all non-slow tests
+[profile.default]
+retries = 0
+fail-fast = true
+slow-timeout = { period = "30s", terminate-after = 2 }
+
+# Unit tests only - fast feedback loop
+# Matches: tests in src/ (#[cfg(test)]) and tests/unit/
+[profile.unit]
+retries = 0
+fail-fast = true
+slow-timeout = { period = "10s", terminate-after = 1 }
+
+# Integration tests - real I/O, real DB
+[profile.integration]
+retries = 0
+fail-fast = false
+slow-timeout = { period = "60s", terminate-after = 2 }
+
+# CI profile - everything except slow/manual tests
+[profile.ci]
+retries = 1
+fail-fast = false
+slow-timeout = { period = "60s", terminate-after = 2 }
+
+# Contract tests - API/trait verification
+[profile.contract]
+retries = 0
+fail-fast = true
+slow-timeout = { period = "30s", terminate-after = 1 }
+
+# Test groups for filtering
+# Usage: cargo nextest run --profile ci -E 'not test(/slow/)'
+[test-groups.slow]
+# Tests that require manual execution
+max-threads = 1
+
+[[profile.default.overrides]]
+filter = "test(/slow/) or test(/manual/)"
+slow-timeout = { period = "300s", terminate-after = 1 }
+
+[[profile.ci.overrides]]
+filter = "test(/slow/) or test(/manual/)"
+skip = true
