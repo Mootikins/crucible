@@ -41,6 +41,8 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
       - name: Create web asset placeholder
         run: mkdir -p crates/crucible-web/web/dist && echo "<html></html>" > crates/crucible-web/web/dist/index.html
-      - run: cargo test --workspace
+      - name: Run tests with nextest
+        run: cargo nextest run --profile ci --workspace
