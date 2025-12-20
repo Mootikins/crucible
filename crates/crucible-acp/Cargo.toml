@@ -67,7 +67,7 @@ tokio-test = { workspace = true }
 tempfile = { workspace = true }
 tracing-subscriber = { workspace = true }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
-which = "7.0"
+which = "8.0"
 
 # Test binaries for integration testing
 [[test]]
