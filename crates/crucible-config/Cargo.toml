@@ -20,8 +20,8 @@ tokio = { workspace = true, features = ["fs"] }
 tempfile = { workspace = true, optional = true }
 schemars = { workspace = true }
 num_cpus = "1.16"
-sysinfo = "0.30"
-dirs = "5.0"
+sysinfo = "0.37"
+dirs = "6.0"
 
 [features]
 default = ["yaml", "toml"]
@@ -34,4 +34,4 @@ tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 futures = "0.3"
 toml = "0.9"
-serial_test = "0.5"
+serial_test = "3.2"
