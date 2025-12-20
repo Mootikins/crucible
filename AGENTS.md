@@ -206,18 +206,35 @@ test-utils = []                    # Mock providers for testing
 
 ### Testing
 
-- Write unit tests for core functionality
-- Include integration tests for component interactions
+The test suite uses **cargo-nextest** for parallel execution. Tests are organized into tiers:
+
+| Tier | Purpose | Command |
+|------|---------|---------|
+| **Unit** | Fast, isolated, mocked I/O | `cargo nextest run --profile unit` |
+| **Integration** | Real DB, real files | `cargo nextest run --profile integration` |
+| **Contract** | API/trait verification | `cargo nextest run --profile contract` |
+| **CI** | All non-slow tests | `cargo nextest run --profile ci` |
+
+**Guidelines:**
+- Write unit tests for core functionality (mock external dependencies)
 - Use `#[cfg(feature = "test-utils")]` for mock providers
+- Mark slow/manual tests with `#[ignore = "reason"]`
+- Use `test-case` crate for parameterized tests
 - Test error conditions and edge cases
 - Use descriptive test names that explain the scenario
-- use `just test` to save on context
+
+**Running tests:**
+```bash
+just test              # Run all tests with nextest
+cargo nextest run      # Same as above
+cargo test --workspace # Fallback to cargo test
+```
 
 ### Quality Checklist
 
 Before submitting changes:
 - [ ] Code follows project style guidelines
-- [ ] Tests pass (`cargo test --workspace`)
+- [ ] Tests pass (`cargo nextest run --profile ci`)
 - [ ] Error handling is comprehensive
 - [ ] OpenSpec updated if needed (architectural changes)
 - [ ] No debug code left in
