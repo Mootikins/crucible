@@ -69,10 +69,10 @@ burn-hip = { version = "0.16", optional = true }    # AMD ROCm/HIP backend (0.16
 burn-import = { version = "0.19", optional = true }
 
 # HuggingFace tokenizers for text tokenization
-tokenizers = "0.19"
+tokenizers = "0.22"
 
 # SafeTensors for model loading
-safetensors = "0.4"
+safetensors = "0.6"
 
 # GGUF file format support
 gguf = "0.1"
@@ -111,13 +111,13 @@ uuid = { workspace = true }
 tracing = { workspace = true }
 
 # FastEmbed for local embeddings and reranking (optional, feature-gated)
-fastembed = { version = "5.2", optional = true }
+fastembed = { version = "5.5", optional = true }
 
 # Path expansion (for tilde expansion)
 shellexpand = "3.1"
 
 # Directory utilities
-dirs = "5.0"
+dirs = "6.0"
 
 # CPU detection for thread count
 num_cpus = "1.16"
@@ -127,9 +127,9 @@ tokio-test = "0.4"
 mockito = "1.0"
 tempfile = { workspace = true }
 tracing-subscriber = { workspace = true }
-toon-format = "0.2"
+toon-format = "0.4"
 criterion = { workspace = true, features = ["html_reports"] }
-serial_test = "3.1"
+serial_test = "3.2"
 wiremock = { workspace = true }
 futures-util = { workspace = true }
 proptest = "1.4"

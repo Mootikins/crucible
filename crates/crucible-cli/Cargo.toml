@@ -40,7 +40,7 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 
 # Table formatting
-tabled = "0.15"
+tabled = "0.20"
 
 # Date/time handling
 chrono = { workspace = true }
@@ -99,7 +99,7 @@ crossterm = { workspace = true }
 ratatui = "0.29"
 
 # Markdown rendering with syntax highlighting
-termimad = "0.30"
+termimad = "0.34"
 syntect = { version = "5.2", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig"] }
 
 # Diff rendering
@@ -129,14 +129,14 @@ mockall = { workspace = true }
 toml = { workspace = true }
 blake3 = "1.5"  # For hash verification tests
 serial_test = "3.2"  # For preventing parallel test execution with shared env vars
-scopeguard = "0.3"  # For RAII-style cleanup in tests
+scopeguard = "1.2"  # For RAII-style cleanup in tests
 insta = { version = "1.40", features = ["filters"] }  # Snapshot testing for TUI
 
 # Additional dependencies for resource constraint testing
-rand = "0.8"
+rand = "0.9"
 # Unix-only resource constraint testing
 [target.'cfg(unix)'.dev-dependencies]
-nix = { version = "0.27", features = ["fs"] }
+nix = { version = "0.30", features = ["fs"] }
 
 # File locking for concurrent test serialization
 fs2 = "0.4"

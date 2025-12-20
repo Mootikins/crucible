@@ -85,13 +85,13 @@ parking_lot = { workspace = true }
 dashmap = { workspace = true }
 
 # Vector operations for embeddings
-ndarray = "0.16"
+ndarray = "0.17"
 
 # Additional dependencies for migration
 futures = "0.3"
 
 # Search tools
-grep = "0.3"
+grep = "0.4"
 ignore = "0.4"
 
 [dev-dependencies]
