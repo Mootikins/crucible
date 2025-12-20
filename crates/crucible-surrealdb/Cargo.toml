@@ -52,7 +52,7 @@ walkdir = "2.4"
 sha2 = "0.10"
 blake3 = "1.0"
 hex = "0.4"
-bincode = "2.0"
+bincode = { version = "2.0", features = ["serde"] }
 
 [features]
 # Default: Enable embeddings (for backward compatibility with existing Kiln/embedding code)
