@@ -1,7 +1,7 @@
 //! Common test fixtures for crucible-surrealdb integration tests.
 //!
 //! This module provides shared test infrastructure for setting up databases
-//! with the test-kiln example vault.
+//! with the dev-kiln example vault.
 //!
 //! Requires the `test-utils` feature to be enabled.
 
@@ -13,7 +13,7 @@ use crucible_surrealdb::test_utils::{
 use std::path::PathBuf;
 use walkdir::WalkDir;
 
-/// Get the path to the test-kiln example vault.
+/// Get the path to the dev-kiln example vault.
 pub fn test_kiln_root() -> PathBuf {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     PathBuf::from(manifest_dir)
@@ -21,10 +21,10 @@ pub fn test_kiln_root() -> PathBuf {
         .unwrap()
         .parent()
         .unwrap()
-        .join("examples/test-kiln")
+        .join("examples/dev-kiln")
 }
 
-/// Find all markdown files in the test-kiln.
+/// Find all markdown files in the dev-kiln.
 pub fn find_test_kiln_markdown_files() -> Vec<PathBuf> {
     let root = test_kiln_root();
     WalkDir::new(&root)
@@ -36,17 +36,17 @@ pub fn find_test_kiln_markdown_files() -> Vec<PathBuf> {
         .collect()
 }
 
-/// Count markdown files in the test-kiln.
+/// Count markdown files in the dev-kiln.
 pub fn count_kiln_files() -> usize {
     find_test_kiln_markdown_files().len()
 }
 
-/// Set up an in-memory test database with the test-kiln data fully ingested.
+/// Set up an in-memory test database with the dev-kiln data fully ingested.
 ///
 /// This function:
 /// 1. Creates an in-memory SurrealDB instance
 /// 2. Applies the EAV graph schema
-/// 3. Parses all markdown files in test-kiln
+/// 3. Parses all markdown files in dev-kiln
 /// 4. Ingests them into the database (including wikilinks, tags, blocks, etc.)
 ///
 /// # Returns
@@ -58,7 +58,7 @@ pub async fn setup_test_db_with_kiln() -> anyhow::Result<SurrealClient> {
     let ingestor = NoteIngestor::new(&store);
     let parser = CrucibleParser::with_default_extensions();
 
-    // Parse and ingest all test-kiln files
+    // Parse and ingest all dev-kiln files
     let md_files = find_test_kiln_markdown_files();
     for file_path in &md_files {
         let note = parser.parse_file(file_path).await?;
@@ -83,10 +83,10 @@ pub async fn setup_empty_test_db() -> anyhow::Result<(SurrealClient, EAVGraphSto
     Ok((client, store))
 }
 
-/// Configuration for test-kiln fixture.
+/// Configuration for dev-kiln fixture.
 #[derive(Debug, Clone)]
 pub struct TestKilnConfig {
-    /// Path to the test-kiln root.
+    /// Path to the dev-kiln root.
     pub root: PathBuf,
     /// List of markdown files in the kiln.
     pub files: Vec<PathBuf>,
@@ -95,7 +95,7 @@ pub struct TestKilnConfig {
 }
 
 impl TestKilnConfig {
-    /// Create a new TestKilnConfig by scanning the test-kiln directory.
+    /// Create a new TestKilnConfig by scanning the dev-kiln directory.
     pub fn new() -> Self {
         let root = test_kiln_root();
         let files = find_test_kiln_markdown_files();
@@ -107,16 +107,16 @@ impl TestKilnConfig {
         }
     }
 
-    /// Assert that the test-kiln exists and has expected files.
+    /// Assert that the dev-kiln exists and has expected files.
     pub fn assert_valid(&self) {
         assert!(
             self.root.exists(),
-            "Test kiln should exist at: {}",
+            "Dev kiln should exist at: {}",
             self.root.display()
         );
         assert!(
-            self.file_count >= 10,
-            "Test kiln should have at least 10 files, found: {}",
+            self.file_count >= 40,
+            "Dev kiln should have at least 40 files, found: {}",
             self.file_count
         );
     }
