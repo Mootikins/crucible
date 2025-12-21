@@ -17,6 +17,11 @@ use crucible_acp::client::{ClientConfig, CrucibleAcpClient};
 use std::path::PathBuf;
 use std::process::Command;
 
+/// Cross-platform test path helper
+fn test_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("crucible_test_{}", name))
+}
+
 /// Helper to check if opencode binary is available
 fn opencode_available() -> Option<PathBuf> {
     which::which("opencode").ok()
@@ -67,7 +72,7 @@ async fn test_opencode_streaming_returns_content() {
     let config = ClientConfig {
         agent_path: opencode_path,
         agent_args: Some(vec!["acp".to_string()]),
-        working_dir: Some(PathBuf::from("/tmp")),
+        working_dir: Some(test_path("opencode_work")),
         env_vars: None,
         timeout_ms: Some(30_000),
         max_retries: Some(1),
@@ -182,13 +187,14 @@ async fn test_opencode_line_sequence() {
     eprintln!("Initialize: OK");
 
     // 2. Create session
+    let cwd = test_path("opencode_work").to_string_lossy().into_owned();
     send(
         &mut stdin,
         &serde_json::json!({
             "jsonrpc": "2.0",
             "id": 2,
             "method": "session/new",
-            "params": {"cwd": "/tmp", "mcpServers": []}
+            "params": {"cwd": cwd, "mcpServers": []}
         }),
     );
     let session_response = read_line(&mut reader);
@@ -368,7 +374,7 @@ async fn test_opencode_with_sse_mcp() {
     let config = ClientConfig {
         agent_path: opencode_path,
         agent_args: Some(vec!["acp".to_string()]),
-        working_dir: Some(PathBuf::from("/tmp")),
+        working_dir: Some(test_path("opencode_work")),
         env_vars: None,
         timeout_ms: Some(30_000),
         max_retries: Some(1),
@@ -485,13 +491,14 @@ async fn test_opencode_no_mcp() {
     eprintln!("Initialize: OK");
 
     // 2. Create session with NO MCP servers (should work!)
+    let cwd = test_path("opencode_work").to_string_lossy().into_owned();
     send(
         &mut stdin,
         &serde_json::json!({
             "jsonrpc": "2.0",
             "id": 2,
             "method": "session/new",
-            "params": {"cwd": "/tmp", "mcpServers": []}
+            "params": {"cwd": cwd, "mcpServers": []}
         }),
     );
     let session_response = read_line(&mut reader);
@@ -717,8 +724,9 @@ async fn test_opencode_raw_sse_mcp() {
     });
 
     // Try format 3 first (empty array - ACP spec)
+    let cwd = test_path("opencode_work").to_string_lossy().into_owned();
     let session_params = serde_json::json!({
-        "cwd": "/tmp",
+        "cwd": cwd,
         "mcpServers": [format3.clone()]
     });
     eprintln!(

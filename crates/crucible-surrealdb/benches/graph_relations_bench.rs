@@ -18,6 +18,11 @@ use crucible_surrealdb::{
 use std::hint::black_box;
 use std::path::PathBuf;
 
+/// Cross-platform benchmark path helper
+fn bench_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("crucible_bench_{}", name))
+}
+
 // Helper to create test note
 fn create_test_document(path: PathBuf) -> ParsedNote {
     let mut doc = ParsedNote::new(path);
@@ -36,7 +41,7 @@ fn bench_record_id_lookup(c: &mut Criterion) {
             let client = SurrealClient::new_memory().await.unwrap();
             initialize_kiln_schema(&client).await.unwrap();
 
-            let kiln_root = PathBuf::from("/tmp/bench_kiln");
+            let kiln_root = bench_path("kiln");
             let mut note_ids = Vec::new();
 
             // Store 1000 documents
@@ -80,7 +85,7 @@ fn bench_graph_traversal(c: &mut Criterion) {
                     let client = SurrealClient::new_memory().await.unwrap();
                     initialize_kiln_schema(&client).await.unwrap();
 
-                    let kiln_root = PathBuf::from("/tmp/bench_kiln");
+                    let kiln_root = bench_path("kiln");
                     let file_path = kiln_root.join("traversal_test.md");
                     let doc = create_test_document(file_path);
                     let note_id = store_parsed_document(&client, &doc, &kiln_root)
@@ -131,7 +136,7 @@ fn bench_concurrent_storage(c: &mut Criterion) {
                 let client = SurrealClient::new_memory().await.unwrap();
                 initialize_kiln_schema(&client).await.unwrap();
 
-                let kiln_root = PathBuf::from("/tmp/bench_kiln");
+                let kiln_root = bench_path("kiln");
                 let mut handles = vec![];
 
                 // Store 50 documents concurrently
@@ -175,7 +180,7 @@ fn bench_embedding_storage(c: &mut Criterion) {
                     let client = SurrealClient::new_memory().await.unwrap();
                     initialize_kiln_schema(&client).await.unwrap();
 
-                    let kiln_root = PathBuf::from("/tmp/bench_kiln");
+                    let kiln_root = bench_path("kiln");
                     let file_path = kiln_root.join("embedding_bench.md");
                     let doc = create_test_document(file_path);
                     let note_id = store_parsed_document(&client, &doc, &kiln_root)
@@ -222,7 +227,7 @@ fn bench_bulk_retrieval(c: &mut Criterion) {
             let client = SurrealClient::new_memory().await.unwrap();
             initialize_kiln_schema(&client).await.unwrap();
 
-            let kiln_root = PathBuf::from("/tmp/bench_kiln");
+            let kiln_root = bench_path("kiln");
             let mut note_ids = Vec::new();
 
             for i in 0..100 {

@@ -679,7 +679,9 @@ verbose = true
 "#;
         let mut main_config: toml::Value = toml::from_str(main_content).unwrap();
 
-        let result = merge_includes(&mut main_config, Path::new("/tmp"));
+        // Use temp dir even though it's not accessed (no includes to process)
+        let base_dir = std::env::temp_dir().join("crucible_test_no_includes");
+        let result = merge_includes(&mut main_config, &base_dir);
         assert!(result.is_ok());
 
         // Config should be unchanged

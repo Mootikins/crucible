@@ -621,6 +621,12 @@ mod tests {
 
     use crate::handler::{RingHandler, RingHandlerContext, RingHandlerResult};
     use serde_json::json;
+    use std::path::PathBuf;
+
+    /// Cross-platform test path helper
+    fn test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("crucible_test_{}", name))
+    }
 
     /// Test handler that logs events.
     struct LoggingHandler {
@@ -816,7 +822,7 @@ mod tests {
     #[tokio::test]
     async fn test_linear_reactor_on_session_start() {
         let reactor = LinearReactor::with_defaults();
-        let config = SessionConfig::new("test-session", "/tmp/test");
+        let config = SessionConfig::new("test-session", test_path("test"));
 
         reactor.on_session_start(&config).await.unwrap();
 
@@ -835,7 +841,7 @@ mod tests {
     #[tokio::test]
     async fn test_linear_reactor_on_session_end() {
         let reactor = LinearReactor::with_defaults();
-        let config = SessionConfig::new("test-session", "/tmp/test");
+        let config = SessionConfig::new("test-session", test_path("test"));
 
         reactor.on_session_start(&config).await.unwrap();
         reactor.on_session_end("user closed").await.unwrap();
@@ -867,7 +873,7 @@ mod tests {
             },
             SessionEvent::ToolCalled {
                 name: "read_file".into(),
-                args: json!({"path": "/tmp/test"}),
+                args: json!({"path": test_path("test").to_string_lossy()}),
             },
             SessionEvent::ToolCompleted {
                 name: "read_file".into(),
@@ -1068,7 +1074,7 @@ mod tests {
         let seq = reactor.ring().push(event);
 
         // Create a ReactorContext
-        let config = Arc::new(SessionConfig::new("test-session", "/tmp/test"));
+        let config = Arc::new(SessionConfig::new("test-session", test_path("test")));
         let mut ctx = ReactorContext::new(config);
 
         // Process via on_event
@@ -1103,7 +1109,7 @@ mod tests {
         assert_eq!(seq, 0);
 
         // Create a ReactorContext
-        let config = Arc::new(SessionConfig::new("test-session", "/tmp/test"));
+        let config = Arc::new(SessionConfig::new("test-session", test_path("test")));
         let mut ctx = ReactorContext::new(config);
 
         // Process via on_event
@@ -1161,7 +1167,7 @@ mod tests {
         let seq = reactor.ring().push(event);
 
         // Create a ReactorContext
-        let config = Arc::new(SessionConfig::new("test-session", "/tmp/test"));
+        let config = Arc::new(SessionConfig::new("test-session", test_path("test")));
         let mut ctx = ReactorContext::new(config);
 
         // Process via on_event
@@ -1186,7 +1192,7 @@ mod tests {
         let seq = reactor.ring().push(event);
 
         // Create a ReactorContext
-        let config = Arc::new(SessionConfig::new("test-session", "/tmp/test"));
+        let config = Arc::new(SessionConfig::new("test-session", test_path("test")));
         let mut ctx = ReactorContext::new(config);
 
         assert_eq!(ctx.token_count(), 0);
@@ -1208,7 +1214,7 @@ mod tests {
             .unwrap();
 
         // Create a ReactorContext
-        let config = Arc::new(SessionConfig::new("test-session", "/tmp/test"));
+        let config = Arc::new(SessionConfig::new("test-session", test_path("test")));
         let mut ctx = ReactorContext::new(config);
 
         // Try to process non-existent event
@@ -1229,7 +1235,7 @@ mod tests {
         assert_eq!(reactor.event_count(), 0);
 
         // Call on_session_start
-        let config = SessionConfig::new("test-session", "/tmp/test")
+        let config = SessionConfig::new("test-session", test_path("test"))
             .with_system_prompt("You are a helpful assistant.");
         reactor.on_session_start(&config).await.unwrap();
 
@@ -1257,7 +1263,7 @@ mod tests {
         let reactor = LinearReactor::with_defaults();
 
         // Start session first
-        let config = SessionConfig::new("test-session", "/tmp/test");
+        let config = SessionConfig::new("test-session", test_path("test"));
         reactor.on_session_start(&config).await.unwrap();
         assert_eq!(reactor.event_count(), 1);
 

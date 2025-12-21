@@ -1058,6 +1058,11 @@ impl SessionEventConfig {
 mod tests {
     use super::*;
 
+    /// Cross-platform test path helper
+    fn test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("crucible_test_{}", name))
+    }
+
     #[test]
     fn test_session_event_type() {
         assert_eq!(
@@ -1553,7 +1558,7 @@ mod tests {
             },
             SessionEvent::SessionCompacted {
                 summary: "summary".into(),
-                new_file: PathBuf::from("/tmp/new"),
+                new_file: test_path("new"),
             },
             SessionEvent::SessionEnded {
                 reason: "user closed".into(),
@@ -1741,23 +1746,26 @@ mod tests {
 
     #[test]
     fn test_tool_call() {
-        let call = ToolCall::new("read_file", serde_json::json!({"path": "/tmp/test.txt"}))
+        let test_file = test_path("test.txt");
+        let test_file_str = test_file.to_string_lossy();
+        let call = ToolCall::new("read_file", serde_json::json!({"path": test_file_str}))
             .with_call_id("call_123");
 
         assert_eq!(call.name, "read_file");
-        assert_eq!(call.args["path"], "/tmp/test.txt");
+        assert_eq!(call.args["path"], test_file_str.as_ref());
         assert_eq!(call.call_id, Some("call_123".to_string()));
     }
 
     #[test]
     fn test_session_event_config() {
+        let session_folder = test_path("session");
         let config = SessionEventConfig::new("test-session")
-            .with_folder("/tmp/session")
+            .with_folder(&session_folder)
             .with_max_context_tokens(50_000)
             .with_system_prompt("You are helpful.");
 
         assert_eq!(config.session_id, "test-session");
-        assert_eq!(config.folder, Some(PathBuf::from("/tmp/session")));
+        assert_eq!(config.folder, Some(session_folder));
         assert_eq!(config.max_context_tokens, 50_000);
         assert_eq!(config.system_prompt, Some("You are helpful.".to_string()));
     }

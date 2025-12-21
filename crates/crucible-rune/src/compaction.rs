@@ -505,7 +505,13 @@ fn estimate_event_tokens(event: &SessionEvent) -> usize {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::path::PathBuf;
     use std::time::Duration;
+
+    /// Cross-platform test path helper
+    fn test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("crucible_test_{}", name))
+    }
 
     #[test]
     fn test_config_default() {
@@ -579,9 +585,10 @@ mod tests {
         assert!(trigger.token_count() > 0);
 
         // Record a non-message event
+        let path = test_path("test.txt");
         let tool_event = SessionEvent::ToolCalled {
             name: "read_file".into(),
-            args: json!({"path": "/tmp/test.txt"}),
+            args: json!({"path": path.to_string_lossy()}),
         };
         trigger.record_event(&tool_event);
 

@@ -363,6 +363,11 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    /// Cross-platform test path helper
+    fn test_path(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("crucible_test_{}", name))
+    }
+
     #[test]
     fn test_event_handler_config_defaults() {
         let config = EventHandlerConfig::with_defaults(None);
@@ -372,8 +377,8 @@ mod tests {
 
     #[test]
     fn test_event_handler_config_with_kiln() {
-        let kiln_path = Path::new("/tmp/test-kiln");
-        let config = EventHandlerConfig::with_defaults(Some(kiln_path));
+        let kiln_path = test_path("test-kiln");
+        let config = EventHandlerConfig::with_defaults(Some(&kiln_path));
         let expected = kiln_path.join(".crucible").join("events");
         assert!(config.base_directories().iter().any(|p| p == &expected));
     }

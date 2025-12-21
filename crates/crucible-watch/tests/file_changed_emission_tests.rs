@@ -81,6 +81,11 @@ async fn test_file_changed_emission_on_modified() {
     }
 }
 
+/// Cross-platform test path helper
+fn test_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("crucible_test_{}", name))
+}
+
 /// Test that IndexingHandler emits SessionEvent::FileDeleted for Deleted events.
 #[tokio::test]
 async fn test_file_deleted_emission() {
@@ -88,7 +93,7 @@ async fn test_file_deleted_emission() {
     let handler = IndexingHandler::with_emitter(emitter.clone()).expect("Failed to create handler");
 
     // For deleted files, the file doesn't need to exist - just simulate the event
-    let deleted_path = PathBuf::from("/tmp/deleted_note.md");
+    let deleted_path = test_path("deleted_note.md");
 
     let file_event = FileEvent::new(FileEventKind::Deleted, deleted_path.clone());
 

@@ -6,6 +6,11 @@ use crucible_core::storage::{RelationStorage, TagStorage};
 use serde_json::json;
 use std::path::PathBuf;
 
+/// Cross-platform test path helper
+fn test_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("crucible_test_{}", name))
+}
+
 fn sample_document() -> ParsedNote {
     let mut doc = ParsedNote::default();
     doc.path = PathBuf::from("notes/sample.md");
@@ -4079,7 +4084,7 @@ mod timestamp_extraction_tests {
 
     fn doc_with_frontmatter(yaml: &str) -> ParsedNote {
         let mut doc = ParsedNote::default();
-        doc.path = PathBuf::from("/tmp/test-note.md");
+        doc.path = test_path("test-note.md");
         doc.content_hash = "test123".into();
         doc.frontmatter = Some(Frontmatter::new(yaml.to_string(), FrontmatterFormat::Yaml));
         doc
@@ -4087,7 +4092,7 @@ mod timestamp_extraction_tests {
 
     fn doc_without_frontmatter() -> ParsedNote {
         let mut doc = ParsedNote::default();
-        doc.path = PathBuf::from("/tmp/test-note.md");
+        doc.path = test_path("test-note.md");
         doc.content_hash = "test123".into();
         doc.frontmatter = None;
         doc
@@ -4203,7 +4208,7 @@ mod timestamp_extraction_tests {
 
         // Create a note WITHOUT created/modified frontmatter
         let mut doc = ParsedNote::default();
-        doc.path = PathBuf::from("/tmp/test-vault/no-timestamps.md");
+        doc.path = test_path("test-vault/no-timestamps.md");
         doc.content_hash = "hash123".into();
         doc.content.plain_text = "Test content without timestamp frontmatter".into();
         // Intentionally no frontmatter with timestamps
@@ -4228,7 +4233,7 @@ mod timestamp_extraction_tests {
 
         // Create a note WITH created/modified frontmatter
         let mut doc = ParsedNote::default();
-        doc.path = PathBuf::from("/tmp/test-vault/with-timestamps.md");
+        doc.path = test_path("test-vault/with-timestamps.md");
         doc.content_hash = "hash456".into();
         doc.content.plain_text = "Test content with timestamp frontmatter".into();
         doc.frontmatter = Some(Frontmatter::new(
@@ -4262,7 +4267,7 @@ mod timestamp_extraction_tests {
 
         // Given: A note with null bytes in the content (simulating ASCII art)
         let mut doc = ParsedNote::default();
-        doc.path = PathBuf::from("/tmp/test-vault/ascii-art.md");
+        doc.path = test_path("test-vault/ascii-art.md");
         doc.content_hash = "hash_nullbyte".into();
         // Content with embedded null bytes - common in copy-pasted ASCII art
         doc.content.plain_text =
