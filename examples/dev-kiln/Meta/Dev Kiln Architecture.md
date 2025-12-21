@@ -27,6 +27,11 @@ examples/dev-kiln/
 │
 ├── Index.md                    # Entry point, links to all sections
 │
+├── Extending Crucible.md       # MoC - extension points
+├── Search & Discovery.md       # MoC - finding things
+├── AI Features.md              # MoC - agents, chat, protocols
+├── Configuration.md            # MoC - all config topics
+│
 ├── Guides/                     # Tutorial content (learn by doing)
 │   ├── Getting Started.md
 │   ├── Your First Kiln.md
@@ -45,11 +50,18 @@ examples/dev-kiln/
 │   ├── Tags.md                # #tag system
 │   ├── Block References.md    # ^block-id syntax
 │   │
+│   ├── Concepts/              # User-facing foundational ideas
+│   │   ├── Kilns.md
+│   │   ├── Semantic Search.md
+│   │   ├── The Knowledge Graph.md
+│   │   ├── Agents & Protocols.md
+│   │   └── Plaintext First.md
+│   │
 │   ├── CLI/                   # Command reference
+│   │   ├── Index.md
 │   │   ├── search.md
 │   │   ├── process.md
 │   │   ├── stats.md
-│   │   ├── index.md
 │   │   └── chat.md
 │   │
 │   ├── Config/                # Configuration reference
@@ -58,11 +70,26 @@ examples/dev-kiln/
 │   │   ├── storage.md
 │   │   └── agents.md
 │   │
-│   └── Extending/             # Extension guides
-│       ├── Writing Plugins.md
-│       ├── Custom Tools.md
-│       ├── Agent Cards.md
-│       └── Workflow Authoring.md
+│   ├── Rune/                  # Rune scripting guides
+│   │   ├── Language Basics.md
+│   │   ├── Crucible API.md
+│   │   └── Best Practices.md
+│   │
+│   ├── Extending/             # Extension guides
+│   │   ├── Creating Plugins.md
+│   │   ├── Event Hooks.md
+│   │   ├── MCP Gateway.md
+│   │   ├── Custom Tools.md
+│   │   ├── Agent Cards.md
+│   │   └── Workflow Authoring.md
+│   │
+│   ├── Workflows/             # Workflow system
+│   │   ├── Index.md
+│   │   ├── Markup.md
+│   │   └── Sessions.md
+│   │
+│   └── Query/                 # Query language
+│       └── Index.md
 │
 ├── Agents/                     # Example agent cards (IN the kiln)
 │   ├── Researcher.md
