@@ -1,23 +1,21 @@
 // Recipe categorizer - auto-categorizes recipes by name patterns
 //
-// This script demonstrates the event system by categorizing
+// This plugin demonstrates the hook system by categorizing
 // recipes based on naming conventions using regex patterns.
 
 use crucible::categorize_by_name;
 use regex::is_match;
 
-/// Handle recipe_discovered event
-///
-/// Receives a recipe object and returns enrichment data.
-pub fn on_recipe_discovered(recipe) {
-    let name = recipe["name"].clone();
+/// Categorize Just recipes when discovered
+#[hook(event = "tool:discovered", pattern = "just_*", priority = 5)]
+pub fn categorize_recipes(ctx, event) {
+    let name = event.identifier;
     let category = categorize_by_name(name.clone());
 
     // Build enrichment with category and tags
     let tags = [];
 
     // Add CI tag if recipe is likely used in CI
-    // Using regex for flexible pattern matching
     if is_match("ci|test|check|spec", name.clone()) {
         tags.push("ci");
     }
@@ -42,9 +40,9 @@ pub fn on_recipe_discovered(recipe) {
         tags.push("versioned");
     }
 
-    // Return enrichment object
-    #{
-        category: category,
-        tags: tags,
-    }
+    // Apply enrichment to the event
+    event.payload.category = category;
+    event.payload.tags = tags;
+
+    event
 }
