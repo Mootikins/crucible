@@ -1,6 +1,20 @@
-# Writing Event Handlers
+---
+description: Write custom event handlers in Rust or Rune for advanced processing
+status: implemented
+tags:
+  - extending
+  - handlers
+  - rust
+  - rune
+  - events
+aliases:
+  - Writing Handlers
+  - Handler Development
+---
 
-This guide explains how to create custom event handlers for the Crucible event system.
+# Custom Handlers
+
+This guide explains how to create custom event handlers for the Crucible event system. For the simpler hook-based approach, see [[Help/Extending/Event Hooks]].
 
 ## Handler Types
 
@@ -56,15 +70,12 @@ use crucible_rune::{EventBus, Handler};
 fn register_handler(bus: &mut EventBus, handler: MyHandler) {
     let handler = Arc::new(handler);
 
-    // Create closure that captures the handler
     let h = handler.clone();
     let bus_handler = Handler::new(
         "my_handler_note_parsed",
         EventType::NoteParsed,
         "*",  // Pattern to match (glob syntax)
         move |_ctx, event| {
-            // Note: Can't use async directly in closure
-            // Actual async handling happens via emit_session
             Ok(event)
         },
     ).with_priority(MyHandler::PRIORITY);
@@ -90,16 +101,10 @@ pub struct StorageHandler {
 impl StorageHandler {
     pub const PRIORITY: u32 = 100;
 
-    pub fn new(store: Arc<EAVGraphStore>, emitter: SharedEventBus<SessionEvent>) -> Self {
-        Self { store, emitter }
-    }
-
     async fn handle_note_parsed(&self, event: &SessionEvent) -> Result<()> {
         if let SessionEvent::NoteParsed { path, payload, .. } = event {
-            // Extract and store the entity
             let entity_id = self.store.upsert_note(path, payload).await?;
 
-            // Emit EntityStored event
             self.emitter.emit(SessionEvent::EntityStored {
                 entity_id: entity_id.clone(),
                 entity_type: EventEntityType::Note,
@@ -127,10 +132,8 @@ impl TagHandler {
 
     async fn handle_note_parsed(&self, event: &SessionEvent) -> Result<()> {
         if let SessionEvent::NoteParsed { path, payload, .. } = event {
-            // Extract tags from frontmatter
             let tags = extract_tags(payload)?;
 
-            // Associate each tag and emit events
             for tag in tags {
                 self.store.associate_tag(path, &tag).await?;
                 self.emitter.emit(SessionEvent::TagAssociated {
@@ -160,15 +163,12 @@ Place Rune handler files in:
 ```rune
 // my_handler.rn
 
-// Main handler function - receives event, returns event
 pub fn handle(event) {
-    // Check event type
     let event_type = event.event_type();
 
     match event_type {
         "note_parsed" => {
             println!("Note parsed: {}", event.path());
-            // Process the event
         }
         "file_changed" => {
             println!("File changed: {}", event.path());
@@ -214,7 +214,6 @@ Handlers can cancel preventable events:
 
 ```rune
 pub fn handle(event) {
-    // Security check - prevent processing of sensitive files
     if event.path().contains(".secret") {
         println!("Blocking access to secret file");
         return null;  // Cancel the event
@@ -228,10 +227,8 @@ pub fn handle(event) {
 
 ```rune
 pub fn handle(event) {
-    // Process the event
     process_event(event);
 
-    // Emit a custom event for downstream handlers
     emit_custom("my_handler_done", #{
         "source": event.path(),
         "timestamp": now()
@@ -250,11 +247,9 @@ pub fn handle(event) {
 async fn test_my_handler() {
     use crucible_core::events::NoOpEmitter;
 
-    // Create handler with no-op emitter for testing
     let emitter = Arc::new(NoOpEmitter::new());
     let handler = MyHandler::new(service, emitter);
 
-    // Test handle method directly
     let result = handler.handle_note_parsed("test.md", 5).await;
     assert!(result.is_ok());
 }
@@ -270,18 +265,13 @@ async fn test_handler_in_event_system() {
     let temp_dir = TempDir::new()?;
     let config = create_test_config(temp_dir.path().to_path_buf());
 
-    // Initialize with all handlers
     let handle = initialize_event_system(&config).await?;
 
-    // Create a file to trigger events
     std::fs::write(temp_dir.path().join("test.md"), "# Test\n\nContent")?;
 
-    // Wait for processing
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     // Verify expected outcomes
-    // ...
-
     handle.shutdown().await?;
 }
 ```
@@ -293,11 +283,9 @@ async fn test_handler_in_event_system() {
 async fn test_rune_handler() {
     let temp_dir = TempDir::new()?;
 
-    // Create handlers directory
     let handlers_dir = temp_dir.path().join(".crucible").join("handlers");
     std::fs::create_dir_all(&handlers_dir)?;
 
-    // Write test handler
     std::fs::write(
         handlers_dir.join("test.rn"),
         r#"
@@ -308,11 +296,9 @@ async fn test_rune_handler() {
         "#,
     )?;
 
-    // Initialize and test
     let config = create_test_config(temp_dir.path().to_path_buf());
     let handle = initialize_event_system(&config).await?;
 
-    // Verify handler was loaded
     let count = handle.handler_count().await;
     assert!(count >= 3); // storage + tag + rune
 
@@ -320,15 +306,17 @@ async fn test_rune_handler() {
 }
 ```
 
-## Handler Best Practices
+## Best Practices
 
 ### 1. Use Appropriate Priority
 
-- **50-99**: Pre-processing hooks
-- **100-199**: Core data handlers (storage, tags)
-- **200-299**: Enrichment handlers (embeddings)
-- **300-499**: Analytics/reporting
-- **500+**: Custom user handlers
+| Range | Use |
+|-------|-----|
+| 50-99 | Pre-processing hooks |
+| 100-199 | Core data handlers (storage, tags) |
+| 200-299 | Enrichment handlers (embeddings) |
+| 300-499 | Analytics/reporting |
+| 500+ | Custom user handlers |
 
 ### 2. Fail Gracefully
 
@@ -412,3 +400,11 @@ async fn handle(&self, event: &SessionEvent) -> Result<()> {
 1. Check syntax with `rune check handlers/*.rn`
 2. Verify `handle` function signature
 3. Check for runtime errors in logs
+
+## See Also
+
+- [[Help/Extending/Event Hooks]] - Simpler hook-based approach
+- [[Meta/Analysis/event-architecture]] - Internal event system design
+- [[Help/Rune/Event Types]] - Complete event type reference
+- [[Help/Rune/Error Handling]] - Fail-open semantics
+- [[Help/Rune/Language Basics]] - Rune syntax
