@@ -5,7 +5,6 @@
 
 use crucible_core::events::{Priority, SessionEvent};
 use crucible_core::test_support::mocks::MockEventEmitter;
-use crucible_core::test_support::nonexistent_path;
 use crucible_watch::handlers::IndexingHandler;
 use crucible_watch::traits::EventHandler;
 use crucible_watch::{FileEvent, FileEventKind};

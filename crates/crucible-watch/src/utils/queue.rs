@@ -22,12 +22,13 @@ pub struct EventQueue {
 }
 
 /// Strategy for handling backpressure when queue is full.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum BackpressureStrategy {
     /// Drop new events
     #[allow(dead_code)]
     DropNew,
     /// Drop oldest events
+    #[default]
     DropOldest,
     /// Block until space is available
     #[allow(dead_code)]
@@ -251,10 +252,4 @@ pub struct QueueStats {
     pub dropped: u64,
     /// Fill ratio (0.0 to 1.0)
     pub fill_ratio: f64,
-}
-
-impl Default for BackpressureStrategy {
-    fn default() -> Self {
-        Self::DropOldest
-    }
 }

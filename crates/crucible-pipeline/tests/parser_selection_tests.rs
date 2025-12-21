@@ -656,7 +656,7 @@ Malformed math: $incomplete
 "#;
 
     // Both parsers should handle malformed syntax gracefully
-    let (pipeline, storage) = create_pipeline_with_parser(ParserBackend::Default);
+    let (pipeline, _storage) = create_pipeline_with_parser(ParserBackend::Default);
     let (_temp, path) = create_test_file(test_content).unwrap();
     let result = pipeline.process(&path).await;
 

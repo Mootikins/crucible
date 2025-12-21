@@ -7,7 +7,6 @@
 use crucible_cli::factories::{create_internal_agent, AgentInitParams};
 use crucible_config::{CliAppConfig, LlmConfig, LlmProvider, LlmProviderConfig, LlmProviderType};
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 /// Helper to create a minimal CliAppConfig for testing
 fn create_test_config() -> CliAppConfig {

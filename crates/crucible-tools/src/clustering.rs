@@ -143,7 +143,7 @@ impl ClusteringTools {
             // Has frontmatter
             let lines: Vec<&str> = content.lines().collect();
             if lines.len() > 1 && lines[0] == "---" {
-                let in_frontmatter = true;
+                let _in_frontmatter = true;
                 for line in lines.iter().skip(1) {
                     if *line == "---" {
                         break;
