@@ -112,7 +112,7 @@ Return CallToolResult
 ## Rune Integration
 
 **RuneToolRegistry** (`registry.rs`):
-- Scans `~/.crucible/runes/` and `{kiln}/runes/`
+- Scans `~/.config/crucible/plugins/` and `{kiln}/.crucible/plugins/`
 - Metadata macros: `#[tool(...)]`, `#[param(...)]`, `#[hook(...)]`
 
 **MCP Gateway** (`mcp_gateway.rs`):
