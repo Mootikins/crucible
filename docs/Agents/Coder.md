@@ -1,5 +1,4 @@
 ---
-title: Coder Agent
 description: Code-focused analysis and generation agent
 tags:
   - agent

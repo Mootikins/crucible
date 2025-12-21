@@ -1,5 +1,4 @@
 ---
-title: Johnny Decimal
 description: Numbered category system for predictable organization
 tags:
   - organization
@@ -118,7 +117,6 @@ Include the ID in frontmatter for searchability:
 
 ```yaml
 ---
-title: Invoice Template
 jd-id: "21.01"
 jd-area: Finance
 jd-category: Invoices

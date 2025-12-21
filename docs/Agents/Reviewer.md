@@ -1,5 +1,4 @@
 ---
-title: Reviewer Agent
 description: Quality review and feedback agent
 tags:
   - agent

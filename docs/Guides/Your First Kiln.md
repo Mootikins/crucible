@@ -1,5 +1,4 @@
 ---
-title: Your First Kiln
 description: Create and configure a new knowledge base from scratch
 tags:
   - guide
@@ -51,7 +50,6 @@ Create `Notes/Welcome.md`:
 
 ```markdown
 ---
-title: Welcome
 description: My first note
 tags:
   - meta
@@ -150,7 +148,6 @@ Every note benefits from frontmatter:
 
 ```yaml
 ---
-title: Project Alpha
 description: Main project documentation
 tags:
   - project

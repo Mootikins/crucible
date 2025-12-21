@@ -1,5 +1,4 @@
 ---
-title: Welcome to Crucible
 description: The dev-kiln - your guide to Crucible's knowledge management system
 status: implemented
 tags:

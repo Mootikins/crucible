@@ -1,5 +1,4 @@
 ---
-title: Parser Types & Data Flow Analysis
 description: Architecture analysis of markdown parsing types and data flow
 type: analysis
 system: parser

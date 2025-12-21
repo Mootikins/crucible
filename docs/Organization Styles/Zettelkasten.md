@@ -1,5 +1,4 @@
 ---
-title: Zettelkasten
 description: Atomic linked notes for building interconnected knowledge
 tags:
   - organization
@@ -139,7 +138,6 @@ Deep Work.md
 
 ```yaml
 ---
-title: Attention Residue
 type: permanent  # fleeting, literature, permanent
 source: Sophie Leroy research
 created: 2024-01-15

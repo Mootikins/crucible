@@ -1,5 +1,4 @@
 ---
-title: cru process
 description: Process markdown files for indexing and search
 tags:
   - reference

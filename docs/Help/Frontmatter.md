@@ -1,5 +1,4 @@
 ---
-title: Frontmatter
 description: YAML metadata format for Crucible notes
 tags:
   - help
@@ -15,7 +14,6 @@ Frontmatter is YAML metadata at the start of a note, enclosed by `---` delimiter
 
 ```yaml
 ---
-title: My Note Title
 description: A brief description of this note
 tags:
   - tag1
@@ -46,7 +44,6 @@ For dev-kiln documentation, these fields are required:
 
 ```yaml
 ---
-title: Getting Started
 description: Your first steps with Crucible
 tags:
   - guide

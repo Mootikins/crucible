@@ -1,5 +1,4 @@
 ---
-title: Workflow Sessions
 description: Track and resume workflow progress
 status: planned
 tags:
