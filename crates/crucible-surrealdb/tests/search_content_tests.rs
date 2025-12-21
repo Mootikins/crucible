@@ -1,7 +1,7 @@
 //! Phase 1A: Content-Based Search Tests
 //!
 //! These tests validate grep-based text search and semantic search functionality
-//! using the test-kiln at `examples/test-kiln/`.
+//! using the dev-kiln at `examples/dev-kiln/`.
 //!
 //! Test Categories:
 //! - Grep-based text search (case sensitivity, regex, scoping)
@@ -17,18 +17,18 @@ use common::setup_test_db_with_kiln;
 
 #[tokio::test]
 async fn grep_basic_keyword() {
-    // ARRANGE: Set up database with test-kiln data
+    // ARRANGE: Set up database with dev-kiln data
     let client = setup_test_db_with_kiln()
         .await
         .expect("Failed to set up test database");
 
-    // ACT: Search for "knowledge management" in note titles
+    // ACT: Search for "wikilinks" in note titles (from dev-kiln Help section)
     // Note: Current schema stores title in data.title field
     let sql = r#"
         SELECT type, data.title as title, data.path as path
         FROM entities
         WHERE type = 'note'
-          AND string::lowercase(data.title) CONTAINS 'knowledge management'
+          AND string::lowercase(data.title) CONTAINS 'wikilinks'
         LIMIT 20
     "#;
 
@@ -37,7 +37,7 @@ async fn grep_basic_keyword() {
     // ASSERT: Should find at least one document
     assert!(
         !result.records.is_empty(),
-        "Expected to find documents with 'knowledge management' in title, found none"
+        "Expected to find documents with 'wikilinks' in title, found none"
     );
 
     // Verify at least one result contains the expected title
@@ -49,8 +49,8 @@ async fn grep_basic_keyword() {
         .collect();
 
     assert!(
-        titles.iter().any(|t| t.contains("Knowledge Management")),
-        "Expected to find 'Knowledge Management Hub' but got titles: {:?}",
+        titles.iter().any(|t| t.contains("Wikilinks")),
+        "Expected to find 'Wikilinks' but got titles: {:?}",
         titles
     );
 }
@@ -66,12 +66,12 @@ async fn grep_multi_word() {
         .await
         .expect("Failed to set up test database");
 
-    // ACT: Search for multi-word phrase "project management" in title
+    // ACT: Search for multi-word phrase "getting started" in title (from dev-kiln Guides)
     let sql = r#"
         SELECT type, data.title as title, data.path as path
         FROM entities
         WHERE type = 'note'
-          AND string::lowercase(data.title) CONTAINS 'project management'
+          AND string::lowercase(data.title) CONTAINS 'getting started'
         LIMIT 20
     "#;
 
@@ -80,7 +80,7 @@ async fn grep_multi_word() {
     // ASSERT: Should find at least one document
     assert!(
         !result.records.is_empty(),
-        "Expected to find documents containing 'project management'"
+        "Expected to find documents containing 'getting started'"
     );
 
     let titles: Vec<String> = result
@@ -91,8 +91,8 @@ async fn grep_multi_word() {
         .collect();
 
     assert!(
-        titles.iter().any(|t| t.contains("Project Management")),
-        "Expected to find 'Project Management' document, got: {:?}",
+        titles.iter().any(|t| t.contains("Getting Started")),
+        "Expected to find 'Getting Started' document, got: {:?}",
         titles
     );
 }
@@ -114,7 +114,7 @@ async fn grep_case_sensitivity() {
         SELECT data.title as title, data.path as path
         FROM entities
         WHERE type = 'note'
-          AND string::lowercase(data.title) CONTAINS 'api'
+          AND string::lowercase(data.title) CONTAINS 'para'
         LIMIT 20
     "#;
 
@@ -128,7 +128,7 @@ async fn grep_case_sensitivity() {
         SELECT data.title as title, data.path as path
         FROM entities
         WHERE type = 'note'
-          AND data.title CONTAINS 'API'
+          AND data.title CONTAINS 'PARA'
         LIMIT 20
     "#;
 
@@ -140,13 +140,13 @@ async fn grep_case_sensitivity() {
     // ASSERT: Case-insensitive should find results
     assert!(
         !result_insensitive.records.is_empty(),
-        "Case-insensitive search should find 'api' in titles"
+        "Case-insensitive search should find 'para' in titles"
     );
 
-    // Case-sensitive should also find results (files with "API" in title)
+    // Case-sensitive should also find results (files with "PARA" in title)
     assert!(
         !result_sensitive.records.is_empty(),
-        "Case-sensitive search should find 'API' in titles"
+        "Case-sensitive search should find 'PARA' in titles"
     );
 
     // Verify we can control case sensitivity
@@ -173,14 +173,14 @@ async fn grep_folder_scoped() {
         .await
         .expect("Failed to set up test database");
 
-    // ACT: Search for "documentation" in titles, scoped to test-kiln path
+    // ACT: Search for notes in Help folder (scoped to dev-kiln path)
     // Note: Using data.title for searching since full-text content isn't indexed yet
     let sql = r#"
         SELECT data.title as title, data.path as path
         FROM entities
         WHERE type = 'note'
-          AND string::contains(data.path, 'test-kiln')
-          AND string::lowercase(data.title) CONTAINS 'documentation'
+          AND string::contains(data.path, 'dev-kiln')
+          AND string::lowercase(data.title) CONTAINS 'frontmatter'
         LIMIT 20
     "#;
 
@@ -189,10 +189,10 @@ async fn grep_folder_scoped() {
     // ASSERT: Should find scoped results
     assert!(
         !result.records.is_empty(),
-        "Expected to find documents in test-kiln with 'documentation' in title"
+        "Expected to find documents in dev-kiln with 'frontmatter' in title"
     );
 
-    // Verify all results are actually in the test-kiln path
+    // Verify all results are actually in the dev-kiln path
     for record in &result.records {
         let path = record
             .data
@@ -201,8 +201,8 @@ async fn grep_folder_scoped() {
             .expect("Path should exist");
 
         assert!(
-            path.contains("test-kiln"),
-            "Result path should be in test-kiln scope: {}",
+            path.contains("dev-kiln"),
+            "Result path should be in dev-kiln scope: {}",
             path
         );
     }
@@ -245,12 +245,12 @@ async fn grep_code_blocks() {
         "Expected to find documents with code blocks (block_type='code')"
     );
 
-    // Technical Documentation should contain code blocks
+    // Dev-kiln documentation should contain code blocks (Agent Cards, Commands, etc.)
     assert!(
         titles
             .iter()
-            .any(|t| t.contains("Technical") || t.contains("API")),
-        "Expected to find technical documentation with code blocks, got: {:?}",
+            .any(|t| t.contains("Agent") || t.contains("Commands") || t.contains("Block")),
+        "Expected to find documentation with code blocks, got: {:?}",
         titles
     );
 }

@@ -139,7 +139,7 @@ crucible/
 │   ├── tq/                      # TOON Query library
 │   └── ...                      # Other crates
 ├── examples/
-│   └── test-kiln/               # Test vault with search scenarios
+│   └── dev-kiln/                # Documentation vault AND test fixture
 ├── openspec/                    # Change proposals & specs
 │   ├── SYSTEMS.md               # System boundaries
 │   ├── AGENTS.md                # OpenSpec workflow
@@ -170,6 +170,23 @@ crucible/
 - **Examples**: `examples/`
 - **Scripts**: `scripts/`
 - **Tests**: `tests/` or `crates/*/tests/`
+
+### Dev Kiln as Living Documentation
+
+The `examples/dev-kiln/` directory serves dual purposes:
+
+1. **User Documentation**: Guides, Help references, and examples using wikilinks
+2. **Test Fixture**: Integration tests validate the kiln parses and indexes correctly
+
+**Use the dev-kiln to document:**
+- Roadmap items and features (in `Meta/Roadmap.md`)
+- Technical decisions (in `Meta/Analysis/`)
+- Usage guides (in `Guides/` and `Help/`)
+
+**Conventions:**
+- Use wikilinks to connect related concepts: `[[Help/Wikilinks]]`
+- Add frontmatter with tags for discoverability
+- Keep notes focused and well-linked rather than monolithic
 
 ## Development Guidelines
 
@@ -283,7 +300,7 @@ For architectural changes, new features, or breaking changes, use the OpenSpec w
 - **[README.md](./README.md)** - Project overview and quick start
 - **[OpenSpec AGENTS.md](./openspec/AGENTS.md)** - Change proposal workflow
 - **[SYSTEMS.md](./openspec/SYSTEMS.md)** - System boundaries and organization
-- **[Example Kiln](./examples/test-kiln/)** - Test vault with search scenarios
+- **[Dev Kiln](./examples/dev-kiln/)** - Documentation vault and test fixture
 - **[justfile](./justfile)** - Development recipes
 
 ---

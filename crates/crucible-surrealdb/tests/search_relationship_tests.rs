@@ -3,7 +3,7 @@
 //! This module implements TDD tests for the relationship-based search features
 //! in Crucible. Tests are organized by relationship type.
 //!
-//! All tests use the test-kiln at `examples/test-kiln/` for realistic test data.
+//! All tests use the dev-kiln at `examples/dev-kiln/` for realistic test data.
 //!
 //! Test Categories:
 //! - Basic Wikilinks
@@ -166,13 +166,13 @@ async fn wikilink_broken() {
     // by attempting to resolve_wikilink_target and storing None if no match is found.
 }
 
-/// Test 1.5: Unique note names in test-kiln
+/// Test 1.5: Note name uniqueness in dev-kiln
 ///
-/// Verifies that test-kiln has unique note names (prerequisite for clean testing).
-/// Ambiguous wikilink handling is an edge case for future implementation.
+/// Verifies that dev-kiln has mostly unique note names (excepting folder indexes).
+/// Index.md files in different folders are expected and handled by path-based resolution.
 #[tokio::test]
 async fn wikilink_unique_names() {
-    // Verify test-kiln has unique note names
+    // Verify dev-kiln has unique note names (excluding common folder index files)
     let kiln_root = test_kiln_root();
 
     let mut note_names: std::collections::HashMap<String, Vec<PathBuf>> =
@@ -182,15 +182,18 @@ async fn wikilink_unique_names() {
         if entry.file_type().is_file() && entry.path().extension().is_some_and(|e| e == "md") {
             if let Some(stem) = entry.path().file_stem() {
                 let name = stem.to_string_lossy().to_string();
-                note_names
-                    .entry(name)
-                    .or_default()
-                    .push(entry.path().to_path_buf());
+                // Index files in folders are expected duplicates (folder indexes)
+                if name != "Index" {
+                    note_names
+                        .entry(name)
+                        .or_default()
+                        .push(entry.path().to_path_buf());
+                }
             }
         }
     }
 
-    // Check for duplicates
+    // Check for duplicates (excluding Index files)
     let duplicates: Vec<_> = note_names
         .iter()
         .filter(|(_, paths)| paths.len() > 1)
@@ -198,7 +201,7 @@ async fn wikilink_unique_names() {
 
     assert!(
         duplicates.is_empty(),
-        "Test kiln should have unique note names, found duplicates: {:?}",
+        "Dev kiln should have unique note names (except Index), found duplicates: {:?}",
         duplicates
     );
 }
@@ -314,10 +317,10 @@ async fn heading_broken_ref() {
 /// Verifies that `[[Note#^blockid]]` is stored with block reference.
 #[tokio::test]
 async fn block_ref_stored() {
-    // Arrange: Look for block references in test-kiln
-    let source_note = "Knowledge Management Hub.md";
-    let target = "Meeting Notes";
-    let block_id = "2024-01-15-key-decisions";
+    // Arrange: Look for block references in dev-kiln (Block References.md)
+    let source_note = "Help/Block References.md";
+    let target = "Other Note";
+    let block_id = "important-point";
 
     let block_ref_pattern = format!("[[{}#^{}]]", target, block_id);
 
@@ -345,8 +348,8 @@ async fn block_ref_stored() {
 
     // GREEN: Block reference parsing is working correctly.
     // The parser properly extracts:
-    // - target = "Meeting Notes"
-    // - block_ref = Some("2024-01-15-key-decisions")
+    // - target = "Other Note"
+    // - block_ref = Some("important-point")
     // - heading_ref = None
     //
     // Database storage (via process_wikilink_metadata):
