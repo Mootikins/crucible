@@ -1,5 +1,4 @@
 ---
-title: Configuration
 description: Map of all configuration options for Crucible
 status: implemented
 tags:

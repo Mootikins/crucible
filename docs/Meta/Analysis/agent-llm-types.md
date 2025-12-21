@@ -1,5 +1,4 @@
 ---
-title: Agent & LLM Types Analysis
 description: Architecture analysis of agent handles and LLM provider infrastructure
 type: analysis
 system: agents
