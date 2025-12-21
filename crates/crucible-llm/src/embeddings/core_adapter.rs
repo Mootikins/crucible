@@ -124,8 +124,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_adapter_batch_embedding() {
-        let config =
-            EmbeddingConfig::fastembed(None, Some(test_cache_path()), None);
+        let config = EmbeddingConfig::fastembed(None, Some(test_cache_path()), None);
         let llm_provider = create_provider(config).await.unwrap();
         let adapter = CoreProviderAdapter::new(llm_provider);
 
