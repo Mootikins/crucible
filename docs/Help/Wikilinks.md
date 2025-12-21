@@ -89,8 +89,8 @@ Wikilinks support hierarchical paths for notes organized in folders:
 **Examples:**
 
 ```markdown
-[[Help/Wikilinks]]              → examples/dev-kiln/Help/Wikilinks.md
-[[Organization Styles/PARA]]    → examples/dev-kiln/Organization Styles/PARA.md
+[[Help/Wikilinks]]              → docs/Help/Wikilinks.md
+[[Organization Styles/PARA]]    → docs/Organization Styles/PARA.md
 ```
 
 ## Resolution Algorithm
