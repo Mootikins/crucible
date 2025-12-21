@@ -708,20 +708,21 @@ fn test_config_show_preserves_order() {
 #[serial]
 fn test_config_output_used_by_other_commands() {
     let temp = TempDir::new().unwrap();
+    let kiln_temp = TempDir::new().unwrap();
     let config_path = temp.path().join("integration-config.toml");
 
     fs::write(
         &config_path,
-        r#"
-kiln_path = "/tmp/test-kiln"
+        format!(
+            r#"
+kiln_path = "{}"
 [embedding]
 provider = "fastembed"
 "#,
+            kiln_temp.path().to_string_lossy().replace('\\', "\\\\")
+        ),
     )
     .unwrap();
-
-    // Create the kiln directory
-    fs::create_dir_all("/tmp/test-kiln").unwrap();
 
     // Test that stats command uses the config
     env::set_var("CRUCIBLE_KILN_PATH", temp.path());
@@ -738,7 +739,6 @@ provider = "fastembed"
 
     // Clean up
     env::remove_var("CRUCIBLE_KILN_PATH");
-    fs::remove_dir_all("/tmp/test-kiln").unwrap_or(());
 }
 
 // ============================================================================
@@ -759,7 +759,16 @@ fn test_config_show_performance() {
     env::set_var("XDG_CONFIG_HOME", &config_dir);
     let default_config_path = config_dir.join("crucible").join("config.toml");
     std::fs::create_dir_all(default_config_path.parent().unwrap()).unwrap();
-    std::fs::write(&default_config_path, "kiln_path = \"/tmp/test-kiln\"\n").unwrap();
+    let kiln_path = temp.path().join("test-kiln");
+    std::fs::create_dir_all(&kiln_path).unwrap();
+    std::fs::write(
+        &default_config_path,
+        format!(
+            "kiln_path = \"{}\"\n",
+            kiln_path.to_string_lossy().replace('\\', "\\\\")
+        ),
+    )
+    .unwrap();
 
     let start = std::time::Instant::now();
 
