@@ -121,34 +121,34 @@ pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
         .just_dir
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
-    // Create Rune discovery config
+    // Create plugin discovery config
     // Load order matches agent discovery (later sources override earlier by tool name):
-    // 1. ~/.config/crucible/runes/ - Global default directory
-    // 2. KILN_DIR/.crucible/runes/ - Kiln hidden config directory
-    // 3. KILN_DIR/runes/ - Kiln visible content directory
+    // 1. ~/.config/crucible/plugins/ - Global personal plugins
+    // 2. KILN_DIR/.crucible/plugins/ - Kiln-specific personal plugins (gitignored)
+    // 3. KILN_DIR/plugins/ - Kiln-tracked shared plugins (versioned)
     let rune_config = if args.no_rune {
         RuneDiscoveryConfig::default()
     } else {
         let mut dirs = vec![];
 
-        // 1. Global runes directory: ~/.config/crucible/runes/
+        // 1. Global plugins directory: ~/.config/crucible/plugins/
         if let Some(config_dir) = dirs::config_dir() {
-            let global_runes = config_dir.join("crucible").join("runes");
-            if global_runes.exists() {
-                dirs.push(global_runes);
+            let global_plugins = config_dir.join("crucible").join("plugins");
+            if global_plugins.exists() {
+                dirs.push(global_plugins);
             }
         }
 
-        // 2. Kiln hidden: KILN_DIR/.crucible/runes/
-        let kiln_hidden_runes = core.kiln_root().join(".crucible").join("runes");
-        if kiln_hidden_runes.exists() {
-            dirs.push(kiln_hidden_runes);
+        // 2. Kiln hidden: KILN_DIR/.crucible/plugins/
+        let kiln_hidden_plugins = core.kiln_root().join(".crucible").join("plugins");
+        if kiln_hidden_plugins.exists() {
+            dirs.push(kiln_hidden_plugins);
         }
 
-        // 3. Kiln visible: KILN_DIR/runes/
-        let kiln_runes = core.kiln_root().join("runes");
-        if kiln_runes.exists() {
-            dirs.push(kiln_runes);
+        // 3. Kiln visible: KILN_DIR/plugins/
+        let kiln_plugins = core.kiln_root().join("plugins");
+        if kiln_plugins.exists() {
+            dirs.push(kiln_plugins);
         }
 
         RuneDiscoveryConfig {
