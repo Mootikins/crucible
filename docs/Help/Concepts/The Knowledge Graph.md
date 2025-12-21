@@ -1,5 +1,4 @@
 ---
-title: The Knowledge Graph
 description: How wikilinks create an interconnected web of knowledge
 status: implemented
 tags:
