@@ -1181,6 +1181,12 @@ impl Default for SessionBuilder {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::path::PathBuf;
+
+    /// Cross-platform test path helper
+    fn test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("crucible_test_{}", name))
+    }
 
     #[test]
     fn test_session_state_display() {
@@ -1272,7 +1278,7 @@ mod tests {
     #[tokio::test]
     async fn test_session_start() {
         let session = SessionBuilder::new("test")
-            .with_folder("/tmp/test-session")
+            .with_folder(test_path("test-session"))
             .build();
 
         session.start().await.unwrap();
@@ -1295,7 +1301,7 @@ mod tests {
         use std::path::PathBuf;
 
         // Use a unique folder path that doesn't exist
-        let folder = PathBuf::from("/tmp/crucible-test-session-folder-creation");
+        let folder = test_path("crucible-test-session-folder-creation");
 
         // Clean up if it exists from a previous run
         if folder.exists() {
@@ -1325,7 +1331,7 @@ mod tests {
         use std::path::PathBuf;
 
         // Use a unique folder path
-        let folder = PathBuf::from("/tmp/crucible-test-session-existing-folder");
+        let folder = test_path("crucible-test-session-existing-folder");
 
         // Create the folder first
         std::fs::create_dir_all(&folder).unwrap();
@@ -1347,14 +1353,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_start_creates_nested_folders() {
-        use std::path::PathBuf;
-
         // Use a nested folder path that doesn't exist
-        let folder = PathBuf::from("/tmp/crucible-test-nested/Sessions/2025-01-01T1200-test");
+        let base_dir = test_path("crucible-test-nested");
+        let folder = base_dir.join("Sessions/2025-01-01T1200-test");
 
         // Clean up if it exists from a previous run
-        if PathBuf::from("/tmp/crucible-test-nested").exists() {
-            std::fs::remove_dir_all("/tmp/crucible-test-nested").unwrap();
+        if base_dir.exists() {
+            std::fs::remove_dir_all(&base_dir).unwrap();
         }
 
         // Verify folder doesn't exist
@@ -1372,7 +1377,7 @@ mod tests {
         assert!(folder.is_dir());
 
         // Clean up
-        std::fs::remove_dir_all("/tmp/crucible-test-nested").unwrap();
+        std::fs::remove_dir_all(&base_dir).unwrap();
     }
 
     #[tokio::test]
@@ -1999,7 +2004,7 @@ mod tests {
         use std::path::PathBuf;
 
         // Use a unique folder path
-        let folder = PathBuf::from("/tmp/crucible-test-session-initial-file");
+        let folder = test_path("crucible-test-session-initial-file");
 
         // Clean up if it exists from a previous run
         if folder.exists() {
@@ -2041,7 +2046,7 @@ mod tests {
         use std::path::PathBuf;
 
         // Use a unique folder path
-        let folder = PathBuf::from("/tmp/crucible-test-events-appended");
+        let folder = test_path("crucible-test-events-appended");
 
         // Clean up if it exists from a previous run
         if folder.exists() {
@@ -2068,7 +2073,7 @@ mod tests {
         // Send some events
         handle.message("Hello world!").await.unwrap();
         handle
-            .tool_called("read_file", json!({"path": "/tmp/test.txt"}))
+            .tool_called("read_file", json!({"path": test_path("test.txt").to_string_lossy()}))
             .await
             .unwrap();
         handle
@@ -2140,7 +2145,7 @@ mod tests {
         use std::path::PathBuf;
 
         // Use a unique folder path
-        let folder = PathBuf::from("/tmp/crucible-test-event-blocks");
+        let folder = test_path("crucible-test-event-blocks");
 
         // Clean up if it exists from a previous run
         if folder.exists() {
@@ -2210,7 +2215,7 @@ mod tests {
     async fn current_file_path_format() {
         use std::path::PathBuf;
 
-        let folder = PathBuf::from("/tmp/test-session");
+        let folder = test_path("test-session");
         let session = SessionBuilder::new("path-test")
             .with_folder(&folder)
             .build();
@@ -2239,7 +2244,7 @@ mod tests {
         use std::path::PathBuf;
 
         // Use a unique folder path
-        let folder = PathBuf::from("/tmp/crucible-test-append-creates");
+        let folder = test_path("crucible-test-append-creates");
 
         // Clean up if it exists from a previous run
         if folder.exists() {
@@ -2282,7 +2287,7 @@ mod tests {
         use std::path::PathBuf;
 
         // Use a unique folder path
-        let folder = PathBuf::from("/tmp/crucible-test-compaction-summary");
+        let folder = test_path("crucible-test-compaction-summary");
 
         // Clean up if it exists from a previous run
         if folder.exists() {
@@ -2369,7 +2374,7 @@ mod tests {
         use std::path::PathBuf;
 
         // Use a unique folder path
-        let folder = PathBuf::from("/tmp/crucible-test-summary-links");
+        let folder = test_path("crucible-test-summary-links");
 
         // Clean up if it exists from a previous run
         if folder.exists() {
@@ -2445,7 +2450,7 @@ mod tests {
         use std::path::PathBuf;
 
         // Use a unique folder path
-        let folder = PathBuf::from("/tmp/crucible-test-ring-overflow-flush");
+        let folder = test_path("crucible-test-ring-overflow-flush");
 
         // Clean up if it exists from a previous run
         if folder.exists() {
@@ -2527,7 +2532,7 @@ mod tests {
         use std::path::PathBuf;
 
         // Use a unique folder path
-        let folder = PathBuf::from("/tmp/crucible-test-session-overflow-callback");
+        let folder = test_path("crucible-test-session-overflow-callback");
 
         // Clean up if it exists from a previous run
         if folder.exists() {

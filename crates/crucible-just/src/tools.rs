@@ -206,10 +206,16 @@ mod tests {
             .unwrap()
     }
 
+    /// Cross-platform test path helper
+    fn test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("crucible_test_{}", name))
+    }
+
     #[tokio::test]
     async fn test_just_tools_new() {
-        let tools = JustTools::new("/tmp");
-        assert_eq!(tools.dir(), Path::new("/tmp"));
+        let test_dir = test_path("just_tools");
+        let tools = JustTools::new(&test_dir);
+        assert_eq!(tools.dir(), test_dir.as_path());
     }
 
     #[tokio::test]

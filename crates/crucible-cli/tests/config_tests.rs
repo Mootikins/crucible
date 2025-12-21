@@ -4,7 +4,13 @@ use crucible_cli::config::CliConfig;
 use crucible_config::EmbeddingProviderType;
 use serial_test::serial;
 use std::fs;
+use std::path::PathBuf;
 use tempfile::TempDir;
+
+/// Cross-platform test path helper
+fn test_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("crucible_test_{}", name))
+}
 
 // ============================================================================
 // Configuration Loading Tests
@@ -36,11 +42,13 @@ fn test_config_load_with_invalid_toml() {
 fn test_config_load_with_valid_toml() {
     let temp = TempDir::new().unwrap();
     let config_path = temp.path().join("valid.toml");
+    let kiln_path = test_path("test-kiln");
 
     fs::write(
         &config_path,
-        r#"
-kiln_path = "/tmp/test-kiln"
+        format!(
+            r#"
+kiln_path = "{}"
 
 [embedding]
 provider = "openai"
@@ -59,11 +67,13 @@ enable_markdown = true
 show_progress = true
 verbose = false
 "#,
+            kiln_path.to_string_lossy().replace('\\', "\\\\")
+        ),
     )
     .unwrap();
 
     let config = CliConfig::load(Some(config_path), None, None).unwrap();
-    assert_eq!(config.kiln_path.to_str().unwrap(), "/tmp/test-kiln");
+    assert_eq!(config.kiln_path, kiln_path);
     assert_eq!(config.embedding.provider, EmbeddingProviderType::OpenAI);
     assert_eq!(config.embedding.model, Some("test-model".to_string()));
     assert_eq!(
@@ -76,17 +86,21 @@ verbose = false
 fn test_config_cli_overrides() {
     let temp = TempDir::new().unwrap();
     let config_path = temp.path().join("config.toml");
+    let kiln_path = test_path("test-kiln");
 
     fs::write(
         &config_path,
-        r#"
-kiln_path = "/tmp/test-kiln"
+        format!(
+            r#"
+kiln_path = "{}"
 
 [embedding]
 provider = "ollama"
 model = "file-model"
 api_url = "https://file-url.com"
 "#,
+            kiln_path.to_string_lossy().replace('\\', "\\\\")
+        ),
     )
     .unwrap();
 
@@ -99,7 +113,7 @@ api_url = "https://file-url.com"
     .unwrap();
 
     // Verify CLI overrides take priority over file config
-    assert_eq!(config.kiln_path.to_str().unwrap(), "/tmp/test-kiln");
+    assert_eq!(config.kiln_path, kiln_path);
     assert_eq!(config.embedding.provider, EmbeddingProviderType::Ollama);
     assert_eq!(config.embedding.model, Some("cli-model".to_string()));
     assert_eq!(
@@ -202,22 +216,24 @@ fn test_tools_path_derivation() {
 #[test]
 fn test_display_as_toml() {
     let mut config = CliConfig::default();
-    config.kiln_path = "/tmp/test".into();
+    let kiln_path = test_path("display_test");
+    config.kiln_path = kiln_path.clone();
 
     let toml_str = config.display_as_toml().unwrap();
     assert!(toml_str.contains("kiln_path"));
-    assert!(toml_str.contains("/tmp/test"));
+    assert!(toml_str.contains(&kiln_path.to_string_lossy().to_string()));
     assert!(toml_str.contains("[embedding]"));
 }
 
 #[test]
 fn test_display_as_json() {
     let mut config = CliConfig::default();
-    config.kiln_path = "/tmp/test".into();
+    let kiln_path = test_path("display_test");
+    config.kiln_path = kiln_path.clone();
 
     let json_str = config.display_as_json().unwrap();
     assert!(json_str.contains("\"kiln_path\""));
-    assert!(json_str.contains("/tmp/test"));
+    assert!(json_str.contains(&kiln_path.to_string_lossy().to_string()));
     assert!(json_str.contains("\"embedding\""));
 }
 
@@ -239,11 +255,13 @@ fn test_embedding_config_defaults() {
 fn test_embedding_config_openai() {
     let temp = TempDir::new().unwrap();
     let config_path = temp.path().join("embedding.toml");
+    let kiln_path = test_path("embedding_test");
 
     fs::write(
         &config_path,
-        r#"
-kiln_path = "/tmp/test"
+        format!(
+            r#"
+kiln_path = "{}"
 
 [embedding]
 provider = "openai"
@@ -251,6 +269,8 @@ model = "text-embedding-3-small"
 api_url = "https://api.openai.com/v1"
 batch_size = 32
 "#,
+            kiln_path.to_string_lossy().replace('\\', "\\\\")
+        ),
     )
     .unwrap();
 

@@ -694,6 +694,11 @@ mod tests {
     use super::*;
     use crate::storage::traits::{BlockOperations, StorageManagement};
 
+    /// Cross-platform test path helper
+    fn test_path(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("crucible_test_{}", name))
+    }
+
     #[test]
     fn test_backend_config_default() {
         let config = BackendConfig::default();
@@ -723,11 +728,12 @@ mod tests {
 
     #[test]
     fn test_storage_config_file_based() {
-        let config = StorageConfig::file_based("/tmp/storage");
+        let storage_dir = test_path("storage");
+        let config = StorageConfig::file_based(&storage_dir);
 
         match config.backend {
             BackendConfig::FileBased { directory, .. } => {
-                assert_eq!(directory, PathBuf::from("/tmp/storage"));
+                assert_eq!(directory, storage_dir);
             }
             _ => panic!("Expected FileBased backend"),
         }
@@ -849,7 +855,7 @@ mod tests {
         let config = StorageConfig::in_memory(Some(100_000_000));
         assert!(config.validate().is_ok());
 
-        let config = StorageConfig::file_based("/tmp/storage");
+        let config = StorageConfig::file_based(&test_path("storage"));
         assert!(config.validate().is_ok());
 
         let config = StorageConfig::surrealdb("ws://localhost:8000", "test", "db");
@@ -897,7 +903,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_factory_create_file_based_not_implemented() {
-        let config = StorageConfig::file_based("/tmp/test");
+        let config = StorageConfig::file_based(&test_path("test"));
         let result = StorageFactory::create(config).await;
 
         assert!(result.is_err());
@@ -982,7 +988,8 @@ mod tests {
         std::env::remove_var("STORAGE_DATABASE");
 
         std::env::set_var("STORAGE_BACKEND", "file_based");
-        std::env::set_var("STORAGE_DIRECTORY", "/tmp/test");
+        let test_dir = test_path("test");
+        std::env::set_var("STORAGE_DIRECTORY", test_dir.to_string_lossy().as_ref());
 
         let result = StorageFactory::create_from_env().await;
         // Should fail because file-based is not implemented

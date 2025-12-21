@@ -287,6 +287,12 @@ fn humanize_tool_title(title: &str) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::path::PathBuf;
+
+    /// Cross-platform test path helper
+    fn test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("crucible_test_{}", name))
+    }
 
     // Tool argument formatting tests
     #[test]
@@ -296,14 +302,16 @@ mod tests {
 
     #[test]
     fn test_format_tool_args_object() {
+        let path = test_path("test.txt");
+        let path_str = path.to_string_lossy();
         let args = json!({
-            "path": "/tmp/test.txt",
+            "path": path_str,
             "mode": "read"
         });
         let formatted = format_tool_args(&Some(args));
         assert!(formatted.contains("path="));
         assert!(formatted.contains("mode="));
-        assert!(formatted.contains("\"/tmp/test.txt\""));
+        assert!(formatted.contains(&format!("\"{}\"", path_str)));
         assert!(formatted.contains("\"read\""));
     }
 
@@ -425,11 +433,12 @@ mod tests {
 
     #[test]
     fn test_non_write_tools_ignored() {
+        let path = test_path("test.txt");
         let non_write_names = ["read_file", "search", "list_notes", "get_info"];
         for name in non_write_names {
             let tool = ToolCallDisplay {
                 title: name.to_string(),
-                arguments: Some(json!({"path": "/tmp/test.txt", "content": "test"})),
+                arguments: Some(json!({"path": path.to_string_lossy(), "content": "test"})),
             };
             Display::maybe_display_diff(&tool);
         }

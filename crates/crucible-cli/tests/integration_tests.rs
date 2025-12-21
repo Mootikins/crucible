@@ -5,7 +5,13 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
+use std::path::PathBuf;
 use tempfile::TempDir;
+
+/// Cross-platform test path helper
+fn test_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("crucible_test_{}", name))
+}
 
 // ============================================================================
 // Basic CLI Tests
@@ -55,14 +61,18 @@ fn test_global_verbose_short_flag() {
 fn test_global_config_flag() {
     let temp = TempDir::new().unwrap();
     let config_path = temp.path().join("test-config.toml");
+    let kiln_path = test_path("test-kiln");
 
     // Create a minimal config file
     fs::write(
         &config_path,
-        r#"
+        format!(
+            r#"
 [kiln]
-path = "/tmp/test-kiln"
+path = "{}"
 "#,
+            kiln_path.to_string_lossy().replace('\\', "\\\\")
+        ),
     )
     .unwrap();
 
@@ -289,11 +299,12 @@ fn test_config_show_help() {
 
 #[test]
 fn test_config_init_with_path_flag() {
+    let config_path = test_path("test-config.toml");
     let mut cmd = Command::cargo_bin("cru").unwrap();
     cmd.arg("config")
         .arg("init")
         .arg("--path")
-        .arg("/tmp/test-config.toml")
+        .arg(config_path.to_str().unwrap())
         .arg("--help");
 
     cmd.assert().success();

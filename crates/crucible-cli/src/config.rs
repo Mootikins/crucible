@@ -60,9 +60,15 @@ impl Default for CliConfigBuilder {
 mod tests {
     use super::*;
     use serial_test::serial;
+    use std::path::PathBuf;
 
     use std::fs;
     use tempfile::TempDir;
+
+    /// Cross-platform test path helper
+    fn test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("crucible_test_{}", name))
+    }
 
     #[test]
     fn test_config_load_from_nonexistent_file() {
@@ -91,11 +97,13 @@ mod tests {
     fn test_config_load_with_valid_toml() {
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("valid.toml");
+        let kiln_path = test_path("test-kiln");
 
         fs::write(
             &config_path,
-            r#"
-kiln_path = "/tmp/test-kiln"
+            format!(
+                r#"
+kiln_path = "{}"
 
 [embedding]
 provider = "openai"
@@ -114,11 +122,13 @@ enable_markdown = true
 show_progress = true
 verbose = false
 "#,
+                kiln_path.to_string_lossy().replace('\\', "\\\\")
+            ),
         )
         .unwrap();
 
         let config = CliConfig::load(Some(config_path), None, None).unwrap();
-        assert_eq!(config.kiln_path.to_str().unwrap(), "/tmp/test-kiln");
+        assert_eq!(config.kiln_path, kiln_path);
         assert_eq!(
             config.embedding.provider,
             crucible_config::EmbeddingProviderType::OpenAI

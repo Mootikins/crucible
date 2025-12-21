@@ -91,12 +91,20 @@ mod tests {
     use super::*;
     use crate::embeddings::{create_provider, EmbeddingConfig};
 
+    /// Cross-platform test cache path helper
+    fn test_cache_path() -> String {
+        std::env::temp_dir()
+            .join("crucible_test_fastembed_cache")
+            .to_string_lossy()
+            .into_owned()
+    }
+
     #[tokio::test]
     async fn test_adapter_single_embedding() {
         // Create a FastEmbed provider
         let config = EmbeddingConfig::fastembed(
             Some("all-MiniLM-L6-v2".to_string()),
-            Some("/tmp/fastembed_cache".to_string()),
+            Some(test_cache_path()),
             None,
         );
         let llm_provider = create_provider(config).await.unwrap();
@@ -117,7 +125,7 @@ mod tests {
     #[tokio::test]
     async fn test_adapter_batch_embedding() {
         let config =
-            EmbeddingConfig::fastembed(None, Some("/tmp/fastembed_cache".to_string()), None);
+            EmbeddingConfig::fastembed(None, Some(test_cache_path()), None);
         let llm_provider = create_provider(config).await.unwrap();
         let adapter = CoreProviderAdapter::new(llm_provider);
 

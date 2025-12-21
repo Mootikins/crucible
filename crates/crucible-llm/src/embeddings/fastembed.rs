@@ -578,6 +578,14 @@ impl CanEmbed for FastEmbedProvider {
 mod tests {
     use super::*;
 
+    /// Cross-platform test cache path helper
+    fn test_cache_path() -> String {
+        std::env::temp_dir()
+            .join("crucible_test_fastembed_cache")
+            .to_string_lossy()
+            .into_owned()
+    }
+
     #[tokio::test]
     async fn test_fastembed_provider_creation() {
         let config = super::super::config::EmbeddingConfig::fastembed(None, None, None);
@@ -593,7 +601,7 @@ mod tests {
     async fn test_fastembed_single_embedding() {
         let config = super::super::config::EmbeddingConfig::fastembed(
             Some("all-MiniLM-L6-v2".to_string()),
-            Some("/tmp/fastembed_cache".to_string()),
+            Some(test_cache_path()),
             None,
         );
         let provider = FastEmbedProvider::new(config).unwrap();
@@ -618,7 +626,7 @@ mod tests {
     async fn test_fastembed_batch_embedding() {
         let config = super::super::config::EmbeddingConfig::fastembed(
             None,
-            Some("/tmp/fastembed_cache".to_string()),
+            Some(test_cache_path()),
             None,
         );
         let provider = FastEmbedProvider::new(config).unwrap();
@@ -648,7 +656,7 @@ mod tests {
     async fn test_fastembed_error_handling() {
         let config = super::super::config::EmbeddingConfig::fastembed(
             None,
-            Some("/tmp/fastembed_cache".to_string()),
+            Some(test_cache_path()),
             None,
         );
         let provider = FastEmbedProvider::new(config).unwrap();
@@ -734,7 +742,7 @@ mod tests {
         async fn test_fastembed_can_embed_trait() {
             let config = super::super::super::config::EmbeddingConfig::fastembed(
                 Some("all-MiniLM-L6-v2".to_string()),
-                Some("/tmp/fastembed_cache".to_string()),
+                Some(test_cache_path()),
                 None,
             );
             let provider = FastEmbedProvider::new(config).unwrap();
@@ -756,7 +764,7 @@ mod tests {
         async fn test_fastembed_can_embed_batch() {
             let config = super::super::super::config::EmbeddingConfig::fastembed(
                 None,
-                Some("/tmp/fastembed_cache".to_string()),
+                Some(test_cache_path()),
                 None,
             );
             let provider = FastEmbedProvider::new(config).unwrap();
@@ -773,7 +781,7 @@ mod tests {
         async fn test_fastembed_unified_health_check() {
             let config = super::super::super::config::EmbeddingConfig::fastembed(
                 None,
-                Some("/tmp/fastembed_cache".to_string()),
+                Some(test_cache_path()),
                 None,
             );
             let provider = FastEmbedProvider::new(config).unwrap();

@@ -220,6 +220,11 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::TempDir;
 
+    /// Cross-platform test path helper
+    fn test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("crucible_test_{}", name))
+    }
+
     // Helper to create a test config
     fn test_config() -> CliConfig {
         use crucible_config::{
@@ -228,7 +233,7 @@ mod tests {
         };
 
         CliConfig {
-            kiln_path: PathBuf::from("/tmp/test-kiln"),
+            kiln_path: test_path("test-kiln"),
             agent_directories: Vec::new(),
             embedding: EmbeddingConfig::default(),
             acp: AcpConfig::default(),

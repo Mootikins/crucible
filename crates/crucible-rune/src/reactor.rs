@@ -787,6 +787,12 @@ pub type BoxedReactor = Box<dyn Reactor>;
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::path::PathBuf;
+
+    /// Cross-platform test path helper
+    fn test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("crucible_test_{}", name))
+    }
 
     #[test]
     fn test_session_config_default() {
@@ -798,13 +804,14 @@ mod tests {
 
     #[test]
     fn test_session_config_builder() {
-        let config = SessionConfig::new("test-session", "/tmp/session")
+        let folder = test_path("session");
+        let config = SessionConfig::new("test-session", folder.clone())
             .with_max_context_tokens(50_000)
             .with_system_prompt("You are a helpful assistant.")
             .with_custom(json!({"key": "value"}));
 
         assert_eq!(config.session_id, "test-session");
-        assert_eq!(config.folder, PathBuf::from("/tmp/session"));
+        assert_eq!(config.folder, folder);
         assert_eq!(config.max_context_tokens, 50_000);
         assert_eq!(
             config.system_prompt,
@@ -839,11 +846,12 @@ mod tests {
 
     #[test]
     fn test_tool_call() {
+        let path = test_path("test.txt");
         let call =
-            ToolCall::new("read_file", json!({"path": "/tmp/test.txt"})).with_call_id("call_123");
+            ToolCall::new("read_file", json!({"path": path.to_string_lossy()})).with_call_id("call_123");
 
         assert_eq!(call.name, "read_file");
-        assert_eq!(call.args["path"], "/tmp/test.txt");
+        assert_eq!(call.args["path"], path.to_string_lossy().as_ref());
         assert_eq!(call.call_id, Some("call_123".to_string()));
     }
 
@@ -905,7 +913,7 @@ mod tests {
             },
             SessionEvent::SessionCompacted {
                 summary: "summary".into(),
-                new_file: PathBuf::from("/tmp/new"),
+                new_file: test_path("new"),
             },
             SessionEvent::SessionEnded {
                 reason: "user closed".into(),
@@ -1041,11 +1049,12 @@ mod tests {
 
     #[test]
     fn test_reactor_context_new() {
-        let config = Arc::new(SessionConfig::new("test-session", "/tmp/test"));
+        let folder = test_path("test");
+        let config = Arc::new(SessionConfig::new("test-session", folder.clone()));
         let ctx = ReactorContext::new(config.clone());
 
         assert_eq!(ctx.session_id(), "test-session");
-        assert_eq!(ctx.folder(), &PathBuf::from("/tmp/test"));
+        assert_eq!(ctx.folder(), &folder);
         assert_eq!(ctx.token_count(), 0);
         assert!(!ctx.compaction_requested());
         assert!(ctx.current_seq().is_none());
@@ -1054,7 +1063,8 @@ mod tests {
 
     #[test]
     fn test_reactor_context_for_subagent() {
-        let config = Arc::new(SessionConfig::new("sub-session", "/tmp/sub"));
+        let folder = test_path("sub");
+        let config = Arc::new(SessionConfig::new("sub-session", folder));
         let ctx = ReactorContext::for_subagent(config, "parent-session");
 
         assert_eq!(ctx.session_id(), "sub-session");
@@ -1064,8 +1074,9 @@ mod tests {
 
     #[test]
     fn test_reactor_context_config_access() {
+        let folder = test_path("config_access");
         let config = Arc::new(
-            SessionConfig::new("test", "/tmp")
+            SessionConfig::new("test", folder)
                 .with_max_context_tokens(50_000)
                 .with_system_prompt("Test prompt"),
         );
@@ -1144,7 +1155,8 @@ mod tests {
 
     #[test]
     fn test_reactor_context_token_tracking() {
-        let config = Arc::new(SessionConfig::new("test", "/tmp").with_max_context_tokens(1000));
+        let folder = test_path("token_tracking");
+        let config = Arc::new(SessionConfig::new("test", folder).with_max_context_tokens(1000));
         let mut ctx = ReactorContext::new(config);
 
         assert_eq!(ctx.token_count(), 0);
@@ -1169,7 +1181,8 @@ mod tests {
 
     #[test]
     fn test_reactor_context_compaction_request() {
-        let config = Arc::new(SessionConfig::new("test", "/tmp").with_max_context_tokens(1000));
+        let folder = test_path("compaction_request");
+        let config = Arc::new(SessionConfig::new("test", folder).with_max_context_tokens(1000));
         let mut ctx = ReactorContext::new(config);
 
         assert!(!ctx.compaction_requested());
