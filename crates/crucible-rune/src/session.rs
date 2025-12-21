@@ -1298,8 +1298,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_start_creates_folder() {
-        use std::path::PathBuf;
-
         // Use a unique folder path that doesn't exist
         let folder = test_path("crucible-test-session-folder-creation");
 
@@ -1328,8 +1326,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_start_handles_existing_folder() {
-        use std::path::PathBuf;
-
         // Use a unique folder path
         let folder = test_path("crucible-test-session-existing-folder");
 
@@ -2001,8 +1997,6 @@ mod tests {
 
     #[tokio::test]
     async fn session_creates_initial_file() {
-        use std::path::PathBuf;
-
         // Use a unique folder path
         let folder = test_path("crucible-test-session-initial-file");
 
@@ -2043,8 +2037,6 @@ mod tests {
 
     #[tokio::test]
     async fn events_appended_to_file() {
-        use std::path::PathBuf;
-
         // Use a unique folder path
         let folder = test_path("crucible-test-events-appended");
 
@@ -2073,7 +2065,10 @@ mod tests {
         // Send some events
         handle.message("Hello world!").await.unwrap();
         handle
-            .tool_called("read_file", json!({"path": test_path("test.txt").to_string_lossy()}))
+            .tool_called(
+                "read_file",
+                json!({"path": test_path("test.txt").to_string_lossy()}),
+            )
             .await
             .unwrap();
         handle
@@ -2142,8 +2137,6 @@ mod tests {
 
     #[tokio::test]
     async fn file_has_event_blocks() {
-        use std::path::PathBuf;
-
         // Use a unique folder path
         let folder = test_path("crucible-test-event-blocks");
 
@@ -2213,8 +2206,6 @@ mod tests {
 
     #[tokio::test]
     async fn current_file_path_format() {
-        use std::path::PathBuf;
-
         let folder = test_path("test-session");
         let session = SessionBuilder::new("path-test")
             .with_folder(&folder)
@@ -2241,8 +2232,6 @@ mod tests {
 
     #[tokio::test]
     async fn append_event_creates_file() {
-        use std::path::PathBuf;
-
         // Use a unique folder path
         let folder = test_path("crucible-test-append-creates");
 
@@ -2284,8 +2273,6 @@ mod tests {
 
     #[tokio::test]
     async fn compaction_includes_summary() {
-        use std::path::PathBuf;
-
         // Use a unique folder path
         let folder = test_path("crucible-test-compaction-summary");
 
@@ -2371,8 +2358,6 @@ mod tests {
 
     #[tokio::test]
     async fn summary_links_previous() {
-        use std::path::PathBuf;
-
         // Use a unique folder path
         let folder = test_path("crucible-test-summary-links");
 
@@ -2447,8 +2432,6 @@ mod tests {
 
     #[tokio::test]
     async fn ring_overflow_flushes_to_kiln() {
-        use std::path::PathBuf;
-
         // Use a unique folder path
         let folder = test_path("crucible-test-ring-overflow-flush");
 
@@ -2529,8 +2512,6 @@ mod tests {
 
     #[tokio::test]
     async fn session_ring_has_overflow_callback() {
-        use std::path::PathBuf;
-
         // Use a unique folder path
         let folder = test_path("crucible-test-session-overflow-callback");
 

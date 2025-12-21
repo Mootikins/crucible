@@ -141,7 +141,7 @@ async fn wikilink_broken() {
     let nonexistent_target = "This Note Does Not Exist In Test Kiln";
 
     use crucible_core::parser::Wikilink;
-    let wikilink = Wikilink::new(nonexistent_target, 100);
+    let _wikilink = Wikilink::new(nonexistent_target, 100);
 
     // Act: Try to resolve the wikilink against test-kiln
     let kiln_root = test_kiln_root();

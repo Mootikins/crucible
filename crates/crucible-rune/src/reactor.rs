@@ -847,8 +847,8 @@ mod tests {
     #[test]
     fn test_tool_call() {
         let path = test_path("test.txt");
-        let call =
-            ToolCall::new("read_file", json!({"path": path.to_string_lossy()})).with_call_id("call_123");
+        let call = ToolCall::new("read_file", json!({"path": path.to_string_lossy()}))
+            .with_call_id("call_123");
 
         assert_eq!(call.name, "read_file");
         assert_eq!(call.args["path"], path.to_string_lossy().as_ref());

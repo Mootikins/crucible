@@ -38,7 +38,7 @@ pub async fn execute(
     path: Option<PathBuf>,
     force: bool,
     watch: bool,
-    verbose: bool,
+    _verbose: bool,
     dry_run: bool,
     parallel: Option<usize>,
 ) -> Result<()> {
