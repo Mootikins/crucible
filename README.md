@@ -3,215 +3,65 @@
 [![CI](https://github.com/Mootikins/crucible/actions/workflows/ci.yml/badge.svg)](https://github.com/Mootikins/crucible/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
 
-> A plaintext-first knowledge management system for metadata-rich knowledge graphs
+> Extensible AI infrastructure for knowledge work — your data, your tools, your workflow
 
-> **Note:** Crucible is in active development. APIs and storage formats may change without notice. Not recommended for production use yet. Contributions welcome!
+Crucible is an AI-powered knowledge system built on **plaintext as source of truth, infinite extensibility, and complete user control.** Your markdown files stay readable forever. AI capabilities layer on top without lock-in. Extend everything through plugins, scripts, and agents.
 
-Crucible is a high-performance knowledge management system built around a simple principle: **wikilinks define the knowledge graph, and applications explore it through a unified core API.** By combining portable markdown files with block-level embeddings, graph traversal, and semantic search, Crucible provides powerful context discovery for AI agents and personal knowledge management.
+> **Early Development**: APIs and storage formats may change. Contributions welcome!
 
-**Key Design Principles:**
-- **Plaintext-First**: Markdown files are source of truth—works with any text editor
-- **Local-First**: Everything stays on your machine, database is optional
-- **Agent-Ready**: Built for AI agent integration via MCP (Model Context Protocol)
-- **Block-Level Granularity**: Semantic search operates at paragraph/heading level for precise context
+## Why Crucible?
 
-## Features
+**Data Sovereignty**: Your knowledge lives in markdown files you can read, edit, and move anywhere. No proprietary formats. No cloud dependency. The database is optional — files are always the source of truth.
 
-### Knowledge Management
-- **Wikilink-Based Graph**: `[[Note Name]]` links define entities and relationships—no extraction needed
-- **Block-Level Embeddings**: Semantic search operates at paragraph/heading level for precise context
-- **Hybrid Search**: Combine semantic similarity, graph traversal, tags, and fuzzy matching
-- **Rich Metadata**: Frontmatter support with bidirectional sync between files and database
+**Extensible by Design**: Crucible exposes primitives you compose into workflows. Scripts, plugins, and AI agents all use the same extension points.
 
-### Architecture & Performance
-- **Plaintext-First**: Markdown files are source of truth—works with any text editor
-- **Incremental Processing**: Hash-based change detection for fast updates
-- **Optional Database**: SurrealDB (embedded) provides rich queries when needed
-- **Memory Safety**: Large file protection, UTF-8 safety, and input validation
-- **Clean Architecture**: Trait-based design with dependency injection for extensibility
+**AI as Infrastructure**: Instead of AI as a black box, Crucible provides semantic search, embeddings, and agent tools as building blocks. Use what you need. Swap providers freely. Run everything locally or connect to APIs.
 
-### AI Agent Integration
-- **MCP Server**: Model Context Protocol server exposing tools for knowledge management
-- **Unified LLM Providers**: Pluggable embedding and chat providers (Ollama, OpenAI, FastEmbed, LlamaCpp)
-- **Context Enrichment**: Automatically gather relevant notes and graph structure for agents
-- **Tool Discovery**: Agents automatically discover and use Crucible's tools via MCP
-- **Sandboxed Execution**: Rune-based scripting with security controls
+## Core Capabilities
+
+### Knowledge Graph
+Wikilinks (`[[Note Name]]`) define your knowledge graph — no extraction or configuration needed. Block-level embeddings enable semantic search at paragraph granularity. Combine graph traversal, tags, and fuzzy matching for precise discovery.
+
+### Agent Integration
+Built-in MCP (Model Context Protocol) server exposes your knowledge base to AI agents. Create notes, search semantically, traverse relationships — all through a standard protocol that works with Claude, GPT, and local models.
+
+### Extension System
+Rune scripting for sandboxed automation. Pluggable LLM providers (Ollama, OpenAI, FastEmbed, LlamaCpp). Query language (tq) for structured data manipulation. Every layer designed for composition.
 
 ## Quick Start
 
 ```bash
-# Clone the repository
 git clone https://github.com/mootikins/crucible.git
 cd crucible
-
-# Build the system
 cargo build --release
 
-# Start chat interface (default behavior)
+# Start the CLI
 cru
 
-# Show available commands
-cru --help
-```
-
-**Windows Users:** See [Windows Configuration Guide](docs/WINDOWS-CONFIGURATION.md) for Windows-specific setup and troubleshooting, including C runtime library configuration.
-
-## Using Crucible
-
-The Crucible CLI (`cru`) provides the primary interface for interacting with your knowledge base.
-
-### Basic Usage
-```bash
-# Start the CLI (processes files on startup)
-cru
-
-# Skip file processing for quick commands
-cru --no-process
-```
-
-### File Processing
-Crucible automatically processes files on startup:
-- Scans for new and modified files using hash-based change detection
-- Updates embeddings for semantic search
-- Processes only changed files (incremental)
-- Shows progress and handles errors gracefully
-
-### Available Commands
-```bash
-cru search "query"           # Text search
-cru fuzzy "concept"          # Fuzzy matching
-cru semantic "ml"            # Semantic search
-cru note create path.md      # Note management
-cru chat                     # Interactive chat with AI agent
-cru mcp                      # Start MCP server for tool exposure
-```
-
-### AI Agent Integration
-
-Crucible includes a built-in MCP (Model Context Protocol) server that exposes knowledge management tools to AI agents:
-
-```bash
-# Start the MCP server (typically invoked by agents automatically)
+# Or start the MCP server for agent integration
 cru mcp
 ```
 
-**Note Tools:**
-- `create_note` - Create new notes with YAML frontmatter
-- `read_note` - Read note content with optional line ranges
-- `read_metadata` - Get note metadata without loading full content
-- `update_note` - Update note content and/or frontmatter
-- `delete_note` - Remove notes from the kiln
-- `list_notes` - List notes in a directory (recursive or non-recursive)
-
-**Search Tools:**
-- `semantic_search` - Find semantically similar notes using embeddings
-- `text_search` - Fast full-text search across all notes
-- `property_search` - Search by frontmatter properties and tags
-
-**Kiln Tools:**
-- `get_kiln_info` - Get kiln path and statistics
-- `get_kiln_roots` - Get kiln root directory information
-- `get_kiln_stats` - Get detailed kiln statistics
+**Windows**: See [Windows Configuration Guide](docs/WINDOWS-CONFIGURATION.md) for platform-specific setup.
 
 ## Architecture
 
-Crucible uses a clean, layered architecture with orthogonal systems:
+Crucible separates concerns into composable crates:
 
-### Crate Organization
+- **Core** — Domain logic, traits, parser types
+- **Storage** — SurrealDB with EAV graph schema (optional)
+- **LLM** — Unified provider system for embeddings and chat
+- **Tools** — MCP server and tool implementations
+- **CLI/Web** — User interfaces
 
-| Crate | Purpose |
-|-------|---------|
-| `crucible-core` | Domain logic, traits, parser types, storage abstractions |
-| `crucible-parser` | Markdown parsing implementation |
-| `crucible-config` | Configuration types and loading |
-| `crucible-llm` | LLM providers (embeddings, chat, text generation) |
-| `crucible-surrealdb` | SurrealDB storage with EAV graph schema |
-| `crucible-cli` | Command-line interface |
-| `crucible-web` | Browser-based chat UI (Svelte 5 + Axum) |
-| `crucible-tools` | MCP server and tool implementations |
-| `crucible-rune` | Rune scripting integration |
-| `crucible-watch` | File system watching |
-| `tq` | TOON Query - jq-like query language |
-
-### LLM Provider Architecture
-
-Crucible uses a unified provider system with capability-based traits:
-
-```
-Provider (base trait)
-   ├── CanEmbed (embedding capability)
-   ├── CanChat (chat/completion capability)
-   └── CanConstrainGeneration (grammar/schema constraints)
-```
-
-**Supported Backends:**
-- **Ollama** - Local LLM server (embeddings + chat)
-- **OpenAI** - Cloud API (embeddings + chat)
-- **FastEmbed** - Local ONNX embeddings (CPU-optimized)
-- **LlamaCpp** - Local GGUF models with GPU acceleration
-- **Burn** - Rust ML framework embeddings
-
-### Tech Stack
-
-- **Language**: Rust with Tokio async runtime
-- **Database**: SurrealDB (embedded) with vector extensions
-- **Embeddings**: FastEmbed (local), OpenAI, Ollama, LlamaCpp
-- **Scripting**: Rune with security sandboxing
-- **CLI**: Clap-based command line interface
-- **Web**: Svelte 5 frontend with Axum backend and SSE
-- **Agent Integration**: Model Context Protocol (MCP)
-- **Query Language**: TOON Query (tq) - jq-like structured data manipulation
+LLM providers implement capability traits (`CanEmbed`, `CanChat`, `CanConstrainGeneration`), letting you swap backends without changing application code.
 
 ## Documentation
 
-- **[AI Agent Guide](./AGENTS.md)** - Instructions for AI agents working on the codebase
-- **[OpenSpec Workflow](./openspec/AGENTS.md)** - Change proposal and specification system
-- **[System Boundaries](./openspec/SYSTEMS.md)** - Orthogonal system organization
-- **[Example Kiln](./examples/test-kiln/)** - Test vault with comprehensive search scenarios
-
-## Example Kiln
-
-The `examples/test-kiln/` directory contains a comprehensive test vault with:
-- 12 realistic markdown files covering diverse content types
-- 150+ search test scenarios
-- 8 different link formats (wikilinks, embeds, aliases)
-- 45 unique frontmatter property types
-- ~25,000 words of content across business, technical, academic, and personal domains
-
-See `examples/test-kiln/README - Test Kiln Structure.md` for full details.
-
-## Safety & Performance
-
-- **Memory Protection**: Large file handling with size limits and streaming reads
-- **UTF-8 Safety**: Graceful handling of encoding errors with character replacement
-- **Input Validation**: Query limits, whitespace normalization, and null character protection
-- **Incremental Processing**: Hash-based change detection for efficient updates
-- **Comprehensive Testing**: Full test coverage across core, CLI, and integration layers
-
-## Roadmap
-
-Crucible is in active development. Current focus areas:
-
-- **Stabilizing core APIs** - Parser, storage, and LLM provider interfaces
-- **CLI polish** - Better error messages, TUI improvements
-- **Documentation** - User guide, architecture docs
-
-Not currently planned:
-- Crates.io publishing
-- GUI/desktop application
-- Mobile support
-
-See [GitHub Issues](https://github.com/Mootikins/crucible/issues) for detailed tracking.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
+- [AGENTS.md](./AGENTS.md) — Guide for AI agents working on the codebase
+- [OpenSpec](./openspec/) — Change proposals and system specifications
+- [Example Kiln](./examples/test-kiln/) — Test vault with search scenarios
 
 ## License
 
-Licensed under either of
-
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
-
-at your option.
+MIT or Apache-2.0, at your option.
