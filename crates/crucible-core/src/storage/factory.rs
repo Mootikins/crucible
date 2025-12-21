@@ -855,7 +855,7 @@ mod tests {
         let config = StorageConfig::in_memory(Some(100_000_000));
         assert!(config.validate().is_ok());
 
-        let config = StorageConfig::file_based(&test_path("storage"));
+        let config = StorageConfig::file_based(test_path("storage"));
         assert!(config.validate().is_ok());
 
         let config = StorageConfig::surrealdb("ws://localhost:8000", "test", "db");
@@ -903,7 +903,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_factory_create_file_based_not_implemented() {
-        let config = StorageConfig::file_based(&test_path("test"));
+        let config = StorageConfig::file_based(test_path("test"));
         let result = StorageFactory::create(config).await;
 
         assert!(result.is_err());

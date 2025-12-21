@@ -189,10 +189,11 @@ impl Default for ProfileConfig {
 }
 
 /// Environment types for profiles.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Environment {
     /// Development environment.
+    #[default]
     Development,
     /// Testing environment.
     Test,
@@ -242,12 +243,6 @@ impl Environment {
     /// Check if debug features should be enabled.
     pub fn enable_debug(&self) -> bool {
         !matches!(self, Self::Production)
-    }
-}
-
-impl Default for Environment {
-    fn default() -> Self {
-        Self::Development
     }
 }
 
