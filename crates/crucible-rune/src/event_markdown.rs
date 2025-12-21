@@ -1114,6 +1114,11 @@ mod tests {
 
     use crate::reactor::SessionEventConfig;
 
+    /// Cross-platform test path helper
+    fn test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("crucible_test_{}", name))
+    }
+
     // Fixed timestamp for consistent test output: 2025-12-14T15:30:45.123 UTC
     // Calculated using: datetime.datetime(2025, 12, 14, 15, 30, 45, 123000, tzinfo=datetime.timezone.utc).timestamp() * 1000
     const TEST_TIMESTAMP_MS: u64 = 1765726245123;
@@ -1239,9 +1244,11 @@ mod tests {
 
     #[test]
     fn tool_event_to_markdown() {
+        let path = test_path("test.txt");
+        let path_str = path.to_string_lossy();
         let event = SessionEvent::ToolCalled {
             name: "read_file".into(),
-            args: json!({"path": "/tmp/test.txt"}),
+            args: json!({"path": path_str}),
         };
 
         let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
@@ -1249,7 +1256,7 @@ mod tests {
         assert!(md.contains("## 2025-12-14T15:30:45.123 - ToolCalled"));
         assert!(md.contains("**Tool:** `read_file`"));
         assert!(md.contains("**Arguments:**"));
-        assert!(md.contains("\"path\": \"/tmp/test.txt\""));
+        assert!(md.contains(&format!("\"path\": \"{}\"", path_str)));
         assert!(md.ends_with("---\n"));
     }
 
@@ -1301,9 +1308,11 @@ mod tests {
 
     #[test]
     fn agent_responded_to_markdown() {
+        let path = test_path("test.txt");
+        let path_str = path.to_string_lossy();
         let event = SessionEvent::AgentResponded {
             content: "I'll help you with that.".into(),
-            tool_calls: vec![ToolCall::new("read_file", json!({"path": "/tmp/test.txt"}))],
+            tool_calls: vec![ToolCall::new("read_file", json!({"path": path_str}))],
         };
 
         let md = event.to_markdown_block(Some(TEST_TIMESTAMP_MS));
@@ -1312,7 +1321,7 @@ mod tests {
         assert!(md.contains("**Content:**"));
         assert!(md.contains("I'll help you with that."));
         assert!(md.contains("**Tool Calls:**"));
-        assert!(md.contains("- `read_file`: `{\"path\":\"/tmp/test.txt\"}`"));
+        assert!(md.contains(&format!("- `read_file`: `{{\"path\":\"{}\"}}`", path_str)));
     }
 
     #[test]
@@ -1654,9 +1663,11 @@ mod tests {
 
     #[test]
     fn roundtrip_tool_called() {
+        let path = test_path("test.txt");
+        let path_str = path.to_string_lossy();
         let original = SessionEvent::ToolCalled {
             name: "read_file".into(),
-            args: json!({"path": "/tmp/test.txt"}),
+            args: json!({"path": path_str}),
         };
 
         let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
@@ -1665,7 +1676,7 @@ mod tests {
         match parsed {
             SessionEvent::ToolCalled { name, args } => {
                 assert_eq!(name, "read_file");
-                assert_eq!(args["path"], "/tmp/test.txt");
+                assert_eq!(args["path"], path_str.as_ref());
             }
             _ => panic!("Wrong event type"),
         }
@@ -1908,9 +1919,11 @@ mod tests {
 
     #[test]
     fn roundtrip_agent_responded_with_tool_calls() {
+        let path = test_path("test.txt");
+        let path_str = path.to_string_lossy();
         let original = SessionEvent::AgentResponded {
             content: "I'll help you with that.".into(),
-            tool_calls: vec![ToolCall::new("read_file", json!({"path": "/tmp/test.txt"}))],
+            tool_calls: vec![ToolCall::new("read_file", json!({"path": path_str}))],
         };
 
         let md = original.to_markdown_block(Some(TEST_TIMESTAMP_MS));
@@ -1924,7 +1937,7 @@ mod tests {
                 assert_eq!(content, "I'll help you with that.");
                 assert_eq!(tool_calls.len(), 1);
                 assert_eq!(tool_calls[0].name, "read_file");
-                assert_eq!(tool_calls[0].args["path"], "/tmp/test.txt");
+                assert_eq!(tool_calls[0].args["path"], path_str.as_ref());
             }
             _ => panic!("Wrong event type"),
         }

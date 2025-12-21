@@ -1637,7 +1637,13 @@ impl Default for LoggingConfig {
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::path::PathBuf;
     use tempfile::NamedTempFile;
+
+    /// Cross-platform test path helper
+    fn test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("crucible_test_{}", name))
+    }
 
     #[test]
     fn test_agent_directories_default_empty() {
@@ -1647,13 +1653,17 @@ mod tests {
 
     #[test]
     fn test_agent_directories_loads_from_toml() {
-        let toml_content = r#"
-kiln_path = "/tmp/test-kiln"
+        let kiln_path = test_path("test-kiln");
+        let toml_content = format!(
+            r#"
+kiln_path = "{}"
 agent_directories = ["/home/user/shared-agents", "./local-agents"]
 
 [embedding]
 provider = "fastembed"
-"#;
+"#,
+            kiln_path.to_string_lossy().replace('\\', "\\\\")
+        );
         let mut temp_file = NamedTempFile::new().unwrap();
         temp_file.write_all(toml_content.as_bytes()).unwrap();
 
@@ -1672,12 +1682,16 @@ provider = "fastembed"
 
     #[test]
     fn test_agent_directories_optional_when_missing() {
-        let toml_content = r#"
-kiln_path = "/tmp/test-kiln"
+        let kiln_path = test_path("test-kiln");
+        let toml_content = format!(
+            r#"
+kiln_path = "{}"
 
 [embedding]
 provider = "fastembed"
-"#;
+"#,
+            kiln_path.to_string_lossy().replace('\\', "\\\\")
+        );
         let mut temp_file = NamedTempFile::new().unwrap();
         temp_file.write_all(toml_content.as_bytes()).unwrap();
 
@@ -2095,8 +2109,10 @@ max_tokens = 4096
 
     #[test]
     fn test_new_providers_config_loads() {
-        let toml = r#"
-kiln_path = "/tmp/test"
+        let kiln_path = test_path("test");
+        let toml = format!(
+            r#"
+kiln_path = "{}"
 
 [providers]
 default_embedding = "ollama"
@@ -2107,8 +2123,10 @@ endpoint = "http://localhost:11434"
 
 [providers.ollama.models]
 embedding = "nomic-embed-text"
-"#;
-        let config: CliAppConfig = toml::from_str(toml).unwrap();
+"#,
+            kiln_path.to_string_lossy().replace('\\', "\\\\")
+        );
+        let config: CliAppConfig = toml::from_str(&toml).unwrap();
 
         assert!(config.providers.get("ollama").is_some());
         assert_eq!(
@@ -2126,15 +2144,19 @@ embedding = "nomic-embed-text"
 
     #[test]
     fn test_legacy_embedding_config_migrates() {
-        let toml = r#"
-kiln_path = "/tmp/test"
+        let kiln_path = test_path("test");
+        let toml = format!(
+            r#"
+kiln_path = "{}"
 
 [embedding]
 provider = "ollama"
 api_url = "http://localhost:11434"
 model = "nomic-embed-text"
-"#;
-        let mut config: CliAppConfig = toml::from_str(toml).unwrap();
+"#,
+            kiln_path.to_string_lossy().replace('\\', "\\\\")
+        );
+        let mut config: CliAppConfig = toml::from_str(&toml).unwrap();
         config.migrate_legacy_config();
 
         // Should have migrated to providers section
@@ -2146,8 +2168,10 @@ model = "nomic-embed-text"
 
     #[test]
     fn test_effective_embedding_provider_prefers_new_config() {
-        let toml = r#"
-kiln_path = "/tmp/test"
+        let kiln_path = test_path("test");
+        let toml = format!(
+            r#"
+kiln_path = "{}"
 
 [embedding]
 provider = "fastembed"
@@ -2162,8 +2186,10 @@ endpoint = "http://localhost:11434"
 
 [providers.new-provider.models]
 embedding = "new-model"
-"#;
-        let config: CliAppConfig = toml::from_str(toml).unwrap();
+"#,
+            kiln_path.to_string_lossy().replace('\\', "\\\\")
+        );
+        let config: CliAppConfig = toml::from_str(&toml).unwrap();
 
         // Should prefer new providers config over legacy
         let (name, provider) = config.effective_embedding_provider().unwrap();
@@ -2174,15 +2200,19 @@ embedding = "new-model"
 
     #[test]
     fn test_effective_embedding_provider_falls_back_to_legacy() {
-        let toml = r#"
-kiln_path = "/tmp/test"
+        let kiln_path = test_path("test");
+        let toml = format!(
+            r#"
+kiln_path = "{}"
 
 [embedding]
 provider = "fastembed"
 model = "legacy-model"
 batch_size = 32
-"#;
-        let config: CliAppConfig = toml::from_str(toml).unwrap();
+"#,
+            kiln_path.to_string_lossy().replace('\\', "\\\\")
+        );
+        let config: CliAppConfig = toml::from_str(&toml).unwrap();
 
         // Should fall back to legacy embedding config
         let (name, provider) = config.effective_embedding_provider().unwrap();

@@ -30,9 +30,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Example 2: File-based storage with custom directory
     println!("📁 Example 2: File-based storage with custom directory");
+    let storage_dir = std::env::temp_dir()
+        .join("crucible_storage")
+        .to_string_lossy()
+        .into_owned();
     let file_storage = ContentAddressedStorageBuilder::new()
         .with_backend(StorageBackendType::FileBased {
-            directory: "/tmp/crucible_storage".to_string(),
+            directory: storage_dir,
             create_if_missing: true,
         })
         .with_hasher(HasherConfig::Blake3(Blake3Hasher::new()))
