@@ -87,20 +87,15 @@ impl std::fmt::Display for LogLevel {
 }
 
 /// Filter for which events to log.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum EventFilter {
     /// Log all events
+    #[default]
     All,
     /// Log only specific event types
     Only(Vec<String>),
     /// Log all except specific event types
     Except(Vec<String>),
-}
-
-impl Default for EventFilter {
-    fn default() -> Self {
-        Self::All
-    }
 }
 
 impl EventFilter {

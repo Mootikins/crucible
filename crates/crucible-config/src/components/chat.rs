@@ -3,21 +3,16 @@
 use serde::{Deserialize, Serialize};
 
 /// LLM provider type for chat
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum LlmProvider {
     /// Ollama provider
+    #[default]
     Ollama,
     /// OpenAI provider
     OpenAI,
     /// Anthropic provider
     Anthropic,
-}
-
-impl Default for LlmProvider {
-    fn default() -> Self {
-        Self::Ollama
-    }
 }
 
 /// Simple chat configuration - only essential user settings

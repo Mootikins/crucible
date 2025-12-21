@@ -155,7 +155,7 @@ async fn test_event_cascade_timing() {
         .expect("Failed to initialize event system");
 
     // Track event order with atomic counters
-    let event_sequence = std::sync::Arc::new(AtomicUsize::new(0));
+    let _event_sequence = std::sync::Arc::new(AtomicUsize::new(0));
 
     // Register a logging handler to track event sequence
     // (This would need access to the bus internals, simplified for now)

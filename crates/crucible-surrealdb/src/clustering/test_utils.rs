@@ -404,7 +404,7 @@ pub fn generate_realistic_test_kiln(num_docs: usize) -> Vec<DocumentInfo> {
     let mut all_paths = HashSet::new();
 
     // Define content domains
-    let domains = vec![
+    let domains = [
         (
             "project-management",
             vec!["project", "tasks", "timeline", "milestone"],

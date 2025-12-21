@@ -654,8 +654,10 @@ impl Default for SessionEvent {
 /// Type of note modification.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum NoteChangeType {
     /// Content body changed.
+    #[default]
     Content,
     /// Frontmatter changed.
     Frontmatter,
@@ -684,17 +686,13 @@ pub enum NoteChangeType {
 /// ```
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum FileChangeKind {
     /// File was newly created.
     Created,
     /// Existing file was modified.
+    #[default]
     Modified,
-}
-
-impl Default for FileChangeKind {
-    fn default() -> Self {
-        Self::Modified
-    }
 }
 
 impl std::fmt::Display for FileChangeKind {
@@ -703,12 +701,6 @@ impl std::fmt::Display for FileChangeKind {
             Self::Created => write!(f, "created"),
             Self::Modified => write!(f, "modified"),
         }
-    }
-}
-
-impl Default for NoteChangeType {
-    fn default() -> Self {
-        Self::Content
     }
 }
 
@@ -730,8 +722,10 @@ impl Default for NoteChangeType {
 /// ```
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum EntityType {
     /// A markdown note (the primary content type).
+    #[default]
     Note,
     /// A content block within a note.
     Block,
@@ -766,21 +760,17 @@ pub enum EntityType {
 /// ```
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum Priority {
     /// Low priority - background processing.
     Low = 1,
     /// Normal priority - standard processing (default).
+    #[default]
     Normal = 2,
     /// High priority - user-requested operations.
     High = 3,
     /// Critical priority - system operations requiring immediate attention.
     Critical = 4,
-}
-
-impl Default for Priority {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
 
 impl std::fmt::Display for Priority {
@@ -906,12 +896,6 @@ impl Default for NotePayload {
     }
 }
 
-impl Default for EntityType {
-    fn default() -> Self {
-        Self::Note
-    }
-}
-
 impl std::fmt::Display for EntityType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -938,6 +922,7 @@ impl std::fmt::Display for NoteChangeType {
 /// Source of a discovered tool.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum ToolSource {
     /// Built-in Rune tool.
     Rune,
@@ -947,13 +932,8 @@ pub enum ToolSource {
         server: String,
     },
     /// Built-in system tool.
+    #[default]
     Builtin,
-}
-
-impl Default for ToolSource {
-    fn default() -> Self {
-        Self::Builtin
-    }
 }
 
 impl std::fmt::Display for ToolSource {

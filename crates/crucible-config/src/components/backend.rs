@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Backends are the underlying services that provide AI capabilities.
 /// Some backends support only embeddings, some only chat, and some support both.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum BackendType {
     // === Multi-capability backends (embeddings + chat) ===
@@ -29,6 +29,7 @@ pub enum BackendType {
 
     // === Embedding-only backends ===
     /// FastEmbed - local CPU-based embeddings
+    #[default]
     #[serde(rename = "fastembed")]
     FastEmbed,
     /// Burn - local GPU-accelerated embeddings via Burn ML framework
@@ -165,12 +166,6 @@ impl BackendType {
             Self::VertexAI => Some("GOOGLE_API_KEY"),
             _ => None,
         }
-    }
-}
-
-impl Default for BackendType {
-    fn default() -> Self {
-        Self::FastEmbed
     }
 }
 

@@ -318,8 +318,8 @@ pub trait ClusteringAlgorithm: Send + Sync + std::fmt::Debug {
     /// Get algorithm-specific suggestions for improving clustering
     async fn suggest_improvements(
         &self,
-        documents: &[DocumentInfo],
-        result: &ClusteringResult,
+        _documents: &[DocumentInfo],
+        _result: &ClusteringResult,
     ) -> Result<Vec<String>, ClusteringError> {
         // Default implementation returns empty suggestions
         Ok(vec![])
