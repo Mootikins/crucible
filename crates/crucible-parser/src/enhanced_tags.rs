@@ -600,7 +600,7 @@ Regular paragraph text.
 ";
 
         // This should not fail parsing, but may handle malformed checkboxes gracefully
-        let errors = extension.parse(content, &mut doc_content).await;
+        let _errors = extension.parse(content, &mut doc_content).await;
 
         // Should parse successfully without throwing errors
         // Malformed checkboxes might be skipped or handled gracefully

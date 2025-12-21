@@ -63,7 +63,7 @@ async fn test_batch_clustering_event_flow() {
     let tools = ClusteringTools::new(vault_path);
 
     // 1. Demonstrate batch document indexing event structure
-    let indexed_docs = vec![
+    let indexed_docs = [
         ("doc1.md", "Document 1", vec!["ai", "ml"], vec!["doc2"]),
         (
             "doc2.md",
