@@ -1,7 +1,7 @@
 //! # Phase 1B: Metadata-Based Search Tests (TDD)
 //!
 //! This module implements TDD tests for metadata-based search functionality in Crucible.
-//! Tests use the test-kiln at `examples/test-kiln/` for realistic test data.
+//! Tests use the dev-kiln at `examples/dev-kiln/` for realistic test data.
 //!
 //! ## Test Coverage
 //!
@@ -41,7 +41,7 @@ mod tests {
     use crucible_parser::CrucibleParser;
     use std::path::PathBuf;
 
-    /// Get the path to test-kiln directory (from workspace root)
+    /// Get the path to dev-kiln directory (from workspace root)
     fn test_kiln_path() -> PathBuf {
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
         PathBuf::from(manifest_dir)
@@ -49,7 +49,7 @@ mod tests {
             .unwrap()
             .parent()
             .unwrap()
-            .join("examples/test-kiln")
+            .join("examples/dev-kiln")
     }
 
     /// Test helper to set up a test database
@@ -60,7 +60,7 @@ mod tests {
         Ok((client, store))
     }
 
-    /// Parse and ingest a markdown file from test-kiln
+    /// Parse and ingest a markdown file from dev-kiln
     async fn ingest_test_file(store: &EAVGraphStore, file_name: &str) -> Result<String> {
         let file_path = test_kiln_path().join(file_name);
 
@@ -82,25 +82,25 @@ mod tests {
     #[tokio::test]
     async fn tag_exact_match() {
         // TDD: Write failing test first
-        // Test should search for exact tag "#project-management" and find matching notes
+        // Test should search for exact tag "#guide" and find matching notes
 
         let (client, store) = setup_test_db().await.unwrap();
 
-        // Ingest test files that contain #project-management tag
-        // According to test-kiln README, "Project Management.md" has tags: [project-management, tasks, timeline, productivity]
-        let _entity_id = ingest_test_file(&store, "Project Management.md")
+        // Ingest test files that contain #guide tag
+        // dev-kiln: "Guides/Getting Started.md" has tags: [guide, beginner]
+        let _entity_id = ingest_test_file(&store, "Guides/Getting Started.md")
             .await
             .unwrap();
 
-        // Search for exact tag #project-management using SurrealDB graph syntax
+        // Search for exact tag #guide using SurrealDB graph syntax
         // We need to:
-        // 1. Find the tag with name 'project-management'
+        // 1. Find the tag with name 'guide'
         // 2. Find entity_tags records that reference this tag
         // 3. Get the entities from those records
         let query = r#"
             SELECT entity_id.id as id, entity_id.data as data
             FROM entity_tags
-            WHERE tag_id.name = 'project-management'
+            WHERE tag_id.name = 'guide'
         "#;
 
         let result = client.query(query, &[]).await.unwrap();
@@ -108,11 +108,11 @@ mod tests {
         // Should find at least 1 document with this tag
         assert!(
             !result.records.is_empty(),
-            "Should find documents with #project-management tag"
+            "Should find documents with #guide tag"
         );
 
         // The record ID is in the record.id field, not record.data
-        // It contains strings like "entities:note:Project Management.md"
+        // It contains strings like "entities:note:Guides/Getting Started.md"
         let found_ids: Vec<String> = result
             .records
             .iter()
@@ -125,10 +125,10 @@ mod tests {
         );
 
         assert!(
-            found_ids.iter().any(|id| id.contains("Project")
-                || id.contains("Management")
-                || id.contains("project")),
-            "Found document should be related to project management, found IDs: {:?}",
+            found_ids.iter().any(|id| id.contains("Getting")
+                || id.contains("Started")
+                || id.contains("Guides")),
+            "Found document should be related to getting started guide, found IDs: {:?}",
             found_ids
         );
     }
@@ -167,42 +167,46 @@ mod tests {
 
         let (client, store) = setup_test_db().await.unwrap();
 
-        // Ingest files with multiple tags
-        let _id1 = ingest_test_file(&store, "Project Management.md")
+        // Ingest files with multiple tags from dev-kiln
+        // "Agents/Coder.md" has tags: [agent, example, coding]
+        // "Agents/Researcher.md" has tags: [agent, example, research]
+        let _id1 = ingest_test_file(&store, "Agents/Coder.md")
             .await
             .unwrap();
-        let _id2 = ingest_test_file(&store, "Meeting Notes.md").await.unwrap();
+        let _id2 = ingest_test_file(&store, "Agents/Researcher.md")
+            .await
+            .unwrap();
 
-        // Test AND logic: documents with BOTH #meeting AND #action-items
+        // Test AND logic: documents with BOTH #agent AND #example
         // In SurrealDB, we need to find entities that appear in both tag sets
         let query_and = r#"
-            LET $meeting_entities = (SELECT entity_id FROM entity_tags WHERE tag_id.name = 'meeting');
-            LET $action_entities = (SELECT entity_id FROM entity_tags WHERE tag_id.name = 'action-items');
-            SELECT id FROM entities WHERE id IN $meeting_entities.entity_id AND id IN $action_entities.entity_id;
+            LET $agent_entities = (SELECT entity_id FROM entity_tags WHERE tag_id.name = 'agent');
+            LET $example_entities = (SELECT entity_id FROM entity_tags WHERE tag_id.name = 'example');
+            SELECT id FROM entities WHERE id IN $agent_entities.entity_id AND id IN $example_entities.entity_id;
         "#;
 
         let result_and = client.query(query_and, &[]).await.unwrap();
 
-        // Should find documents with both tags
+        // Should find documents with both tags (both agent files have agent + example)
         assert!(
             !result_and.records.is_empty(),
-            "Should find documents with both #meeting AND #action-items"
+            "Should find documents with both #agent AND #example"
         );
 
-        // Test OR logic: documents with EITHER #meeting OR #project-management
+        // Test OR logic: documents with EITHER #coding OR #research
         let query_or = r#"
             SELECT entity_id
             FROM entity_tags
-            WHERE tag_id.name IN ['meeting', 'project-management']
+            WHERE tag_id.name IN ['coding', 'research']
             GROUP ALL
         "#;
 
         let result_or = client.query(query_or, &[]).await.unwrap();
 
-        // Should find at least 2 documents (one with each tag)
+        // Should find at least 1 document (files have either coding or research tag)
         assert!(
             !result_or.records.is_empty(),
-            "Should find at least 1 document with #meeting OR #project-management"
+            "Should find at least 1 document with #coding OR #research"
         );
     }
 
@@ -227,8 +231,8 @@ mod tests {
 
         let (client, store) = setup_test_db().await.unwrap();
 
-        // Ingest some test data
-        let _id = ingest_test_file(&store, "Project Management.md")
+        // Ingest some test data from dev-kiln
+        let _id = ingest_test_file(&store, "Guides/Getting Started.md")
             .await
             .unwrap();
 
@@ -255,62 +259,62 @@ mod tests {
     #[tokio::test]
     async fn property_string_match() {
         // TDD: Write failing test first
-        // Test string property matching: project_manager: "Sarah Chen"
+        // Test string property matching: type: "agent-card"
 
         let (client, store) = setup_test_db().await.unwrap();
 
-        // According to test-kiln, "Project Management.md" has project_manager: "Sarah Chen"
-        let _id = ingest_test_file(&store, "Project Management.md")
+        // dev-kiln: "Agents/Coder.md" has type: agent-card
+        let _id = ingest_test_file(&store, "Agents/Coder.md")
             .await
             .unwrap();
 
-        // Search for documents with specific project_manager using SurrealDB graph syntax
+        // Search for documents with specific type using SurrealDB graph syntax
         // Frontmatter is stored as a single property with key='frontmatter'
         // The value structure is: {type: "json", value: {...frontmatter fields...}}
-        // We need to query: value.value.project_manager
+        // We need to query: value.value.type
         let query = r#"
             SELECT entity_id.id as id, value
             FROM properties
             WHERE key = 'frontmatter'
-            AND value.value.project_manager = 'Sarah Chen'
+            AND value.value.type = 'agent-card'
         "#;
 
         let result = client.query(query, &[]).await.unwrap();
 
-        // Should find the project management document
+        // Should find the agent card document
         assert!(
             !result.records.is_empty(),
-            "Should find documents with project_manager: 'Sarah Chen'"
+            "Should find documents with type: 'agent-card'"
         );
     }
 
     #[tokio::test]
     async fn property_numeric_compare() {
         // TDD: Write failing test first
-        // Test numeric property comparison: team_size > 3
+        // Test numeric property comparison: order >= 1
 
         let (client, store) = setup_test_db().await.unwrap();
 
-        // Test-kiln files have team_size as numeric property
-        let _id = ingest_test_file(&store, "Project Management.md")
+        // dev-kiln: "Guides/Getting Started.md" has order: 1
+        let _id = ingest_test_file(&store, "Guides/Getting Started.md")
             .await
             .unwrap();
 
-        // Search for documents with team_size > 3 using SurrealDB graph syntax
+        // Search for documents with order >= 1 using SurrealDB graph syntax
         let query = r#"
             SELECT entity_id.id as id, value
             FROM properties
             WHERE key = 'frontmatter'
-            AND value.value.team_size > 3
+            AND value.value.order >= 1
         "#;
 
         let result = client.query(query, &[]).await.unwrap();
 
-        // Should find documents with team_size > 3
-        // Project Management has team_size: 5
+        // Should find documents with order >= 1
+        // Getting Started has order: 1
         assert!(
             !result.records.is_empty(),
-            "Should find documents with team_size > 3"
+            "Should find documents with order >= 1"
         );
     }
 
@@ -321,8 +325,12 @@ mod tests {
 
         let (client, store) = setup_test_db().await.unwrap();
 
-        // Test-kiln files have created/modified dates in 2025-01-XX format
-        let _id = ingest_test_file(&store, "Project Management.md")
+        // dev-kiln: "Guides/Getting Started.md" has created: 2025-01-10 (January)
+        // dev-kiln: "Guides/Your First Kiln.md" has created: 2025-02-05 (February)
+        let _id1 = ingest_test_file(&store, "Guides/Getting Started.md")
+            .await
+            .unwrap();
+        let _id2 = ingest_test_file(&store, "Guides/Your First Kiln.md")
             .await
             .unwrap();
 
@@ -337,10 +345,27 @@ mod tests {
 
         let result = client.query(query, &[]).await.unwrap();
 
-        // Should find documents created in January 2025
+        // Should find only "Getting Started" (created 2025-01-10), not "Your First Kiln" (created 2025-02-05)
         assert!(
             !result.records.is_empty(),
             "Should find documents created in January 2025"
+        );
+
+        // Verify February document is not included in January range
+        let query_feb = r#"
+            SELECT entity_id.id as id, value
+            FROM properties
+            WHERE key = 'frontmatter'
+            AND value.value.created >= '2025-02-01'
+            AND value.value.created <= '2025-02-28'
+        "#;
+
+        let result_feb = client.query(query_feb, &[]).await.unwrap();
+
+        // Should find "Your First Kiln" in February range
+        assert!(
+            !result_feb.records.is_empty(),
+            "Should find documents created in February 2025"
         );
     }
 
@@ -363,23 +388,23 @@ mod tests {
 
         let (client, store) = setup_test_db().await.unwrap();
 
-        // Test-kiln files have arrays like attendees: ["Sarah Chen", "Michael Rodriguez", ...]
-        let _id = ingest_test_file(&store, "Meeting Notes.md").await.unwrap();
+        // dev-kiln: files have tags array, e.g. "Agents/Coder.md" has tags: [agent, example, coding]
+        let _id = ingest_test_file(&store, "Agents/Coder.md").await.unwrap();
 
-        // Search for documents where attendees array contains "Sarah Chen" using SurrealDB graph syntax
+        // Search for documents where tags array contains "coding" using SurrealDB graph syntax
         let query = r#"
             SELECT entity_id.id as id, value
             FROM properties
             WHERE key = 'frontmatter'
-            AND 'Sarah Chen' IN value.value.attendees
+            AND 'coding' IN value.value.tags
         "#;
 
         let result = client.query(query, &[]).await.unwrap();
 
-        // Should find documents with "Sarah Chen" in attendees array
+        // Should find documents with "coding" in tags array
         assert!(
             !result.records.is_empty(),
-            "Should find documents with 'Sarah Chen' in attendees array"
+            "Should find documents with 'coding' in tags array"
         );
     }
 
@@ -406,16 +431,16 @@ mod tests {
 
         let (client, store) = setup_test_db().await.unwrap();
 
-        // Ingest test data
-        let _id = ingest_test_file(&store, "Project Management.md")
+        // Ingest test data - Agents/Coder.md has tag "agent" and type: "agent-card"
+        let _id = ingest_test_file(&store, "Agents/Coder.md")
             .await
             .unwrap();
 
-        // Search for documents with tag #project-management AND priority = high using SurrealDB graph syntax
+        // Search for documents with tag #agent AND type = agent-card using SurrealDB graph syntax
         let query = r#"
-            LET $tagged_entities = (SELECT entity_id FROM entity_tags WHERE tag_id.name = 'project-management');
-            LET $priority_entities = (SELECT entity_id FROM properties WHERE key = 'frontmatter' AND value.value.priority = 'high');
-            SELECT id FROM entities WHERE id IN $tagged_entities.entity_id AND id IN $priority_entities.entity_id;
+            LET $tagged_entities = (SELECT entity_id FROM entity_tags WHERE tag_id.name = 'agent');
+            LET $type_entities = (SELECT entity_id FROM properties WHERE key = 'frontmatter' AND value.value.type = 'agent-card');
+            SELECT id FROM entities WHERE id IN $tagged_entities.entity_id AND id IN $type_entities.entity_id;
         "#;
 
         let result = client.query(query, &[]).await.unwrap();
@@ -423,7 +448,7 @@ mod tests {
         // Should find documents matching both criteria
         assert!(
             !result.records.is_empty(),
-            "Should find documents with #project-management AND priority=high"
+            "Should find documents with #agent AND type=agent-card"
         );
     }
 
@@ -434,16 +459,18 @@ mod tests {
 
         let (client, store) = setup_test_db().await.unwrap();
 
-        // Ingest test data
-        let _id = ingest_test_file(&store, "Project Management.md")
+        // Ingest test data - Guides/Getting Started.md has order: 1 and tags array with "guide"
+        let _id = ingest_test_file(&store, "Guides/Getting Started.md")
             .await
             .unwrap();
 
-        // Search for documents with status=active AND priority=high using SurrealDB graph syntax
+        // Search for documents with order >= 1 AND 'guide' in tags array using SurrealDB graph syntax
         let query = r#"
-            LET $status_entities = (SELECT entity_id FROM properties WHERE key = 'frontmatter' AND value.value.status = 'active');
-            LET $priority_entities = (SELECT entity_id FROM properties WHERE key = 'frontmatter' AND value.value.priority = 'high');
-            SELECT id FROM entities WHERE id IN $status_entities.entity_id AND id IN $priority_entities.entity_id;
+            SELECT entity_id.id as id, value
+            FROM properties
+            WHERE key = 'frontmatter'
+            AND value.value.order >= 1
+            AND 'guide' IN value.value.tags
         "#;
 
         let result = client.query(query, &[]).await.unwrap();
@@ -451,7 +478,7 @@ mod tests {
         // Should find documents matching all property criteria
         assert!(
             !result.records.is_empty(),
-            "Should find documents with status=active AND priority=high"
+            "Should find documents with order >= 1 AND 'guide' in tags"
         );
     }
 
