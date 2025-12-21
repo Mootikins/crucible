@@ -311,6 +311,11 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
+    /// Cross-platform test path helper
+    fn test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("crucible_test_{}", name))
+    }
+
     #[test]
     fn test_new_without_kiln() {
         let paths = DiscoveryPaths::new("tools", None);
@@ -357,7 +362,7 @@ mod tests {
 
     #[test]
     fn test_new_with_kiln() {
-        let kiln = PathBuf::from("/tmp/test-kiln");
+        let kiln = test_path("test-kiln");
         let paths = DiscoveryPaths::new("hooks", Some(&kiln));
 
         assert_eq!(paths.type_name(), "hooks");
@@ -399,7 +404,7 @@ mod tests {
 
     #[test]
     fn test_all_paths_no_duplicates() {
-        let kiln = PathBuf::from("/tmp/kiln");
+        let kiln = test_path("kiln");
         let paths = DiscoveryPaths::new("tools", Some(&kiln))
             .with_path(kiln.join(".crucible").join("tools")); // Add same as default
 
@@ -484,7 +489,7 @@ mod tests {
 
     #[test]
     fn test_from_config_with_defaults() {
-        let kiln = PathBuf::from("/tmp/test-kiln");
+        let kiln = test_path("test-kiln");
         let config = DiscoveryConfig {
             additional_paths: vec!["/custom/path".into()],
             use_defaults: true,
@@ -503,7 +508,7 @@ mod tests {
 
     #[test]
     fn test_from_config_without_defaults() {
-        let kiln = PathBuf::from("/tmp/test-kiln");
+        let kiln = test_path("test-kiln");
         let config = DiscoveryConfig {
             additional_paths: vec!["/custom/path".into()],
             use_defaults: false,

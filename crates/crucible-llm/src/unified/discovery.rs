@@ -166,6 +166,11 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::TempDir;
 
+    /// Cross-platform test path helper
+    fn test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("crucible_test_{}", name))
+    }
+
     /// Create a mock GGUF file for testing
     fn create_mock_gguf(path: &std::path::Path) -> std::io::Result<()> {
         let mut file = std::fs::File::create(path)?;
@@ -299,7 +304,7 @@ mod tests {
     fn test_discovered_model_conversion() {
         let discovered = DiscoveredModel {
             name: "test-model".to_string(),
-            path: PathBuf::from("/tmp/test-model.gguf"),
+            path: test_path("test-model.gguf"),
             capability: crate::model_discovery::ModelCapability::Embedding,
             dimensions: Some(768),
             architecture: Some("bert".to_string()),

@@ -696,6 +696,11 @@ mod tests {
     use serde_json::json;
     use std::path::PathBuf;
 
+    /// Cross-platform test path helper
+    fn test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("crucible_test_{}", name))
+    }
+
     #[test]
     fn test_log_level_from_str() {
         assert_eq!(LogLevel::from_str("debug"), Some(LogLevel::Debug));
@@ -838,9 +843,10 @@ mod tests {
         assert!(summary.contains("from=user"));
         assert!(summary.contains("content_len=11"));
 
+        let path = test_path("test.txt");
         let event = SessionEvent::ToolCalled {
             name: "read_file".into(),
-            args: json!({"path": "/tmp/test.txt"}),
+            args: json!({"path": path.to_string_lossy()}),
         };
         let summary = LoggingHandler::event_summary(&event, 100);
         assert!(summary.contains("tool=read_file"));
@@ -993,7 +999,7 @@ mod tests {
             },
             SessionEvent::SessionCompacted {
                 summary: "summary".into(),
-                new_file: PathBuf::from("/tmp/new"),
+                new_file: test_path("new"),
             },
             SessionEvent::SessionEnded {
                 reason: "test done".into(),

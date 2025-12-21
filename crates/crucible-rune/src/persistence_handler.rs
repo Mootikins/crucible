@@ -393,12 +393,18 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::tempdir;
 
+    /// Cross-platform test path helper
+    fn test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("crucible_test_{}", name))
+    }
+
     #[test]
     fn test_persistence_handler_new() {
-        let handler = PersistenceHandler::new(PathBuf::from("/tmp/test-session"));
+        let folder = test_path("test-session");
+        let handler = PersistenceHandler::new(folder.clone());
 
         assert_eq!(handler.name(), PersistenceHandler::NAME);
-        assert_eq!(handler.folder(), &PathBuf::from("/tmp/test-session"));
+        assert_eq!(handler.folder(), &folder);
         assert_eq!(handler.file_index(), 0);
         assert_eq!(handler.last_persisted_seq(), 0);
     }
@@ -406,50 +412,51 @@ mod tests {
     #[test]
     fn test_persistence_handler_with_name() {
         let handler =
-            PersistenceHandler::new(PathBuf::from("/tmp/test")).with_name("custom_persist");
+            PersistenceHandler::new(test_path("test")).with_name("custom_persist");
 
         assert_eq!(handler.name(), "custom_persist");
     }
 
     #[test]
     fn test_persistence_handler_with_fatal_on_error() {
-        let handler = PersistenceHandler::new(PathBuf::from("/tmp/test")).with_fatal_on_error(true);
+        let handler = PersistenceHandler::new(test_path("test")).with_fatal_on_error(true);
 
         assert!(handler.fatal_on_error);
     }
 
     #[test]
     fn test_persistence_handler_with_file_index() {
-        let handler = PersistenceHandler::new(PathBuf::from("/tmp/test")).with_file_index(5);
+        let handler = PersistenceHandler::new(test_path("test")).with_file_index(5);
 
         assert_eq!(handler.file_index(), 5);
     }
 
     #[test]
     fn test_current_file_path() {
-        let handler = PersistenceHandler::new(PathBuf::from("/tmp/test-session"));
+        let folder = test_path("test-session");
+        let handler = PersistenceHandler::new(folder.clone());
 
         assert_eq!(
             handler.current_file_path(),
-            PathBuf::from("/tmp/test-session/000-context.md")
+            folder.join("000-context.md")
         );
 
         handler.file_index.store(3, Ordering::SeqCst);
         assert_eq!(
             handler.current_file_path(),
-            PathBuf::from("/tmp/test-session/003-context.md")
+            folder.join("003-context.md")
         );
 
         handler.file_index.store(42, Ordering::SeqCst);
         assert_eq!(
             handler.current_file_path(),
-            PathBuf::from("/tmp/test-session/042-context.md")
+            folder.join("042-context.md")
         );
     }
 
     #[test]
     fn test_increment_file_index() {
-        let handler = PersistenceHandler::new(PathBuf::from("/tmp/test"));
+        let handler = PersistenceHandler::new(test_path("test"));
 
         assert_eq!(handler.file_index(), 0);
 
@@ -580,17 +587,18 @@ mod tests {
 
     #[test]
     fn test_handler_debug() {
-        let handler = PersistenceHandler::new(PathBuf::from("/tmp/test"));
+        let folder = test_path("test");
+        let handler = PersistenceHandler::new(folder.clone());
         let debug = format!("{:?}", handler);
 
         assert!(debug.contains("PersistenceHandler"));
         assert!(debug.contains("persist"));
-        assert!(debug.contains("/tmp/test"));
+        assert!(debug.contains(&folder.to_string_lossy().to_string()));
     }
 
     #[test]
     fn test_handler_no_dependencies() {
-        let handler = PersistenceHandler::new(PathBuf::from("/tmp/test"));
+        let handler = PersistenceHandler::new(test_path("test"));
         assert!(handler.depends_on().is_empty());
     }
 
@@ -600,9 +608,10 @@ mod tests {
         let handler = PersistenceHandler::new(dir.path().to_path_buf());
 
         let mut ctx = RingHandlerContext::new();
+        let mock_path = test_path("test.txt");
         let event = Arc::new(SessionEvent::ToolCalled {
             name: "read_file".into(),
-            args: json!({"path": "/tmp/test.txt"}),
+            args: json!({"path": mock_path.to_string_lossy()}),
         });
 
         handler.handle(&mut ctx, event.clone(), 42).await.unwrap();
@@ -782,11 +791,11 @@ mod tests {
                 error: None,
             },
             SessionEvent::SessionStarted {
-                config: crate::reactor::SessionEventConfig::new("test").with_folder("/tmp/test"),
+                config: crate::reactor::SessionEventConfig::new("test").with_folder(test_path("test")),
             },
             SessionEvent::SessionCompacted {
                 summary: "Session summary".into(),
-                new_file: PathBuf::from("/tmp/001-context.md"),
+                new_file: test_path("001-context.md"),
             },
             SessionEvent::SessionEnded {
                 reason: "User ended session".into(),
@@ -837,7 +846,7 @@ mod tests {
 
     #[test]
     fn test_file_index_zero_padding() {
-        let handler = PersistenceHandler::new(PathBuf::from("/tmp/test"));
+        let handler = PersistenceHandler::new(test_path("test"));
 
         // Test various indices for proper zero-padding
         handler.file_index.store(0, Ordering::SeqCst);

@@ -848,13 +848,17 @@ mod tests {
         matches!(&backend, StorageBackendType::InMemory);
         matches!(&cloned, StorageBackendType::InMemory);
 
+        let test_dir = std::env::temp_dir()
+            .join("crucible_test_clone")
+            .to_string_lossy()
+            .into_owned();
         let file_backend = StorageBackendType::FileBased {
-            directory: "/tmp".to_string(),
+            directory: test_dir.clone(),
             create_if_missing: true,
         };
         let cloned_file = file_backend.clone();
-        matches!(&file_backend, StorageBackendType::FileBased { directory, .. } if directory == "/tmp");
-        matches!(&cloned_file, StorageBackendType::FileBased { directory, .. } if directory == "/tmp");
+        matches!(&file_backend, StorageBackendType::FileBased { directory, .. } if *directory == test_dir);
+        matches!(&cloned_file, StorageBackendType::FileBased { directory, .. } if *directory == test_dir);
     }
 
     #[test]

@@ -1483,6 +1483,11 @@ mod tests {
     use crucible_core::types::acp::SessionConfig;
     use serde_json::json;
 
+    /// Cross-platform test path helper
+    fn test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("crucible_test_{}", name))
+    }
+
     #[test]
     fn test_client_creation() {
         let config = ClientConfig {
@@ -1601,7 +1606,7 @@ mod tests {
     #[test]
     fn streaming_state_adds_padding_after_tools() {
         let config = ClientConfig {
-            agent_path: PathBuf::from("/tmp/agent"),
+            agent_path: test_path("agent"),
             agent_args: None,
             working_dir: None,
             env_vars: None,
@@ -1697,7 +1702,7 @@ mod tests {
     #[tokio::test]
     async fn process_streaming_message_prioritizes_methods() {
         let config = ClientConfig {
-            agent_path: PathBuf::from("/tmp/test-agent"),
+            agent_path: test_path("test-agent"),
             agent_args: None,
             working_dir: None,
             env_vars: None,
@@ -1725,7 +1730,7 @@ mod tests {
     #[tokio::test]
     async fn process_streaming_message_returns_prompt_response() {
         let config = ClientConfig {
-            agent_path: PathBuf::from("/tmp/test-agent"),
+            agent_path: test_path("test-agent"),
             agent_args: None,
             working_dir: None,
             env_vars: None,
@@ -1754,7 +1759,7 @@ mod tests {
     #[tokio::test]
     async fn process_streaming_message_tracks_available_commands() {
         let config = ClientConfig {
-            agent_path: PathBuf::from("/tmp/test-agent"),
+            agent_path: test_path("test-agent"),
             agent_args: None,
             working_dir: None,
             env_vars: None,
@@ -1801,7 +1806,7 @@ mod tests {
     #[test]
     fn tool_call_indents_after_text() {
         let config = ClientConfig {
-            agent_path: PathBuf::from("/tmp/test-agent"),
+            agent_path: test_path("test-agent"),
             agent_args: None,
             working_dir: None,
             env_vars: None,
@@ -1831,7 +1836,7 @@ mod tests {
     #[test]
     fn tool_call_updates_existing_entry() {
         let config = ClientConfig {
-            agent_path: PathBuf::from("/tmp/test-agent"),
+            agent_path: test_path("test-agent"),
             agent_args: None,
             working_dir: None,
             env_vars: None,
@@ -2447,7 +2452,7 @@ mod tests {
         use tempfile::NamedTempFile;
 
         let config = ClientConfig {
-            agent_path: PathBuf::from("/tmp/agent"),
+            agent_path: test_path("agent"),
             agent_args: None,
             working_dir: None,
             env_vars: None,
@@ -2485,7 +2490,7 @@ mod tests {
         use tempfile::NamedTempFile;
 
         let config = ClientConfig {
-            agent_path: PathBuf::from("/tmp/agent"),
+            agent_path: test_path("agent"),
             agent_args: None,
             working_dir: None,
             env_vars: None,
@@ -2525,7 +2530,7 @@ mod tests {
     #[test]
     fn test_generate_diff_skips_read_operations() {
         let config = ClientConfig {
-            agent_path: PathBuf::from("/tmp/agent"),
+            agent_path: test_path("agent"),
             agent_args: None,
             working_dir: None,
             env_vars: None,
@@ -2535,9 +2540,10 @@ mod tests {
         let client = CrucibleAcpClient::new(config);
 
         // Read operation should not generate diff
+        let test_file = test_path("test.md");
         let tool_call = ToolCallInfo::new("read_note")
             .with_id("tool-1")
-            .with_arguments(json!({"path": "/tmp/test.md"}));
+            .with_arguments(json!({"path": test_file.to_string_lossy()}));
 
         let diff = client.generate_diff_for_write(&tool_call);
         assert!(
@@ -2552,7 +2558,7 @@ mod tests {
         use tempfile::NamedTempFile;
 
         let config = ClientConfig {
-            agent_path: PathBuf::from("/tmp/agent"),
+            agent_path: test_path("agent"),
             agent_args: None,
             working_dir: None,
             env_vars: None,
@@ -2618,7 +2624,7 @@ mod tests {
     fn test_streaming_state_consecutive_tools_no_double_spacing() {
         // RED: Multiple consecutive tools should be in one block with single spacing
         let config = ClientConfig {
-            agent_path: PathBuf::from("/tmp/test-agent"),
+            agent_path: test_path("test-agent"),
             agent_args: None,
             working_dir: None,
             env_vars: None,
@@ -2649,7 +2655,7 @@ mod tests {
     fn test_streaming_state_text_tool_text_formatting() {
         // RED: Text -> Tools -> Text should have proper separation
         let config = ClientConfig {
-            agent_path: PathBuf::from("/tmp/test-agent"),
+            agent_path: test_path("test-agent"),
             agent_args: None,
             working_dir: None,
             env_vars: None,
