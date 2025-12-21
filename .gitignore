@@ -11,6 +11,9 @@ yarn-error.log*
 package-lock.json
 pnpm-lock.yaml
 
+# Windows special files
+nul
+
 # Build outputs
 dist/
 build/
