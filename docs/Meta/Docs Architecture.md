@@ -1,19 +1,19 @@
 ---
-title: Dev Kiln Architecture
-description: Structure, purpose, and conventions for the Crucible dev-kiln documentation system
+title: Documentation Architecture
+description: Structure, purpose, and conventions for the Crucible documentation kiln
 tags:
   - meta
   - architecture
   - documentation
 ---
 
-# Dev Kiln Architecture
+# Documentation Architecture
 
-This document defines the structure, purpose, and conventions for the Crucible dev-kiln - a self-documenting, self-testing example kiln.
+This document defines the structure, purpose, and conventions for the Crucible documentation — a reference kiln that serves as both user documentation and test fixture.
 
 ## Purpose
 
-The dev-kiln serves four roles:
+The docs kiln serves four roles:
 
 1. **User Guide** - Tutorial content for learning Crucible
 2. **Reference System** - `:h`-style queryable documentation
@@ -23,7 +23,7 @@ The dev-kiln serves four roles:
 ## Directory Structure
 
 ```
-examples/dev-kiln/
+docs/
 │
 ├── Index.md                    # Entry point, links to all sections
 │
@@ -101,8 +101,8 @@ examples/dev-kiln/
 │   └── Daily Summary.rn
 │
 ├── Meta/                       # About this kiln
-│   ├── Dev Kiln Architecture.md  # This file
-│   └── Dogfooding Notes.md
+│   ├── Docs Architecture.md    # This file
+│   └── Plugin User Stories.md  # Plugin system design
 │
 └── Config.toml                 # Kiln configuration
 ```
