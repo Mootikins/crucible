@@ -31,27 +31,21 @@ Each kiln (knowledge base) can have its own configuration:
 
 - **Kiln config**: `KILN_ROOT/.crucible/` directory
   - Database: `KILN_ROOT/.crucible/kiln.db`
-  - Kiln-specific tools: `KILN_ROOT/.crucible/tools/`
-  - Kiln-specific agents: `KILN_ROOT/.crucible/agents/`
-  - Kiln-specific hooks: `KILN_ROOT/.crucible/hooks/`
-  - Kiln-specific events: `KILN_ROOT/.crucible/events/`
+  - Plugins: `KILN_ROOT/.crucible/plugins/`
+  - Agents: `KILN_ROOT/.crucible/agents/`
 
 ### Discovery Paths
 
-Crucible searches for resources (tools, hooks, events, agents) in the following order:
+Crucible searches for plugins and agents in the following order:
 
 1. **Kiln-specific** (highest priority):
-   - `KILN_ROOT/.crucible/tools/`
-   - `KILN_ROOT/.crucible/hooks/`
-   - `KILN_ROOT/.crucible/events/`
+   - `KILN_ROOT/.crucible/plugins/`
    - `KILN_ROOT/.crucible/agents/`
 
 2. **Global user directories**:
-   - **Windows**: `%APPDATA%\crucible\{tools,hooks,events,agents}\`
+   - **Windows**: `%APPDATA%\crucible\plugins\`, `%APPDATA%\crucible\agents\`
 
-3. **Additional paths** from `config.toml`:
-   - `agent_directories` field
-   - `discovery.tools.additional_paths`
+3. **Additional paths** from `config.toml`
 
 ### Creating Your Configuration File
 
