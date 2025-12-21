@@ -430,7 +430,7 @@ Some text in section 2.
 #[tokio::test]
 async fn test_pipeline_skip_unchanged_files() {
     // Create pipeline
-    let (pipeline, change_detector, _merkle_store, enrichment_service, storage) =
+    let (pipeline, _change_detector, _merkle_store, enrichment_service, storage) =
         create_test_pipeline();
 
     // Create a test file
@@ -476,7 +476,7 @@ async fn test_pipeline_force_reprocess() {
         skip_enrichment: false,
         force_reprocess: true,
     };
-    let (pipeline, change_detector, _merkle_store, enrichment_service, storage) =
+    let (pipeline, _change_detector, _merkle_store, enrichment_service, storage) =
         create_test_pipeline_with_config(config);
 
     // Create a test file
@@ -658,7 +658,7 @@ async fn test_pipeline_storage_error_handling() {
 #[tokio::test]
 async fn test_pipeline_detects_content_changes() {
     // Create pipeline
-    let (pipeline, _change_detector, merkle_store, enrichment_service, storage) =
+    let (pipeline, _change_detector, _merkle_store, enrichment_service, _storage) =
         create_test_pipeline();
 
     // Create initial file
@@ -699,7 +699,7 @@ async fn test_pipeline_detects_content_changes() {
 async fn test_pipeline_no_changes_after_merkle_diff() {
     // This test verifies the NoChanges result when Merkle diff finds no changes
 
-    let (pipeline, _change_detector, merkle_store, enrichment_service, storage) =
+    let (pipeline, _change_detector, merkle_store, enrichment_service, _storage) =
         create_test_pipeline();
 
     // Create a test file
@@ -714,7 +714,7 @@ async fn test_pipeline_no_changes_after_merkle_diff() {
     let stored_tree = merkle_store.retrieve(&path_str).await.ok();
     assert!(stored_tree.is_some(), "Tree should be stored");
 
-    let initial_enrich_count = enrichment_service.enrich_with_tree_count();
+    let _initial_enrich_count = enrichment_service.enrich_with_tree_count();
 
     // Modify file metadata (touch) but not content
     // This would bypass Phase 1 (file hash) but Merkle diff should catch it

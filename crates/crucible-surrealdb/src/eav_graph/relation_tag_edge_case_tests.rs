@@ -430,7 +430,7 @@ mod edge_cases {
         let store = EAVGraphStore::new(client.clone());
         let ingestor = NoteIngestor::new(&store);
 
-        let entity_id = ingestor.ingest(&doc, "test.md").await.unwrap();
+        let _entity_id = ingestor.ingest(&doc, "test.md").await.unwrap();
 
         // Verify tags were created
         let project = store
@@ -479,9 +479,9 @@ mod edge_cases {
         let ingestor = NoteIngestor::new(&store);
 
         // Store tags and ingest both documents
-        let entity_id1 = ingestor.ingest(&doc1, "doc1.md").await.unwrap();
+        let _entity_id1 = ingestor.ingest(&doc1, "doc1.md").await.unwrap();
 
-        let entity_id2 = ingestor.ingest(&doc2, "doc2.md").await.unwrap();
+        let _entity_id2 = ingestor.ingest(&doc2, "doc2.md").await.unwrap();
 
         // Should only have 1 'shared' tag despite 2 documents using it
         let tag = store
@@ -617,7 +617,7 @@ mod edge_cases {
         doc2.tags.push(Tag::new("project/ai/nlp", 0));
 
         // Ingest documents - tags are automatically associated during ingestion
-        let entity1 = ingestor.ingest(&doc1, "doc1.md").await.unwrap();
+        let _entity1 = ingestor.ingest(&doc1, "doc1.md").await.unwrap();
         let entity2 = ingestor.ingest(&doc2, "doc2.md").await.unwrap();
 
         // Search for leaf tag

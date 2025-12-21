@@ -1405,10 +1405,11 @@ pub struct DatabaseConfig {
 }
 
 /// Supported database types.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum DatabaseType {
     /// SQLite database.
+    #[default]
     Sqlite,
     /// PostgreSQL database.
     Postgres,
@@ -1418,12 +1419,6 @@ pub enum DatabaseType {
     Surrealdb,
     /// Custom database type.
     Custom(String),
-}
-
-impl Default for DatabaseType {
-    fn default() -> Self {
-        Self::Sqlite
-    }
 }
 
 /// Cache configuration.
@@ -1457,10 +1452,11 @@ pub struct CacheConfig {
 }
 
 /// Supported cache types.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum CacheType {
     /// In-memory LRU cache.
+    #[default]
     Lru,
     /// In-memory TTL cache.
     Ttl,
@@ -1468,12 +1464,6 @@ pub enum CacheType {
     Redis,
     /// No caching.
     None,
-}
-
-impl Default for CacheType {
-    fn default() -> Self {
-        Self::Lru
-    }
 }
 
 fn default_cache_max_size() -> usize {

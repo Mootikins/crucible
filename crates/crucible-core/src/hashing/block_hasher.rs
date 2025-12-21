@@ -1427,7 +1427,7 @@ mod tests {
         use crate::hashing::algorithm::Blake3Algorithm;
         let hasher = BlockHasher::new(Blake3Algorithm);
 
-        let blocks = vec![
+        let blocks = [
             ASTBlock::new(
                 ASTBlockType::Heading,
                 "Heading".to_string(),

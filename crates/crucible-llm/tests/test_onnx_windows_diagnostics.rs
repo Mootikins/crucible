@@ -10,8 +10,6 @@
 
 #[cfg(feature = "fastembed")]
 mod fastembed_diagnostics {
-    use crucible_llm::embeddings::{create_provider, EmbeddingConfig};
-    use std::env;
 
     /// Test that verifies ONNX Runtime can be initialized on Windows
     #[tokio::test]
@@ -23,8 +21,14 @@ mod fastembed_diagnostics {
         // Log environment information
         println!("Environment Information:");
         println!("  OS: Windows");
-        println!("  Target: {}", env::var("TARGET").unwrap_or_else(|_| "unknown".to_string()));
-        if let Ok(rustc) = std::process::Command::new("rustc").arg("--version").output() {
+        println!(
+            "  Target: {}",
+            env::var("TARGET").unwrap_or_else(|_| "unknown".to_string())
+        );
+        if let Ok(rustc) = std::process::Command::new("rustc")
+            .arg("--version")
+            .output()
+        {
             if let Ok(version) = String::from_utf8(rustc.stdout) {
                 println!("  Rust Version: {}", version.trim());
             }
@@ -33,7 +37,8 @@ mod fastembed_diagnostics {
 
         // Check for Visual C++ Redistributable
         println!("Checking for Visual C++ Redistributable...");
-        let vc_redist_installed = std::path::Path::new("C:\\Windows\\System32\\msvcp140.dll").exists()
+        let vc_redist_installed = std::path::Path::new("C:\\Windows\\System32\\msvcp140.dll")
+            .exists()
             || std::path::Path::new("C:\\Windows\\System32\\vcruntime140.dll").exists();
         println!("  VCRuntime DLLs found: {}", vc_redist_installed);
         if !vc_redist_installed {
@@ -54,7 +59,7 @@ mod fastembed_diagnostics {
         // Try to create FastEmbed provider
         println!("Attempting to create FastEmbed provider...");
         let config = EmbeddingConfig::fastembed(None, None, None);
-        
+
         match create_provider(config).await {
             Ok(provider) => {
                 println!("  ✓ Provider created successfully");
@@ -108,14 +113,14 @@ mod fastembed_diagnostics {
     fn test_log_dependency_versions() {
         println!("=== Dependency Version Information ===");
         println!();
-        
+
         // Read Cargo.lock to get versions
         let cargo_lock = std::path::Path::new("Cargo.lock");
         if cargo_lock.exists() {
             if let Ok(contents) = std::fs::read_to_string(cargo_lock) {
                 let lines: Vec<&str> = contents.lines().collect();
                 let deps_to_check = ["fastembed", "ort", "ort-sys", "esaxx-rs", "tokenizers"];
-                
+
                 for dep_name in &deps_to_check {
                     let search_str = format!("name = \"{}\"", dep_name);
                     for (i, line) in lines.iter().enumerate() {
@@ -152,7 +157,9 @@ mod fastembed_diagnostics {
                 if contents.contains("target-feature=-crt-static") {
                     println!("  ✓ Dynamic runtime (MD) configured correctly");
                 } else if contents.contains("target-feature=+crt-static") {
-                    println!("  ✗ Static runtime (MT) configured - may cause issues with ONNX Runtime");
+                    println!(
+                        "  ✗ Static runtime (MT) configured - may cause issues with ONNX Runtime"
+                    );
                 } else {
                     println!("  ? Runtime configuration not explicitly set");
                 }
@@ -164,4 +171,3 @@ mod fastembed_diagnostics {
         println!();
     }
 }
-

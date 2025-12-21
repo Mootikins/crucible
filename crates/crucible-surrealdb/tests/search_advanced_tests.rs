@@ -227,7 +227,7 @@ async fn fuzzy_typo_tolerance() {
 #[tokio::test]
 async fn fuzzy_phonetic() {
     // Arrange: Words that sound similar
-    let phonetic_pairs = [
+    let _phonetic_pairs = [
         ("color", "colour"),
         ("organize", "organise"),
         ("analyze", "analyse"),
@@ -279,7 +279,7 @@ async fn fuzzy_stemming() {
 #[tokio::test]
 async fn fuzzy_prefix_matching() {
     // Arrange: Partial words that should match full words
-    let prefix_tests = vec![
+    let _prefix_tests = vec![
         ("proj", "project"),      // Should match "project", "projects", etc.
         ("tech", "technical"),    // Should match "technical", "technology"
         ("doc", "documentation"), // Should match "document", "documentation"
@@ -340,7 +340,7 @@ async fn domain_technical_code_blocks() {
 #[tokio::test]
 async fn domain_business_project_status() {
     // Arrange: Search for projects with different statuses
-    let statuses = ["active", "completed", "on-hold", "planning"];
+    let _statuses = ["active", "completed", "on-hold", "planning"];
 
     // Expected: Should find projects matching each status
     // Project Management has status: active

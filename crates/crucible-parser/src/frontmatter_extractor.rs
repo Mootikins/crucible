@@ -86,9 +86,10 @@ pub struct ExtractionStats {
 }
 
 /// Detected line ending style
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LineEndingStyle {
     /// Unix style (\n)
+    #[default]
     Unix,
     /// Windows style (\r\n)
     Windows,
@@ -96,12 +97,6 @@ pub enum LineEndingStyle {
     OldMac,
     /// Mixed line endings
     Mixed,
-}
-
-impl Default for LineEndingStyle {
-    fn default() -> Self {
-        Self::Unix
-    }
 }
 
 /// Comprehensive frontmatter extractor

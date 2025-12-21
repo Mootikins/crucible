@@ -84,7 +84,7 @@ impl ClusteringService for DefaultClusteringService {
         Ok(json)
     }
 
-    async fn get_statistics(&self, config: &ClusterConfig) -> Result<serde_json::Value> {
+    async fn get_statistics(&self, _config: &ClusterConfig) -> Result<serde_json::Value> {
         let stats = self.tools.get_document_stats().await?;
         let json = serde_json::to_value(&stats)?;
         Ok(json)

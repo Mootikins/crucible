@@ -289,7 +289,7 @@ async fn test_clustering_quality_metrics() {
         return;
     }
 
-    let documents = load_documents_from_path(&test_kiln_path)
+    let _documents = load_documents_from_path(&test_kiln_path)
         .await
         .expect("Failed to load documents");
 
@@ -359,7 +359,7 @@ async fn test_clustering_quality_metrics() {
 
 /// Load documents from a directory path
 async fn load_documents_from_path(
-    path: &Path,
+    _path: &Path,
 ) -> Result<Vec<DocumentInfo>, Box<dyn std::error::Error>> {
     let mut documents = Vec::new();
 
@@ -421,7 +421,7 @@ async fn load_documents_from_path(
         ),
     ];
 
-    for (filename, doc_type, tags, outbound_links) in test_files {
+    for (filename, _doc_type, tags, outbound_links) in test_files {
         documents.push(DocumentInfo {
             file_path: filename.to_string(),
             title: Some(filename.replace(".md", "")),

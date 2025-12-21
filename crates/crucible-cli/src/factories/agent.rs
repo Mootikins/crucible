@@ -16,18 +16,13 @@ use crucible_core::traits::tools::ToolExecutor;
 use crucible_llm::text_generation;
 
 /// Agent type selection
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum AgentType {
     /// External ACP agent (claude-code, etc.)
+    #[default]
     Acp,
     /// Internal direct LLM agent
     Internal,
-}
-
-impl Default for AgentType {
-    fn default() -> Self {
-        Self::Acp // Default to ACP for backwards compatibility
-    }
 }
 
 /// Agent initialization parameters

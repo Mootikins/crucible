@@ -31,19 +31,14 @@ use std::time::SystemTime;
 use tracing::{debug, info};
 
 /// Parser backend selection
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ParserBackend {
     /// Use CrucibleParser (default, regex-based extraction)
+    #[default]
     Default,
     /// Use markdown-it-rust based parser (AST-based, requires feature flag)
     #[cfg(feature = "markdown-it-parser")]
     MarkdownIt,
-}
-
-impl Default for ParserBackend {
-    fn default() -> Self {
-        Self::Default
-    }
 }
 
 /// Configuration for pipeline behavior
@@ -475,7 +470,7 @@ mod tests {
         let mut temp_file = NamedTempFile::new().unwrap();
         // Write some content that might cause issues (actual failure will depend on parser)
         writeln!(temp_file, "# Test").unwrap();
-        let file_path = temp_file.path();
+        let _file_path = temp_file.path();
 
         // When we implement this test properly with mocks, we'll verify:
         // - Error contains file path: assert!(error_msg.contains(file_path.display()))

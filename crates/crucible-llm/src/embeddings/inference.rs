@@ -10,9 +10,10 @@ use super::error::{EmbeddingError, EmbeddingResult};
 use std::path::Path;
 
 /// Device type for inference acceleration
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum DeviceType {
     /// Automatic detection (prefer GPU, fallback to CPU)
+    #[default]
     Auto,
     /// CPU only
     Cpu,
@@ -26,12 +27,6 @@ pub enum DeviceType {
     Rocm,
     /// OpenCL (cross-platform GPU)
     OpenCL,
-}
-
-impl Default for DeviceType {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 impl DeviceType {
@@ -205,7 +200,7 @@ impl BackendFactory {
     /// Detect the best backend for a given model file
     pub fn detect_backend(
         model_path: &Path,
-        preferred_device: DeviceType,
+        _preferred_device: DeviceType,
     ) -> EmbeddingResult<Box<dyn InferenceBackend>> {
         let format = ModelFormat::from_path(model_path);
 

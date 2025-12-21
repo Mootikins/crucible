@@ -186,11 +186,12 @@ impl Default for EmbeddingEventMetadata {
 /// the same priority levels (`Low`, `Normal`, `High`, `Critical`) and integrates with
 /// the unified `SessionEvent` system.
 #[deprecated(since = "0.1.0", note = "Use crucible_core::events::Priority instead")]
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum EmbeddingEventPriority {
     /// Low priority - background processing
     Low = 1,
     /// Normal priority - standard processing
+    #[default]
     Normal = 2,
     /// High priority - user-initiated changes
     High = 3,
@@ -199,11 +200,6 @@ pub enum EmbeddingEventPriority {
 }
 
 #[allow(deprecated)]
-impl Default for EmbeddingEventPriority {
-    fn default() -> Self {
-        Self::Normal
-    }
-}
 
 /// Result of processing an embedding event.
 ///
