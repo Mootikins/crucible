@@ -1,8 +1,10 @@
 //! Event handler system - discovers and executes Rune scripts for events
 //!
 //! Scripts are discovered from:
-//! - `~/.crucible/events/<event_name>/`
-//! - `KILN/.crucible/events/<event_name>/`
+//! - `~/.config/crucible/plugins/`
+//! - `KILN/.crucible/plugins/`
+//!
+//! Note: Event handlers are now unified with hooks via `#[hook(...)]` attributes.
 
 use crate::discovery_paths::DiscoveryPaths;
 use crate::events::{CrucibleEvent, EnrichedRecipe};
@@ -27,11 +29,14 @@ impl EventHandlerConfig {
     /// Create config with default directories
     ///
     /// Default directories:
-    /// - `~/.crucible/events/` (global)
-    /// - `KILN/.crucible/events/` (kiln-specific, if provided)
+    /// - `~/.config/crucible/plugins/` (global personal)
+    /// - `KILN/.crucible/plugins/` (kiln-specific)
+    ///
+    /// Note: Event handlers are now unified with hooks. Use `#[hook(event = "...", ...)]`
+    /// attributes in plugin scripts instead of the events/ subdirectory pattern.
     pub fn with_defaults(kiln_path: Option<&Path>) -> Self {
         Self {
-            discovery_paths: DiscoveryPaths::new("events", kiln_path),
+            discovery_paths: DiscoveryPaths::new("plugins", kiln_path),
         }
     }
 
@@ -379,7 +384,8 @@ mod tests {
     fn test_event_handler_config_with_kiln() {
         let kiln_path = test_path("test-kiln");
         let config = EventHandlerConfig::with_defaults(Some(&kiln_path));
-        let expected = kiln_path.join(".crucible").join("events");
+        // Now uses unified plugins directory
+        let expected = kiln_path.join(".crucible").join("plugins");
         assert!(config.base_directories().iter().any(|p| p == &expected));
     }
 
