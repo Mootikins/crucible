@@ -5,6 +5,8 @@ tags:
   - guide
   - beginner
 order: 2
+created: 2025-02-05
+modified: 2025-02-10
 ---
 
 # Your First Kiln
