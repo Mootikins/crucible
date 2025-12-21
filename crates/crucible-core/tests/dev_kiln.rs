@@ -1,6 +1,6 @@
 //! Dev-Kiln Documentation Validation Tests
 //!
-//! These tests validate the integrity and quality of the `examples/dev-kiln/` documentation.
+//! These tests validate the integrity and quality of the `docs/` documentation kiln.
 //! They follow TDD (RED-GREEN-REFACTOR) methodology:
 //!
 //! 1. RED: Tests are written to FAIL initially
@@ -21,8 +21,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-/// Base path to dev-kiln (relative to workspace root)
-const DEV_KILN_PATH: &str = "examples/dev-kiln";
+/// Base path to docs kiln (relative to workspace root)
+const DEV_KILN_PATH: &str = "docs";
 
 /// Get absolute path to dev-kiln from workspace root
 fn dev_kiln_root() -> PathBuf {

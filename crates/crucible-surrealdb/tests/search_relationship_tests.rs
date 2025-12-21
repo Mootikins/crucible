@@ -3,7 +3,7 @@
 //! This module implements TDD tests for the relationship-based search features
 //! in Crucible. Tests are organized by relationship type.
 //!
-//! All tests use the dev-kiln at `examples/dev-kiln/` for realistic test data.
+//! All tests use the docs kiln at `docs/` for realistic test data.
 //!
 //! Test Categories:
 //! - Basic Wikilinks
