@@ -24,7 +24,12 @@
 # the dynamic runtime by default.)
 rustflags = ["-C", "target-feature=-crt-static"]
 
+# Note: The rustflags above apply to both the main build and native dependencies
+# The `cc` crate (used by esaxx-rs, tokenizers, etc.) will inherit these settings
+# and use dynamic runtime (/MD) to match ONNX Runtime
+
 # Note: If you need static runtime instead (not recommended with ort_sys):
-# 1. Comment out the rustflags line above
+# 1. Comment out the rustflags lines above
 # 2. Ensure native dependencies use "/MT" consistently
 # 3. This will likely cause linker errors with ort_sys (ONNX Runtime)
+# 4. You may need to patch or rebuild ort_sys with static runtime
