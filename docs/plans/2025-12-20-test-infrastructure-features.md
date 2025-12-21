@@ -12,14 +12,14 @@ Add workspace-level feature flags that gate tests requiring specific infrastruct
 
 ## Feature Flags
 
-Defined at workspace level in root `Cargo.toml`:
+Defined per-crate (Cargo doesn't support workspace-level features):
 
-| Feature | Requirements | Env Vars |
-|---------|--------------|----------|
-| `test-local-kiln` | Developer's personal vault | `CRUCIBLE_KILN_PATH` |
-| `test-ollama` | Running Ollama server | `OLLAMA_HOST` (optional) |
-| `test-embeddings` | Embedding API endpoint | `EMBEDDING_ENDPOINT`, `EMBEDDING_MODEL` |
-| `test-onnx-download` | Network + ~100MB disk | None |
+| Feature | Crate(s) | Requirements | Env Vars |
+|---------|----------|--------------|----------|
+| `test-local-kiln` | crucible-surrealdb | Developer's personal vault | `CRUCIBLE_KILN_PATH` |
+| `test-ollama` | crucible-llm | Running Ollama server | `OLLAMA_HOST` (optional) |
+| `test-embeddings` | crucible-llm, crucible-surrealdb, crucible-cli | Embedding API endpoint | `EMBEDDING_ENDPOINT`, `EMBEDDING_MODEL` |
+| `test-onnx-download` | crucible-llm | Network + ~100MB disk | None |
 
 **Not gated** (always available):
 - `tempfile::TempDir` — OS-agnostic temp directories
@@ -27,18 +27,26 @@ Defined at workspace level in root `Cargo.toml`:
 
 ## Implementation
 
-### 1. Workspace Features
+### 1. Per-Crate Features
+
+Features are defined in each crate's `Cargo.toml`:
 
 ```toml
-# Root Cargo.toml
-[workspace.features]
-test-local-kiln = []
+# crates/crucible-llm/Cargo.toml
+[features]
 test-ollama = []
 test-embeddings = []
 test-onnx-download = []
-```
 
-Each crate re-exports relevant features in its own `[features]` section.
+# crates/crucible-surrealdb/Cargo.toml
+[features]
+test-local-kiln = []
+test-embeddings = []
+
+# crates/crucible-cli/Cargo.toml
+[features]
+test-embeddings = []
+```
 
 ### 2. OS-Agnostic Temp Paths
 
@@ -87,11 +95,19 @@ EMBEDDING_ENDPOINT = "https://llama.example.com"
 EMBEDDING_MODEL = "nomic-embed-text-v1.5-q8_0"
 ```
 
-Run infrastructure tests:
+Run infrastructure tests (per-crate):
 
 ```bash
-cargo test --features test-ollama
-cargo test --features test-embeddings,test-local-kiln
+# Run Ollama tests in crucible-llm
+cargo test -p crucible-llm --features test-ollama
+
+# Run embedding tests in all crates that have them
+cargo test -p crucible-llm --features test-embeddings
+cargo test -p crucible-surrealdb --features test-embeddings
+cargo test -p crucible-cli --features test-embeddings
+
+# Run local kiln tests
+cargo test -p crucible-surrealdb --features test-local-kiln
 ```
 
 ### 5. CI Integration
