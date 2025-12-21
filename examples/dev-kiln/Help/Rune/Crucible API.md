@@ -1,11 +1,13 @@
 ---
-title: Crucible API
 description: Built-in functions available in Rune plugins for interacting with your kiln
 status: implemented
 tags:
   - rune
   - api
   - reference
+aliases:
+  - Rune API
+  - Plugin API
 ---
 
 # Crucible API
