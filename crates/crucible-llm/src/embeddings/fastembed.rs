@@ -319,7 +319,7 @@ impl FastEmbedProvider {
                 .map_err(|e| {
                     let error_str = e.to_string();
                     let mut error_msg = format!("Failed to load ONNX model: {}", error_str);
-                    
+
                     #[cfg(target_os = "windows")]
                     {
                         // Add Windows-specific diagnostic information
@@ -346,7 +346,7 @@ impl FastEmbedProvider {
                             );
                         }
                     }
-                    
+
                     tracing::error!("FastEmbed model loading error: {}", error_msg);
                     EmbeddingError::ProviderError {
                         provider: "FastEmbed".to_string(),
@@ -369,8 +369,8 @@ impl FastEmbedProvider {
         let model_arc = Arc::clone(&self.model);
         let batch_size = self.config.batch_size;
 
-            // Run embedding in blocking thread pool
-            let embeddings =
+        // Run embedding in blocking thread pool
+        let embeddings =
                 tokio::task::spawn_blocking(move || -> Result<Vec<Vec<f32>>, fastembed::Error> {
                     // Get lock inside the blocking task
                     let mut model_guard = model_arc.blocking_lock();
@@ -402,7 +402,7 @@ impl FastEmbedProvider {
                 .map_err(|e| {
                     let error_str = e.to_string();
                     let mut error_msg = format!("Failed to generate embeddings: {}", error_str);
-                    
+
                     #[cfg(target_os = "windows")]
                     {
                         if error_str.contains("DLL") || error_str.contains("dll") {
@@ -411,7 +411,7 @@ impl FastEmbedProvider {
                             );
                         }
                     }
-                    
+
                     EmbeddingError::ProviderError {
                         provider: "FastEmbed".to_string(),
                         message: error_msg,
@@ -624,11 +624,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_fastembed_batch_embedding() {
-        let config = super::super::config::EmbeddingConfig::fastembed(
-            None,
-            Some(test_cache_path()),
-            None,
-        );
+        let config =
+            super::super::config::EmbeddingConfig::fastembed(None, Some(test_cache_path()), None);
         let provider = FastEmbedProvider::new(config).unwrap();
 
         let texts = vec![
@@ -654,11 +651,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_fastembed_error_handling() {
-        let config = super::super::config::EmbeddingConfig::fastembed(
-            None,
-            Some(test_cache_path()),
-            None,
-        );
+        let config =
+            super::super::config::EmbeddingConfig::fastembed(None, Some(test_cache_path()), None);
         let provider = FastEmbedProvider::new(config).unwrap();
 
         // Test empty text
