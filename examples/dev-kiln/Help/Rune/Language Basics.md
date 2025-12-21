@@ -1,11 +1,13 @@
 ---
-title: Rune Language Basics
 description: Fundamentals of the Rune scripting language for Crucible plugins
 status: implemented
 tags:
   - rune
   - scripting
   - reference
+aliases:
+  - Rune Basics
+  - Rune Syntax
 ---
 
 # Rune Language Basics
@@ -222,4 +224,6 @@ println("Debug: {:?}", complex_value);
 
 - [[Help/Rune/Crucible API]] - Available functions
 - [[Help/Rune/Best Practices]] - Writing good plugins
+- [[Help/Rune/Error Handling]] - Error handling patterns
+- [[Help/Rune/Tool Definition]] - Creating tools with metadata
 - [[Help/Extending/Creating Plugins]] - Plugin overview

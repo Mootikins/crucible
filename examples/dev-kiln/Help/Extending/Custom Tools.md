@@ -1,10 +1,12 @@
 ---
-title: Custom Tools
 description: How to create custom tools for Crucible agents
 tags:
   - help
   - extending
   - tools
+aliases:
+  - Creating Tools
+  - Tool Development
 ---
 
 # Custom Tools
@@ -57,5 +59,7 @@ parameters:
 
 ## See Also
 
+- [[Help/Rune/Tool Definition]] - Tool and param attributes
 - [[Help/Extending/Creating Plugins]] - Plugin development guide
+- [[Help/Extending/MCP Gateway]] - External tool integration
 - [[Scripts/Auto Tagging]] - Example Rune script

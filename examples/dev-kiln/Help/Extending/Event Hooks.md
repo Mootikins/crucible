@@ -1,5 +1,4 @@
 ---
-title: Event Hooks
 description: React to events in your kiln with Rune scripts
 status: implemented
 tags:
@@ -7,6 +6,9 @@ tags:
   - hooks
   - rune
   - events
+aliases:
+  - Hooks
+  - Rune Hooks
 ---
 
 # Event Hooks
@@ -202,6 +204,8 @@ pub fn conditional(ctx, event) {
 
 ## See Also
 
+- [[Help/Rune/Event Types]] - Complete event type reference
+- [[Help/Rune/Error Handling]] - Fail-open semantics
 - [[Help/Rune/Language Basics]] - Rune syntax
 - [[Help/Rune/Crucible API]] - Available functions
 - [[Help/Extending/MCP Gateway]] - External tool integration
