@@ -230,6 +230,34 @@ cargo nextest run      # Same as above
 cargo test --workspace # Fallback to cargo test
 ```
 
+### Test Infrastructure Features
+
+Some tests require external infrastructure (Ollama, embedding endpoints, developer vaults). These are gated behind feature flags to avoid CI failures.
+
+| Feature | Crate(s) | Requirements |
+|---------|----------|--------------|
+| `test-ollama` | crucible-llm | Running Ollama server |
+| `test-embeddings` | crucible-llm, crucible-surrealdb, crucible-cli | Embedding API endpoint |
+| `test-local-kiln` | crucible-surrealdb | Developer's personal vault |
+| `test-onnx-download` | crucible-llm | Network access (~100MB download) |
+
+**Running infrastructure tests:**
+```bash
+# Set environment variables for your infrastructure
+export EMBEDDING_ENDPOINT="https://your-llm-endpoint.com"
+export EMBEDDING_MODEL="nomic-embed-text-v1.5-q8_0"
+export CRUCIBLE_KILN_PATH="/path/to/your/vault"
+
+# Run tests with specific features
+cargo test -p crucible-llm --features test-ollama
+cargo test -p crucible-surrealdb --features test-local-kiln
+```
+
+**Cross-platform test paths:**
+- Use `tempfile::TempDir` for tests that need real filesystem access
+- Use `crucible_core::test_support::nonexistent_path()` for paths that don't need to exist
+- Never use hardcoded `/tmp` paths (not portable to Windows)
+
 ### Quality Checklist
 
 Before submitting changes:

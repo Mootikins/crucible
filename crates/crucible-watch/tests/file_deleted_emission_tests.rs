@@ -5,12 +5,18 @@
 
 use crucible_core::events::{Priority, SessionEvent};
 use crucible_core::test_support::mocks::MockEventEmitter;
+use crucible_core::test_support::nonexistent_path;
 use crucible_watch::handlers::IndexingHandler;
 use crucible_watch::traits::EventHandler;
 use crucible_watch::{FileEvent, FileEventKind};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
+
+/// Helper to create a mock path in the temp directory (cross-platform)
+fn mock_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("crucible_test_{}", name))
+}
 
 /// Test that IndexingHandler emits SessionEvent::FileDeleted for Deleted events.
 #[tokio::test]
@@ -19,7 +25,7 @@ async fn test_file_deleted_emission() {
     let handler = IndexingHandler::with_emitter(emitter.clone()).expect("Failed to create handler");
 
     // For deleted files, the file doesn't need to exist - just simulate the event
-    let deleted_path = PathBuf::from("/tmp/deleted_note.md");
+    let deleted_path = mock_path("deleted_note.md");
 
     let file_event = FileEvent::new(FileEventKind::Deleted, deleted_path.clone());
 
@@ -42,7 +48,7 @@ async fn test_file_deleted_event_priority() {
     let emitter: Arc<MockEventEmitter<SessionEvent>> = Arc::new(MockEventEmitter::new());
     let handler = IndexingHandler::with_emitter(emitter.clone()).expect("Failed to create handler");
 
-    let deleted_path = PathBuf::from("/tmp/deleted_note.md");
+    let deleted_path = mock_path("deleted_note.md");
     let file_event = FileEvent::new(FileEventKind::Deleted, deleted_path.clone());
 
     handler.handle(file_event).await.expect("Handler failed");
@@ -69,7 +75,7 @@ async fn test_file_deleted_emission_various_extensions() {
     for ext in extensions {
         emitter.reset();
 
-        let deleted_path = PathBuf::from(format!("/tmp/deleted_note.{}", ext));
+        let deleted_path = mock_path(&format!("deleted_note.{}", ext));
         let file_event = FileEvent::new(FileEventKind::Deleted, deleted_path.clone());
 
         handler.handle(file_event).await.expect("Handler failed");
@@ -127,9 +133,9 @@ async fn test_multiple_file_deleted_events() {
     let handler = IndexingHandler::with_emitter(emitter.clone()).expect("Failed to create handler");
 
     let paths = vec![
-        PathBuf::from("/tmp/deleted1.md"),
-        PathBuf::from("/tmp/deleted2.md"),
-        PathBuf::from("/tmp/nested/deleted3.md"),
+        mock_path("deleted1.md"),
+        mock_path("deleted2.md"),
+        mock_path("nested/deleted3.md"),
     ];
 
     for path in &paths {
@@ -184,7 +190,7 @@ async fn test_file_deleted_emission_unicode_filename() {
     let emitter: Arc<MockEventEmitter<SessionEvent>> = Arc::new(MockEventEmitter::new());
     let handler = IndexingHandler::with_emitter(emitter.clone()).expect("Failed to create handler");
 
-    let unicode_path = PathBuf::from("/tmp/删除的笔记.md");
+    let unicode_path = mock_path("删除的笔记.md");
     let file_event = FileEvent::new(FileEventKind::Deleted, unicode_path.clone());
 
     handler.handle(file_event).await.expect("Handler failed");
@@ -206,7 +212,7 @@ async fn test_file_deleted_emission_spaces_in_path() {
     let emitter: Arc<MockEventEmitter<SessionEvent>> = Arc::new(MockEventEmitter::new());
     let handler = IndexingHandler::with_emitter(emitter.clone()).expect("Failed to create handler");
 
-    let spaced_path = PathBuf::from("/tmp/My Documents/My Note.md");
+    let spaced_path = mock_path("My Documents/My Note.md");
     let file_event = FileEvent::new(FileEventKind::Deleted, spaced_path.clone());
 
     handler.handle(file_event).await.expect("Handler failed");
@@ -228,7 +234,7 @@ async fn test_file_deleted_is_file_event() {
     let emitter: Arc<MockEventEmitter<SessionEvent>> = Arc::new(MockEventEmitter::new());
     let handler = IndexingHandler::with_emitter(emitter.clone()).expect("Failed to create handler");
 
-    let deleted_path = PathBuf::from("/tmp/deleted.md");
+    let deleted_path = mock_path("deleted.md");
     let file_event = FileEvent::new(FileEventKind::Deleted, deleted_path.clone());
 
     handler.handle(file_event).await.expect("Handler failed");
@@ -251,7 +257,7 @@ async fn test_file_deleted_is_not_note_event() {
     let emitter: Arc<MockEventEmitter<SessionEvent>> = Arc::new(MockEventEmitter::new());
     let handler = IndexingHandler::with_emitter(emitter.clone()).expect("Failed to create handler");
 
-    let deleted_path = PathBuf::from("/tmp/deleted.md");
+    let deleted_path = mock_path("deleted.md");
     let file_event = FileEvent::new(FileEventKind::Deleted, deleted_path.clone());
 
     handler.handle(file_event).await.expect("Handler failed");
@@ -272,7 +278,7 @@ async fn test_file_deleted_event_type() {
     let emitter: Arc<MockEventEmitter<SessionEvent>> = Arc::new(MockEventEmitter::new());
     let handler = IndexingHandler::with_emitter(emitter.clone()).expect("Failed to create handler");
 
-    let deleted_path = PathBuf::from("/tmp/deleted.md");
+    let deleted_path = mock_path("deleted.md");
     let file_event = FileEvent::new(FileEventKind::Deleted, deleted_path.clone());
 
     handler.handle(file_event).await.expect("Handler failed");
@@ -401,7 +407,7 @@ async fn test_file_deleted_emission_with_cancelled_outcome() {
 
     let handler = IndexingHandler::with_emitter(emitter.clone()).expect("Failed to create handler");
 
-    let deleted_path = PathBuf::from("/tmp/deleted.md");
+    let deleted_path = mock_path("deleted.md");
     let file_event = FileEvent::new(FileEventKind::Deleted, deleted_path.clone());
 
     // Handler should still complete successfully even if the event was cancelled

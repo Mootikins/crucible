@@ -84,3 +84,20 @@ pub fn create_basic_kiln() -> Result<TempDir> {
 pub fn kiln_path_str(path: &Path) -> String {
     path.to_string_lossy().to_string()
 }
+
+/// Returns a cross-platform path that doesn't exist.
+///
+/// Use this for tests that verify error handling for missing files/directories.
+/// The path is constructed using `std::env::temp_dir()` which works on all platforms.
+///
+/// # Example
+///
+/// ```rust
+/// use crucible_core::test_support::nonexistent_path;
+///
+/// let path = nonexistent_path("missing_note.md");
+/// assert!(!path.exists());
+/// ```
+pub fn nonexistent_path(name: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("crucible_nonexistent_{}", name))
+}

@@ -18,6 +18,12 @@ default = ["fastembed"]
 # Enable test utilities (MockEmbeddingProvider, MockConstrainedProvider) for integration tests
 test-utils = []
 
+# Test infrastructure features - enable tests requiring specific infrastructure
+# Usage: cargo test -p crucible-llm --features test-ollama
+test-ollama = []           # Tests requiring running Ollama server
+test-embeddings = []       # Tests requiring embedding endpoint (EMBEDDING_ENDPOINT env var)
+test-onnx-download = []    # Tests that download ONNX models (~100MB)
+
 # Enable e2e tests that require local model configuration (GGUF models in ~/models/)
 # These tests are skipped unless this feature is enabled AND a local model exists
 local-config = ["llama-cpp"]
