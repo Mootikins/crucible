@@ -1,10 +1,12 @@
 ---
-title: Workflow Authoring
 description: How to create custom workflows in Crucible
 status: implemented
 tags:
   - extending
   - workflows
+aliases:
+  - Creating Workflows
+  - Workflow Development
 ---
 
 # Workflow Authoring
