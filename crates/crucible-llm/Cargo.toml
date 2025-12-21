@@ -69,7 +69,11 @@ burn-hip = { version = "0.16", optional = true }    # AMD ROCm/HIP backend (0.16
 burn-import = { version = "0.19", optional = true }
 
 # HuggingFace tokenizers for text tokenization
-tokenizers = "0.22"
+# Note: We disable default features to exclude esaxx_fast, which has a hardcoded
+# static_crt(true) in its build script causing runtime library mismatch with
+# ort_sys (ONNX Runtime) on Windows. The esaxx_fast feature provides faster
+# suffix array construction but is not essential for tokenization.
+tokenizers = { version = "0.22", default-features = false, features = ["progressbar", "onig"] }
 
 # SafeTensors for model loading
 safetensors = "0.6"
