@@ -60,7 +60,7 @@ LLM providers implement capability traits (`CanEmbed`, `CanChat`, `CanConstrainG
 
 - [AGENTS.md](./AGENTS.md) — Guide for AI agents working on the codebase
 - [OpenSpec](./openspec/) — Change proposals and system specifications
-- [Dev Kiln](./examples/dev-kiln/) — Documentation vault and test fixture
+- [Documentation](./docs/) — User guides, help references, and test fixture
 
 ## License
 

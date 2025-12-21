@@ -21,7 +21,7 @@ pub fn test_kiln_root() -> PathBuf {
         .unwrap()
         .parent()
         .unwrap()
-        .join("examples/dev-kiln")
+        .join("docs")
 }
 
 /// Find all markdown files in the dev-kiln.

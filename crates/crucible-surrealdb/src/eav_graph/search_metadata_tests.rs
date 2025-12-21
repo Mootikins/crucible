@@ -1,7 +1,7 @@
 //! # Phase 1B: Metadata-Based Search Tests (TDD)
 //!
 //! This module implements TDD tests for metadata-based search functionality in Crucible.
-//! Tests use the dev-kiln at `examples/dev-kiln/` for realistic test data.
+//! Tests use the docs kiln at `docs/` for realistic test data.
 //!
 //! ## Test Coverage
 //!
@@ -49,7 +49,7 @@ mod tests {
             .unwrap()
             .parent()
             .unwrap()
-            .join("examples/dev-kiln")
+            .join("docs")
     }
 
     /// Test helper to set up a test database

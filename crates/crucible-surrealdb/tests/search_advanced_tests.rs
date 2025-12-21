@@ -4,7 +4,7 @@
 //! Tests cover multi-criteria queries, fuzzy search, domain-specific searches,
 //! and link validation.
 //!
-//! All tests use the dev-kiln at `examples/dev-kiln/` for realistic test data.
+//! All tests use the docs kiln at `docs/` for realistic test data.
 
 mod common;
 
