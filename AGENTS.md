@@ -138,8 +138,7 @@ crucible/
 │   ├── crucible-watch/          # File watching
 │   ├── tq/                      # TOON Query library
 │   └── ...                      # Other crates
-├── examples/
-│   └── dev-kiln/                # Documentation vault AND test fixture
+├── docs/                        # Documentation kiln (user guides + test fixture)
 ├── openspec/                    # Change proposals & specs
 │   ├── SYSTEMS.md               # System boundaries
 │   ├── AGENTS.md                # OpenSpec workflow
@@ -171,14 +170,14 @@ crucible/
 - **Scripts**: `scripts/`
 - **Tests**: `tests/` or `crates/*/tests/`
 
-### Dev Kiln as Living Documentation
+### Documentation Kiln
 
-The `examples/dev-kiln/` directory serves dual purposes:
+The `docs/` directory is a **reference kiln** — a valid Crucible vault that serves as both documentation and test fixture:
 
 1. **User Documentation**: Guides, Help references, and examples using wikilinks
 2. **Test Fixture**: Integration tests validate the kiln parses and indexes correctly
 
-**Use the dev-kiln to document:**
+**Use the docs kiln to document:**
 - Roadmap items and features (in `Meta/Roadmap.md`)
 - Technical decisions (in `Meta/Analysis/`)
 - Usage guides (in `Guides/` and `Help/`)
@@ -300,7 +299,7 @@ For architectural changes, new features, or breaking changes, use the OpenSpec w
 - **[README.md](./README.md)** - Project overview and quick start
 - **[OpenSpec AGENTS.md](./openspec/AGENTS.md)** - Change proposal workflow
 - **[SYSTEMS.md](./openspec/SYSTEMS.md)** - System boundaries and organization
-- **[Dev Kiln](./examples/dev-kiln/)** - Documentation vault and test fixture
+- **[Documentation](./docs/)** - Reference kiln (user guides + test fixture)
 - **[justfile](./justfile)** - Development recipes
 
 ---
