@@ -56,6 +56,7 @@ pub use types::{
     Blockquote,
     // Enhanced content types
     Callout,
+    CalloutType,
     CheckboxStatus,
     CodeBlock,
     FootnoteDefinition,

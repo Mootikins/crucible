@@ -569,7 +569,6 @@ impl BlockExtractor {
         let metadata = ASTBlockMetadata::callout(
             callout.callout_type.clone(),
             callout.title.clone(),
-            callout.is_standard_type,
         );
 
         let block = ASTBlock::new(
