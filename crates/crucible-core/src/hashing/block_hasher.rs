@@ -697,7 +697,6 @@ enum SerializableMetadata {
     Callout {
         callout_type: String,
         title: Option<String>,
-        is_standard_type: bool,
     },
     /// LaTeX metadata
     Latex { is_block: bool },
@@ -736,11 +735,9 @@ impl SerializableMetadata {
             ASTBlockMetadata::Callout {
                 callout_type,
                 title,
-                is_standard_type,
             } => Self::Callout {
-                callout_type: callout_type.clone(),
+                callout_type: callout_type.to_string(),
                 title: title.clone(),
-                is_standard_type: *is_standard_type,
             },
             ASTBlockMetadata::Latex { is_block } => Self::Latex {
                 is_block: *is_block,
@@ -1086,7 +1083,7 @@ mod tests {
         use crate::hashing::algorithm::Blake3Algorithm;
         let hasher = BlockHasher::new(Blake3Algorithm);
         let metadata =
-            ASTBlockMetadata::callout("note".to_string(), Some("Important Note".to_string()), true);
+            ASTBlockMetadata::callout("note", Some("Important Note".to_string()));
         let block = ASTBlock::new(
             ASTBlockType::Callout,
             "This is an important callout message".to_string(),
@@ -1716,7 +1713,7 @@ mod tests {
                 "This is important!".to_string(),
                 15,
                 34,
-                ASTBlockMetadata::callout("warning".to_string(), None, true),
+                ASTBlockMetadata::callout("warning", None),
             ),
             ASTBlock::new(
                 ASTBlockType::Code,

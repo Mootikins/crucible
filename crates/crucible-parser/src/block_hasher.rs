@@ -160,7 +160,6 @@ enum SerializableMetadata {
     Callout {
         callout_type: String,
         title: Option<String>,
-        is_standard_type: bool,
     },
     /// LaTeX metadata
     Latex { is_block: bool },
@@ -199,11 +198,9 @@ impl SerializableMetadata {
             ASTBlockMetadata::Callout {
                 callout_type,
                 title,
-                is_standard_type,
             } => Self::Callout {
-                callout_type: callout_type.clone(),
+                callout_type: callout_type.to_string(),
                 title: title.clone(),
-                is_standard_type: *is_standard_type,
             },
             ASTBlockMetadata::Latex { is_block } => Self::Latex {
                 is_block: *is_block,

@@ -36,7 +36,7 @@ pub use crate::parser::error::ParseError;
 pub use ast::{ASTBlock, ASTBlockMetadata, ASTBlockType};
 pub use block_hash::BlockHash;
 pub use blocks::{Blockquote, HorizontalRule, Table};
-pub use callout::{Callout, LatexExpression};
+pub use callout::{Callout, CalloutType, LatexExpression};
 pub use content::{CodeBlock, Heading, NoteContent, Paragraph};
 pub use frontmatter::{Frontmatter, FrontmatterFormat};
 pub use inline_metadata::{extract_inline_metadata, InlineMetadata};
@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn test_ast_block_callout_creation() {
         let metadata =
-            ASTBlockMetadata::callout("note".to_string(), Some("Important Note".to_string()), true);
+            ASTBlockMetadata::callout("note", Some("Important Note".to_string()));
         let block = ASTBlock::new(
             ASTBlockType::Callout,
             "This is an important note".to_string(),
@@ -288,16 +288,15 @@ mod tests {
         }
 
         let callout_meta =
-            ASTBlockMetadata::callout("warning".to_string(), Some("Watch out".to_string()), true);
+            ASTBlockMetadata::callout("warning", Some("Watch out".to_string()));
         if let ASTBlockMetadata::Callout {
             callout_type,
             title,
-            is_standard_type,
         } = callout_meta
         {
-            assert_eq!(callout_type, "warning");
+            assert_eq!(callout_type.as_str(), "warning");
             assert_eq!(title, Some("Watch out".to_string()));
-            assert!(is_standard_type);
+            assert!(callout_type.is_standard());
         } else {
             panic!("Expected callout metadata");
         }

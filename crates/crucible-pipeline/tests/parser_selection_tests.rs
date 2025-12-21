@@ -385,14 +385,14 @@ Another text section.
 
     // Verify Default parser extracted callouts correctly
     assert_eq!(callouts_pulldown.len(), 3, "Should extract 3 callouts");
-    assert_eq!(callouts_pulldown[0].callout_type, "note");
+    assert_eq!(callouts_pulldown[0].callout_type, "note".into());
     assert_eq!(callouts_pulldown[0].title, None);
-    assert_eq!(callouts_pulldown[1].callout_type, "warning");
+    assert_eq!(callouts_pulldown[1].callout_type, "warning".into());
     assert_eq!(
         callouts_pulldown[1].title,
         Some("Important Warning".to_string())
     );
-    assert_eq!(callouts_pulldown[2].callout_type, "tip");
+    assert_eq!(callouts_pulldown[2].callout_type, "tip".into());
 
     #[cfg(feature = "markdown-it-parser")]
     {
