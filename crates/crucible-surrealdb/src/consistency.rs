@@ -15,10 +15,11 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 /// Consistency levels for database reads
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ConsistencyLevel {
     /// Standard database read without checking batch queue (current behavior)
     /// May return stale data if changes are pending in batches
+    #[default]
     Eventual,
 
     /// Check batch queue for pending operations before reading
@@ -28,12 +29,6 @@ pub enum ConsistencyLevel {
     /// Force flush of pending batches before reading
     /// Guarantees most up-to-date state but with higher latency
     Strong,
-}
-
-impl Default for ConsistencyLevel {
-    fn default() -> Self {
-        Self::Eventual
-    }
 }
 
 /// Status of a pending operation for a specific file

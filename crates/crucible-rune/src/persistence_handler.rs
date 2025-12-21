@@ -411,8 +411,7 @@ mod tests {
 
     #[test]
     fn test_persistence_handler_with_name() {
-        let handler =
-            PersistenceHandler::new(test_path("test")).with_name("custom_persist");
+        let handler = PersistenceHandler::new(test_path("test")).with_name("custom_persist");
 
         assert_eq!(handler.name(), "custom_persist");
     }
@@ -436,22 +435,13 @@ mod tests {
         let folder = test_path("test-session");
         let handler = PersistenceHandler::new(folder.clone());
 
-        assert_eq!(
-            handler.current_file_path(),
-            folder.join("000-context.md")
-        );
+        assert_eq!(handler.current_file_path(), folder.join("000-context.md"));
 
         handler.file_index.store(3, Ordering::SeqCst);
-        assert_eq!(
-            handler.current_file_path(),
-            folder.join("003-context.md")
-        );
+        assert_eq!(handler.current_file_path(), folder.join("003-context.md"));
 
         handler.file_index.store(42, Ordering::SeqCst);
-        assert_eq!(
-            handler.current_file_path(),
-            folder.join("042-context.md")
-        );
+        assert_eq!(handler.current_file_path(), folder.join("042-context.md"));
     }
 
     #[test]
@@ -791,7 +781,8 @@ mod tests {
                 error: None,
             },
             SessionEvent::SessionStarted {
-                config: crate::reactor::SessionEventConfig::new("test").with_folder(test_path("test")),
+                config: crate::reactor::SessionEventConfig::new("test")
+                    .with_folder(test_path("test")),
             },
             SessionEvent::SessionCompacted {
                 summary: "Session summary".into(),

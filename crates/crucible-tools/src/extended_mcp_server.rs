@@ -414,7 +414,7 @@ impl ExtendedMcpServer {
 
         // Process through event handlers
         match handler.process_recipes(recipes).await {
-            Ok(enriched) => {
+            Ok(_enriched) => {
                 // Update tools with enrichment data
                 // Note: McpTool doesn't currently support enrichment fields
                 // for (tool, recipe) in tools.iter_mut().zip(enriched.iter()) {

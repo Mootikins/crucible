@@ -318,7 +318,7 @@ impl FastEmbedProvider {
                 })?
                 .map_err(|e| {
                     let error_str = e.to_string();
-                    let mut error_msg = format!("Failed to load ONNX model: {}", error_str);
+                    let error_msg = format!("Failed to load ONNX model: {}", error_str);
 
                     #[cfg(target_os = "windows")]
                     {
@@ -401,7 +401,7 @@ impl FastEmbedProvider {
                 })?
                 .map_err(|e| {
                     let error_str = e.to_string();
-                    let mut error_msg = format!("Failed to generate embeddings: {}", error_str);
+                    let error_msg = format!("Failed to generate embeddings: {}", error_str);
 
                     #[cfg(target_os = "windows")]
                     {
