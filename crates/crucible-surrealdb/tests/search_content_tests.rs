@@ -1,7 +1,7 @@
 //! Phase 1A: Content-Based Search Tests
 //!
 //! These tests validate grep-based text search and semantic search functionality
-//! using the dev-kiln at `examples/dev-kiln/`.
+//! using the docs kiln at `docs/`.
 //!
 //! Test Categories:
 //! - Grep-based text search (case sensitivity, regex, scoping)
@@ -179,7 +179,7 @@ async fn grep_folder_scoped() {
         SELECT data.title as title, data.path as path
         FROM entities
         WHERE type = 'note'
-          AND string::contains(data.path, 'dev-kiln')
+          AND string::contains(data.path, 'Help')
           AND string::lowercase(data.title) CONTAINS 'frontmatter'
         LIMIT 20
     "#;
@@ -189,10 +189,10 @@ async fn grep_folder_scoped() {
     // ASSERT: Should find scoped results
     assert!(
         !result.records.is_empty(),
-        "Expected to find documents in dev-kiln with 'frontmatter' in title"
+        "Expected to find documents in Help folder with 'frontmatter' in title"
     );
 
-    // Verify all results are actually in the dev-kiln path
+    // Verify all results are actually in the Help path
     for record in &result.records {
         let path = record
             .data
@@ -201,8 +201,8 @@ async fn grep_folder_scoped() {
             .expect("Path should exist");
 
         assert!(
-            path.contains("dev-kiln"),
-            "Result path should be in dev-kiln scope: {}",
+            path.contains("Help"),
+            "Result path should be in Help folder scope: {}",
             path
         );
     }
