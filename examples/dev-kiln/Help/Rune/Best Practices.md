@@ -1,11 +1,13 @@
 ---
-title: Rune Best Practices
 description: Guidelines for writing effective and reliable Crucible plugins
 status: implemented
 tags:
   - rune
   - best-practices
   - reference
+aliases:
+  - Rune Guidelines
+  - Plugin Best Practices
 ---
 
 # Rune Best Practices
@@ -260,5 +262,7 @@ pub fn daily_summary() {
 
 - [[Help/Rune/Language Basics]] - Rune syntax
 - [[Help/Rune/Crucible API]] - Available functions
+- [[Help/Rune/Error Handling]] - Error handling patterns
+- [[Help/Rune/Testing Plugins]] - Debugging and testing
 - [[Help/Extending/Creating Plugins]] - Plugin overview
 - [[Scripts/Auto Tagging]] - Example plugin

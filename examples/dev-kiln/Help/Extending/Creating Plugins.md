@@ -1,11 +1,13 @@
 ---
-title: Creating Plugins
 description: Build Rune plugins to extend Crucible's capabilities
 status: implemented
 tags:
   - extending
   - rune
   - plugins
+aliases:
+  - Plugin Development
+  - Writing Plugins
 ---
 
 # Creating Plugins
@@ -138,6 +140,8 @@ pub fn main() {
 - [[Help/Rune/Language Basics]] - Syntax fundamentals
 - [[Help/Rune/Crucible API]] - Available functions
 - [[Help/Rune/Best Practices]] - Writing good plugins
+- [[Help/Rune/Testing Plugins]] - Debugging and testing
+- [[Help/Rune/Error Handling]] - Error handling patterns
 
 ## Examples in This Kiln
 
@@ -148,4 +152,5 @@ pub fn main() {
 
 - [[Help/Extending/Event Hooks]] - React to events
 - [[Help/Extending/Custom Tools]] - Create MCP tools
+- [[Help/Rune/Rune vs Just]] - When to use Rune vs Just
 - [[Extending Crucible]] - All extension points
