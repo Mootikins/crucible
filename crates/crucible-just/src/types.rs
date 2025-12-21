@@ -183,7 +183,7 @@ mod tests {
             "windows_shell": null,
             "working_directory": null
         },
-        "source": "/tmp/justfile",
+        "source": "justfile",
         "unexports": [],
         "warnings": []
     }"#;

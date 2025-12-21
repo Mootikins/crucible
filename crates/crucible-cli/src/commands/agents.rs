@@ -336,6 +336,11 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
+    /// Cross-platform test path helper
+    fn test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("crucible_test_{}", name))
+    }
+
     fn test_config(kiln_path: PathBuf) -> CliConfig {
         CliConfig {
             kiln_path,
@@ -377,7 +382,8 @@ You are a test agent.
 
     #[test]
     fn test_collect_agent_directories_includes_defaults() {
-        let config = test_config(PathBuf::from("/tmp/test-kiln"));
+        let kiln_path = test_path("test-kiln");
+        let config = test_config(kiln_path.clone());
         let dirs = collect_agent_directories(&config);
 
         // Should include at least:
@@ -387,13 +393,14 @@ You are a test agent.
         assert!(dirs.len() >= 3);
 
         // Check kiln directories are present
-        assert!(dirs.contains(&PathBuf::from("/tmp/test-kiln/.crucible/agents")));
-        assert!(dirs.contains(&PathBuf::from("/tmp/test-kiln/agents")));
+        assert!(dirs.contains(&kiln_path.join(".crucible/agents")));
+        assert!(dirs.contains(&kiln_path.join("agents")));
     }
 
     #[test]
     fn test_collect_agent_directories_includes_config() {
-        let mut config = test_config(PathBuf::from("/tmp/test-kiln"));
+        let kiln_path = test_path("test-kiln");
+        let mut config = test_config(kiln_path);
         config.agent_directories = vec![
             PathBuf::from("/custom/agents"),
             PathBuf::from("./local-agents"),
@@ -408,16 +415,15 @@ You are a test agent.
 
     #[test]
     fn test_collect_agent_directories_order() {
-        let config = test_config(PathBuf::from("/tmp/test-kiln"));
+        let kiln_path = test_path("test-kiln");
+        let config = test_config(kiln_path.clone());
         let dirs = collect_agent_directories(&config);
 
         // Find indices
         let kiln_hidden_idx = dirs
             .iter()
-            .position(|p| p == &PathBuf::from("/tmp/test-kiln/.crucible/agents"));
-        let kiln_visible_idx = dirs
-            .iter()
-            .position(|p| p == &PathBuf::from("/tmp/test-kiln/agents"));
+            .position(|p| p == &kiln_path.join(".crucible/agents"));
+        let kiln_visible_idx = dirs.iter().position(|p| p == &kiln_path.join("agents"));
 
         // Kiln hidden should come before kiln visible
         assert!(kiln_hidden_idx.is_some());

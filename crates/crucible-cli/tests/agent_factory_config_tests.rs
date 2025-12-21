@@ -12,7 +12,7 @@ use std::path::PathBuf;
 /// Helper to create a minimal CliAppConfig for testing
 fn create_test_config() -> CliAppConfig {
     CliAppConfig {
-        kiln_path: PathBuf::from("/tmp/test-kiln"),
+        kiln_path: std::env::temp_dir().join("crucible_test_kiln"),
         ..Default::default()
     }
 }

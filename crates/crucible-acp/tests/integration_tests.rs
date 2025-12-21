@@ -7,6 +7,12 @@ use crucible_acp::session::{AcpSession, SessionConfig};
 use crucible_acp::{
     ChatConfig, ChatSession, ContextConfig, CrucibleAcpClient, HistoryConfig, StreamConfig,
 };
+use std::path::PathBuf;
+
+/// Cross-platform test path helper
+fn test_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("crucible_test_{}", name))
+}
 
 /// Integration test: Full chat pipeline with all components
 #[tokio::test]
@@ -650,7 +656,7 @@ async fn baseline_client_configuration_variants() {
     let config_full = ClientConfig {
         agent_path: PathBuf::from("cat"),
         agent_args: None,
-        working_dir: Some(PathBuf::from("/tmp")),
+        working_dir: Some(test_path("workdir")),
         env_vars: Some(env_vars),
         timeout_ms: Some(5000),
         max_retries: Some(3),
@@ -1525,7 +1531,7 @@ async fn integration_chat_agent_config_variants() {
         ClientConfig {
             agent_path: PathBuf::from("cat"),
             agent_args: None,
-            working_dir: Some(PathBuf::from("/tmp")),
+            working_dir: Some(test_path("workdir")),
             env_vars: None,
             timeout_ms: Some(5000),
             max_retries: Some(3),

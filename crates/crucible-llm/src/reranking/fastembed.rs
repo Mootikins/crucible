@@ -254,6 +254,12 @@ impl std::fmt::Debug for FastEmbedReranker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
+    /// Cross-platform test cache path helper
+    fn test_cache_path() -> PathBuf {
+        std::env::temp_dir().join("crucible_test_fastembed_cache")
+    }
 
     #[test]
     fn test_config_defaults() {
@@ -286,12 +292,13 @@ mod tests {
 
     #[test]
     fn test_config_with_methods() {
+        let cache_dir = test_cache_path();
         let config = FastEmbedRerankerConfig::default()
-            .with_cache_dir(PathBuf::from("/tmp/cache"))
+            .with_cache_dir(cache_dir.clone())
             .with_batch_size(64)
             .with_show_download(false);
 
-        assert_eq!(config.cache_dir, Some(PathBuf::from("/tmp/cache")));
+        assert_eq!(config.cache_dir, Some(cache_dir));
         assert_eq!(config.batch_size, Some(64));
         assert!(!config.show_download);
     }
@@ -321,7 +328,7 @@ mod tests {
     #[tokio::test]
     async fn test_rerank_empty_documents() {
         let mut config = FastEmbedRerankerConfig::default();
-        config.cache_dir = Some("/tmp/fastembed_cache".into());
+        config.cache_dir = Some(test_cache_path());
         let reranker = FastEmbedReranker::new(config).unwrap();
 
         let results = reranker.rerank("test query", vec![], None).await.unwrap();
