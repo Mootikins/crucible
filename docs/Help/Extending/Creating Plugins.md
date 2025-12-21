@@ -1,10 +1,10 @@
 ---
-description: Build Rune plugins to extend Crucible's capabilities
+description: Build plugins to extend Crucible with tools, hooks, workflows, and more
 status: implemented
 tags:
   - extending
-  - rune
   - plugins
+  - rune
 aliases:
   - Plugin Development
   - Writing Plugins
@@ -12,145 +12,188 @@ aliases:
 
 # Creating Plugins
 
-Crucible plugins are Rune scripts that automate tasks in your kiln. They can read notes, search content, and create new files.
+Plugins are executable extensions that add capabilities to Crucible. A plugin can provide:
 
-## Quick Start
+- **Tools** - MCP-compatible functions agents can call
+- **Hooks** - React to events (tool calls, note changes)
 
-1. Create a script in `Scripts/`:
-
-```rune
-// Scripts/hello.rn
-
-/// My first plugin
-pub fn main() {
-    println("Hello from my plugin!");
-    Ok(())
-}
-```
-
-2. Run it:
-
-```bash
-cru script "Scripts/hello.rn"
-```
+> **Note:** Agents and workflows are defined separately as markdown templates in `.crucible/agents/` and `.crucible/workflows/`. They use the tools that plugins provide. See [[Help/Extending/Agent Cards]] and [[Help/Workflows/Index]].
 
 ## Plugin Location
 
-Place plugins in your kiln's `Scripts/` folder:
+Plugins live in `.crucible/plugins/`:
 
 ```
 your-kiln/
-├── Scripts/
-│   ├── auto-tagging.rn
-│   ├── daily-summary.rn
-│   └── cleanup.rn
+├── .crucible/
+│   └── plugins/
+│       ├── tasks/           # Directory plugin
+│       │   ├── mod.rn       # Main module
+│       │   ├── parser.rn    # Helper module
+│       │   └── README.md    # Documentation
+│       └── quick-tag.rn     # Single-file plugin
 ```
 
-## Basic Structure
+Plugins are also discovered from global config:
+- Linux: `~/.config/crucible/plugins/`
+- macOS: `~/Library/Application Support/crucible/plugins/`
+- Windows: `%APPDATA%\crucible\plugins\`
 
-Every plugin needs a `main` function:
+## Plugin Languages
+
+Plugins can be written in:
+
+| Language | Extension | Status |
+|----------|-----------|--------|
+| Rune | `.rn` | Implemented |
+| Lua | `.lua` | Planned |
+| WASM | `.wasm` | Future |
+
+File extension determines the runtime. All languages use the same discovery and registration system.
+
+## Single-File Plugin
+
+The simplest plugin is a single `.rn` file:
 
 ```rune
-/// Plugin description (shown in help)
-pub fn main() {
-    // Your code here
-    Ok(())
+// .crucible/plugins/greet.rn
+
+/// A friendly greeting tool
+#[tool(
+    name = "greet",
+    description = "Say hello to someone"
+)]
+pub fn greet(name) {
+    Ok(format!("Hello, {}!", name))
 }
 ```
 
-## Running Plugins
+This registers one tool. Agents can now call `greet`.
 
-```bash
-# Run a plugin
-cru script "Scripts/my-plugin.rn"
+## Directory Plugin
 
-# With act mode (allows file modifications)
-cru script "Scripts/my-plugin.rn" --act
+For complex plugins, use a directory with `mod.rn`:
 
-# With arguments
-cru script "Scripts/my-plugin.rn" --arg value
+```
+plugins/tasks/
+├── mod.rn          # Entry point, exports public items
+├── parser.rn       # TASKS.md format parser
+├── commands.rn     # CLI command handlers
+└── README.md       # Usage documentation
 ```
 
-## What Plugins Can Do
+```rune
+// mod.rn - Main module that exports everything
 
-- **Read notes** - Access content and frontmatter
-- **Search** - Semantic, text, and property searches
-- **Create notes** - Generate new files (requires `--act`)
-- **Update notes** - Modify frontmatter (requires `--act`)
+mod parser;
+mod commands;
 
-See [[Help/Rune/Crucible API]] for all available functions.
+use parser::parse_tasks;
+use commands::{list_tasks, next_task, pick_task, done_task};
 
-## Example: Tag Suggester
+/// List all tasks with status
+#[tool(name = "tasks_list")]
+pub fn list(path) {
+    let tasks = parse_tasks(path)?;
+    commands::list_tasks(tasks)
+}
+
+/// Get next available task
+#[tool(name = "tasks_next")]
+pub fn next(path) {
+    let tasks = parse_tasks(path)?;
+    commands::next_task(tasks)
+}
+
+// ... more tools
+```
+
+## Providing Tools
+
+Use the `#[tool]` attribute to expose functions as MCP tools:
 
 ```rune
-/// Suggest tags for untagged notes
+#[tool(
+    name = "search_notes",
+    description = "Search notes by content",
+    schema = #{
+        query: #{ type: "string", description: "Search query" },
+        limit: #{ type: "integer", default: 10 }
+    }
+)]
+pub fn search_notes(query, limit) {
+    let results = crucible::search_by_content(query, limit)?;
+    Ok(results)
+}
+```
+
+Tools are automatically registered when the plugin loads.
+
+## Providing Hooks
+
+Use `#[hook]` to react to events:
+
+```rune
+/// Log all tool calls
+#[hook(event = "tool:after", pattern = "*")]
+pub fn log_tools(ctx, event) {
+    println!("Tool called: {}", event.identifier);
+    event
+}
+
+/// Block dangerous operations
+#[hook(event = "tool:before", pattern = "*delete*", priority = 5)]
+pub fn block_deletes(ctx, event) {
+    event.cancelled = true;
+    event
+}
+```
+
+See [[Help/Extending/Event Hooks]] for event types and patterns.
+
+## Plugin Lifecycle
+
+1. **Discovery**: Crucible scans plugin directories on startup
+2. **Loading**: Each plugin is compiled/loaded by its runtime
+3. **Registration**: Tools, hooks, and other exports are registered
+4. **Execution**: Components are invoked as needed
+
+## Standalone Scripts
+
+For one-off automation (not reusable tools), use `Scripts/`:
+
+```rune
+// Scripts/cleanup.rn - Run manually with: cru script Scripts/cleanup.rn
+
 pub fn main() {
     let notes = crucible::search_by_properties(#{})?;
-
-    for note in notes {
-        let data = crucible::read_note(note.path)?;
-        let tags = data.frontmatter.get("tags").unwrap_or([]);
-
-        if tags.len() == 0 {
-            let suggestions = suggest_tags(data.content);
-            println("{}: {}", note.path, suggestions);
-        }
-    }
-
-    Ok(())
-}
-
-fn suggest_tags(content) {
-    let tags = [];
-    if content.contains("TODO") { tags.push("actionable"); }
-    if content.contains("```") { tags.push("has-code"); }
-    tags
-}
-```
-
-## Example: Daily Summary
-
-```rune
-/// Generate a summary of today's changes
-pub fn main() {
-    let today = crucible::today();
-
-    let summary = format!("# Summary for {}\n\n", today);
-    summary += "Notes modified today:\n";
-
-    let notes = crucible::search_by_properties(#{})?;
-    // Filter by today's changes...
-
-    if crucible::is_act_mode() {
-        crucible::create_note("Summaries/" + today + ".md", summary, #{
-            tags: ["summary"]
-        })?;
-        println("Created summary");
-    } else {
-        println(summary);
-        println("Run with --act to create file");
-    }
-
+    // ... cleanup logic
     Ok(())
 }
 ```
 
-## Learning Rune
+Scripts in `Scripts/` are not auto-registered as tools.
 
-- [[Help/Rune/Language Basics]] - Syntax fundamentals
-- [[Help/Rune/Crucible API]] - Available functions
-- [[Help/Rune/Best Practices]] - Writing good plugins
-- [[Help/Rune/Testing Plugins]] - Debugging and testing
-- [[Help/Rune/Error Handling]] - Error handling patterns
+## Best Practices
 
-## Examples in This Kiln
+1. **One concern per plugin** - Keep plugins focused
+2. **Document with README.md** - Explain what it does and how to use it
+3. **Use descriptive tool names** - `tasks_list` not `list`
+4. **Handle errors gracefully** - Return `Err()` with helpful messages
+5. **Provide schemas** - Help agents understand your tools
 
-- [[Scripts/Auto Tagging]] - Tag suggestion
-- [[Scripts/Daily Summary]] - Summary generation
+## Example: Tasks Plugin
+
+See [[Help/Task Management]] for a complete example plugin that demonstrates:
+- Programmatic tool generation
+- File-as-state patterns
+- Tools→workflow integration
 
 ## See Also
 
-- [[Help/Extending/Event Hooks]] - React to events
-- [[Help/Extending/Custom Tools]] - Create MCP tools
-- [[Help/Rune/Rune vs Just]] - When to use Rune vs Just
+- [[Help/Rune/Language Basics]] - Rune syntax
+- [[Help/Rune/Crucible API]] - Available functions
+- [[Help/Rune/Tool Definition]] - Tool attribute details
+- [[Help/Extending/Event Hooks]] - Hook system
+- [[Help/Extending/Custom Tools]] - Tool deep dive
 - [[Extending Crucible]] - All extension points
