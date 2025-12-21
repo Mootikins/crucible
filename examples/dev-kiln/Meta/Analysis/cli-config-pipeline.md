@@ -1,8 +1,14 @@
 ---
+title: CLI, Config & Pipeline Analysis
+description: Architecture analysis of CLI commands, configuration, and processing pipeline
 type: analysis
 system: cli
 status: review
 updated: 2025-12-13
+tags:
+  - meta
+  - analysis
+  - cli
 ---
 
 # CLI, Config & Pipeline Analysis

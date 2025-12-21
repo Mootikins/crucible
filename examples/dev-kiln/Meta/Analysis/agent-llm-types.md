@@ -1,8 +1,14 @@
 ---
+title: Agent & LLM Types Analysis
+description: Architecture analysis of agent handles and LLM provider infrastructure
 type: analysis
 system: agents
 status: review
 updated: 2024-12-13
+tags:
+  - meta
+  - analysis
+  - agents
 ---
 
 # Agent & LLM Types Analysis

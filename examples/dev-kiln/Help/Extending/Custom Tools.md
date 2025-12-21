@@ -57,5 +57,5 @@ parameters:
 
 ## See Also
 
-- [[Help/Extending/Writing Plugins]] - Plugin development guide
+- [[Help/Extending/Creating Plugins]] - Plugin development guide
 - [[Scripts/Auto Tagging]] - Example Rune script
