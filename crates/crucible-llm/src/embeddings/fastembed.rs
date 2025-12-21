@@ -302,13 +302,56 @@ impl FastEmbedProvider {
             // Load model (this runs in blocking thread pool via tokio::task::spawn_blocking)
             let model = tokio::task::spawn_blocking(move || TextEmbedding::try_new(init_options))
                 .await
-                .map_err(|e| EmbeddingError::ProviderError {
-                    provider: "FastEmbed".to_string(),
-                    message: format!("Failed to spawn model loading task: {}", e),
+                .map_err(|e| {
+                    let error_msg = format!("Failed to spawn model loading task: {}", e);
+                    #[cfg(target_os = "windows")]
+                    {
+                        tracing::error!(
+                            "{} On Windows, this may indicate a threading or runtime issue.",
+                            error_msg
+                        );
+                    }
+                    EmbeddingError::ProviderError {
+                        provider: "FastEmbed".to_string(),
+                        message: error_msg,
+                    }
                 })?
-                .map_err(|e| EmbeddingError::ProviderError {
-                    provider: "FastEmbed".to_string(),
-                    message: format!("Failed to load model: {}", e),
+                .map_err(|e| {
+                    let error_str = e.to_string();
+                    let mut error_msg = format!("Failed to load ONNX model: {}", error_str);
+                    
+                    #[cfg(target_os = "windows")]
+                    {
+                        // Add Windows-specific diagnostic information
+                        if error_str.contains("DLL") || error_str.contains("dll") {
+                            error_msg.push_str(
+                                "\n\nWindows DLL Error Detected. Troubleshooting:\n\
+                                1. Install Visual C++ Redistributable: https://aka.ms/vs/17/release/vc_redist.x64.exe\n\
+                                2. Verify .cargo/config.toml uses dynamic runtime (target-feature=-crt-static)\n\
+                                3. Clean and rebuild: cargo clean && cargo build"
+                            );
+                        } else if error_str.contains("LNK2038") || error_str.contains("RuntimeLibrary") {
+                            error_msg.push_str(
+                                "\n\nC Runtime Mismatch Detected. Troubleshooting:\n\
+                                1. Clean build: cargo clean && cargo build\n\
+                                2. Verify .cargo/config.toml exists and uses dynamic runtime\n\
+                                3. Check that all dependencies use /MD (dynamic runtime)"
+                            );
+                        } else {
+                            error_msg.push_str(
+                                "\n\nWindows-specific troubleshooting:\n\
+                                1. Ensure Visual C++ Redistributable is installed\n\
+                                2. Check .cargo/config.toml for correct runtime settings\n\
+                                3. Try: cargo clean && cargo build"
+                            );
+                        }
+                    }
+                    
+                    tracing::error!("FastEmbed model loading error: {}", error_msg);
+                    EmbeddingError::ProviderError {
+                        provider: "FastEmbed".to_string(),
+                        message: error_msg,
+                    }
                 })?;
 
             *model_guard = Some(model);
@@ -326,30 +369,54 @@ impl FastEmbedProvider {
         let model_arc = Arc::clone(&self.model);
         let batch_size = self.config.batch_size;
 
-        // Run embedding in blocking thread pool
-        let embeddings =
-            tokio::task::spawn_blocking(move || -> Result<Vec<Vec<f32>>, fastembed::Error> {
-                // Get lock inside the blocking task
-                let mut model_guard = model_arc.blocking_lock();
-                let model = model_guard
-                    .as_mut()
-                    .ok_or_else(|| fastembed::Error::msg("Model not loaded"))?;
+            // Run embedding in blocking thread pool
+            let embeddings =
+                tokio::task::spawn_blocking(move || -> Result<Vec<Vec<f32>>, fastembed::Error> {
+                    // Get lock inside the blocking task
+                    let mut model_guard = model_arc.blocking_lock();
+                    let model = model_guard
+                        .as_mut()
+                        .ok_or_else(|| fastembed::Error::msg("Model not loaded"))?;
 
-                // Convert to references for fastembed API
-                let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+                    // Convert to references for fastembed API
+                    let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
 
-                // Generate embeddings
-                model.embed(text_refs, batch_size)
-            })
-            .await
-            .map_err(|e| EmbeddingError::ProviderError {
-                provider: "FastEmbed".to_string(),
-                message: format!("Failed to spawn embedding task: {}", e),
-            })?
-            .map_err(|e| EmbeddingError::ProviderError {
-                provider: "FastEmbed".to_string(),
-                message: format!("Failed to generate embeddings: {}", e),
-            })?;
+                    // Generate embeddings
+                    model.embed(text_refs, batch_size)
+                })
+                .await
+                .map_err(|e| {
+                    let error_msg = format!("Failed to spawn embedding task: {}", e);
+                    #[cfg(target_os = "windows")]
+                    {
+                        tracing::error!(
+                            "{} On Windows, this may indicate a threading or runtime issue.",
+                            error_msg
+                        );
+                    }
+                    EmbeddingError::ProviderError {
+                        provider: "FastEmbed".to_string(),
+                        message: error_msg,
+                    }
+                })?
+                .map_err(|e| {
+                    let error_str = e.to_string();
+                    let mut error_msg = format!("Failed to generate embeddings: {}", error_str);
+                    
+                    #[cfg(target_os = "windows")]
+                    {
+                        if error_str.contains("DLL") || error_str.contains("dll") {
+                            error_msg.push_str(
+                                "\n\nWindows DLL Error during inference. Check Visual C++ Redistributable installation."
+                            );
+                        }
+                    }
+                    
+                    EmbeddingError::ProviderError {
+                        provider: "FastEmbed".to_string(),
+                        message: error_msg,
+                    }
+                })?;
 
         Ok(embeddings)
     }
