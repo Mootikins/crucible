@@ -416,7 +416,7 @@ verbose = false
 # See examples/config/discovery.toml for detailed examples
 #
 # See Help/Extending/Custom Tools.md for writing custom tools
-# See Help/Extending/Writing Plugins.md for Rune scripting guide
+# See Help/Extending/Creating Plugins.md for Rune scripting guide
 
 # [discovery]
 # # Configure discovery for each resource type (tools, hooks, events)
@@ -494,7 +494,7 @@ verbose = false
 # - Tool selection/blocking (restrict capabilities)
 #
 # See examples/config/hooks.toml for detailed examples
-# See Help/Extending/Writing Plugins.md for writing custom hooks
+# See Help/Extending/Creating Plugins.md for writing custom hooks
 
 # [hooks]
 # # Built-in hooks (provided by Crucible)

@@ -1,7 +1,13 @@
 ---
+title: Project Tasks
+description: Active development tasks and backlog for Crucible
 type: tasks
 status: active
 updated: 2025-12-14
+tags:
+  - meta
+  - tasks
+  - tracking
 ---
 
 # Project Tasks

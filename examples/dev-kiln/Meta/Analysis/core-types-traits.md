@@ -1,8 +1,14 @@
 ---
+title: Core Types & Traits Analysis
+description: Architecture analysis of crucible-core traits and type organization
 type: analysis
 system: core
 status: review
 updated: 2024-12-13
+tags:
+  - meta
+  - analysis
+  - architecture
 ---
 
 # Core Types & Traits Analysis

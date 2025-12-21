@@ -1,6 +1,7 @@
 ---
 title: Welcome to Crucible
 description: The dev-kiln - your guide to Crucible's knowledge management system
+status: implemented
 tags:
   - index
   - guide
@@ -23,15 +24,24 @@ This **dev-kiln** serves as:
 
 Think of it as Crucible documenting itself, using itself.
 
+## Maps of Content
+
+Navigate by topic:
+
+- **[[Extending Crucible]]** - Plugins, hooks, tools, and customization
+- **[[Search & Discovery]]** - Finding and navigating your notes
+- **[[AI Features]]** - Agents, chat, and AI-powered capabilities
+- **[[Configuration]]** - Setting up providers and backends
+
 ## Core Concepts
 
-Crucible is built on simple principles:
+Understand the fundamentals:
 
-- **Wikilinks Define the Graph** - `[[Note Name]]` links create your knowledge structure
-- **Plaintext is Source of Truth** - Works with any text editor, no vendor lock-in
-- **Block-Level Granularity** - Search and embed at paragraph/heading level
-- **Local-First** - Everything stays on your machine
-- **Agent-Ready** - Built for AI collaboration via MCP and ACP protocols
+- **[[Help/Concepts/Kilns]]** - What makes a kiln
+- **[[Help/Concepts/The Knowledge Graph]]** - How wikilinks connect ideas
+- **[[Help/Concepts/Semantic Search]]** - Finding by meaning
+- **[[Help/Concepts/Plaintext First]]** - Why markdown matters
+- **[[Help/Concepts/Agents & Protocols]]** - MCP and ACP explained
 
 ## Getting Started
 
@@ -75,10 +85,21 @@ Quick help on specific features:
 - **[[Help/Config/agents]]** - Agent card configuration
 
 ### Extending Crucible
-- **[[Help/Extending/Writing Plugins]]** - Create plugins with Rune
+- **[[Help/Extending/Creating Plugins]]** - Create plugins with Rune
+- **[[Help/Extending/Event Hooks]]** - React to kiln events
+- **[[Help/Extending/MCP Gateway]]** - Connect external tools
 - **[[Help/Extending/Custom Tools]]** - Add MCP tools
 - **[[Help/Extending/Agent Cards]]** - Configure AI agents
 - **[[Help/Extending/Workflow Authoring]]** - Build workflows
+
+### Scripting with Rune
+- **[[Help/Rune/Language Basics]]** - Rune syntax fundamentals
+- **[[Help/Rune/Crucible API]]** - Available functions
+- **[[Help/Rune/Best Practices]]** - Writing good plugins
+
+### Advanced Features
+- **[[Help/Workflows/Index]]** - Automated multi-step processes
+- **[[Help/Query/Index]]** - Advanced query language
 
 ## Example Agents
 
