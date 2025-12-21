@@ -4,7 +4,7 @@
 //! Tests cover multi-criteria queries, fuzzy search, domain-specific searches,
 //! and link validation.
 //!
-//! All tests use the test-kiln at `examples/test-kiln/` for realistic test data.
+//! All tests use the dev-kiln at `examples/dev-kiln/` for realistic test data.
 
 mod common;
 
@@ -321,7 +321,7 @@ async fn domain_technical_code_blocks() {
                 }
             });
 
-        // At least some languages should have code blocks in test-kiln
+        // At least some languages should have code blocks in dev-kiln
         if has_code_block {
             // TODO: Database query to find documents with code blocks
             // SELECT * FROM entities
