@@ -426,15 +426,14 @@ impl ContentAddressedStorageSurrealDB {
             ASTBlockMetadata::Callout {
                 callout_type,
                 title,
-                is_standard_type,
             } => {
                 metadata.insert(
                     "callout_type".to_string(),
-                    serde_json::Value::String(callout_type.clone()),
+                    serde_json::Value::String(callout_type.to_string()),
                 );
                 metadata.insert(
                     "is_standard_type".to_string(),
-                    serde_json::Value::Bool(*is_standard_type),
+                    serde_json::Value::Bool(callout_type.is_standard()),
                 );
                 if let Some(title) = title {
                     metadata.insert(
