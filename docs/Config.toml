@@ -1,7 +1,7 @@
 # =============================================================================
-# Crucible Dev-Kiln Configuration
+# Crucible Reference Configuration
 # =============================================================================
-# Location: examples/dev-kiln/Config.toml
+# Location: docs/Config.toml
 #
 # This is THE reference configuration for Crucible. Every available option is
 # documented here with examples and defaults. Use this as a guide to configure
