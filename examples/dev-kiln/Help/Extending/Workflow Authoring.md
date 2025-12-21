@@ -1,8 +1,8 @@
 ---
 title: Workflow Authoring
 description: How to create custom workflows in Crucible
+status: implemented
 tags:
-  - help
   - extending
   - workflows
 ---
@@ -10,6 +10,8 @@ tags:
 # Workflow Authoring
 
 Create automated workflows that combine multiple operations.
+
+> [!warning] A new prose-based workflow syntax is planned. See [[Help/Workflows/Markup]].
 
 ## Overview
 
@@ -19,7 +21,7 @@ Workflows are sequences of steps that:
 - React to file changes
 - Schedule recurring tasks
 
-## Workflow Definition
+## Workflow Definition (YAML)
 
 ```yaml
 # workflows/daily-review.yaml
@@ -54,8 +56,39 @@ steps:
 | `manual` | Explicit invocation |
 | `webhook` | HTTP trigger |
 
+## Steps
+
+Each step can:
+- Call a **tool** with parameters
+- Invoke an **agent** with a prompt
+- Reference **previous step results** with `{{previous.*}}`
+
+## Variables
+
+Use template variables in steps:
+
+| Variable | Description |
+|----------|-------------|
+| `{{date}}` | Current date |
+| `{{time}}` | Current time |
+| `{{previous.results}}` | Output from previous step |
+| `{{previous.response}}` | Agent response from previous step |
+
+## Running Workflows
+
+```bash
+# Run a workflow manually
+cru workflow run "daily-review"
+
+# List available workflows
+cru workflow list
+```
+
 ## See Also
 
-- [[Help/Extending/Writing Plugins]] - Plugin development
+- [[Help/Workflows/Index]] - Workflow system overview
+- [[Help/Workflows/Markup]] - Planned prose syntax
+- [[Help/Workflows/Sessions]] - Session tracking
+- [[Help/Extending/Creating Plugins]] - Plugin development
 - [[Help/Extending/Custom Tools]] - Creating tools
 - [[Scripts/Daily Summary]] - Example workflow script
