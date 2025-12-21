@@ -142,12 +142,13 @@ impl RuneDiscoveryConfig {
     /// Create config with default directories
     ///
     /// Default directories:
-    /// - `~/.crucible/tools/` (global)
-    /// - `KILN/.crucible/tools/` (kiln-specific, if provided)
+    /// - `~/.config/crucible/plugins/` (global personal)
+    /// - `KILN/.crucible/plugins/` (kiln-specific personal)
+    /// - `KILN/plugins/` (kiln-tracked shared)
     ///
     /// Note: Uses `DiscoveryPaths` internally for consistent path resolution.
     pub fn with_defaults(kiln_path: Option<&std::path::Path>) -> Self {
-        let paths = DiscoveryPaths::new("tools", kiln_path);
+        let paths = DiscoveryPaths::new("plugins", kiln_path);
 
         Self {
             tool_directories: paths.all_paths(),

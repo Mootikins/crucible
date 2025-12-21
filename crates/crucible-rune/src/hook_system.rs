@@ -8,7 +8,7 @@
 //!
 //! ## Lifecycle
 //!
-//! 1. Hooks are discovered from `~/.crucible/hooks/` and `KILN/.crucible/hooks/`
+//! 1. Hooks are discovered from `~/.config/crucible/plugins/` and `KILN/.crucible/plugins/`
 //! 2. RuneHook metadata is parsed via `AttributeDiscovery`
 //! 3. RuneHookHandlers are created from discovered metadata
 //! 4. Handlers are registered on the EventBus
@@ -309,7 +309,7 @@ pub struct HookRegistry {
 impl HookRegistry {
     /// Create a new registry with default discovery paths
     pub fn new(kiln_path: Option<&Path>) -> Result<Self, RuneError> {
-        let paths = DiscoveryPaths::new("hooks", kiln_path);
+        let paths = DiscoveryPaths::new("plugins", kiln_path);
         let executor = Arc::new(RuneExecutor::new()?);
 
         Ok(Self {
