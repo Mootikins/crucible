@@ -6,6 +6,8 @@ tags:
   - example
   - review
 type: agent-card
+created: 2025-03-15T10:30:00Z
+modified: 2025-03-20T14:45:00Z
 ---
 
 # Reviewer Agent

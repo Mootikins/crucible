@@ -5,6 +5,8 @@ tags:
   - guide
   - beginner
 order: 1
+created: 2025-01-10
+modified: 2025-01-15
 ---
 
 # Getting Started with Crucible
