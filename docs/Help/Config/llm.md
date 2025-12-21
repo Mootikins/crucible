@@ -1,5 +1,4 @@
 ---
-title: LLM Configuration
 description: Configure language model providers for chat and agents
 tags:
   - reference

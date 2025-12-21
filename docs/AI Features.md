@@ -1,5 +1,4 @@
 ---
-title: AI Features
 description: Map of AI agent capabilities, chat, and protocol integrations
 status: implemented
 tags:

@@ -1,5 +1,4 @@
 ---
-title: Tools, MCP & Rune Analysis
 description: Architecture analysis of MCP tools, Rune scripting, and extensibility layer
 type: analysis
 system: tools

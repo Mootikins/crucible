@@ -1,5 +1,4 @@
 ---
-title: PARA Method
 description: Organizing by actionability - Projects, Areas, Resources, Archive
 tags:
   - organization

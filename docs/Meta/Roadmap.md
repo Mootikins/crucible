@@ -1,5 +1,4 @@
 ---
-title: Crucible Roadmap
 description: Vision, milestones, and feature planning for Crucible development
 type: roadmap
 status: active

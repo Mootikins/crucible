@@ -1,5 +1,4 @@
 ---
-title: cru stats
 description: Display statistics about your kiln
 tags:
   - reference

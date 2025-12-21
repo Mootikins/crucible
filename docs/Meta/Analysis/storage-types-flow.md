@@ -1,5 +1,4 @@
 ---
-title: Storage Types & Data Flow Analysis
 description: Architecture analysis of SurrealDB storage layer and EAV schema
 type: analysis
 system: storage

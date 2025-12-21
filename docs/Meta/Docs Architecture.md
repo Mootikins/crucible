@@ -1,5 +1,4 @@
 ---
-title: Documentation Architecture
 description: Structure, purpose, and conventions for the Crucible documentation kiln
 tags:
   - meta
@@ -122,7 +121,6 @@ Every note should have frontmatter:
 
 ```yaml
 ---
-title: Getting Started
 description: Your first steps with Crucible
 tags:
   - guide

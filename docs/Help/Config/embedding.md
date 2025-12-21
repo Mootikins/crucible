@@ -1,5 +1,4 @@
 ---
-title: Embedding Configuration
 description: Configure embedding providers for semantic search
 tags:
   - reference

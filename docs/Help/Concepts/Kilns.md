@@ -1,5 +1,4 @@
 ---
-title: Kilns
 description: What a kiln is and how it differs from a folder or vault
 status: implemented
 tags:

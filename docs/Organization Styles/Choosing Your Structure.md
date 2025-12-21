@@ -1,5 +1,4 @@
 ---
-title: Choosing Your Structure
 description: Decision guide for selecting an organizational approach
 tags:
   - organization

@@ -1,5 +1,4 @@
 ---
-title: Getting Started
 description: Your first steps with Crucible - installation, setup, and basic commands
 tags:
   - guide
