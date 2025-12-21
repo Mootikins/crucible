@@ -1,56 +1,120 @@
-# Discovery Path Conventions
+# Plugin Discovery
 
 **Status**: Implemented
 **System**: plugins
-**Related**: [hooks.md](./hooks.md), [event-system.md](./event-system.md)
+**Related**: [hooks.md](./hooks.md)
 
 ## Overview
 
-Crucible uses a unified discovery system to locate Rune scripts across multiple directories. This enables separation of global resources (shared across kilns) and kiln-specific customizations.
+Crucible uses a unified plugin discovery system. All extensions (tools, hooks) are discovered from `plugins/` directories. Attributes within scripts (`#[tool(...)]`, `#[hook(...)]`) determine what gets registered.
 
-**Discovery applies to**:
-- **Rune tools** - Script-based MCP tools
-- **Rune hooks** - Event handlers
-- **Event handlers** - Specialized event processors
+**Plugins can provide**:
+- **Tools** - MCP-compatible functions via `#[tool(...)]`
+- **Hooks** - Event handlers via `#[hook(...)]`
 
 ## Directory Structure
 
-### Global Paths
-
-Located in `~/.crucible/` (user's home directory):
+Plugins are discovered from three locations in priority order:
 
 ```
-~/.crucible/
-├── runes/          # Rune tool scripts (global)
-├── hooks/          # Hook scripts (global)
-└── events/         # Event handler scripts (global)
-```
+~/.config/crucible/
+└── plugins/              # 1. Global personal (user-specific)
 
-**Purpose**: Shared across all kilns, user-specific customizations
-
-### Kiln Paths
-
-Located in `KILN/.crucible/` (kiln-specific):
-
-```
 KILN/
-└── .crucible/
-    ├── runes/      # Rune tool scripts (kiln-specific)
-    ├── hooks/      # Hook scripts (kiln-specific)
-    └── events/     # Event handler scripts (kiln-specific)
+├── .crucible/
+│   └── plugins/          # 2. Kiln personal (gitignored)
+└── plugins/              # 3. Kiln shared (version-controlled)
 ```
 
-**Purpose**: Kiln-specific tools and hooks, project customizations
+### Discovery Priority
 
-## Search Priority
+Later sources override earlier by name:
 
-When discovering resources, paths are searched in this order:
+1. **Global personal**: `~/.config/crucible/plugins/`
+   - User-specific tools and hooks
+   - Shared across all kilns
+   - Platform-specific: Windows uses `%APPDATA%\crucible\plugins\`
 
-1. **Additional paths** (from configuration)
-2. **Global user path** (`~/.crucible/<type>/`)
-3. **Kiln-specific path** (`KILN/.crucible/<type>/`)
+2. **Kiln personal**: `KILN/.crucible/plugins/`
+   - Kiln-specific customizations
+   - Should be gitignored
+   - Private to the user
 
-**Name conflicts**: First match wins. Kiln-specific scripts can override global scripts by using the same filename.
+3. **Kiln shared**: `KILN/plugins/`
+   - Version-controlled with the kiln
+   - Shared with collaborators
+   - Project-specific tools
+
+## Plugin Types
+
+### Single-File Plugin
+
+A `.rn` file with tool or hook attributes:
+
+```rune
+// plugins/greet.rn
+
+/// A friendly greeting tool
+#[tool(name = "greet", description = "Say hello")]
+pub fn greet(name) {
+    Ok(format!("Hello, {}!", name))
+}
+```
+
+### Module Plugin (lazy.nvim-style)
+
+A directory with `mod.rn` entry point:
+
+```
+plugins/
+└── tasks/
+    ├── mod.rn           # Entry point
+    ├── parser.rn        # Helper module
+    └── commands.rn      # More helpers
+```
+
+```rune
+// tasks/mod.rn
+mod parser;
+mod commands;
+
+#[tool(name = "tasks_list")]
+pub fn list(path) {
+    let tasks = parser::parse_tasks(path)?;
+    commands::list_tasks(tasks)
+}
+
+#[tool(name = "tasks_next")]
+pub fn next(path) {
+    let tasks = parser::parse_tasks(path)?;
+    commands::next_task(tasks)
+}
+```
+
+### Mixed Tools and Hooks
+
+A single file can provide both:
+
+```rune
+// plugins/github.rn
+
+#[tool(name = "gh_issues", description = "List GitHub issues")]
+pub fn list_issues(repo) {
+    // Implementation
+}
+
+#[hook(event = "tool:before", pattern = "gh_*", priority = 5)]
+pub fn rate_limit_github(ctx, event) {
+    // Rate limiting logic
+    event
+}
+
+#[hook(event = "tool:after", pattern = "gh_*", priority = 50)]
+pub fn transform_github_results(ctx, event) {
+    // Transform output
+    event
+}
+```
 
 ## DiscoveryPaths API
 
@@ -59,28 +123,28 @@ When discovering resources, paths are searched in this order:
 ```rust
 use crucible_rune::discovery_paths::DiscoveryPaths;
 
-// With kiln path
-let paths = DiscoveryPaths::new("hooks", Some(kiln_path));
+// With kiln path (includes all three tiers)
+let paths = DiscoveryPaths::new("plugins", Some(kiln_path));
 
-// Without kiln path (global only)
-let paths = DiscoveryPaths::new("tools", None);
+// Global only (no kiln paths)
+let paths = DiscoveryPaths::new("plugins", None);
 
-// Empty (no defaults)
-let paths = DiscoveryPaths::empty("hooks");
+// Empty (no defaults, explicit paths only)
+let paths = DiscoveryPaths::empty("plugins");
 ```
 
 ### Adding Custom Paths
 
 ```rust
 // Add single path
-let paths = DiscoveryPaths::new("hooks", None)
-    .with_path("/custom/hooks".into());
+let paths = DiscoveryPaths::new("plugins", None)
+    .with_path("/custom/plugins".into());
 
 // Add multiple paths
-let paths = DiscoveryPaths::new("hooks", None)
+let paths = DiscoveryPaths::new("plugins", None)
     .with_additional(vec![
-        "/project/hooks".into(),
-        "/shared/hooks".into(),
+        "/project/plugins".into(),
+        "/shared/plugins".into(),
     ]);
 ```
 
@@ -88,7 +152,7 @@ let paths = DiscoveryPaths::new("hooks", None)
 
 ```rust
 // Disable defaults (explicit paths only)
-let paths = DiscoveryPaths::new("hooks", None)
+let paths = DiscoveryPaths::new("plugins", None)
     .without_defaults()
     .with_path("/only/this/path".into());
 
@@ -110,29 +174,20 @@ let additional = paths.additional_paths();  // &[PathBuf]
 
 // Get only existing directories
 let existing = paths.existing_paths();  // Vec<PathBuf>
-
-// Get subdirectories
-let subdirs = paths.subdir("recipe_discovered");  // Vec<PathBuf>
-let existing_subdirs = paths.existing_subdir("recipe_discovered");
 ```
 
 ## Configuration
 
 Discovery paths can be configured via TOML:
 
-### Format
-
 ```toml
-[discovery.hooks]
-additional_paths = ["/custom/hooks", "/shared/hooks"]
-use_defaults = true
+# ~/.config/crucible/config.toml
 
-[discovery.tools]
-additional_paths = ["/project/tools"]
-use_defaults = false  # Disable ~/.crucible/tools/ and KILN/.crucible/tools/
-
-[discovery.events]
-# Use defaults only
+[discovery.plugins]
+additional_paths = [
+    "/work/shared-plugins",
+    "~/personal-plugins"
+]
 use_defaults = true
 ```
 
@@ -146,164 +201,54 @@ let config = DiscoveryConfig {
     use_defaults: true,
 };
 
-let paths = DiscoveryPaths::new("hooks", Some(kiln_path))
+let paths = DiscoveryPaths::new("plugins", Some(kiln_path))
     .with_config(&config);
 ```
 
-## Hook Discovery
+## Discovery Process
 
-### Discovery Process
-
-1. **Scan directories**: Find all `.rn` files in discovery paths
-2. **Parse attributes**: Extract `#[hook(...)]` attributes from each file
+1. **Scan directories**: Find all `.rn` files in plugin paths (recursive)
+2. **Parse attributes**: Extract `#[tool(...)]` and `#[hook(...)]` attributes
 3. **Compile scripts**: Compile Rune source to bytecode
-4. **Create handlers**: Wrap in `RuneHookHandler` instances
-5. **Register**: Add to EventBus
+4. **Register**: Add tools to registry, hooks to EventBus
 
 ### Example Discovery
 
 ```rust
-use crucible_rune::hook_system::HookRegistry;
+use crucible_rune::{RuneToolRegistry, RuneDiscoveryConfig, HookRegistry};
 
-// Create registry with discovery paths
-let mut registry = HookRegistry::new(Some(kiln_path))?;
+// Discover tools
+let config = RuneDiscoveryConfig::with_defaults(Some(kiln_path));
+let tool_registry = RuneToolRegistry::discover_from(config).await?;
 
-// Discover all hooks
-let count = registry.discover()?;
-println!("Discovered {} hooks", count);
+// Discover hooks
+let mut hook_registry = HookRegistry::new(Some(kiln_path))?;
+let hook_count = hook_registry.discover()?;
 
-// Register on event bus
+// Register hooks on event bus
 let mut bus = EventBus::new();
-registry.register_all(&mut bus);
-```
-
-### Hot Reload
-
-File watcher detects changes:
-
-```rust
-// Watch for file changes
-let watcher = setup_file_watcher(registry.paths());
-
-// On file change:
-registry.reload_file(&changed_path)?;
-
-// Re-register on bus
-registry.register_all(&mut bus);
-```
-
-## Tool Discovery
-
-### Rune Tools
-
-Tools are discovered from `runes/` directories:
-
-```rust
-use crucible_rune::discovery_paths::DiscoveryPaths;
-use crucible_rune::attribute_discovery::AttributeDiscovery;
-
-let paths = DiscoveryPaths::new("runes", Some(kiln_path));
-let discovery = AttributeDiscovery::new();
-
-// Discover all tools
-let tools: Vec<RuneTool> = discovery.discover_all(&paths)?;
-```
-
-### Tool Metadata
-
-Tools use `#[tool(...)]` attributes:
-
-```rune
-/// Search for Rust crates on crates.io
-#[tool(
-    name = "search_crates",
-    description = "Search for Rust crates",
-    category = "search"
-)]
-pub fn search_crates(query) {
-    // Implementation
-}
-```
-
-## Event Handler Discovery
-
-Event handlers are specialized hooks for custom event types:
-
-### Directory Structure
-
-```
-~/.crucible/events/
-├── recipe_discovered/    # Handlers for recipe:discovered
-│   └── enrich.rn
-├── audit/                # Handlers for audit:* events
-│   └── log.rn
-└── custom/               # General custom event handlers
-    └── process.rn
-```
-
-### Subdirectory Matching
-
-```rust
-// Get paths for specific event type
-let paths = DiscoveryPaths::new("events", Some(kiln_path));
-let recipe_paths = paths.existing_subdir("recipe_discovered");
-
-// Discover handlers in subdirectory
-for path in recipe_paths {
-    let handlers = discover_in_dir(&path)?;
-}
+hook_registry.register_all(&mut bus);
 ```
 
 ## File Organization
 
 ### Naming Conventions
 
-**Recommended naming**:
-- Descriptive names: `filter_test_output.rn`, `github_rate_limiter.rn`
-- Lowercase with underscores: `my_hook.rn` not `MyHook.rn`
-- Category prefix optional: `tool_validator.rn`, `note_indexer.rn`
+**Recommended**:
+- Descriptive names: `filter_test_output.rn`, `github_tools.rn`
+- Lowercase with underscores: `my_plugin.rn` not `MyPlugin.rn`
+- Category prefix for related plugins: `task_list.rn`, `task_next.rn`
 
 **Avoid**:
-- Generic names: `hook1.rn`, `script.rn`
+- Generic names: `plugin1.rn`, `script.rn`
 - Special characters in filenames
 - Names longer than 50 characters
-
-### Single vs Multiple Hooks
-
-**One file, one hook** (recommended):
-```rune
-// filter_tests.rn
-#[hook(event = "tool:after", pattern = "just_test*")]
-pub fn filter_tests(ctx, event) {
-    // Implementation
-}
-```
-
-**One file, multiple hooks** (for related functionality):
-```rune
-// github_hooks.rn
-
-#[hook(event = "tool:before", pattern = "gh_*", priority = 5)]
-pub fn rate_limit_github(ctx, event) {
-    // Rate limiting logic
-}
-
-#[hook(event = "tool:after", pattern = "gh_*", priority = 50)]
-pub fn transform_github_results(ctx, event) {
-    // Transformation logic
-}
-
-#[hook(event = "tool:error", pattern = "gh_*", priority = 100)]
-pub fn retry_github_errors(ctx, event) {
-    // Retry logic
-}
-```
 
 ### Directory Organization
 
 **Flat structure** (simple projects):
 ```
-~/.crucible/hooks/
+plugins/
 ├── filter_tests.rn
 ├── log_tools.rn
 └── enrich_recipes.rn
@@ -311,27 +256,25 @@ pub fn retry_github_errors(ctx, event) {
 
 **Categorized structure** (complex projects):
 ```
-~/.crucible/hooks/
-├── tools/
-│   ├── filter_tests.rn
-│   ├── rate_limiter.rn
-│   └── validator.rn
-├── notes/
-│   ├── index_backlinks.rn
-│   └── extract_tags.rn
-└── github/
-    ├── rate_limit.rn
-    ├── transform.rn
-    └── retry.rn
+plugins/
+├── github/
+│   ├── mod.rn
+│   ├── issues.rn
+│   └── rate_limit.rn
+├── tasks/
+│   ├── mod.rn
+│   └── parser.rn
+└── utils/
+    └── logging.rn
 ```
 
-**Note**: Discovery is recursive, so subdirectories are automatically scanned.
+Discovery is recursive - subdirectories are automatically scanned.
 
 ## Examples
 
-### Example 1: Global Hook
+### Example 1: Global Plugin
 
-Create `~/.crucible/hooks/log_all_tools.rn`:
+Create `~/.config/crucible/plugins/log_tools.rn`:
 
 ```rune
 /// Log all tool executions (global)
@@ -347,24 +290,42 @@ pub fn log_all_tools(ctx, event) {
 
 This hook applies to all kilns.
 
-### Example 2: Kiln-Specific Hook
+### Example 2: Kiln Shared Plugin
 
-Create `KILN/.crucible/hooks/project_specific.rn`:
+Create `KILN/plugins/project_tools.rn`:
 
 ```rune
-/// Project-specific test filtering
-#[hook(event = "tool:after", pattern = "just_test*", priority = 10)]
-pub fn filter_project_tests(ctx, event) {
-    // Project-specific filtering logic
-    event
+/// Project-specific deployment tool
+#[tool(
+    name = "deploy",
+    description = "Deploy to staging"
+)]
+pub fn deploy(env) {
+    // Deployment logic shared with team
+    Ok("Deployed!")
 }
 ```
 
-This hook only applies to this kiln.
+This tool is version-controlled and shared with collaborators.
 
-### Example 3: Override Global Hook
+### Example 3: Kiln Personal Plugin
 
-**Global**: `~/.crucible/hooks/test_filter.rn`
+Create `KILN/.crucible/plugins/my_shortcuts.rn`:
+
+```rune
+/// Personal shortcut (not shared)
+#[tool(name = "quick_test")]
+pub fn quick_test() {
+    // My personal testing workflow
+    Ok("Done")
+}
+```
+
+This tool is gitignored and personal to the user.
+
+### Example 4: Override Pattern
+
+**Global**: `~/.config/crucible/plugins/test_filter.rn`
 ```rune
 #[hook(event = "tool:after", pattern = "just_test*", priority = 10)]
 pub fn test_filter(ctx, event) {
@@ -373,95 +334,45 @@ pub fn test_filter(ctx, event) {
 }
 ```
 
-**Kiln override**: `KILN/.crucible/hooks/test_filter.rn`
+**Kiln override**: `KILN/plugins/test_filter.rn`
 ```rune
 #[hook(event = "tool:after", pattern = "just_test*", priority = 10)]
 pub fn test_filter(ctx, event) {
-    // Custom filtering for this project
+    // Project-specific filtering
     event
 }
 ```
 
-The kiln-specific hook shadows the global one (same name = override).
-
-### Example 4: Custom Path Configuration
-
-`~/.config/crucible/config.toml`:
-
-```toml
-[discovery.hooks]
-additional_paths = [
-    "/work/shared-hooks",
-    "/home/user/personal-hooks"
-]
-use_defaults = true
-
-[discovery.tools]
-additional_paths = ["/work/company-tools"]
-use_defaults = false  # Only use company tools, not defaults
-```
-
-This configuration:
-- Adds two custom hook directories
-- Keeps default hook paths
-- Disables default tool paths (uses only company tools)
-
-### Example 5: Event-Specific Handlers
-
-Create event-specific handlers:
-
-```
-~/.crucible/events/
-└── recipe_discovered/
-    └── enrich_rust_recipes.rn
-```
-
-```rune
-/// Enrich Rust-related recipes
-#[hook(event = "custom", pattern = "recipe:discovered", priority = 10)]
-pub fn enrich_rust_recipes(ctx, event) {
-    let recipe_name = event.payload.name;
-
-    if recipe_name.contains("cargo") || recipe_name.contains("rust") {
-        event.payload.tags.push("rust");
-        event.payload.category = "rust-development";
-    }
-
-    event
-}
-```
+The kiln plugin shadows the global one (same name = override).
 
 ## Troubleshooting
 
-### Hooks Not Found
+### Plugins Not Found
 
 **Check discovery paths**:
 ```bash
 # Verify directories exist
-ls -la ~/.crucible/hooks/
-ls -la KILN/.crucible/hooks/
+ls -la ~/.config/crucible/plugins/
+ls -la KILN/.crucible/plugins/
+ls -la KILN/plugins/
 
 # Check for .rn files
-find ~/.crucible/hooks/ -name "*.rn"
+find ~/.config/crucible/plugins/ -name "*.rn"
 ```
 
 **Check logs**:
 ```bash
 # Look for discovery messages
-grep "Discovered.*hooks" crucible.log
+grep "Discovered.*plugin" crucible.log
 ```
 
-### Hooks Not Executing
+### Plugins Not Executing
 
-**Verify registration**:
-- Check hook attribute syntax
-- Verify event type matches
-- Check pattern matches identifier
-- Ensure `enabled = true`
-
-**Check priority**:
-- Lower priority hooks run first
-- Check if earlier hook cancels event
+**Verify attributes**:
+- Check `#[tool(...)]` or `#[hook(...)]` syntax
+- Verify event type matches (for hooks)
+- Check pattern matches identifier (for hooks)
+- Ensure `enabled = true` (for hooks)
 
 **Check compilation**:
 - Look for Rune compilation errors in logs
@@ -469,52 +380,43 @@ grep "Discovered.*hooks" crucible.log
 
 ### Name Conflicts
 
-If multiple hooks have the same name:
-- First discovered wins
-- Use unique names to avoid conflicts
-- Use namespacing: `project_filter_tests` vs `global_filter_tests`
-
-### Permission Issues
-
-Ensure directories are readable:
-```bash
-chmod -R u+r ~/.crucible/
-chmod -R u+r KILN/.crucible/
-```
+If multiple plugins have the same name:
+- Later in discovery order wins
+- Kiln shared overrides kiln personal overrides global
+- Use unique names to avoid unintended overrides
 
 ## Best Practices
 
 ### Organization
 
-- **Global hooks**: General utilities, logging, audit
-- **Kiln hooks**: Project-specific behavior, customizations
-- **Subdirectories**: Group related hooks together
-- **Clear names**: Descriptive function and file names
+- **Global plugins**: General utilities, logging, audit
+- **Kiln shared plugins**: Project-specific tools for the team
+- **Kiln personal plugins**: User-specific customizations
+- **Subdirectories**: Group related plugins together
 
 ### Performance
 
-- **Minimize file count**: Combine related hooks
-- **Use specific patterns**: Reduce unnecessary invocations
+- **Combine related items**: Put related tools/hooks in one file
+- **Use specific patterns**: Reduce unnecessary hook invocations
 - **Cache compiled code**: Discovery caches compiled units
 
 ### Maintainability
 
-- **Document paths**: Comment why custom paths are needed
-- **Version control**: Check kiln hooks into project repo
-- **Avoid hardcoding**: Use configuration for paths
-- **Test discovery**: Verify hooks load on startup
+- **Version control kiln shared**: Put project plugins in `KILN/plugins/`
+- **Gitignore personal**: Add `.crucible/` to `.gitignore`
+- **Document plugins**: Add comments explaining purpose
+- **Test discovery**: Verify plugins load on startup
 
 ### Security
 
-- **Restrict permissions**: Make hook directories user-only
-- **Review scripts**: Audit hooks before deploying
-- **Separate concerns**: Don't mix sensitive and public hooks
-- **Use .gitignore**: Don't commit sensitive hooks
+- **Restrict permissions**: Make plugin directories user-only
+- **Review shared plugins**: Audit plugins from collaborators
+- **Separate concerns**: Don't mix sensitive and shared plugins
+- **Use .gitignore**: Keep personal plugins out of version control
 
 ## See Also
 
 - [hooks.md](./hooks.md) - Writing Rune hooks
-- [event-system.md](./event-system.md) - Event types and handling
-- `/examples/rune-hooks/` - Example hook scripts
+- `/examples/plugins/` - Example plugin scripts
 - `crates/crucible-rune/src/discovery_paths.rs` - Implementation
 - `crates/crucible-rune/src/hook_system.rs` - Hook registration

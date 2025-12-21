@@ -145,12 +145,12 @@ async fn test_kiln_tool_schemas() {
 #[tokio::test]
 async fn test_rune_tools_discovered() {
     let temp = TempDir::new().unwrap();
-    let runes_dir = temp.path().join("runes");
-    fs::create_dir_all(&runes_dir).unwrap();
+    let plugins_dir = temp.path().join("plugins");
+    fs::create_dir_all(&plugins_dir).unwrap();
 
     // Create multi-tool Rune file
     fs::write(
-        runes_dir.join("tools.rn"),
+        plugins_dir.join("tools.rn"),
         r#"
 #[tool(desc = "Greet someone")]
 #[param(name = "name", type = "string", desc = "Name to greet")]
@@ -170,7 +170,7 @@ pub fn add(a, b) {
 
     let (knowledge_repo, embedding_provider) = create_mocks();
     let rune_config = RuneDiscoveryConfig {
-        tool_directories: vec![runes_dir],
+        tool_directories: vec![plugins_dir],
         extensions: vec!["rn".to_string()],
         recursive: false,
     };
@@ -199,11 +199,11 @@ pub fn add(a, b) {
 #[tokio::test]
 async fn test_rune_tool_schema_preserved() {
     let temp = TempDir::new().unwrap();
-    let runes_dir = temp.path().join("runes");
-    fs::create_dir_all(&runes_dir).unwrap();
+    let plugins_dir = temp.path().join("plugins");
+    fs::create_dir_all(&plugins_dir).unwrap();
 
     fs::write(
-        runes_dir.join("schema_test.rn"),
+        plugins_dir.join("schema_test.rn"),
         r#"
 #[tool(desc = "Test tool with various params", tags = ["test", "schema"])]
 #[param(name = "text", type = "string", desc = "Text input")]
@@ -217,7 +217,7 @@ pub fn schema_test(text, count, enabled, optional_val) {}
 
     let (knowledge_repo, embedding_provider) = create_mocks();
     let rune_config = RuneDiscoveryConfig {
-        tool_directories: vec![runes_dir],
+        tool_directories: vec![plugins_dir],
         extensions: vec!["rn".to_string()],
         recursive: false,
     };
@@ -253,12 +253,12 @@ pub fn schema_test(text, count, enabled, optional_val) {}
 #[tokio::test]
 async fn test_mixed_legacy_and_multi_tool_rune() {
     let temp = TempDir::new().unwrap();
-    let runes_dir = temp.path().join("runes");
-    fs::create_dir_all(&runes_dir).unwrap();
+    let plugins_dir = temp.path().join("plugins");
+    fs::create_dir_all(&plugins_dir).unwrap();
 
     // Legacy single-tool format
     fs::write(
-        runes_dir.join("legacy.rn"),
+        plugins_dir.join("legacy.rn"),
         r#"//! Legacy format tool
 //! @param input string The input text
 
@@ -271,7 +271,7 @@ pub fn main(input) {
 
     // Multi-tool format
     fs::write(
-        runes_dir.join("modern.rn"),
+        plugins_dir.join("modern.rn"),
         r#"
 #[tool(desc = "Modern tool A")]
 pub fn tool_a() {}
@@ -284,7 +284,7 @@ pub fn tool_b() {}
 
     let (knowledge_repo, embedding_provider) = create_mocks();
     let rune_config = RuneDiscoveryConfig {
-        tool_directories: vec![runes_dir],
+        tool_directories: vec![plugins_dir],
         extensions: vec!["rn".to_string()],
         recursive: false,
     };
@@ -318,8 +318,8 @@ pub fn tool_b() {}
 async fn test_multiple_rune_directories() {
     let temp = TempDir::new().unwrap();
 
-    // Global runes directory
-    let global_dir = temp.path().join("global_runes");
+    // Global plugins directory
+    let global_dir = temp.path().join("global_plugins");
     fs::create_dir_all(&global_dir).unwrap();
     fs::write(
         global_dir.join("global_tool.rn"),
@@ -327,8 +327,8 @@ async fn test_multiple_rune_directories() {
     )
     .unwrap();
 
-    // Kiln-specific runes directory
-    let kiln_dir = temp.path().join("kiln_runes");
+    // Kiln-specific plugins directory
+    let kiln_dir = temp.path().join("kiln_plugins");
     fs::create_dir_all(&kiln_dir).unwrap();
     fs::write(
         kiln_dir.join("kiln_tool.rn"),
@@ -445,19 +445,19 @@ fn test_tool_prefix_routing() {
 #[tokio::test]
 async fn test_rune_refresh_discovers_new_tools() {
     let temp = TempDir::new().unwrap();
-    let runes_dir = temp.path().join("runes");
-    fs::create_dir_all(&runes_dir).unwrap();
+    let plugins_dir = temp.path().join("plugins");
+    fs::create_dir_all(&plugins_dir).unwrap();
 
     // Start with one tool
     fs::write(
-        runes_dir.join("initial.rn"),
+        plugins_dir.join("initial.rn"),
         "//! Initial tool\npub fn main() {}",
     )
     .unwrap();
 
     let (knowledge_repo, embedding_provider) = create_mocks();
     let rune_config = RuneDiscoveryConfig {
-        tool_directories: vec![runes_dir.clone()],
+        tool_directories: vec![plugins_dir.clone()],
         extensions: vec!["rn".to_string()],
         recursive: false,
     };
@@ -477,7 +477,7 @@ async fn test_rune_refresh_discovers_new_tools() {
 
     // Add another tool
     fs::write(
-        runes_dir.join("added.rn"),
+        plugins_dir.join("added.rn"),
         "//! Added tool\npub fn main() {}",
     )
     .unwrap();
@@ -523,13 +523,13 @@ async fn test_nonexistent_rune_directory_handled() {
 #[tokio::test]
 async fn test_empty_rune_directory_handled() {
     let temp = TempDir::new().unwrap();
-    let runes_dir = temp.path().join("runes");
-    fs::create_dir_all(&runes_dir).unwrap();
+    let plugins_dir = temp.path().join("plugins");
+    fs::create_dir_all(&plugins_dir).unwrap();
     // Directory exists but is empty
 
     let (knowledge_repo, embedding_provider) = create_mocks();
     let rune_config = RuneDiscoveryConfig {
-        tool_directories: vec![runes_dir],
+        tool_directories: vec![plugins_dir],
         extensions: vec!["rn".to_string()],
         recursive: false,
     };
@@ -555,27 +555,27 @@ async fn test_empty_rune_directory_handled() {
 #[tokio::test]
 async fn test_recursive_rune_discovery() {
     let temp = TempDir::new().unwrap();
-    let runes_dir = temp.path().join("runes");
+    let plugins_dir = temp.path().join("plugins");
 
     // Create nested structure
-    fs::create_dir_all(runes_dir.join("notes")).unwrap();
-    fs::create_dir_all(runes_dir.join("utils")).unwrap();
+    fs::create_dir_all(plugins_dir.join("notes")).unwrap();
+    fs::create_dir_all(plugins_dir.join("utils")).unwrap();
 
-    fs::write(runes_dir.join("root.rn"), "//! Root tool\npub fn main() {}").unwrap();
+    fs::write(plugins_dir.join("root.rn"), "//! Root tool\npub fn main() {}").unwrap();
     fs::write(
-        runes_dir.join("notes").join("note_tool.rn"),
+        plugins_dir.join("notes").join("note_tool.rn"),
         "//! Notes tool\npub fn main() {}",
     )
     .unwrap();
     fs::write(
-        runes_dir.join("utils").join("util_tool.rn"),
+        plugins_dir.join("utils").join("util_tool.rn"),
         "//! Utils tool\npub fn main() {}",
     )
     .unwrap();
 
     let (knowledge_repo, embedding_provider) = create_mocks();
     let rune_config = RuneDiscoveryConfig {
-        tool_directories: vec![runes_dir],
+        tool_directories: vec![plugins_dir],
         extensions: vec!["rn".to_string()],
         recursive: true, // Enable recursive scanning
     };

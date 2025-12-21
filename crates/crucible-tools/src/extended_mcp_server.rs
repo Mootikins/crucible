@@ -3,16 +3,19 @@
 //! This server combines:
 //! - **`CrucibleMcpServer`** (12 tools): Note, Search, and Kiln operations
 //! - **`JustTools`** (dynamic): Recipes from justfile in PWD
-//! - **`RuneTools`** (dynamic): Scripts from configured runes/ directories
+//! - **`RuneTools`** (dynamic): Scripts from configured plugins/ directories
 //!
 //! All responses are formatted with TOON for token efficiency.
 //!
-//! ## Recipe Enrichment
+//! ## Plugin Discovery
 //!
-//! Just recipes are automatically enriched by Rune event handlers:
-//! - Scripts in `runes/events/recipe_discovered/` are executed for each recipe
-//! - Handlers can add category, tags, priority, and custom metadata
-//! - Enrichment is visible in tool descriptions and schema annotations
+//! Plugins are discovered from:
+//! - Global personal: `~/.config/crucible/plugins/`
+//! - Kiln personal: `KILN/.crucible/plugins/` (gitignored)
+//! - Kiln shared: `KILN/plugins/` (version-controlled)
+//!
+//! Plugins use `#[tool(...)]` and `#[hook(...)]` attributes to register
+//! tools and event handlers respectively.
 
 use crate::clustering::ClusteringTools;
 use crate::output_filter::{filter_test_output, FilterConfig};

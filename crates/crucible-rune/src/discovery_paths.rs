@@ -1,18 +1,25 @@
-//! Unified path discovery for Rune resources (tools, hooks, events)
+//! Unified path discovery for Crucible plugins
 //!
-//! This module provides a consistent pattern for discovering Rune scripts
+//! This module provides a consistent pattern for discovering plugin scripts
 //! across multiple directories with support for:
-//! - Global defaults (uses platform-appropriate directory: ~/.config/crucible/<type>/ on Linux,
-//!   %APPDATA%\crucible\<type>\ on Windows (Roaming, syncs), ~/Library/Application Support/crucible/<type>/ on macOS)
-//! - Kiln-specific paths (KILN/.crucible/<type>/)
+//! - Global defaults (uses platform-appropriate directory: ~/.config/crucible/plugins/ on Linux,
+//!   %APPDATA%\crucible\plugins\ on Windows (Roaming, syncs), ~/Library/Application Support/crucible/plugins/ on macOS)
+//! - Kiln-specific paths (KILN/.crucible/plugins/ and KILN/plugins/)
 //! - Additional paths from configuration
 //! - Option to disable defaults
+//!
+//! ## Plugin Discovery Order
+//!
+//! Plugins are discovered in priority order (later sources override earlier by name):
+//! 1. Global personal: `~/.config/crucible/plugins/`
+//! 2. Kiln personal: `KILN/.crucible/plugins/` (gitignored)
+//! 3. Kiln shared: `KILN/plugins/` (version-controlled)
 //!
 //! ## Usage
 //!
 //! ```rust,ignore
-//! // Create discovery paths for tools
-//! let paths = DiscoveryPaths::new("tools", Some(kiln_path));
+//! // Create discovery paths for plugins
+//! let paths = DiscoveryPaths::new("plugins", Some(kiln_path));
 //!
 //! // Get all paths to search
 //! for path in paths.all_paths() {
@@ -20,19 +27,19 @@
 //! }
 //!
 //! // Add additional paths from config
-//! let paths = paths.with_additional(vec!["/custom/tools".into()]);
+//! let paths = paths.with_additional(vec!["/custom/plugins".into()]);
 //! ```
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-/// Unified path discovery configuration for any Rune resource type
+/// Unified path discovery configuration for Crucible plugins
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoveryPaths {
-    /// Type of resource being discovered (e.g., "tools", "hooks", "events")
+    /// Type of resource being discovered (typically "plugins")
     type_name: String,
 
-    /// Default paths (~/.crucible/<type>/, KILN/.crucible/<type>/)
+    /// Default paths (~/.config/crucible/<type>/, KILN/.crucible/<type>/)
     defaults: Vec<PathBuf>,
 
     /// Additional paths from configuration
@@ -46,16 +53,17 @@ impl DiscoveryPaths {
     /// Create new discovery paths for a resource type
     ///
     /// Default paths are:
-    /// - `~/.crucible/<type_name>/` (global, uses platform data directory)
-    /// - `KILN/.crucible/<type_name>/` (kiln-specific, if provided)
+    /// - Global: `~/.config/crucible/<type_name>/` (platform-appropriate config directory)
+    /// - Kiln personal: `KILN/.crucible/<type_name>/` (gitignored)
+    /// - Kiln shared: `KILN/<type_name>/` (version-controlled, if provided)
     ///
     /// Platform-specific global paths:
-    /// - Linux: `~/.config/crucible/<type_name>/` (XDG config directory - these are configuration, not data)
+    /// - Linux: `~/.config/crucible/<type_name>/` (XDG config directory)
     /// - macOS: `~/Library/Application Support/crucible/<type_name>/`
     /// - Windows: `%APPDATA%\crucible\<type_name>\` (Roaming AppData, syncs across machines)
     ///
     /// # Arguments
-    /// * `type_name` - The resource type (e.g., "tools", "hooks", "events")
+    /// * `type_name` - The resource type (typically "plugins")
     /// * `kiln_path` - Optional path to the kiln directory
     pub fn new(type_name: impl Into<String>, kiln_path: Option<&Path>) -> Self {
         let type_name = type_name.into();
@@ -106,9 +114,12 @@ impl DiscoveryPaths {
             }
         }
 
-        // Kiln-specific: KILN/.crucible/<type_name>/
+        // Kiln-specific paths (in priority order)
         if let Some(kiln) = kiln_path {
+            // Kiln personal: KILN/.crucible/<type_name>/ (gitignored)
             defaults.push(kiln.join(".crucible").join(&type_name));
+            // Kiln shared: KILN/<type_name>/ (version-controlled)
+            defaults.push(kiln.join(&type_name));
         }
 
         Self {

@@ -1,8 +1,13 @@
-//! Rune scripting integration for Crucible tools
+//! Rune scripting integration for Crucible plugins
 //!
-//! This crate provides dynamic tool discovery and execution using the Rune
-//! scripting language. Tools are discovered from configured directories
-//! (global `~/.crucible/runes/` and kiln-specific `{kiln}/runes/`).
+//! This crate provides dynamic plugin discovery and execution using the Rune
+//! scripting language. Plugins are discovered from configured directories:
+//!
+//! - Global personal: `~/.config/crucible/plugins/`
+//! - Kiln personal: `KILN/.crucible/plugins/` (gitignored)
+//! - Kiln shared: `KILN/plugins/` (version-controlled)
+//!
+//! Plugins can provide tools (`#[tool(...)]`) and hooks (`#[hook(...)]`).
 //!
 //! ## Usage
 //!

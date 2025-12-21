@@ -1,7 +1,10 @@
 //! Integration tests for the event handler system
+//!
+//! These tests verify the legacy `on_<event_name>` function pattern which
+//! is still supported for backwards compatibility. New plugins should use
+//! the modern `#[hook(...)]` attribute pattern instead.
 
 use crucible_rune::{DiscoveryPaths, EnrichedRecipe, EventHandler, EventHandlerConfig};
-use std::path::PathBuf;
 use tempfile::TempDir;
 
 fn init_test_logging() {
@@ -11,21 +14,10 @@ fn init_test_logging() {
         .try_init();
 }
 
-/// Get the path to the examples/runes directory in the repo
-fn examples_runes_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("examples")
-        .join("runes")
-}
-
 /// Helper to create EventHandlerConfig from a temp directory
-/// The temp directory structure should be: <temp>/events/<event_name>/*.rn
+/// The temp directory structure should be: <temp>/<event_name>/*.rn
 fn config_from_temp(temp_path: &std::path::Path) -> EventHandlerConfig {
-    let paths = DiscoveryPaths::empty("events").with_path(temp_path.join("events"));
+    let paths = DiscoveryPaths::empty("plugins").with_path(temp_path.to_path_buf());
     EventHandlerConfig::from_discovery_paths(paths)
 }
 
@@ -34,10 +26,10 @@ fn config_from_temp(temp_path: &std::path::Path) -> EventHandlerConfig {
 async fn test_recipe_categorization_with_script() {
     // Create temp directory with event handler
     let temp = TempDir::new().unwrap();
-    let event_dir = temp.path().join("events").join("recipe_discovered");
+    let event_dir = temp.path().join("recipe_discovered");
     std::fs::create_dir_all(&event_dir).unwrap();
 
-    // Write categorizer script
+    // Write categorizer script (legacy on_<event_name> pattern)
     let script = r#"
 use crucible::categorize_by_name;
 
@@ -95,7 +87,7 @@ pub fn on_recipe_discovered(recipe) {
 #[tokio::test]
 async fn test_multiple_handlers_chain() {
     let temp = TempDir::new().unwrap();
-    let event_dir = temp.path().join("events").join("recipe_discovered");
+    let event_dir = temp.path().join("recipe_discovered");
     std::fs::create_dir_all(&event_dir).unwrap();
 
     // First handler: adds category
@@ -130,7 +122,7 @@ pub fn on_recipe_discovered(recipe) {
 #[tokio::test]
 async fn test_handler_returns_null() {
     let temp = TempDir::new().unwrap();
-    let event_dir = temp.path().join("events").join("recipe_discovered");
+    let event_dir = temp.path().join("recipe_discovered");
     std::fs::create_dir_all(&event_dir).unwrap();
 
     // Handler returns nothing for private recipes
@@ -163,7 +155,7 @@ pub fn on_recipe_discovered(recipe) {
 #[tokio::test]
 async fn test_process_recipes_batch() {
     let temp = TempDir::new().unwrap();
-    let event_dir = temp.path().join("events").join("recipe_discovered");
+    let event_dir = temp.path().join("recipe_discovered");
     std::fs::create_dir_all(&event_dir).unwrap();
 
     let script = r#"
@@ -196,7 +188,7 @@ pub fn on_recipe_discovered(recipe) {
 #[tokio::test]
 async fn test_handler_error_continues() {
     let temp = TempDir::new().unwrap();
-    let event_dir = temp.path().join("events").join("recipe_discovered");
+    let event_dir = temp.path().join("recipe_discovered");
     std::fs::create_dir_all(&event_dir).unwrap();
 
     // First handler: has a bug (undefined function)
@@ -230,7 +222,7 @@ pub fn on_recipe_discovered(recipe) {
 async fn test_regex_in_script() {
     init_test_logging();
     let temp = TempDir::new().unwrap();
-    let event_dir = temp.path().join("events").join("recipe_discovered");
+    let event_dir = temp.path().join("recipe_discovered");
     std::fs::create_dir_all(&event_dir).unwrap();
 
     // Script that uses regex for categorization
@@ -295,28 +287,42 @@ pub fn on_recipe_discovered(recipe) {
     }
 }
 
-/// Test the actual example categorizer.rn script from examples/runes
+/// Test the legacy on_<event_name> handler pattern
+///
+/// Note: This tests backwards compatibility with the legacy pattern.
+/// New plugins should use the modern #[hook(...)] attribute pattern instead.
 #[tokio::test]
-async fn test_example_categorizer_script() {
+async fn test_legacy_event_handler_pattern() {
     init_test_logging();
 
-    // Use the actual examples/runes directory
-    let examples_dir = examples_runes_dir();
-    println!("Examples dir: {:?}", examples_dir);
+    // Create temp directory with plugin structure
+    let temp = tempfile::TempDir::new().unwrap();
+    let event_dir = temp.path().join("recipe_discovered");
+    std::fs::create_dir_all(&event_dir).unwrap();
 
-    // Verify the script exists
-    let script_path = examples_dir
-        .join("events")
-        .join("recipe_discovered")
-        .join("categorizer.rn");
-    assert!(
-        script_path.exists(),
-        "Example script should exist at {:?}",
-        script_path
-    );
+    // Write a legacy-style event handler script
+    let script = r#"
+use crucible::categorize_by_name;
+use regex::is_match;
 
-    // Create handler pointing to examples/runes (new structure: events/<event>/*.rn)
-    let paths = DiscoveryPaths::empty("events").with_path(examples_dir.join("events"));
+pub fn on_recipe_discovered(recipe) {
+    let name = recipe["name"].clone();
+    let category = categorize_by_name(name.clone());
+    let tags = [];
+
+    if is_match("ci|test|check|spec", name.clone()) { tags.push("ci"); }
+    if is_match("fmt|lint|check", name.clone()) { tags.push("quick"); }
+    if is_match("build|release|compile", name.clone()) { tags.push("build"); }
+    if is_match("doc", name.clone()) { tags.push("doc"); }
+    if is_match("v\\d+\\.\\d+", name.clone()) { tags.push("versioned"); }
+
+    #{ category: category, tags: tags }
+}
+"#;
+    std::fs::write(event_dir.join("categorizer.rn"), script).unwrap();
+
+    // Create handler pointing to temp directory
+    let paths = DiscoveryPaths::empty("plugins").with_path(temp.path().to_path_buf());
     let config = EventHandlerConfig::from_discovery_paths(paths);
     let handler = EventHandler::new(config).unwrap();
 
@@ -359,7 +365,7 @@ async fn test_example_categorizer_script() {
 async fn test_regex_replace_in_script() {
     init_test_logging();
     let temp = TempDir::new().unwrap();
-    let event_dir = temp.path().join("events").join("recipe_discovered");
+    let event_dir = temp.path().join("recipe_discovered");
     std::fs::create_dir_all(&event_dir).unwrap();
 
     // Script that normalizes recipe names using regex
