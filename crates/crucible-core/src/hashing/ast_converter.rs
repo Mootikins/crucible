@@ -236,7 +236,6 @@ impl<A: HashingAlgorithm> ASTBlockConverter<A> {
             Callout {
                 callout_type: &'a str,
                 title: Option<&'a str>,
-                is_standard_type: bool,
             },
             Latex {
                 is_block: bool,
@@ -273,11 +272,9 @@ impl<A: HashingAlgorithm> ASTBlockConverter<A> {
             crate::parser::types::ASTBlockMetadata::Callout {
                 callout_type,
                 title,
-                is_standard_type,
             } => SerializableMetadata::Callout {
-                callout_type,
+                callout_type: callout_type.as_str(),
                 title: title.as_deref(),
-                is_standard_type: *is_standard_type,
             },
             crate::parser::types::ASTBlockMetadata::Latex { is_block } => {
                 SerializableMetadata::Latex {
@@ -717,7 +714,7 @@ mod tests {
                 "Important note".to_string(),
                 30,
                 44,
-                ASTBlockMetadata::callout("note".to_string(), None, true),
+                ASTBlockMetadata::callout("note", None),
             ),
             ASTBlock::new(
                 ASTBlockType::Latex,
