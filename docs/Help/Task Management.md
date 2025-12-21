@@ -1,20 +1,34 @@
-# TASKS.md Format Specification
+---
+description: Track implementation tasks using structured markdown files
+status: planned
+tags:
+  - reference
+  - tasks
+  - workflows
+  - plugins
+aliases:
+  - TASKS.md
+  - Task Files
+---
 
-This document describes the format for `TASKS.md` files used with the `cru tasks` CLI commands.
+# Task Management
+
+> **Status**: This feature is planned as an official Rune plugin. It will demonstrate programmatic tool generation, file-as-state patterns, and the tools→workflow bridge.
+
+Task management in Crucible uses structured markdown files (typically `TASKS.md`) to track implementation plans. The file format is designed for both human readability and machine parsing.
 
 ## Overview
 
-TASKS.md files are structured markdown documents that define implementation plans with:
+TASKS.md files combine:
 - **Frontmatter** for project metadata
 - **Phases** to organize work into logical stages
 - **Tasks** with checkboxes, IDs, and dependencies
 - **Inline metadata** for machine parsing
 
-## File Structure
+## File Format
 
 ```markdown
 ---
-title: Project Title
 description: Brief description of the project
 context_files:
   - path/to/relevant/file.rs
@@ -39,7 +53,6 @@ tdd: true
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `title` | Yes | Human-readable project name |
 | `description` | Yes | Brief description of what this task list accomplishes |
 | `context_files` | No | List of files relevant to this work (for agent context) |
 | `verify` | No | Command to run to verify completion (e.g., `just test`) |
@@ -61,7 +74,7 @@ Standard markdown checkboxes with extended statuses:
 
 ## Inline Metadata
 
-Metadata is embedded in task lines using `[key:: value]` syntax:
+Metadata is embedded in task lines using `[key:: value]` syntax (Dataview-compatible):
 
 | Key | Description | Example |
 |-----|-------------|---------|
@@ -77,9 +90,9 @@ Task IDs follow the pattern: `{phase}.{section}.{task}`
 - Phase 1, Section 1, Task 1: `1.1.1`
 - Phase 2, Section 3, Task 2: `2.3.2`
 
-## CLI Commands
+## Planned CLI Commands
 
-The `cru tasks` command provides operations on TASKS.md files:
+The `cru tasks` command will provide operations on TASKS.md files:
 
 ```bash
 # List all tasks with status
@@ -108,6 +121,37 @@ Tasks with `[deps:: ...]` metadata won't be available until all dependencies are
 - [ ] Add caching layer [id:: 1.1.3] [deps:: 1.1.2]          # Not available yet
 ```
 
+## Plugin Architecture
+
+This feature will be implemented as an official Rune plugin, demonstrating:
+
+1. **Programmatic tool generation**: Tools are generated at initialization based on the TASKS.md format
+2. **File-as-state**: No runtime state—the markdown file is the source of truth
+3. **Tools→workflow bridge**: Individual task tools compose into a workflow
+
+### Planned Plugin Structure
+
+```
+Scripts/
+└── tasks/
+    ├── plugin.rn          # Main plugin with tool generators
+    ├── parser.rn          # TASKS.md format parser
+    └── README.md          # Usage documentation
+```
+
+### Tool Generation Pattern
+
+```rune
+// At initialization, generate tools from task format
+pub fn on_init(ctx) {
+    // Register task management tools
+    ctx.register_tool("tasks_list", tasks_list_handler);
+    ctx.register_tool("tasks_next", tasks_next_handler);
+    ctx.register_tool("tasks_pick", tasks_pick_handler);
+    ctx.register_tool("tasks_done", tasks_done_handler);
+}
+```
+
 ## Best Practices
 
 1. **Use descriptive IDs**: IDs should reflect the phase/section structure
@@ -116,6 +160,9 @@ Tasks with `[deps:: ...]` metadata won't be available until all dependencies are
 4. **Include verification steps**: Add `[tests::]` for testable tasks
 5. **Group related work**: Use phases and sections to organize logically
 
-## Example
+## See Also
 
-See `examples/test-kiln/Tasks/example-project.md` for a complete example.
+- [[Help/Extending/Creating Plugins]] - Plugin development guide
+- [[Help/Rune/Tool Definition]] - Defining custom tools
+- [[Help/Workflows/Index]] - Workflow system overview
+- [[Meta/Plugin User Stories]] - Plugin system user stories
