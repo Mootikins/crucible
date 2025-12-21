@@ -5,9 +5,9 @@
 
 // Re-export all types from canonical source
 pub use crucible_core::parser::types::{
-    ASTBlock, ASTBlockMetadata, ASTBlockType, BlockHash, Blockquote, Callout, CheckboxStatus,
-    CodeBlock, FootnoteDefinition, FootnoteMap, FootnoteReference, Frontmatter, FrontmatterFormat,
-    Heading, HorizontalRule, InlineLink, LatexExpression, ListBlock, ListItem, ListMarkerStyle,
-    ListType, NoteContent, Paragraph, ParseError, ParsedNote, ParsedNoteBuilder,
+    ASTBlock, ASTBlockMetadata, ASTBlockType, BlockHash, Blockquote, Callout, CalloutType,
+    CheckboxStatus, CodeBlock, FootnoteDefinition, FootnoteMap, FootnoteReference, Frontmatter,
+    FrontmatterFormat, Heading, HorizontalRule, InlineLink, LatexExpression, ListBlock, ListItem,
+    ListMarkerStyle, ListType, NoteContent, Paragraph, ParseError, ParsedNote, ParsedNoteBuilder,
     ParsedNoteMetadata, Table, Tag, TaskStatus, Wikilink,
 };

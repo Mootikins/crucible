@@ -1,6 +1,6 @@
 //! AST block types for semantic markdown structure
 
-use super::ListType;
+use super::{CalloutType, ListType};
 use serde::{Deserialize, Serialize};
 
 /// AST block type enumeration
@@ -232,7 +232,7 @@ impl ASTBlock {
     /// Check if this block is a specific callout type
     pub fn is_callout_type(&self, callout_type: &str) -> bool {
         matches!(self.block_type, ASTBlockType::Callout)
-            && matches!(&self.metadata, ASTBlockMetadata::Callout { callout_type: ct, .. } if ct == callout_type)
+            && matches!(&self.metadata, ASTBlockMetadata::Callout { callout_type: ct, .. } if ct.as_str() == callout_type)
     }
 
     /// Builder method: Set the parent block ID for hierarchy tracking
@@ -301,11 +301,9 @@ pub enum ASTBlockMetadata {
     /// Callout metadata
     Callout {
         /// Callout type (note, tip, warning, etc.)
-        callout_type: String,
+        callout_type: CalloutType,
         /// Callout title (optional)
         title: Option<String>,
-        /// Whether this is a standard callout type
-        is_standard_type: bool,
     },
 
     /// LaTeX metadata
@@ -351,11 +349,10 @@ impl ASTBlockMetadata {
     }
 
     /// Create callout metadata
-    pub fn callout(callout_type: String, title: Option<String>, is_standard_type: bool) -> Self {
+    pub fn callout(callout_type: impl Into<CalloutType>, title: Option<String>) -> Self {
         Self::Callout {
-            callout_type,
+            callout_type: callout_type.into(),
             title,
-            is_standard_type,
         }
     }
 

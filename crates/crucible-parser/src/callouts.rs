@@ -6,7 +6,7 @@
 
 use super::error::{ParseError, ParseErrorType};
 use super::extensions::SyntaxExtension;
-use super::types::{Callout, NoteContent};
+use super::types::{Callout, CalloutType, NoteContent};
 use async_trait::async_trait;
 
 use regex::Regex;
@@ -57,13 +57,14 @@ impl SyntaxExtension for CalloutExtension {
 
         for cap in re.captures_iter(content) {
             let full_match = cap.get(0).unwrap();
-            let callout_type = cap.get(1).unwrap().as_str().trim().to_lowercase();
+            let callout_type_str = cap.get(1).unwrap().as_str().trim();
+            let callout_type: CalloutType = callout_type_str.into();
             let title = cap.get(2).map(|m| m.as_str().trim());
 
-            // Validate callout type
-            if !self.is_valid_callout_type(&callout_type) {
+            // Warn about unknown/custom callout types
+            if !callout_type.is_standard() {
                 errors.push(ParseError::warning(
-                    format!("Unknown callout type: '{}'", callout_type),
+                    format!("Unknown callout type: '{}'", callout_type_str),
                     ParseErrorType::InvalidCallout,
                     0,
                     0,
@@ -147,35 +148,6 @@ impl CalloutExtension {
         }
 
         full_content.trim_end().to_string()
-    }
-
-    /// Check if a callout type is valid
-    fn is_valid_callout_type(&self, callout_type: &str) -> bool {
-        matches!(
-            callout_type,
-            "note"
-                | "tip"
-                | "warning"
-                | "danger"
-                | "info"
-                | "abstract"
-                | "summary"
-                | "tldr"
-                | "todo"
-                | "question"
-                | "success"
-                | "failure"
-                | "example"
-                | "quote"
-                | "cite"
-                | "help"
-                | "important"
-                | "check"
-                | "bug"
-                | "caution"
-                | "attention"
-                | "tbd"
-        )
     }
 }
 
@@ -283,14 +255,19 @@ Warning details
 
     #[tokio::test]
     async fn test_valid_callout_types() {
-        let extension = CalloutExtension::new();
+        // Test that standard types are recognized
+        assert!(CalloutType::from("note").is_standard());
+        assert!(CalloutType::from("warning").is_standard());
+        assert!(CalloutType::from("danger").is_standard());
+        assert!(CalloutType::from("tip").is_standard());
+        assert!(CalloutType::from("info").is_standard());
 
-        assert!(extension.is_valid_callout_type("note"));
-        assert!(extension.is_valid_callout_type("warning"));
-        assert!(extension.is_valid_callout_type("danger"));
-        assert!(extension.is_valid_callout_type("tip"));
-        assert!(extension.is_valid_callout_type("info"));
-        assert!(!extension.is_valid_callout_type("invalid"));
-        assert!(!extension.is_valid_callout_type(""));
+        // Test that custom types are recognized as non-standard
+        assert!(!CalloutType::from("invalid").is_standard());
+        assert!(!CalloutType::from("custom").is_standard());
+
+        // Test case insensitivity
+        assert!(CalloutType::from("NOTE").is_standard());
+        assert!(CalloutType::from("Warning").is_standard());
     }
 }

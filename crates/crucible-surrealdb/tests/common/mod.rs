@@ -60,11 +60,14 @@ pub async fn setup_test_db_with_kiln() -> anyhow::Result<SurrealClient> {
 
     // Parse and ingest all dev-kiln files
     let md_files = find_test_kiln_markdown_files();
+    let kiln_root = test_kiln_root();
     for file_path in &md_files {
         let note = parser.parse_file(file_path).await?;
+        // Use relative path from kiln root, not just filename
+        // This prevents Index.md files in different directories from overwriting each other
         let relative_path = file_path
-            .file_name()
-            .unwrap_or_default()
+            .strip_prefix(&kiln_root)
+            .unwrap_or(file_path)
             .to_string_lossy()
             .to_string();
         ingestor.ingest(&note, &relative_path).await?;
