@@ -225,6 +225,64 @@ If you get "missing DLL" errors at runtime:
 2. Ensure all dependencies are in your PATH
 3. For ONNX Runtime, ensure `onnxruntime.dll` is accessible
 
+#### ONNX Runtime (FastEmbed) Issues
+
+If you encounter issues with FastEmbed (which uses ONNX Runtime):
+
+**Common Symptoms:**
+- Linker errors: `LNK2038: mismatch detected for 'RuntimeLibrary'`
+- DLL loading errors when initializing FastEmbed
+- Model loading failures with ONNX Runtime errors
+
+**Diagnostic Steps:**
+
+1. **Run the diagnostic test:**
+   ```powershell
+   cargo test -p crucible-llm --features fastembed --test test_onnx_windows_diagnostics -- --nocapture
+   ```
+   This will check:
+   - Visual C++ Redistributable installation
+   - Build configuration
+   - ONNX Runtime initialization
+   - Dependency versions
+
+2. **Verify build configuration:**
+   - Ensure `.cargo/config.toml` exists and contains:
+     ```toml
+     [target.'cfg(windows)']
+     rustflags = ["-C", "target-feature=-crt-static"]
+     ```
+   - This forces dynamic runtime (MD) which matches ONNX Runtime
+
+3. **Clean and rebuild:**
+   ```powershell
+   cargo clean
+   cargo build --verbose
+   ```
+   Watch for any warnings about runtime mismatches.
+
+4. **Check dependency versions:**
+   - FastEmbed: 5.5.0 (current)
+   - ort: 2.0.0-rc.10 (current)
+   - ort-sys: 2.0.0-rc.10 (current)
+   - esaxx-rs: 0.1.10 (used by tokenizers)
+   
+   If versions are outdated, update them:
+   ```powershell
+   cargo update -p fastembed -p ort -p ort-sys
+   ```
+
+5. **Verify Visual C++ Redistributable:**
+   - Check for `msvcp140.dll` and `vcruntime140.dll` in `C:\Windows\System32\`
+   - If missing, install from: https://aka.ms/vs/17/release/vc_redist.x64.exe
+
+**If issues persist:**
+
+- Check error messages for specific DLL names or runtime mismatches
+- Review build logs for linker warnings
+- Consider using an alternative embedding provider (Ollama, llama.cpp) temporarily
+- File an issue with diagnostic test output
+
 #### Long Path Issues
 
 If you encounter path length errors:
@@ -258,6 +316,9 @@ cargo test -- --nocapture
 
 # Specific test
 cargo test test_backend_comparison
+
+# ONNX Runtime diagnostic test (Windows-specific)
+cargo test -p crucible-llm --features fastembed --test test_onnx_windows_diagnostics -- --nocapture
 ```
 
 ## Performance Considerations
@@ -265,6 +326,39 @@ cargo test test_backend_comparison
 - **File watching**: Windows file system events may have different latency than Linux
 - **Embedding models**: ONNX Runtime performance is similar across platforms
 - **Database**: SurrealDB performance is consistent on Windows
+
+## ONNX Runtime Troubleshooting
+
+### Understanding the Issue
+
+FastEmbed uses ONNX Runtime (via the `ort` crate) for local embedding generation. On Windows, this can cause C runtime library mismatches because:
+
+1. **ONNX Runtime (`ort_sys`)**: Uses dynamic C runtime (`/MD`)
+2. **Native dependencies (`esaxx-rs`, `tokenizers`)**: May be compiled with static runtime (`/MT`) if not configured correctly
+3. **Result**: Linker errors when linking incompatible runtime libraries
+
+### Solution
+
+The `.cargo/config.toml` file forces all dependencies to use dynamic runtime (`/MD`) to match ONNX Runtime. This ensures compatibility.
+
+### Verification
+
+After building, you can verify the configuration worked:
+
+1. **Check for linker errors**: Build should complete without `LNK2038` errors
+2. **Run diagnostic test**: See "ONNX Runtime (FastEmbed) Issues" section above
+3. **Test FastEmbed**: Try creating a FastEmbed provider and generating embeddings
+
+### Alternative Providers
+
+If ONNX Runtime issues persist, you can use alternative embedding providers:
+
+- **Ollama**: Local or remote, requires Ollama server
+- **llama.cpp**: GGUF models, excellent Windows support
+- **Burn**: ML framework, GPU-accelerated
+- **OpenAI/Anthropic**: Cloud-based APIs
+
+All providers work on Windows and can be configured in `config.toml`.
 
 ## Getting Help
 
