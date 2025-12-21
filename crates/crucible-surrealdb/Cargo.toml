@@ -63,6 +63,11 @@ embeddings = ["crucible-llm"]
 # Test utilities - optionally enables LLM test-utils if embeddings feature is enabled
 test-utils = ["crucible-llm?/test-utils", "crucible-config/test-utils"]
 
+# Test infrastructure features - enable tests requiring specific infrastructure
+# Usage: cargo test -p crucible-surrealdb --features test-local-kiln
+test-local-kiln = []       # Tests requiring CRUCIBLE_KILN_PATH (developer's vault)
+test-embeddings = []       # Tests requiring embedding endpoint
+
 # Always enable test-utils for tests
 [dev-dependencies]
 crucible-surrealdb = { path = ".", features = ["test-utils"] }

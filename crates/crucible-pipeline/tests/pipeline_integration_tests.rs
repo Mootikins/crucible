@@ -10,6 +10,7 @@ use crucible_core::processing::{
     ChangeDetectionError, ChangeDetectionResult, ChangeDetectionStore, FileState, ProcessingResult,
 };
 use crucible_core::test_support::mocks::MockEnrichmentService;
+use crucible_core::test_support::nonexistent_path;
 use crucible_core::EnrichedNoteStore;
 use crucible_merkle::{HybridMerkleTree, MerkleStore, StorageError, TreeMetadata};
 use crucible_pipeline::{NotePipeline, NotePipelineConfig};
@@ -562,8 +563,9 @@ async fn test_pipeline_parse_error_handling() {
     let (pipeline, _change_detector, _merkle_store, enrichment_service, storage) =
         create_test_pipeline();
 
-    // Try to process a non-existent file
-    let non_existent_path = Path::new("/tmp/does_not_exist_12345.md");
+    // Try to process a non-existent file (using cross-platform helper)
+    let non_existent = nonexistent_path("does_not_exist_12345.md");
+    let non_existent_path = non_existent.as_path();
 
     let result = pipeline.process(non_existent_path).await;
 
