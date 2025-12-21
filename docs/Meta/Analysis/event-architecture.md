@@ -1,3 +1,11 @@
+---
+description: Internal architecture of Crucible's event-driven processing system
+tags:
+  - architecture
+  - events
+  - internals
+---
+
 # Event System Architecture
 
 This document describes the event-driven architecture used by Crucible for processing file changes and maintaining the knowledge graph.
@@ -163,7 +171,7 @@ handle.shutdown().await?;
 
 ## Custom Handlers (Rune)
 
-Users can create custom handlers in Rune scripting language:
+Users can create custom handlers in Rune scripting language. See [[Help/Extending/Event Hooks]] for the user-facing guide.
 
 **Location**: `{kiln}/.crucible/handlers/*.rn`
 
@@ -220,3 +228,9 @@ handle.shutdown().await?;
 - Fatal errors stop the event cascade immediately
 - Non-fatal errors are logged and processing continues
 - The event bus remains operational even if individual handlers fail
+
+## See Also
+
+- [[Help/Extending/Event Hooks]] - User-facing hook guide
+- [[Help/Extending/Custom Handlers]] - Writing Rust and Rune handlers
+- [[Help/Rune/Event Types]] - Complete event type reference
