@@ -29,7 +29,6 @@ Create `Agents/Researcher.md`:
 
 ```markdown
 ---
-title: Researcher
 description: Explores and synthesizes knowledge
 type: agent
 model: llama3.2
@@ -164,7 +163,6 @@ Agents can override global settings:
 
 ```yaml
 ---
-title: Creative Writer
 type: agent
 model: claude-3-opus
 temperature: 0.9
@@ -180,7 +178,6 @@ Limit what an agent can do:
 
 ```yaml
 ---
-title: Reader
 type: agent
 tools:
   - read_note
@@ -195,14 +192,12 @@ Use different providers per agent:
 
 ```yaml
 ---
-title: Local Agent
 type: agent
 model: llama3.2
 provider: ollama
 ---
 
 ---
-title: Cloud Agent
 type: agent
 model: gpt-4
 provider: openai

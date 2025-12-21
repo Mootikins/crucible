@@ -1,5 +1,4 @@
 ---
-title: Basic Commands
 description: Essential CLI commands for everyday use
 tags:
   - guide
