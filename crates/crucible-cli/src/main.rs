@@ -5,8 +5,8 @@ use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::prelude::*; // For SubscriberExt trait
 
 use crucible_cli::{
-    cli::{Cli, ClusterActions, Commands},
-    commands::{self, cluster::ClusterAction},
+    cli::{Cli, Commands},
+    commands,
     config, factories,
     sync::quick_sync_check,
 };
@@ -316,37 +316,6 @@ async fn main() -> Result<()> {
         Some(Commands::Storage(cmd)) => commands::storage::execute(config, cmd).await?,
 
         Some(Commands::Agents { command }) => commands::agents::execute(config, command).await?,
-
-        Some(Commands::Cluster {
-            action,
-            algorithm,
-            min_similarity,
-            min_cluster_size,
-            min_moc_score,
-            format,
-            output,
-        }) => {
-            let action = action
-                .map(|cmd| match cmd {
-                    ClusterActions::Mocs => ClusterAction::Mocs,
-                    ClusterActions::Documents => ClusterAction::Documents,
-                    ClusterActions::Stats => ClusterAction::Statistics,
-                    ClusterActions::All => ClusterAction::All,
-                })
-                .unwrap_or(ClusterAction::All); // Default to all if no subcommand
-
-            commands::cluster::execute(
-                action,
-                algorithm,
-                min_similarity,
-                min_cluster_size,
-                min_moc_score,
-                format,
-                output,
-                config,
-            )
-            .await?
-        }
 
         Some(Commands::Tasks { file, command }) => {
             commands::tasks::execute(config, file, command).await?

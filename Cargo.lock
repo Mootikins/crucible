@@ -2627,18 +2627,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crucible-just"
-version = "0.1.0"
-dependencies = [
- "schemars 1.1.0",
- "serde",
- "serde_json",
- "thiserror 2.0.17",
- "tokio",
- "tokio-test",
-]
-
-[[package]]
 name = "crucible-llm"
 version = "0.1.0"
 dependencies = [
@@ -2824,7 +2812,6 @@ dependencies = [
  "chrono",
  "crucible-config",
  "crucible-core",
- "crucible-just",
  "crucible-llm",
  "crucible-rune",
  "crucible-surrealdb",

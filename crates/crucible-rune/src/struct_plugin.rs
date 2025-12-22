@@ -46,7 +46,265 @@ use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::thread::{self, JoinHandle};
+use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, info, warn};
+
+// ============================================================================
+// Thread-safe Handle (Send + Sync)
+// ============================================================================
+
+/// Commands sent to the Rune plugin thread
+enum PluginCommand {
+    /// Load plugins from a directory
+    LoadFromDirectory {
+        dir: PathBuf,
+        reply: oneshot::Sender<Result<(), RuneError>>,
+    },
+    /// Dispatch a tool call
+    Dispatch {
+        tool_name: String,
+        args: JsonValue,
+        reply: oneshot::Sender<Result<JsonValue, RuneError>>,
+    },
+    /// Handle a file watch event
+    OnWatch {
+        plugin_path: PathBuf,
+        event: WatchEvent,
+        reply: oneshot::Sender<Result<(), RuneError>>,
+    },
+    /// Get all tool definitions
+    AllTools {
+        reply: oneshot::Sender<Vec<ToolDefinition>>,
+    },
+    /// Check if a tool exists
+    HasTool {
+        name: String,
+        reply: oneshot::Sender<bool>,
+    },
+    /// Shutdown the thread
+    Shutdown,
+}
+
+/// Thread-safe handle to the struct plugin system
+///
+/// This handle is `Send + Sync` and communicates with a dedicated thread
+/// that runs all Rune code. This avoids the `!Send` limitation of Rune's
+/// `Value` type.
+pub struct StructPluginHandle {
+    /// Channel to send commands to the Rune thread
+    command_tx: mpsc::UnboundedSender<PluginCommand>,
+    /// Handle to the background thread (for cleanup)
+    _thread_handle: Arc<JoinHandle<()>>,
+}
+
+// Explicit Send + Sync - the handle only contains channel sender which is Send+Sync
+unsafe impl Send for StructPluginHandle {}
+unsafe impl Sync for StructPluginHandle {}
+
+impl StructPluginHandle {
+    /// Create a new plugin handle, spawning the background Rune thread
+    pub fn new() -> Result<Self, RuneError> {
+        let (command_tx, command_rx) = mpsc::unbounded_channel();
+
+        // Spawn the dedicated Rune thread
+        let thread_handle = thread::spawn(move || {
+            // Create a new tokio runtime for this thread
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to create tokio runtime for plugin thread");
+
+            rt.block_on(async {
+                Self::run_plugin_thread(command_rx).await;
+            });
+        });
+
+        Ok(Self {
+            command_tx,
+            _thread_handle: Arc::new(thread_handle),
+        })
+    }
+
+    /// The main loop running on the dedicated Rune thread
+    async fn run_plugin_thread(mut command_rx: mpsc::UnboundedReceiver<PluginCommand>) {
+        // Create the actual loader on this thread (contains non-Send types)
+        let mut loader = match StructPluginLoader::new() {
+            Ok(l) => l,
+            Err(e) => {
+                warn!("Failed to create StructPluginLoader: {}", e);
+                return;
+            }
+        };
+
+        debug!("Plugin thread started");
+
+        while let Some(cmd) = command_rx.recv().await {
+            match cmd {
+                PluginCommand::LoadFromDirectory { dir, reply } => {
+                    let result = loader.load_from_directory(&dir).await;
+                    let _ = reply.send(result);
+                }
+                PluginCommand::Dispatch {
+                    tool_name,
+                    args,
+                    reply,
+                } => {
+                    let result = loader.dispatch(&tool_name, args).await;
+                    let _ = reply.send(result);
+                }
+                PluginCommand::OnWatch {
+                    plugin_path,
+                    event,
+                    reply,
+                } => {
+                    let result = loader.call_on_watch(&plugin_path, event).await;
+                    let _ = reply.send(result);
+                }
+                PluginCommand::AllTools { reply } => {
+                    // Clone the tool definitions to send across thread boundary
+                    let tools: Vec<ToolDefinition> =
+                        loader.all_tools().into_iter().cloned().collect();
+                    let _ = reply.send(tools);
+                }
+                PluginCommand::HasTool { name, reply } => {
+                    let has = loader.registry().find_plugin_for_tool(&name).is_some();
+                    let _ = reply.send(has);
+                }
+                PluginCommand::Shutdown => {
+                    debug!("Plugin thread shutting down");
+                    break;
+                }
+            }
+        }
+
+        debug!("Plugin thread exited");
+    }
+
+    /// Load plugins from a directory
+    pub async fn load_from_directory(&self, dir: &Path) -> Result<(), RuneError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(PluginCommand::LoadFromDirectory {
+                dir: dir.to_path_buf(),
+                reply: reply_tx,
+            })
+            .map_err(|_| RuneError::Execution("Plugin thread closed".to_string()))?;
+
+        reply_rx
+            .await
+            .map_err(|_| RuneError::Execution("Plugin thread did not respond".to_string()))?
+    }
+
+    /// Dispatch a tool call to the appropriate plugin
+    pub async fn dispatch(&self, tool_name: &str, args: JsonValue) -> Result<JsonValue, RuneError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(PluginCommand::Dispatch {
+                tool_name: tool_name.to_string(),
+                args,
+                reply: reply_tx,
+            })
+            .map_err(|_| RuneError::Execution("Plugin thread closed".to_string()))?;
+
+        reply_rx
+            .await
+            .map_err(|_| RuneError::Execution("Plugin thread did not respond".to_string()))?
+    }
+
+    /// Handle a file watch event
+    pub async fn call_on_watch(
+        &self,
+        plugin_path: &Path,
+        event: WatchEvent,
+    ) -> Result<(), RuneError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(PluginCommand::OnWatch {
+                plugin_path: plugin_path.to_path_buf(),
+                event,
+                reply: reply_tx,
+            })
+            .map_err(|_| RuneError::Execution("Plugin thread closed".to_string()))?;
+
+        reply_rx
+            .await
+            .map_err(|_| RuneError::Execution("Plugin thread did not respond".to_string()))?
+    }
+
+    /// Get all tool definitions from all plugins
+    pub async fn all_tools(&self) -> Vec<ToolDefinition> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        if self
+            .command_tx
+            .send(PluginCommand::AllTools { reply: reply_tx })
+            .is_err()
+        {
+            return vec![];
+        }
+
+        reply_rx.await.unwrap_or_default()
+    }
+
+    /// Check if a tool exists in any plugin
+    pub async fn has_tool(&self, name: &str) -> bool {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        if self
+            .command_tx
+            .send(PluginCommand::HasTool {
+                name: name.to_string(),
+                reply: reply_tx,
+            })
+            .is_err()
+        {
+            return false;
+        }
+
+        reply_rx.await.unwrap_or(false)
+    }
+}
+
+impl Drop for StructPluginHandle {
+    fn drop(&mut self) {
+        // Send shutdown command (ignore errors if already closed)
+        let _ = self.command_tx.send(PluginCommand::Shutdown);
+    }
+}
+
+// ============================================================================
+// Original types (kept for internal use on the Rune thread)
+// ============================================================================
+
+/// Event passed to plugin's `on_watch()` method when a watched file changes
+#[derive(Debug, Clone)]
+pub struct WatchEvent {
+    /// Path to the file that changed
+    pub path: PathBuf,
+    /// Type of change
+    pub kind: WatchEventKind,
+}
+
+/// Type of file change for watch events
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WatchEventKind {
+    /// File was created
+    Created,
+    /// File was modified
+    Modified,
+    /// File was deleted
+    Deleted,
+}
+
+impl WatchEventKind {
+    /// Get the string representation for Rune scripts
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            WatchEventKind::Created => "created",
+            WatchEventKind::Modified => "modified",
+            WatchEventKind::Deleted => "deleted",
+        }
+    }
+}
 
 /// Metadata parsed from `#[plugin(...)]` attribute
 #[derive(Debug, Clone)]
@@ -115,7 +373,7 @@ pub struct ToolParameter {
 }
 
 /// A loaded plugin instance with its compiled unit and Rune value
-pub struct PluginInstance {
+struct PluginInstance {
     /// Plugin metadata from attribute
     pub metadata: PluginMetadata,
     /// Compiled Rune unit
@@ -151,7 +409,7 @@ impl std::fmt::Debug for PluginInstance {
 }
 
 /// Registry of loaded struct-based plugins
-pub struct PluginRegistry {
+struct PluginRegistry {
     /// Loaded plugin instances by source path
     instances: HashMap<PathBuf, PluginInstance>,
     /// Index from tool name to plugin path for fast dispatch
@@ -252,7 +510,10 @@ impl Default for PluginRegistry {
 ///
 /// Discovers plugins with `#[plugin(...)]` attributes, compiles them,
 /// calls factory functions to create instances, and manages the lifecycle.
-pub struct StructPluginLoader {
+///
+/// Note: This is internal and runs only on the dedicated Rune thread.
+/// Use `StructPluginHandle` for thread-safe access.
+struct StructPluginLoader {
     /// Shared Rune context
     context: Arc<Context>,
     /// Runtime context for VM
@@ -392,6 +653,8 @@ impl StructPluginLoader {
         if !diagnostics.is_empty() {
             for diag in diagnostics.diagnostics() {
                 warn!("Rune diagnostic: {:?}", diag);
+                // Also print to stderr for tests
+                eprintln!("Rune diagnostic: {:?}", diag);
             }
         }
 
@@ -542,6 +805,96 @@ impl StructPluginLoader {
     /// Get all tools from all plugins
     pub fn all_tools(&self) -> Vec<&ToolDefinition> {
         self.registry.all_tools()
+    }
+
+    /// Call on_watch() on a plugin when a watched file changes
+    ///
+    /// This method:
+    /// 1. Calls the plugin's `on_watch(self, event)` method (if it exists)
+    /// 2. Re-calls `tools()` to refresh the tool list
+    /// 3. Updates the tool index
+    pub async fn call_on_watch(
+        &mut self,
+        plugin_path: &Path,
+        event: WatchEvent,
+    ) -> Result<(), RuneError> {
+        // Get plugin info (we need to look up before borrowing mutably)
+        let (unit, instance_clone, type_hash) = {
+            let plugin = self.registry.get(plugin_path).ok_or_else(|| {
+                RuneError::NotFound(format!("Plugin not found: {:?}", plugin_path))
+            })?;
+            (
+                plugin.unit.clone(),
+                plugin.instance.clone(),
+                plugin.instance.type_hash(),
+            )
+        };
+
+        let mut vm = Vm::new(self.runtime.clone(), unit.clone());
+
+        // Convert event to Rune value
+        let event_value = self.watch_event_to_rune(&event)?;
+
+        // Call on_watch(self, event) as an instance method
+        let method_hash = rune::Hash::associated_function(type_hash, "on_watch");
+        match vm.call(method_hash, (instance_clone.clone(), event_value)) {
+            Ok(output) => {
+                // Handle async
+                let type_info = output.type_info();
+                let type_name = format!("{}", type_info);
+
+                if type_name.contains("Generator") || type_name.contains("Future") {
+                    let _ = vm.async_complete().await;
+                }
+                debug!("on_watch completed for {:?}", plugin_path);
+            }
+            Err(e) => {
+                // Method might not exist, that's OK
+                debug!("on_watch not found or failed: {}", e);
+            }
+        }
+
+        // Refresh tools after on_watch (the instance may have mutated)
+        self.refresh_plugin_tools(plugin_path, &unit, &instance_clone)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Convert a WatchEvent to a Rune value
+    fn watch_event_to_rune(&self, event: &WatchEvent) -> Result<Value, RuneError> {
+        let json = serde_json::json!({
+            "path": event.path.to_string_lossy(),
+            "kind": event.kind.as_str(),
+        });
+
+        match json_to_rune(&json) {
+            rune::runtime::VmResult::Ok(v) => Ok(v),
+            rune::runtime::VmResult::Err(e) => {
+                Err(RuneError::Conversion(format!("Failed to convert event: {:?}", e)))
+            }
+        }
+    }
+
+    /// Refresh a plugin's tools by re-calling tools()
+    async fn refresh_plugin_tools(
+        &mut self,
+        path: &Path,
+        unit: &Arc<Unit>,
+        instance: &Value,
+    ) -> Result<(), RuneError> {
+        // Call tools() to get new tool definitions
+        let new_tools = self.call_tools(unit, instance).await?;
+
+        // Update the plugin's cached tools
+        if let Some(plugin) = self.registry.get_mut(path) {
+            plugin.tools = new_tools;
+        }
+
+        // Refresh the tool index
+        self.registry.refresh_tool_index();
+
+        Ok(())
     }
 }
 
@@ -970,5 +1323,585 @@ this is not valid rune {{{
         // Should load the valid plugin only
         assert_eq!(loader.registry().len(), 1);
         assert_eq!(loader.all_tools()[0].name, "valid_tool");
+    }
+
+    // ===== Watch Event Tests =====
+
+    #[test]
+    fn test_watch_event_kind_display() {
+        assert_eq!(WatchEventKind::Created.as_str(), "created");
+        assert_eq!(WatchEventKind::Modified.as_str(), "modified");
+        assert_eq!(WatchEventKind::Deleted.as_str(), "deleted");
+    }
+
+    #[tokio::test]
+    async fn test_on_watch_calls_plugin_method() {
+        let temp = TempDir::new().unwrap();
+
+        // Plugin that tracks on_watch calls
+        let plugin = r#"
+struct WatcherPlugin {
+    watch_count,
+    last_path,
+}
+
+impl WatcherPlugin {
+    fn new() {
+        WatcherPlugin { watch_count: 0, last_path: "" }
+    }
+
+    fn tools(self) {
+        [#{ name: "watcher_tool", description: `Called ${self.watch_count} times` }]
+    }
+
+    fn on_watch(self, event) {
+        self.watch_count = self.watch_count + 1;
+        self.last_path = event.path;
+    }
+}
+
+#[plugin(watch = ["*.txt"])]
+pub fn create() {
+    WatcherPlugin::new()
+}
+"#;
+        std::fs::write(temp.path().join("watcher.rn"), plugin).unwrap();
+
+        let mut loader = StructPluginLoader::new().unwrap();
+        loader.load_from_directory(temp.path()).await.unwrap();
+
+        // Initially description should say 0 times
+        let tools = loader.all_tools();
+        assert_eq!(tools.len(), 1);
+        assert!(tools[0].description.contains("0 times"));
+
+        // Simulate a file change
+        let plugin_path = temp.path().join("watcher.rn");
+        let event = WatchEvent {
+            path: PathBuf::from("test.txt"),
+            kind: WatchEventKind::Modified,
+        };
+        loader.call_on_watch(&plugin_path, event).await.unwrap();
+
+        // Tools should be refreshed with new description
+        let tools = loader.all_tools();
+        assert!(tools[0].description.contains("1 times"));
+    }
+
+    #[tokio::test]
+    async fn test_on_watch_refreshes_tools() {
+        let temp = TempDir::new().unwrap();
+
+        // Plugin that adds a tool on each watch event
+        let plugin = r#"
+struct CounterPlugin {
+    count,
+}
+
+impl CounterPlugin {
+    fn new() {
+        CounterPlugin { count: 1 }
+    }
+
+    fn tools(self) {
+        let tools = [];
+        for i in 0..self.count {
+            tools.push(#{ name: `tool_${i}` });
+        }
+        tools
+    }
+
+    fn on_watch(self, event) {
+        self.count = self.count + 1;
+    }
+}
+
+#[plugin(watch = ["*.txt"])]
+pub fn create() {
+    CounterPlugin::new()
+}
+"#;
+        std::fs::write(temp.path().join("counter.rn"), plugin).unwrap();
+
+        let mut loader = StructPluginLoader::new().unwrap();
+        loader.load_from_directory(temp.path()).await.unwrap();
+
+        // Initially 1 tool
+        assert_eq!(loader.all_tools().len(), 1);
+
+        // Simulate file change
+        let plugin_path = temp.path().join("counter.rn");
+        let event = WatchEvent {
+            path: PathBuf::from("test.txt"),
+            kind: WatchEventKind::Modified,
+        };
+        loader.call_on_watch(&plugin_path, event).await.unwrap();
+
+        // Now 2 tools
+        assert_eq!(loader.all_tools().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_on_watch_plugin_without_method() {
+        let temp = TempDir::new().unwrap();
+
+        // Plugin without on_watch method
+        let plugin = r#"
+struct NoWatchPlugin { }
+
+impl NoWatchPlugin {
+    fn new() { NoWatchPlugin {} }
+    fn tools(self) { [#{ name: "no_watch_tool" }] }
+}
+
+#[plugin(watch = ["*.txt"])]
+pub fn create() {
+    NoWatchPlugin::new()
+}
+"#;
+        std::fs::write(temp.path().join("no_watch.rn"), plugin).unwrap();
+
+        let mut loader = StructPluginLoader::new().unwrap();
+        loader.load_from_directory(temp.path()).await.unwrap();
+
+        // Should not error when calling on_watch on plugin without the method
+        let plugin_path = temp.path().join("no_watch.rn");
+        let event = WatchEvent {
+            path: PathBuf::from("test.txt"),
+            kind: WatchEventKind::Modified,
+        };
+        let result = loader.call_on_watch(&plugin_path, event).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_on_watch_event_contains_path_and_kind() {
+        let temp = TempDir::new().unwrap();
+
+        // Plugin that stores event details
+        let plugin = r#"
+struct EventLogger {
+    event_path,
+    event_kind,
+}
+
+impl EventLogger {
+    fn new() {
+        EventLogger { event_path: "", event_kind: "" }
+    }
+
+    fn tools(self) {
+        [#{ name: "logger_tool", description: `${self.event_kind}:${self.event_path}` }]
+    }
+
+    fn on_watch(self, event) {
+        self.event_path = event.path;
+        self.event_kind = event.kind;
+    }
+}
+
+#[plugin(watch = ["*.log"])]
+pub fn create() {
+    EventLogger::new()
+}
+"#;
+        std::fs::write(temp.path().join("logger.rn"), plugin).unwrap();
+
+        let mut loader = StructPluginLoader::new().unwrap();
+        loader.load_from_directory(temp.path()).await.unwrap();
+
+        // Simulate a file change
+        let plugin_path = temp.path().join("logger.rn");
+        let event = WatchEvent {
+            path: PathBuf::from("/path/to/file.log"),
+            kind: WatchEventKind::Created,
+        };
+        loader.call_on_watch(&plugin_path, event).await.unwrap();
+
+        // Check the description contains the path and kind
+        let tools = loader.all_tools();
+        assert!(tools[0].description.contains("created"));
+        assert!(tools[0].description.contains("/path/to/file.log"));
+    }
+
+    #[tokio::test]
+    async fn test_find_plugins_for_watch_by_filename() {
+        let temp = TempDir::new().unwrap();
+
+        // Plugin watching justfiles
+        let plugin1 = r#"
+struct JustWatcher { }
+impl JustWatcher {
+    fn new() { JustWatcher {} }
+    fn tools(self) { [#{ name: "just_tool" }] }
+}
+#[plugin(watch = ["justfile", "*.just"])]
+pub fn create() { JustWatcher::new() }
+"#;
+        std::fs::write(temp.path().join("just.rn"), plugin1).unwrap();
+
+        // Plugin watching makefiles
+        let plugin2 = r#"
+struct MakeWatcher { }
+impl MakeWatcher {
+    fn new() { MakeWatcher {} }
+    fn tools(self) { [#{ name: "make_tool" }] }
+}
+#[plugin(watch = ["Makefile"])]
+pub fn create() { MakeWatcher::new() }
+"#;
+        std::fs::write(temp.path().join("make.rn"), plugin2).unwrap();
+
+        let mut loader = StructPluginLoader::new().unwrap();
+        loader.load_from_directory(temp.path()).await.unwrap();
+
+        // Find plugins for justfile
+        let plugins = loader.registry().find_plugins_for_watch("justfile");
+        assert_eq!(plugins.len(), 1);
+        assert!(plugins[0].provides_tool("just_tool"));
+
+        // Find plugins for Makefile
+        let plugins = loader.registry().find_plugins_for_watch("Makefile");
+        assert_eq!(plugins.len(), 1);
+        assert!(plugins[0].provides_tool("make_tool"));
+
+        // Find plugins for build.just (matches *.just)
+        let plugins = loader.registry().find_plugins_for_watch("build.just");
+        assert_eq!(plugins.len(), 1);
+        assert!(plugins[0].provides_tool("just_tool"));
+
+        // No plugins for random file
+        let plugins = loader.registry().find_plugins_for_watch("random.txt");
+        assert!(plugins.is_empty());
+    }
+
+    // ===== Minimal Shell Exec Test =====
+
+    #[tokio::test]
+    async fn test_minimal_shell_exec_in_struct() {
+        let temp = TempDir::new().unwrap();
+
+        // Minimal plugin that calls shell::exec
+        let plugin = r#"
+use shell::exec;
+
+struct MinimalPlugin { }
+
+impl MinimalPlugin {
+    fn new() {
+        let result = exec("echo", ["test"], #{});
+        if result.is_err() {
+            return MinimalPlugin {};
+        }
+        MinimalPlugin {}
+    }
+
+    fn tools(self) {
+        [#{ name: "minimal_tool" }]
+    }
+}
+
+#[plugin()]
+pub fn create() {
+    MinimalPlugin::new()
+}
+"#;
+        std::fs::write(temp.path().join("minimal.rn"), plugin).unwrap();
+
+        let mut loader = StructPluginLoader::new().unwrap();
+        loader.load_from_directory(temp.path()).await.unwrap();
+
+        assert_eq!(loader.registry().len(), 1, "Minimal plugin should load");
+    }
+
+    // ===== Shell + oq Combined Test =====
+
+    #[tokio::test]
+    async fn test_shell_and_oq_combined() {
+        let temp = TempDir::new().unwrap();
+
+        // Plugin that uses both shell::exec with multiple args and oq::parse
+        let plugin = r#"
+use shell::exec;
+use oq::parse;
+
+struct CombinedPlugin {
+    data,
+}
+
+impl CombinedPlugin {
+    fn new() {
+        // Use multiple args like the just plugin does
+        let result = exec("echo", ["-n", "{\"key\": \"value\"}"], #{});
+        if result.is_err() {
+            return CombinedPlugin { data: #{} };
+        }
+
+        let result = result.unwrap();
+        if result.exit_code != 0 {
+            return CombinedPlugin { data: #{} };
+        }
+
+        // Parse the JSON output
+        let parsed = parse(result.stdout);
+        if parsed.is_err() {
+            return CombinedPlugin { data: #{} };
+        }
+
+        CombinedPlugin { data: parsed.unwrap() }
+    }
+
+    fn tools(self) {
+        [#{ name: "combined_tool" }]
+    }
+}
+
+#[plugin()]
+pub fn create() {
+    CombinedPlugin::new()
+}
+"#;
+        std::fs::write(temp.path().join("combined.rn"), plugin).unwrap();
+
+        let mut loader = StructPluginLoader::new().unwrap();
+        loader.load_from_directory(temp.path()).await.unwrap();
+
+        assert_eq!(loader.registry().len(), 1, "Combined plugin should load");
+    }
+
+    // ===== Object Iteration Test =====
+
+    #[tokio::test]
+    async fn test_object_access_without_iteration() {
+        let temp = TempDir::new().unwrap();
+
+        // Plugin that accesses nested object WITHOUT iteration
+        let plugin = r#"
+use oq::parse;
+
+struct SimplePlugin {
+    doc,
+}
+
+impl SimplePlugin {
+    fn new() {
+        let json = "{\"recipes\": {\"build\": {\"name\": \"build\", \"doc\": \"Build it\"}}}";
+        let data = parse(json);
+        if data.is_err() {
+            return SimplePlugin { doc: "parse error" };
+        }
+        let data = data.unwrap();
+
+        // Access nested object directly (no iteration)
+        let recipes = data["recipes"];
+        let build = recipes["build"];
+        let doc = build["doc"];
+
+        SimplePlugin { doc }
+    }
+
+    fn tools(self) {
+        [#{ name: "simple_tool" }]
+    }
+}
+
+#[plugin()]
+pub fn create() {
+    SimplePlugin::new()
+}
+"#;
+        std::fs::write(temp.path().join("simple.rn"), plugin).unwrap();
+
+        let mut loader = StructPluginLoader::new().unwrap();
+        let compile_result = loader.compile("simple.rn", plugin);
+        assert!(compile_result.is_ok(), "Plugin should compile: {:?}", compile_result.err());
+
+        let unit = compile_result.unwrap();
+        let factory_result = loader.call_factory(&unit, "create").await;
+        assert!(factory_result.is_ok(), "Factory should succeed: {:?}", factory_result.err());
+    }
+
+    #[tokio::test]
+    async fn test_object_iteration_simple() {
+        let temp = TempDir::new().unwrap();
+
+        // Plugin that iterates over an object but doesn't do dynamic assignment
+        let plugin = r#"
+use oq::parse;
+
+struct IterPlugin {
+    count,
+}
+
+impl IterPlugin {
+    fn new() {
+        let json = "{\"a\": 1, \"b\": 2, \"c\": 3}";
+        let data = parse(json);
+        if data.is_err() {
+            return IterPlugin { count: -1 };
+        }
+        let data = data.unwrap();
+
+        // Just count entries
+        let count = 0;
+        for entry in data {
+            count = count + 1;
+        }
+
+        IterPlugin { count }
+    }
+
+    fn tools(self) {
+        [#{ name: "iter_tool" }]
+    }
+}
+
+#[plugin()]
+pub fn create() {
+    IterPlugin::new()
+}
+"#;
+        std::fs::write(temp.path().join("iter.rn"), plugin).unwrap();
+
+        let mut loader = StructPluginLoader::new().unwrap();
+        let compile_result = loader.compile("iter.rn", plugin);
+        assert!(compile_result.is_ok(), "Plugin should compile: {:?}", compile_result.err());
+
+        let unit = compile_result.unwrap();
+        let factory_result = loader.call_factory(&unit, "create").await;
+        assert!(factory_result.is_ok(), "Factory should succeed: {:?}", factory_result.err());
+    }
+
+    #[tokio::test]
+    async fn test_object_iteration_value_access() {
+        let temp = TempDir::new().unwrap();
+
+        // Plugin that iterates and accesses value properties
+        let plugin = r#"
+use oq::{parse, query};
+
+struct AccessPlugin {
+    names,
+}
+
+impl AccessPlugin {
+    fn new() {
+        // Nested object like just --dump
+        let json = "{\"outer\": {\"a\": {\"name\": \"Alice\"}, \"b\": {\"name\": \"Bob\"}}}";
+
+        // Use oq::query to extract an array of names directly
+        // jq's to_entries converts object to array of {key, value}
+        let entries = query(json, ".outer | to_entries");
+        if entries.is_err() {
+            return AccessPlugin { names: [] };
+        }
+        let entries = entries.unwrap();
+        if entries == () {
+            return AccessPlugin { names: [] };
+        }
+
+        // entries is now an array, which should iterate correctly
+        let names = [];
+        for entry in entries {
+            let key = entry["key"];
+            let value = entry["value"];
+            let name = value["name"];
+            names.push(#{ key: key, name: name });
+        }
+
+        AccessPlugin { names }
+    }
+
+    fn tools(self) {
+        [#{ name: "access_tool" }]
+    }
+}
+
+#[plugin()]
+pub fn create() {
+    AccessPlugin::new()
+}
+"#;
+        std::fs::write(temp.path().join("array.rn"), plugin).unwrap();
+
+        let mut loader = StructPluginLoader::new().unwrap();
+        let compile_result = loader.compile("array.rn", plugin);
+        assert!(compile_result.is_ok(), "Plugin should compile: {:?}", compile_result.err());
+
+        let unit = compile_result.unwrap();
+        let factory_result = loader.call_factory(&unit, "create").await;
+        assert!(factory_result.is_ok(), "Factory should succeed: {:?}", factory_result.err());
+    }
+
+    // ===== Just Plugin Integration Test =====
+
+    #[tokio::test]
+    async fn test_just_plugin_compiles_and_loads() {
+        // Load the actual just.rn plugin from examples/plugins
+        let plugin_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("examples/plugins");
+
+        if !plugin_path.exists() {
+            // Skip if examples/plugins doesn't exist
+            return;
+        }
+
+        let just_plugin = plugin_path.join("just.rn");
+        if !just_plugin.exists() {
+            // Skip if just.rn doesn't exist
+            return;
+        }
+
+        let mut loader = StructPluginLoader::new().unwrap();
+
+        // Create a temp dir with just the just.rn plugin
+        let temp = TempDir::new().unwrap();
+        std::fs::copy(&just_plugin, temp.path().join("just.rn")).unwrap();
+
+        // Verify the file was copied
+        let copied = temp.path().join("just.rn");
+        assert!(copied.exists(), "just.rn should be copied");
+
+        // Read and check the content has #[plugin(...)]
+        let content = std::fs::read_to_string(&copied).unwrap();
+        assert!(content.contains("#[plugin("), "just.rn should have #[plugin(...)] attribute");
+
+        // First, test discovery directly
+        let discovery = AttributeDiscovery::new();
+        let plugins: Vec<PluginMetadata> = discovery.discover_in_directory(temp.path()).unwrap();
+        assert_eq!(plugins.len(), 1, "Discovery should find 1 plugin, found {}", plugins.len());
+
+        // Try loading the plugin directly and check for errors
+        let plugin_metadata = plugins.into_iter().next().unwrap();
+        println!("Plugin metadata: {:?}", plugin_metadata);
+
+        // Read source and try to compile
+        let source = std::fs::read_to_string(&plugin_metadata.source_path).unwrap();
+        let compile_result = loader.compile(&plugin_metadata.source_path.to_string_lossy(), &source);
+        assert!(compile_result.is_ok(), "Plugin should compile: {:?}", compile_result.err());
+
+        // Try loading manually to see the actual error
+        let unit = compile_result.unwrap();
+        let factory_result = loader.call_factory(&unit, &plugin_metadata.factory_fn).await;
+        assert!(factory_result.is_ok(), "Factory function should succeed: {:?}", factory_result.as_ref().err());
+
+        // Load should succeed (plugin compiles)
+        let mut loader2 = StructPluginLoader::new().unwrap();
+        let result = loader2.load_from_directory(temp.path()).await;
+        assert!(result.is_ok(), "Just plugin should load: {:?}", result);
+
+        // Plugin should be registered
+        assert_eq!(loader2.registry().len(), 1, "Just plugin should be loaded (found {} plugins)", loader2.registry().len());
+
+        // Should have watch patterns
+        let plugins = loader2.registry().find_plugins_for_watch("justfile");
+        assert_eq!(plugins.len(), 1, "Just plugin should watch 'justfile'");
+
+        let plugins = loader2.registry().find_plugins_for_watch("build.just");
+        assert_eq!(plugins.len(), 1, "Just plugin should watch '*.just'");
     }
 }
