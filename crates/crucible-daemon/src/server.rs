@@ -1,8 +1,10 @@
 //! Unix socket server for JSON-RPC
 
-use crate::protocol::{Request, Response, METHOD_NOT_FOUND, PARSE_ERROR};
+use crate::kiln_manager::KilnManager;
+use crate::protocol::{Request, Response, METHOD_NOT_FOUND, PARSE_ERROR, INVALID_PARAMS, INTERNAL_ERROR};
 use anyhow::Result;
 use std::path::Path;
+use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::broadcast;
@@ -12,6 +14,7 @@ use tracing::{error, info, warn};
 pub struct Server {
     listener: UnixListener,
     shutdown_tx: broadcast::Sender<()>,
+    kiln_manager: Arc<KilnManager>,
 }
 
 impl Server {
@@ -31,7 +34,11 @@ impl Server {
         let (shutdown_tx, _) = broadcast::channel(1);
 
         info!("Daemon listening on {:?}", path);
-        Ok(Self { listener, shutdown_tx })
+        Ok(Self {
+            listener,
+            shutdown_tx,
+            kiln_manager: Arc::new(KilnManager::new()),
+        })
     }
 
     /// Get a shutdown sender for external shutdown triggers
@@ -49,8 +56,9 @@ impl Server {
                     match accept_result {
                         Ok((stream, _)) => {
                             let shutdown_tx = self.shutdown_tx.clone();
+                            let km = self.kiln_manager.clone();
                             tokio::spawn(async move {
-                                if let Err(e) = handle_client(stream, shutdown_tx).await {
+                                if let Err(e) = handle_client(stream, shutdown_tx, km).await {
                                     error!("Client error: {}", e);
                                 }
                             });
@@ -71,7 +79,11 @@ impl Server {
     }
 }
 
-async fn handle_client(stream: UnixStream, shutdown_tx: broadcast::Sender<()>) -> Result<()> {
+async fn handle_client(
+    stream: UnixStream,
+    shutdown_tx: broadcast::Sender<()>,
+    kiln_manager: Arc<KilnManager>,
+) -> Result<()> {
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
@@ -84,7 +96,7 @@ async fn handle_client(stream: UnixStream, shutdown_tx: broadcast::Sender<()>) -
         }
 
         let response = match serde_json::from_str::<Request>(&line) {
-            Ok(req) => handle_request(req, &shutdown_tx).await,
+            Ok(req) => handle_request(req, &shutdown_tx, &kiln_manager).await,
             Err(e) => {
                 warn!("Parse error: {}", e);
                 Response::error(None, PARSE_ERROR, e.to_string())
@@ -99,7 +111,11 @@ async fn handle_client(stream: UnixStream, shutdown_tx: broadcast::Sender<()>) -
     Ok(())
 }
 
-async fn handle_request(req: Request, shutdown_tx: &broadcast::Sender<()>) -> Response {
+async fn handle_request(
+    req: Request,
+    shutdown_tx: &broadcast::Sender<()>,
+    kiln_manager: &Arc<KilnManager>,
+) -> Response {
     match req.method.as_str() {
         "ping" => Response::success(req.id, "pong"),
         "shutdown" => {
@@ -107,8 +123,46 @@ async fn handle_request(req: Request, shutdown_tx: &broadcast::Sender<()>) -> Re
             let _ = shutdown_tx.send(());
             Response::success(req.id, "shutting down")
         }
+        "kiln.open" => handle_kiln_open(req, kiln_manager).await,
+        "kiln.close" => handle_kiln_close(req, kiln_manager).await,
+        "kiln.list" => handle_kiln_list(req, kiln_manager).await,
         _ => Response::error(req.id, METHOD_NOT_FOUND, format!("Unknown method: {}", req.method)),
     }
+}
+
+async fn handle_kiln_open(req: Request, km: &Arc<KilnManager>) -> Response {
+    let path = match req.params.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'path' parameter"),
+    };
+
+    match km.open(Path::new(path)).await {
+        Ok(()) => Response::success(req.id, serde_json::json!({"status": "ok"})),
+        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    }
+}
+
+async fn handle_kiln_close(req: Request, km: &Arc<KilnManager>) -> Response {
+    let path = match req.params.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'path' parameter"),
+    };
+
+    match km.close(Path::new(path)).await {
+        Ok(()) => Response::success(req.id, serde_json::json!({"status": "ok"})),
+        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    }
+}
+
+async fn handle_kiln_list(req: Request, km: &Arc<KilnManager>) -> Response {
+    let kilns = km.list().await;
+    let list: Vec<_> = kilns.iter()
+        .map(|(path, last_access)| serde_json::json!({
+            "path": path.to_string_lossy(),
+            "last_access_secs_ago": last_access.elapsed().as_secs()
+        }))
+        .collect();
+    Response::success(req.id, list)
 }
 
 #[cfg(test)]
