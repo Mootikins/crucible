@@ -2617,16 +2617,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crucible-examples"
-version = "0.1.0"
-dependencies = [
- "crucible-core",
- "crucible-enrichment",
- "markdown-it",
- "md5 0.8.0",
-]
-
-[[package]]
 name = "crucible-llm"
 version = "0.1.0"
 dependencies = [
