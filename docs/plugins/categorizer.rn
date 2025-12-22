@@ -1,48 +1,126 @@
-// Recipe categorizer - auto-categorizes recipes by name patterns
+// Recipe categorizer - auto-categorizes tools by name patterns
 //
 // This plugin demonstrates the hook system by categorizing
-// recipes based on naming conventions using regex patterns.
+// tools based on naming conventions using regex patterns.
+// It handles all tool sources (just, rune, upstream MCP).
 
 use crucible::categorize_by_name;
-use regex::is_match;
+use regex::Regex;
 
-/// Categorize Just recipes when discovered
-#[hook(event = "tool:discovered", pattern = "just_*", priority = 5)]
-pub fn categorize_recipes(ctx, event) {
+// Pre-compile regex patterns for performance
+// These are compiled once when the plugin loads
+let CI_PATTERN = Regex::new(r"(?i)(ci|test|check|spec|verify)");
+let QUICK_PATTERN = Regex::new(r"(?i)(fmt|lint|check|clippy)");
+let BUILD_PATTERN = Regex::new(r"(?i)(build|release|compile|dist)");
+let DOC_PATTERN = Regex::new(r"(?i)(doc|readme|changelog)");
+let VERSION_PATTERN = Regex::new(r"v\d+\.\d+");
+let DEPLOY_PATTERN = Regex::new(r"(?i)(deploy|publish|push|release)");
+let CLEAN_PATTERN = Regex::new(r"(?i)(clean|purge|reset|clear)");
+
+/// Categorize all tools when discovered
+///
+/// Applies to just_*, rune_*, and upstream MCP tools
+#[hook(event = "tool:discovered", pattern = "*", priority = 5)]
+pub fn categorize_tools(ctx, event) {
     let name = event.identifier;
+    let source = event.source;
+
+    // Start with base category from name patterns
     let category = categorize_by_name(name.clone());
 
-    // Build enrichment with category and tags
+    // Build enrichment tags
     let tags = [];
 
-    // Add CI tag if recipe is likely used in CI
-    if is_match("ci|test|check|spec", name.clone()) {
+    // Add CI tag if tool is likely used in CI pipelines
+    if CI_PATTERN.is_match(name.clone()) {
         tags.push("ci");
     }
 
-    // Add "quick" tag for likely fast recipes
-    if is_match("fmt|lint|check", name.clone()) {
+    // Add "quick" tag for likely fast operations
+    if QUICK_PATTERN.is_match(name.clone()) {
         tags.push("quick");
     }
 
-    // Add "build" tag for build-related recipes
-    if is_match("build|release|compile", name.clone()) {
+    // Add "build" tag for build-related tools
+    if BUILD_PATTERN.is_match(name.clone()) {
         tags.push("build");
     }
 
-    // Add "doc" tag for documentation recipes
-    if is_match("doc", name.clone()) {
+    // Add "doc" tag for documentation tools
+    if DOC_PATTERN.is_match(name.clone()) {
         tags.push("doc");
     }
 
     // Detect version patterns like v1.0, v2.3.4
-    if is_match("v\\d+\\.\\d+", name.clone()) {
+    if VERSION_PATTERN.is_match(name.clone()) {
         tags.push("versioned");
     }
 
-    // Apply enrichment to the event
+    // Add deployment-related tag
+    if DEPLOY_PATTERN.is_match(name.clone()) {
+        tags.push("deploy");
+    }
+
+    // Add maintenance tag
+    if CLEAN_PATTERN.is_match(name.clone()) {
+        tags.push("maintenance");
+    }
+
+    // Add source-based tags
+    match source {
+        "just" => tags.push("justfile"),
+        "rune" => tags.push("plugin"),
+        "upstream" => tags.push("external"),
+        "kiln" => tags.push("builtin"),
+        _ => {}
+    }
+
+    // Apply enrichment to the event payload
     event.payload.category = category;
     event.payload.tags = tags;
 
+    // Store category counts in context for reporting
+    let category_counts = ctx.get("category_counts");
+    if category_counts == () {
+        category_counts = #{};
+    }
+    let count = category_counts.get(category);
+    if count == () {
+        count = 0;
+    }
+    category_counts[category] = count + 1;
+    ctx.set("category_counts", category_counts);
+
     event
+}
+
+/// Get category statistics
+///
+/// Returns a summary of tool categories discovered in this session
+#[param(name = "format", type = "string", desc = "Output format: text, json, or toon", required = false)]
+#[tool(desc = "Get statistics about categorized tools", tags = ["meta", "reporting"])]
+pub fn category_stats(format) {
+    use oq::format_to;
+
+    let ctx = crucible::get_context();
+    let counts = ctx.get("category_counts");
+
+    if counts == () {
+        return #{ message: "No tools categorized yet" };
+    }
+
+    let fmt = if format == () { "text" } else { format };
+
+    match fmt {
+        "json" => format_to(counts, "json"),
+        "toon" => format_to(counts, "toon"),
+        _ => {
+            // Text format
+            let lines = ["Tool Category Statistics:", ""];
+            for (category, count) in counts {
+                lines.push(`  ${category}: ${count} tools`);
+            }
+            lines.join("\n")
+        }
+    }
 }

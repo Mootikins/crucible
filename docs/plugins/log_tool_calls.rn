@@ -1,103 +1,323 @@
+// Audit logging plugin - tracks all tool executions
+//
+// This plugin provides comprehensive audit logging for tool calls,
+// errors, and discovery events. Useful for debugging, monitoring,
+// and compliance tracking.
+
+use oq::{format_to, parse};
+
+/// Maximum number of audit entries to keep in memory
+const MAX_AUDIT_ENTRIES = 1000;
+
 /// Log all tool executions to audit trail
 ///
-/// This hook runs after every tool execution and emits a custom audit event
-/// that can be captured by logging systems, webhooks, or other monitoring tools.
-///
-/// Captured information:
-/// - Tool name
-/// - Execution timestamp
-/// - Duration (if available)
+/// This hook runs after every tool execution and records:
+/// - Tool name and source
+/// - Execution timestamp and duration
 /// - Success/error status
-/// - Source (kiln, just, rune, upstream)
+/// - Result summary (truncated for large outputs)
 #[hook(event = "tool:after", pattern = "*", priority = 200)]
 pub fn log_tool_calls(ctx, event) {
-    // Extract relevant information
     let tool_name = event.identifier;
     let timestamp = event.timestamp_ms;
     let source = event.source;
 
     // Get duration if available
-    let duration = if let Some(d) = event.payload.get("duration_ms") {
-        d
-    } else {
-        null
-    };
+    let duration = event.payload.get("duration_ms");
+    if duration == () {
+        duration = null;
+    }
 
     // Check if this was an error
-    let is_error = if let Some(err) = event.payload.get("is_error") {
-        err
-    } else {
-        false
-    };
+    let is_error = event.payload.get("is_error");
+    if is_error == () {
+        is_error = false;
+    }
 
-    // Emit audit event
-    ctx.emit_custom("audit:tool_executed", #{
+    // Get result summary (truncate large results)
+    let result_summary = ();
+    if let Some(result) = event.payload.get("result") {
+        let result_str = `${result}`;
+        if result_str.len() > 200 {
+            result_summary = result_str[..200] + "...";
+        } else {
+            result_summary = result_str;
+        }
+    }
+
+    // Create audit entry
+    let entry = #{
+        event_type: "tool:after",
         tool: tool_name,
         timestamp_ms: timestamp,
         duration_ms: duration,
         is_error: is_error,
         source: source,
-    });
+        result_summary: result_summary,
+    };
 
-    // Store audit info in context for potential webhook processing
-    ctx.set("audit_logged", true);
-    ctx.set("audit_timestamp", timestamp);
+    // Add to audit log
+    add_audit_entry(ctx, entry);
 
-    // Pass through unchanged
+    // Emit custom event for external listeners
+    ctx.emit_custom("audit:tool_executed", entry);
+
+    // Update statistics
+    update_stats(ctx, "total_calls", 1);
+    if duration != () {
+        update_stats(ctx, "total_duration_ms", duration);
+    }
+
     event
 }
 
-/// Log tool errors with additional context
+/// Log tool errors with detailed context
 ///
-/// This hook specifically handles tool errors and provides more detailed
-/// error information for debugging and monitoring.
+/// Provides extra information for failed tool executions
+/// to help with debugging and error tracking.
 #[hook(event = "tool:error", pattern = "*", priority = 200)]
 pub fn log_tool_errors(ctx, event) {
     let tool_name = event.identifier;
     let timestamp = event.timestamp_ms;
-    let error_msg = event.payload.error;
-    let duration = event.payload.duration_ms;
+    let error_msg = event.payload.get("error");
+    let duration = event.payload.get("duration_ms");
+    let source = event.source;
 
-    // Emit detailed error event
-    ctx.emit_custom("audit:tool_error", #{
+    // Create detailed error entry
+    let entry = #{
+        event_type: "tool:error",
         tool: tool_name,
         timestamp_ms: timestamp,
         duration_ms: duration,
         error: error_msg,
-        source: event.source,
-    });
-
-    // Track error count in context
-    let error_count = if let Some(count) = ctx.get("error_count") {
-        count + 1
-    } else {
-        1
+        source: source,
+        arguments: event.payload.get("arguments"),
     };
 
-    ctx.set("error_count", error_count);
+    // Add to audit log
+    add_audit_entry(ctx, entry);
+
+    // Emit custom error event
+    ctx.emit_custom("audit:tool_error", entry);
+
+    // Update error statistics
+    update_stats(ctx, "total_errors", 1);
+
+    // Track error count by tool
+    let error_by_tool = ctx.get("errors_by_tool");
+    if error_by_tool == () {
+        error_by_tool = #{};
+    }
+    let current = error_by_tool.get(tool_name);
+    if current == () {
+        current = 0;
+    }
+    error_by_tool[tool_name] = current + 1;
+    ctx.set("errors_by_tool", error_by_tool);
 
     event
 }
 
-/// Log tool discovery for monitoring new tools
+/// Log tool discovery events
 ///
-/// This hook logs when new tools are discovered, useful for tracking
-/// what tools are available and when they were added.
+/// Tracks when new tools are registered, useful for understanding
+/// what tools are available at any point.
 #[hook(event = "tool:discovered", pattern = "*", priority = 200)]
 pub fn log_tool_discovered(ctx, event) {
     let tool_name = event.identifier;
-    let description = if let Some(desc) = event.payload.get("description") {
-        desc
-    } else {
-        "No description"
-    };
+    let description = event.payload.get("description");
+    if description == () {
+        description = "No description";
+    }
 
-    ctx.emit_custom("audit:tool_discovered", #{
+    let entry = #{
+        event_type: "tool:discovered",
         tool: tool_name,
         description: description,
-        upstream: event.payload.get("upstream"),
+        source: event.source,
         timestamp_ms: event.timestamp_ms,
-    });
+        category: event.payload.get("category"),
+        tags: event.payload.get("tags"),
+    };
+
+    // Add to audit log
+    add_audit_entry(ctx, entry);
+
+    // Emit custom event
+    ctx.emit_custom("audit:tool_discovered", entry);
+
+    // Update discovery count
+    update_stats(ctx, "tools_discovered", 1);
 
     event
+}
+
+/// Log note modification events
+///
+/// Tracks changes to notes in the kiln for compliance and debugging.
+#[hook(event = "note:modified", pattern = "*", priority = 200)]
+pub fn log_note_changes(ctx, event) {
+    let entry = #{
+        event_type: "note:modified",
+        path: event.identifier,
+        timestamp_ms: event.timestamp_ms,
+        change_type: event.payload.get("change_type"),
+    };
+
+    add_audit_entry(ctx, entry);
+    ctx.emit_custom("audit:note_modified", entry);
+    update_stats(ctx, "notes_modified", 1);
+
+    event
+}
+
+// === Helper Functions ===
+
+/// Add an entry to the audit log, maintaining size limit
+fn add_audit_entry(ctx, entry) {
+    let audit_log = ctx.get("audit_log");
+    if audit_log == () {
+        audit_log = [];
+    }
+
+    audit_log.push(entry);
+
+    // Trim if over limit
+    if audit_log.len() > MAX_AUDIT_ENTRIES {
+        audit_log = audit_log[audit_log.len() - MAX_AUDIT_ENTRIES..];
+    }
+
+    ctx.set("audit_log", audit_log);
+}
+
+/// Update a statistics counter
+fn update_stats(ctx, key, delta) {
+    let stats = ctx.get("audit_stats");
+    if stats == () {
+        stats = #{};
+    }
+
+    let current = stats.get(key);
+    if current == () {
+        current = 0;
+    }
+
+    stats[key] = current + delta;
+    ctx.set("audit_stats", stats);
+}
+
+// === Tools for Querying Audit Data ===
+
+/// Get recent audit entries
+///
+/// Returns the most recent audit log entries for inspection.
+#[param(name = "limit", type = "number", desc = "Maximum entries to return", required = false)]
+#[param(name = "event_type", type = "string", desc = "Filter by event type", required = false)]
+#[param(name = "format", type = "string", desc = "Output format: json or toon", required = false)]
+#[tool(desc = "Get recent audit log entries", tags = ["audit", "debugging"])]
+pub fn audit_log(limit, event_type, format) {
+    let ctx = crucible::get_context();
+    let log = ctx.get("audit_log");
+
+    if log == () || log.len() == 0 {
+        return #{ message: "No audit entries recorded" };
+    }
+
+    // Apply limit
+    let max = if limit == () { 20 } else { limit };
+    let entries = if log.len() > max {
+        log[log.len() - max..]
+    } else {
+        log
+    };
+
+    // Filter by event type if specified
+    if event_type != () {
+        let filtered = [];
+        for entry in entries {
+            if entry.event_type == event_type {
+                filtered.push(entry);
+            }
+        }
+        entries = filtered;
+    }
+
+    // Format output
+    let fmt = if format == () { "toon" } else { format };
+    match fmt {
+        "json" => format_to(entries, "json"),
+        _ => format_to(entries, "toon"),
+    }
+}
+
+/// Get audit statistics
+///
+/// Returns aggregate statistics about tool usage.
+#[param(name = "format", type = "string", desc = "Output format: text, json, or toon", required = false)]
+#[tool(desc = "Get audit statistics summary", tags = ["audit", "reporting"])]
+pub fn audit_stats(format) {
+    let ctx = crucible::get_context();
+    let stats = ctx.get("audit_stats");
+    let errors_by_tool = ctx.get("errors_by_tool");
+
+    if stats == () {
+        stats = #{};
+    }
+
+    // Calculate average duration
+    let avg_duration = ();
+    let total_calls = stats.get("total_calls");
+    let total_duration = stats.get("total_duration_ms");
+    if total_calls != () && total_duration != () && total_calls > 0 {
+        avg_duration = total_duration / total_calls;
+    }
+
+    let result = #{
+        total_calls: stats.get("total_calls"),
+        total_errors: stats.get("total_errors"),
+        total_duration_ms: total_duration,
+        average_duration_ms: avg_duration,
+        tools_discovered: stats.get("tools_discovered"),
+        notes_modified: stats.get("notes_modified"),
+        errors_by_tool: errors_by_tool,
+    };
+
+    let fmt = if format == () { "text" } else { format };
+
+    match fmt {
+        "json" => format_to(result, "json"),
+        "toon" => format_to(result, "toon"),
+        _ => {
+            let lines = ["Audit Statistics:", ""];
+            if result.total_calls != () {
+                lines.push(`  Total tool calls: ${result.total_calls}`);
+            }
+            if result.total_errors != () {
+                lines.push(`  Total errors: ${result.total_errors}`);
+            }
+            if result.average_duration_ms != () {
+                lines.push(`  Average duration: ${result.average_duration_ms}ms`);
+            }
+            if result.tools_discovered != () {
+                lines.push(`  Tools discovered: ${result.tools_discovered}`);
+            }
+            if result.notes_modified != () {
+                lines.push(`  Notes modified: ${result.notes_modified}`);
+            }
+            lines.join("\n")
+        }
+    }
+}
+
+/// Clear the audit log
+///
+/// Removes all audit entries and resets statistics.
+#[tool(desc = "Clear audit log and reset statistics", tags = ["audit", "maintenance"])]
+pub fn clear_audit() {
+    let ctx = crucible::get_context();
+    ctx.set("audit_log", []);
+    ctx.set("audit_stats", #{});
+    ctx.set("errors_by_tool", #{});
+
+    #{ message: "Audit log cleared" }
 }
