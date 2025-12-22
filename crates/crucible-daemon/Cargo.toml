@@ -11,6 +11,7 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 dirs = { workspace = true }
+crucible-surrealdb = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
