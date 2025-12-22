@@ -320,6 +320,10 @@ async fn main() -> Result<()> {
             commands::tasks::execute(config, file, command).await?
         }
 
+        Some(Commands::Daemon(cmd)) => {
+            commands::daemon::handle(cmd).await?;
+        }
+
         // Commands::EnhancedChat { // Temporarily disabled
         //     agent,
         //     model,

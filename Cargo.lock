@@ -2492,6 +2492,8 @@ dependencies = [
  "crucible-agents",
  "crucible-config",
  "crucible-core",
+ "crucible-daemon",
+ "crucible-daemon-client",
  "crucible-enrichment",
  "crucible-llm",
  "crucible-merkle",
@@ -2604,7 +2606,21 @@ name = "crucible-daemon"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "crucible-surrealdb",
  "dirs 6.0.0",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "crucible-daemon-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crucible-daemon",
  "serde",
  "serde_json",
  "tempfile",

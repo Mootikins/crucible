@@ -224,6 +224,10 @@ pub enum Commands {
         #[command(subcommand)]
         command: crate::commands::tasks::TasksSubcommand,
     },
+
+    /// Daemon management (start, stop, status)
+    #[command(subcommand)]
+    Daemon(crate::commands::daemon::DaemonCommands),
 }
 
 /// Agent card management subcommands
