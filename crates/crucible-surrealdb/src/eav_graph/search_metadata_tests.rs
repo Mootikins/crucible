@@ -170,9 +170,7 @@ mod tests {
         // Ingest files with multiple tags from dev-kiln
         // "Agents/Coder.md" has tags: [agent, example, coding]
         // "Agents/Researcher.md" has tags: [agent, example, research]
-        let _id1 = ingest_test_file(&store, "Agents/Coder.md")
-            .await
-            .unwrap();
+        let _id1 = ingest_test_file(&store, "Agents/Coder.md").await.unwrap();
         let _id2 = ingest_test_file(&store, "Agents/Researcher.md")
             .await
             .unwrap();
@@ -264,9 +262,7 @@ mod tests {
         let (client, store) = setup_test_db().await.unwrap();
 
         // dev-kiln: "Agents/Coder.md" has type: agent-card
-        let _id = ingest_test_file(&store, "Agents/Coder.md")
-            .await
-            .unwrap();
+        let _id = ingest_test_file(&store, "Agents/Coder.md").await.unwrap();
 
         // Search for documents with specific type using SurrealDB graph syntax
         // Frontmatter is stored as a single property with key='frontmatter'
@@ -432,9 +428,7 @@ mod tests {
         let (client, store) = setup_test_db().await.unwrap();
 
         // Ingest test data - Agents/Coder.md has tag "agent" and type: "agent-card"
-        let _id = ingest_test_file(&store, "Agents/Coder.md")
-            .await
-            .unwrap();
+        let _id = ingest_test_file(&store, "Agents/Coder.md").await.unwrap();
 
         // Search for documents with tag #agent AND type = agent-card using SurrealDB graph syntax
         let query = r#"

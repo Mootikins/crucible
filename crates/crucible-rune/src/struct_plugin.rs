@@ -322,12 +322,7 @@ impl FromAttributes for PluginMetadata {
         "plugin"
     }
 
-    fn from_attrs(
-        attrs: &str,
-        fn_name: &str,
-        path: &Path,
-        _docs: &str,
-    ) -> Result<Self, RuneError> {
+    fn from_attrs(attrs: &str, fn_name: &str, path: &Path, _docs: &str) -> Result<Self, RuneError> {
         let watch_strs = attr_parsers::extract_string_array(attrs, "watch").unwrap_or_default();
         let watch_patterns: Vec<Pattern> = watch_strs
             .iter()
@@ -392,10 +387,7 @@ impl PluginInstance {
 
     /// Check if this plugin should handle a file change
     pub fn matches_watch_pattern(&self, path: &str) -> bool {
-        self.metadata
-            .watch_patterns
-            .iter()
-            .any(|p| p.matches(path))
+        self.metadata.watch_patterns.iter().any(|p| p.matches(path))
     }
 }
 
@@ -589,7 +581,10 @@ impl StructPluginLoader {
         let discovery = AttributeDiscovery::new();
         let plugins: Vec<PluginMetadata> = discovery.discover_all(paths)?;
 
-        info!("Found {} plugins with #[plugin(...)] attribute", plugins.len());
+        info!(
+            "Found {} plugins with #[plugin(...)] attribute",
+            plugins.len()
+        );
 
         for metadata in plugins {
             if let Err(e) = self.load_plugin(metadata).await {
@@ -606,8 +601,9 @@ impl StructPluginLoader {
         debug!("Loading plugin from {:?}", metadata.source_path);
 
         // Read and compile the source
-        let source = std::fs::read_to_string(&metadata.source_path)
-            .map_err(|e| RuneError::Io(format!("Failed to read {:?}: {}", metadata.source_path, e)))?;
+        let source = std::fs::read_to_string(&metadata.source_path).map_err(|e| {
+            RuneError::Io(format!("Failed to read {:?}: {}", metadata.source_path, e))
+        })?;
 
         let unit = self.compile(&metadata.source_path.to_string_lossy(), &source)?;
 
@@ -639,9 +635,7 @@ impl StructPluginLoader {
     fn compile(&self, name: &str, source: &str) -> Result<Arc<Unit>, RuneError> {
         let mut sources = Sources::new();
         sources
-            .insert(
-                Source::new(name, source).map_err(|e| RuneError::Compile(e.to_string()))?,
-            )
+            .insert(Source::new(name, source).map_err(|e| RuneError::Compile(e.to_string()))?)
             .map_err(|e| RuneError::Compile(e.to_string()))?;
 
         let mut diagnostics = Diagnostics::new();
@@ -743,16 +737,14 @@ impl StructPluginLoader {
     }
 
     /// Call dispatch() on a plugin for a tool invocation
-    pub async fn dispatch(
-        &self,
-        tool_name: &str,
-        args: JsonValue,
-    ) -> Result<JsonValue, RuneError> {
+    pub async fn dispatch(&self, tool_name: &str, args: JsonValue) -> Result<JsonValue, RuneError> {
         // Find the plugin that provides this tool
         let plugin = self
             .registry
             .find_plugin_for_tool(tool_name)
-            .ok_or_else(|| RuneError::NotFound(format!("No plugin provides tool: {}", tool_name)))?;
+            .ok_or_else(|| {
+                RuneError::NotFound(format!("No plugin provides tool: {}", tool_name))
+            })?;
 
         let instance_clone = plugin.instance.clone();
 
@@ -762,7 +754,10 @@ impl StructPluginLoader {
         let args_value = match json_to_rune(&args) {
             rune::runtime::VmResult::Ok(v) => v,
             rune::runtime::VmResult::Err(e) => {
-                return Err(RuneError::Conversion(format!("Failed to convert args: {:?}", e)));
+                return Err(RuneError::Conversion(format!(
+                    "Failed to convert args: {:?}",
+                    e
+                )));
             }
         };
         let tool_name_value = tool_name.to_string();
@@ -870,9 +865,10 @@ impl StructPluginLoader {
 
         match json_to_rune(&json) {
             rune::runtime::VmResult::Ok(v) => Ok(v),
-            rune::runtime::VmResult::Err(e) => {
-                Err(RuneError::Conversion(format!("Failed to convert event: {:?}", e)))
-            }
+            rune::runtime::VmResult::Err(e) => Err(RuneError::Conversion(format!(
+                "Failed to convert event: {:?}",
+                e
+            ))),
         }
     }
 
@@ -1218,7 +1214,10 @@ pub fn create() {
         // Should error on unknown tool
         let result = loader.dispatch("unknown_tool", serde_json::json!({})).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No plugin provides"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No plugin provides"));
     }
 
     #[tokio::test]
@@ -1714,11 +1713,19 @@ pub fn create() {
 
         let mut loader = StructPluginLoader::new().unwrap();
         let compile_result = loader.compile("simple.rn", plugin);
-        assert!(compile_result.is_ok(), "Plugin should compile: {:?}", compile_result.err());
+        assert!(
+            compile_result.is_ok(),
+            "Plugin should compile: {:?}",
+            compile_result.err()
+        );
 
         let unit = compile_result.unwrap();
         let factory_result = loader.call_factory(&unit, "create").await;
-        assert!(factory_result.is_ok(), "Factory should succeed: {:?}", factory_result.err());
+        assert!(
+            factory_result.is_ok(),
+            "Factory should succeed: {:?}",
+            factory_result.err()
+        );
     }
 
     #[tokio::test]
@@ -1765,11 +1772,19 @@ pub fn create() {
 
         let mut loader = StructPluginLoader::new().unwrap();
         let compile_result = loader.compile("iter.rn", plugin);
-        assert!(compile_result.is_ok(), "Plugin should compile: {:?}", compile_result.err());
+        assert!(
+            compile_result.is_ok(),
+            "Plugin should compile: {:?}",
+            compile_result.err()
+        );
 
         let unit = compile_result.unwrap();
         let factory_result = loader.call_factory(&unit, "create").await;
-        assert!(factory_result.is_ok(), "Factory should succeed: {:?}", factory_result.err());
+        assert!(
+            factory_result.is_ok(),
+            "Factory should succeed: {:?}",
+            factory_result.err()
+        );
     }
 
     #[tokio::test]
@@ -1826,11 +1841,19 @@ pub fn create() {
 
         let mut loader = StructPluginLoader::new().unwrap();
         let compile_result = loader.compile("array.rn", plugin);
-        assert!(compile_result.is_ok(), "Plugin should compile: {:?}", compile_result.err());
+        assert!(
+            compile_result.is_ok(),
+            "Plugin should compile: {:?}",
+            compile_result.err()
+        );
 
         let unit = compile_result.unwrap();
         let factory_result = loader.call_factory(&unit, "create").await;
-        assert!(factory_result.is_ok(), "Factory should succeed: {:?}", factory_result.err());
+        assert!(
+            factory_result.is_ok(),
+            "Factory should succeed: {:?}",
+            factory_result.err()
+        );
     }
 
     // ===== Just Plugin Integration Test =====
@@ -1868,12 +1891,20 @@ pub fn create() {
 
         // Read and check the content has #[plugin(...)]
         let content = std::fs::read_to_string(&copied).unwrap();
-        assert!(content.contains("#[plugin("), "just.rn should have #[plugin(...)] attribute");
+        assert!(
+            content.contains("#[plugin("),
+            "just.rn should have #[plugin(...)] attribute"
+        );
 
         // First, test discovery directly
         let discovery = AttributeDiscovery::new();
         let plugins: Vec<PluginMetadata> = discovery.discover_in_directory(temp.path()).unwrap();
-        assert_eq!(plugins.len(), 1, "Discovery should find 1 plugin, found {}", plugins.len());
+        assert_eq!(
+            plugins.len(),
+            1,
+            "Discovery should find 1 plugin, found {}",
+            plugins.len()
+        );
 
         // Try loading the plugin directly and check for errors
         let plugin_metadata = plugins.into_iter().next().unwrap();
@@ -1881,13 +1912,24 @@ pub fn create() {
 
         // Read source and try to compile
         let source = std::fs::read_to_string(&plugin_metadata.source_path).unwrap();
-        let compile_result = loader.compile(&plugin_metadata.source_path.to_string_lossy(), &source);
-        assert!(compile_result.is_ok(), "Plugin should compile: {:?}", compile_result.err());
+        let compile_result =
+            loader.compile(&plugin_metadata.source_path.to_string_lossy(), &source);
+        assert!(
+            compile_result.is_ok(),
+            "Plugin should compile: {:?}",
+            compile_result.err()
+        );
 
         // Try loading manually to see the actual error
         let unit = compile_result.unwrap();
-        let factory_result = loader.call_factory(&unit, &plugin_metadata.factory_fn).await;
-        assert!(factory_result.is_ok(), "Factory function should succeed: {:?}", factory_result.as_ref().err());
+        let factory_result = loader
+            .call_factory(&unit, &plugin_metadata.factory_fn)
+            .await;
+        assert!(
+            factory_result.is_ok(),
+            "Factory function should succeed: {:?}",
+            factory_result.as_ref().err()
+        );
 
         // Load should succeed (plugin compiles)
         let mut loader2 = StructPluginLoader::new().unwrap();
@@ -1895,7 +1937,12 @@ pub fn create() {
         assert!(result.is_ok(), "Just plugin should load: {:?}", result);
 
         // Plugin should be registered
-        assert_eq!(loader2.registry().len(), 1, "Just plugin should be loaded (found {} plugins)", loader2.registry().len());
+        assert_eq!(
+            loader2.registry().len(),
+            1,
+            "Just plugin should be loaded (found {} plugins)",
+            loader2.registry().len()
+        );
 
         // Should have watch patterns
         let plugins = loader2.registry().find_plugins_for_watch("justfile");
