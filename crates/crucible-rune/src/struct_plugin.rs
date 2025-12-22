@@ -309,6 +309,10 @@ impl WatchEventKind {
 /// Metadata parsed from `#[plugin(...)]` attribute
 #[derive(Debug, Clone)]
 pub struct PluginMetadata {
+    /// Plugin name (defaults to factory function name)
+    pub name: String,
+    /// Names of plugins this one depends on
+    pub deps: Vec<String>,
     /// Name of the factory function
     pub factory_fn: String,
     /// Watch patterns for file changes
@@ -323,6 +327,14 @@ impl FromAttributes for PluginMetadata {
     }
 
     fn from_attrs(attrs: &str, fn_name: &str, path: &Path, _docs: &str) -> Result<Self, RuneError> {
+        // Extract name (defaults to factory function name)
+        let name =
+            attr_parsers::extract_string(attrs, "name").unwrap_or_else(|| fn_name.to_string());
+
+        // Extract dependencies
+        let deps = attr_parsers::extract_string_array(attrs, "deps").unwrap_or_default();
+
+        // Extract watch patterns
         let watch_strs = attr_parsers::extract_string_array(attrs, "watch").unwrap_or_default();
         let watch_patterns: Vec<Pattern> = watch_strs
             .iter()
@@ -334,6 +346,8 @@ impl FromAttributes for PluginMetadata {
             .collect();
 
         Ok(PluginMetadata {
+            name,
+            deps,
             factory_fn: fn_name.to_string(),
             watch_patterns,
             source_path: path.to_path_buf(),
@@ -578,6 +592,8 @@ impl StructPluginLoader {
 
     /// Load plugins from discovery paths
     pub async fn load_from_paths(&mut self, paths: &DiscoveryPaths) -> Result<(), RuneError> {
+        use crate::dependency_graph::DependencyGraph;
+
         let discovery = AttributeDiscovery::new();
         let plugins: Vec<PluginMetadata> = discovery.discover_all(paths)?;
 
@@ -586,10 +602,40 @@ impl StructPluginLoader {
             plugins.len()
         );
 
+        // Phase 1: Build dependency graph
+        let mut graph = DependencyGraph::new();
+        let mut plugin_map: HashMap<String, PluginMetadata> = HashMap::new();
+
         for metadata in plugins {
-            if let Err(e) = self.load_plugin(metadata).await {
-                warn!("Failed to load plugin: {}", e);
-                // Continue loading other plugins
+            graph
+                .add(&metadata.name, metadata.deps.clone())
+                .map_err(|e| {
+                    RuneError::Discovery(format!("Duplicate plugin '{}': {}", metadata.name, e))
+                })?;
+            plugin_map.insert(metadata.name.clone(), metadata);
+        }
+
+        // Phase 2: Get sorted load order
+        let load_order = graph.execution_order().map_err(|e| match e {
+            crate::dependency_graph::DependencyError::CycleDetected { cycle } => {
+                RuneError::Discovery(format!("Plugin dependency cycle: {}", cycle.join(" -> ")))
+            }
+            crate::dependency_graph::DependencyError::UnknownDependency {
+                handler,
+                dependency,
+            } => RuneError::Discovery(format!(
+                "Plugin '{}' requires unknown plugin '{}'",
+                handler, dependency
+            )),
+            e => RuneError::Discovery(e.to_string()),
+        })?;
+
+        // Phase 3: Load in order
+        for name in load_order {
+            if let Some(metadata) = plugin_map.remove(&name) {
+                if let Err(e) = self.load_plugin(metadata).await {
+                    warn!("Failed to load plugin '{}': {}", name, e);
+                }
             }
         }
 
@@ -947,9 +993,11 @@ mod tests {
 
     #[test]
     fn test_registry_register_and_get() {
-        let mut registry = PluginRegistry::new();
+        let _registry = PluginRegistry::new();
 
-        let meta = PluginMetadata {
+        let _meta = PluginMetadata {
+            name: "test".to_string(),
+            deps: vec![],
             factory_fn: "create".to_string(),
             watch_patterns: vec![],
             source_path: PathBuf::from("/plugins/test.rn"),
@@ -1066,6 +1114,8 @@ pub fn create() {}
     #[test]
     fn test_plugin_matches_watch_pattern() {
         let meta = PluginMetadata {
+            name: "test".to_string(),
+            deps: vec![],
             factory_fn: "create".to_string(),
             watch_patterns: vec![
                 Pattern::new("justfile").unwrap(),
@@ -1235,7 +1285,7 @@ impl PluginA {
     }
 }
 
-#[plugin()]
+#[plugin(name = "plugin_a")]
 pub fn create() { PluginA::new() }
 "#;
         std::fs::write(temp.path().join("plugin_a.rn"), plugin1).unwrap();
@@ -1251,7 +1301,7 @@ impl PluginB {
     }
 }
 
-#[plugin()]
+#[plugin(name = "plugin_b")]
 pub fn create() { PluginB::new() }
 "#;
         std::fs::write(temp.path().join("plugin_b.rn"), plugin2).unwrap();
@@ -1534,7 +1584,7 @@ impl JustWatcher {
     fn new() { JustWatcher {} }
     fn tools(self) { [#{ name: "just_tool" }] }
 }
-#[plugin(watch = ["justfile", "*.just"])]
+#[plugin(name = "just_watcher", watch = ["justfile", "*.just"])]
 pub fn create() { JustWatcher::new() }
 "#;
         std::fs::write(temp.path().join("just.rn"), plugin1).unwrap();
@@ -1546,7 +1596,7 @@ impl MakeWatcher {
     fn new() { MakeWatcher {} }
     fn tools(self) { [#{ name: "make_tool" }] }
 }
-#[plugin(watch = ["Makefile"])]
+#[plugin(name = "make_watcher", watch = ["Makefile"])]
 pub fn create() { MakeWatcher::new() }
 "#;
         std::fs::write(temp.path().join("make.rn"), plugin2).unwrap();
@@ -1950,5 +2000,151 @@ pub fn create() {
 
         let plugins = loader2.registry().find_plugins_for_watch("build.just");
         assert_eq!(plugins.len(), 1, "Just plugin should watch '*.just'");
+    }
+
+    // ===== Plugin Metadata name and deps Tests =====
+
+    #[test]
+    fn test_plugin_metadata_with_name() {
+        let attrs = r#"name = "my_custom_name""#;
+        let meta = PluginMetadata::from_attrs(attrs, "create", Path::new("test.rn"), "").unwrap();
+
+        assert_eq!(meta.name, "my_custom_name");
+        assert_eq!(meta.factory_fn, "create");
+        assert!(meta.deps.is_empty());
+    }
+
+    #[test]
+    fn test_plugin_metadata_name_defaults_to_factory_fn() {
+        let attrs = "";
+        let meta =
+            PluginMetadata::from_attrs(attrs, "create_foo", Path::new("test.rn"), "").unwrap();
+
+        // Should default to factory function name
+        assert_eq!(meta.name, "create_foo");
+    }
+
+    #[test]
+    fn test_plugin_metadata_with_deps() {
+        let attrs = r#"deps = ["shell", "tasks"]"#;
+        let meta = PluginMetadata::from_attrs(attrs, "create", Path::new("test.rn"), "").unwrap();
+
+        assert_eq!(meta.deps, vec!["shell", "tasks"]);
+    }
+
+    #[test]
+    fn test_plugin_metadata_with_name_and_deps() {
+        let attrs = r#"name = "deploy", deps = ["shell", "oq"]"#;
+        let meta = PluginMetadata::from_attrs(attrs, "create", Path::new("test.rn"), "").unwrap();
+
+        assert_eq!(meta.name, "deploy");
+        assert_eq!(meta.deps, vec!["shell", "oq"]);
+    }
+
+    #[test]
+    fn test_plugin_metadata_full_attribute() {
+        let attrs = r#"name = "just", watch = ["justfile", "*.just"], deps = ["shell"]"#;
+        let meta = PluginMetadata::from_attrs(attrs, "create", Path::new("test.rn"), "").unwrap();
+
+        assert_eq!(meta.name, "just");
+        assert_eq!(meta.deps, vec!["shell"]);
+        assert_eq!(meta.watch_patterns.len(), 2);
+    }
+
+    // ===== Dependency Graph Integration Tests =====
+
+    #[tokio::test]
+    async fn test_loader_respects_dependency_order() {
+        let temp = TempDir::new().unwrap();
+
+        // Plugin B depends on A - create B first to ensure order isn't just file order
+        let plugin_b = r#"
+struct PluginB { }
+impl PluginB {
+    fn new() { PluginB {} }
+    fn tools(self) { [#{ name: "tool_b" }] }
+}
+#[plugin(name = "b", deps = ["a"])]
+pub fn create() { PluginB::new() }
+"#;
+        std::fs::write(temp.path().join("b_plugin.rn"), plugin_b).unwrap();
+
+        let plugin_a = r#"
+struct PluginA { }
+impl PluginA {
+    fn new() { PluginA {} }
+    fn tools(self) { [#{ name: "tool_a" }] }
+}
+#[plugin(name = "a")]
+pub fn create() { PluginA::new() }
+"#;
+        std::fs::write(temp.path().join("a_plugin.rn"), plugin_a).unwrap();
+
+        let mut loader = StructPluginLoader::new().unwrap();
+        loader.load_from_directory(temp.path()).await.unwrap();
+
+        // Both should load successfully
+        assert_eq!(loader.registry().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_loader_detects_missing_dependency() {
+        let temp = TempDir::new().unwrap();
+
+        let plugin = r#"
+struct PluginB { }
+impl PluginB {
+    fn new() { PluginB {} }
+    fn tools(self) { [] }
+}
+#[plugin(name = "b", deps = ["nonexistent"])]
+pub fn create() { PluginB::new() }
+"#;
+        std::fs::write(temp.path().join("b_plugin.rn"), plugin).unwrap();
+
+        let mut loader = StructPluginLoader::new().unwrap();
+        let result = loader.load_from_directory(temp.path()).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("nonexistent"),
+            "Error should mention missing dependency: {}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn test_loader_detects_cycle() {
+        let temp = TempDir::new().unwrap();
+
+        let plugin_a = r#"
+struct PluginA { }
+impl PluginA {
+    fn new() { PluginA {} }
+    fn tools(self) { [] }
+}
+#[plugin(name = "a", deps = ["b"])]
+pub fn create() { PluginA::new() }
+"#;
+        std::fs::write(temp.path().join("a.rn"), plugin_a).unwrap();
+
+        let plugin_b = r#"
+struct PluginB { }
+impl PluginB {
+    fn new() { PluginB {} }
+    fn tools(self) { [] }
+}
+#[plugin(name = "b", deps = ["a"])]
+pub fn create() { PluginB::new() }
+"#;
+        std::fs::write(temp.path().join("b.rn"), plugin_b).unwrap();
+
+        let mut loader = StructPluginLoader::new().unwrap();
+        let result = loader.load_from_directory(temp.path()).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cycle"), "Error should mention cycle: {}", err);
     }
 }
