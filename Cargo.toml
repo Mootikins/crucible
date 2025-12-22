@@ -15,7 +15,6 @@ members = [
     "crates/crucible-tools",
     "crates/crucible-watch",
     "crates/tq",
-    "crates/crucible-just",
     "crates/crucible-rune",
     "crates/crucible-web",
     "examples",
