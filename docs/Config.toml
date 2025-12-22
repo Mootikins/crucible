@@ -3,6 +3,15 @@
 # =============================================================================
 # Location: docs/Config.toml
 #
+# NOTE: This config format is evolving to a three-tier system:
+#   - Global: ~/.config/crucible/config.toml (credentials, security)
+#   - Workspace: .crucible/workspace.toml (security policies, kilns)
+#   - Kiln: .crucible/config.toml (content preferences)
+#
+# See Help/Config/workspaces.md for the new model.
+# Provider credentials and security settings will move to global/workspace.
+# Kiln config will become simpler (just embedding/llm preferences).
+#
 # This is THE reference configuration for Crucible. Every available option is
 # documented here with examples and defaults. Use this as a guide to configure
 # your own kiln.
