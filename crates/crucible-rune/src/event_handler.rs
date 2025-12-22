@@ -9,6 +9,7 @@
 use crate::discovery_paths::DiscoveryPaths;
 use crate::events::{CrucibleEvent, EnrichedRecipe};
 use crate::regex_module::regex_module;
+use crate::shell_module::shell_module;
 use crate::rune_types::{crucible_module, RuneRecipeEnrichment};
 use crate::RuneError;
 use rune::runtime::RuntimeContext;
@@ -79,6 +80,11 @@ impl EventHandler {
         // Install regex module
         context
             .install(regex_module()?)
+            .map_err(|e| RuneError::Context(e.to_string()))?;
+
+        // Install shell module
+        context
+            .install(shell_module()?)
             .map_err(|e| RuneError::Context(e.to_string()))?;
 
         // Install our crucible module with types
