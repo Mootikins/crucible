@@ -6,6 +6,9 @@ use std::path::{Path, PathBuf};
 
 /// Get the socket path for the daemon
 pub fn socket_path() -> PathBuf {
+    if let Ok(path) = std::env::var("CRUCIBLE_DAEMON_SOCKET") {
+        return PathBuf::from(path);
+    }
     dirs::runtime_dir()
         .unwrap_or_else(|| PathBuf::from("/tmp"))
         .join("crucible")
@@ -14,6 +17,9 @@ pub fn socket_path() -> PathBuf {
 
 /// Get the PID file path
 pub fn pid_path() -> PathBuf {
+    if let Ok(path) = std::env::var("CRUCIBLE_DAEMON_PID") {
+        return PathBuf::from(path);
+    }
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("~/.config"))
         .join("crucible")
