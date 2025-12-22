@@ -168,6 +168,7 @@ crucible-llm = { path = "crates/crucible-llm" }
 crucible-surrealdb = { path = "crates/crucible-surrealdb" }
 crucible-rune = { path = "crates/crucible-rune" }
 crucible-web = { path = "crates/crucible-web" }
+crucible-daemon = { path = "crates/crucible-daemon" }
 tq = { path = "crates/tq" }
 
 [profile.release]
