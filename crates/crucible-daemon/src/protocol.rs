@@ -5,10 +5,18 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// JSON-RPC 2.0 request ID (can be string or number)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum RequestId {
+    Number(u64),
+    String(String),
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Request {
     pub jsonrpc: String,
-    pub id: Option<u64>,
+    pub id: Option<RequestId>,
     pub method: String,
     #[serde(default)]
     pub params: Value,
@@ -18,7 +26,7 @@ pub struct Request {
 pub struct Response {
     pub jsonrpc: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<u64>,
+    pub id: Option<RequestId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -29,10 +37,12 @@ pub struct Response {
 pub struct RpcError {
     pub code: i32,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<Value>,
 }
 
 impl Response {
-    pub fn success(id: Option<u64>, result: impl Into<Value>) -> Self {
+    pub fn success(id: Option<RequestId>, result: impl Into<Value>) -> Self {
         Self {
             jsonrpc: "2.0",
             id,
@@ -41,12 +51,25 @@ impl Response {
         }
     }
 
-    pub fn error(id: Option<u64>, code: i32, message: impl Into<String>) -> Self {
+    pub fn error(id: Option<RequestId>, code: i32, message: impl Into<String>) -> Self {
+        Self::error_with_data(id, code, message, None)
+    }
+
+    pub fn error_with_data(
+        id: Option<RequestId>,
+        code: i32,
+        message: impl Into<String>,
+        data: Option<Value>,
+    ) -> Self {
         Self {
             jsonrpc: "2.0",
             id,
             result: None,
-            error: Some(RpcError { code, message: message.into() }),
+            error: Some(RpcError {
+                code,
+                message: message.into(),
+                data,
+            }),
         }
     }
 }
@@ -64,7 +87,7 @@ mod tests {
 
     #[test]
     fn test_response_success_serialization() {
-        let resp = Response::success(Some(1), "pong");
+        let resp = Response::success(Some(RequestId::Number(1)), "pong");
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("\"result\":\"pong\""));
         assert!(json.contains("\"id\":1"));
@@ -73,7 +96,7 @@ mod tests {
 
     #[test]
     fn test_response_error_serialization() {
-        let resp = Response::error(Some(1), METHOD_NOT_FOUND, "Unknown method");
+        let resp = Response::error(Some(RequestId::Number(1)), METHOD_NOT_FOUND, "Unknown method");
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("\"error\""));
         assert!(json.contains("-32601"));
@@ -85,7 +108,7 @@ mod tests {
         let json = r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#;
         let req: Request = serde_json::from_str(json).unwrap();
         assert_eq!(req.method, "ping");
-        assert_eq!(req.id, Some(1));
+        assert_eq!(req.id, Some(RequestId::Number(1)));
     }
 
     #[test]
@@ -93,8 +116,37 @@ mod tests {
         let json = r#"{"jsonrpc":"2.0","id":2,"method":"kiln.open","params":{"path":"/tmp/test"}}"#;
         let req: Request = serde_json::from_str(json).unwrap();
         assert_eq!(req.method, "kiln.open");
-        assert_eq!(req.id, Some(2));
+        assert_eq!(req.id, Some(RequestId::Number(2)));
         assert_eq!(req.params["path"], "/tmp/test");
+    }
+
+    #[test]
+    fn test_request_id_string_deserialization() {
+        let json = r#"{"jsonrpc":"2.0","id":"req-123","method":"ping"}"#;
+        let req: Request = serde_json::from_str(json).unwrap();
+        assert_eq!(req.method, "ping");
+        assert_eq!(req.id, Some(RequestId::String("req-123".to_string())));
+    }
+
+    #[test]
+    fn test_response_with_string_id() {
+        let resp = Response::success(Some(RequestId::String("req-abc".to_string())), "result");
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"id\":\"req-abc\""));
+    }
+
+    #[test]
+    fn test_error_with_data() {
+        let data = serde_json::json!({"trace": "stack trace here"});
+        let resp = Response::error_with_data(
+            Some(RequestId::Number(1)),
+            INTERNAL_ERROR,
+            "Something went wrong",
+            Some(data),
+        );
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"data\""));
+        assert!(json.contains("stack trace here"));
     }
 
     #[test]
