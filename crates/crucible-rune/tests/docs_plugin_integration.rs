@@ -37,10 +37,7 @@ fn test_categorizer_plugin_parses() {
     let content = fs::read_to_string(&categorizer).unwrap();
 
     // Should have hook attribute
-    assert!(
-        content.contains("#[hook("),
-        "Should have hook attribute"
-    );
+    assert!(content.contains("#[hook("), "Should have hook attribute");
     assert!(
         content.contains("tool:discovered"),
         "Should hook tool:discovered event"
@@ -48,7 +45,8 @@ fn test_categorizer_plugin_parses() {
 
     // Should use categorize_by_name from crucible module
     assert!(
-        content.contains("crucible::categorize_by_name") || content.contains("use crucible::categorize_by_name"),
+        content.contains("crucible::categorize_by_name")
+            || content.contains("use crucible::categorize_by_name"),
         "Should use crucible::categorize_by_name"
     );
 
@@ -81,7 +79,10 @@ async fn test_categorizer_plugin_discovers() {
     let plugins_path = docs_plugins_path();
 
     if !plugins_path.exists() {
-        eprintln!("Skipping test - docs/plugins not found at {:?}", plugins_path);
+        eprintln!(
+            "Skipping test - docs/plugins not found at {:?}",
+            plugins_path
+        );
         return;
     }
 
@@ -178,7 +179,10 @@ async fn test_log_tool_calls_plugin_discovers() {
     let plugins_path = docs_plugins_path();
 
     if !plugins_path.exists() {
-        eprintln!("Skipping test - docs/plugins not found at {:?}", plugins_path);
+        eprintln!(
+            "Skipping test - docs/plugins not found at {:?}",
+            plugins_path
+        );
         return;
     }
 
@@ -192,10 +196,7 @@ async fn test_log_tool_calls_plugin_discovers() {
     let tools = discovery.discover_all().unwrap();
 
     // Should discover audit tools
-    let audit_tools: Vec<_> = tools
-        .iter()
-        .filter(|t| t.name.contains("audit"))
-        .collect();
+    let audit_tools: Vec<_> = tools.iter().filter(|t| t.name.contains("audit")).collect();
 
     assert!(
         audit_tools.len() >= 2,
@@ -267,7 +268,10 @@ async fn test_all_docs_plugins_discover_without_errors() {
     let plugins_path = docs_plugins_path();
 
     if !plugins_path.exists() {
-        eprintln!("Skipping test - docs/plugins not found at {:?}", plugins_path);
+        eprintln!(
+            "Skipping test - docs/plugins not found at {:?}",
+            plugins_path
+        );
         return;
     }
 
@@ -305,7 +309,10 @@ async fn test_docs_plugins_register_in_registry() {
     let plugins_path = docs_plugins_path();
 
     if !plugins_path.exists() {
-        eprintln!("Skipping test - docs/plugins not found at {:?}", plugins_path);
+        eprintln!(
+            "Skipping test - docs/plugins not found at {:?}",
+            plugins_path
+        );
         return;
     }
 
