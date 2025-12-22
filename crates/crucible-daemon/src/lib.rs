@@ -10,5 +10,5 @@ pub mod kiln_manager;
 
 pub use protocol::{Request, Response, RpcError};
 pub use server::Server;
-pub use lifecycle::{pid_path, socket_path, is_daemon_running};
+pub use lifecycle::{pid_path, socket_path, is_daemon_running, write_pid_file};
 pub use kiln_manager::KilnManager;
