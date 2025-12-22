@@ -215,37 +215,6 @@ pub enum Commands {
         command: Option<AgentsCommands>,
     },
 
-    /// Knowledge base clustering and organization
-    Cluster {
-        /// Clustering operation to perform
-        #[command(subcommand)]
-        action: Option<ClusterActions>,
-
-        /// Clustering algorithm to use (heuristic, kmeans, hierarchical)
-        #[arg(long, default_value = "heuristic")]
-        algorithm: String,
-
-        /// Minimum similarity threshold for clustering (0.0-1.0)
-        #[arg(long, default_value = "0.2")]
-        min_similarity: f64,
-
-        /// Minimum cluster size (default: 2)
-        #[arg(long, default_value = "2")]
-        min_cluster_size: usize,
-
-        /// Minimum score for MoC detection (0.0-1.0)
-        #[arg(long, default_value = "0.5")]
-        min_moc_score: f64,
-
-        /// Output format (json, table, summary)
-        #[arg(short = 'f', long, default_value = "summary")]
-        format: String,
-
-        /// Save results to file (JSON format)
-        #[arg(long)]
-        output: Option<PathBuf>,
-    },
-
     /// Task harness management
     Tasks {
         /// Path to tasks file (default: TASKS.md in cwd)
@@ -292,22 +261,6 @@ pub enum AgentsCommands {
         #[arg(long)]
         verbose: bool,
     },
-}
-
-/// Clustering subcommands
-#[derive(Subcommand)]
-pub enum ClusterActions {
-    /// Detect Maps of Content (MoCs) in the knowledge base
-    Mocs,
-
-    /// Cluster related documents together
-    Documents,
-
-    /// Get statistics about the knowledge base
-    Stats,
-
-    /// Run all clustering operations
-    All,
 }
 
 #[derive(Subcommand)]

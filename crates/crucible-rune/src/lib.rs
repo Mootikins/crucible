@@ -129,7 +129,9 @@ pub use oq_module::oq_module;
 pub use regex_module::regex_module;
 pub use shell_module::shell_module;
 pub use registry::RuneToolRegistry;
-pub use struct_plugin::{PluginInstance, PluginMetadata, PluginRegistry, StructPluginLoader, ToolDefinition, ToolParameter};
+pub use struct_plugin::{
+    PluginMetadata, StructPluginHandle, ToolDefinition, ToolParameter, WatchEvent, WatchEventKind,
+};
 pub use rune_types::{
     categorize_by_name_impl, crucible_module, session_event_module, RuneEventContext,
     RuneFileChangeKind, RuneNoteChangeType, RuneRecipe, RuneRecipeEnrichment, RuneSessionEvent,
