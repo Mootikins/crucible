@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 # Core traits and types
 crucible-core = { path = "../crucible-core" }
+crucible-config = { path = "../crucible-config" }
 
 # Rune scripting
 rune = "0.14"

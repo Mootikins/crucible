@@ -55,7 +55,7 @@ use tracing::{debug, warn};
 ///
 /// Any section name not explicitly listed here can still be used
 /// via the catch-all `custom` field.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IncludeConfig {
     /// Gateway/MCP servers configuration file
     #[serde(default)]

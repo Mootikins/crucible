@@ -30,11 +30,14 @@
 mod components;
 mod config;
 mod enrichment;
+mod global;
 mod includes;
 mod loader;
 mod profile;
+mod resolver;
 mod security;
 mod value_source;
+mod workspace;
 
 // Include test_utils when test-utils feature is enabled
 #[cfg(feature = "test-utils")]
@@ -47,11 +50,14 @@ pub use config::{
     ServerConfig,
 };
 pub use enrichment::*;
+pub use global::GlobalConfig;
 pub use includes::{process_file_references, IncludeConfig, IncludeError};
 pub use loader::*;
 pub use profile::*;
+pub use resolver::ConfigResolver;
 pub use security::ShellPolicy;
 pub use value_source::*;
+pub use workspace::{KilnAttachment, SecurityConfig, WorkspaceConfig, WorkspaceMeta};
 
 // Export test utilities when feature is enabled
 #[cfg(feature = "test-utils")]
