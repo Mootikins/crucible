@@ -87,4 +87,30 @@ mod tests {
         assert_eq!(req.method, "ping");
         assert_eq!(req.id, Some(1));
     }
+
+    #[test]
+    fn test_request_with_params_deserialization() {
+        let json = r#"{"jsonrpc":"2.0","id":2,"method":"kiln.open","params":{"path":"/tmp/test"}}"#;
+        let req: Request = serde_json::from_str(json).unwrap();
+        assert_eq!(req.method, "kiln.open");
+        assert_eq!(req.id, Some(2));
+        assert_eq!(req.params["path"], "/tmp/test");
+    }
+
+    #[test]
+    fn test_request_without_id_deserialization() {
+        let json = r#"{"jsonrpc":"2.0","method":"ping"}"#;
+        let req: Request = serde_json::from_str(json).unwrap();
+        assert_eq!(req.method, "ping");
+        assert_eq!(req.id, None);
+    }
+
+    #[test]
+    fn test_error_codes_are_standard() {
+        assert_eq!(PARSE_ERROR, -32700);
+        assert_eq!(INVALID_REQUEST, -32600);
+        assert_eq!(METHOD_NOT_FOUND, -32601);
+        assert_eq!(INVALID_PARAMS, -32602);
+        assert_eq!(INTERNAL_ERROR, -32603);
+    }
 }
