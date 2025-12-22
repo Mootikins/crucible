@@ -44,6 +44,14 @@ pub async fn execute(
 ) -> Result<()> {
     info!("Starting process command");
 
+    // Check if daemon is running - if so, we can't use direct DB access
+    if crucible_daemon::is_daemon_running() {
+        anyhow::bail!(
+            "Daemon is currently running and holds the database lock.\n\
+             Please stop the daemon first: cru daemon stop"
+        );
+    }
+
     // Determine target path
     let target_path = path.as_deref().unwrap_or(config.kiln_path.as_path());
 
