@@ -1,0 +1,77 @@
+//! Deploy plugin that demonstrates plugin dependencies
+//!
+//! This plugin provides deployment tools that depend on shell execution.
+
+use shell::exec;
+
+struct DeployPlugin {
+    last_deploy,
+}
+
+impl DeployPlugin {
+    fn new() {
+        DeployPlugin { last_deploy: () }
+    }
+
+    fn tools(self) {
+        [
+            #{
+                name: "deploy_check",
+                description: "Check deployment prerequisites",
+            },
+            #{
+                name: "deploy_status",
+                description: "Show deployment status",
+            },
+        ]
+    }
+
+    fn dispatch(self, tool_name, args) {
+        match tool_name {
+            "deploy_check" => self.check_deploy(args),
+            "deploy_status" => self.get_status(args),
+            _ => #{ error: `Unknown tool: ${tool_name}` },
+        }
+    }
+
+    fn check_deploy(self, args) {
+        // Use shell to check git status
+        let result = exec("git", ["status", "--porcelain"], #{});
+        if result.is_err() {
+            return #{ success: false, error: "Git not available" };
+        }
+
+        let result = result.unwrap();
+        if result.stdout.len() > 0 {
+            #{
+                success: false,
+                error: "Working directory has uncommitted changes",
+                changes: result.stdout,
+            }
+        } else {
+            #{ success: true, message: "Working directory is clean" }
+        }
+    }
+
+    fn get_status(self, args) {
+        // Get current branch
+        let result = exec("git", ["branch", "--show-current"], #{});
+        if result.is_err() {
+            return #{ error: "Git not available" };
+        }
+
+        let result = result.unwrap();
+        #{
+            branch: result.stdout.trim(),
+            last_deploy: self.last_deploy,
+        }
+    }
+}
+
+#[plugin(
+    name = "deploy",
+    watch = ["deploy.toml", "*.deploy"]
+)]
+pub fn create() {
+    DeployPlugin::new()
+}
