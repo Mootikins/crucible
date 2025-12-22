@@ -148,11 +148,9 @@ fn parse_as_format(input: &str, format: Format) -> Result<JsonValue, String> {
             };
             serde_yaml::from_str(content).map_err(|e| format!("YAML parse error: {}", e))
         }
-        Format::Toml => {
-            toml::from_str::<toml::Value>(input)
-                .map(|v| toml_to_json(v))
-                .map_err(|e| format!("TOML parse error: {}", e))
-        }
+        Format::Toml => toml::from_str::<toml::Value>(input)
+            .map(|v| toml_to_json(v))
+            .map_err(|e| format!("TOML parse error: {}", e)),
         Format::Toon => {
             toon_format::decode_default(input).map_err(|e| format!("TOON parse error: {}", e))
         }
@@ -186,7 +184,9 @@ fn format_as(value: &JsonValue, format: Format) -> Result<String, String> {
         Format::Json => {
             serde_json::to_string_pretty(value).map_err(|e| format!("JSON format error: {}", e))
         }
-        Format::Yaml => serde_yaml::to_string(value).map_err(|e| format!("YAML format error: {}", e)),
+        Format::Yaml => {
+            serde_yaml::to_string(value).map_err(|e| format!("YAML format error: {}", e))
+        }
         Format::Toml => {
             // TOML requires a table at the root
             if let JsonValue::Object(map) = value {

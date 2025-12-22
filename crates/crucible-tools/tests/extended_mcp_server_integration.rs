@@ -557,7 +557,11 @@ async fn test_recursive_rune_discovery() {
     fs::create_dir_all(plugins_dir.join("notes")).unwrap();
     fs::create_dir_all(plugins_dir.join("utils")).unwrap();
 
-    fs::write(plugins_dir.join("root.rn"), "//! Root tool\npub fn main() {}").unwrap();
+    fs::write(
+        plugins_dir.join("root.rn"),
+        "//! Root tool\npub fn main() {}",
+    )
+    .unwrap();
     fs::write(
         plugins_dir.join("notes").join("note_tool.rn"),
         "//! Notes tool\npub fn main() {}",
