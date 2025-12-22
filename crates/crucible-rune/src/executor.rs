@@ -1,6 +1,7 @@
 //! Execute Rune scripts
 
 use crate::mcp_types::mcp_types_module;
+use crate::shell_module::shell_module;
 use crate::types::{RuneExecutionResult, RuneTool};
 use crate::RuneError;
 use rune::ast;
@@ -57,6 +58,11 @@ impl RuneExecutor {
         // Register MCP types module (cru::mcp with McpResult type)
         context
             .install(mcp_types_module()?)
+            .map_err(|e| RuneError::Context(e.to_string()))?;
+
+        // Register shell module for command execution
+        context
+            .install(shell_module()?)
             .map_err(|e| RuneError::Context(e.to_string()))?;
 
         // Install additional modules (e.g., MCP server modules)
