@@ -9,7 +9,19 @@ tags:
 
 # Configuration
 
-Crucible is configured through `Config.toml` in your kiln root. This map connects all configuration topics.
+Crucible uses a three-tier configuration system:
+
+| Tier | Location | Purpose |
+|------|----------|---------|
+| **Global** | `~/.config/crucible/` | Provider credentials, security defaults |
+| **Workspace** | `.crucible/workspace.toml` | Security policies, resource access |
+| **Kiln** | `.crucible/config.toml` | Content preferences |
+
+See [[Help/Config/workspaces]] for the full configuration model.
+
+## Workspaces & Security
+
+- [[Help/Config/workspaces]] - Workspace setup and security policies
 
 ## Provider Setup
 
