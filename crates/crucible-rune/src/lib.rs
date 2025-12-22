@@ -57,6 +57,7 @@ pub mod persistence_handler;
 mod plugin_loader;
 mod plugin_types;
 pub mod reactor;
+mod oq_module;
 mod regex_module;
 mod shell_module;
 mod registry;
@@ -123,6 +124,7 @@ pub use reactor::{
     BoxedReactor, Reactor, ReactorContext, ReactorError, ReactorMetadata, ReactorResult,
     SessionConfig, SessionEvent, ToolCall,
 };
+pub use oq_module::oq_module;
 pub use regex_module::regex_module;
 pub use shell_module::shell_module;
 pub use registry::RuneToolRegistry;
