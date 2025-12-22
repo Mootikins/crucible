@@ -1,3 +1,5 @@
+mod protocol;
+
 use anyhow::Result;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
