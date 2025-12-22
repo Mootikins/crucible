@@ -17,7 +17,6 @@ members = [
     "crates/tq",
     "crates/crucible-rune",
     "crates/crucible-web",
-    "examples",
 ]
 default-members = ["crates/crucible-cli"]
 
