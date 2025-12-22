@@ -1,7 +1,7 @@
 //! Daemon client implementation
 
 use anyhow::Result;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
@@ -18,6 +18,68 @@ impl DaemonClient {
     pub async fn connect() -> Result<Self> {
         let path = crucible_daemon::socket_path();
         Self::connect_to(&path).await
+    }
+
+    /// Connect to daemon or start it if not running
+    pub async fn connect_or_start() -> Result<Self> {
+        // Try to connect first
+        match Self::connect().await {
+            Ok(client) => return Ok(client),
+            Err(_) => {
+                // Check if daemon is actually running (stale socket)
+                if crucible_daemon::is_daemon_running() {
+                    // PID exists but can't connect - try again after a short delay
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    return Self::connect().await;
+                }
+            }
+        }
+
+        // Daemon not running - start it
+        Self::start_daemon().await?;
+
+        // Wait for daemon to be ready with exponential backoff
+        let mut delay = std::time::Duration::from_millis(50);
+        for attempt in 0..10 {
+            tokio::time::sleep(delay).await;
+            if let Ok(client) = Self::connect().await {
+                return Ok(client);
+            }
+            delay *= 2;
+            if attempt > 5 {
+                tracing::warn!("Daemon not ready after {} attempts", attempt + 1);
+            }
+        }
+
+        anyhow::bail!("Failed to start daemon or connect after multiple attempts")
+    }
+
+    /// Start the daemon process in the background
+    async fn start_daemon() -> Result<()> {
+        use std::process::Command;
+
+        // Find the cru-daemon binary
+        let exe = std::env::current_exe()?;
+        let daemon_exe = if exe.ends_with("cru") {
+            // In development or installed alongside
+            exe.parent()
+                .ok_or_else(|| anyhow::anyhow!("No parent directory"))?
+                .join("cru-daemon")
+        } else {
+            // Try PATH
+            PathBuf::from("cru-daemon")
+        };
+
+        tracing::info!("Starting daemon: {:?}", daemon_exe);
+
+        Command::new(daemon_exe)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("Failed to spawn daemon: {}", e))?;
+
+        Ok(())
     }
 
     /// Connect to daemon at a specific socket path
@@ -81,6 +143,30 @@ impl DaemonClient {
     /// Request daemon shutdown
     pub async fn shutdown(&self) -> Result<()> {
         self.call("shutdown", serde_json::json!({})).await?;
+        Ok(())
+    }
+
+    /// Open a kiln
+    pub async fn kiln_open(&self, path: &Path) -> Result<()> {
+        self.call(
+            "kiln.open",
+            serde_json::json!({
+                "path": path.to_string_lossy()
+            }),
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Close a kiln
+    pub async fn kiln_close(&self, path: &Path) -> Result<()> {
+        self.call(
+            "kiln.close",
+            serde_json::json!({
+                "path": path.to_string_lossy()
+            }),
+        )
+        .await?;
         Ok(())
     }
 
