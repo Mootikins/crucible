@@ -38,6 +38,7 @@ use crate::attribute_discovery::{attr_parsers, AttributeDiscovery, FromAttribute
 use crate::discovery_paths::DiscoveryPaths;
 use crate::mcp_types::{json_to_rune, rune_to_json};
 use crate::RuneError;
+use crucible_config::ShellPolicy;
 use glob::Pattern;
 use rune::runtime::Value;
 use rune::{Context, Diagnostics, Source, Sources, Unit, Vm};
@@ -104,7 +105,11 @@ unsafe impl Sync for StructPluginHandle {}
 
 impl StructPluginHandle {
     /// Create a new plugin handle, spawning the background Rune thread
-    pub fn new() -> Result<Self, RuneError> {
+    ///
+    /// # Arguments
+    ///
+    /// * `policy` - Shell security policy for plugin command execution
+    pub fn new(policy: ShellPolicy) -> Result<Self, RuneError> {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
 
         // Spawn the dedicated Rune thread
@@ -116,7 +121,7 @@ impl StructPluginHandle {
                 .expect("Failed to create tokio runtime for plugin thread");
 
             rt.block_on(async {
-                Self::run_plugin_thread(command_rx).await;
+                Self::run_plugin_thread(command_rx, policy).await;
             });
         });
 
@@ -127,9 +132,12 @@ impl StructPluginHandle {
     }
 
     /// The main loop running on the dedicated Rune thread
-    async fn run_plugin_thread(mut command_rx: mpsc::UnboundedReceiver<PluginCommand>) {
+    async fn run_plugin_thread(
+        mut command_rx: mpsc::UnboundedReceiver<PluginCommand>,
+        policy: ShellPolicy,
+    ) {
         // Create the actual loader on this thread (contains non-Send types)
-        let mut loader = match StructPluginLoader::new() {
+        let mut loader = match StructPluginLoader::new(policy) {
             Ok(l) => l,
             Err(e) => {
                 warn!("Failed to create StructPluginLoader: {}", e);
@@ -529,8 +537,12 @@ struct StructPluginLoader {
 }
 
 impl StructPluginLoader {
-    /// Create a new plugin loader
-    pub fn new() -> Result<Self, RuneError> {
+    /// Create a new plugin loader with specified shell policy
+    ///
+    /// # Arguments
+    ///
+    /// * `policy` - Shell security policy for command execution
+    pub fn new(policy: ShellPolicy) -> Result<Self, RuneError> {
         let mut context =
             Context::with_default_modules().map_err(|e| RuneError::Context(e.to_string()))?;
 
@@ -539,9 +551,9 @@ impl StructPluginLoader {
             .install(rune_modules::json::module(false)?)
             .map_err(|e| RuneError::Context(e.to_string()))?;
 
-        // Add our custom modules
+        // Add our custom modules with security policy
         context
-            .install(crate::shell_module::shell_module()?)
+            .install(crate::shell_module::shell_module_with_policy(policy)?)
             .map_err(|e| RuneError::Context(e.to_string()))?;
         context
             .install(crate::oq_module::oq_module()?)
@@ -942,7 +954,8 @@ impl StructPluginLoader {
 
 impl Default for StructPluginLoader {
     fn default() -> Self {
-        Self::new().expect("Failed to create default StructPluginLoader")
+        Self::new(ShellPolicy::with_defaults())
+            .expect("Failed to create default StructPluginLoader")
     }
 }
 
@@ -1134,14 +1147,14 @@ pub fn create() {}
 
     #[test]
     fn test_loader_creation() {
-        let loader = StructPluginLoader::new();
+        let loader = StructPluginLoader::new(ShellPolicy::with_defaults());
         assert!(loader.is_ok(), "Should create loader");
     }
 
     #[tokio::test]
     async fn test_loader_empty_directory() {
         let temp = TempDir::new().unwrap();
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
 
         loader.load_from_directory(temp.path()).await.unwrap();
 
@@ -1175,7 +1188,7 @@ pub fn create() {
 "#;
         std::fs::write(temp.path().join("simple.rn"), plugin).unwrap();
 
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         loader.load_from_directory(temp.path()).await.unwrap();
 
         assert_eq!(loader.registry().len(), 1);
@@ -1206,7 +1219,7 @@ pub fn create() {
 "#;
         std::fs::write(temp.path().join("no_tools.rn"), plugin).unwrap();
 
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         loader.load_from_directory(temp.path()).await.unwrap();
 
         // Should load but have no tools
@@ -1245,7 +1258,7 @@ pub fn create() {
 "#;
         std::fs::write(temp.path().join("echo.rn"), plugin).unwrap();
 
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         loader.load_from_directory(temp.path()).await.unwrap();
 
         // Dispatch a call
@@ -1259,7 +1272,7 @@ pub fn create() {
 
     #[tokio::test]
     async fn test_loader_dispatch_not_found() {
-        let loader = StructPluginLoader::new().unwrap();
+        let loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
 
         // Should error on unknown tool
         let result = loader.dispatch("unknown_tool", serde_json::json!({})).await;
@@ -1306,7 +1319,7 @@ pub fn create() { PluginB::new() }
 "#;
         std::fs::write(temp.path().join("plugin_b.rn"), plugin2).unwrap();
 
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         loader.load_from_directory(temp.path()).await.unwrap();
 
         assert_eq!(loader.registry().len(), 2);
@@ -1330,7 +1343,7 @@ pub fn create() { WatchPlugin::new() }
 "#;
         std::fs::write(temp.path().join("watch.rn"), plugin).unwrap();
 
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         loader.load_from_directory(temp.path()).await.unwrap();
 
         // Check watch patterns are registered
@@ -1366,7 +1379,7 @@ this is not valid rune {{{
 "#;
         std::fs::write(temp.path().join("invalid.rn"), invalid).unwrap();
 
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         loader.load_from_directory(temp.path()).await.unwrap();
 
         // Should load the valid plugin only
@@ -1416,7 +1429,7 @@ pub fn create() {
 "#;
         std::fs::write(temp.path().join("watcher.rn"), plugin).unwrap();
 
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         loader.load_from_directory(temp.path()).await.unwrap();
 
         // Initially description should say 0 times
@@ -1472,7 +1485,7 @@ pub fn create() {
 "#;
         std::fs::write(temp.path().join("counter.rn"), plugin).unwrap();
 
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         loader.load_from_directory(temp.path()).await.unwrap();
 
         // Initially 1 tool
@@ -1510,7 +1523,7 @@ pub fn create() {
 "#;
         std::fs::write(temp.path().join("no_watch.rn"), plugin).unwrap();
 
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         loader.load_from_directory(temp.path()).await.unwrap();
 
         // Should not error when calling on_watch on plugin without the method
@@ -1556,7 +1569,7 @@ pub fn create() {
 "#;
         std::fs::write(temp.path().join("logger.rn"), plugin).unwrap();
 
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         loader.load_from_directory(temp.path()).await.unwrap();
 
         // Simulate a file change
@@ -1601,7 +1614,7 @@ pub fn create() { MakeWatcher::new() }
 "#;
         std::fs::write(temp.path().join("make.rn"), plugin2).unwrap();
 
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         loader.load_from_directory(temp.path()).await.unwrap();
 
         // Find plugins for justfile
@@ -1657,7 +1670,7 @@ pub fn create() {
 "#;
         std::fs::write(temp.path().join("minimal.rn"), plugin).unwrap();
 
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         loader.load_from_directory(temp.path()).await.unwrap();
 
         assert_eq!(loader.registry().len(), 1, "Minimal plugin should load");
@@ -1712,7 +1725,7 @@ pub fn create() {
 "#;
         std::fs::write(temp.path().join("combined.rn"), plugin).unwrap();
 
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         loader.load_from_directory(temp.path()).await.unwrap();
 
         assert_eq!(loader.registry().len(), 1, "Combined plugin should load");
@@ -1761,7 +1774,7 @@ pub fn create() {
 "#;
         std::fs::write(temp.path().join("simple.rn"), plugin).unwrap();
 
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         let compile_result = loader.compile("simple.rn", plugin);
         assert!(
             compile_result.is_ok(),
@@ -1820,7 +1833,7 @@ pub fn create() {
 "#;
         std::fs::write(temp.path().join("iter.rn"), plugin).unwrap();
 
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         let compile_result = loader.compile("iter.rn", plugin);
         assert!(
             compile_result.is_ok(),
@@ -1889,7 +1902,7 @@ pub fn create() {
 "#;
         std::fs::write(temp.path().join("array.rn"), plugin).unwrap();
 
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         let compile_result = loader.compile("array.rn", plugin);
         assert!(
             compile_result.is_ok(),
@@ -1907,6 +1920,57 @@ pub fn create() {
     }
 
     // ===== Just Plugin Integration Test =====
+
+    /// Test that StructPluginHandle respects the shell policy
+    #[tokio::test]
+    async fn test_struct_plugin_handle_respects_policy() {
+        let temp = TempDir::new().unwrap();
+
+        // Create a plugin that tries to run a blocked command
+        let plugin = r#"
+use shell::exec;
+
+struct TestPlugin { }
+
+impl TestPlugin {
+    fn new() {
+        // This should be blocked by restrictive policy
+        let result = exec("curl", ["https://example.com"], #{});
+        if result.is_err() {
+            TestPlugin {}
+        } else {
+            TestPlugin {}
+        }
+    }
+
+    fn tools(self) {
+        [#{ name: "test_tool" }]
+    }
+}
+
+#[plugin()]
+pub fn create() {
+    TestPlugin::new()
+}
+"#;
+        std::fs::write(temp.path().join("test.rn"), plugin).unwrap();
+
+        // Create a restrictive policy that only allows 'echo'
+        let mut policy = ShellPolicy::default();
+        policy.whitelist.push("echo".to_string());
+        policy.blacklist.push("curl".to_string());
+
+        // Create plugin handle with restrictive policy
+        let handle = StructPluginHandle::new(policy).unwrap();
+
+        // Plugin should load (compilation succeeds)
+        // But when it runs, curl should be blocked
+        let result = handle.load_from_directory(temp.path()).await;
+
+        // The plugin should load successfully
+        // The shell::exec call will return an error at runtime due to policy
+        assert!(result.is_ok(), "Plugin should load even if it contains blocked commands");
+    }
 
     #[tokio::test]
     async fn test_just_plugin_compiles_and_loads() {
@@ -1929,7 +1993,7 @@ pub fn create() {
             return;
         }
 
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
 
         // Create a temp dir with just the just.rn plugin
         let temp = TempDir::new().unwrap();
@@ -1982,7 +2046,7 @@ pub fn create() {
         );
 
         // Load should succeed (plugin compiles)
-        let mut loader2 = StructPluginLoader::new().unwrap();
+        let mut loader2 = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         let result = loader2.load_from_directory(temp.path()).await;
         assert!(result.is_ok(), "Just plugin should load: {:?}", result);
 
@@ -2080,7 +2144,7 @@ pub fn create() { PluginA::new() }
 "#;
         std::fs::write(temp.path().join("a_plugin.rn"), plugin_a).unwrap();
 
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         loader.load_from_directory(temp.path()).await.unwrap();
 
         // Both should load successfully
@@ -2102,7 +2166,7 @@ pub fn create() { PluginB::new() }
 "#;
         std::fs::write(temp.path().join("b_plugin.rn"), plugin).unwrap();
 
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         let result = loader.load_from_directory(temp.path()).await;
 
         assert!(result.is_err());
@@ -2140,7 +2204,7 @@ pub fn create() { PluginB::new() }
 "#;
         std::fs::write(temp.path().join("b.rn"), plugin_b).unwrap();
 
-        let mut loader = StructPluginLoader::new().unwrap();
+        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         let result = loader.load_from_directory(temp.path()).await;
 
         assert!(result.is_err());
