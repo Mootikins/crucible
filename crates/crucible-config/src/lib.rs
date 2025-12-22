@@ -33,6 +33,7 @@ mod enrichment;
 mod includes;
 mod loader;
 mod profile;
+mod security;
 mod value_source;
 
 // Include test_utils when test-utils feature is enabled
@@ -49,6 +50,7 @@ pub use enrichment::*;
 pub use includes::{process_file_references, IncludeConfig, IncludeError};
 pub use loader::*;
 pub use profile::*;
+pub use security::ShellPolicy;
 pub use value_source::*;
 
 // Export test utilities when feature is enabled
