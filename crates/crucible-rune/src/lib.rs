@@ -53,17 +53,17 @@ pub mod mcp_gateway;
 pub mod mcp_module;
 pub mod mcp_types;
 pub mod note_events;
+mod oq_module;
 pub mod persistence_handler;
 mod plugin_loader;
 mod plugin_types;
 pub mod reactor;
-mod struct_plugin;
-mod oq_module;
 mod regex_module;
-mod shell_module;
 mod registry;
 mod rune_types;
 pub mod session;
+mod shell_module;
+mod struct_plugin;
 pub mod tool_events;
 mod types;
 
@@ -118,6 +118,7 @@ pub use note_events::{
     NoteCreatedPayload, NoteEventEmitter, NoteMetadata, NoteModifiedPayload, NotePayload,
     WikilinkInfo,
 };
+pub use oq_module::oq_module;
 pub use persistence_handler::PersistenceHandler;
 pub use plugin_loader::PluginLoader;
 pub use plugin_types::{HookConfig, PluginManifest, RegisteredHook};
@@ -125,18 +126,17 @@ pub use reactor::{
     BoxedReactor, Reactor, ReactorContext, ReactorError, ReactorMetadata, ReactorResult,
     SessionConfig, SessionEvent, ToolCall,
 };
-pub use oq_module::oq_module;
 pub use regex_module::regex_module;
-pub use shell_module::shell_module;
 pub use registry::RuneToolRegistry;
-pub use struct_plugin::{
-    PluginMetadata, StructPluginHandle, ToolDefinition, ToolParameter, WatchEvent, WatchEventKind,
-};
 pub use rune_types::{
     categorize_by_name_impl, crucible_module, session_event_module, RuneEventContext,
     RuneFileChangeKind, RuneNoteChangeType, RuneRecipe, RuneRecipeEnrichment, RuneSessionEvent,
 };
 pub use session::{Session, SessionBuilder, SessionHandle, SessionState};
+pub use shell_module::shell_module;
+pub use struct_plugin::{
+    PluginMetadata, StructPluginHandle, ToolDefinition, ToolParameter, WatchEvent, WatchEventKind,
+};
 pub use tool_events::{ContentBlock as ToolContentBlock, ToolEventEmitter, ToolSource};
 pub use types::{RuneDiscoveryConfig, RuneExecutionResult, RuneTool};
 

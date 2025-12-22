@@ -332,7 +332,11 @@ mod tests {
             .expect("Should execute");
         let output: String = rune::from_value(output).unwrap();
 
-        assert!(output.trim() == "/tmp", "cwd should change to /tmp, got: {}", output.trim());
+        assert!(
+            output.trim() == "/tmp",
+            "cwd should change to /tmp, got: {}",
+            output.trim()
+        );
     }
 
     /// Test that exec accepts env option from Rune
@@ -380,7 +384,11 @@ mod tests {
             .expect("Should execute");
         let output: String = rune::from_value(output).unwrap();
 
-        assert!(output.contains("hello_from_rune"), "env should be set, got: {}", output);
+        assert!(
+            output.contains("hello_from_rune"),
+            "env should be set, got: {}",
+            output
+        );
     }
 
     #[test]

@@ -1082,8 +1082,7 @@ mod tests {
     async fn test_callout_block_hashing() {
         use crate::hashing::algorithm::Blake3Algorithm;
         let hasher = BlockHasher::new(Blake3Algorithm);
-        let metadata =
-            ASTBlockMetadata::callout("note", Some("Important Note".to_string()));
+        let metadata = ASTBlockMetadata::callout("note", Some("Important Note".to_string()));
         let block = ASTBlock::new(
             ASTBlockType::Callout,
             "This is an important callout message".to_string(),

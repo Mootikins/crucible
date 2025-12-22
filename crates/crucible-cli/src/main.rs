@@ -6,8 +6,7 @@ use tracing_subscriber::prelude::*; // For SubscriberExt trait
 
 use crucible_cli::{
     cli::{Cli, Commands},
-    commands,
-    config, factories,
+    commands, config, factories,
     sync::quick_sync_check,
 };
 
