@@ -10,9 +10,11 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
+async-trait = { workspace = true }
 
 # Re-use protocol and lifecycle from daemon
 crucible-daemon = { workspace = true }
+crucible-core = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

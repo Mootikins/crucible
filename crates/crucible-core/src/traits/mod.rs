@@ -38,6 +38,7 @@ pub mod parser;
 pub mod provider;
 pub mod registry;
 pub mod storage;
+pub mod storage_client;
 pub mod tools;
 
 // Re-export key traits
@@ -65,6 +66,7 @@ pub use provider::{
 };
 pub use registry::{Registry, RegistryBuilder};
 pub use storage::Storage;
+pub use storage_client::StorageClient;
 pub use tools::{ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult};
 // Input abstractions for cross-platform UI
 pub use input::{ChatEvent, InputMode, KeyAction, KeyCode, KeyPattern, Modifiers, SessionAction};
