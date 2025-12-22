@@ -21,6 +21,7 @@
 use crate::output_filter::{filter_test_output, FilterConfig};
 use crate::toon_response::toon_success_smart;
 use crate::CrucibleMcpServer;
+use crucible_config::ConfigResolver;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::events::{SessionEvent, ToolSource as CoreToolSource};
 use crucible_core::traits::KnowledgeRepository;
@@ -94,10 +95,28 @@ impl ExtendedMcpServer {
 
         let plugin_dir = plugin_dir.as_ref().to_path_buf();
 
+        // Load configuration and get shell policy for plugin security
+        // Use kiln_path as workspace root for three-tier config resolution
+        let shell_policy = match ConfigResolver::for_workspace(&kiln_path) {
+            Ok(resolver) => {
+                let policy = resolver.shell_policy();
+                info!(
+                    "Loaded shell policy: {} whitelisted commands, {} blacklisted",
+                    policy.whitelist.len(),
+                    policy.blacklist.len()
+                );
+                policy
+            }
+            Err(e) => {
+                warn!("Failed to load workspace config, using defaults: {}", e);
+                crucible_config::ShellPolicy::with_defaults()
+            }
+        };
+
         // Create struct-based plugin handle (for plugins with #[plugin] attribute)
         // The handle spawns a dedicated Rune thread for thread-safe plugin execution
         let struct_plugins = {
-            let handle = StructPluginHandle::new()
+            let handle = StructPluginHandle::new(shell_policy)
                 .map_err(|e| format!("Failed to create struct plugin handle: {}", e))?;
 
             // Load plugins from kiln/plugins/ directory
@@ -240,7 +259,8 @@ impl ExtendedMcpServer {
                 .expect("Failed to create empty Rune registry"),
         );
         let struct_plugins = Arc::new(
-            StructPluginHandle::new().expect("Failed to create empty struct plugin handle"),
+            StructPluginHandle::new(crucible_config::ShellPolicy::with_defaults())
+                .expect("Failed to create empty struct plugin handle"),
         );
 
         Self {
