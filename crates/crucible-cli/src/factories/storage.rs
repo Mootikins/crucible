@@ -5,7 +5,8 @@
 //!
 //! ## Available Factories
 //!
-//! - `create_surrealdb_storage` - SurrealDB-backed persistent storage
+//! - `create_surrealdb_storage` - SurrealDB-backed persistent storage (legacy, direct connection)
+//! - `create_daemon_storage` - Daemon-backed storage (preferred, auto-starts daemon)
 //! - `create_content_addressed_storage` - In-memory content-addressed storage (for testing/demos)
 
 use crate::config::CliConfig;
@@ -16,9 +17,12 @@ use crucible_core::storage::{
     BlockSize, ContentAddressedStorage, ContentAddressedStorageBuilder, HasherConfig,
     StorageBackendType, StorageResult,
 };
+use crucible_core::traits::StorageClient;
+use crucible_daemon_client::{DaemonClient, DaemonStorageClient};
 use crucible_surrealdb::{adapters, SurrealDbConfig};
 use once_cell::sync::Lazy;
 use std::collections::{hash_map::Entry, HashMap};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 /// Create SurrealDB storage from CLI configuration
@@ -120,4 +124,44 @@ pub fn create_content_addressed_storage(
         .with_hasher(HasherConfig::Blake3(Blake3Hasher::new()))
         .with_block_size(BlockSize::Medium)
         .build()
+}
+
+/// Create daemon-backed storage client (preferred path)
+///
+/// This creates a storage client that connects to the daemon, automatically
+/// starting it if not already running. This is the preferred way to access
+/// storage in the CLI as it enables:
+///
+/// - Shared connection pooling across multiple CLI invocations
+/// - Automatic daemon lifecycle management
+/// - Multi-kiln support with idle timeout
+///
+/// # Arguments
+///
+/// * `kiln_path` - Path to the kiln (notes directory)
+///
+/// # Returns
+///
+/// A storage client that implements the StorageClient trait, backed by the daemon.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// # use std::path::Path;
+/// # use anyhow::Result;
+/// # async fn example() -> Result<()> {
+/// use crucible_cli::factories;
+/// use crucible_core::traits::StorageClient;
+///
+/// let kiln_path = Path::new("/home/user/notes");
+/// let storage = factories::create_daemon_storage(kiln_path).await?;
+///
+/// // Use the storage client
+/// let result = storage.query_raw("SELECT * FROM notes LIMIT 10").await?;
+/// # Ok(())
+/// # }
+/// ```
+pub async fn create_daemon_storage(kiln_path: &Path) -> Result<Arc<DaemonStorageClient>> {
+    let client = Arc::new(DaemonClient::connect_or_start().await?);
+    Ok(Arc::new(DaemonStorageClient::new(client, kiln_path.to_path_buf())))
 }
