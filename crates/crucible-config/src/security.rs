@@ -9,22 +9,13 @@ use serde::{Deserialize, Serialize};
 ///
 /// Implements prefix-based matching with blacklist-first evaluation.
 /// Commands are matched by building the full command string from cmd + args.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct ShellPolicy {
     /// Commands that are explicitly allowed (prefix matching)
     pub whitelist: Vec<String>,
     /// Commands that are explicitly blocked (prefix matching, takes precedence)
     pub blacklist: Vec<String>,
-}
-
-impl Default for ShellPolicy {
-    fn default() -> Self {
-        Self {
-            whitelist: Vec::new(),
-            blacklist: Vec::new(),
-        }
-    }
 }
 
 impl ShellPolicy {
