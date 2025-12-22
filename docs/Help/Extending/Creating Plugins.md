@@ -219,6 +219,42 @@ let result = exec("cargo", ["build"], #{
 // result.stdout, result.stderr, result.exit_code
 ```
 
+## Plugin Dependencies
+
+Plugins can declare dependencies on other plugins using the `deps` attribute:
+
+```rune
+#[plugin(
+    name = "deploy",
+    deps = ["shell"]  // Requires shell module
+)]
+pub fn create() {
+    DeployPlugin::new()
+}
+```
+
+Dependencies are resolved at load time:
+- Plugins load in topological order (dependencies first)
+- Missing dependencies cause a load error
+- Circular dependencies are detected and rejected
+
+### Built-in Modules
+
+These modules are always available (no need to declare as deps):
+- `shell` - Shell command execution
+- `oq` - JSON/TOON query operations
+
+### Plugin-to-Plugin Dependencies
+
+For plugins that depend on other plugins:
+
+```rune
+#[plugin(name = "ci", deps = ["deploy", "tasks"])]
+pub fn create() {
+    // Can use deploy:: and tasks:: modules
+}
+```
+
 ## Best Practices
 
 1. **One concern per plugin** - Keep plugins focused
