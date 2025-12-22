@@ -26,6 +26,12 @@ async-trait = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 
+# TOON query for oq module
+tq = { path = "../tq" }
+toon-format = "0.4"
+serde_yaml = "0.9"
+toml = "0.8"
+
 # Logging
 tracing = { workspace = true }
 

@@ -8,6 +8,7 @@
 
 use crate::discovery_paths::DiscoveryPaths;
 use crate::events::{CrucibleEvent, EnrichedRecipe};
+use crate::oq_module::oq_module;
 use crate::regex_module::regex_module;
 use crate::shell_module::shell_module;
 use crate::rune_types::{crucible_module, RuneRecipeEnrichment};
@@ -85,6 +86,11 @@ impl EventHandler {
         // Install shell module
         context
             .install(shell_module()?)
+            .map_err(|e| RuneError::Context(e.to_string()))?;
+
+        // Install oq module for object querying
+        context
+            .install(oq_module()?)
             .map_err(|e| RuneError::Context(e.to_string()))?;
 
         // Install our crucible module with types
