@@ -167,8 +167,7 @@ mod tests {
 
     #[test]
     fn test_ast_block_callout_creation() {
-        let metadata =
-            ASTBlockMetadata::callout("note", Some("Important Note".to_string()));
+        let metadata = ASTBlockMetadata::callout("note", Some("Important Note".to_string()));
         let block = ASTBlock::new(
             ASTBlockType::Callout,
             "This is an important note".to_string(),
@@ -287,8 +286,7 @@ mod tests {
             panic!("Expected list metadata");
         }
 
-        let callout_meta =
-            ASTBlockMetadata::callout("warning", Some("Watch out".to_string()));
+        let callout_meta = ASTBlockMetadata::callout("warning", Some("Watch out".to_string()));
         if let ASTBlockMetadata::Callout {
             callout_type,
             title,

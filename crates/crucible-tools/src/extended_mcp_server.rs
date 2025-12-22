@@ -104,11 +104,19 @@ impl ExtendedMcpServer {
             let kiln_plugins = PathBuf::from(&kiln_path).join("plugins");
             if kiln_plugins.exists() {
                 if let Err(e) = handle.load_from_directory(&kiln_plugins).await {
-                    warn!("Failed to load plugins from {}: {}", kiln_plugins.display(), e);
+                    warn!(
+                        "Failed to load plugins from {}: {}",
+                        kiln_plugins.display(),
+                        e
+                    );
                 } else {
                     let tool_count = handle.all_tools().await.len();
                     if tool_count > 0 {
-                        info!("Loaded {} struct plugin tools from {}", tool_count, kiln_plugins.display());
+                        info!(
+                            "Loaded {} struct plugin tools from {}",
+                            tool_count,
+                            kiln_plugins.display()
+                        );
                     }
                 }
             }
@@ -116,10 +124,18 @@ impl ExtendedMcpServer {
             // Also try the provided plugin_dir if different
             if plugin_dir.exists() && plugin_dir != kiln_plugins {
                 if let Err(e) = handle.load_from_directory(&plugin_dir).await {
-                    warn!("Failed to load plugins from {}: {}", plugin_dir.display(), e);
+                    warn!(
+                        "Failed to load plugins from {}: {}",
+                        plugin_dir.display(),
+                        e
+                    );
                 } else {
                     let tool_count = handle.all_tools().await.len();
-                    info!("Loaded {} struct plugin tools from {}", tool_count, plugin_dir.display());
+                    info!(
+                        "Loaded {} struct plugin tools from {}",
+                        tool_count,
+                        plugin_dir.display()
+                    );
                 }
             }
 
@@ -218,8 +234,7 @@ impl ExtendedMcpServer {
         knowledge_repo: Arc<dyn KnowledgeRepository>,
         embedding_provider: Arc<dyn EmbeddingProvider>,
     ) -> Self {
-        let kiln_server =
-            CrucibleMcpServer::new(kiln_path, knowledge_repo, embedding_provider);
+        let kiln_server = CrucibleMcpServer::new(kiln_path, knowledge_repo, embedding_provider);
         let rune_registry = Arc::new(
             RuneToolRegistry::new(RuneDiscoveryConfig::default())
                 .expect("Failed to create empty Rune registry"),
@@ -711,7 +726,10 @@ impl ExtendedMcpServer {
     }
 
     /// Refresh struct plugins (reload plugins and rediscover tools)
-    pub async fn refresh_struct_plugins(&self, plugin_dir: &Path) -> Result<(), crucible_rune::RuneError> {
+    pub async fn refresh_struct_plugins(
+        &self,
+        plugin_dir: &Path,
+    ) -> Result<(), crucible_rune::RuneError> {
         self.struct_plugins.load_from_directory(plugin_dir).await
     }
 
@@ -1368,7 +1386,10 @@ mod tests {
         // Verify upstream tool can be found via gateway
         let gateway = server.upstream_clients().unwrap();
         assert!(
-            gateway.find_client_for_tool("gh_search_repos").await.is_some(),
+            gateway
+                .find_client_for_tool("gh_search_repos")
+                .await
+                .is_some(),
             "gh_search_repos should be routable via gateway"
         );
 
@@ -1378,7 +1399,10 @@ mod tests {
             "rune_ tools should not be in gateway"
         );
         assert!(
-            gateway.find_client_for_tool("search_by_content").await.is_none(),
+            gateway
+                .find_client_for_tool("search_by_content")
+                .await
+                .is_none(),
             "kiln tools should not be in gateway"
         );
     }
