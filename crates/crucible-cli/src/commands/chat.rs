@@ -51,8 +51,15 @@ pub async fn execute(
     info!("Starting chat command");
     info!("Initial mode: {}", mode_display_name(initial_mode));
 
-    // Ensure daemon is running (auto-start if needed)
-    let _daemon = super::daemon::ensure_daemon().await?;
+    // Check if daemon is running - if so, we can't use direct DB access
+    // TODO: Refactor to use daemon for storage when running
+    if crucible_daemon::is_daemon_running() {
+        anyhow::bail!(
+            "Daemon is currently running and holds the database lock.\n\
+             Please stop the daemon first: cru daemon stop\n\
+             (Future versions will route queries through the daemon)"
+        );
+    }
 
     // Single-line status display for clean startup UX
     let mut status = StatusLine::new();
