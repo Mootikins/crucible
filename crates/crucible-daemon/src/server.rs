@@ -242,4 +242,300 @@ mod tests {
         let _ = shutdown_handle.send(());
         let _ = server_task.await;
     }
+
+    #[tokio::test]
+    async fn test_kiln_open_missing_path_param() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        // Missing "path" parameter
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"kiln.open\",\"params\":{}}\n")
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 1024];
+        let n = client.read(&mut buf).await.unwrap();
+        let response = String::from_utf8_lossy(&buf[..n]);
+
+        assert!(response.contains("error"));
+        assert!(response.contains("-32602")); // INVALID_PARAMS
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_kiln_close_missing_path_param() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        // Missing "path" parameter
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"kiln.close\",\"params\":{}}\n")
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 1024];
+        let n = client.read(&mut buf).await.unwrap();
+        let response = String::from_utf8_lossy(&buf[..n]);
+
+        assert!(response.contains("error"));
+        assert!(response.contains("-32602")); // INVALID_PARAMS
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_kiln_list_returns_array() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"kiln.list\",\"params\":{}}\n")
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 1024];
+        let n = client.read(&mut buf).await.unwrap();
+        let response = String::from_utf8_lossy(&buf[..n]);
+
+        assert!(response.contains("\"result\":[]")); // Empty array initially
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_query_missing_kiln_param() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        // Missing kiln parameter
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"query\",\"params\":{\"sql\":\"SELECT * FROM notes\"}}\n")
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 1024];
+        let n = client.read(&mut buf).await.unwrap();
+        let response = String::from_utf8_lossy(&buf[..n]);
+
+        assert!(response.contains("error"));
+        assert!(response.contains("kiln")); // Error message should mention missing kiln
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_query_missing_sql_param() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        // Missing sql parameter
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"query\",\"params\":{\"kiln\":\"/tmp/test\"}}\n")
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 1024];
+        let n = client.read(&mut buf).await.unwrap();
+        let response = String::from_utf8_lossy(&buf[..n]);
+
+        assert!(response.contains("error"));
+        assert!(response.contains("sql")); // Error message should mention missing sql
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_method_not_found() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"unknown.method\",\"params\":{}}\n")
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 1024];
+        let n = client.read(&mut buf).await.unwrap();
+        let response = String::from_utf8_lossy(&buf[..n]);
+
+        assert!(response.contains("error"));
+        assert!(response.contains("-32601")); // METHOD_NOT_FOUND
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_parse_error() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        // Invalid JSON
+        client
+            .write_all(b"{invalid json}\n")
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 1024];
+        let n = client.read(&mut buf).await.unwrap();
+        let response = String::from_utf8_lossy(&buf[..n]);
+
+        assert!(response.contains("error"));
+        assert!(response.contains("-32700")); // PARSE_ERROR
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_shutdown_method() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"shutdown\",\"params\":{}}\n")
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 1024];
+        let n = client.read(&mut buf).await.unwrap();
+        let response = String::from_utf8_lossy(&buf[..n]);
+
+        assert!(response.contains("\"result\":\"shutting down\""));
+
+        // Server should shut down gracefully
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            server_task
+        ).await;
+
+        assert!(result.is_ok(), "Server should shutdown within timeout");
+    }
+
+    #[tokio::test]
+    async fn test_kiln_open_nonexistent_path_fails() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        // Valid request format, but path doesn't exist
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"kiln.open\",\"params\":{\"path\":\"/nonexistent/path/to/kiln\"}}\n")
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 1024];
+        let n = client.read(&mut buf).await.unwrap();
+        let response = String::from_utf8_lossy(&buf[..n]);
+
+        assert!(response.contains("error"));
+        assert!(response.contains("-32603")); // INTERNAL_ERROR (can't open DB)
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_client_disconnect_closes_connection() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(async move { server.run().await });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Connect and immediately disconnect
+        {
+            let _client = UnixStream::connect(&sock_path).await.unwrap();
+            // Client drops here, closing connection
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Server should still be running and accept new connections
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"ping\"}\n")
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 1024];
+        let n = client.read(&mut buf).await.unwrap();
+        let response = String::from_utf8_lossy(&buf[..n]);
+
+        assert!(response.contains("\"result\":\"pong\""));
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
 }
