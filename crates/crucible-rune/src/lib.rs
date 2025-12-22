@@ -133,7 +133,7 @@ pub use rune_types::{
     RuneFileChangeKind, RuneNoteChangeType, RuneRecipe, RuneRecipeEnrichment, RuneSessionEvent,
 };
 pub use session::{Session, SessionBuilder, SessionHandle, SessionState};
-pub use shell_module::shell_module;
+pub use shell_module::{shell_module, shell_module_with_policy};
 pub use struct_plugin::{
     PluginMetadata, StructPluginHandle, ToolDefinition, ToolParameter, WatchEvent, WatchEventKind,
 };
