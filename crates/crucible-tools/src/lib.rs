@@ -33,7 +33,6 @@
 #![warn(clippy::all)]
 #![warn(clippy::pedantic)]
 
-pub mod clustering;
 pub mod extended_mcp_server;
 pub mod kiln;
 pub mod mcp_client;
@@ -46,7 +45,6 @@ pub mod utils;
 
 // ===== PUBLIC API EXPORTS =====
 
-pub use clustering::ClusteringTools;
 pub use extended_mcp_server::{ExtendedMcpServer, ExtendedMcpService};
 pub use kiln::KilnTools;
 pub use mcp_client::{create_stdio_executor, create_stdio_executor_with_env, RmcpExecutor};
