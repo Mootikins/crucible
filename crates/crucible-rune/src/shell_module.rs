@@ -20,7 +20,6 @@
 //! ```
 
 use rune::alloc::Vec as RuneVec;
-use rune::runtime::VmResult;
 use rune::{Any, ContextError, Module};
 use std::collections::HashMap;
 
@@ -119,7 +118,7 @@ impl std::fmt::Display for RuneExecError {
 fn exec(
     cmd: String,
     args: RuneVec<String>,
-    _options: rune::Value,
+    options: rune::runtime::Object,
 ) -> Result<RuneExecResult, RuneExecError> {
     use std::process::Command;
 
@@ -129,7 +128,25 @@ fn exec(
     let mut command = Command::new(&cmd);
     command.args(&args_ref);
 
-    // TODO: Parse options for cwd, env, timeout
+    // Parse cwd option
+    if let Some(cwd_value) = options.get("cwd") {
+        if let Ok(cwd) = rune::from_value::<String>(cwd_value.clone()) {
+            command.current_dir(cwd);
+        }
+    }
+
+    // Parse env option
+    if let Some(env_value) = options.get("env") {
+        if let Ok(env_obj) = rune::from_value::<rune::runtime::Object>(env_value.clone()) {
+            for (key, value) in env_obj.iter() {
+                if let Ok(val_str) = rune::from_value::<String>(value.clone()) {
+                    command.env(key.as_str(), val_str);
+                }
+            }
+        }
+    }
+
+    // TODO: timeout support requires async or threads
 
     match command.output() {
         Ok(output) => Ok(RuneExecResult {
@@ -268,6 +285,102 @@ mod tests {
         let output: String = rune::from_value(output).unwrap();
 
         assert!(output.contains("test"));
+    }
+
+    /// Test that exec accepts cwd option from Rune
+    #[test]
+    fn test_exec_with_cwd_from_rune() {
+        use rune::termcolor::{ColorChoice, StandardStream};
+        use rune::{Context, Diagnostics, Source, Sources, Vm};
+        use std::sync::Arc;
+
+        let mut context = Context::with_default_modules().unwrap();
+        context.install(shell_module().unwrap()).unwrap();
+        let runtime = Arc::new(context.runtime().unwrap());
+
+        let script = r#"
+            use shell::exec;
+
+            pub fn main() {
+                let result = exec("pwd", [], #{ cwd: "/tmp" })?;
+                result.stdout
+            }
+        "#;
+
+        let mut sources = Sources::new();
+        sources
+            .insert(Source::new("test", script).unwrap())
+            .unwrap();
+
+        let mut diagnostics = Diagnostics::new();
+        let result = rune::prepare(&mut sources)
+            .with_context(&context)
+            .with_diagnostics(&mut diagnostics)
+            .build();
+
+        if !diagnostics.is_empty() {
+            let mut writer = StandardStream::stderr(ColorChoice::Always);
+            diagnostics.emit(&mut writer, &sources).unwrap();
+        }
+
+        let unit = result.expect("Should compile");
+        let unit = Arc::new(unit);
+
+        let mut vm = Vm::new(runtime, unit);
+        let output = vm
+            .call(rune::Hash::type_hash(["main"]), ())
+            .expect("Should execute");
+        let output: String = rune::from_value(output).unwrap();
+
+        assert!(output.trim() == "/tmp", "cwd should change to /tmp, got: {}", output.trim());
+    }
+
+    /// Test that exec accepts env option from Rune
+    #[test]
+    fn test_exec_with_env_from_rune() {
+        use rune::termcolor::{ColorChoice, StandardStream};
+        use rune::{Context, Diagnostics, Source, Sources, Vm};
+        use std::sync::Arc;
+
+        let mut context = Context::with_default_modules().unwrap();
+        context.install(shell_module().unwrap()).unwrap();
+        let runtime = Arc::new(context.runtime().unwrap());
+
+        let script = r#"
+            use shell::exec;
+
+            pub fn main() {
+                let result = exec("sh", ["-c", "echo $TEST_VAR"], #{ env: #{ TEST_VAR: "hello_from_rune" } })?;
+                result.stdout
+            }
+        "#;
+
+        let mut sources = Sources::new();
+        sources
+            .insert(Source::new("test", script).unwrap())
+            .unwrap();
+
+        let mut diagnostics = Diagnostics::new();
+        let result = rune::prepare(&mut sources)
+            .with_context(&context)
+            .with_diagnostics(&mut diagnostics)
+            .build();
+
+        if !diagnostics.is_empty() {
+            let mut writer = StandardStream::stderr(ColorChoice::Always);
+            diagnostics.emit(&mut writer, &sources).unwrap();
+        }
+
+        let unit = result.expect("Should compile");
+        let unit = Arc::new(unit);
+
+        let mut vm = Vm::new(runtime, unit);
+        let output = vm
+            .call(rune::Hash::type_hash(["main"]), ())
+            .expect("Should execute");
+        let output: String = rune::from_value(output).unwrap();
+
+        assert!(output.contains("hello_from_rune"), "env should be set, got: {}", output);
     }
 
     #[test]
