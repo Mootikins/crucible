@@ -18,6 +18,7 @@ members = [
     "crates/crucible-rune",
     "crates/crucible-web",
     "crates/crucible-daemon",
+    "crates/crucible-daemon-client",
 ]
 default-members = ["crates/crucible-cli"]
 
@@ -169,6 +170,7 @@ crucible-surrealdb = { path = "crates/crucible-surrealdb" }
 crucible-rune = { path = "crates/crucible-rune" }
 crucible-web = { path = "crates/crucible-web" }
 crucible-daemon = { path = "crates/crucible-daemon" }
+crucible-daemon-client = { path = "crates/crucible-daemon-client" }
 tq = { path = "crates/tq" }
 
 [profile.release]
