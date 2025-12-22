@@ -174,6 +174,51 @@ pub fn main() {
 
 Scripts in `Scripts/` are not auto-registered as tools.
 
+## Shell Commands
+
+Plugins can execute shell commands using `shell::exec()`:
+
+```rune
+use shell::exec;
+
+#[tool(name = "run_tests")]
+pub fn run_tests() {
+    let result = exec("cargo", ["test"], #{})?;
+    Ok(result.stdout)
+}
+```
+
+### Security Model
+
+Shell commands are **deny by default**. Commands must be whitelisted at the workspace or global level to execute.
+
+When a plugin tries a non-whitelisted command, the user is prompted to allow or deny it, with options to save the decision.
+
+Common commands (`git`, `cargo`, `npm`, `docker`, etc.) are whitelisted by default.
+
+### Workspace Shell Policy
+
+```toml
+# .crucible/workspace.toml
+[security.shell]
+whitelist = ["aws", "terraform"]  # Allow these commands
+blacklist = ["docker run"]         # Block these (prefix match)
+```
+
+See [[Help/Config/workspaces]] for full security configuration.
+
+### Shell Options
+
+```rune
+let result = exec("cargo", ["build"], #{
+    cwd: "/path/to/project",      # Working directory
+    env: #{ RUST_LOG: "debug" },  # Environment variables
+    timeout: 60000,               # Timeout in milliseconds
+})?;
+
+// result.stdout, result.stderr, result.exit_code
+```
+
 ## Best Practices
 
 1. **One concern per plugin** - Keep plugins focused
@@ -181,6 +226,7 @@ Scripts in `Scripts/` are not auto-registered as tools.
 3. **Use descriptive tool names** - `tasks_list` not `list`
 4. **Handle errors gracefully** - Return `Err()` with helpful messages
 5. **Provide schemas** - Help agents understand your tools
+6. **Minimize shell usage** - Prefer Crucible APIs over shelling out
 
 ## Example: Tasks Plugin
 
@@ -196,4 +242,5 @@ See [[Help/Task Management]] for a complete example plugin that demonstrates:
 - [[Help/Rune/Tool Definition]] - Tool attribute details
 - [[Help/Extending/Event Hooks]] - Hook system
 - [[Help/Extending/Custom Tools]] - Tool deep dive
+- [[Help/Config/workspaces]] - Workspace and security configuration
 - [[Extending Crucible]] - All extension points
