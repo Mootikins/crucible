@@ -2726,6 +2726,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "crucible-config",
  "crucible-core",
  "dirs 6.0.0",
  "glob",
