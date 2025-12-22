@@ -79,6 +79,19 @@ impl KilnManager {
             .collect()
     }
 
+    /// Get client for a kiln if it's already open (does not open if closed)
+    pub async fn get(&self, kiln_path: &Path) -> Option<SurrealClientHandle> {
+        let canonical = kiln_path.canonicalize().unwrap_or_else(|_| kiln_path.to_path_buf());
+
+        let mut conns = self.connections.write().await;
+        if let Some(conn) = conns.get_mut(&canonical) {
+            conn.last_access = Instant::now();
+            Some(conn.client.clone())
+        } else {
+            None
+        }
+    }
+
     /// Get client for a kiln, opening if needed
     pub async fn get_or_open(&self, kiln_path: &Path) -> Result<SurrealClientHandle> {
         let canonical = kiln_path.canonicalize().unwrap_or_else(|_| kiln_path.to_path_buf());
@@ -250,5 +263,54 @@ mod tests {
         // Clients should be clones of the same handle
         drop(client1);
         drop(client2);
+    }
+
+    #[tokio::test]
+    async fn test_get_returns_none_if_not_open() {
+        let km = KilnManager::new();
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path().join("test_kiln");
+
+        // get() should return None if kiln is not open
+        let result = km.get(&kiln_path).await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_returns_client_if_open() {
+        let km = KilnManager::new();
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path().join("test_kiln");
+
+        // Open the kiln first
+        km.open(&kiln_path).await.unwrap();
+
+        // get() should now return Some(client)
+        let result = km.get(&kiln_path).await;
+        assert!(result.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_get_updates_last_access() {
+        let km = KilnManager::new();
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path().join("test_kiln");
+
+        // Open and get initial access time
+        km.open(&kiln_path).await.unwrap();
+        let initial_list = km.list().await;
+        let initial_time = initial_list[0].1;
+
+        // Wait a bit
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+        // Call get()
+        let _ = km.get(&kiln_path).await;
+
+        // Last access should be updated
+        let updated_list = km.list().await;
+        let updated_time = updated_list[0].1;
+
+        assert!(updated_time > initial_time);
     }
 }
