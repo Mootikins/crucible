@@ -1,6 +1,6 @@
 //! Shell module for Rune
 //!
-//! Provides command execution for Rune scripts.
+//! Provides command execution for Rune scripts with security policies.
 //!
 //! # Example
 //!
@@ -19,9 +19,11 @@
 //! })?;
 //! ```
 
+use crucible_config::ShellPolicy;
 use rune::alloc::Vec as RuneVec;
 use rune::{Any, ContextError, Module};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Options for command execution
 #[derive(Debug, Default)]
@@ -106,24 +108,41 @@ impl std::fmt::Display for RuneExecError {
     }
 }
 
-/// Execute a command from Rune
+/// Core implementation of command execution with optional policy enforcement
 ///
 /// Arguments:
 /// - cmd: Command to execute
 /// - args: Arguments as a vector of strings
 /// - options: Object with optional timeout, cwd, env fields
+/// - policy: Optional security policy to enforce
 ///
 /// Returns Result<ExecResult, ExecError> which supports the ? operator
-#[rune::function]
-fn exec(
+fn exec_impl_with_policy(
     cmd: String,
     args: RuneVec<String>,
     options: rune::runtime::Object,
+    policy: Option<&ShellPolicy>,
 ) -> Result<RuneExecResult, RuneExecError> {
     use std::process::Command;
 
     let args_vec: Vec<String> = args.into_iter().collect();
     let args_ref: Vec<&str> = args_vec.iter().map(|s| s.as_str()).collect();
+
+    // Check policy if provided
+    if let Some(policy) = policy {
+        if !policy.is_allowed(&cmd, &args_ref) {
+            return Err(RuneExecError {
+                message: format!(
+                    "Command '{}' is not whitelisted by security policy",
+                    if args_ref.is_empty() {
+                        cmd.clone()
+                    } else {
+                        format!("{} {}", cmd, args_ref.join(" "))
+                    }
+                ),
+            });
+        }
+    }
 
     let mut command = Command::new(&cmd);
     command.args(&args_ref);
@@ -160,8 +179,41 @@ fn exec(
     }
 }
 
-/// Create the shell module for Rune
-pub fn shell_module() -> Result<Module, ContextError> {
+/// Wrapper struct to hold policy for Rune exec function
+#[derive(Clone)]
+struct ExecPolicyWrapper {
+    policy: Arc<ShellPolicy>,
+}
+
+impl ExecPolicyWrapper {
+    /// Execute with policy check
+    fn exec(
+        &self,
+        cmd: String,
+        args: RuneVec<String>,
+        options: rune::runtime::Object,
+    ) -> Result<RuneExecResult, RuneExecError> {
+        exec_impl_with_policy(cmd, args, options, Some(&self.policy))
+    }
+}
+
+/// Create the shell module for Rune with a specific security policy
+///
+/// # Arguments
+///
+/// * `policy` - Security policy defining which commands are allowed
+///
+/// # Example
+///
+/// ```rust
+/// use crucible_config::ShellPolicy;
+/// use crucible_rune::shell_module_with_policy;
+///
+/// let mut policy = ShellPolicy::default();
+/// policy.whitelist.push("git".to_string());
+/// let module = shell_module_with_policy(policy).unwrap();
+/// ```
+pub fn shell_module_with_policy(policy: ShellPolicy) -> Result<Module, ContextError> {
     let mut module = Module::with_crate("shell")?;
 
     // Register the result type
@@ -170,10 +222,37 @@ pub fn shell_module() -> Result<Module, ContextError> {
     // Register the error type
     module.ty::<RuneExecError>()?;
 
-    // Register the exec function
-    module.function_meta(exec)?;
+    // Wrap policy in wrapper for method-based registration
+    let wrapper = ExecPolicyWrapper {
+        policy: Arc::new(policy),
+    };
+
+    // Register the exec function with a closure that captures the wrapper
+    module.function(
+        "exec",
+        move |cmd: String, args: RuneVec<String>, options: rune::runtime::Object| {
+            wrapper.exec(cmd, args, options)
+        },
+    );
 
     Ok(module)
+}
+
+/// Create the shell module for Rune with default security policy
+///
+/// Uses `ShellPolicy::with_defaults()` which includes:
+/// - Safe development commands (git, cargo, npm, etc.)
+/// - Blocks dangerous commands (sudo, rm -rf /, etc.)
+///
+/// # Example
+///
+/// ```rust
+/// use crucible_rune::shell_module;
+///
+/// let module = shell_module().unwrap();
+/// ```
+pub fn shell_module() -> Result<Module, ContextError> {
+    shell_module_with_policy(ShellPolicy::with_defaults())
 }
 
 #[cfg(test)]
@@ -455,5 +534,223 @@ mod tests {
     fn test_exec_command_not_found() {
         let result = exec_impl("nonexistent_command_12345", &[], ExecOptions::default());
         assert!(result.is_err());
+    }
+
+    /// Test that shell_module_with_policy blocks non-whitelisted commands
+    /// This test should FAIL until we implement shell_module_with_policy
+    #[test]
+    fn test_shell_module_with_policy_blocks_non_whitelisted() {
+        use crucible_config::ShellPolicy;
+        use rune::termcolor::{ColorChoice, StandardStream};
+        use rune::{Context, Diagnostics, Source, Sources, Vm};
+        use std::sync::Arc;
+
+        // Create restrictive policy - only allow 'echo'
+        let mut policy = ShellPolicy::default();
+        policy.whitelist.push("echo".to_string());
+
+        // Create context with restricted shell module
+        let mut context = Context::with_default_modules().unwrap();
+        context
+            .install(shell_module_with_policy(policy).unwrap())
+            .unwrap();
+        let runtime = Arc::new(context.runtime().unwrap());
+
+        // Script tries to run 'rm' which is not whitelisted
+        let script = r#"
+            use shell::exec;
+
+            pub fn main() {
+                let result = exec("rm", ["test.txt"], #{})?;
+                result.stdout
+            }
+        "#;
+
+        let mut sources = Sources::new();
+        sources
+            .insert(Source::new("test", script).unwrap())
+            .unwrap();
+
+        let mut diagnostics = Diagnostics::new();
+        let result = rune::prepare(&mut sources)
+            .with_context(&context)
+            .with_diagnostics(&mut diagnostics)
+            .build();
+
+        if !diagnostics.is_empty() {
+            let mut writer = StandardStream::stderr(ColorChoice::Always);
+            diagnostics.emit(&mut writer, &sources).unwrap();
+        }
+
+        let unit = result.expect("Should compile");
+        let unit = Arc::new(unit);
+
+        // Execute - should fail with policy error
+        let mut vm = Vm::new(runtime, unit);
+        let result = vm.call(rune::Hash::type_hash(["main"]), ());
+
+        assert!(result.is_err(), "Should fail when command is not whitelisted");
+        let err = result.unwrap_err();
+        let err_msg = format!("{:?}", err);
+        assert!(
+            err_msg.contains("not whitelisted") || err_msg.contains("not allowed"),
+            "Error should mention policy violation, got: {}",
+            err_msg
+        );
+    }
+
+    /// Test that shell_module_with_policy allows whitelisted commands
+    /// This test should FAIL until we implement shell_module_with_policy
+    #[test]
+    fn test_shell_module_with_policy_allows_whitelisted() {
+        use crucible_config::ShellPolicy;
+        use rune::termcolor::{ColorChoice, StandardStream};
+        use rune::{Context, Diagnostics, Source, Sources, Vm};
+        use std::sync::Arc;
+
+        // Create policy that allows echo
+        let mut policy = ShellPolicy::default();
+        policy.whitelist.push("echo".to_string());
+
+        let mut context = Context::with_default_modules().unwrap();
+        context
+            .install(shell_module_with_policy(policy).unwrap())
+            .unwrap();
+        let runtime = Arc::new(context.runtime().unwrap());
+
+        let script = r#"
+            use shell::exec;
+
+            pub fn main() {
+                let result = exec("echo", ["hello"], #{})?;
+                result.stdout
+            }
+        "#;
+
+        let mut sources = Sources::new();
+        sources
+            .insert(Source::new("test", script).unwrap())
+            .unwrap();
+
+        let mut diagnostics = Diagnostics::new();
+        let result = rune::prepare(&mut sources)
+            .with_context(&context)
+            .with_diagnostics(&mut diagnostics)
+            .build();
+
+        if !diagnostics.is_empty() {
+            let mut writer = StandardStream::stderr(ColorChoice::Always);
+            diagnostics.emit(&mut writer, &sources).unwrap();
+        }
+
+        let unit = result.expect("Should compile");
+        let unit = Arc::new(unit);
+
+        let mut vm = Vm::new(runtime, unit);
+        let output = vm
+            .call(rune::Hash::type_hash(["main"]), ())
+            .expect("Should execute when command is whitelisted");
+        let output: String = rune::from_value(output).unwrap();
+
+        assert!(
+            output.contains("hello"),
+            "Should execute whitelisted command"
+        );
+    }
+
+    /// Test that default shell_module uses default policy
+    /// This test should FAIL until we update shell_module to use ShellPolicy::with_defaults()
+    #[test]
+    fn test_shell_module_default_uses_defaults() {
+        use rune::termcolor::{ColorChoice, StandardStream};
+        use rune::{Context, Diagnostics, Source, Sources, Vm};
+        use std::sync::Arc;
+
+        let mut context = Context::with_default_modules().unwrap();
+        context.install(shell_module().unwrap()).unwrap();
+        let runtime = Arc::new(context.runtime().unwrap());
+
+        // Test that cargo is allowed (in default whitelist)
+        let script_allowed = r#"
+            use shell::exec;
+
+            pub fn main() {
+                let result = exec("cargo", ["--version"], #{})?;
+                result.stdout
+            }
+        "#;
+
+        let mut sources = Sources::new();
+        sources
+            .insert(Source::new("test", script_allowed).unwrap())
+            .unwrap();
+
+        let mut diagnostics = Diagnostics::new();
+        let result = rune::prepare(&mut sources)
+            .with_context(&context)
+            .with_diagnostics(&mut diagnostics)
+            .build();
+
+        if !diagnostics.is_empty() {
+            let mut writer = StandardStream::stderr(ColorChoice::Always);
+            diagnostics.emit(&mut writer, &sources).unwrap();
+        }
+
+        let unit = result.expect("Should compile");
+        let unit = Arc::new(unit);
+
+        let mut vm = Vm::new(runtime.clone(), unit);
+        let output = vm
+            .call(rune::Hash::type_hash(["main"]), ())
+            .expect("Should allow cargo (in default whitelist)");
+        let output: String = rune::from_value(output).unwrap();
+        assert!(
+            output.contains("cargo"),
+            "Should execute cargo from default whitelist"
+        );
+
+        // Test that sudo is blocked (in default blacklist)
+        let script_blocked = r#"
+            use shell::exec;
+
+            pub fn main() {
+                let result = exec("sudo", ["ls"], #{})?;
+                result.stdout
+            }
+        "#;
+
+        let mut sources = Sources::new();
+        sources
+            .insert(Source::new("test", script_blocked).unwrap())
+            .unwrap();
+
+        let mut diagnostics = Diagnostics::new();
+        let result = rune::prepare(&mut sources)
+            .with_context(&context)
+            .with_diagnostics(&mut diagnostics)
+            .build();
+
+        if !diagnostics.is_empty() {
+            let mut writer = StandardStream::stderr(ColorChoice::Always);
+            diagnostics.emit(&mut writer, &sources).unwrap();
+        }
+
+        let unit = result.expect("Should compile");
+        let unit = Arc::new(unit);
+
+        let mut vm = Vm::new(runtime, unit);
+        let result = vm.call(rune::Hash::type_hash(["main"]), ());
+
+        assert!(
+            result.is_err(),
+            "Should block sudo (in default blacklist)"
+        );
+        let err = result.unwrap_err();
+        let err_msg = format!("{:?}", err);
+        assert!(
+            err_msg.contains("not whitelisted") || err_msg.contains("not allowed"),
+            "Error should mention policy violation for sudo, got: {}",
+            err_msg
+        );
     }
 }
