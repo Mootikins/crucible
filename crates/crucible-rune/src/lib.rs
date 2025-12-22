@@ -58,6 +58,7 @@ mod plugin_loader;
 mod plugin_types;
 pub mod reactor;
 mod regex_module;
+mod shell_module;
 mod registry;
 mod rune_types;
 pub mod session;
@@ -123,6 +124,7 @@ pub use reactor::{
     SessionConfig, SessionEvent, ToolCall,
 };
 pub use regex_module::regex_module;
+pub use shell_module::shell_module;
 pub use registry::RuneToolRegistry;
 pub use rune_types::{
     categorize_by_name_impl, crucible_module, session_event_module, RuneEventContext,
