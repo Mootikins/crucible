@@ -17,6 +17,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 dirs = { workspace = true }
 crucible-surrealdb = { workspace = true }
+scopeguard = "1"
 
 [dev-dependencies]
 tempfile = { workspace = true }
