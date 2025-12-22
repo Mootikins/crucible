@@ -1969,7 +1969,10 @@ pub fn create() {
 
         // The plugin should load successfully
         // The shell::exec call will return an error at runtime due to policy
-        assert!(result.is_ok(), "Plugin should load even if it contains blocked commands");
+        assert!(
+            result.is_ok(),
+            "Plugin should load even if it contains blocked commands"
+        );
     }
 
     #[tokio::test]
