@@ -51,6 +51,9 @@ pub async fn execute(
     info!("Starting chat command");
     info!("Initial mode: {}", mode_display_name(initial_mode));
 
+    // Ensure daemon is running (auto-start if needed)
+    let _daemon = super::daemon::ensure_daemon().await?;
+
     // Single-line status display for clean startup UX
     let mut status = StatusLine::new();
 
