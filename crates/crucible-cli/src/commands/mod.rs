@@ -1,6 +1,7 @@
 // New CLI commands (ACP-based)
 pub mod agents;
 pub mod chat;
+pub mod daemon;
 pub mod mcp;
 pub mod process;
 pub mod tasks;
