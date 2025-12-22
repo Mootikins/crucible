@@ -1,15 +1,20 @@
-# Crucible Configuration Examples
+---
+title: Configuration Guide
+description: Complete guide to configuring Crucible
+tags:
+  - configuration
+  - reference
+---
 
-This directory contains example configuration files demonstrating Crucible's configuration system.
+# Configuration Guide
+
+Crucible uses TOML configuration files stored in `~/.config/crucible/`.
 
 ## Quick Start
 
-Copy these files to `~/.config/crucible/`:
-
 ```bash
 mkdir -p ~/.config/crucible
-cp config.example.toml ~/.config/crucible/config.toml
-cp mcps.toml ~/.config/crucible/
+# Create config.toml with your settings
 ```
 
 ## File Structure
@@ -28,7 +33,7 @@ cp mcps.toml ~/.config/crucible/
 
 Crucible supports two ways to include external files:
 
-### 1. `{file:path}` References (Recommended)
+### `{file:path}` References (Recommended)
 
 Use `{file:path}` **anywhere** in your config to pull in external content:
 
@@ -53,7 +58,7 @@ secret = "{file:secret.txt}"
 - If the file has a `.toml` extension → parsed as structured TOML data
 - Otherwise → file content is used as a string (whitespace trimmed)
 
-### 2. `[include]` Section (Legacy)
+### `[include]` Section (Legacy)
 
 The `[include]` section merges files into top-level sections:
 
@@ -81,7 +86,7 @@ When files are included:
 
 ## MCP Server Configuration
 
-See `mcps.toml` for examples of configuring upstream MCP servers:
+Configure upstream MCP servers in `mcps.toml`. See [[MCP Gateway]] for details.
 
 ### Stdio Transport (spawn a process)
 
@@ -125,7 +130,7 @@ blocked_tools = ["delete_*"]           # Blacklist (takes priority)
 
 ## Environment Variables
 
-You can override configuration with environment variables:
+Override configuration with environment variables:
 
 | Variable | Description |
 |----------|-------------|
@@ -138,7 +143,7 @@ You can override configuration with environment variables:
 
 ## Profiles
 
-You can define multiple profiles for different environments:
+Define multiple profiles for different environments:
 
 ```toml
 profile = "development"  # Active profile
