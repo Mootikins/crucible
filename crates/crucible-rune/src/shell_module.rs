@@ -598,10 +598,7 @@ mod tests {
         // Try to convert to Result<RuneExecResult, RuneExecError>
         let exec_result: Result<RuneExecResult, RuneExecError> = rune::from_value(value).unwrap();
 
-        assert!(
-            exec_result.is_err(),
-            "Command should be blocked by policy"
-        );
+        assert!(exec_result.is_err(), "Command should be blocked by policy");
         let err = exec_result.unwrap_err();
         assert!(
             err.message.contains("not whitelisted"),
