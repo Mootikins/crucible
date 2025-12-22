@@ -228,12 +228,14 @@ pub fn shell_module_with_policy(policy: ShellPolicy) -> Result<Module, ContextEr
     };
 
     // Register the exec function with a closure that captures the wrapper
-    module.function(
-        "exec",
-        move |cmd: String, args: RuneVec<String>, options: rune::runtime::Object| {
-            wrapper.exec(cmd, args, options)
-        },
-    );
+    module
+        .function(
+            "exec",
+            move |cmd: String, args: RuneVec<String>, options: rune::runtime::Object| {
+                wrapper.exec(cmd, args, options)
+            },
+        )
+        .build()?;
 
     Ok(module)
 }
@@ -587,15 +589,24 @@ mod tests {
 
         // Execute - should fail with policy error
         let mut vm = Vm::new(runtime, unit);
-        let result = vm.call(rune::Hash::type_hash(["main"]), ());
+        let vm_result = vm.call(rune::Hash::type_hash(["main"]), ());
 
-        assert!(result.is_err(), "Should fail when command is not whitelisted");
-        let err = result.unwrap_err();
-        let err_msg = format!("{:?}", err);
+        // The VM returns Ok(Result<...>) - we need to check the inner Result
+        assert!(vm_result.is_ok(), "VM should execute successfully");
+        let value = vm_result.unwrap();
+
+        // Try to convert to Result<RuneExecResult, RuneExecError>
+        let exec_result: Result<RuneExecResult, RuneExecError> = rune::from_value(value).unwrap();
+
         assert!(
-            err_msg.contains("not whitelisted") || err_msg.contains("not allowed"),
+            exec_result.is_err(),
+            "Command should be blocked by policy"
+        );
+        let err = exec_result.unwrap_err();
+        assert!(
+            err.message.contains("not whitelisted"),
             "Error should mention policy violation, got: {}",
-            err_msg
+            err.message
         );
     }
 
@@ -739,18 +750,24 @@ mod tests {
         let unit = Arc::new(unit);
 
         let mut vm = Vm::new(runtime, unit);
-        let result = vm.call(rune::Hash::type_hash(["main"]), ());
+        let vm_result = vm.call(rune::Hash::type_hash(["main"]), ());
+
+        // The VM returns Ok(Result<...>) - we need to check the inner Result
+        assert!(vm_result.is_ok(), "VM should execute successfully");
+        let value = vm_result.unwrap();
+
+        // Try to convert to Result<RuneExecResult, RuneExecError>
+        let exec_result: Result<RuneExecResult, RuneExecError> = rune::from_value(value).unwrap();
 
         assert!(
-            result.is_err(),
+            exec_result.is_err(),
             "Should block sudo (in default blacklist)"
         );
-        let err = result.unwrap_err();
-        let err_msg = format!("{:?}", err);
+        let err = exec_result.unwrap_err();
         assert!(
-            err_msg.contains("not whitelisted") || err_msg.contains("not allowed"),
+            err.message.contains("not whitelisted"),
             "Error should mention policy violation for sudo, got: {}",
-            err_msg
+            err.message
         );
     }
 }
