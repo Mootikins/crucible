@@ -2622,6 +2622,8 @@ name = "crucible-daemon-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
+ "crucible-core",
  "crucible-daemon",
  "serde",
  "serde_json",
