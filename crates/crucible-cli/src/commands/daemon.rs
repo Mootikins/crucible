@@ -14,6 +14,9 @@ pub enum DaemonCommands {
         /// Run in foreground (don't daemonize)
         #[arg(long)]
         foreground: bool,
+        /// Wait for daemon to be ready
+        #[arg(long)]
+        wait: bool,
     },
     /// Stop the daemon
     Stop,
@@ -23,13 +26,13 @@ pub enum DaemonCommands {
 
 pub async fn handle(cmd: DaemonCommands) -> Result<()> {
     match cmd {
-        DaemonCommands::Start { foreground } => start_daemon(foreground).await,
+        DaemonCommands::Start { foreground, wait } => start_daemon(foreground, wait).await,
         DaemonCommands::Stop => stop_daemon().await,
         DaemonCommands::Status => show_status().await,
     }
 }
 
-async fn start_daemon(foreground: bool) -> Result<()> {
+async fn start_daemon(foreground: bool, wait: bool) -> Result<()> {
     if is_daemon_running() {
         println!("Daemon is already running");
         return Ok(());
@@ -63,17 +66,30 @@ async fn start_daemon(foreground: bool) -> Result<()> {
         // Spawn detached
         cmd.spawn()?;
 
-        // Wait for socket to appear
-        let sock = socket_path();
-        for _ in 0..50 {
-            if sock.exists() {
-                println!("Daemon started");
-                return Ok(());
+        if wait {
+            // Poll until daemon responds
+            for _ in 0..50 {
+                if let Ok(client) = DaemonClient::connect().await {
+                    if client.ping().await.is_ok() {
+                        println!("Daemon started");
+                        return Ok(());
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            anyhow::bail!("Daemon failed to start within 5 seconds");
+        } else {
+            // Just wait for socket to appear
+            let sock = socket_path();
+            for _ in 0..50 {
+                if sock.exists() {
+                    println!("Daemon starting...");
+                    return Ok(());
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+            anyhow::bail!("Daemon failed to start (socket not created)");
         }
-
-        anyhow::bail!("Daemon failed to start (socket not created)");
     }
 
     Ok(())
@@ -134,8 +150,8 @@ async fn show_status() -> Result<()> {
 /// Ensure daemon is running, starting it if necessary
 pub async fn ensure_daemon() -> Result<DaemonClient> {
     if !is_daemon_running() {
-        // Start daemon in background
-        start_daemon(false).await?;
+        // Start daemon in background and wait for it to be ready
+        start_daemon(false, true).await?;
     }
 
     // Connect with retry
