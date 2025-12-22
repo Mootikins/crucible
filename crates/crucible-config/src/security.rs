@@ -119,6 +119,7 @@ impl ShellPolicy {
             "pwd".to_string(),
             "env".to_string(),
             "which".to_string(),
+            "sh".to_string(),
         ]
     }
 
