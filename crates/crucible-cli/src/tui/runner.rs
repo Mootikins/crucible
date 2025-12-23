@@ -256,6 +256,14 @@ impl RatatuiRunner {
     ) -> Result<bool> {
         use crossterm::event::KeyCode;
 
+        // Dialog takes priority over all other input
+        if self.view.has_dialog() {
+            if let Some(result) = self.view.handle_dialog_key(*key) {
+                self.handle_dialog_result(result)?;
+            }
+            return Ok(false);
+        }
+
         // Special handling when splash is shown
         if self.view.is_showing_splash() {
             match key.code {
@@ -551,6 +559,28 @@ impl RatatuiRunner {
     /// Get the view state for testing.
     pub fn view(&self) -> &RatatuiView {
         &self.view
+    }
+
+    /// Handle dialog result
+    fn handle_dialog_result(&mut self, result: crate::tui::dialog::DialogResult) -> Result<()> {
+        use crate::tui::dialog::DialogResult;
+
+        match result {
+            DialogResult::Confirm(value) => {
+                // Handle confirmation based on context
+                // For now, just log that a dialog was confirmed
+                // In the future, this could emit events or call callbacks
+                self.view.set_status_text(&format!("Dialog confirmed: {}", value));
+            }
+            DialogResult::Cancel => {
+                // Dialog was cancelled
+                self.view.set_status_text("Dialog cancelled");
+            }
+            DialogResult::Pending => {
+                // Still active (shouldn't happen after handle_key)
+            }
+        }
+        Ok(())
     }
 
     /// Apply parse events to the view (converts events to content blocks)
