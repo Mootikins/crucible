@@ -149,6 +149,34 @@ impl ConversationState {
         }
     }
 
+    /// Append content to the last block of the streaming assistant message
+    pub fn append_to_last_block(&mut self, content: &str) {
+        for item in self.items.iter_mut().rev() {
+            if let ConversationItem::AssistantMessage { blocks, is_streaming } = item {
+                if *is_streaming {
+                    if let Some(last_block) = blocks.last_mut() {
+                        last_block.append(content);
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Mark the last block of the streaming assistant message as complete
+    pub fn complete_last_block(&mut self) {
+        for item in self.items.iter_mut().rev() {
+            if let ConversationItem::AssistantMessage { blocks, is_streaming } = item {
+                if *is_streaming {
+                    if let Some(last_block) = blocks.last_mut() {
+                        last_block.complete();
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
     pub fn set_status(&mut self, status: StatusKind) {
         // Remove any existing status
         self.items
@@ -299,8 +327,13 @@ fn render_assistant_blocks(blocks: &[ContentBlock], is_streaming: bool) -> Vec<L
 /// Helper to render markdown text
 fn render_markdown_text(content: &str) -> Vec<Line<'static>> {
     let ansi_output = MARKDOWN_RENDERER.render(content);
-    let text = ansi_output.into_text().expect("Failed to parse ANSI output");
-    text.lines
+    match ansi_output.into_text() {
+        Ok(text) => text.lines,
+        Err(_) => {
+            // Fallback to plain text on ANSI parse error
+            content.lines().map(|l| Line::from(l.to_string())).collect()
+        }
+    }
 }
 
 /// Helper to render a code block with optional language
