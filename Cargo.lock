@@ -2791,6 +2791,7 @@ dependencies = [
  "chrono",
  "crucible-core",
  "crucible-skills",
+ "crucible-surrealdb",
  "dirs 5.0.1",
  "glob",
  "serde",
