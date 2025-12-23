@@ -8,6 +8,9 @@ use crucible_surrealdb::adapters::SurrealClientHandle;
 use serde_json::json;
 use tracing::debug;
 
+#[cfg(feature = "embeddings")]
+use crate::embedding::SkillSearchResult;
+
 /// Storage operations for skills
 pub struct SkillStore {
     client: SurrealClientHandle,
@@ -149,10 +152,149 @@ impl SkillStore {
 
         Ok(())
     }
+
+    /// Store embedding for a skill (stores in separate skills_embeddings table)
+    #[cfg(feature = "embeddings")]
+    pub async fn store_embedding(
+        &self,
+        skill: &Skill,
+        embedding: &[f32],
+        model: &str,
+    ) -> SkillResult<()> {
+        let skill_id = skill_record_id(&skill.name, skill.source.scope);
+
+        let sql = r#"
+            UPSERT type::thing("skills_embeddings", $skill_id) CONTENT {
+                skill_id: type::thing("skills", $skill_id),
+                name: $name,
+                description: $description,
+                scope: $scope,
+                embedding: $embedding,
+                model: $model,
+                created_at: time::now()
+            }
+        "#;
+
+        let params = json!({
+            "skill_id": skill_id,
+            "name": skill.name,
+            "description": skill.description,
+            "scope": skill.source.scope.to_string(),
+            "embedding": embedding,
+            "model": model,
+        });
+
+        self.client
+            .inner()
+            .query(sql, &[params])
+            .await
+            .map_err(|e| SkillError::DiscoveryError(format!("Failed to store embedding: {}", e)))?;
+
+        debug!("Stored embedding for skill: {}", skill.name);
+        Ok(())
+    }
+
+    /// Search skills by embedding similarity
+    #[cfg(feature = "embeddings")]
+    pub async fn search_by_embedding(
+        &self,
+        query_embedding: &[f32],
+        limit: usize,
+    ) -> SkillResult<Vec<SkillSearchResult>> {
+        let sql = format!(
+            r#"
+            SELECT
+                name,
+                description,
+                scope,
+                skill_id,
+                vector::distance::cosine(embedding, $vector) AS distance
+            FROM skills_embeddings
+            ORDER BY distance ASC
+            LIMIT {limit}
+            "#,
+            limit = limit
+        );
+
+        let params = json!({ "vector": query_embedding });
+
+        let result = self
+            .client
+            .inner()
+            .query(&sql, &[params])
+            .await
+            .map_err(|e| SkillError::DiscoveryError(format!("Skill search failed: {}", e)))?;
+
+        let mut results = Vec::new();
+        for record in result.records {
+            let name = record
+                .data
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            let description = record
+                .data
+                .get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            let scope = record
+                .data
+                .get("scope")
+                .and_then(|v| v.as_str())
+                .unwrap_or("personal")
+                .to_string();
+
+            let distance = record
+                .data
+                .get("distance")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(1.0) as f32;
+
+            let source_path = format!("{}:{}", scope, name);
+
+            results.push(SkillSearchResult::new(
+                name,
+                description,
+                scope,
+                source_path,
+                distance,
+            ));
+        }
+
+        Ok(results)
+    }
 }
 
 fn skill_record_id(name: &str, scope: SkillScope) -> String {
     format!("{}_{}", scope, name.replace('-', "_"))
+}
+
+// Implement embedding traits when embeddings feature is enabled
+#[cfg(feature = "embeddings")]
+impl crate::embedding::SkillEmbeddingStore for SkillStore {
+    async fn store_skill_embedding(
+        &self,
+        skill: &Skill,
+        embedding: &[f32],
+        model: &str,
+    ) -> SkillResult<()> {
+        self.store_embedding(skill, embedding, model).await
+    }
+}
+
+#[cfg(feature = "embeddings")]
+impl crate::embedding::SkillSearchStore for SkillStore {
+    async fn search_by_embedding(
+        &self,
+        query_embedding: &[f32],
+        limit: usize,
+    ) -> SkillResult<Vec<SkillSearchResult>> {
+        self.search_by_embedding(query_embedding, limit).await
+    }
 }
 
 /// Convert a database Record to a Skill
