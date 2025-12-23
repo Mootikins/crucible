@@ -5,7 +5,7 @@
 //! with full viewport control.
 
 use crate::tui::{
-    markdown::MarkdownRenderer,
+    content_block::ContentBlock, markdown::MarkdownRenderer,
     styles::{indicators, styles},
 };
 use ansi_to_tui::IntoText;
@@ -34,7 +34,11 @@ pub enum ConversationItem {
     /// User input message
     UserMessage { content: String },
     /// Assistant text response
-    AssistantMessage { content: String },
+    AssistantMessage {
+        blocks: Vec<ContentBlock>,
+        /// True if still streaming
+        is_streaming: bool,
+    },
     /// Status indicator (thinking, generating)
     Status(StatusKind),
     /// Tool call with status
@@ -105,9 +109,44 @@ impl ConversationState {
     }
 
     pub fn push_assistant_message(&mut self, content: impl Into<String>) {
+        // For non-streaming messages, create a single prose block
+        let blocks = vec![ContentBlock::prose(content.into())];
         self.items.push(ConversationItem::AssistantMessage {
-            content: content.into(),
+            blocks,
+            is_streaming: false,
         });
+    }
+
+    /// Start streaming an assistant message (creates empty blocks list)
+    pub fn start_assistant_streaming(&mut self) {
+        self.items.push(ConversationItem::AssistantMessage {
+            blocks: Vec::new(),
+            is_streaming: true,
+        });
+    }
+
+    /// Append blocks to the most recent streaming assistant message
+    pub fn append_streaming_blocks(&mut self, new_blocks: Vec<ContentBlock>) {
+        for item in self.items.iter_mut().rev() {
+            if let ConversationItem::AssistantMessage { blocks, is_streaming } = item {
+                if *is_streaming {
+                    blocks.extend(new_blocks);
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Mark the most recent streaming assistant message as complete
+    pub fn complete_streaming(&mut self) {
+        for item in self.items.iter_mut().rev() {
+            if let ConversationItem::AssistantMessage { is_streaming, .. } = item {
+                if *is_streaming {
+                    *is_streaming = false;
+                    return;
+                }
+            }
+        }
     }
 
     pub fn set_status(&mut self, status: StatusKind) {
@@ -193,7 +232,9 @@ impl ConversationState {
 pub fn render_item_to_lines(item: &ConversationItem) -> Vec<Line<'static>> {
     match item {
         ConversationItem::UserMessage { content } => render_user_message(content),
-        ConversationItem::AssistantMessage { content } => render_assistant_message(content),
+        ConversationItem::AssistantMessage { blocks, is_streaming } => {
+            render_assistant_blocks(blocks, *is_streaming)
+        }
         ConversationItem::Status(status) => render_status(status),
         ConversationItem::ToolCall(tool) => render_tool_call(tool),
     }
@@ -222,26 +263,63 @@ fn render_user_message(content: &str) -> Vec<Line<'static>> {
     lines
 }
 
-fn render_assistant_message(content: &str) -> Vec<Line<'static>> {
-    // Assistant messages: render markdown with styling
+/// Render assistant message blocks with streaming indicators
+fn render_assistant_blocks(blocks: &[ContentBlock], is_streaming: bool) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     // Add blank line for spacing
     lines.push(Line::from(""));
 
-    // Use global MarkdownRenderer to convert markdown to ANSI-styled text
-    // (static instance avoids reloading syntect themes on every message)
-    let ansi_output = MARKDOWN_RENDERER.render(content);
+    for (idx, block) in blocks.iter().enumerate() {
+        match block {
+            ContentBlock::Prose { text, is_complete } => {
+                // Render prose as markdown
+                lines.extend(render_markdown_text(text));
 
-    // Convert ANSI to ratatui Text, then extract lines
-    let text = ansi_output.into_text().expect("Failed to parse ANSI output");
+                // Show streaming cursor on incomplete blocks
+                if !is_complete && is_streaming && idx == blocks.len() - 1 {
+                    lines.push(Line::from(Span::styled("▌", styles::streaming())));
+                }
+            }
+            ContentBlock::Code { lang, content, is_complete } => {
+                // Render code block with language
+                lines.extend(render_code_block(lang.as_deref(), content));
 
-    // Convert owned Text to Vec<Line<'static>>
-    for line in text.lines {
-        lines.push(line);
+                // Show streaming cursor on incomplete blocks
+                if !is_complete && is_streaming && idx == blocks.len() - 1 {
+                    lines.push(Line::from(Span::styled("▌", styles::streaming())));
+                }
+            }
+        }
     }
 
     lines
+}
+
+/// Helper to render markdown text
+fn render_markdown_text(content: &str) -> Vec<Line<'static>> {
+    let ansi_output = MARKDOWN_RENDERER.render(content);
+    let text = ansi_output.into_text().expect("Failed to parse ANSI output");
+    text.lines
+}
+
+/// Helper to render a code block with optional language
+fn render_code_block(lang: Option<&str>, content: &str) -> Vec<Line<'static>> {
+    // Format as markdown code block and render
+    let markdown = if let Some(lang) = lang {
+        format!("```{}\n{}\n```", lang, content)
+    } else {
+        format!("```\n{}\n```", content)
+    };
+
+    render_markdown_text(&markdown)
+}
+
+/// Legacy function for backward compatibility (now wraps block rendering)
+fn render_assistant_message(content: &str) -> Vec<Line<'static>> {
+    // Convert string to single prose block and render
+    let blocks = vec![ContentBlock::prose(content)];
+    render_assistant_blocks(&blocks, false)
 }
 
 fn render_status(status: &StatusKind) -> Vec<Line<'static>> {
