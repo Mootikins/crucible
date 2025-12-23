@@ -810,3 +810,159 @@ fn streaming_complete_blocks() {
     render_conversation_view(&mut terminal, &conv, "", "act", Some(80), "Generating");
     assert_snapshot!("conv_streaming_mixed_blocks", terminal.backend());
 }
+
+// =============================================================================
+// Dialog System Tests (Phase 5)
+// =============================================================================
+// Tests for modal dialogs with centered overlay rendering
+
+use crucible_cli::tui::dialog::{DialogState, DialogWidget};
+
+#[test]
+fn dialog_confirm() {
+    let mut terminal = test_terminal();
+    let dialog = DialogState::confirm("Confirm Action", "Are you sure you want to proceed?");
+
+    terminal
+        .draw(|f| {
+            let widget = DialogWidget::new(&dialog);
+            f.render_widget(widget, f.area());
+        })
+        .unwrap();
+
+    assert_snapshot!("dialog_confirm", terminal.backend());
+}
+
+#[test]
+fn dialog_confirm_focused_cancel() {
+    let mut terminal = test_terminal();
+    let mut dialog = DialogState::confirm("Delete File", "This action cannot be undone.");
+    // Move focus to cancel button
+    dialog.focus_index = 1;
+
+    terminal
+        .draw(|f| {
+            let widget = DialogWidget::new(&dialog);
+            f.render_widget(widget, f.area());
+        })
+        .unwrap();
+
+    assert_snapshot!("dialog_confirm_focused_cancel", terminal.backend());
+}
+
+#[test]
+fn dialog_select() {
+    let mut terminal = test_terminal();
+    let dialog = DialogState::select(
+        "Select Agent",
+        vec![
+            "claude-opus".into(),
+            "local-qwen".into(),
+            "research-agent".into(),
+        ],
+    );
+
+    terminal
+        .draw(|f| {
+            let widget = DialogWidget::new(&dialog);
+            f.render_widget(widget, f.area());
+        })
+        .unwrap();
+
+    assert_snapshot!("dialog_select", terminal.backend());
+}
+
+#[test]
+fn dialog_select_second_item() {
+    let mut terminal = test_terminal();
+    let dialog = DialogState::select(
+        "Choose Mode",
+        vec!["plan".into(), "act".into(), "auto".into()],
+    );
+    // Select second item
+    let mut dialog = dialog;
+    if let crucible_cli::tui::dialog::DialogKind::Select { selected, .. } = &mut dialog.kind {
+        *selected = 1;
+        dialog.focus_index = 1;
+    }
+
+    terminal
+        .draw(|f| {
+            let widget = DialogWidget::new(&dialog);
+            f.render_widget(widget, f.area());
+        })
+        .unwrap();
+
+    assert_snapshot!("dialog_select_second_item", terminal.backend());
+}
+
+#[test]
+fn dialog_info() {
+    let mut terminal = test_terminal();
+    let dialog = DialogState::info("Help", "Press Ctrl+C to exit\nPress ? for help");
+
+    terminal
+        .draw(|f| {
+            let widget = DialogWidget::new(&dialog);
+            f.render_widget(widget, f.area());
+        })
+        .unwrap();
+
+    assert_snapshot!("dialog_info", terminal.backend());
+}
+
+#[test]
+fn dialog_info_multiline() {
+    let mut terminal = test_terminal();
+    let dialog = DialogState::info(
+        "Keyboard Shortcuts",
+        "Navigation:\n  j/k - Move down/up\n  h/l - Move left/right\n\nActions:\n  Enter - Confirm\n  Esc - Cancel\n  q - Quit",
+    );
+
+    terminal
+        .draw(|f| {
+            let widget = DialogWidget::new(&dialog);
+            f.render_widget(widget, f.area());
+        })
+        .unwrap();
+
+    assert_snapshot!("dialog_info_multiline", terminal.backend());
+}
+
+#[test]
+fn dialog_select_many_items() {
+    let mut terminal = test_terminal();
+    let items: Vec<String> = (1..=15)
+        .map(|i| format!("Option {}", i))
+        .collect();
+    let dialog = DialogState::select("Select Option", items);
+
+    terminal
+        .draw(|f| {
+            let widget = DialogWidget::new(&dialog);
+            f.render_widget(widget, f.area());
+        })
+        .unwrap();
+
+    assert_snapshot!("dialog_select_many_items", terminal.backend());
+}
+
+#[test]
+fn dialog_over_conversation() {
+    let mut terminal = test_terminal();
+    let mut view = RatatuiView::new("plan", TEST_WIDTH, TEST_HEIGHT);
+
+    // Add some conversation content
+    view.push_user_message("What is the project structure?").unwrap();
+    view.push_assistant_message("Let me analyze the codebase.").unwrap();
+
+    // Push a dialog
+    view.push_dialog(DialogState::confirm(
+        "Continue Analysis",
+        "This will analyze all files. Continue?",
+    ));
+
+    terminal.draw(|f| view.render_frame(f)).unwrap();
+
+    assert_snapshot!("dialog_over_conversation", terminal.backend());
+}
