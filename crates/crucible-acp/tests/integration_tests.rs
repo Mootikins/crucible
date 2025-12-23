@@ -2,6 +2,8 @@
 //!
 //! These tests verify that components work together correctly.
 
+#![allow(clippy::field_reassign_with_default)]
+
 use crucible_acp::client::ClientConfig;
 use crucible_acp::session::{AcpSession, SessionConfig};
 use crucible_acp::{

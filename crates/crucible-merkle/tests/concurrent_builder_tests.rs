@@ -48,6 +48,7 @@ async fn test_concurrent_services_with_different_builders() {
     // Simulate multiple enrichment services running concurrently
     struct Service<M: MerkleTreeBuilder> {
         builder: M,
+        #[allow(dead_code)]
         id: usize,
     }
 

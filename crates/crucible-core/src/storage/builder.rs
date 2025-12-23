@@ -558,6 +558,7 @@ mod tests {
     /// Mock storage backend for testing
     #[derive(Debug)]
     struct MockStorageBackend {
+        #[allow(dead_code)]
         name: String,
     }
 

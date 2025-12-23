@@ -705,8 +705,8 @@ fn ymd_to_days(year: i64, month: u32, day: u32) -> i64 {
         [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
     };
 
-    for m in 0..((month - 1) as usize) {
-        days += days_in_months[m];
+    for &day_count in days_in_months.iter().take((month - 1) as usize) {
+        days += day_count;
     }
 
     // Add days (minus 1 since day 1 = 0 extra days)
@@ -924,8 +924,8 @@ fn parse_custom_event(body: &str) -> MarkdownParseResult<SessionEvent> {
 fn extract_field(body: &str, label: &str) -> MarkdownParseResult<String> {
     for line in body.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with(label) {
-            let value = trimmed[label.len()..].trim();
+        if let Some(stripped) = trimmed.strip_prefix(label) {
+            let value = stripped.trim();
             return Ok(value.to_string());
         }
     }
@@ -937,12 +937,12 @@ fn extract_field(body: &str, label: &str) -> MarkdownParseResult<String> {
 fn extract_inline_code_field(body: &str, label: &str) -> MarkdownParseResult<String> {
     for line in body.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with(label) {
-            let after_label = trimmed[label.len()..].trim();
+        if let Some(stripped) = trimmed.strip_prefix(label) {
+            let after_label = stripped.trim();
             // Extract value between backticks
-            if after_label.starts_with('`') {
-                let end = after_label[1..].find('`').unwrap_or(after_label.len() - 1);
-                return Ok(after_label[1..end + 1].to_string());
+            if let Some(stripped_backtick) = after_label.strip_prefix('`') {
+                let end = stripped_backtick.find('`').unwrap_or(after_label.len() - 1);
+                return Ok(stripped_backtick[..end].to_string());
             }
             return Ok(after_label.to_string());
         }

@@ -20,6 +20,12 @@
 //! let result = client.call_tool_with_events("git_status", args).await?;
 //! ```
 
+#![allow(
+    clippy::missing_errors_doc,
+    clippy::default_trait_access,
+    clippy::unnecessary_wraps
+)]
+
 use async_trait::async_trait;
 use crucible_core::traits::mcp::{
     ContentBlock, McpError, McpServerInfo, McpToolExecutor, McpToolInfo, ToolCallResult,

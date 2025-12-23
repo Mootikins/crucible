@@ -16,6 +16,8 @@
 //! The `SessionEvent` system provides a unified event model across all Crucible
 //! components, enabling better integration with the event bus and handler system.
 
+#![allow(clippy::ptr_arg)]
+
 use crate::FileEventKind;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -44,6 +46,7 @@ use uuid::Uuid;
 ///     priority: Priority::Normal,
 /// };
 /// ```
+#[allow(deprecated)]
 #[deprecated(
     since = "0.1.0",
     note = "Use SessionEvent::EmbeddingRequested from crucible_core::events instead"
@@ -139,6 +142,7 @@ impl EmbeddingEvent {
 ///
 /// This type is deprecated. Metadata should be encoded in the `entity_id` or
 /// handled through separate storage queries when using `SessionEvent::EmbeddingRequested`.
+#[allow(deprecated)]
 #[deprecated(
     since = "0.1.0",
     note = "Use SessionEvent::EmbeddingRequested from crucible_core::events instead"
@@ -185,6 +189,7 @@ impl Default for EmbeddingEventMetadata {
 /// This type is deprecated. Use `crucible_core::events::Priority` instead, which provides
 /// the same priority levels (`Low`, `Normal`, `High`, `Critical`) and integrates with
 /// the unified `SessionEvent` system.
+#[allow(deprecated)]
 #[deprecated(since = "0.1.0", note = "Use crucible_core::events::Priority instead")]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum EmbeddingEventPriority {
@@ -200,7 +205,6 @@ pub enum EmbeddingEventPriority {
 }
 
 #[allow(deprecated)]
-
 /// Result of processing an embedding event.
 ///
 /// # Deprecation

@@ -223,7 +223,7 @@ impl ExtensionRegistry {
     /// Resort extensions by priority (internal)
     fn resort_extensions(&mut self) {
         let mut extensions = self.extensions.clone();
-        extensions.sort_by(|a, b| b.priority().cmp(&a.priority()));
+        extensions.sort_by_key(|e| std::cmp::Reverse(e.priority()));
         self.sorted_extensions = extensions;
     }
 }

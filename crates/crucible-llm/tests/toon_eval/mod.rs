@@ -17,6 +17,7 @@
 //! OLLAMA_BASE_URL=https://your-ollama.example.com cargo test ...
 //! ```
 
+#[allow(dead_code)]
 pub mod fixtures;
 pub mod prompts;
 pub mod report;

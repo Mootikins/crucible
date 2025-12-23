@@ -38,6 +38,7 @@ struct MockChangeDetectionState {
     error_message: String,
 }
 
+#[allow(dead_code)]
 impl MockChangeDetectionStore {
     fn new() -> Self {
         Self {
@@ -132,6 +133,7 @@ struct MockMerkleStoreState {
     error_message: String,
 }
 
+#[allow(dead_code)]
 impl MockMerkleStore {
     fn new() -> Self {
         Self {
@@ -247,6 +249,7 @@ struct MockEnrichedNoteStoreState {
     store_count: usize,
 }
 
+#[allow(dead_code)]
 impl MockEnrichedNoteStore {
     fn new() -> Self {
         Self {

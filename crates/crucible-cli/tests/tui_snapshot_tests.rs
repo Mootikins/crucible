@@ -1,4 +1,7 @@
 //! TUI Snapshot Tests
+
+#![allow(clippy::field_reassign_with_default)]
+
 //!
 //! Uses insta for snapshot testing of TUI rendering.
 //! Run `cargo insta review` to interactively review snapshot changes.

@@ -302,38 +302,32 @@ impl ModelDiscovery {
             .collect();
 
         // Extract architecture
-        if let Some(arch) = metadata_map.get("general.architecture") {
-            if let gguf::GGUFMetadataValue::String(s) = arch {
-                metadata.architecture = Some(s.clone());
-            }
+        if let Some(gguf::GGUFMetadataValue::String(s)) = metadata_map.get("general.architecture") {
+            metadata.architecture = Some(s.clone());
         }
 
         // Determine capability based on architecture
         metadata.capability = self.classify_capability(&metadata.architecture);
 
         // Extract embedding dimensions
-        if let Some(dim) = metadata_map
+        if let Some(gguf::GGUFMetadataValue::Uint32(d)) = metadata_map
             .get("bert.embedding_length")
             .or_else(|| metadata_map.get("llama.embedding_length"))
             .or_else(|| metadata_map.get("nomic-bert.embedding_length"))
         {
-            if let gguf::GGUFMetadataValue::Uint32(d) = dim {
-                metadata.dimensions = Some(*d as usize);
-            }
+            metadata.dimensions = Some(*d as usize);
         }
 
         // Extract parameter count
-        if let Some(params) = metadata_map.get("general.parameter_count") {
-            if let gguf::GGUFMetadataValue::Uint64(p) = params {
-                metadata.parameter_count = Some(*p);
-            }
+        if let Some(gguf::GGUFMetadataValue::Uint64(p)) =
+            metadata_map.get("general.parameter_count")
+        {
+            metadata.parameter_count = Some(*p);
         }
 
         // Extract quantization from file type or infer from filename
-        if let Some(file_type) = metadata_map.get("general.file_type") {
-            if let gguf::GGUFMetadataValue::Uint32(ft) = file_type {
-                metadata.quantization = Some(self.file_type_to_quantization(*ft));
-            }
+        if let Some(gguf::GGUFMetadataValue::Uint32(ft)) = metadata_map.get("general.file_type") {
+            metadata.quantization = Some(self.file_type_to_quantization(*ft));
         }
 
         Ok(metadata)

@@ -248,6 +248,7 @@ pub struct TuiState {
     pub status_error: Option<String>,
     // Inline popup for slash commands / agents / files/notes
     pub popup: Option<PopupState>,
+    #[allow(clippy::type_complexity)] // Complex callback type, not worth a type alias
     output_fn: Option<Box<dyn Fn(&str) + Send + Sync>>,
 }
 

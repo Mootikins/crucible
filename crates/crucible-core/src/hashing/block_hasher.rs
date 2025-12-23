@@ -767,8 +767,8 @@ impl<A: HashingAlgorithm> StorageContentHasher for BlockHasher<A> {
 
     fn hash_nodes(&self, left: &str, right: &str) -> String {
         // Use the generic algorithm's hash_nodes method
-        let left_bytes = self.algorithm.from_hex(left).unwrap_or_default();
-        let right_bytes = self.algorithm.from_hex(right).unwrap_or_default();
+        let left_bytes = self.algorithm.parse_hex(left).unwrap_or_default();
+        let right_bytes = self.algorithm.parse_hex(right).unwrap_or_default();
         let hash_bytes = self.algorithm.hash_nodes(&left_bytes, &right_bytes);
         self.algorithm.to_hex(&hash_bytes)
     }
@@ -917,11 +917,11 @@ impl MerkleTreeStats {
     /// Get a summary string of the statistics
     pub fn summary(&self) -> String {
         format!(
-            "Merkle Tree: {} blocks, {} depth, {} nodes, {} efficiency, algorithm: {}",
+            "Merkle Tree: {} blocks, {} depth, {} nodes, {:.2} efficiency, algorithm: {}",
             self.block_count,
             self.tree_depth,
             self.node_count,
-            format!("{:.2}", self.efficiency_ratio()),
+            self.efficiency_ratio(),
             self.algorithm
         )
     }
@@ -1345,7 +1345,7 @@ mod tests {
         );
 
         let tree = hasher
-            .build_merkle_tree_from_blocks(&[block.clone()])
+            .build_merkle_tree_from_blocks(std::slice::from_ref(&block))
             .await
             .unwrap();
 

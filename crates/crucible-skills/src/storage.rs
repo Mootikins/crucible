@@ -1,7 +1,5 @@
 //! Skill storage operations for SurrealDB
 
-#![cfg(feature = "storage")]
-
 use crate::error::{SkillError, SkillResult};
 use crate::types::{Skill, SkillScope, SkillSource};
 use crucible_surrealdb::adapters::SurrealClientHandle;
