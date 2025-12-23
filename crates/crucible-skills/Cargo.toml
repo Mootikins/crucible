@@ -19,6 +19,7 @@ chrono = { workspace = true }
 glob = { workspace = true }
 walkdir = "2"
 dirs = "5"
+sha2 = "0.10"
 
 [features]
 default = []
