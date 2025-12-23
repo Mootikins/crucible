@@ -246,28 +246,19 @@ cargo nextest run      # Same as above
 cargo test --workspace # Fallback to cargo test
 ```
 
-### Test Infrastructure Features
+### Infrastructure Tests
 
-Some tests require external infrastructure (Ollama, embedding endpoints, developer vaults). These are gated behind feature flags to avoid CI failures.
+Some tests require external infrastructure (Ollama, embedding endpoints, developer vaults). These use `#[ignore]` and can be run explicitly:
 
-| Feature | Crate(s) | Requirements |
-|---------|----------|--------------|
-| `test-ollama` | crucible-llm | Running Ollama server |
-| `test-embeddings` | crucible-llm, crucible-surrealdb, crucible-cli | Embedding API endpoint |
-| `test-local-kiln` | crucible-surrealdb | Developer's personal vault |
-| `test-onnx-download` | crucible-llm | Network access (~100MB download) |
-
-**Running infrastructure tests:**
 ```bash
-# Set environment variables for your infrastructure
-export EMBEDDING_ENDPOINT="https://your-llm-endpoint.com"
-export EMBEDDING_MODEL="nomic-embed-text-v1.5-q8_0"
-export CRUCIBLE_KILN_PATH="/path/to/your/vault"
+# Run ignored tests (requires infrastructure to be available)
+cargo nextest run -- --ignored
 
-# Run tests with specific features
-cargo test -p crucible-llm --features test-ollama
-cargo test -p crucible-surrealdb --features test-local-kiln
+# Run specific ignored test
+cargo test -p crucible-surrealdb clustering -- --ignored
 ```
+
+Tests handle missing infrastructure gracefully with runtime checks.
 
 **Cross-platform test paths:**
 - Use `tempfile::TempDir` for tests that need real filesystem access
