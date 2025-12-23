@@ -932,6 +932,96 @@ pub struct SearchResult {
     pub snippet: Option<String>,
 }
 
+/// Unified search result that can represent either a note or a skill
+///
+/// This enum supports searching across both notes and agent skills, allowing
+/// semantic search to return relevant results from either source. Results can
+/// be merged and sorted by relevance score.
+///
+/// # JSON Serialization
+///
+/// The enum uses `#[serde(tag = "type")]` to include a discriminator field:
+///
+/// ```json
+/// // Note result
+/// {
+///   "type": "note",
+///   "document_id": "notes/rust.md",
+///   "score": 0.85,
+///   "snippet": "...",
+///   "highlights": [...]
+/// }
+///
+/// // Skill result
+/// {
+///   "type": "skill",
+///   "name": "git-commit",
+///   "description": "Create well-formatted git commits",
+///   "scope": "personal",
+///   "score": 0.82
+/// }
+/// ```
+///
+/// # Usage Example
+///
+/// ```rust,no_run
+/// # use crucible_core::types::{UnifiedSearchResult, SearchResult, DocumentId};
+/// // Collect results from both sources
+/// let mut results: Vec<UnifiedSearchResult> = Vec::new();
+///
+/// // Add note results
+/// for (doc_id, score) in note_results {
+///     results.push(UnifiedSearchResult::Note {
+///         result: SearchResult {
+///             document_id: DocumentId(doc_id),
+///             score,
+///             highlights: None,
+///             snippet: None,
+///         },
+///     });
+/// }
+///
+/// // Add skill results (if skills crate is available)
+/// # #[cfg(feature = "skills")]
+/// for skill_result in skill_results {
+///     results.push(UnifiedSearchResult::Skill {
+///         name: skill_result.name,
+///         description: skill_result.description,
+///         scope: skill_result.scope,
+///         score: skill_result.relevance as f64,
+///     });
+/// }
+///
+/// // Sort by score descending
+/// results.sort_by(|a, b| {
+///     let score_a = match a {
+///         UnifiedSearchResult::Note { result } => result.score,
+///         UnifiedSearchResult::Skill { score, .. } => *score,
+///     };
+///     let score_b = match b {
+///         UnifiedSearchResult::Note { result } => result.score,
+///         UnifiedSearchResult::Skill { score, .. } => *score,
+///     };
+///     score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+/// });
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum UnifiedSearchResult {
+    /// A note search result
+    Note {
+        #[serde(flatten)]
+        result: SearchResult,
+    },
+    /// A skill search result
+    Skill {
+        name: String,
+        description: String,
+        scope: String,
+        score: f64,
+    },
+}
+
 /// Aggregation pipeline for note analytics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AggregationPipeline {
@@ -993,4 +1083,129 @@ pub struct BatchResult {
     pub successful: u64,
     pub failed: u64,
     pub errors: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_unified_search_result_note_serialization() {
+        let note_result = UnifiedSearchResult::Note {
+            result: SearchResult {
+                document_id: DocumentId("notes/rust.md".to_string()),
+                score: 0.85,
+                highlights: Some(vec!["memory safety".to_string()]),
+                snippet: Some("Rust is a systems programming language...".to_string()),
+            },
+        };
+
+        let json = serde_json::to_value(&note_result).unwrap();
+
+        // Check discriminator field
+        assert_eq!(json["type"], "note");
+        assert_eq!(json["document_id"], "notes/rust.md");
+        assert_eq!(json["score"], 0.85);
+
+        // Verify round-trip
+        let deserialized: UnifiedSearchResult = serde_json::from_value(json).unwrap();
+        match deserialized {
+            UnifiedSearchResult::Note { result } => {
+                assert_eq!(result.document_id.0, "notes/rust.md");
+                assert_eq!(result.score, 0.85);
+            }
+            _ => panic!("Expected Note variant"),
+        }
+    }
+
+    #[test]
+    fn test_unified_search_result_skill_serialization() {
+        let skill_result = UnifiedSearchResult::Skill {
+            name: "git-commit".to_string(),
+            description: "Create well-formatted git commits".to_string(),
+            scope: "personal".to_string(),
+            score: 0.82,
+        };
+
+        let json = serde_json::to_value(&skill_result).unwrap();
+
+        // Check discriminator field
+        assert_eq!(json["type"], "skill");
+        assert_eq!(json["name"], "git-commit");
+        assert_eq!(json["description"], "Create well-formatted git commits");
+        assert_eq!(json["scope"], "personal");
+        assert_eq!(json["score"], 0.82);
+
+        // Verify round-trip
+        let deserialized: UnifiedSearchResult = serde_json::from_value(json).unwrap();
+        match deserialized {
+            UnifiedSearchResult::Skill {
+                name,
+                description,
+                scope,
+                score,
+            } => {
+                assert_eq!(name, "git-commit");
+                assert_eq!(description, "Create well-formatted git commits");
+                assert_eq!(scope, "personal");
+                assert_eq!(score, 0.82);
+            }
+            _ => panic!("Expected Skill variant"),
+        }
+    }
+
+    #[test]
+    fn test_unified_search_result_sorting() {
+        let mut results = vec![
+            UnifiedSearchResult::Note {
+                result: SearchResult {
+                    document_id: DocumentId("notes/low.md".to_string()),
+                    score: 0.60,
+                    highlights: None,
+                    snippet: None,
+                },
+            },
+            UnifiedSearchResult::Skill {
+                name: "high-skill".to_string(),
+                description: "High scoring skill".to_string(),
+                scope: "personal".to_string(),
+                score: 0.90,
+            },
+            UnifiedSearchResult::Note {
+                result: SearchResult {
+                    document_id: DocumentId("notes/medium.md".to_string()),
+                    score: 0.75,
+                    highlights: None,
+                    snippet: None,
+                },
+            },
+        ];
+
+        // Sort by score descending
+        results.sort_by(|a, b| {
+            let score_a = match a {
+                UnifiedSearchResult::Note { result } => result.score,
+                UnifiedSearchResult::Skill { score, .. } => *score,
+            };
+            let score_b = match b {
+                UnifiedSearchResult::Note { result } => result.score,
+                UnifiedSearchResult::Skill { score, .. } => *score,
+            };
+            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // Verify order: 0.90, 0.75, 0.60
+        match &results[0] {
+            UnifiedSearchResult::Skill { score, .. } => assert_eq!(*score, 0.90),
+            _ => panic!("Expected highest score first"),
+        }
+        match &results[1] {
+            UnifiedSearchResult::Note { result } => assert_eq!(result.score, 0.75),
+            _ => panic!("Expected second highest score"),
+        }
+        match &results[2] {
+            UnifiedSearchResult::Note { result } => assert_eq!(result.score, 0.60),
+            _ => panic!("Expected lowest score last"),
+        }
+    }
 }
