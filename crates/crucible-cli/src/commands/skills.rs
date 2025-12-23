@@ -20,10 +20,7 @@ pub async fn execute(config: CliConfig, command: SkillsCommands) -> Result<()> {
 
 /// List discovered skills
 async fn list(config: &CliConfig, scope_filter: Option<String>) -> Result<()> {
-    let paths = default_discovery_paths(
-        Some(&std::env::current_dir()?),
-        Some(&config.kiln_path),
-    );
+    let paths = default_discovery_paths(Some(&std::env::current_dir()?), Some(&config.kiln_path));
 
     let discovery = FolderDiscovery::new(paths);
     let skills = discovery.discover()?;
@@ -61,10 +58,7 @@ async fn list(config: &CliConfig, scope_filter: Option<String>) -> Result<()> {
 
 /// Show skill details
 async fn show(config: &CliConfig, name: String) -> Result<()> {
-    let paths = default_discovery_paths(
-        Some(&std::env::current_dir()?),
-        Some(&config.kiln_path),
-    );
+    let paths = default_discovery_paths(Some(&std::env::current_dir()?), Some(&config.kiln_path));
 
     let discovery = FolderDiscovery::new(paths);
     let skills = discovery.discover()?;
@@ -101,10 +95,7 @@ async fn show(config: &CliConfig, name: String) -> Result<()> {
 async fn search(config: &CliConfig, query: String, limit: usize) -> Result<()> {
     println!("Searching for: '{}' (limit: {})", query, limit);
 
-    let paths = default_discovery_paths(
-        Some(&std::env::current_dir()?),
-        Some(&config.kiln_path),
-    );
+    let paths = default_discovery_paths(Some(&std::env::current_dir()?), Some(&config.kiln_path));
 
     let discovery = FolderDiscovery::new(paths);
     let skills = discovery.discover()?;

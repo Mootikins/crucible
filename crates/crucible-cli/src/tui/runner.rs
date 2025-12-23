@@ -570,7 +570,8 @@ impl RatatuiRunner {
                 // Handle confirmation based on context
                 // For now, just log that a dialog was confirmed
                 // In the future, this could emit events or call callbacks
-                self.view.set_status_text(&format!("Dialog confirmed: {}", value));
+                self.view
+                    .set_status_text(&format!("Dialog confirmed: {}", value));
             }
             DialogResult::Cancel => {
                 // Dialog was cancelled

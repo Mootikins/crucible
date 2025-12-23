@@ -251,7 +251,10 @@ impl RatatuiView {
                     crate::tui::state::PopupItemKind::Skill => "[skill]",
                 };
                 spans.push(Span::raw(" "));
-                spans.push(Span::styled(kind_label, Style::default().fg(Color::Magenta)));
+                spans.push(Span::styled(
+                    kind_label,
+                    Style::default().fg(Color::Magenta),
+                ));
                 spans.push(Span::raw(" "));
                 spans.push(Span::styled(
                     &item.title,
@@ -265,7 +268,10 @@ impl RatatuiView {
                 ));
                 if !item.subtitle.is_empty() {
                     spans.push(Span::raw(" "));
-                    spans.push(Span::styled(&item.subtitle, Style::default().fg(Color::DarkGray)));
+                    spans.push(Span::styled(
+                        &item.subtitle,
+                        Style::default().fg(Color::DarkGray),
+                    ));
                 }
                 Line::from(spans)
             })
@@ -678,7 +684,10 @@ mod tests {
         // Scroll down to exactly 0
         view.scroll_down(10);
         assert_eq!(view.state().scroll_offset, 0);
-        assert!(view.state().at_bottom, "Should be at_bottom when scroll_offset reaches 0");
+        assert!(
+            view.state().at_bottom,
+            "Should be at_bottom when scroll_offset reaches 0"
+        );
     }
 
     #[test]
@@ -695,6 +704,9 @@ mod tests {
         // Scroll down partially (not all the way to bottom)
         view.scroll_down(5);
         assert_eq!(view.state().scroll_offset, 5);
-        assert!(!view.state().at_bottom, "Should NOT be at_bottom when scroll_offset > 0");
+        assert!(
+            !view.state().at_bottom,
+            "Should NOT be at_bottom when scroll_offset > 0"
+        );
     }
 }

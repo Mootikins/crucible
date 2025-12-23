@@ -163,7 +163,9 @@ impl StreamingParser {
         // Check for closing fence
         let fence_str = &String::from(fence_char).repeat(fence_len);
         if trimmed.starts_with(fence_str)
-            && trimmed.chars().all(|c| c == fence_char || c.is_whitespace())
+            && trimmed
+                .chars()
+                .all(|c| c == fence_char || c.is_whitespace())
         {
             // Found closing fence
             let mut events = Vec::new();
@@ -198,7 +200,8 @@ impl StreamingParser {
                     self.blocks.push(ContentBlock::prose(text.clone()));
                 }
                 ParseEvent::CodeBlockStart { lang } => {
-                    self.blocks.push(ContentBlock::code_partial(lang.clone(), ""));
+                    self.blocks
+                        .push(ContentBlock::code_partial(lang.clone(), ""));
                 }
                 ParseEvent::CodeBlockContent(content) => {
                     if let Some(block) = self.blocks.last_mut() {

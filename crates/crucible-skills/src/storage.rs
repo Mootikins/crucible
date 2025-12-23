@@ -94,8 +94,8 @@ impl SkillStore {
 
         // Convert the first record if it exists
         if let Some(record) = result.records.first() {
-            let skill = record_to_skill(record)
-                .map_err(|e| SkillError::DiscoveryError(e.to_string()))?;
+            let skill =
+                record_to_skill(record).map_err(|e| SkillError::DiscoveryError(e.to_string()))?;
             Ok(Some(skill))
         } else {
             Ok(None)
@@ -117,7 +117,9 @@ impl SkillStore {
         result
             .records
             .iter()
-            .map(|record| record_to_skill(record).map_err(|e| SkillError::DiscoveryError(e.to_string())))
+            .map(|record| {
+                record_to_skill(record).map_err(|e| SkillError::DiscoveryError(e.to_string()))
+            })
             .collect()
     }
 
@@ -134,7 +136,9 @@ impl SkillStore {
         result
             .records
             .iter()
-            .map(|record| record_to_skill(record).map_err(|e| SkillError::DiscoveryError(e.to_string())))
+            .map(|record| {
+                record_to_skill(record).map_err(|e| SkillError::DiscoveryError(e.to_string()))
+            })
             .collect()
     }
 
@@ -380,11 +384,7 @@ fn record_to_skill(record: &crucible_core::database::Record) -> anyhow::Result<S
         .data
         .get("metadata")
         .and_then(|v| v.as_object())
-        .map(|obj| {
-            obj.iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect()
-        })
+        .map(|obj| obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
         .unwrap_or_default();
 
     let indexed_at = record

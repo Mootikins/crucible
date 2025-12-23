@@ -54,7 +54,9 @@ impl SplashState {
 
     pub fn select_prev(&mut self) {
         if !self.agents.is_empty() {
-            self.selected_index = self.selected_index.checked_sub(1)
+            self.selected_index = self
+                .selected_index
+                .checked_sub(1)
                 .unwrap_or(self.agents.len() - 1);
         }
     }
@@ -95,13 +97,19 @@ impl Widget for SplashWidget<'_> {
         // Build content lines
         let mut lines = vec![
             // Title
-            Line::from(vec![
-                Span::styled("CRUCIBLE CHAT", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-            ]),
+            Line::from(vec![Span::styled(
+                "CRUCIBLE CHAT",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )]),
             Line::from("═══════════════════"),
             Line::from(""),
             // Agent selection
-            Line::from(Span::styled("Select Agent:", Style::default().add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(
+                "Select Agent:",
+                Style::default().add_modifier(Modifier::BOLD),
+            )),
         ];
 
         for (i, agent) in self.state.agents.iter().enumerate() {
@@ -110,14 +118,17 @@ impl Widget for SplashWidget<'_> {
             let suffix = if agent.is_default { " (default)" } else { "" };
 
             let style = if is_selected {
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::Gray)
             };
 
-            lines.push(Line::from(vec![
-                Span::styled(format!("{}{}{}", prefix, agent.name, suffix), style),
-            ]));
+            lines.push(Line::from(vec![Span::styled(
+                format!("{}{}{}", prefix, agent.name, suffix),
+                style,
+            )]));
         }
 
         lines.push(Line::from(""));
@@ -140,8 +151,7 @@ impl Widget for SplashWidget<'_> {
             Span::raw(" quit"),
         ]));
 
-        let paragraph = Paragraph::new(lines)
-            .alignment(Alignment::Center);
+        let paragraph = Paragraph::new(lines).alignment(Alignment::Center);
 
         paragraph.render(content_area, buf);
     }

@@ -733,7 +733,11 @@ fn send_message_clears_input() {
     );
 
     // Verify input is now empty in the view
-    assert_eq!(view.input(), "", "Input should be cleared after SendMessage");
+    assert_eq!(
+        view.input(),
+        "",
+        "Input should be cleared after SendMessage"
+    );
 
     // Snapshot the expected "after" state for visual verification
     assert_snapshot!("send_message_input_cleared", terminal.backend());
@@ -746,7 +750,8 @@ fn send_message_shows_thinking_status() {
     let mut view = RatatuiView::new("act", TEST_WIDTH, TEST_HEIGHT);
 
     // Simulate SendMessage flow
-    view.push_user_message("What is the project structure?").unwrap();
+    view.push_user_message("What is the project structure?")
+        .unwrap();
     view.set_status(StatusKind::Thinking);
     view.set_status_text("Thinking");
     view.set_input(""); // Should be cleared
@@ -931,9 +936,7 @@ fn dialog_info_multiline() {
 #[test]
 fn dialog_select_many_items() {
     let mut terminal = test_terminal();
-    let items: Vec<String> = (1..=15)
-        .map(|i| format!("Option {}", i))
-        .collect();
+    let items: Vec<String> = (1..=15).map(|i| format!("Option {}", i)).collect();
     let dialog = DialogState::select("Select Option", items);
 
     terminal
@@ -952,8 +955,10 @@ fn dialog_over_conversation() {
     let mut view = RatatuiView::new("plan", TEST_WIDTH, TEST_HEIGHT);
 
     // Add some conversation content
-    view.push_user_message("What is the project structure?").unwrap();
-    view.push_assistant_message("Let me analyze the codebase.").unwrap();
+    view.push_user_message("What is the project structure?")
+        .unwrap();
+    view.push_assistant_message("Let me analyze the codebase.")
+        .unwrap();
 
     // Push a dialog
     view.push_dialog(DialogState::confirm(

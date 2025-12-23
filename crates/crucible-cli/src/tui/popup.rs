@@ -15,9 +15,9 @@ pub trait PopupProvider: Send + Sync {
 #[derive(Clone, Default)]
 pub struct StaticPopupProvider {
     pub commands: Vec<CommandDescriptor>,
-    pub agents: Vec<(String, String)>,       // (id/slug, description)
-    pub files: Vec<String>,                  // workspace relative
-    pub notes: Vec<String>,                  // note:<path> or note:<kiln>/<path>
+    pub agents: Vec<(String, String)>, // (id/slug, description)
+    pub files: Vec<String>,            // workspace relative
+    pub notes: Vec<String>,            // note:<path> or note:<kiln>/<path>
     pub skills: Vec<(String, String, String)>, // (name, description, scope)
 }
 
@@ -273,7 +273,9 @@ impl PopupMatcherCache {
 
     fn needs_rebuild(&self, kind: CacheKind, versions: (u64, u64, u64, u64, u64)) -> bool {
         match kind {
-            CacheKind::Command => versions.0 != self.last_versions.0 || versions.4 != self.last_versions.4,
+            CacheKind::Command => {
+                versions.0 != self.last_versions.0 || versions.4 != self.last_versions.4
+            }
             CacheKind::AgentOrFile => {
                 versions.1 != self.last_versions.1
                     || versions.2 != self.last_versions.2
@@ -523,28 +525,40 @@ mod tests {
 #[cfg(test)]
 mod skill_popup_tests {
     use super::{PopupProvider, StaticPopupProvider};
-    use crate::tui::state::{PopupKind, PopupItemKind};
+    use crate::tui::state::{PopupItemKind, PopupKind};
 
     #[test]
     fn test_skills_appear_in_command_popup() {
         let mut provider = StaticPopupProvider::new();
         provider.skills = vec![
-            ("git-commit".into(), "Create git commits".into(), "user".into()),
-            ("code-review".into(), "Review code quality".into(), "user".into()),
+            (
+                "git-commit".into(),
+                "Create git commits".into(),
+                "user".into(),
+            ),
+            (
+                "code-review".into(),
+                "Review code quality".into(),
+                "user".into(),
+            ),
         ];
 
         let items = provider.provide(PopupKind::Command, "git");
-        
+
         // Should find the git-commit skill
-        assert!(items.iter().any(|item| {
-            item.kind == PopupItemKind::Skill && item.title == "skill:git-commit"
-        }), "git-commit skill should appear in results");
-        
+        assert!(
+            items.iter().any(|item| {
+                item.kind == PopupItemKind::Skill && item.title == "skill:git-commit"
+            }),
+            "git-commit skill should appear in results"
+        );
+
         // Verify token format
-        let git_skill = items.iter()
+        let git_skill = items
+            .iter()
             .find(|item| item.kind == PopupItemKind::Skill && item.title == "skill:git-commit")
             .expect("git-commit skill should exist");
-        
+
         assert_eq!(git_skill.token, "skill:git-commit ");
         assert!(git_skill.subtitle.contains("Create git commits"));
         assert!(git_skill.subtitle.contains("(user)"));
@@ -553,15 +567,16 @@ mod skill_popup_tests {
     #[test]
     fn test_skills_fuzzy_match() {
         let mut provider = StaticPopupProvider::new();
-        provider.skills = vec![
-            ("code-review".into(), "Review code".into(), "user".into()),
-        ];
+        provider.skills = vec![("code-review".into(), "Review code".into(), "user".into())];
 
         let items = provider.provide(PopupKind::Command, "crvw");
-        
+
         // Fuzzy match should find code-review
-        assert!(items.iter().any(|item| {
-            item.kind == PopupItemKind::Skill && item.title == "skill:code-review"
-        }), "Should fuzzy match code-review with 'crvw'");
+        assert!(
+            items.iter().any(|item| {
+                item.kind == PopupItemKind::Skill && item.title == "skill:code-review"
+            }),
+            "Should fuzzy match code-review with 'crvw'"
+        );
     }
 }
