@@ -1,6 +1,23 @@
 //! Channel-based streaming for TUI
 //!
-//! Provides typed events for streaming LLM responses without unsafe code.
+//! This module provides safe streaming infrastructure that replaces the previous
+//! unsafe lifetime transmute approach. The key insight is that by transferring
+//! stream ownership to the spawned task, we avoid lifetime issues entirely.
+//!
+//! # Architecture
+//!
+//! ```text
+//! Agent::send_message_stream() -> BoxStream<'a>
+//!            |
+//!            v (ownership transfer)
+//!     StreamingTask::spawn()
+//!            |
+//!            v (sends events)
+//!     StreamingReceiver (polled in main loop)
+//! ```
+//!
+//! The spawned task consumes the stream and sends typed events to the main loop,
+//! which polls the channel non-blockingly to update the UI.
 
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use futures::{Stream, StreamExt};
@@ -29,7 +46,7 @@ pub fn create_streaming_channel() -> (StreamingSender, StreamingReceiver) {
     unbounded_channel()
 }
 
-/// Wraps a streaming task with proper ownership (no unsafe)
+/// Wraps streaming task spawning (zero-sized type, just namespace)
 pub struct StreamingTask;
 
 impl StreamingTask {
@@ -42,6 +59,8 @@ impl StreamingTask {
             while let Some(result) = stream.next().await {
                 match result {
                     Ok(chunk) => {
+                        // Only send Delta events for non-empty chunks
+                        // Sequence numbers track actual content deltas, not empty stream items
                         if !chunk.delta.is_empty() {
                             full_response.push_str(&chunk.delta);
                             let _ = tx.send(StreamingEvent::Delta {
