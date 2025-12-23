@@ -130,7 +130,7 @@ impl RatatuiRunner {
                 }
             }
 
-            // 3. Refresh popup items
+            // 3. Refresh popup items and sync with view
             if let Some(ref mut popup) = self.popup {
                 if popup_debounce.ready() {
                     let items = self.popup_provider.provide(popup.kind, &popup.query);
@@ -139,6 +139,8 @@ impl RatatuiRunner {
                     popup.selected = selected;
                 }
             }
+            // Sync popup state to view for rendering
+            self.view.set_popup(self.popup.clone());
 
             // 4. Poll ring buffer for session events
             self.poll_session_events(bridge, &mut last_seen_seq);

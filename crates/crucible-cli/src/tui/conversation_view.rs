@@ -5,9 +5,13 @@
 use crate::tui::conversation::{
     ConversationState, ConversationWidget, InputBoxWidget, StatusBarWidget, StatusKind,
 };
+use crate::tui::state::{PopupItem, PopupState};
 use anyhow::Result;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
 
@@ -83,6 +87,8 @@ pub struct ViewState {
     pub scroll_offset: usize,
     pub width: u16,
     pub height: u16,
+    /// Popup state for slash commands / agents / files
+    pub popup: Option<PopupState>,
 }
 
 impl ViewState {
@@ -97,6 +103,7 @@ impl ViewState {
             scroll_offset: 0,
             width,
             height,
+            popup: None,
         }
     }
 }
@@ -120,41 +127,122 @@ impl RatatuiView {
         }
     }
 
+    /// Maximum popup items to display
+    const MAX_POPUP_ITEMS: usize = 5;
+
     /// Render to a ratatui frame
     pub fn render_frame(&self, frame: &mut Frame) {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
+        // Calculate popup height if needed
+        let popup_height = self
+            .state
+            .popup
+            .as_ref()
+            .filter(|p| !p.items.is_empty())
+            .map(|p| (p.items.len().min(Self::MAX_POPUP_ITEMS) + 2) as u16)
+            .unwrap_or(0);
+
+        let constraints = if popup_height > 0 {
+            vec![
+                Constraint::Min(3),               // Conversation area
+                Constraint::Length(popup_height), // Popup
+                Constraint::Length(3),            // Input box
+                Constraint::Length(1),            // Status bar
+            ]
+        } else {
+            vec![
                 Constraint::Min(3),    // Conversation area
                 Constraint::Length(3), // Input box
-                Constraint::Length(1), // Padding above status
                 Constraint::Length(1), // Status bar
-                Constraint::Length(1), // Padding below status
-            ])
+            ]
+        };
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(constraints)
             .split(frame.area());
+
+        let mut idx = 0;
 
         // Conversation
         let conv_widget = ConversationWidget::new(&self.state.conversation)
             .scroll_offset(self.state.scroll_offset);
-        frame.render_widget(conv_widget, chunks[0]);
+        frame.render_widget(conv_widget, chunks[idx]);
+        idx += 1;
+
+        // Popup (if active)
+        if popup_height > 0 {
+            self.render_popup(frame, chunks[idx]);
+            idx += 1;
+        }
 
         // Input box
         let input_widget =
             InputBoxWidget::new(&self.state.input_buffer, self.state.cursor_position);
-        frame.render_widget(input_widget, chunks[1]);
-
-        // Padding above status (empty)
-        // chunks[2] left empty
+        frame.render_widget(input_widget, chunks[idx]);
+        idx += 1;
 
         // Status bar
         let mut status_widget = StatusBarWidget::new(&self.state.mode_id, &self.state.status_text);
         if let Some(count) = self.state.token_count {
             status_widget = status_widget.token_count(count);
         }
-        frame.render_widget(status_widget, chunks[3]);
+        frame.render_widget(status_widget, chunks[idx]);
+    }
 
-        // Padding below status (empty)
-        // chunks[4] left empty
+    /// Render popup overlay
+    fn render_popup(&self, frame: &mut Frame, area: ratatui::layout::Rect) {
+        let Some(ref popup) = self.state.popup else {
+            return;
+        };
+
+        let lines: Vec<Line> = popup
+            .items
+            .iter()
+            .take(Self::MAX_POPUP_ITEMS)
+            .enumerate()
+            .map(|(idx, item)| {
+                let mut spans = Vec::new();
+                let marker = if idx == popup.selected { ">" } else { " " };
+                spans.push(Span::styled(
+                    marker,
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ));
+
+                let kind_label = match item.kind {
+                    crate::tui::state::PopupItemKind::Command => "[cmd]",
+                    crate::tui::state::PopupItemKind::Agent => "[agent]",
+                    crate::tui::state::PopupItemKind::File => "[file]",
+                    crate::tui::state::PopupItemKind::Note => "[note]",
+                    crate::tui::state::PopupItemKind::Skill => "[skill]",
+                };
+                spans.push(Span::raw(" "));
+                spans.push(Span::styled(kind_label, Style::default().fg(Color::Magenta)));
+                spans.push(Span::raw(" "));
+                spans.push(Span::styled(
+                    &item.title,
+                    if idx == popup.selected {
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+                    } else {
+                        Style::default().fg(Color::White)
+                    },
+                ));
+                if !item.subtitle.is_empty() {
+                    spans.push(Span::raw(" "));
+                    spans.push(Span::styled(&item.subtitle, Style::default().fg(Color::DarkGray)));
+                }
+                Line::from(spans)
+            })
+            .collect();
+
+        let popup_widget = Paragraph::new(lines)
+            .block(Block::default().borders(Borders::ALL).title("Select"))
+            .wrap(Wrap { trim: true });
+
+        frame.render_widget(popup_widget, area);
     }
 
     /// Get inner state reference
@@ -165,6 +253,21 @@ impl RatatuiView {
     /// Get mutable inner state reference
     pub fn state_mut(&mut self) -> &mut ViewState {
         &mut self.state
+    }
+
+    /// Set popup state
+    pub fn set_popup(&mut self, popup: Option<PopupState>) {
+        self.state.popup = popup;
+    }
+
+    /// Get popup state reference
+    pub fn popup(&self) -> Option<&PopupState> {
+        self.state.popup.as_ref()
+    }
+
+    /// Get mutable popup state reference
+    pub fn popup_mut(&mut self) -> Option<&mut PopupState> {
+        self.state.popup.as_mut()
     }
 
     /// Calculate total content height for scroll bounds
@@ -284,6 +387,9 @@ impl ConversationView for RatatuiView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::state::{PopupItemKind, PopupKind};
+    use ratatui::{backend::TestBackend, Terminal};
+    use std::time::Instant;
 
     #[test]
     fn test_view_state_new() {
@@ -323,5 +429,101 @@ mod tests {
         // Scroll back down
         view.scroll_to_bottom();
         assert_eq!(view.state().scroll_offset, 0);
+    }
+
+    /// Test that popup is rendered in RatatuiView::render_frame
+    /// This test would have FAILED before the fix because render_frame
+    /// didn't render the popup at all.
+    #[test]
+    fn test_ratatui_view_renders_popup() {
+        let mut view = RatatuiView::new("plan", 80, 24);
+
+        // Set up popup with a command
+        let popup = PopupState {
+            kind: PopupKind::Command,
+            query: String::new(),
+            items: vec![PopupItem {
+                kind: PopupItemKind::Command,
+                title: "/help".to_string(),
+                subtitle: "Show help".to_string(),
+                token: "/help ".to_string(),
+                score: 0,
+                available: true,
+            }],
+            selected: 0,
+            last_update: Instant::now(),
+        };
+        view.set_popup(Some(popup));
+
+        // Render to test backend
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| view.render_frame(f)).unwrap();
+
+        // Get the buffer content as string
+        let buffer = terminal.backend().buffer();
+        let content: String = (0..buffer.area().height)
+            .flat_map(|y| {
+                (0..buffer.area().width)
+                    .map(move |x| buffer.cell((x, y)).map(|c| c.symbol()).unwrap_or(" "))
+            })
+            .collect();
+
+        // The popup should contain "/help" and "[cmd]"
+        assert!(
+            content.contains("/help"),
+            "Popup should render '/help' command. Buffer content: {}",
+            content
+        );
+        assert!(
+            content.contains("[cmd]"),
+            "Popup should render '[cmd]' label. Buffer content: {}",
+            content
+        );
+    }
+
+    /// Test that skill items render with [skill] label
+    #[test]
+    fn test_ratatui_view_renders_skill_popup() {
+        let mut view = RatatuiView::new("plan", 80, 24);
+
+        let popup = PopupState {
+            kind: PopupKind::Command,
+            query: String::new(),
+            items: vec![PopupItem {
+                kind: PopupItemKind::Skill,
+                title: "skill:git-commit".to_string(),
+                subtitle: "Create commits (personal)".to_string(),
+                token: "skill:git-commit ".to_string(),
+                score: 0,
+                available: true,
+            }],
+            selected: 0,
+            last_update: Instant::now(),
+        };
+        view.set_popup(Some(popup));
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| view.render_frame(f)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content: String = (0..buffer.area().height)
+            .flat_map(|y| {
+                (0..buffer.area().width)
+                    .map(move |x| buffer.cell((x, y)).map(|c| c.symbol()).unwrap_or(" "))
+            })
+            .collect();
+
+        assert!(
+            content.contains("[skill]"),
+            "Popup should render '[skill]' label. Buffer: {}",
+            content
+        );
+        assert!(
+            content.contains("skill:git-commit"),
+            "Popup should render skill title. Buffer: {}",
+            content
+        );
     }
 }
