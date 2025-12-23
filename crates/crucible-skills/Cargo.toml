@@ -21,10 +21,12 @@ walkdir = "2"
 dirs = "5"
 sha2 = "0.10"
 crucible-surrealdb = { path = "../crucible-surrealdb", optional = true }
+crucible-llm = { path = "../crucible-llm", optional = true }
 
 [features]
 default = []
 storage = ["crucible-surrealdb"]
+embeddings = ["crucible-llm", "storage"]
 test-utils = ["storage"]
 
 [dev-dependencies]
