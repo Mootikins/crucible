@@ -27,9 +27,10 @@ fn test_discover_skills_in_single_directory() {
     create_test_skill(temp.path(), "skill-one");
     create_test_skill(temp.path(), "skill-two");
 
-    let discovery = FolderDiscovery::new(vec![
-        SearchPath::new(temp.path().to_path_buf(), SkillScope::Personal),
-    ]);
+    let discovery = FolderDiscovery::new(vec![SearchPath::new(
+        temp.path().to_path_buf(),
+        SkillScope::Personal,
+    )]);
 
     let discovered = discovery.discover().expect("Should discover skills");
 
@@ -55,6 +56,10 @@ fn test_priority_ordering_higher_scope_wins() {
     let discovered = discovery.discover().expect("Should discover");
 
     let resolved = discovered.get("shared-skill").expect("Should find skill");
-    assert_eq!(resolved.skill.source.scope, SkillScope::Kiln, "Kiln should win");
+    assert_eq!(
+        resolved.skill.source.scope,
+        SkillScope::Kiln,
+        "Kiln should win"
+    );
     assert_eq!(resolved.shadowed.len(), 1, "Should shadow personal");
 }

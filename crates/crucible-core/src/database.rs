@@ -1191,7 +1191,9 @@ mod tests {
                 UnifiedSearchResult::Note { result } => result.score,
                 UnifiedSearchResult::Skill { score, .. } => *score,
             };
-            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         // Verify order: 0.90, 0.75, 0.60

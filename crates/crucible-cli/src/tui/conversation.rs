@@ -5,7 +5,8 @@
 //! with full viewport control.
 
 use crate::tui::{
-    content_block::ContentBlock, markdown::MarkdownRenderer,
+    content_block::ContentBlock,
+    markdown::MarkdownRenderer,
     styles::{indicators, styles},
 };
 use ansi_to_tui::IntoText;
@@ -128,7 +129,11 @@ impl ConversationState {
     /// Append blocks to the most recent streaming assistant message
     pub fn append_streaming_blocks(&mut self, new_blocks: Vec<ContentBlock>) {
         for item in self.items.iter_mut().rev() {
-            if let ConversationItem::AssistantMessage { blocks, is_streaming } = item {
+            if let ConversationItem::AssistantMessage {
+                blocks,
+                is_streaming,
+            } = item
+            {
                 if *is_streaming {
                     blocks.extend(new_blocks);
                     return;
@@ -152,7 +157,11 @@ impl ConversationState {
     /// Append content to the last block of the streaming assistant message
     pub fn append_to_last_block(&mut self, content: &str) {
         for item in self.items.iter_mut().rev() {
-            if let ConversationItem::AssistantMessage { blocks, is_streaming } = item {
+            if let ConversationItem::AssistantMessage {
+                blocks,
+                is_streaming,
+            } = item
+            {
                 if *is_streaming {
                     if let Some(last_block) = blocks.last_mut() {
                         last_block.append(content);
@@ -166,7 +175,11 @@ impl ConversationState {
     /// Mark the last block of the streaming assistant message as complete
     pub fn complete_last_block(&mut self) {
         for item in self.items.iter_mut().rev() {
-            if let ConversationItem::AssistantMessage { blocks, is_streaming } = item {
+            if let ConversationItem::AssistantMessage {
+                blocks,
+                is_streaming,
+            } = item
+            {
                 if *is_streaming {
                     if let Some(last_block) = blocks.last_mut() {
                         last_block.complete();
@@ -260,9 +273,10 @@ impl ConversationState {
 pub fn render_item_to_lines(item: &ConversationItem) -> Vec<Line<'static>> {
     match item {
         ConversationItem::UserMessage { content } => render_user_message(content),
-        ConversationItem::AssistantMessage { blocks, is_streaming } => {
-            render_assistant_blocks(blocks, *is_streaming)
-        }
+        ConversationItem::AssistantMessage {
+            blocks,
+            is_streaming,
+        } => render_assistant_blocks(blocks, *is_streaming),
         ConversationItem::Status(status) => render_status(status),
         ConversationItem::ToolCall(tool) => render_tool_call(tool),
     }
@@ -309,7 +323,11 @@ fn render_assistant_blocks(blocks: &[ContentBlock], is_streaming: bool) -> Vec<L
                     lines.push(Line::from(Span::styled("▌", styles::streaming())));
                 }
             }
-            ContentBlock::Code { lang, content, is_complete } => {
+            ContentBlock::Code {
+                lang,
+                content,
+                is_complete,
+            } => {
                 // Render code block with language
                 lines.extend(render_code_block(lang.as_deref(), content));
 
@@ -708,7 +726,11 @@ mod tests {
         let lines = render_assistant_message(content);
 
         // Should have content (blank line + text + code block)
-        assert!(lines.len() > 3, "Expected multiple lines, got {}", lines.len());
+        assert!(
+            lines.len() > 3,
+            "Expected multiple lines, got {}",
+            lines.len()
+        );
 
         // Look for any styling changes that indicate code formatting
         // Code blocks should have different styling than plain text
@@ -771,8 +793,8 @@ mod tests {
         let has_code_styling = lines.iter().any(|line| {
             line.spans.iter().any(|span| {
                 // Check for background color or distinct foreground
-                span.style.bg.is_some() ||
-                (span.style.fg.is_some() && span.style != styles::assistant_message())
+                span.style.bg.is_some()
+                    || (span.style.fg.is_some() && span.style != styles::assistant_message())
             })
         });
 
@@ -802,16 +824,17 @@ mod tests {
 
     #[test]
     fn test_assistant_message_multiline_markdown() {
-        let content = "# Heading\n\nSome **bold** and *italic* text.\n\n- List item 1\n- List item 2";
+        let content =
+            "# Heading\n\nSome **bold** and *italic* text.\n\n- List item 1\n- List item 2";
         let lines = render_assistant_message(content);
 
         // Should have multiple lines
         assert!(lines.len() > 5);
 
         // Should have some styled content
-        let has_styling = lines.iter().any(|line| {
-            line.spans.iter().any(|span| span.style != Style::default())
-        });
+        let has_styling = lines
+            .iter()
+            .any(|line| line.spans.iter().any(|span| span.style != Style::default()));
 
         assert!(has_styling, "Expected markdown formatting to apply styles");
     }
