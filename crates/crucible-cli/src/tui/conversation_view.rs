@@ -127,7 +127,9 @@ impl RatatuiView {
             .constraints([
                 Constraint::Min(3),    // Conversation area
                 Constraint::Length(3), // Input box
+                Constraint::Length(1), // Padding above status
                 Constraint::Length(1), // Status bar
+                Constraint::Length(1), // Padding below status
             ])
             .split(frame.area());
 
@@ -141,12 +143,18 @@ impl RatatuiView {
             InputBoxWidget::new(&self.state.input_buffer, self.state.cursor_position);
         frame.render_widget(input_widget, chunks[1]);
 
+        // Padding above status (empty)
+        // chunks[2] left empty
+
         // Status bar
         let mut status_widget = StatusBarWidget::new(&self.state.mode_id, &self.state.status_text);
         if let Some(count) = self.state.token_count {
             status_widget = status_widget.token_count(count);
         }
-        frame.render_widget(status_widget, chunks[2]);
+        frame.render_widget(status_widget, chunks[3]);
+
+        // Padding below status (empty)
+        // chunks[4] left empty
     }
 
     /// Get inner state reference
