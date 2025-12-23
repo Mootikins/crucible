@@ -123,7 +123,9 @@ impl SearchTools {
             .knowledge_repo
             .search_vectors(embedding.clone())
             .await
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Note search failed: {e}"), None))?;
+            .map_err(|e| {
+                rmcp::ErrorData::internal_error(format!("Note search failed: {e}"), None)
+            })?;
 
         let mut all_results: Vec<serde_json::Value> = note_results
             .into_iter()
@@ -163,7 +165,9 @@ impl SearchTools {
         all_results.sort_by(|a, b| {
             let score_a = a["score"].as_f64().unwrap_or(0.0);
             let score_b = b["score"].as_f64().unwrap_or(0.0);
-            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         // Take only the top results

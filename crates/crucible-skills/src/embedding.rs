@@ -52,7 +52,9 @@ pub async fn search_skills_semantic<P: CanEmbed>(
         .await
         .map_err(|e| SkillError::DiscoveryError(format!("Embedding failed: {}", e)))?;
 
-    client.search_by_embedding(&embedding.embedding, limit).await
+    client
+        .search_by_embedding(&embedding.embedding, limit)
+        .await
 }
 
 /// Trait for searching skills by embedding
@@ -76,7 +78,13 @@ pub struct SkillSearchResult {
 }
 
 impl SkillSearchResult {
-    pub fn new(name: String, description: String, scope: String, source_path: String, distance: f32) -> Self {
+    pub fn new(
+        name: String,
+        description: String,
+        scope: String,
+        source_path: String,
+        distance: f32,
+    ) -> Self {
         Self {
             name,
             description,

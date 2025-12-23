@@ -400,8 +400,8 @@ impl AgentHandle for CrucibleAcpClient {
         // in a 'static stream. The solution here mimics what the old unsafe code
         // in runner.rs did, but encapsulated within this implementation.
 
-        use std::pin::Pin;
         use std::future::Future;
+        use std::pin::Pin;
 
         // Helper type that wraps the future and makes it Send
         // SAFETY: We're asserting that the future IS actually Send, which it should be
@@ -414,18 +414,17 @@ impl AgentHandle for CrucibleAcpClient {
         match self.session.as_mut() {
             Some(session) => {
                 // This creates a future that borrows from session
-                type FutureOutput = Result<(String, Vec<crucible_acp::ToolCallInfo>), crucible_acp::AcpError>;
-                let fut: Pin<Box<dyn Future<Output = FutureOutput> + '_>> = Box::pin(async move {
-                    session.send_message(&message).await
-                });
+                type FutureOutput =
+                    Result<(String, Vec<crucible_acp::ToolCallInfo>), crucible_acp::AcpError>;
+                let fut: Pin<Box<dyn Future<Output = FutureOutput> + '_>> =
+                    Box::pin(async move { session.send_message(&message).await });
 
                 // SAFETY: We're transmuting the lifetime away. This is safe because:
                 // 1. The session lives as long as self
                 // 2. The stream must be consumed before self is dropped (enforced by Rust)
                 // 3. Only one stream can be active at a time (&mut self exclusivity)
-                let static_fut: Pin<Box<dyn Future<Output = FutureOutput> + Send>> = unsafe {
-                    std::mem::transmute(fut)
-                };
+                let static_fut: Pin<Box<dyn Future<Output = FutureOutput> + Send>> =
+                    unsafe { std::mem::transmute(fut) };
 
                 Box::pin(futures::stream::once(async move {
                     let (content, acp_tool_calls) = static_fut

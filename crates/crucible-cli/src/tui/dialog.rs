@@ -46,10 +46,7 @@ pub enum DialogKind {
         selected: usize,
     },
     /// Information display
-    Info {
-        title: String,
-        content: String,
-    },
+    Info { title: String, content: String },
 }
 
 /// Dialog state with focus tracking
@@ -101,9 +98,7 @@ impl DialogState {
     /// Handle key input, returning result
     pub fn handle_key(&mut self, key: KeyEvent) -> DialogResult {
         match &mut self.kind {
-            DialogKind::Confirm {
-                confirm_label, ..
-            } => match key.code {
+            DialogKind::Confirm { confirm_label, .. } => match key.code {
                 KeyCode::Left | KeyCode::Char('h') => {
                     self.focus_index = 0;
                     DialogResult::Pending
@@ -231,7 +226,14 @@ impl Widget for DialogWidget<'_> {
                 confirm_label,
                 cancel_label,
             } => {
-                self.render_confirm(dialog_area, buf, title, message, confirm_label, cancel_label);
+                self.render_confirm(
+                    dialog_area,
+                    buf,
+                    title,
+                    message,
+                    confirm_label,
+                    cancel_label,
+                );
             }
             DialogKind::Select {
                 title,
@@ -304,7 +306,12 @@ impl DialogWidget<'_> {
             Style::default().fg(Color::Red)
         };
         let cancel_btn = format!("[{}]", cancel_label);
-        buf.set_string(start_x + btn_width + gap, button_y, &cancel_btn, cancel_style);
+        buf.set_string(
+            start_x + btn_width + gap,
+            button_y,
+            &cancel_btn,
+            cancel_style,
+        );
     }
 
     fn render_select(
@@ -479,10 +486,7 @@ mod tests {
 
     #[test]
     fn test_select_dialog_navigation() {
-        let mut dialog = DialogState::select(
-            "Choose",
-            vec!["A".into(), "B".into(), "C".into()],
-        );
+        let mut dialog = DialogState::select("Choose", vec!["A".into(), "B".into(), "C".into()]);
         dialog.handle_key(key(KeyCode::Down));
         dialog.handle_key(key(KeyCode::Down));
         assert_eq!(
@@ -493,10 +497,7 @@ mod tests {
 
     #[test]
     fn test_select_dialog_vim_navigation() {
-        let mut dialog = DialogState::select(
-            "Choose",
-            vec!["A".into(), "B".into(), "C".into()],
-        );
+        let mut dialog = DialogState::select("Choose", vec!["A".into(), "B".into(), "C".into()]);
         dialog.handle_key(key(KeyCode::Char('j')));
         assert_eq!(
             dialog.handle_key(key(KeyCode::Enter)),

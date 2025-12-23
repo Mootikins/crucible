@@ -81,10 +81,8 @@ pub struct ChatChunk {
 /// Runtime handle to an active agent
 #[async_trait]
 pub trait AgentHandle: Send + Sync {
-    fn send_message_stream(
-        &mut self,
-        message: String,
-    ) -> BoxStream<'static, ChatResult<ChatChunk>>;
+    fn send_message_stream(&mut self, message: String)
+        -> BoxStream<'static, ChatResult<ChatChunk>>;
 
     async fn send_message(&mut self, message: &str) -> ChatResult<ChatResponse> {
         use futures::StreamExt;
