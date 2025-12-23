@@ -203,9 +203,10 @@ impl RatatuiView {
         }
 
         // Input box
+        let input_area = chunks[idx];
         let input_widget =
             InputBoxWidget::new(&self.state.input_buffer, self.state.cursor_position);
-        frame.render_widget(input_widget, chunks[idx]);
+        frame.render_widget(input_widget, input_area);
         idx += 1;
 
         // Status bar
@@ -219,6 +220,12 @@ impl RatatuiView {
         if let Some(dialog) = self.state.dialog_stack.current() {
             let widget = DialogWidget::new(dialog);
             frame.render_widget(widget, frame.area());
+            // Hide cursor when dialog is active
+        } else {
+            // Position cursor in input box (accounting for border and "› " prefix)
+            let cursor_x = input_area.x + 1 + 2 + self.state.cursor_position as u16;
+            let cursor_y = input_area.y + 1;
+            frame.set_cursor_position((cursor_x, cursor_y));
         }
     }
 
@@ -329,10 +336,31 @@ impl RatatuiView {
         }
     }
 
+    /// Select agent by index in splash screen
+    pub fn splash_select_index(&mut self, index: usize) {
+        if let Some(splash) = &mut self.state.splash {
+            splash.select_index(index);
+        }
+    }
+
+    /// Check if current splash selection can be confirmed
+    pub fn splash_can_confirm(&self) -> bool {
+        self.state
+            .splash
+            .as_ref()
+            .map(|s| s.can_confirm())
+            .unwrap_or(false)
+    }
+
     /// Confirm current splash selection and return selected agent name
+    /// Returns None if agent is unavailable
     pub fn splash_confirm(&mut self) -> Option<String> {
         if let Some(splash) = &self.state.splash {
-            splash.selected_agent().map(|a| a.name.clone())
+            if splash.can_confirm() {
+                splash.selected_agent().map(|a| a.name.clone())
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -346,6 +374,21 @@ impl RatatuiView {
     /// Check if splash is currently showing
     pub fn is_showing_splash(&self) -> bool {
         self.state.splash.is_some() && self.state.conversation.items().is_empty()
+    }
+
+    /// Check if splash needs availability probing
+    pub fn splash_needs_probing(&self) -> bool {
+        self.state
+            .splash
+            .as_ref()
+            .is_some_and(|s| !s.probed)
+    }
+
+    /// Update splash screen agent availability
+    pub fn update_splash_availability(&mut self, agents: Vec<crucible_acp::KnownAgent>) {
+        if let Some(splash) = &mut self.state.splash {
+            splash.update_availability(agents);
+        }
     }
 
     /// Start streaming an assistant message (creates empty message with streaming indicator)
