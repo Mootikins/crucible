@@ -167,6 +167,7 @@ crucible-agents = { path = "crates/crucible-agents" }
 # crucible-rune-macros = { path = "crates/crucible-rune-macros" }
 crucible-tools = { path = "crates/crucible-tools" }
 crucible-llm = { path = "crates/crucible-llm" }
+crucible-skills = { path = "crates/crucible-skills" }
 crucible-surrealdb = { path = "crates/crucible-surrealdb" }
 crucible-rune = { path = "crates/crucible-rune" }
 crucible-web = { path = "crates/crucible-web" }
