@@ -26,10 +26,15 @@ Follow these steps to create commits:
     };
 
     let parser = SkillParser::new();
-    let skill = parser.parse(content, source).expect("Should parse valid skill");
+    let skill = parser
+        .parse(content, source)
+        .expect("Should parse valid skill");
 
     assert_eq!(skill.name, "git-commit");
-    assert_eq!(skill.description, "Create well-formatted git commits with conventional messages");
+    assert_eq!(
+        skill.description,
+        "Create well-formatted git commits with conventional messages"
+    );
     assert_eq!(skill.license, Some("MIT".to_string()));
     assert!(skill.body.contains("# Git Commit Skill"));
 }
@@ -79,7 +84,11 @@ Body content.
 
     assert_eq!(
         skill.allowed_tools,
-        Some(vec!["Bash".to_string(), "Read".to_string(), "Write".to_string()])
+        Some(vec![
+            "Bash".to_string(),
+            "Read".to_string(),
+            "Write".to_string()
+        ])
     );
 }
 

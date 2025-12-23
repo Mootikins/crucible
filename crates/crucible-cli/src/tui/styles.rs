@@ -108,9 +108,7 @@ pub mod styles {
 
     /// User message style (inverted)
     pub fn user_message() -> Style {
-        Style::default()
-            .fg(colors::USER_FG)
-            .bg(colors::USER_BG)
+        Style::default().fg(colors::USER_FG).bg(colors::USER_BG)
     }
 
     /// User message prefix style
@@ -169,9 +167,7 @@ pub mod styles {
 
     /// Input box style
     pub fn input_box() -> Style {
-        Style::default()
-            .fg(colors::INPUT_FG)
-            .bg(colors::INPUT_BG)
+        Style::default().fg(colors::INPUT_FG).bg(colors::INPUT_BG)
     }
 
     /// Status line style (no background, dim text)
@@ -213,7 +209,11 @@ pub fn format_thinking() -> String {
 /// Format streaming status with token count
 pub fn format_streaming(token_count: usize) -> String {
     if token_count > 0 {
-        format!("{} Generating... ({} tokens)", indicators::STREAMING, token_count)
+        format!(
+            "{} Generating... ({} tokens)",
+            indicators::STREAMING,
+            token_count
+        )
     } else {
         format!("{} Generating...", indicators::STREAMING)
     }
@@ -249,7 +249,10 @@ pub fn format_status_line(mode_id: &str, token_count: Option<usize>, status: &st
     match token_count {
         Some(count) => format!(
             "{} {} │ {} tokens │ {}",
-            indicators::MODE_ARROW, mode_name, count, status
+            indicators::MODE_ARROW,
+            mode_name,
+            count,
+            status
         ),
         None => format!("{} {} │ {}", indicators::MODE_ARROW, mode_name, status),
     }

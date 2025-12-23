@@ -96,7 +96,10 @@ async fn test_client_shutdown_with_real_daemon() {
 
     // Try to connect a new client - should fail because daemon is down
     let result = DaemonClient::connect_to(&socket_path).await;
-    assert!(result.is_err(), "Expected new connection to fail after shutdown");
+    assert!(
+        result.is_err(),
+        "Expected new connection to fail after shutdown"
+    );
 }
 
 /// Test multiple sequential RPC calls
@@ -225,5 +228,8 @@ async fn test_new_connection_fails_after_shutdown() {
 
     // New connection should fail
     let result = DaemonClient::connect_to(&socket_path).await;
-    assert!(result.is_err(), "New connection should fail after server shutdown");
+    assert!(
+        result.is_err(),
+        "New connection should fail after server shutdown"
+    );
 }

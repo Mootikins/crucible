@@ -4,15 +4,15 @@
 //!
 //! Supports the [Agent Skills](https://agentskills.io) format.
 
-pub mod types;
 pub mod discovery;
-pub mod parser;
 mod error;
+pub mod parser;
+pub mod types;
 
-pub use error::{SkillError, SkillResult};
-pub use types::{Skill, SkillScope, SkillSource, ResolvedSkill};
 pub use discovery::FolderDiscovery;
+pub use error::{SkillError, SkillResult};
 pub use parser::SkillParser;
+pub use types::{ResolvedSkill, Skill, SkillScope, SkillSource};
 
 #[cfg(feature = "test-utils")]
 pub mod test_utils;

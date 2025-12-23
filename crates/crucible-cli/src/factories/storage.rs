@@ -163,5 +163,8 @@ pub fn create_content_addressed_storage(
 /// ```
 pub async fn create_daemon_storage(kiln_path: &Path) -> Result<Arc<DaemonStorageClient>> {
     let client = Arc::new(DaemonClient::connect_or_start().await?);
-    Ok(Arc::new(DaemonStorageClient::new(client, kiln_path.to_path_buf())))
+    Ok(Arc::new(DaemonStorageClient::new(
+        client,
+        kiln_path.to_path_buf(),
+    )))
 }

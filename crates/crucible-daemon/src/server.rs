@@ -1,7 +1,9 @@
 //! Unix socket server for JSON-RPC
 
 use crate::kiln_manager::KilnManager;
-use crate::protocol::{Request, Response, METHOD_NOT_FOUND, PARSE_ERROR, INVALID_PARAMS, INTERNAL_ERROR};
+use crate::protocol::{
+    Request, Response, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND, PARSE_ERROR,
+};
 use anyhow::Result;
 use std::path::Path;
 use std::sync::Arc;
@@ -127,7 +129,11 @@ async fn handle_request(
         "kiln.close" => handle_kiln_close(req, kiln_manager).await,
         "kiln.list" => handle_kiln_list(req, kiln_manager).await,
         "query" => handle_query(req, kiln_manager).await,
-        _ => Response::error(req.id, METHOD_NOT_FOUND, format!("Unknown method: {}", req.method)),
+        _ => Response::error(
+            req.id,
+            METHOD_NOT_FOUND,
+            format!("Unknown method: {}", req.method),
+        ),
     }
 }
 
@@ -157,11 +163,14 @@ async fn handle_kiln_close(req: Request, km: &Arc<KilnManager>) -> Response {
 
 async fn handle_kiln_list(req: Request, km: &Arc<KilnManager>) -> Response {
     let kilns = km.list().await;
-    let list: Vec<_> = kilns.iter()
-        .map(|(path, last_access)| serde_json::json!({
-            "path": path.to_string_lossy(),
-            "last_access_secs_ago": last_access.elapsed().as_secs()
-        }))
+    let list: Vec<_> = kilns
+        .iter()
+        .map(|(path, last_access)| {
+            serde_json::json!({
+                "path": path.to_string_lossy(),
+                "last_access_secs_ago": last_access.elapsed().as_secs()
+            })
+        })
         .collect();
     Response::success(req.id, list)
 }
@@ -220,16 +229,17 @@ mod tests {
         let shutdown_handle = server.shutdown_handle();
 
         // Spawn server
-        let server_task = tokio::spawn(async move {
-            server.run().await
-        });
+        let server_task = tokio::spawn(async move { server.run().await });
 
         // Give server time to start
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         // Connect and send ping
         let mut client = UnixStream::connect(&sock_path).await.unwrap();
-        client.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n").await.unwrap();
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n")
+            .await
+            .unwrap();
 
         let mut buf = vec![0u8; 1024];
         let n = client.read(&mut buf).await.unwrap();
@@ -399,7 +409,9 @@ mod tests {
 
         let mut client = UnixStream::connect(&sock_path).await.unwrap();
         client
-            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"unknown.method\",\"params\":{}}\n")
+            .write_all(
+                b"{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"unknown.method\",\"params\":{}}\n",
+            )
             .await
             .unwrap();
 
@@ -427,10 +439,7 @@ mod tests {
 
         let mut client = UnixStream::connect(&sock_path).await.unwrap();
         // Invalid JSON
-        client
-            .write_all(b"{invalid json}\n")
-            .await
-            .unwrap();
+        client.write_all(b"{invalid json}\n").await.unwrap();
 
         let mut buf = vec![0u8; 1024];
         let n = client.read(&mut buf).await.unwrap();
@@ -466,10 +475,7 @@ mod tests {
         assert!(response.contains("\"result\":\"shutting down\""));
 
         // Server should shut down gracefully
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(1),
-            server_task
-        ).await;
+        let result = tokio::time::timeout(std::time::Duration::from_secs(1), server_task).await;
 
         assert!(result.is_ok(), "Server should shutdown within timeout");
     }

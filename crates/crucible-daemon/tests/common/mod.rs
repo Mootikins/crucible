@@ -96,7 +96,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_daemon_fixture_starts_and_stops() {
-        let mut daemon = TestDaemon::start().await.expect("Failed to start test daemon");
+        let mut daemon = TestDaemon::start()
+            .await
+            .expect("Failed to start test daemon");
 
         // Verify socket exists
         assert!(daemon.socket_path.exists(), "Socket should exist");
@@ -116,7 +118,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_daemon_fixture_cleanup_on_drop() {
-        let daemon = TestDaemon::start().await.expect("Failed to start test daemon");
+        let daemon = TestDaemon::start()
+            .await
+            .expect("Failed to start test daemon");
         let socket_path = daemon.socket_path.clone();
 
         // Drop daemon (should clean up)
