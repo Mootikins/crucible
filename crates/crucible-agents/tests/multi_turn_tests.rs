@@ -344,7 +344,7 @@ async fn test_two_round_tool_execution() {
 
     let mut handle = create_test_handle(provider, Some(tool_executor));
 
-    let mut stream = handle.send_message_stream("What is the answer?");
+    let mut stream = handle.send_message_stream("What is the answer?".to_string());
     let mut content = String::new();
     let mut chunk_count = 0;
 
@@ -392,7 +392,7 @@ async fn test_multiple_tools_single_turn() {
 
     let mut handle = create_test_handle(provider, Some(tool_executor));
 
-    let mut stream = handle.send_message_stream("Run both tools");
+    let mut stream = handle.send_message_stream("Run both tools".to_string());
     let mut results = Vec::new();
 
     while let Some(chunk_result) = stream.next().await {
@@ -419,7 +419,7 @@ async fn test_tool_loop_max_iterations() {
 
     let mut handle = create_test_handle(provider, Some(tool_executor));
 
-    let mut stream = handle.send_message_stream("Start the loop");
+    let mut stream = handle.send_message_stream("Start the loop".to_string());
 
     // Consume the stream with a timeout to prevent actual infinite loop in test
     let mut iteration_count = 0;
@@ -459,7 +459,7 @@ async fn test_context_accumulation_during_tools() {
     let mut handle = create_test_handle(provider, Some(tool_executor));
 
     // Send first message
-    let mut stream = handle.send_message_stream("Lookup test key");
+    let mut stream = handle.send_message_stream("Lookup test key".to_string());
     while let Some(_chunk) = stream.next().await {}
 
     // The context should now contain:

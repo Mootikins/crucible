@@ -312,7 +312,7 @@ pub async fn execute(
                 let renderer = MarkdownRenderer::new();
                 let mut response_content = String::new();
 
-                let mut stream = handle.send_message_stream(&prompt);
+                let mut stream = handle.send_message_stream(prompt.clone());
                 while let Some(result) = stream.next().await {
                     match result {
                         Ok(chunk) => {

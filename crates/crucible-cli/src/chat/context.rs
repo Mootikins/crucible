@@ -205,10 +205,10 @@ mod tests {
 
     #[async_trait]
     impl AgentHandle for MockAgent {
-        fn send_message_stream<'a>(
-            &'a mut self,
-            _message: &'a str,
-        ) -> futures::stream::BoxStream<'a, ChatResult<crucible_core::traits::chat::ChatChunk>>
+        fn send_message_stream(
+            &mut self,
+            _message: String,
+        ) -> futures::stream::BoxStream<'static, ChatResult<crucible_core::traits::chat::ChatChunk>>
         {
             use futures::stream;
             Box::pin(stream::iter(vec![

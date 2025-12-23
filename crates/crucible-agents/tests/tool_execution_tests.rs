@@ -259,7 +259,7 @@ async fn test_tool_json_parse_error() {
     let tool_executor = Box::new(MockToolExecutor::with_tools(vec!["test_tool".to_string()]));
     let mut handle = create_test_handle(provider, Some(tool_executor));
 
-    let mut stream = handle.send_message_stream("test message");
+    let mut stream = handle.send_message_stream("test message".to_string());
     let mut results = Vec::new();
 
     while let Some(chunk_result) = stream.next().await {
@@ -279,7 +279,7 @@ async fn test_tool_missing_executor() {
     let provider = Box::new(MockProvider::with_valid_tool_call("any_tool"));
     let mut handle = create_test_handle(provider, None);
 
-    let mut stream = handle.send_message_stream("test message");
+    let mut stream = handle.send_message_stream("test message".to_string());
     let mut results = Vec::new();
 
     while let Some(chunk_result) = stream.next().await {
@@ -300,7 +300,7 @@ async fn test_tool_not_found_error() {
     let tool_executor = Box::new(MockToolExecutor::with_tools(vec!["other_tool".to_string()]));
     let mut handle = create_test_handle(provider, Some(tool_executor));
 
-    let mut stream = handle.send_message_stream("test message");
+    let mut stream = handle.send_message_stream("test message".to_string());
     let mut results = Vec::new();
 
     while let Some(chunk_result) = stream.next().await {
@@ -321,7 +321,7 @@ async fn test_tool_failure_adds_error_to_context() {
     let tool_executor = Box::new(MockToolExecutor::failing());
     let mut handle = create_test_handle(provider, Some(tool_executor));
 
-    let mut stream = handle.send_message_stream("test message");
+    let mut stream = handle.send_message_stream("test message".to_string());
     let mut results = Vec::new();
 
     while let Some(chunk_result) = stream.next().await {
