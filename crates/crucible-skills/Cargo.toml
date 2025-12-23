@@ -20,10 +20,12 @@ glob = { workspace = true }
 walkdir = "2"
 dirs = "5"
 sha2 = "0.10"
+crucible-surrealdb = { path = "../crucible-surrealdb", optional = true }
 
 [features]
 default = []
-test-utils = []
+storage = ["crucible-surrealdb"]
+test-utils = ["storage"]
 
 [dev-dependencies]
 crucible-skills = { path = ".", features = ["test-utils"] }
