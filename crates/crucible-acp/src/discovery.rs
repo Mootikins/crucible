@@ -28,14 +28,54 @@ pub struct AgentInfo {
     pub env_vars: HashMap<String, String>,
 }
 
-/// Known ACP-compatible agents (name, command, args)
-const KNOWN_AGENTS: &[(&str, &str, &[&str])] = &[
-    ("opencode", "opencode", &["acp"]),
-    ("claude", "npx", &["@zed-industries/claude-code-acp"]),
-    ("gemini", "gemini-cli", &[]),
-    ("codex", "npx", &["@zed-industries/codex-acp"]),
-    ("cursor", "cursor-acp", &[]),
+/// Known ACP-compatible agents (name, command, args, description)
+const KNOWN_AGENTS: &[(&str, &str, &[&str], &str)] = &[
+    ("opencode", "opencode", &["acp"], "OpenCode AI (Go)"),
+    ("claude", "npx", &["@zed-industries/claude-code-acp"], "Claude Code via ACP"),
+    ("gemini", "gemini", &[], "Google Gemini CLI"),
+    ("codex", "npx", &["@zed-industries/codex-acp"], "OpenAI Codex via ACP"),
+    ("cursor", "cursor-acp", &[], "Cursor IDE via ACP"),
 ];
+
+/// Information about a known agent (for splash screen display)
+#[derive(Debug, Clone)]
+pub struct KnownAgent {
+    pub name: String,
+    pub description: String,
+    pub available: bool,
+}
+
+/// Get list of known agents (sync, no availability check)
+pub fn get_known_agents() -> Vec<KnownAgent> {
+    KNOWN_AGENTS
+        .iter()
+        .map(|(name, _, _, desc)| KnownAgent {
+            name: name.to_string(),
+            description: desc.to_string(),
+            available: false, // Unknown until probed
+        })
+        .collect()
+}
+
+/// Probe all known agents and return availability status
+///
+/// This probes all agents in parallel and returns their availability.
+/// Use this to populate splash screen with actual availability info.
+pub async fn probe_all_agents() -> Vec<KnownAgent> {
+    let futures: Vec<_> = KNOWN_AGENTS
+        .iter()
+        .map(|(name, cmd, _, desc)| async move {
+            let available = is_agent_available(cmd).await;
+            KnownAgent {
+                name: name.to_string(),
+                description: desc.to_string(),
+                available,
+            }
+        })
+        .collect();
+
+    join_all(futures).await
+}
 
 /// Discover an available ACP agent using parallel probing
 ///
@@ -62,7 +102,8 @@ pub async fn discover_agent(preferred: Option<&str>) -> Result<AgentInfo> {
     // If a preferred agent is specified, check it first (single probe)
     if let Some(agent_name) = preferred {
         debug!("Trying preferred agent: {}", agent_name);
-        if let Some((name, cmd, args)) = KNOWN_AGENTS.iter().find(|(n, _, _)| *n == agent_name) {
+        if let Some((name, cmd, args, _)) = KNOWN_AGENTS.iter().find(|(n, _, _, _)| *n == agent_name)
+        {
             if is_agent_available(cmd).await {
                 info!("Using preferred agent: {}", agent_name);
                 let agent = AgentInfo {
@@ -88,7 +129,7 @@ pub async fn discover_agent(preferred: Option<&str>) -> Result<AgentInfo> {
 
     let futures: Vec<_> = KNOWN_AGENTS
         .iter()
-        .map(|(name, cmd, args)| async move {
+        .map(|(name, cmd, args, _)| async move {
             let available = is_agent_available(cmd).await;
             (*name, *cmd, *args, available)
         })
@@ -183,14 +224,25 @@ Note: Some agents require both the base CLI and a bridge package.
     .to_string()
 }
 
+/// Commands that should trust PATH lookup without --version verification.
+/// These are either:
+/// - Package managers (npx) that handle resolution themselves
+/// - ACP agents that start servers and don't support --version
+const TRUST_PATH_COMMANDS: &[&str] = &[
+    "npx",        // Package manager, verifies packages at runtime
+    "cursor-acp", // ACP server, no --version support
+    "gemini",     // ACP server, no --version support
+];
+
 /// Check if an agent command is available (async, non-blocking)
 ///
 /// Uses a two-phase approach for speed:
 /// 1. Fast check with `which` to see if command exists in PATH
 /// 2. Only if found, verify with `--version` (with timeout)
 ///
-/// For `npx` commands, we skip the slow --version check since npx itself
-/// handles package resolution.
+/// For certain commands (npx, cursor-acp, gemini-cli), we skip the
+/// --version check since they either handle verification at runtime
+/// or don't support --version.
 pub async fn is_agent_available(command: &str) -> bool {
     // Phase 1: Fast PATH lookup using `which` (Unix) or `where` (Windows)
     // This is ~1ms vs ~300ms+ for spawning the actual command
@@ -205,9 +257,12 @@ pub async fn is_agent_available(command: &str) -> bool {
         Ok(output) if output.status.success() => {
             debug!("Agent '{}' found in PATH", command);
 
-            // For npx, we trust the PATH check - npx --version is slow
-            // and we'll verify the actual package when spawning
-            if command == "npx" {
+            // For certain commands, trust PATH check without --version verification
+            if TRUST_PATH_COMMANDS.contains(&command) {
+                debug!(
+                    "Agent '{}' trusted without --version check",
+                    command
+                );
                 return true;
             }
 
@@ -267,7 +322,7 @@ pub fn resolve_agent_from_config(name: &str, config: &AcpConfig) -> Result<Agent
     }
 
     // Fall back to built-in agent
-    if let Some((_, cmd, args)) = KNOWN_AGENTS.iter().find(|(n, _, _)| *n == name) {
+    if let Some((_, cmd, args, _)) = KNOWN_AGENTS.iter().find(|(n, _, _, _)| *n == name) {
         return Ok(AgentInfo {
             name: name.to_string(),
             command: cmd.to_string(),
@@ -297,7 +352,7 @@ fn resolve_profile(name: &str, profile: &AgentProfile) -> Result<AgentInfo> {
     // Otherwise, look up base agent (from extends or profile name)
     let base_name = profile.extends.as_deref().unwrap_or(name);
 
-    if let Some((_, cmd, args)) = KNOWN_AGENTS.iter().find(|(n, _, _)| *n == base_name) {
+    if let Some((_, cmd, args, _)) = KNOWN_AGENTS.iter().find(|(n, _, _, _)| *n == base_name) {
         Ok(AgentInfo {
             name: name.to_string(),
             command: cmd.to_string(),
@@ -436,13 +491,13 @@ mod tests {
         // Verify KNOWN_AGENTS structure is valid
         assert!(!KNOWN_AGENTS.is_empty(), "Should have known agents");
 
-        for (name, cmd, _args) in KNOWN_AGENTS {
+        for (name, cmd, _args, _desc) in KNOWN_AGENTS {
             assert!(!name.is_empty(), "Agent name should not be empty");
             assert!(!cmd.is_empty(), "Agent command should not be empty");
         }
 
         // Verify expected agents are present
-        let names: Vec<_> = KNOWN_AGENTS.iter().map(|(n, _, _)| *n).collect();
+        let names: Vec<_> = KNOWN_AGENTS.iter().map(|(n, _, _, _)| *n).collect();
         assert!(names.contains(&"opencode"));
         assert!(names.contains(&"claude"));
     }
