@@ -38,8 +38,6 @@ pub struct RatatuiRunner {
     /// Track Ctrl+C for double-press exit
     ctrl_c_count: u8,
     last_ctrl_c: Option<std::time::Instant>,
-    /// Should exit flag
-    should_exit: bool,
     /// Popup state
     popup: Option<crate::tui::state::PopupState>,
 }
@@ -59,7 +57,6 @@ impl RatatuiRunner {
             is_streaming: false,
             ctrl_c_count: 0,
             last_ctrl_c: None,
-            should_exit: false,
             popup: None,
         })
     }
@@ -155,8 +152,6 @@ impl RatatuiRunner {
         bridge: &AgentEventBridge,
         agent: &mut A,
     ) -> Result<bool> {
-        use crossterm::event::{KeyCode, KeyModifiers};
-
         // Build a minimal TuiState for key mapping (we'll migrate away from this)
         let mut temp_state = TuiState::new(self.view.mode_id());
         temp_state.input_buffer = self.view.input().to_string();
@@ -337,7 +332,7 @@ impl RatatuiRunner {
                     self.view.set_status_text("Generating");
                     self.view.set_token_count(Some(self.token_count));
                 }
-                SessionEvent::AgentResponded { content, tool_calls } => {
+                SessionEvent::AgentResponded { content, tool_calls: _ } => {
                     // Streaming complete
                     self.is_streaming = false;
                     self.view.clear_status();
