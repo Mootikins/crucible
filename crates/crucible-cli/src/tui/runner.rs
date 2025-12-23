@@ -10,7 +10,10 @@ use crate::tui::streaming_channel::{
 
 use crate::tui::conversation::StatusKind;
 use crate::tui::conversation_view::{ConversationView, RatatuiView};
-use crate::tui::{map_key_event, DynamicPopupProvider, InputAction, PopupProvider, TuiState};
+use crate::tui::{
+    map_key_event, ContentBlock, DynamicPopupProvider, InputAction, ParseEvent, PopupProvider,
+    StreamingParser, TuiState,
+};
 use anyhow::Result;
 use crossterm::{
     cursor,
@@ -49,6 +52,8 @@ pub struct RatatuiRunner {
     streaming_task: Option<tokio::task::JoinHandle<()>>,
     /// Channel receiver for streaming events
     streaming_rx: Option<StreamingReceiver>,
+    /// Streaming parser for incremental markdown parsing
+    streaming_parser: Option<StreamingParser>,
 }
 
 impl RatatuiRunner {
@@ -69,6 +74,7 @@ impl RatatuiRunner {
             popup: None,
             streaming_task: None,
             streaming_rx: None,
+            streaming_parser: None,
         })
     }
 
@@ -155,6 +161,10 @@ impl RatatuiRunner {
             self.poll_session_events(bridge, &mut last_seen_seq);
 
             // 5. Poll streaming channel (non-blocking)
+            let mut pending_parse_events = Vec::new();
+            let mut streaming_complete = false;
+            let mut streaming_error = None;
+
             if let Some(rx) = &mut self.streaming_rx {
                 while let Ok(event) = rx.try_recv() {
                     match event {
@@ -163,6 +173,13 @@ impl RatatuiRunner {
                             self.view.set_status(StatusKind::Generating {
                                 token_count: self.token_count,
                             });
+
+                            // Feed delta through parser
+                            if let Some(parser) = &mut self.streaming_parser {
+                                let parse_events = parser.feed(&text);
+                                pending_parse_events.extend(parse_events);
+                            }
+
                             bridge.ring.push(SessionEvent::TextDelta {
                                 delta: text,
                                 seq: self.token_count as u64,
@@ -171,6 +188,15 @@ impl RatatuiRunner {
                         StreamingEvent::Done { full_response } => {
                             self.is_streaming = false;
                             self.view.clear_status();
+
+                            // Finalize parser
+                            if let Some(parser) = &mut self.streaming_parser {
+                                let parse_events = parser.finalize();
+                                pending_parse_events.extend(parse_events);
+                            }
+
+                            streaming_complete = true;
+
                             bridge.ring.push(SessionEvent::AgentResponded {
                                 content: full_response,
                                 tool_calls: vec![],
@@ -178,11 +204,28 @@ impl RatatuiRunner {
                         }
                         StreamingEvent::Error { message } => {
                             self.is_streaming = false;
-                            self.view.clear_status();
-                            self.view.set_status_text(&format!("Error: {}", message));
+                            streaming_error = Some(message);
                         }
                     }
                 }
+            }
+
+            // Apply parse events after borrow of streaming_rx is released
+            if !pending_parse_events.is_empty() {
+                self.apply_parse_events(pending_parse_events);
+            }
+
+            // Handle streaming completion
+            if streaming_complete {
+                self.streaming_parser = None;
+                self.view.complete_assistant_streaming();
+            }
+
+            // Handle streaming error
+            if let Some(message) = streaming_error {
+                self.view.clear_status();
+                self.view.set_status_text(&format!("Error: {}", message));
+                self.streaming_parser = None;
             }
 
             // 6. Poll streaming task for completion (cleanup)
@@ -292,6 +335,10 @@ impl RatatuiRunner {
                 self.token_count = 0;
                 self.view.set_status(StatusKind::Thinking);
                 self.view.set_status_text("Thinking");
+
+                // Initialize streaming parser and start streaming message in view
+                self.streaming_parser = Some(StreamingParser::new());
+                self.view.start_assistant_streaming();
 
                 // Emit user message to ring
                 bridge.ring.push(SessionEvent::MessageReceived {
@@ -504,6 +551,41 @@ impl RatatuiRunner {
     /// Get the view state for testing.
     pub fn view(&self) -> &RatatuiView {
         &self.view
+    }
+
+    /// Apply parse events to the view (converts events to content blocks)
+    fn apply_parse_events(&mut self, events: Vec<ParseEvent>) {
+        if events.is_empty() {
+            return;
+        }
+
+        let mut blocks = Vec::new();
+
+        for event in events {
+            match event {
+                ParseEvent::Text(text) => {
+                    blocks.push(ContentBlock::prose(text));
+                }
+                ParseEvent::CodeBlockStart { lang } => {
+                    blocks.push(ContentBlock::code_partial(lang, ""));
+                }
+                ParseEvent::CodeBlockContent(content) => {
+                    // Append to last block (should be a code block)
+                    if let Some(last_block) = blocks.last_mut() {
+                        last_block.append(&content);
+                    }
+                }
+                ParseEvent::CodeBlockEnd => {
+                    // Mark last block as complete
+                    if let Some(last_block) = blocks.last_mut() {
+                        last_block.complete();
+                    }
+                }
+            }
+        }
+
+        // Append blocks to the streaming message
+        self.view.append_streaming_blocks(blocks);
     }
 }
 
