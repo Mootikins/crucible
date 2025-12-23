@@ -9,6 +9,7 @@
 pub mod content_block;
 pub mod conversation;
 pub mod conversation_view;
+pub mod dialog;
 pub mod input;
 pub mod markdown;
 pub mod popup;
@@ -27,6 +28,7 @@ pub mod viewport;
 pub mod widget;
 
 pub use content_block::{ContentBlock, ParseEvent};
+pub use dialog::{DialogKind, DialogResult, DialogStack, DialogState, DialogWidget};
 pub use input::{map_key_event, InputAction};
 pub use markdown::MarkdownRenderer;
 pub use popup::{DynamicPopupProvider, PopupProvider, StaticPopupProvider};
