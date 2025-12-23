@@ -760,3 +760,53 @@ fn send_message_shows_thinking_status() {
 
     assert_snapshot!("send_message_thinking_status", terminal.backend());
 }
+
+// =============================================================================
+// Streaming Parser Tests (Phase 4)
+// =============================================================================
+// Tests for incremental parsing with ContentBlock rendering
+
+use crucible_cli::tui::content_block::ContentBlock;
+
+#[test]
+fn streaming_partial_prose() {
+    let mut terminal = test_terminal();
+    let mut conv = ConversationState::new();
+    conv.push_user_message("Explain this");
+    conv.start_assistant_streaming();
+    conv.append_streaming_blocks(vec![ContentBlock::prose_partial("Hello, I'm here to hel")]);
+
+    render_conversation_view(&mut terminal, &conv, "", "act", Some(23), "Generating");
+    assert_snapshot!("conv_streaming_partial_prose", terminal.backend());
+}
+
+#[test]
+fn streaming_code_block() {
+    let mut terminal = test_terminal();
+    let mut conv = ConversationState::new();
+    conv.push_user_message("Show me code");
+    conv.start_assistant_streaming();
+    conv.append_streaming_blocks(vec![
+        ContentBlock::prose("Here's the code:"),
+        ContentBlock::code_partial(Some("rust".into()), "fn main() {\n    println!(\"Hel"),
+    ]);
+
+    render_conversation_view(&mut terminal, &conv, "", "act", Some(45), "Generating");
+    assert_snapshot!("conv_streaming_code_block", terminal.backend());
+}
+
+#[test]
+fn streaming_complete_blocks() {
+    let mut terminal = test_terminal();
+    let mut conv = ConversationState::new();
+    conv.push_user_message("Explain");
+    conv.start_assistant_streaming();
+    conv.append_streaming_blocks(vec![
+        ContentBlock::prose("First paragraph complete."),
+        ContentBlock::code(Some("rust".into()), "fn example() {}"),
+        ContentBlock::prose_partial("Now continuin"),
+    ]);
+
+    render_conversation_view(&mut terminal, &conv, "", "act", Some(80), "Generating");
+    assert_snapshot!("conv_streaming_mixed_blocks", terminal.backend());
+}
