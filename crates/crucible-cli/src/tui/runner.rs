@@ -54,6 +54,8 @@ pub struct RatatuiRunner {
     streaming_rx: Option<StreamingReceiver>,
     /// Streaming parser for incremental markdown parsing
     streaming_parser: Option<StreamingParser>,
+    /// Receiver for agent availability probing results
+    agent_probe_rx: Option<tokio::sync::oneshot::Receiver<Vec<crucible_acp::KnownAgent>>>,
 }
 
 impl RatatuiRunner {
@@ -75,6 +77,7 @@ impl RatatuiRunner {
             streaming_task: None,
             streaming_rx: None,
             streaming_parser: None,
+            agent_probe_rx: None,
         })
     }
 
@@ -85,13 +88,14 @@ impl RatatuiRunner {
         agent: &mut A,
     ) -> Result<()> {
         // Setup terminal with alternate screen and mouse capture
+        // Note: Don't hide cursor here - let ratatui manage cursor visibility
+        // based on whether set_cursor_position is called in render
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         execute!(
             stdout,
             EnterAlternateScreen,
-            crossterm::event::EnableMouseCapture,
-            cursor::Hide
+            crossterm::event::EnableMouseCapture
         )?;
 
         let backend = CrosstermBackend::new(stdout);
@@ -124,10 +128,28 @@ impl RatatuiRunner {
         let mut last_seen_seq = 0u64;
 
         loop {
-            // 1. Render
+            // 1. Start agent probing if splash needs it
+            if self.view.splash_needs_probing() && self.agent_probe_rx.is_none() {
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                self.agent_probe_rx = Some(rx);
+                tokio::spawn(async move {
+                    let agents = crucible_acp::probe_all_agents().await;
+                    let _ = tx.send(agents);
+                });
+            }
+
+            // 2. Check for agent probing results
+            if let Some(rx) = &mut self.agent_probe_rx {
+                if let Ok(agents) = rx.try_recv() {
+                    self.view.update_splash_availability(agents);
+                    self.agent_probe_rx = None;
+                }
+            }
+
+            // 3. Render
             terminal.draw(|f| self.view.render_frame(f))?;
 
-            // 2. Poll events (non-blocking, ~60fps)
+            // 4. Poll events (non-blocking, ~60fps)
             if event::poll(Duration::from_millis(16))? {
                 match event::read()? {
                     Event::Key(key) => {
@@ -145,7 +167,7 @@ impl RatatuiRunner {
                 }
             }
 
-            // 3. Refresh popup items and sync with view
+            // 5. Refresh popup items and sync with view
             if let Some(ref mut popup) = self.popup {
                 if popup_debounce.ready() {
                     let items = self.popup_provider.provide(popup.kind, &popup.query);
@@ -157,10 +179,10 @@ impl RatatuiRunner {
             // Sync popup state to view for rendering
             self.view.set_popup(self.popup.clone());
 
-            // 4. Poll ring buffer for session events
+            // 6. Poll ring buffer for session events
             self.poll_session_events(bridge, &mut last_seen_seq);
 
-            // 5. Poll streaming channel (non-blocking)
+            // 7. Poll streaming channel (non-blocking)
             let mut pending_parse_events = Vec::new();
             let mut streaming_complete = false;
             let mut streaming_error = None;
@@ -267,24 +289,32 @@ impl RatatuiRunner {
         // Special handling when splash is shown
         if self.view.is_showing_splash() {
             match key.code {
-                KeyCode::Up => {
+                // Vim-style navigation: k=up, j=down
+                KeyCode::Up | KeyCode::Char('k') => {
                     self.view.splash_select_prev();
                     return Ok(false);
                 }
-                KeyCode::Down => {
+                KeyCode::Down | KeyCode::Char('j') => {
                     self.view.splash_select_next();
                     return Ok(false);
                 }
-                KeyCode::Enter => {
-                    // Confirm selection and dismiss splash
+                // Quick access by number (1-indexed)
+                KeyCode::Char(c @ '1'..='9') => {
+                    let index = (c as usize) - ('1' as usize);
+                    self.view.splash_select_index(index);
+                    return Ok(false);
+                }
+                // Confirm with Enter, Space, or 'l' (vim-style right/accept)
+                KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('l') => {
                     if let Some(_agent_name) = self.view.splash_confirm() {
                         // TODO: Use agent_name to configure agent
                         self.view.dismiss_splash();
                     }
                     return Ok(false);
                 }
-                KeyCode::Esc => {
-                    return Ok(true); // Exit
+                // Exit with Esc, 'q', or 'h' (vim-style left/back)
+                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') => {
+                    return Ok(true);
                 }
                 _ => return Ok(false),
             }
