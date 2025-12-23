@@ -328,6 +328,22 @@ impl RatatuiView {
     pub fn is_showing_splash(&self) -> bool {
         self.state.splash.is_some() && self.state.conversation.items().is_empty()
     }
+
+    /// Start streaming an assistant message (creates empty message with streaming indicator)
+    pub fn start_assistant_streaming(&mut self) {
+        self.state.conversation.start_assistant_streaming();
+    }
+
+    /// Append content blocks to the streaming assistant message
+    pub fn append_streaming_blocks(&mut self, blocks: Vec<crate::tui::ContentBlock>) {
+        self.state.conversation.append_streaming_blocks(blocks);
+        self.scroll_to_bottom();
+    }
+
+    /// Mark the streaming assistant message as complete
+    pub fn complete_assistant_streaming(&mut self) {
+        self.state.conversation.complete_streaming();
+    }
 }
 
 impl ConversationView for RatatuiView {
