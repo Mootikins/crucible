@@ -3,6 +3,7 @@
 //! This module provides semantic, text, and property search tools.
 
 use crucible_core::{enrichment::EmbeddingProvider, traits::KnowledgeRepository};
+use crucible_skills::storage::SkillStore;
 use grep::regex::RegexMatcher;
 use grep::searcher::{sinks::UTF8, Searcher};
 use ignore::WalkBuilder;
@@ -37,6 +38,7 @@ pub struct SearchTools {
     kiln_path: String,
     knowledge_repo: Arc<dyn KnowledgeRepository>,
     embedding_provider: Arc<dyn EmbeddingProvider>,
+    skill_store: Option<Arc<SkillStore>>,
 }
 
 /// Parameters for semantic search
@@ -80,13 +82,30 @@ impl SearchTools {
             kiln_path,
             knowledge_repo,
             embedding_provider,
+            skill_store: None,
+        }
+    }
+
+    /// Create SearchTools with skill search support
+    #[allow(missing_docs)]
+    pub fn with_skill_store(
+        kiln_path: String,
+        knowledge_repo: Arc<dyn KnowledgeRepository>,
+        embedding_provider: Arc<dyn EmbeddingProvider>,
+        skill_store: Arc<SkillStore>,
+    ) -> Self {
+        Self {
+            kiln_path,
+            knowledge_repo,
+            embedding_provider,
+            skill_store: Some(skill_store),
         }
     }
 }
 
 #[tool_router]
 impl SearchTools {
-    #[tool(description = "Search notes using semantic similarity")]
+    #[tool(description = "Search notes and skills using semantic similarity")]
     pub async fn semantic_search(
         &self,
         params: Parameters<SemanticSearchParams>,
@@ -99,17 +118,18 @@ impl SearchTools {
             rmcp::ErrorData::internal_error(format!("Failed to generate embedding: {e}"), None)
         })?;
 
-        let search_results = self
+        // Search notes
+        let note_results = self
             .knowledge_repo
-            .search_vectors(embedding)
+            .search_vectors(embedding.clone())
             .await
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Search failed: {e}"), None))?;
+            .map_err(|e| rmcp::ErrorData::internal_error(format!("Note search failed: {e}"), None))?;
 
-        let results_json: Vec<serde_json::Value> = search_results
+        let mut all_results: Vec<serde_json::Value> = note_results
             .into_iter()
-            .take(limit)
             .map(|r| {
                 serde_json::json!({
+                    "type": "note",
                     "id": r.document_id,
                     "score": r.score,
                     "snippet": r.snippet,
@@ -118,9 +138,40 @@ impl SearchTools {
             })
             .collect();
 
+        // Search skills if skill_store is available
+        if let Some(ref skill_store) = self.skill_store {
+            match skill_store.search_by_embedding(&embedding, limit).await {
+                Ok(skill_results) => {
+                    for skill_result in skill_results {
+                        all_results.push(serde_json::json!({
+                            "type": "skill",
+                            "name": skill_result.name,
+                            "description": skill_result.description,
+                            "scope": skill_result.scope,
+                            "score": skill_result.relevance
+                        }));
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Skill search failed: {}", e);
+                    // Continue without skill results
+                }
+            }
+        }
+
+        // Sort all results by score descending
+        all_results.sort_by(|a, b| {
+            let score_a = a["score"].as_f64().unwrap_or(0.0);
+            let score_b = b["score"].as_f64().unwrap_or(0.0);
+            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // Take only the top results
+        all_results.truncate(limit);
+
         Ok(CallToolResult::success(vec![rmcp::model::Content::json(
             serde_json::json!({
-                "results": results_json,
+                "results": all_results,
                 "query": query,
                 "limit": limit
             }),
