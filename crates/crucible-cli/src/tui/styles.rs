@@ -29,11 +29,14 @@ pub mod colors {
 
     // --- Input box colors ---
 
-    /// Input box border/background accent
-    pub const INPUT_ACCENT: Color = Color::Rgb(80, 80, 120); // Muted purple-blue
+    /// Input box background (darker)
+    pub const INPUT_BG: Color = Color::Rgb(35, 35, 50); // Dark blue-gray
 
     /// Input text color
     pub const INPUT_FG: Color = Color::White;
+
+    /// Status line background (slightly lighter than input)
+    pub const STATUS_BG: Color = Color::Rgb(45, 45, 65); // Slightly lighter blue-gray
 
     // --- Mode colors ---
 
@@ -171,12 +174,14 @@ pub mod styles {
     pub fn input_box() -> Style {
         Style::default()
             .fg(colors::INPUT_FG)
-            .bg(colors::INPUT_ACCENT)
+            .bg(colors::INPUT_BG)
     }
 
-    /// Status line style
+    /// Status line style (slightly lighter than input)
     pub fn status_line() -> Style {
-        Style::default().fg(colors::DIM)
+        Style::default()
+            .fg(colors::INPUT_FG)
+            .bg(colors::STATUS_BG)
     }
 
     /// Token/metrics style
