@@ -228,6 +228,10 @@ pub enum Commands {
     /// Daemon management (start, stop, status)
     #[command(subcommand)]
     Daemon(crate::commands::daemon::DaemonCommands),
+
+    /// Agent skills management
+    #[command(subcommand)]
+    Skills(SkillsCommands),
 }
 
 /// Agent card management subcommands
@@ -394,6 +398,30 @@ pub enum StorageCommands {
         /// Import format (json, binary)
         #[arg(short = 'f', long, default_value = "json")]
         format: String,
+    },
+}
+
+/// Skills management subcommands
+#[derive(Subcommand)]
+pub enum SkillsCommands {
+    /// List discovered skills
+    List {
+        /// Filter by scope (personal, workspace, kiln)
+        #[arg(long)]
+        scope: Option<String>,
+    },
+    /// Show skill details
+    Show {
+        /// Skill name
+        name: String,
+    },
+    /// Search skills by query
+    Search {
+        /// Search query
+        query: String,
+        /// Maximum results
+        #[arg(short, long, default_value = "10")]
+        limit: usize,
     },
 }
 
