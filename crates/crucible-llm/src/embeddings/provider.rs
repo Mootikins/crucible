@@ -89,6 +89,7 @@ impl ModelFamily {
     /// Parse a model family from a string
     ///
     /// Case-insensitive matching against known families.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "bert" => Self::Bert,
@@ -151,6 +152,7 @@ impl ParameterSize {
     }
 
     /// Parse a parameter size from a string like "137M" or "7B"
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         let s = s.trim().to_uppercase();
 

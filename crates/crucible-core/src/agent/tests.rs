@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod tests {
+mod agent_tests {
     use crate::agent::{AgentCardLoader, AgentCardQuery, AgentCardRegistry};
     use std::fs;
     use tempfile::TempDir;

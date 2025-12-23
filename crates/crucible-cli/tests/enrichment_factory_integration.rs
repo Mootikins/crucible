@@ -1,4 +1,7 @@
 //! Integration tests for enrichment factory
+
+#![allow(clippy::field_reassign_with_default)]
+
 //!
 //! Tests the enrichment service creation, provider caching, and configuration handling.
 

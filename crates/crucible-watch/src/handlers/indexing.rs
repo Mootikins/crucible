@@ -5,6 +5,8 @@
 //! compatibility. New code should use `SessionEvent::EmbeddingRequested` from
 //! `crucible_core::events` instead.
 
+#![allow(clippy::ptr_arg)]
+
 #[allow(deprecated)]
 use crate::{
     embedding_events::{create_embedding_metadata, EmbeddingEvent, EventDrivenEmbeddingConfig},
@@ -23,6 +25,7 @@ use tracing::{debug, error, info, warn};
 /// Integrates with PulldownParser for note parsing and prepares for database storage.
 /// Emits SessionEvent variants (FileChanged, FileDeleted, FileMoved) to the event bus
 /// and EmbeddingEvent objects for integration with the embedding pipeline.
+#[allow(deprecated)]
 pub struct IndexingHandler {
     supported_extensions: Vec<String>,
     index_debounce: std::time::Duration,
@@ -41,7 +44,7 @@ pub struct IndexingHandler {
     // Database connection will be added in Phase 4
 }
 
-#[allow(dead_code)] // Many methods scaffolded for future Phase 4 implementation
+#[allow(dead_code, deprecated)] // Many methods scaffolded for future Phase 4 implementation
 impl IndexingHandler {
     /// Create a new indexing handler with default NoOpEmitter.
     ///

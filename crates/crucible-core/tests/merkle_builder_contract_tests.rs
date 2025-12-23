@@ -99,9 +99,11 @@ fn contract_from_document_must_be_deterministic() {
 #[test]
 fn contract_tree_must_be_send_sync() {
     #[derive(Clone)]
+    #[allow(dead_code)]
     struct ThreadSafeBuilder;
 
     #[derive(Clone, Debug)]
+    #[allow(dead_code)]
     struct ThreadSafeTree {
         data: String,
     }

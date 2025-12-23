@@ -40,7 +40,7 @@
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Result type for ACP operations
 pub type AcpResult<T> = Result<T, AcpError>;
@@ -233,7 +233,7 @@ pub trait FilesystemHandler: Send + Sync {
     /// - `AcpError::NotFound` - File doesn't exist
     /// - `AcpError::Filesystem` - Read failed (permissions, encoding, etc.)
     /// - `AcpError::PermissionDenied` - Path outside allowed scope
-    async fn read_file(&self, path: &PathBuf) -> AcpResult<Self::FileContent>;
+    async fn read_file(&self, path: &Path) -> AcpResult<Self::FileContent>;
 
     /// Write content to a text file
     ///
@@ -253,7 +253,7 @@ pub trait FilesystemHandler: Send + Sync {
     ///
     /// - `AcpError::PermissionDenied` - Plan mode blocks writes
     /// - `AcpError::Filesystem` - Write failed (permissions, disk space, etc.)
-    async fn write_file(&self, path: &PathBuf, content: Self::FileContent) -> AcpResult<()>;
+    async fn write_file(&self, path: &Path, content: Self::FileContent) -> AcpResult<()>;
 
     /// List files in a directory
     ///
@@ -274,7 +274,7 @@ pub trait FilesystemHandler: Send + Sync {
     /// - `AcpError::NotFound` - Directory doesn't exist
     /// - `AcpError::Filesystem` - Read failed
     /// - `AcpError::PermissionDenied` - Path outside allowed scope
-    async fn list_files(&self, path: &PathBuf, recursive: bool) -> AcpResult<Vec<PathBuf>>;
+    async fn list_files(&self, path: &Path, recursive: bool) -> AcpResult<Vec<PathBuf>>;
 }
 
 /// Tool discovery and execution abstraction

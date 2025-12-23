@@ -1910,9 +1910,9 @@ impl<'a> NoteIngestor<'a> {
             metadata.insert("service".to_string(), serde_json::json!("google_drive"));
         } else if target_lower.contains("dropbox.com/") {
             metadata.insert("service".to_string(), serde_json::json!("dropbox"));
-        } else if target_lower.contains("gist.githubusercontent.com/") {
-            metadata.insert("service".to_string(), serde_json::json!("github"));
-        } else if target_lower.contains("github.com/") {
+        } else if target_lower.contains("gist.githubusercontent.com/")
+            || target_lower.contains("github.com/")
+        {
             metadata.insert("service".to_string(), serde_json::json!("github"));
         } else if target_lower.contains("linkedin.com/") {
             metadata.insert("service".to_string(), serde_json::json!("linkedin"));

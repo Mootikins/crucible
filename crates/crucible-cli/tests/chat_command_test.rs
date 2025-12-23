@@ -1,4 +1,7 @@
 //! Integration tests for chat command
+
+#![allow(clippy::field_reassign_with_default)]
+
 //!
 //! This test reproduces the double database open bug where chat::execute()
 //! tries to open the same RocksDB database twice in the same process.

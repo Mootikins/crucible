@@ -1,4 +1,7 @@
 //! Tests for CLI configuration commands
+
+#![allow(clippy::field_reassign_with_default, deprecated)]
+
 //!
 //! This module tests the `config` subcommands:
 //! - `config init`: Initialize a new config file

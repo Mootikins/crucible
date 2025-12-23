@@ -2,6 +2,8 @@
 //!
 //! This module contains helper functions used across multiple tool modules.
 
+#![allow(clippy::missing_errors_doc)]
+
 use std::path::{Path, PathBuf};
 
 /// Parse YAML frontmatter from markdown content

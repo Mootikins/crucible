@@ -1156,7 +1156,7 @@ mod tests {
 
     #[test]
     fn test_unified_search_result_sorting() {
-        let mut results = vec![
+        let mut results = [
             UnifiedSearchResult::Note {
                 result: SearchResult {
                     document_id: DocumentId("notes/low.md".to_string()),

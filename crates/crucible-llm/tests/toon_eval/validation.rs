@@ -83,6 +83,7 @@ pub struct ValidationResult {
     /// Whether validation passed
     pub success: bool,
     /// The parsed JSON value (if parsing succeeded)
+    #[allow(dead_code)]
     pub parsed: Option<Value>,
     /// List of errors found
     pub errors: Vec<ToonError>,

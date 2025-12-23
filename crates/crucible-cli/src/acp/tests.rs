@@ -100,8 +100,8 @@ mod agent_tests {
 
         // Will fail if no compatible agents are installed
         // This is expected in most test environments
-        if result.is_err() {
-            let error_msg = result.unwrap_err().to_string();
+        if let Err(e) = result {
+            let error_msg = e.to_string();
             assert!(error_msg.contains("No compatible ACP agent found"));
         }
     }

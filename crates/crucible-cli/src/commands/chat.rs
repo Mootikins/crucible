@@ -32,6 +32,7 @@ use crucible_watch::{EventFilter, WatchMode};
 /// * `provider_key` - Optional LLM provider for internal agent
 /// * `max_context_tokens` - Maximum context window tokens for internal agent
 /// * `env_overrides` - Environment variables to pass to ACP agent (KEY=VALUE pairs)
+#[allow(clippy::too_many_arguments)] // CLI entry point takes CLI args directly
 pub async fn execute(
     config: CliConfig,
     agent_name: Option<String>,

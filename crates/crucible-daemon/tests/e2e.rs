@@ -77,7 +77,7 @@ async fn test_e2e_daemon_lifecycle() {
 async fn test_e2e_multiple_requests() {
     let mut daemon = TestDaemon::start().await.expect("Failed to start daemon");
 
-    let mut stream = UnixStream::connect(&daemon.socket_path)
+    let stream = UnixStream::connect(&daemon.socket_path)
         .await
         .expect("Failed to connect");
 

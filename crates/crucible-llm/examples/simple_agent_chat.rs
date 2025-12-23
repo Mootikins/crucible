@@ -19,7 +19,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use crucible_core::traits::{
-    ExecutionContext, LlmMessage, ToolDefinition, ToolError, ToolExecutor, ToolResult,
+    ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult,
 };
 use crucible_llm::{create_chat_provider, AgentRuntime};
 use std::io::{self, Write};

@@ -6,6 +6,7 @@
 //! - Mock HTTP servers for testing streaming endpoints
 //! - Stream collection utilities
 
+#[allow(dead_code)]
 pub mod mock_server;
 
 use crucible_core::traits::{ChatCompletionChunk, LlmError, LlmResult, ToolCallDelta};
@@ -118,6 +119,7 @@ pub async fn collect_stream_with_error(
 }
 
 /// Assert that a stream yields the expected content
+#[allow(dead_code)]
 pub async fn assert_stream_yields_content(
     stream: BoxStream<'_, LlmResult<ChatCompletionChunk>>,
     expected: &str,
@@ -129,6 +131,7 @@ pub async fn assert_stream_yields_content(
 }
 
 /// Assert that a stream contains at least one tool call with the given name
+#[allow(dead_code)]
 pub async fn assert_stream_has_tool_call(
     stream: BoxStream<'_, LlmResult<ChatCompletionChunk>>,
     expected_tool_name: &str,

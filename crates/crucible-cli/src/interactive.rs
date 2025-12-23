@@ -124,8 +124,8 @@ mod tests {
 
     #[test]
     fn test_fuzzy_picker_initialization() {
+        // Just verify FuzzyPicker can be constructed without panic
         let _picker = FuzzyPicker::new();
-        assert!(true);
     }
 
     #[test]

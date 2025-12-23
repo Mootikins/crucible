@@ -14,6 +14,8 @@
 //! - **Single Responsibility**: Focused on test support
 //! - **Test Isolation**: Enables testing without external dependencies
 
+#![allow(clippy::field_reassign_with_default)]
+
 use serde_json::Value;
 use std::collections::HashMap;
 

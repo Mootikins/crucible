@@ -255,16 +255,16 @@ impl SurrealClient {
         // Extract the actual record objects from the wrapped structure
         let converted_records = records_array
             .into_iter()
-            .filter_map(|item| {
+            .map(|item| {
                 // Each item might be wrapped in {"Object": {...}}
                 if let Value::Object(mut outer) = item {
                     if let Some(Value::Object(inner)) = outer.remove("Object") {
-                        Some(self.convert_wrapped_object_to_record(inner))
+                        self.convert_wrapped_object_to_record(inner)
                     } else {
-                        Some(self.convert_value_to_record(Value::Object(outer)))
+                        self.convert_value_to_record(Value::Object(outer))
                     }
                 } else {
-                    Some(self.convert_value_to_record(item))
+                    self.convert_value_to_record(item)
                 }
             })
             .collect();

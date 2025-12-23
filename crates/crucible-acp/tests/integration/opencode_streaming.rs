@@ -12,6 +12,8 @@
 //! cargo test -p crucible-acp --test integration -- --ignored --nocapture opencode
 //! ```
 
+#![allow(clippy::zombie_processes)]
+
 use agent_client_protocol::PromptRequest;
 use crucible_acp::client::{ClientConfig, CrucibleAcpClient};
 use std::path::PathBuf;

@@ -30,6 +30,7 @@ fn is_retryable_error(error_msg: &str) -> bool {
 }
 
 /// Upsert embedding record with retry logic
+#[allow(clippy::too_many_arguments)]
 async fn upsert_embedding_record(
     client: &SurrealClient,
     chunk_id: &str,
@@ -69,7 +70,10 @@ async fn upsert_embedding_record(
 
     let mut last_error = None;
     for attempt in 0..MAX_RETRIES {
-        match client.query(&upsert_sql, &[params.clone()]).await {
+        match client
+            .query(&upsert_sql, std::slice::from_ref(&params))
+            .await
+        {
             Ok(_) => return Ok(()),
             Err(e) => {
                 let error_msg = e.to_string();
@@ -292,6 +296,7 @@ pub async fn store_document_embedding(
 }
 
 /// Store embedding with graph relations
+#[allow(clippy::too_many_arguments)]
 pub async fn store_embedding(
     client: &SurrealClient,
     note_id: &str,
@@ -334,6 +339,7 @@ pub async fn store_embedding(
 }
 
 /// Store embedding with graph relations and optional chunk_id field
+#[allow(clippy::too_many_arguments)]
 pub async fn store_embedding_with_chunk_id(
     client: &SurrealClient,
     note_id: &str,

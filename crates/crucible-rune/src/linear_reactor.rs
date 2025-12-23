@@ -332,7 +332,7 @@ impl std::fmt::Debug for LinearReactor {
 fn generate_compaction_summary(events: &[SessionEvent]) -> String {
     let mut message_count = 0usize;
     let mut tool_call_count = 0usize;
-    let mut tool_complete_count = 0usize;
+    let mut _tool_complete_count = 0usize;
     let mut agent_response_count = 0usize;
     let mut thinking_count = 0usize;
     let mut subagent_count = 0usize;
@@ -369,7 +369,7 @@ fn generate_compaction_summary(events: &[SessionEvent]) -> String {
                 }
             }
             SessionEvent::ToolCompleted { .. } => {
-                tool_complete_count += 1;
+                _tool_complete_count += 1;
             }
             SessionEvent::SubagentSpawned { .. }
             | SessionEvent::SubagentCompleted { .. }

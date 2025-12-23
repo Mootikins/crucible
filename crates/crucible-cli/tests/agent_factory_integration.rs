@@ -1,4 +1,7 @@
 //! Integration tests for agent factory
+
+#![allow(clippy::field_reassign_with_default)]
+
 //!
 //! Tests the unified agent initialization for both ACP and internal agents.
 

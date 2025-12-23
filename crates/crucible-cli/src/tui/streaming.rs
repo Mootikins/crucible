@@ -399,7 +399,7 @@ mod tests {
         let mut buf = StreamingBuffer::new();
         buf.append("First\n\n");
         // First part flushed
-        let result = buf.append("Second");
+        let _result = buf.append("Second");
         // No flush for "Second" alone
 
         let remaining = buf.finalize();

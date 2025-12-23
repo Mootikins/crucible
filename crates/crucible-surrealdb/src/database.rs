@@ -17,12 +17,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
 
+type GraphRelation = (String, String, String, HashMap<String, serde_json::Value>);
+
 /// In-memory kiln database (temporary implementation)
 pub struct SurrealEmbeddingDatabase {
     // In-memory storage for documents - uses RwLock for concurrent reads
     storage: Arc<RwLock<HashMap<String, EmbeddingData>>>,
     // In-memory graph relations - uses RwLock for concurrent reads
-    relations: Arc<RwLock<Vec<(String, String, String, HashMap<String, serde_json::Value>)>>>,
+    relations: Arc<RwLock<Vec<GraphRelation>>>,
     #[allow(dead_code)] // Config will be used for actual SurrealDB implementation
     config: SurrealDbConfig,
 }

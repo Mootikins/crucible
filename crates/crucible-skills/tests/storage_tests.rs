@@ -1,7 +1,6 @@
 #![cfg(feature = "storage")]
 
 use chrono::Utc;
-use crucible_skills::storage::SkillStore;
 use crucible_skills::{Skill, SkillScope, SkillSource};
 use std::path::PathBuf;
 

@@ -208,7 +208,7 @@ async fn test_event_bus_integration() {
     let _bus = event_bus.read().await;
     // The event bus should have handlers registered if any
     // For now, we just verify the client is set up correctly
-    assert!(true); // Placeholder - actual event verification would require event bus inspection
+    // TODO: Add actual event verification when event bus inspection API is available
 }
 
 #[tokio::test]

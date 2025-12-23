@@ -34,6 +34,7 @@ impl Default for ChatServiceConfig {
 pub struct ChatService {
     session: Arc<Mutex<Option<ChatSession>>>,
     event_tx: broadcast::Sender<ChatEvent>,
+    #[allow(dead_code)]
     config: ChatServiceConfig,
 }
 

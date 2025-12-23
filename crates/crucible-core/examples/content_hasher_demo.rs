@@ -19,7 +19,7 @@ use crucible_core::{
         BatchLookupConfig, ChangeDetectionMetrics, ChangeDetectionResult, ChangeDetector,
         ChangeStatistics, ContentHasher, HashLookupResult, HashLookupStorage, StoredHash,
     },
-    types::hashing::{FileHash, FileHashInfo, HashAlgorithm, HashError},
+    types::hashing::{FileHash, FileHashInfo, HashError},
     ChangeSet,
 };
 
@@ -222,7 +222,7 @@ impl ChangeDetector for SimpleChangeDetector {
             .storage
             .lookup_file_hashes_batch(&[path.to_string()], None)
             .await?;
-        if let Some(stored) = lookup_result.found_files.get(path) {
+        if lookup_result.found_files.contains_key(path) {
             // In a real implementation, we would hash the current file and compare
             // For this demo, we'll return None to indicate no current file state
             Ok(None)
@@ -250,7 +250,7 @@ impl ChangeDetector for SimpleChangeDetector {
             // For mock, assume files in storage haven't changed
             let lookup_result = self
                 .storage
-                .lookup_file_hashes_batch(&[path.clone()], None)
+                .lookup_file_hashes_batch(std::slice::from_ref(path), None)
                 .await?;
             let has_stored = lookup_result.found_files.contains_key(path);
             results.insert(path.clone(), has_stored);

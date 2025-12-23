@@ -25,21 +25,8 @@ impl GGUFModelInfo {
         // determine the dimensions from the model output
         // Full GGUF parsing would require reading the file format properly
 
-        // Try to infer from filename or use defaults
-        let filename = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("")
-            .to_lowercase();
-
-        // Try to detect dimensions from filename (e.g., "v1.5" -> 768, "v2" -> 768)
-        let embedding_dim = if filename.contains("v1.5") || filename.contains("v1_5") {
-            768
-        } else if filename.contains("v2") {
-            768
-        } else {
-            768 // Default for nomic-embed-text
-        };
+        // All nomic-embed-text models use 768 dimensions
+        let embedding_dim = 768;
 
         Ok(Self {
             vocab_size: 32000, // Default

@@ -2,6 +2,8 @@
 //!
 //! This module provides simple filesystem-based note CRUD tools.
 
+#![allow(missing_docs)]
+
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{model::CallToolResult, tool, tool_router};
 use schemars::JsonSchema;

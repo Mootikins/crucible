@@ -330,7 +330,6 @@ impl CommitHandler {
     /// Analyze staged changes and suggest commit type
     fn analyze_changes(files: &[String], diff: &str) -> (String, String) {
         let mut commit_type = "chore";
-        let description;
 
         // Analyze file patterns
         let _has_rust = files.iter().any(|f| f.ends_with(".rs"));
@@ -375,15 +374,13 @@ impl CommitHandler {
         }
 
         // Generate description from file names
-        if files.len() == 1 {
+        let description = if files.len() == 1 {
             let file = &files[0];
             let name = file.split('/').next_back().unwrap_or(file);
-            description = format!("update {}", name);
-        } else if files.len() <= 3 {
-            description = format!("update {} files", files.len());
+            format!("update {}", name)
         } else {
-            description = format!("update {} files", files.len());
-        }
+            format!("update {} files", files.len())
+        };
 
         (commit_type.to_string(), description)
     }

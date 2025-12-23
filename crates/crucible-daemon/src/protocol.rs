@@ -15,6 +15,7 @@ pub enum RequestId {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Request {
+    #[allow(dead_code)]
     pub jsonrpc: String,
     pub id: Option<RequestId>,
     pub method: String,
@@ -76,6 +77,7 @@ impl Response {
 
 // Standard JSON-RPC error codes
 pub const PARSE_ERROR: i32 = -32700;
+#[allow(dead_code)]
 pub const INVALID_REQUEST: i32 = -32600;
 pub const METHOD_NOT_FOUND: i32 = -32601;
 pub const INVALID_PARAMS: i32 = -32602;

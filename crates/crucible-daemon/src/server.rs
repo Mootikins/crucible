@@ -44,6 +44,7 @@ impl Server {
     }
 
     /// Get a shutdown sender for external shutdown triggers
+    #[allow(dead_code)]
     pub fn shutdown_handle(&self) -> broadcast::Sender<()> {
         self.shutdown_tx.clone()
     }

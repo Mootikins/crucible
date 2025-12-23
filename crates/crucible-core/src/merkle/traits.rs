@@ -52,6 +52,7 @@ pub trait MerkleTreeBuilder: Send + Sync + Clone + 'static {
     /// # Returns
     ///
     /// A merkle tree representing the document's structure and content hashes
+    #[allow(clippy::wrong_self_convention)] // Builder pattern, not conversion
     fn from_document(&self, doc: &ParsedNote) -> Self::Tree;
 }
 

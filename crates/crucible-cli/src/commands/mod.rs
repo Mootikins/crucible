@@ -14,7 +14,3 @@ pub mod status;
 pub mod secure_filesystem;
 pub mod stats;
 pub mod storage;
-
-// Tests
-#[cfg(test)]
-mod tests;

@@ -583,7 +583,7 @@ mod tests {
         // Send message - should trim context automatically
         {
             let mut stream = handle.send_message_stream("Test message".to_string());
-            while let Some(_) = stream.next().await {
+            while (stream.next().await).is_some() {
                 // Consume stream
             }
             // Stream is dropped here
