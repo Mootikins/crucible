@@ -14,6 +14,7 @@ pub mod popup;
 pub mod render;
 pub mod runner;
 pub mod scrollback_runner;
+pub mod splash;
 pub mod state;
 pub mod streaming;
 pub mod streaming_channel;
@@ -28,6 +29,7 @@ pub use markdown::MarkdownRenderer;
 pub use popup::{DynamicPopupProvider, PopupProvider, StaticPopupProvider};
 pub use render::render;
 pub use runner::RatatuiRunner;
+pub use splash::{AgentOption, SplashState, SplashWidget};
 pub use state::TuiState;
 pub use streaming::StreamingBuffer;
 pub use streaming_channel::{

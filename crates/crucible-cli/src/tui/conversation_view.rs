@@ -5,6 +5,7 @@
 use crate::tui::conversation::{
     ConversationState, ConversationWidget, InputBoxWidget, StatusBarWidget, StatusKind,
 };
+use crate::tui::splash::{SplashState, SplashWidget};
 use crate::tui::state::{PopupItem, PopupState};
 use anyhow::Result;
 use ratatui::{
@@ -91,6 +92,8 @@ pub struct ViewState {
     pub height: u16,
     /// Popup state for slash commands / agents / files
     pub popup: Option<PopupState>,
+    /// Splash screen state (Some when conversation is empty)
+    pub splash: Option<SplashState>,
 }
 
 impl ViewState {
@@ -107,6 +110,11 @@ impl ViewState {
             width,
             height,
             popup: None,
+            splash: Some(SplashState::new(
+                std::env::current_dir()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|_| "~".to_string()),
+            )),
         }
     }
 }
@@ -135,6 +143,15 @@ impl RatatuiView {
 
     /// Render to a ratatui frame
     pub fn render_frame(&self, frame: &mut Frame) {
+        // Show splash if conversation is empty AND no popup is active
+        if self.state.conversation.items().is_empty() && self.state.popup.is_none() {
+            if let Some(splash) = &self.state.splash {
+                let widget = SplashWidget::new(splash);
+                frame.render_widget(widget, frame.area());
+                return;
+            }
+        }
+
         // Calculate popup height if needed
         let popup_height = self
             .state
@@ -277,6 +294,39 @@ impl RatatuiView {
     fn content_height(&self) -> usize {
         // Rough estimate: count items * average lines per item
         self.state.conversation.items().len() * 3
+    }
+
+    /// Select next agent in splash screen
+    pub fn splash_select_next(&mut self) {
+        if let Some(splash) = &mut self.state.splash {
+            splash.select_next();
+        }
+    }
+
+    /// Select previous agent in splash screen
+    pub fn splash_select_prev(&mut self) {
+        if let Some(splash) = &mut self.state.splash {
+            splash.select_prev();
+        }
+    }
+
+    /// Confirm current splash selection and return selected agent name
+    pub fn splash_confirm(&mut self) -> Option<String> {
+        if let Some(splash) = &self.state.splash {
+            splash.selected_agent().map(|a| a.name.clone())
+        } else {
+            None
+        }
+    }
+
+    /// Dismiss the splash screen
+    pub fn dismiss_splash(&mut self) {
+        self.state.splash = None;
+    }
+
+    /// Check if splash is currently showing
+    pub fn is_showing_splash(&self) -> bool {
+        self.state.splash.is_some() && self.state.conversation.items().is_empty()
     }
 }
 
