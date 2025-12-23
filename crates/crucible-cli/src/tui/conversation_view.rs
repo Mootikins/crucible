@@ -344,6 +344,16 @@ impl RatatuiView {
     pub fn complete_assistant_streaming(&mut self) {
         self.state.conversation.complete_streaming();
     }
+
+    /// Append content to the last block of the streaming message
+    pub fn append_to_last_block(&mut self, content: &str) {
+        self.state.conversation.append_to_last_block(content);
+    }
+
+    /// Mark the last block as complete
+    pub fn complete_last_block(&mut self) {
+        self.state.conversation.complete_last_block();
+    }
 }
 
 impl ConversationView for RatatuiView {
