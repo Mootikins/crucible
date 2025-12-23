@@ -35,6 +35,7 @@ pub enum PopupItemKind {
     Agent,
     File,
     Note,
+    Skill,
 }
 
 /// Popup entry displayed in the inline picker

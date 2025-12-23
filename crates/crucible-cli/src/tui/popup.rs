@@ -15,9 +15,10 @@ pub trait PopupProvider: Send + Sync {
 #[derive(Clone, Default)]
 pub struct StaticPopupProvider {
     pub commands: Vec<CommandDescriptor>,
-    pub agents: Vec<(String, String)>, // (id/slug, description)
-    pub files: Vec<String>,            // workspace relative
-    pub notes: Vec<String>,            // note:<path> or note:<kiln>/<path>
+    pub agents: Vec<(String, String)>,       // (id/slug, description)
+    pub files: Vec<String>,                  // workspace relative
+    pub notes: Vec<String>,                  // note:<path> or note:<kiln>/<path>
+    pub skills: Vec<(String, String, String)>, // (name, description, scope)
 }
 
 impl StaticPopupProvider {
@@ -51,6 +52,24 @@ impl PopupProvider for StaticPopupProvider {
                             title,
                             subtitle,
                             token: format!("/{} ", cmd.name),
+                            score: score.min(i32::MAX as u32) as i32,
+                            available: true,
+                        });
+                    }
+                }
+
+                // Also show skills in command popup
+                for (name, description, scope) in &self.skills {
+                    let title = format!("skill:{}", name);
+                    let subtitle = format!("{} ({})", description, scope);
+                    let match_col = Utf32String::from(name.as_str());
+                    let score = pattern.score(std::slice::from_ref(&match_col), &mut matcher);
+                    if let Some(score) = score {
+                        out.push(PopupItem {
+                            kind: PopupItemKind::Skill,
+                            title,
+                            subtitle,
+                            token: format!("skill:{} ", name),
                             score: score.min(i32::MAX as u32) as i32,
                             available: true,
                         });
@@ -164,6 +183,7 @@ pub struct DynamicPopupProvider {
     agents_version: AtomicU64,
     files_version: AtomicU64,
     notes_version: AtomicU64,
+    skills_version: AtomicU64,
     command_matcher: parking_lot::Mutex<PopupMatcherCache>,
     agent_file_matcher: parking_lot::Mutex<PopupMatcherCache>,
 }
@@ -186,6 +206,7 @@ impl DynamicPopupProvider {
             agents_version: AtomicU64::new(1),
             files_version: AtomicU64::new(1),
             notes_version: AtomicU64::new(1),
+            skills_version: AtomicU64::new(1),
             command_matcher: parking_lot::Mutex::new(PopupMatcherCache::new(
                 Nucleo::new(config_commands.clone(), notify.clone(), None, 1),
                 Matcher::new(config_commands),
@@ -220,6 +241,11 @@ impl DynamicPopupProvider {
         self.inner.write().notes = notes;
         self.notes_version.fetch_add(1, Ordering::Relaxed);
     }
+
+    pub fn set_skills(&self, skills: Vec<(String, String, String)>) {
+        self.inner.write().skills = skills;
+        self.skills_version.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -232,7 +258,7 @@ struct PopupMatcherCache {
     nucleo: Nucleo<PopupCandidate>,
     score_matcher: Matcher,
     last_query: String,
-    last_versions: (u64, u64, u64, u64), // commands, agents, files, notes
+    last_versions: (u64, u64, u64, u64, u64), // commands, agents, files, notes, skills
 }
 
 impl PopupMatcherCache {
@@ -241,13 +267,13 @@ impl PopupMatcherCache {
             nucleo,
             score_matcher,
             last_query: String::new(),
-            last_versions: (0, 0, 0, 0),
+            last_versions: (0, 0, 0, 0, 0),
         }
     }
 
-    fn needs_rebuild(&self, kind: CacheKind, versions: (u64, u64, u64, u64)) -> bool {
+    fn needs_rebuild(&self, kind: CacheKind, versions: (u64, u64, u64, u64, u64)) -> bool {
         match kind {
-            CacheKind::Command => versions.0 != self.last_versions.0,
+            CacheKind::Command => versions.0 != self.last_versions.0 || versions.4 != self.last_versions.4,
             CacheKind::AgentOrFile => {
                 versions.1 != self.last_versions.1
                     || versions.2 != self.last_versions.2
@@ -259,7 +285,7 @@ impl PopupMatcherCache {
     fn maybe_rebuild(
         &mut self,
         kind: CacheKind,
-        versions: (u64, u64, u64, u64),
+        versions: (u64, u64, u64, u64, u64),
         data: StaticPopupProvider,
     ) {
         if !self.needs_rebuild(kind, versions) {
@@ -288,6 +314,21 @@ impl PopupMatcherCache {
                         title,
                         subtitle,
                         token: format!("/{} ", name),
+                        available: true,
+                    };
+                    injector.push(cand, |c, cols| cols[0] = c.match_col.clone());
+                }
+
+                // Include skills in command cache
+                for (name, description, scope) in data.skills {
+                    let title = format!("skill:{}", name);
+                    let subtitle = format!("{} ({})", description, scope);
+                    let cand = PopupCandidate {
+                        kind: PopupItemKind::Skill,
+                        match_col: Utf32String::from(name.as_str()),
+                        title,
+                        subtitle,
+                        token: format!("skill:{} ", name),
                         available: true,
                     };
                     injector.push(cand, |c, cols| cols[0] = c.match_col.clone());
@@ -370,6 +411,7 @@ impl PopupProvider for DynamicPopupProvider {
             self.agents_version.load(Ordering::Relaxed),
             self.files_version.load(Ordering::Relaxed),
             self.notes_version.load(Ordering::Relaxed),
+            self.skills_version.load(Ordering::Relaxed),
         );
 
         match kind {
@@ -476,5 +518,50 @@ mod tests {
         }
         let items = provider.provide(PopupKind::AgentOrFile, "file");
         assert!(items.len() <= 20);
+    }
+}
+#[cfg(test)]
+mod skill_popup_tests {
+    use super::{PopupProvider, StaticPopupProvider};
+    use crate::tui::state::{PopupKind, PopupItemKind};
+
+    #[test]
+    fn test_skills_appear_in_command_popup() {
+        let mut provider = StaticPopupProvider::new();
+        provider.skills = vec![
+            ("git-commit".into(), "Create git commits".into(), "user".into()),
+            ("code-review".into(), "Review code quality".into(), "user".into()),
+        ];
+
+        let items = provider.provide(PopupKind::Command, "git");
+        
+        // Should find the git-commit skill
+        assert!(items.iter().any(|item| {
+            item.kind == PopupItemKind::Skill && item.title == "skill:git-commit"
+        }), "git-commit skill should appear in results");
+        
+        // Verify token format
+        let git_skill = items.iter()
+            .find(|item| item.kind == PopupItemKind::Skill && item.title == "skill:git-commit")
+            .expect("git-commit skill should exist");
+        
+        assert_eq!(git_skill.token, "skill:git-commit ");
+        assert!(git_skill.subtitle.contains("Create git commits"));
+        assert!(git_skill.subtitle.contains("(user)"));
+    }
+
+    #[test]
+    fn test_skills_fuzzy_match() {
+        let mut provider = StaticPopupProvider::new();
+        provider.skills = vec![
+            ("code-review".into(), "Review code".into(), "user".into()),
+        ];
+
+        let items = provider.provide(PopupKind::Command, "crvw");
+        
+        // Fuzzy match should find code-review
+        assert!(items.iter().any(|item| {
+            item.kind == PopupItemKind::Skill && item.title == "skill:code-review"
+        }), "Should fuzzy match code-review with 'crvw'");
     }
 }
