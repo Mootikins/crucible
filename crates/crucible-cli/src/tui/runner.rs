@@ -4,6 +4,9 @@
 //! Uses ratatui with alternate screen for full viewport control.
 
 use crate::chat::bridge::AgentEventBridge;
+use crate::tui::streaming_channel::{
+    create_streaming_channel, StreamingEvent, StreamingReceiver, StreamingTask,
+};
 
 use crate::tui::conversation::StatusKind;
 use crate::tui::conversation_view::{ConversationView, RatatuiView};
@@ -42,6 +45,10 @@ pub struct RatatuiRunner {
     last_ctrl_c: Option<std::time::Instant>,
     /// Popup state
     popup: Option<crate::tui::state::PopupState>,
+    /// Background streaming task
+    streaming_task: Option<tokio::task::JoinHandle<()>>,
+    /// Channel receiver for streaming events
+    streaming_rx: Option<StreamingReceiver>,
 }
 
 impl RatatuiRunner {
@@ -60,6 +67,8 @@ impl RatatuiRunner {
             ctrl_c_count: 0,
             last_ctrl_c: None,
             popup: None,
+            streaming_task: None,
+            streaming_rx: None,
         })
     }
 
@@ -144,7 +153,53 @@ impl RatatuiRunner {
 
             // 4. Poll ring buffer for session events
             self.poll_session_events(bridge, &mut last_seen_seq);
+
+            // 5. Poll streaming channel (non-blocking)
+            if let Some(rx) = &mut self.streaming_rx {
+                while let Ok(event) = rx.try_recv() {
+                    match event {
+                        StreamingEvent::Delta { text, seq: _ } => {
+                            self.token_count += 1;
+                            self.view.set_status(StatusKind::Generating {
+                                token_count: self.token_count,
+                            });
+                            bridge.ring.push(SessionEvent::TextDelta {
+                                delta: text,
+                                seq: self.token_count as u64,
+                            });
+                        }
+                        StreamingEvent::Done { full_response } => {
+                            self.is_streaming = false;
+                            self.view.clear_status();
+                            bridge.ring.push(SessionEvent::AgentResponded {
+                                content: full_response,
+                                tool_calls: vec![],
+                            });
+                        }
+                        StreamingEvent::Error { message } => {
+                            self.is_streaming = false;
+                            self.view.clear_status();
+                            self.view.set_status_text(&format!("Error: {}", message));
+                        }
+                    }
+                }
+            }
+
+            // 6. Poll streaming task for completion (cleanup)
+            if let Some(task) = &mut self.streaming_task {
+                if task.is_finished() {
+                    let task = self.streaming_task.take().unwrap();
+                    let _ = task.await; // Just cleanup, events already processed
+                    self.streaming_rx = None;
+                }
+            }
         }
+
+        // Ensure streaming task completes before exiting
+        if let Some(task) = self.streaming_task.take() {
+            let _ = task.await;
+        }
+        self.streaming_rx = None;
 
         Ok(())
     }
@@ -196,6 +251,11 @@ impl RatatuiRunner {
                 // Reset Ctrl+C tracking
                 self.ctrl_c_count = 0;
 
+                // Clear input IMMEDIATELY (before any async work)
+                self.view.set_input("");
+                self.view.set_cursor_position(0);
+                self.popup = None;
+
                 // Add user message to view
                 self.view.push_user_message(&msg)?;
 
@@ -205,12 +265,31 @@ impl RatatuiRunner {
                 self.view.set_status(StatusKind::Thinking);
                 self.view.set_status_text("Thinking");
 
-                // Send to agent
-                if let Err(e) = bridge.send_message(&msg, agent).await {
-                    self.is_streaming = false;
-                    self.view.clear_status();
-                    self.view.set_status_text(&format!("Error: {}", e));
-                }
+                // Emit user message to ring
+                bridge.ring.push(SessionEvent::MessageReceived {
+                    content: msg.clone(),
+                    participant_id: "user".to_string(),
+                });
+
+                // Create channel and spawn streaming task
+                let (tx, rx) = create_streaming_channel();
+
+                // SAFETY: We transmute the stream lifetime from 'a to 'static.
+                // This is sound because:
+                // 1. The agent lives for the entire run() method
+                // 2. We ensure streaming_task completes before run() returns
+                // 3. Only one streaming task active at a time
+                // 4. The stream processing happens entirely within the spawned task
+                let stream = agent.send_message_stream(&msg);
+                let static_stream: futures::stream::BoxStream<
+                    'static,
+                    crucible_core::traits::chat::ChatResult<crucible_core::traits::chat::ChatChunk>,
+                > = unsafe { std::mem::transmute(stream) };
+
+                let task = StreamingTask::spawn(tx, static_stream);
+
+                self.streaming_task = Some(task);
+                self.streaming_rx = Some(rx);
             }
             InputAction::InsertChar(c) => {
                 let mut input = self.view.input().to_string();
