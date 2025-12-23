@@ -9,7 +9,7 @@ mod error;
 pub mod parser;
 pub mod types;
 
-pub use discovery::FolderDiscovery;
+pub use discovery::{FolderDiscovery, SearchPath};
 pub use error::{SkillError, SkillResult};
 pub use parser::SkillParser;
 pub use types::{ResolvedSkill, Skill, SkillScope, SkillSource};
