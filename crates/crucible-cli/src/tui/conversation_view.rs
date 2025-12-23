@@ -134,8 +134,8 @@ impl RatatuiView {
             .split(frame.area());
 
         // Conversation
-        let conv_widget =
-            ConversationWidget::new(&self.state.conversation).scroll_offset(self.state.scroll_offset);
+        let conv_widget = ConversationWidget::new(&self.state.conversation)
+            .scroll_offset(self.state.scroll_offset);
         frame.render_widget(conv_widget, chunks[0]);
 
         // Input box

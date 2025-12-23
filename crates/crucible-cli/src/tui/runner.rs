@@ -13,7 +13,9 @@ use crossterm::{
     cursor,
     event::{self, Event, MouseEvent, MouseEventKind},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, size, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{
+        disable_raw_mode, enable_raw_mode, size, EnterAlternateScreen, LeaveAlternateScreen,
+    },
 };
 use crucible_core::events::SessionEvent;
 use crucible_core::traits::chat::AgentHandle;
@@ -332,7 +334,10 @@ impl RatatuiRunner {
                     self.view.set_status_text("Generating");
                     self.view.set_token_count(Some(self.token_count));
                 }
-                SessionEvent::AgentResponded { content, tool_calls: _ } => {
+                SessionEvent::AgentResponded {
+                    content,
+                    tool_calls: _,
+                } => {
                     // Streaming complete
                     self.is_streaming = false;
                     self.view.clear_status();
@@ -345,7 +350,11 @@ impl RatatuiRunner {
                     self.view.push_tool_running(name);
                     self.view.set_status_text(&format!("Running: {}", name));
                 }
-                SessionEvent::ToolCompleted { name, result, error } => {
+                SessionEvent::ToolCompleted {
+                    name,
+                    result,
+                    error,
+                } => {
                     if let Some(err) = error {
                         self.view.error_tool(name, err);
                     } else {

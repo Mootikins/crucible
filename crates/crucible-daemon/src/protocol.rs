@@ -96,7 +96,11 @@ mod tests {
 
     #[test]
     fn test_response_error_serialization() {
-        let resp = Response::error(Some(RequestId::Number(1)), METHOD_NOT_FOUND, "Unknown method");
+        let resp = Response::error(
+            Some(RequestId::Number(1)),
+            METHOD_NOT_FOUND,
+            "Unknown method",
+        );
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("\"error\""));
         assert!(json.contains("-32601"));
