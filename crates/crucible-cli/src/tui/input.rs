@@ -53,13 +53,16 @@ pub fn map_key_event(event: &KeyEvent, state: &TuiState) -> InputAction {
         // Ctrl+J inserts newline
         (KeyCode::Char('j'), KeyModifiers::CONTROL) => InputAction::InsertNewline,
 
-        // Enter sends message if buffer non-empty, or handles /exit command
+        // Enter: confirm popup if active with / or @, otherwise send message
         (KeyCode::Enter, KeyModifiers::NONE) => {
             let trimmed = state.input_buffer.trim();
             if trimmed.is_empty() {
                 InputAction::None
             } else if trimmed == "/exit" || trimmed == "/quit" || trimmed == "/q" {
                 InputAction::Exit
+            } else if trimmed.starts_with('/') || trimmed.starts_with('@') {
+                // Popup completion - Tab or Enter confirms
+                InputAction::ConfirmPopup
             } else {
                 InputAction::SendMessage(state.input_buffer.clone())
             }
@@ -77,20 +80,6 @@ pub fn map_key_event(event: &KeyEvent, state: &TuiState) -> InputAction {
         (KeyCode::PageDown, _) => InputAction::PageDown,
         (KeyCode::Left, KeyModifiers::NONE) => InputAction::MoveCursorLeft,
         (KeyCode::Right, KeyModifiers::NONE) => InputAction::MoveCursorRight,
-
-        // Popup confirm
-        (KeyCode::Enter, KeyModifiers::NONE) => {
-            let trimmed = state.input_buffer.trim();
-            if trimmed.starts_with('/') || trimmed.starts_with('@') {
-                InputAction::ConfirmPopup
-            } else if trimmed.is_empty() {
-                InputAction::None
-            } else if trimmed == "/exit" || trimmed == "/quit" || trimmed == "/q" {
-                InputAction::Exit
-            } else {
-                InputAction::SendMessage(state.input_buffer.clone())
-            }
-        }
 
         // Tab confirms popup selection
         (KeyCode::Tab, KeyModifiers::NONE) => InputAction::ConfirmPopup,
