@@ -2790,6 +2790,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "crucible-core",
+ "crucible-llm",
  "crucible-skills",
  "crucible-surrealdb",
  "dirs 5.0.1",
