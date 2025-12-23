@@ -20,7 +20,7 @@ use crate::chat::slash_registry::{SlashCommandRegistry, SlashCommandRegistryBuil
 use crate::chat::{AgentHandle, ChatError, ChatResult};
 use crate::core_facade::KilnContext;
 use crate::tui::DynamicPopupProvider;
-use crate::tui::TuiRunner;
+use crate::tui::RatatuiRunner;
 use crucible_core::traits::registry::{Registry, RegistryBuilder};
 use crucible_rune::SessionBuilder;
 use walkdir::WalkDir;
@@ -308,7 +308,7 @@ impl ChatSession {
         let bridge = AgentEventBridge::new(session.handle(), ring);
 
         // Create and run TUI
-        let mut runner = TuiRunner::new(&self.config.initial_mode_id, popup_provider.clone())?;
+        let mut runner = RatatuiRunner::new(&self.config.initial_mode_id, popup_provider.clone())?;
         runner.run(&bridge, agent).await
     }
 }
