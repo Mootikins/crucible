@@ -158,7 +158,11 @@ impl RatatuiRunner {
         use crossterm::event::{KeyCode, KeyModifiers};
 
         // Build a minimal TuiState for key mapping (we'll migrate away from this)
-        let temp_state = TuiState::new(self.view.mode_id());
+        let mut temp_state = TuiState::new(self.view.mode_id());
+        temp_state.input_buffer = self.view.input().to_string();
+        temp_state.cursor_position = self.view.cursor_position();
+        temp_state.ctrl_c_count = self.ctrl_c_count;
+        temp_state.last_ctrl_c = self.last_ctrl_c;
         let action = map_key_event(key, &temp_state);
 
         match action {
