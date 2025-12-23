@@ -153,6 +153,7 @@ fn render_popup(frame: &mut Frame, area: Rect, state: &TuiState) {
                 crate::tui::state::PopupItemKind::Agent => "[agent]",
                 crate::tui::state::PopupItemKind::File => "[file]",
                 crate::tui::state::PopupItemKind::Note => "[note]",
+                crate::tui::state::PopupItemKind::Skill => "[skill]",
             };
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
