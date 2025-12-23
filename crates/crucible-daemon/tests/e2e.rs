@@ -13,9 +13,7 @@ use tokio::net::UnixStream;
 /// Test basic daemon lifecycle: start, connect, ping, shutdown
 #[tokio::test]
 async fn test_e2e_daemon_lifecycle() {
-    let mut daemon = TestDaemon::start()
-        .await
-        .expect("Failed to start daemon");
+    let mut daemon = TestDaemon::start().await.expect("Failed to start daemon");
 
     // Verify daemon is running
     assert!(daemon.is_running(), "Daemon should be running");
@@ -33,14 +31,20 @@ async fn test_e2e_daemon_lifecycle() {
 
     // Read response
     let mut buf = vec![0u8; 1024];
-    let n = stream.read(&mut buf).await.expect("Failed to read response");
+    let n = stream
+        .read(&mut buf)
+        .await
+        .expect("Failed to read response");
     let response = String::from_utf8_lossy(&buf[..n]);
 
     assert!(
         response.contains("\"result\":\"pong\""),
         "Expected pong response"
     );
-    assert!(response.contains("\"id\":1"), "Expected matching request ID");
+    assert!(
+        response.contains("\"id\":1"),
+        "Expected matching request ID"
+    );
 
     // Send shutdown via RPC
     stream
@@ -71,9 +75,7 @@ async fn test_e2e_daemon_lifecycle() {
 /// Test that multiple sequential requests work correctly
 #[tokio::test]
 async fn test_e2e_multiple_requests() {
-    let mut daemon = TestDaemon::start()
-        .await
-        .expect("Failed to start daemon");
+    let mut daemon = TestDaemon::start().await.expect("Failed to start daemon");
 
     let mut stream = UnixStream::connect(&daemon.socket_path)
         .await
@@ -115,9 +117,7 @@ async fn test_e2e_multiple_requests() {
 /// Test concurrent clients connecting to the same daemon
 #[tokio::test]
 async fn test_e2e_concurrent_clients() {
-    let daemon = TestDaemon::start()
-        .await
-        .expect("Failed to start daemon");
+    let daemon = TestDaemon::start().await.expect("Failed to start daemon");
 
     let socket_path = daemon.socket_path.clone();
 
@@ -174,9 +174,7 @@ async fn test_e2e_concurrent_clients() {
 /// Test kiln.list returns empty array initially
 #[tokio::test]
 async fn test_e2e_kiln_list_initially_empty() {
-    let mut daemon = TestDaemon::start()
-        .await
-        .expect("Failed to start daemon");
+    let mut daemon = TestDaemon::start().await.expect("Failed to start daemon");
 
     let mut stream = UnixStream::connect(&daemon.socket_path)
         .await
@@ -203,9 +201,7 @@ async fn test_e2e_kiln_list_initially_empty() {
 /// Test daemon handles invalid JSON gracefully
 #[tokio::test]
 async fn test_e2e_invalid_json_handling() {
-    let mut daemon = TestDaemon::start()
-        .await
-        .expect("Failed to start daemon");
+    let mut daemon = TestDaemon::start().await.expect("Failed to start daemon");
 
     let mut stream = UnixStream::connect(&daemon.socket_path)
         .await
@@ -244,9 +240,7 @@ async fn test_e2e_invalid_json_handling() {
 /// Test daemon handles unknown methods gracefully
 #[tokio::test]
 async fn test_e2e_unknown_method_handling() {
-    let mut daemon = TestDaemon::start()
-        .await
-        .expect("Failed to start daemon");
+    let mut daemon = TestDaemon::start().await.expect("Failed to start daemon");
 
     let mut stream = UnixStream::connect(&daemon.socket_path)
         .await
@@ -275,9 +269,7 @@ async fn test_e2e_unknown_method_handling() {
 /// Test client disconnect doesn't crash daemon
 #[tokio::test]
 async fn test_e2e_client_disconnect_handling() {
-    let mut daemon = TestDaemon::start()
-        .await
-        .expect("Failed to start daemon");
+    let mut daemon = TestDaemon::start().await.expect("Failed to start daemon");
 
     // Connect and immediately disconnect
     {

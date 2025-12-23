@@ -15,12 +15,11 @@ impl SkillParser {
     /// Parse SKILL.md content into a Skill
     pub fn parse(&self, content: &str, source: SkillSource) -> SkillResult<Skill> {
         let (frontmatter, body) = self.split_frontmatter(content)?;
-        let fm: SkillFrontmatter = serde_yaml::from_str(&frontmatter).map_err(|e| {
-            SkillError::ParseError {
+        let fm: SkillFrontmatter =
+            serde_yaml::from_str(&frontmatter).map_err(|e| SkillError::ParseError {
                 path: source.path.clone(),
                 source: e,
-            }
-        })?;
+            })?;
 
         // Validate required fields
         if fm.description.is_empty() {
@@ -30,11 +29,9 @@ impl SkillParser {
         }
 
         // Parse allowed-tools from space-delimited string
-        let allowed_tools = fm.allowed_tools.map(|s| {
-            s.split_whitespace()
-                .map(|t| t.to_string())
-                .collect()
-        });
+        let allowed_tools = fm
+            .allowed_tools
+            .map(|s| s.split_whitespace().map(|t| t.to_string()).collect());
 
         Ok(Skill {
             name: fm.name,
@@ -61,9 +58,11 @@ impl SkillParser {
 
         // Find closing ---
         let rest = &content[3..];
-        let end_idx = rest.find("\n---").ok_or_else(|| SkillError::ValidationError {
-            reason: "Missing closing --- for frontmatter".to_string(),
-        })?;
+        let end_idx = rest
+            .find("\n---")
+            .ok_or_else(|| SkillError::ValidationError {
+                reason: "Missing closing --- for frontmatter".to_string(),
+            })?;
 
         let frontmatter = rest[..end_idx].trim().to_string();
         let body = rest[end_idx + 4..].to_string();

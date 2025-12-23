@@ -82,7 +82,10 @@ pub mod mock {
 
         /// Set a response for a specific query
         pub async fn set_response(&self, query: &str, response: Value) {
-            self.responses.lock().await.insert(query.to_string(), response);
+            self.responses
+                .lock()
+                .await
+                .insert(query.to_string(), response);
         }
     }
 
@@ -112,7 +115,9 @@ pub mod mock {
         async fn test_mock_client_returns_configured_response() {
             let client = MockStorageClient::new();
             let expected = json!({"result": "test"});
-            client.set_response("SELECT * FROM test", expected.clone()).await;
+            client
+                .set_response("SELECT * FROM test", expected.clone())
+                .await;
 
             let result = client.query_raw("SELECT * FROM test").await.unwrap();
             assert_eq!(result, expected);

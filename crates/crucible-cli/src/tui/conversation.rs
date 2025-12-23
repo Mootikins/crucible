@@ -100,12 +100,14 @@ impl ConversationState {
 
     pub fn set_status(&mut self, status: StatusKind) {
         // Remove any existing status
-        self.items.retain(|item| !matches!(item, ConversationItem::Status(_)));
+        self.items
+            .retain(|item| !matches!(item, ConversationItem::Status(_)));
         self.items.push(ConversationItem::Status(status));
     }
 
     pub fn clear_status(&mut self) {
-        self.items.retain(|item| !matches!(item, ConversationItem::Status(_)));
+        self.items
+            .retain(|item| !matches!(item, ConversationItem::Status(_)));
     }
 
     pub fn push_tool_running(&mut self, name: impl Into<String>) {
@@ -201,10 +203,7 @@ fn render_user_message(content: &str) -> Vec<Line<'static>> {
 
         lines.push(Line::from(vec![
             Span::styled(prefix, styles::user_prefix()),
-            Span::styled(
-                format!("{} ", line),
-                styles::user_message(),
-            ),
+            Span::styled(format!("{} ", line), styles::user_message()),
         ]));
     }
 
@@ -243,11 +242,9 @@ fn render_status(status: &StatusKind) -> Vec<Line<'static>> {
             };
             (indicators::STREAMING, text, styles::streaming())
         }
-        StatusKind::Processing { message } => (
-            indicators::STREAMING,
-            message.clone(),
-            styles::streaming(),
-        ),
+        StatusKind::Processing { message } => {
+            (indicators::STREAMING, message.clone(), styles::streaming())
+        }
     };
 
     vec![
@@ -271,9 +268,10 @@ fn render_tool_call(tool: &ToolCallDisplay) -> Vec<Line<'static>> {
 
     let status_suffix = match &tool.status {
         ToolStatus::Running => String::new(),
-        ToolStatus::Complete { summary } => {
-            summary.as_ref().map(|s| format!(" → {}", s)).unwrap_or_default()
-        }
+        ToolStatus::Complete { summary } => summary
+            .as_ref()
+            .map(|s| format!(" → {}", s))
+            .unwrap_or_default(),
         ToolStatus::Error { message } => format!(" → {}", message),
     };
 
@@ -384,10 +382,7 @@ impl Widget for InputBoxWidget<'_> {
             self.content.to_string()
         };
 
-        let line = Line::from(vec![
-            Span::raw(" > "),
-            Span::raw(content_with_cursor),
-        ]);
+        let line = Line::from(vec![Span::raw(" > "), Span::raw(content_with_cursor)]);
 
         // Center vertically in the area
         let middle_row = area.y + area.height / 2;

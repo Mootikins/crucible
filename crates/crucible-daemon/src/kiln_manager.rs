@@ -31,7 +31,9 @@ impl KilnManager {
 
     /// Open a connection to a kiln (or return existing)
     pub async fn open(&self, kiln_path: &Path) -> Result<()> {
-        let canonical = kiln_path.canonicalize().unwrap_or_else(|_| kiln_path.to_path_buf());
+        let canonical = kiln_path
+            .canonicalize()
+            .unwrap_or_else(|_| kiln_path.to_path_buf());
 
         {
             let conns = self.connections.read().await;
@@ -53,17 +55,22 @@ impl KilnManager {
         let client = adapters::create_surreal_client(config).await?;
 
         let mut conns = self.connections.write().await;
-        conns.insert(canonical, KilnConnection {
-            client,
-            last_access: Instant::now(),
-        });
+        conns.insert(
+            canonical,
+            KilnConnection {
+                client,
+                last_access: Instant::now(),
+            },
+        );
 
         Ok(())
     }
 
     /// Close a kiln connection
     pub async fn close(&self, kiln_path: &Path) -> Result<()> {
-        let canonical = kiln_path.canonicalize().unwrap_or_else(|_| kiln_path.to_path_buf());
+        let canonical = kiln_path
+            .canonicalize()
+            .unwrap_or_else(|_| kiln_path.to_path_buf());
         let mut conns = self.connections.write().await;
         if conns.remove(&canonical).is_some() {
             info!("Closed kiln at {:?}", canonical);
@@ -74,14 +81,17 @@ impl KilnManager {
     /// List all open kilns
     pub async fn list(&self) -> Vec<(PathBuf, Instant)> {
         let conns = self.connections.read().await;
-        conns.iter()
+        conns
+            .iter()
             .map(|(path, conn)| (path.clone(), conn.last_access))
             .collect()
     }
 
     /// Get client for a kiln if it's already open (does not open if closed)
     pub async fn get(&self, kiln_path: &Path) -> Option<SurrealClientHandle> {
-        let canonical = kiln_path.canonicalize().unwrap_or_else(|_| kiln_path.to_path_buf());
+        let canonical = kiln_path
+            .canonicalize()
+            .unwrap_or_else(|_| kiln_path.to_path_buf());
 
         let mut conns = self.connections.write().await;
         if let Some(conn) = conns.get_mut(&canonical) {
@@ -94,7 +104,9 @@ impl KilnManager {
 
     /// Get client for a kiln, opening if needed
     pub async fn get_or_open(&self, kiln_path: &Path) -> Result<SurrealClientHandle> {
-        let canonical = kiln_path.canonicalize().unwrap_or_else(|_| kiln_path.to_path_buf());
+        let canonical = kiln_path
+            .canonicalize()
+            .unwrap_or_else(|_| kiln_path.to_path_buf());
 
         // Try to get existing and update last_access
         {
@@ -109,7 +121,8 @@ impl KilnManager {
         self.open(kiln_path).await?;
 
         let conns = self.connections.read().await;
-        conns.get(&canonical)
+        conns
+            .get(&canonical)
             .map(|c| c.client.clone())
             .ok_or_else(|| anyhow::anyhow!("Failed to get connection after opening"))
     }
@@ -198,10 +211,13 @@ mod tests {
 
             // Skip this test if we can't create a client
             if let Ok(client) = adapters::create_surreal_client(config).await {
-                conns.insert(path.clone(), KilnConnection {
-                    client,
-                    last_access: Instant::now(),
-                });
+                conns.insert(
+                    path.clone(),
+                    KilnConnection {
+                        client,
+                        last_access: Instant::now(),
+                    },
+                );
             } else {
                 return; // Skip test if client creation fails
             }

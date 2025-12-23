@@ -95,11 +95,7 @@ impl DaemonClient {
     }
 
     /// Send a JSON-RPC request and get the response
-    pub async fn call(
-        &self,
-        method: &str,
-        params: serde_json::Value,
-    ) -> Result<serde_json::Value> {
+    pub async fn call(&self, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let request = serde_json::json!({
             "jsonrpc": "2.0",

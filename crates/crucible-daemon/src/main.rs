@@ -4,9 +4,12 @@ mod protocol;
 mod server;
 
 use anyhow::{bail, Result};
-use lifecycle::{is_daemon_running, pid_path, remove_pid_file, remove_socket, socket_path, wait_for_shutdown, write_pid_file};
-use server::Server;
+use lifecycle::{
+    is_daemon_running, pid_path, remove_pid_file, remove_socket, socket_path, wait_for_shutdown,
+    write_pid_file,
+};
 use scopeguard::defer;
+use server::Server;
 
 #[tokio::main]
 async fn main() -> Result<()> {
