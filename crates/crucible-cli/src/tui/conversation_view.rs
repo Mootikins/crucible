@@ -85,6 +85,8 @@ pub struct ViewState {
     pub token_count: Option<usize>,
     pub status_text: String,
     pub scroll_offset: usize,
+    /// True if user is at bottom (auto-scroll enabled)
+    pub at_bottom: bool,
     pub width: u16,
     pub height: u16,
     /// Popup state for slash commands / agents / files
@@ -101,6 +103,7 @@ impl ViewState {
             token_count: None,
             status_text: "Ready".to_string(),
             scroll_offset: 0,
+            at_bottom: true,
             width,
             height,
             popup: None,
@@ -373,14 +376,19 @@ impl ConversationView for RatatuiView {
             .content_height()
             .saturating_sub(self.state.height as usize);
         self.state.scroll_offset = self.state.scroll_offset.min(max_scroll);
+        self.state.at_bottom = false; // User scrolled up
     }
 
     fn scroll_down(&mut self, lines: usize) {
         self.state.scroll_offset = self.state.scroll_offset.saturating_sub(lines);
+        if self.state.scroll_offset == 0 {
+            self.state.at_bottom = true; // Back at bottom
+        }
     }
 
     fn scroll_to_bottom(&mut self) {
         self.state.scroll_offset = 0;
+        self.state.at_bottom = true;
     }
 }
 
@@ -525,5 +533,64 @@ mod tests {
             "Popup should render skill title. Buffer: {}",
             content
         );
+    }
+
+    // =============================================================================
+    // Bottom-Anchored Rendering Tests
+    // =============================================================================
+
+    #[test]
+    fn test_at_bottom_tracking() {
+        let mut view = RatatuiView::new("plan", 80, 24);
+        assert!(view.state().at_bottom);
+
+        // Add content
+        for i in 0..20 {
+            view.push_user_message(&format!("Message {}", i)).unwrap();
+        }
+        assert!(view.state().at_bottom);
+
+        // Scroll up - no longer at bottom
+        view.scroll_up(5);
+        assert!(!view.state().at_bottom);
+
+        // Scroll back to bottom
+        view.scroll_to_bottom();
+        assert!(view.state().at_bottom);
+    }
+
+    #[test]
+    fn test_at_bottom_scroll_down_to_zero() {
+        let mut view = RatatuiView::new("plan", 80, 24);
+
+        // Add content and scroll up
+        for i in 0..20 {
+            view.push_user_message(&format!("Message {}", i)).unwrap();
+        }
+        view.scroll_up(10);
+        assert!(!view.state().at_bottom);
+        assert_eq!(view.state().scroll_offset, 10);
+
+        // Scroll down to exactly 0
+        view.scroll_down(10);
+        assert_eq!(view.state().scroll_offset, 0);
+        assert!(view.state().at_bottom, "Should be at_bottom when scroll_offset reaches 0");
+    }
+
+    #[test]
+    fn test_at_bottom_scroll_down_partial() {
+        let mut view = RatatuiView::new("plan", 80, 24);
+
+        // Add content and scroll up
+        for i in 0..20 {
+            view.push_user_message(&format!("Message {}", i)).unwrap();
+        }
+        view.scroll_up(10);
+        assert!(!view.state().at_bottom);
+
+        // Scroll down partially (not all the way to bottom)
+        view.scroll_down(5);
+        assert_eq!(view.state().scroll_offset, 5);
+        assert!(!view.state().at_bottom, "Should NOT be at_bottom when scroll_offset > 0");
     }
 }
