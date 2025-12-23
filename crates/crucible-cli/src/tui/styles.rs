@@ -35,9 +35,6 @@ pub mod colors {
     /// Input text color
     pub const INPUT_FG: Color = Color::White;
 
-    /// Status line background (slightly lighter than input)
-    pub const STATUS_BG: Color = Color::Rgb(45, 45, 65); // Slightly lighter blue-gray
-
     // --- Mode colors ---
 
     /// Plan mode color
@@ -177,11 +174,9 @@ pub mod styles {
             .bg(colors::INPUT_BG)
     }
 
-    /// Status line style (slightly lighter than input)
+    /// Status line style (no background, dim text)
     pub fn status_line() -> Style {
-        Style::default()
-            .fg(colors::INPUT_FG)
-            .bg(colors::STATUS_BG)
+        Style::default().fg(colors::DIM)
     }
 
     /// Token/metrics style
