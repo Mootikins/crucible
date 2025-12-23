@@ -18,13 +18,7 @@ async fn test_handler_priorities() {
     use crucible_enrichment::EmbeddingHandler;
     use crucible_surrealdb::event_handlers::{StorageHandler, TagHandler};
 
-    // Verify priority ordering
-    assert!(
-        StorageHandler::PRIORITY < TagHandler::PRIORITY,
-        "StorageHandler should run before TagHandler"
-    );
-    assert!(
-        TagHandler::PRIORITY < EmbeddingHandler::PRIORITY,
-        "TagHandler should run before EmbeddingHandler"
-    );
+    // Verify priority ordering (compile-time constants)
+    const _: () = assert!(StorageHandler::PRIORITY < TagHandler::PRIORITY);
+    const _: () = assert!(TagHandler::PRIORITY < EmbeddingHandler::PRIORITY);
 }

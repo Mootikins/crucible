@@ -1,7 +1,5 @@
 //! Skill embedding generation and search
 
-#![cfg(feature = "embeddings")]
-
 use crate::error::{SkillError, SkillResult};
 use crate::types::Skill;
 use crucible_core::traits::provider::CanEmbed;

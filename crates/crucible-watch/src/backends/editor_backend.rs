@@ -1,5 +1,7 @@
 //! Editor integration backend for low-frequency inode watching.
 
+#![allow(dead_code)]
+
 use crate::{
     error::{Error, Result},
     events::{EventMetadata, FileEvent, FileEventKind},

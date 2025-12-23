@@ -2,6 +2,8 @@
 //!
 //! This module provides semantic, text, and property search tools.
 
+#![allow(clippy::doc_markdown, clippy::manual_let_else, missing_docs)]
+
 use crucible_core::{enrichment::EmbeddingProvider, traits::KnowledgeRepository};
 use crucible_skills::storage::SkillStore;
 use grep::regex::RegexMatcher;

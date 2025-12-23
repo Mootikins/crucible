@@ -180,10 +180,10 @@ impl ListMarkerStyle {
 
     /// Check if this style supports ordered lists
     pub fn is_ordered(&self) -> bool {
-        match self {
-            ListMarkerStyle::Dash | ListMarkerStyle::Asterisk | ListMarkerStyle::Plus => false,
-            _ => true,
-        }
+        !matches!(
+            self,
+            ListMarkerStyle::Dash | ListMarkerStyle::Asterisk | ListMarkerStyle::Plus
+        )
     }
 
     /// Check if this style supports unordered lists
@@ -308,6 +308,7 @@ impl ListItem {
     }
 
     /// Create a task list item with full metadata
+    #[allow(clippy::too_many_arguments)]
     pub fn new_task_with_metadata(
         content: String,
         level: usize,

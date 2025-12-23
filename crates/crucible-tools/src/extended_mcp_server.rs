@@ -29,7 +29,7 @@ use crucible_rune::{
     builtin_hooks::{create_test_filter_hook, BuiltinHooksConfig},
     event_bus::EventBus,
     mcp_gateway::McpGatewayManager,
-    ContentBlock, EnrichedRecipe, EventHandler, EventHandlerConfig, EventPipeline, PluginLoader,
+    ContentBlock, EventHandler, EventHandlerConfig, EventPipeline, PluginLoader,
     RuneDiscoveryConfig, RuneToolRegistry, StructPluginHandle, ToolResultEvent,
 };
 use rmcp::model::{CallToolResult, Content, Tool};
@@ -72,6 +72,13 @@ pub struct ExtendedMcpServer {
     upstream_clients: Option<Arc<McpGatewayManager>>,
 }
 
+#[allow(
+    clippy::missing_errors_doc,
+    clippy::too_many_lines,
+    clippy::missing_panics_doc,
+    clippy::unused_self,
+    clippy::cast_possible_truncation
+)]
 impl ExtendedMcpServer {
     /// Create a new extended MCP server
     ///
@@ -117,7 +124,7 @@ impl ExtendedMcpServer {
         // The handle spawns a dedicated Rune thread for thread-safe plugin execution
         let struct_plugins = {
             let handle = StructPluginHandle::new(shell_policy)
-                .map_err(|e| format!("Failed to create struct plugin handle: {}", e))?;
+                .map_err(|e| format!("Failed to create struct plugin handle: {e}"))?;
 
             // Load plugins from kiln/plugins/ directory
             let kiln_plugins = PathBuf::from(&kiln_path).join("plugins");
@@ -448,7 +455,7 @@ impl ExtendedMcpServer {
 
     /// Check if a tool is provided by struct plugins
     ///
-    /// This checks the struct_plugins handle for the tool by name.
+    /// This checks the `struct_plugins` handle for the tool by name.
     pub async fn has_struct_plugin_tool(&self, name: &str) -> bool {
         self.struct_plugins.has_tool(name).await
     }
@@ -506,14 +513,11 @@ impl ExtendedMcpServer {
                 let duration_ms = start.elapsed().as_millis() as u64;
 
                 // Check for error in result
-                let is_error = result_value
-                    .get("error")
-                    .map(|v| !v.is_null())
-                    .unwrap_or(false);
+                let is_error = result_value.get("error").is_some_and(|v| !v.is_null());
 
                 let exit_code = result_value
                     .get("exit_code")
-                    .and_then(|v| v.as_i64())
+                    .and_then(serde_json::Value::as_i64)
                     .unwrap_or(0);
                 let is_error = is_error || exit_code != 0;
 
@@ -818,6 +822,7 @@ pub struct ExtendedMcpService {
     cached_tools: Arc<RwLock<Vec<Tool>>>,
 }
 
+#[allow(clippy::missing_errors_doc)]
 impl ExtendedMcpService {
     /// Create from an `ExtendedMcpServer`
     pub async fn new(server: ExtendedMcpServer) -> Self {
@@ -941,7 +946,6 @@ impl ServerHandler for ExtendedMcpService {
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::TempDir;
 
     struct MockKnowledgeRepository;

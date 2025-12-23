@@ -81,8 +81,8 @@ impl Wikilink {
 
         let (target, heading_ref, block_ref) =
             if let Some((t, ref_part)) = target_part.split_once('#') {
-                if ref_part.starts_with('^') {
-                    (t.to_string(), None, Some(ref_part[1..].to_string()))
+                if let Some(stripped) = ref_part.strip_prefix('^') {
+                    (t.to_string(), None, Some(stripped.to_string()))
                 } else {
                     (t.to_string(), Some(ref_part.to_string()), None)
                 }
@@ -275,7 +275,7 @@ impl FootnoteDefinition {
     }
 }
 
-/// Footnote reference [^1]
+/// Footnote reference `[^1]`
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FootnoteReference {
     /// Footnote identifier (without [^])

@@ -126,6 +126,7 @@ impl Default for AgentInitParams {
 }
 
 /// Result of agent initialization
+#[allow(clippy::large_enum_variant)] // Acp variant is large but this enum is not frequently cloned
 pub enum InitializedAgent {
     /// ACP agent (needs async spawning)
     Acp(crate::acp::CrucibleAcpClient),

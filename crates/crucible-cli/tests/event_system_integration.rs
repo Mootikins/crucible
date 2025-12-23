@@ -1,4 +1,7 @@
 //! Integration tests for the event system.
+
+#![allow(clippy::field_reassign_with_default)]
+
 //!
 //! These tests verify the end-to-end event cascade:
 //! FileChanged -> NoteParsed -> EntityStored -> BlocksUpdated -> EmbeddingGenerated

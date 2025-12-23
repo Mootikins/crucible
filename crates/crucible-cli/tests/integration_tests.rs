@@ -1,4 +1,7 @@
 //! Integration tests for Crucible CLI
+
+#![allow(clippy::field_reassign_with_default, deprecated)]
+
 //!
 //! These tests verify end-to-end functionality of CLI commands
 

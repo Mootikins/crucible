@@ -11,6 +11,9 @@
 //! - Embedding generation via `EmbeddingHandler`
 //! - Custom handlers via Rune scripting
 
+// Allow some lints for WIP TUI code - to be cleaned up
+#![allow(dead_code, unused_imports)]
+
 pub mod acp;
 pub mod chat;
 pub mod cli;

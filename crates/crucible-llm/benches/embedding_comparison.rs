@@ -7,6 +7,8 @@
 //! When actual Burn integration is complete, we can see real performance
 //! improvements from GPU acceleration.
 
+#![allow(deprecated)] // criterion::black_box is deprecated
+
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use crucible_config::{
     BurnBackendConfig, BurnEmbedConfig, EmbeddingProviderConfig, FastEmbedConfig,

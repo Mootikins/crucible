@@ -7,7 +7,7 @@
 use crate::tui::{
     content_block::ContentBlock,
     markdown::MarkdownRenderer,
-    styles::{indicators, styles},
+    styles::{indicators, presets},
 };
 use ansi_to_tui::IntoText;
 use once_cell::sync::Lazy;
@@ -297,8 +297,8 @@ fn render_user_message(content: &str) -> Vec<Line<'static>> {
         };
 
         lines.push(Line::from(vec![
-            Span::styled(prefix, styles::user_prefix()),
-            Span::styled(format!("{} ", line), styles::user_message()),
+            Span::styled(prefix, presets::user_prefix()),
+            Span::styled(format!("{} ", line), presets::user_message()),
         ]));
     }
 
@@ -320,7 +320,7 @@ fn render_assistant_blocks(blocks: &[ContentBlock], is_streaming: bool) -> Vec<L
 
                 // Show streaming cursor on incomplete blocks
                 if !is_complete && is_streaming && idx == blocks.len() - 1 {
-                    lines.push(Line::from(Span::styled("▌", styles::streaming())));
+                    lines.push(Line::from(Span::styled("▌", presets::streaming())));
                 }
             }
             ContentBlock::Code {
@@ -333,7 +333,7 @@ fn render_assistant_blocks(blocks: &[ContentBlock], is_streaming: bool) -> Vec<L
 
                 // Show streaming cursor on incomplete blocks
                 if !is_complete && is_streaming && idx == blocks.len() - 1 {
-                    lines.push(Line::from(Span::styled("▌", styles::streaming())));
+                    lines.push(Line::from(Span::styled("▌", presets::streaming())));
                 }
             }
         }
@@ -378,7 +378,7 @@ fn render_status(status: &StatusKind) -> Vec<Line<'static>> {
         StatusKind::Thinking => (
             indicators::THINKING,
             "Thinking...".to_string(),
-            styles::thinking(),
+            presets::thinking(),
         ),
         StatusKind::Generating { token_count } => {
             let text = if *token_count > 0 {
@@ -386,10 +386,10 @@ fn render_status(status: &StatusKind) -> Vec<Line<'static>> {
             } else {
                 "Generating...".to_string()
             };
-            (indicators::STREAMING, text, styles::streaming())
+            (indicators::STREAMING, text, presets::streaming())
         }
         StatusKind::Processing { message } => {
-            (indicators::STREAMING, message.clone(), styles::streaming())
+            (indicators::STREAMING, message.clone(), presets::streaming())
         }
     };
 
@@ -407,9 +407,9 @@ fn render_tool_call(tool: &ToolCallDisplay) -> Vec<Line<'static>> {
 
     // Tool status line
     let (indicator, style) = match &tool.status {
-        ToolStatus::Running => (indicators::SPINNER_FRAMES[0], styles::tool_running()),
-        ToolStatus::Complete { .. } => (indicators::COMPLETE, styles::tool_complete()),
-        ToolStatus::Error { .. } => (indicators::ERROR, styles::tool_error()),
+        ToolStatus::Running => (indicators::SPINNER_FRAMES[0], presets::tool_running()),
+        ToolStatus::Complete { .. } => (indicators::COMPLETE, presets::tool_complete()),
+        ToolStatus::Error { .. } => (indicators::ERROR, presets::tool_error()),
     };
 
     let status_suffix = match &tool.status {
@@ -430,7 +430,7 @@ fn render_tool_call(tool: &ToolCallDisplay) -> Vec<Line<'static>> {
     for line in &tool.output_lines {
         lines.push(Line::from(vec![Span::styled(
             format!("  {}", line),
-            styles::tool_output(),
+            presets::tool_output(),
         )]));
     }
 
@@ -545,9 +545,9 @@ impl Widget for InputBoxWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         // Input box with accent background
         let style = if self.focused {
-            styles::input_box()
+            presets::input_box()
         } else {
-            styles::dim()
+            presets::dim()
         };
 
         // Fill background
@@ -604,7 +604,7 @@ impl<'a> StatusBarWidget<'a> {
 
 impl Widget for StatusBarWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let mode_style = styles::mode(self.mode_id);
+        let mode_style = presets::mode(self.mode_id);
         let mode_name = match self.mode_id {
             "plan" => "Plan",
             "act" => "Act",
@@ -613,21 +613,24 @@ impl Widget for StatusBarWidget<'_> {
         };
 
         let mut spans = vec![
-            Span::styled(indicators::MODE_ARROW, styles::dim()),
+            Span::styled(indicators::MODE_ARROW, presets::dim()),
             Span::raw(" "),
             Span::styled(mode_name, mode_style),
         ];
 
         if let Some(count) = self.token_count {
-            spans.push(Span::styled(" │ ", styles::dim()));
-            spans.push(Span::styled(format!("{} tokens", count), styles::metrics()));
+            spans.push(Span::styled(" │ ", presets::dim()));
+            spans.push(Span::styled(
+                format!("{} tokens", count),
+                presets::metrics(),
+            ));
         }
 
-        spans.push(Span::styled(" │ ", styles::dim()));
-        spans.push(Span::styled(self.status.to_string(), styles::dim()));
+        spans.push(Span::styled(" │ ", presets::dim()));
+        spans.push(Span::styled(self.status.to_string(), presets::dim()));
 
         let line = Line::from(spans);
-        let paragraph = Paragraph::new(line).style(styles::status_line());
+        let paragraph = Paragraph::new(line).style(presets::status_line());
         paragraph.render(area, buf);
     }
 }
@@ -737,7 +740,7 @@ mod tests {
         let has_styled_content = lines.iter().any(|line| {
             line.spans.iter().any(|span| {
                 // Check if any span has non-default styling
-                span.style != Style::default() && span.style != styles::assistant_message()
+                span.style != Style::default() && span.style != presets::assistant_message()
             })
         });
 
@@ -794,7 +797,7 @@ mod tests {
             line.spans.iter().any(|span| {
                 // Check for background color or distinct foreground
                 span.style.bg.is_some()
-                    || (span.style.fg.is_some() && span.style != styles::assistant_message())
+                    || (span.style.fg.is_some() && span.style != presets::assistant_message())
             })
         });
 
@@ -873,7 +876,7 @@ mod tests {
             .map(|x| buffer.cell((x, 0)).map(|c| c.symbol()).unwrap_or(" "))
             .collect();
 
-        let bottom_line: String = (0..80)
+        let _bottom_line: String = (0..80)
             .map(|x| buffer.cell((x, 19)).map(|c| c.symbol()).unwrap_or(" "))
             .collect();
 
@@ -906,7 +909,7 @@ mod tests {
 
         let mut state = ConversationState::new();
         for i in 0..30 {
-            state.push_user_message(&format!("Message {}", i));
+            state.push_user_message(format!("Message {}", i));
         }
 
         let backend = TestBackend::new(80, 20);

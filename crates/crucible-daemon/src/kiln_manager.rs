@@ -88,6 +88,7 @@ impl KilnManager {
     }
 
     /// Get client for a kiln if it's already open (does not open if closed)
+    #[allow(dead_code)]
     pub async fn get(&self, kiln_path: &Path) -> Option<SurrealClientHandle> {
         let canonical = kiln_path
             .canonicalize()

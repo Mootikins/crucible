@@ -393,6 +393,7 @@ impl TextGenerationProvider for OllamaChatProvider {
         #[derive(Deserialize)]
         struct OllamaModelInfo {
             name: String,
+            #[allow(dead_code)]
             #[serde(default)]
             size: u64,
         }
@@ -477,6 +478,7 @@ struct OllamaFunction {
 // Ollama streaming response types
 #[derive(Debug, Deserialize)]
 struct OllamaStreamResponse {
+    #[allow(dead_code)]
     model: String,
     message: OllamaStreamMessage,
     done: bool,

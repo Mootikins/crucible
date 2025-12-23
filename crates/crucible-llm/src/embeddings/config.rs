@@ -16,6 +16,7 @@ pub enum ProviderType {
 
 impl ProviderType {
     /// Parse provider type from string
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> EmbeddingResult<Self> {
         match s.to_lowercase().as_str() {
             "ollama" => Ok(ProviderType::Ollama),

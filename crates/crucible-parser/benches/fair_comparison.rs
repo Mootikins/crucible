@@ -1,5 +1,7 @@
 //! Benchmark: Full parsing + tree building
 
+#![allow(deprecated)] // criterion::black_box is deprecated
+
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use crucible_parser::{CrucibleParser, MarkdownParser};
 use std::path::PathBuf;

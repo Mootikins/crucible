@@ -16,6 +16,8 @@
 //! - Easy testing of individual tool categories
 //! - Future composition of additional tool routers
 
+#![allow(missing_docs)]
+
 use crate::{KilnTools, NoteTools, SearchTools};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
