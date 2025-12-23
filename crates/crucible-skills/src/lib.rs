@@ -24,7 +24,9 @@ pub use types::{ResolvedSkill, Skill, SkillScope, SkillSource};
 pub use storage::SkillStore;
 
 #[cfg(feature = "embeddings")]
-pub use embedding::{embed_skill, search_skills_semantic, SkillSearchResult, SkillEmbeddingStore, SkillSearchStore};
+pub use embedding::{
+    embed_skill, search_skills_semantic, SkillEmbeddingStore, SkillSearchResult, SkillSearchStore,
+};
 
 #[cfg(feature = "test-utils")]
 pub mod test_utils;

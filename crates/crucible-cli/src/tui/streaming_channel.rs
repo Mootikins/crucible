@@ -19,11 +19,11 @@
 //! The spawned task consumes the stream and sends typed events to the main loop,
 //! which polls the channel non-blockingly to update the UI.
 
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
-use futures::{Stream, StreamExt};
-use tokio::task::JoinHandle;
 use crucible_core::traits::chat::{ChatChunk, ChatResult};
+use futures::{Stream, StreamExt};
 use std::pin::Pin;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::task::JoinHandle;
 
 pub type ChatStream = Pin<Box<dyn Stream<Item = ChatResult<ChatChunk>> + Send>>;
 
@@ -159,7 +159,9 @@ mod tests {
         handle.await.unwrap();
 
         let e1 = rx.recv().await.unwrap();
-        assert!(matches!(&e1, StreamingEvent::Delta { text, seq } if text == "Hello " && *seq == 0));
+        assert!(
+            matches!(&e1, StreamingEvent::Delta { text, seq } if text == "Hello " && *seq == 0)
+        );
 
         let e2 = rx.recv().await.unwrap();
         assert!(matches!(&e2, StreamingEvent::Delta { text, seq } if text == "world" && *seq == 1));

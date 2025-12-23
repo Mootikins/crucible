@@ -17,10 +17,7 @@ pub enum ParseEvent {
 #[derive(Debug, Clone)]
 pub enum ContentBlock {
     /// Markdown prose (may be partial during streaming)
-    Prose {
-        text: String,
-        is_complete: bool,
-    },
+    Prose { text: String, is_complete: bool },
     /// Code block with optional language
     Code {
         lang: Option<String>,
@@ -94,7 +91,9 @@ impl ContentBlock {
     /// Append text to the block (for streaming)
     pub fn append(&mut self, text: &str) {
         match self {
-            Self::Prose { text: ref mut t, .. } => t.push_str(text),
+            Self::Prose {
+                text: ref mut t, ..
+            } => t.push_str(text),
             Self::Code { content, .. } => content.push_str(text),
         }
     }
