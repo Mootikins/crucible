@@ -126,7 +126,7 @@ async fn demo_storage_operations(
     ];
 
     for (hash, data) in &test_data {
-        storage.store_block(hash, &data).await?;
+        storage.store_block(hash, data).await?;
         println!("     Stored block: {} ({} bytes)", hash, data.len());
     }
 

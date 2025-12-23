@@ -58,7 +58,10 @@ impl EAVGraphStore {
             return_clause
         );
 
-        let result = self.client.query(&update_query, &[params.clone()]).await?;
+        let result = self
+            .client
+            .query(&update_query, std::slice::from_ref(params))
+            .await?;
 
         if result.records.is_empty() {
             let create_query = format!(
@@ -70,7 +73,7 @@ impl EAVGraphStore {
                 return_clause
             );
             self.client
-                .query(&create_query, &[params.clone()])
+                .query(&create_query, std::slice::from_ref(params))
                 .await
                 .map_err(|e| e.into())
         } else {
@@ -111,7 +114,10 @@ impl EAVGraphStore {
             set_clause, return_clause
         );
 
-        let result = self.client.query(&update_query, &[params.clone()]).await?;
+        let result = self
+            .client
+            .query(&update_query, std::slice::from_ref(params))
+            .await?;
 
         if result.records.is_empty() {
             let create_query = format!(
@@ -123,7 +129,11 @@ impl EAVGraphStore {
                 set_clause, return_clause
             );
 
-            match self.client.query(&create_query, &[params.clone()]).await {
+            match self
+                .client
+                .query(&create_query, std::slice::from_ref(params))
+                .await
+            {
                 Ok(result) => Ok(result),
                 Err(e) if ignore_already_exists && e.to_string().contains("already exists") => {
                     // Race condition: another thread created the record between UPDATE and CREATE
@@ -628,7 +638,7 @@ impl EAVGraphStore {
                     content_category = $content_category
                 RETURN NONE;
                 "#,
-                &[params.clone()],
+                std::slice::from_ref(&params),
             )
             .await?;
 
@@ -1779,7 +1789,7 @@ impl CoreTagStorage for EAVGraphStore {
             self.client
                 .query(
                     "DELETE FROM entity_tags WHERE tag_id = type::thing('tags', $id)",
-                    &[params.clone()],
+                    std::slice::from_ref(&params),
                 )
                 .await
                 .map_err(|e| StorageError::Backend(e.to_string()))?;

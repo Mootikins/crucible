@@ -221,9 +221,8 @@ impl CircuitBreaker {
     }
 }
 
-impl CircuitBreakerConfig {
-    /// Default configuration (conservative)
-    pub fn default() -> Self {
+impl Default for CircuitBreakerConfig {
+    fn default() -> Self {
         Self {
             failure_threshold: 5,
             reset_timeout: Duration::from_secs(30),
@@ -231,7 +230,9 @@ impl CircuitBreakerConfig {
             half_open_timeout: Some(Duration::from_secs(10)),
         }
     }
+}
 
+impl CircuitBreakerConfig {
     /// Aggressive configuration (fail fast)
     pub fn aggressive() -> Self {
         Self {

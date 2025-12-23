@@ -855,7 +855,11 @@ impl<'a> HashLookupStorage for SurrealHashLookupStorage<'a> {
 
             // Check if record exists first
             let check_sql = "SELECT id FROM type::thing('entities', $id)";
-            let exists = match self.client.query(check_sql, &[params.clone()]).await {
+            let exists = match self
+                .client
+                .query(check_sql, std::slice::from_ref(&params))
+                .await
+            {
                 Ok(result) => !result.records.is_empty(),
                 Err(_) => false,
             };

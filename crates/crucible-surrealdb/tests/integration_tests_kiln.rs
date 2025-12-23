@@ -169,38 +169,36 @@ async fn consistency_related_docs() {
     let mut all_titles: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut all_related: Vec<(String, Vec<String>)> = Vec::new();
 
-    for entry in walkdir::WalkDir::new(&kiln_root) {
-        if let Ok(entry) = entry {
-            if entry.file_type().is_file() && entry.path().extension().is_some_and(|e| e == "md") {
-                let title = entry
-                    .path()
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_default();
+    for entry in walkdir::WalkDir::new(&kiln_root).into_iter().flatten() {
+        if entry.file_type().is_file() && entry.path().extension().is_some_and(|e| e == "md") {
+            let title = entry
+                .path()
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
 
-                all_titles.insert(title.clone());
+            all_titles.insert(title.clone());
 
-                if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                    if let Some(cap) = related_regex.captures(&content) {
-                        if let Some(related_str) = cap.get(1) {
-                            let related: Vec<String> = related_str
-                                .as_str()
-                                .split(',')
-                                .map(|s| {
-                                    // Strip quotes and wikilink brackets
-                                    s.trim()
-                                        .trim_matches('"')
-                                        .trim_matches('\'')
-                                        .trim_start_matches("[[")
-                                        .trim_end_matches("]]")
-                                        .to_string()
-                                })
-                                .filter(|s| !s.is_empty())
-                                .collect();
+            if let Ok(content) = std::fs::read_to_string(entry.path()) {
+                if let Some(cap) = related_regex.captures(&content) {
+                    if let Some(related_str) = cap.get(1) {
+                        let related: Vec<String> = related_str
+                            .as_str()
+                            .split(',')
+                            .map(|s| {
+                                // Strip quotes and wikilink brackets
+                                s.trim()
+                                    .trim_matches('"')
+                                    .trim_matches('\'')
+                                    .trim_start_matches("[[")
+                                    .trim_end_matches("]]")
+                                    .to_string()
+                            })
+                            .filter(|s| !s.is_empty())
+                            .collect();
 
-                            if !related.is_empty() {
-                                all_related.push((title, related));
-                            }
+                        if !related.is_empty() {
+                            all_related.push((title, related));
                         }
                     }
                 }

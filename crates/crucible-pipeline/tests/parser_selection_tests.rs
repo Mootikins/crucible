@@ -124,6 +124,7 @@ struct MockEnrichedNoteStore {
     state: Arc<Mutex<Vec<EnrichedNote>>>,
 }
 
+#[allow(dead_code)]
 impl MockEnrichedNoteStore {
     fn new() -> Self {
         Self {

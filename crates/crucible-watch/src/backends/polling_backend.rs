@@ -1,5 +1,7 @@
 //! Polling-based file watching backend.
 
+#![allow(dead_code)]
+
 use crate::{
     error::{Error, Result},
     events::{EventMetadata, FileEvent, FileEventKind},

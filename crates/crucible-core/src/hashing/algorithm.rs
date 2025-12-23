@@ -115,7 +115,7 @@ pub trait HashingAlgorithm: Send + Sync + Clone + fmt::Debug {
     /// # Returns
     ///
     /// Raw hash bytes or error if invalid hex
-    fn from_hex(&self, hex: &str) -> Result<Vec<u8>, String> {
+    fn parse_hex(&self, hex: &str) -> Result<Vec<u8>, String> {
         if !hex.len().is_multiple_of(2) {
             return Err("Hex string must have even length".to_string());
         }
@@ -283,7 +283,7 @@ mod tests {
         assert_eq!(hex.len(), 64); // 32 bytes * 2
         assert!(hex.chars().all(|c| c.is_ascii_hexdigit()));
 
-        let decoded = hasher.from_hex(&hex).unwrap();
+        let decoded = hasher.parse_hex(&hex).unwrap();
         assert_eq!(decoded, hash);
     }
 
@@ -351,16 +351,16 @@ mod tests {
     }
 
     #[test]
-    fn test_from_hex_error_handling() {
+    fn test_parse_hex_error_handling() {
         let hasher = Blake3Algorithm;
 
         // Odd length
-        assert!(hasher.from_hex("abc").is_err());
+        assert!(hasher.parse_hex("abc").is_err());
 
         // Invalid hex character
-        assert!(hasher.from_hex("gg").is_err());
+        assert!(hasher.parse_hex("gg").is_err());
 
         // Valid hex
-        assert!(hasher.from_hex("abcd").is_ok());
+        assert!(hasher.parse_hex("abcd").is_ok());
     }
 }

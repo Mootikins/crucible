@@ -19,6 +19,8 @@
 //! })))
 //! ```
 
+#![allow(clippy::needless_pass_by_value)]
+
 use rmcp::model::{CallToolResult, Content};
 
 /// Create a successful tool response with TOON-formatted content

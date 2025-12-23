@@ -145,6 +145,7 @@ impl ParsedNote {
     }
 
     /// Legacy compatibility constructor for existing tests
+    #[allow(clippy::too_many_arguments)]
     pub fn legacy(
         path: PathBuf,
         frontmatter: Option<Frontmatter>,

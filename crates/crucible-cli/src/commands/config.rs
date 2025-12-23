@@ -60,7 +60,7 @@ async fn show(format: String, sources: bool) -> Result<()> {
                 let json = config.display_as_json_with_sources()?;
                 println!("{}", json);
             }
-            "toml" | _ => {
+            _ => {
                 let toml = config.display_as_toml_with_sources()?;
                 println!("{}", toml);
             }
@@ -71,7 +71,7 @@ async fn show(format: String, sources: bool) -> Result<()> {
                 let json = config.display_as_json()?;
                 println!("{}", json);
             }
-            "toml" | _ => {
+            _ => {
                 let toml = config.display_as_toml()?;
                 println!("{}", toml);
             }
@@ -91,7 +91,7 @@ async fn dump(format: String) -> Result<()> {
             let json = config.display_as_json()?;
             println!("{}", json);
         }
-        "toml" | _ => {
+        _ => {
             let toml = config.display_as_toml()?;
             println!("{}", toml);
         }

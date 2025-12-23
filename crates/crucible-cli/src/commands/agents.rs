@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use crucible_core::agent::{AgentCard, AgentCardLoader, AgentCardRegistry};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::cli::AgentsCommands;
 use crate::config::CliConfig;
@@ -83,16 +83,16 @@ pub fn collect_agent_directories(config: &CliConfig) -> Vec<PathBuf> {
 /// - Absolute paths are used as-is
 /// - Paths starting with ~ are expanded to home directory
 /// - Relative paths are returned as-is (caller should resolve relative to config file)
-fn resolve_path(path: &PathBuf, _config_dir: Option<&PathBuf>) -> PathBuf {
+fn resolve_path(path: &Path, _config_dir: Option<&PathBuf>) -> PathBuf {
     let path_str = path.to_string_lossy();
 
-    if path_str.starts_with("~/") {
+    if let Some(rest) = path_str.strip_prefix("~/") {
         if let Some(home) = dirs::home_dir() {
-            return home.join(&path_str[2..]);
+            return home.join(rest);
         }
     }
 
-    path.clone()
+    path.to_path_buf()
 }
 
 /// List all registered agent cards
@@ -111,8 +111,8 @@ async fn list(config: &CliConfig, tag: Option<String>, format: String) -> Result
     };
 
     if cards.is_empty() {
-        if tag.is_some() {
-            println!("No agent cards found with tag '{}'.", tag.unwrap());
+        if let Some(t) = &tag {
+            println!("No agent cards found with tag '{}'.", t);
         } else {
             println!("No agent cards found.");
         }

@@ -1,5 +1,7 @@
 //! Integration test for TUI streaming behavior
 
+#![allow(clippy::field_reassign_with_default)]
+
 use crucible_cli::tui::streaming_channel::{
     create_streaming_channel, StreamingEvent, StreamingTask,
 };

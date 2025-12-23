@@ -33,18 +33,16 @@ pub struct VirtualizationConfig {
     pub virtual_section_size: usize,
 }
 
-impl VirtualizationConfig {
-    /// Default configuration for typical documents
-    ///
-    /// - Threshold: 100 sections (enables virtualization for large docs)
-    /// - Virtual section size: 10 sections (balances memory vs. granularity)
-    pub fn default() -> Self {
+impl Default for VirtualizationConfig {
+    fn default() -> Self {
         Self {
             threshold: 100,
             virtual_section_size: 10,
         }
     }
+}
 
+impl VirtualizationConfig {
     /// Configuration for very large documents (>1000 sections)
     ///
     /// - Threshold: 500 sections
@@ -73,12 +71,6 @@ impl VirtualizationConfig {
             threshold: usize::MAX,
             virtual_section_size: 1,
         }
-    }
-}
-
-impl Default for VirtualizationConfig {
-    fn default() -> Self {
-        Self::default()
     }
 }
 
@@ -219,7 +211,7 @@ impl VirtualSection {
             return sections
                 .iter()
                 .enumerate()
-                .map(|(i, section)| VirtualSection::from_sections(&[section.clone()], i))
+                .map(|(i, section)| VirtualSection::from_sections(std::slice::from_ref(section), i))
                 .collect();
         }
 
@@ -312,7 +304,7 @@ mod tests {
     #[test]
     fn test_virtual_section_from_single_section() {
         let section = create_test_section(1, Some("Test"), 5);
-        let virtual_section = VirtualSection::from_sections(&[section.clone()], 0);
+        let virtual_section = VirtualSection::from_sections(std::slice::from_ref(&section), 0);
 
         assert_eq!(virtual_section.section_count, 1);
         assert_eq!(virtual_section.total_blocks, 5);
@@ -448,8 +440,8 @@ mod tests {
         assert_eq!(virtual_sections.len(), 11);
 
         // First 10 should have 10 sections each
-        for i in 0..10 {
-            assert_eq!(virtual_sections[i].section_count, 10);
+        for vs in virtual_sections.iter().take(10) {
+            assert_eq!(vs.section_count, 10);
         }
 
         // Last one should have 5 sections

@@ -2,6 +2,8 @@
 //!
 //! This module provides kiln-specific tools like roots and statistics.
 
+#![allow(missing_docs)]
+
 use rmcp::{model::CallToolResult, tool, tool_router};
 
 #[derive(Clone)]

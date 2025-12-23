@@ -27,6 +27,7 @@ use std::sync::Arc;
 
 /// Options for command execution
 #[derive(Debug, Default)]
+#[allow(dead_code)]
 pub struct ExecOptions {
     /// Timeout in milliseconds
     pub timeout: Option<u64>,
@@ -38,6 +39,7 @@ pub struct ExecOptions {
 
 /// Output from command execution
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ExecOutput {
     /// Standard output
     pub stdout: String,
@@ -50,6 +52,7 @@ pub struct ExecOutput {
 /// Execute a command synchronously (blocking)
 ///
 /// This is the core implementation that will be wrapped for Rune.
+#[allow(dead_code)]
 pub fn exec_impl(cmd: &str, args: &[&str], options: ExecOptions) -> Result<ExecOutput, String> {
     use std::process::Command;
 

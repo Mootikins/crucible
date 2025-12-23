@@ -1,4 +1,7 @@
 //! Integration tests for process command
+
+#![allow(clippy::field_reassign_with_default)]
+
 //!
 //! These tests verify the process command correctly:
 //! 1. Uses persistent SurrealDB storage (not in-memory)

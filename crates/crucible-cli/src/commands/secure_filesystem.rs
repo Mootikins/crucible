@@ -20,13 +20,12 @@ use std::time::{Duration, Instant};
 /// of text files to indicate UTF-8 encoding. For text processing, it should be stripped
 /// as it's not part of the actual content and can interfere with parsing.
 fn strip_utf8_bom(content: &str) -> String {
-    if content.starts_with('\u{FEFF}') {
-        // Content starts with UTF-8 BOM (Unicode code point U+FEFF)
-        // Strip it by skipping the first character
-        content[3..].to_string() // Skip the 3-byte BOM
-    } else {
-        content.to_string()
-    }
+    // Content starts with UTF-8 BOM (Unicode code point U+FEFF)
+    // Strip it by skipping the first character
+    content
+        .strip_prefix('\u{FEFF}')
+        .unwrap_or(content)
+        .to_string()
 }
 
 /// Enhanced UTF-8 validation with detailed error messages
@@ -455,12 +454,13 @@ impl PathValidator {
     }
 
     /// Check if an absolute path is allowed (for testing or safe system directories)
+    #[allow(unused_variables)] // path is only used in non-test builds
     fn is_absolute_path_allowed(&self, path: &Path) -> bool {
         // In test builds, allow absolute paths in system temp directories
         // This enables integration tests using TempDir without compromising production security
         #[cfg(test)]
         {
-            return true; // All absolute paths allowed in test mode
+            true // All absolute paths allowed in test mode
         }
 
         #[cfg(not(test))]

@@ -312,7 +312,7 @@ impl ContentAddressedStorageSurrealDB {
     ) -> StorageResult<()> {
         for (index, block) in blocks.iter().enumerate() {
             let block_type = self.ast_block_type_to_string(&block.block_type);
-            let block_metadata = Some(self.ast_block_to_metadata(block));
+            let block_metadata = self.ast_block_to_metadata(block);
 
             // Store note block directly (inline store_document_block logic)
             if document_id.is_empty() {
@@ -350,7 +350,7 @@ impl ContentAddressedStorageSurrealDB {
                 block.start_offset,
                 block.end_offset,
                 block.content.replace("'", "''").replace("\n", "\\n"),
-                serde_json::to_string(&block_metadata.unwrap_or_default()).unwrap_or_default(),
+                serde_json::to_string(&block_metadata).unwrap_or_default(),
                 now.to_rfc3339(),
                 now.to_rfc3339()
             );
@@ -802,6 +802,7 @@ impl ContentAddressedStorageSurrealDB {
     ///
     /// This maps a block to its note context, enabling content-addressed storage
     /// with note awareness for change detection and deduplication.
+    #[allow(clippy::too_many_arguments)]
     pub async fn store_document_block(
         &self,
         document_id: &str,

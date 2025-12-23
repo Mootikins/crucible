@@ -85,12 +85,14 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
     ///
     /// The emitter is used to emit `SessionEvent` variants (e.g., `EmbeddingBatchComplete`)
     /// when enrichment operations complete.
+    #[allow(dead_code)]
     pub fn with_emitter(mut self, emitter: SharedEventBus<SessionEvent>) -> Self {
         self.emitter = Some(emitter);
         self
     }
 
     /// Get a reference to the event emitter (if configured)
+    #[allow(dead_code)]
     pub fn emitter(&self) -> Option<&SharedEventBus<SessionEvent>> {
         self.emitter.as_ref()
     }
@@ -135,11 +137,11 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
         if !embeddings.is_empty() {
             if let Some(ref emitter) = self.emitter {
                 let entity_id = format!("note:{}", parsed.path.display());
-                let _ = emitter.emit(SessionEvent::EmbeddingBatchComplete {
+                drop(emitter.emit(SessionEvent::EmbeddingBatchComplete {
                     entity_id,
                     count: embeddings.len(),
                     duration_ms: embed_duration.as_millis() as u64,
-                });
+                }));
                 debug!(
                     "Emitted EmbeddingBatchComplete for {} embeddings in {}ms",
                     embeddings.len(),

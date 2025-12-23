@@ -1236,7 +1236,7 @@ mod tests {
         assert_eq!(hex.len(), 64); // 32 bytes * 2
         assert!(hex.chars().all(|c| c.is_ascii_hexdigit()));
 
-        let decoded = hasher.from_hex(&hex).unwrap();
+        let decoded = hasher.parse_hex(&hex).unwrap();
         assert_eq!(decoded, hash);
     }
 
