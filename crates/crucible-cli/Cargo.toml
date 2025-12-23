@@ -13,10 +13,6 @@ path = "src/main.rs"
 [features]
 default = []
 
-# Test infrastructure features - enable tests requiring specific infrastructure
-# Usage: cargo test -p crucible-cli --features test-embeddings
-test-embeddings = []       # Tests requiring embedding endpoint
-
 [dependencies]
 crucible-core = { path = "../crucible-core" }
 crucible-parser = { path = "../crucible-parser" }
