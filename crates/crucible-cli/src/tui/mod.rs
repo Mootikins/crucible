@@ -6,6 +6,7 @@
 //! - Supports mode switching (Plan/Act/AutoApprove)
 //! - Handles cancellation (Ctrl+C)
 
+pub mod content_block;
 pub mod conversation;
 pub mod conversation_view;
 pub mod input;
@@ -18,12 +19,14 @@ pub mod splash;
 pub mod state;
 pub mod streaming;
 pub mod streaming_channel;
+pub mod streaming_parser;
 pub mod styles;
 #[cfg(test)]
 pub mod testing;
 pub mod viewport;
 pub mod widget;
 
+pub use content_block::{ContentBlock, ParseEvent};
 pub use input::{map_key_event, InputAction};
 pub use markdown::MarkdownRenderer;
 pub use popup::{DynamicPopupProvider, PopupProvider, StaticPopupProvider};
@@ -36,6 +39,7 @@ pub use streaming_channel::{
     create_streaming_channel, ChatStream, StreamingEvent, StreamingReceiver, StreamingSender,
     StreamingTask,
 };
+pub use streaming_parser::StreamingParser;
 pub use widget::{
     ansi, calculate_heights, calculate_position, format_help_command, mode_color, mode_icon,
     move_to_widget, render_help_text, render_input_area, render_separator, render_status_line,
