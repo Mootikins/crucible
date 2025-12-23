@@ -636,6 +636,19 @@ fn conversation_input_box_with_content() {
 }
 
 #[test]
+fn conversation_markdown_formatting() {
+    let mut terminal = test_terminal();
+    let mut conv = ConversationState::new();
+    conv.push_user_message("Show me an example");
+    conv.push_assistant_message(
+        "Here's a **Rust** example:\n\n```rust\nfn main() {\n    println!(\"Hello, world!\");\n}\n```\n\nUse `cargo run` to execute it.\n\nYou can also:\n- Build with `cargo build`\n- Test with `cargo test`\n\nSee the *Cargo Book* for more details."
+    );
+
+    render_conversation_view(&mut terminal, &conv, "", "plan", None, "Ready");
+    assert_snapshot!("conv_markdown_formatted", terminal.backend());
+}
+
+#[test]
 fn conversation_status_bar_modes() {
     // Test all three modes show correctly
     let mut terminal = test_terminal();
@@ -662,4 +675,88 @@ fn conversation_status_bar_auto_mode() {
 
     render_conversation_view(&mut terminal, &conv, "", "auto", Some(300), "Ready");
     assert_snapshot!("conv_status_auto", terminal.backend());
+}
+
+// =============================================================================
+// SendMessage State Transition Tests
+// =============================================================================
+// These tests verify the expected UI state after SendMessage action.
+// The input should be cleared and status should show "Thinking".
+
+use crucible_cli::tui::conversation_view::{ConversationView, RatatuiView};
+
+/// Helper to render RatatuiView (full view with popup support)
+fn render_ratatui_view(terminal: &mut Terminal<TestBackend>, view: &RatatuiView) {
+    terminal.draw(|f| view.render_frame(f)).unwrap();
+}
+
+/// Test: After SendMessage, input box should be EMPTY
+///
+/// This is the expected behavior:
+/// 1. User types "Hello world"
+/// 2. User presses Enter (SendMessage)
+/// 3. Input box clears
+/// 4. User message appears in conversation
+/// 5. Status shows "Thinking"
+///
+/// BUG: Currently RatatuiRunner doesn't clear input after SendMessage
+#[test]
+fn send_message_clears_input() {
+    let mut terminal = test_terminal();
+    let mut view = RatatuiView::new("plan", TEST_WIDTH, TEST_HEIGHT);
+
+    // Simulate state BEFORE sending: user typed "Hello world"
+    view.set_input("Hello world");
+    view.set_cursor_position(11);
+
+    // Capture "before" state
+    render_ratatui_view(&mut terminal, &view);
+    let before_snapshot = format!("{:?}", terminal.backend().buffer());
+
+    // Now simulate what SHOULD happen after SendMessage:
+    // 1. Clear input (THIS IS THE BUG - runner doesn't do this)
+    view.set_input("");
+    view.set_cursor_position(0);
+    // 2. Add user message to conversation
+    view.push_user_message("Hello world").unwrap();
+    // 3. Set thinking status
+    view.set_status(StatusKind::Thinking);
+    view.set_status_text("Thinking");
+
+    // Capture "after" state
+    render_ratatui_view(&mut terminal, &view);
+    let after_snapshot = format!("{:?}", terminal.backend().buffer());
+
+    // The before and after should be DIFFERENT (input should be cleared)
+    assert_ne!(
+        before_snapshot, after_snapshot,
+        "UI should change after SendMessage"
+    );
+
+    // Verify input is now empty in the view
+    assert_eq!(view.input(), "", "Input should be cleared after SendMessage");
+
+    // Snapshot the expected "after" state for visual verification
+    assert_snapshot!("send_message_input_cleared", terminal.backend());
+}
+
+/// Test: Status shows "Thinking" after SendMessage
+#[test]
+fn send_message_shows_thinking_status() {
+    let mut terminal = test_terminal();
+    let mut view = RatatuiView::new("act", TEST_WIDTH, TEST_HEIGHT);
+
+    // Simulate SendMessage flow
+    view.push_user_message("What is the project structure?").unwrap();
+    view.set_status(StatusKind::Thinking);
+    view.set_status_text("Thinking");
+    view.set_input(""); // Should be cleared
+
+    render_ratatui_view(&mut terminal, &view);
+
+    // Verify view state
+    assert_eq!(view.status_text(), "Thinking");
+    assert_eq!(view.input(), "");
+
+    assert_snapshot!("send_message_thinking_status", terminal.backend());
 }

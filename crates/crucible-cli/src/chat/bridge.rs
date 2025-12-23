@@ -45,7 +45,7 @@ impl AgentEventBridge {
         });
 
         // 2. Stream response, emitting TextDeltas
-        let mut stream = agent.send_message_stream(message);
+        let mut stream = agent.send_message_stream(message.to_string());
         let mut full_response = String::new();
         let mut seq = 0u64;
 
@@ -104,10 +104,10 @@ mod tests {
 
     #[async_trait]
     impl AgentHandle for MockAgent {
-        fn send_message_stream<'a>(
-            &'a mut self,
-            _message: &'a str,
-        ) -> BoxStream<'a, ChatResult<ChatChunk>> {
+        fn send_message_stream(
+            &mut self,
+            _message: String,
+        ) -> BoxStream<'static, ChatResult<ChatChunk>> {
             let chunks = self.chunks.clone();
             let len = chunks.len();
             Box::pin(stream::iter(chunks.into_iter().enumerate().map(
@@ -135,7 +135,7 @@ mod tests {
         use futures::StreamExt;
 
         let mut agent = MockAgent::new(vec!["Hello ".into(), "world".into()]);
-        let mut stream = agent.send_message_stream("test");
+        let mut stream = agent.send_message_stream("test".to_string());
 
         let chunk1 = stream.next().await.unwrap().unwrap();
         assert_eq!(chunk1.delta, "Hello ");

@@ -4,13 +4,25 @@
 //! tool calls, and status indicators. Designed for ratatui rendering
 //! with full viewport control.
 
-use crate::tui::styles::{indicators, styles};
+use crate::tui::{
+    markdown::MarkdownRenderer,
+    styles::{indicators, styles},
+};
+use ansi_to_tui::IntoText;
+use once_cell::sync::Lazy;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
     text::{Line, Span},
     widgets::{Paragraph, Widget, Wrap},
 };
+
+// =============================================================================
+// Static Instances
+// =============================================================================
+
+/// Global markdown renderer (initialized once to avoid loading syntect themes repeatedly)
+static MARKDOWN_RENDERER: Lazy<MarkdownRenderer> = Lazy::new(MarkdownRenderer::new);
 
 // =============================================================================
 // Conversation Types
@@ -211,17 +223,22 @@ fn render_user_message(content: &str) -> Vec<Line<'static>> {
 }
 
 fn render_assistant_message(content: &str) -> Vec<Line<'static>> {
-    // Assistant messages: normal style, no prefix
+    // Assistant messages: render markdown with styling
     let mut lines = Vec::new();
 
     // Add blank line for spacing
     lines.push(Line::from(""));
 
-    for line in content.lines() {
-        lines.push(Line::from(Span::styled(
-            line.to_string(),
-            styles::assistant_message(),
-        )));
+    // Use global MarkdownRenderer to convert markdown to ANSI-styled text
+    // (static instance avoids reloading syntect themes on every message)
+    let ansi_output = MARKDOWN_RENDERER.render(content);
+
+    // Convert ANSI to ratatui Text, then extract lines
+    let text = ansi_output.into_text().expect("Failed to parse ANSI output");
+
+    // Convert owned Text to Vec<Line<'static>>
+    for line in text.lines {
+        lines.push(line);
     }
 
     lines
@@ -457,6 +474,7 @@ impl Widget for StatusBarWidget<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ratatui::style::{Modifier, Style};
 
     #[test]
     fn test_conversation_state_new() {
@@ -535,5 +553,123 @@ mod tests {
         };
         let lines = render_tool_call(&tool);
         assert!(!lines.is_empty());
+    }
+
+    // =============================================================================
+    // Markdown Rendering Tests
+    // =============================================================================
+
+    #[test]
+    fn test_assistant_message_renders_code_blocks() {
+        let content = "Here's some code:\n\n```rust\nfn main() {\n    println!(\"Hello\");\n}\n```";
+        let lines = render_assistant_message(content);
+
+        // Should have content (blank line + text + code block)
+        assert!(lines.len() > 3, "Expected multiple lines, got {}", lines.len());
+
+        // Look for any styling changes that indicate code formatting
+        // Code blocks should have different styling than plain text
+        let has_styled_content = lines.iter().any(|line| {
+            line.spans.iter().any(|span| {
+                // Check if any span has non-default styling
+                span.style != Style::default() && span.style != styles::assistant_message()
+            })
+        });
+
+        assert!(
+            has_styled_content,
+            "Expected code blocks to have distinct styling"
+        );
+    }
+
+    #[test]
+    fn test_assistant_message_renders_bold() {
+        let content = "This is **bold** text.";
+        let lines = render_assistant_message(content);
+
+        // Should have at least blank line + content
+        assert!(lines.len() >= 2);
+
+        // Look for bold modifier in any span
+        let has_bold = lines.iter().any(|line| {
+            line.spans
+                .iter()
+                .any(|span| span.style.add_modifier.contains(Modifier::BOLD))
+        });
+
+        assert!(has_bold, "Expected bold text to have BOLD modifier");
+    }
+
+    #[test]
+    fn test_assistant_message_renders_italic() {
+        let content = "This is *italic* text.";
+        let lines = render_assistant_message(content);
+
+        assert!(lines.len() >= 2);
+
+        // Look for italic modifier in any span
+        let has_italic = lines.iter().any(|line| {
+            line.spans
+                .iter()
+                .any(|span| span.style.add_modifier.contains(Modifier::ITALIC))
+        });
+
+        assert!(has_italic, "Expected italic text to have ITALIC modifier");
+    }
+
+    #[test]
+    fn test_assistant_message_renders_inline_code() {
+        let content = "Use `cargo build` to compile.";
+        let lines = render_assistant_message(content);
+
+        assert!(lines.len() >= 2);
+
+        // Inline code should have different styling (background or color change)
+        let has_code_styling = lines.iter().any(|line| {
+            line.spans.iter().any(|span| {
+                // Check for background color or distinct foreground
+                span.style.bg.is_some() ||
+                (span.style.fg.is_some() && span.style != styles::assistant_message())
+            })
+        });
+
+        assert!(
+            has_code_styling,
+            "Expected inline code to have distinct styling (background or color)"
+        );
+    }
+
+    #[test]
+    fn test_assistant_message_plain_text_unchanged() {
+        let content = "Just plain text here.";
+        let lines = render_assistant_message(content);
+
+        // Should still work for plain text
+        assert!(lines.len() >= 2);
+
+        // Should contain the text content
+        let text_content: String = lines
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.as_ref())
+            .collect();
+
+        assert!(text_content.contains("plain text"));
+    }
+
+    #[test]
+    fn test_assistant_message_multiline_markdown() {
+        let content = "# Heading\n\nSome **bold** and *italic* text.\n\n- List item 1\n- List item 2";
+        let lines = render_assistant_message(content);
+
+        // Should have multiple lines
+        assert!(lines.len() > 5);
+
+        // Should have some styled content
+        let has_styling = lines.iter().any(|line| {
+            line.spans.iter().any(|span| span.style != Style::default())
+        });
+
+        assert!(has_styling, "Expected markdown formatting to apply styles");
     }
 }

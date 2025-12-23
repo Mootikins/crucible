@@ -655,10 +655,10 @@ mod tests {
 
         #[async_trait]
         impl AgentHandle for MockAgentWithModes {
-            fn send_message_stream<'a>(
-                &'a mut self,
-                _message: &'a str,
-            ) -> BoxStream<'a, CoreChatResult<ChatChunk>> {
+            fn send_message_stream(
+                &mut self,
+                _message: String,
+            ) -> BoxStream<'static, CoreChatResult<ChatChunk>> {
                 Box::pin(futures::stream::empty())
             }
 
@@ -745,10 +745,10 @@ mod tests {
 
         #[async_trait]
         impl AgentHandle for MockAgent {
-            fn send_message_stream<'a>(
-                &'a mut self,
-                _message: &'a str,
-            ) -> BoxStream<'a, CoreChatResult<ChatChunk>> {
+            fn send_message_stream(
+                &mut self,
+                _message: String,
+            ) -> BoxStream<'static, CoreChatResult<ChatChunk>> {
                 Box::pin(futures::stream::empty())
             }
 
@@ -805,10 +805,10 @@ mod tests {
 
         #[async_trait]
         impl AgentHandle for MockAgentWithCounter {
-            fn send_message_stream<'a>(
-                &'a mut self,
-                _message: &'a str,
-            ) -> BoxStream<'a, CoreChatResult<ChatChunk>> {
+            fn send_message_stream(
+                &mut self,
+                _message: String,
+            ) -> BoxStream<'static, CoreChatResult<ChatChunk>> {
                 Box::pin(futures::stream::empty())
             }
 

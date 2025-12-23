@@ -81,17 +81,17 @@ pub struct ChatChunk {
 /// Runtime handle to an active agent
 #[async_trait]
 pub trait AgentHandle: Send + Sync {
-    fn send_message_stream<'a>(
-        &'a mut self,
-        message: &'a str,
-    ) -> BoxStream<'a, ChatResult<ChatChunk>>;
+    fn send_message_stream(
+        &mut self,
+        message: String,
+    ) -> BoxStream<'static, ChatResult<ChatChunk>>;
 
     async fn send_message(&mut self, message: &str) -> ChatResult<ChatResponse> {
         use futures::StreamExt;
 
         let mut content = String::new();
         let mut tool_calls = Vec::new();
-        let mut stream = self.send_message_stream(message);
+        let mut stream = self.send_message_stream(message.to_string());
 
         while let Some(chunk) = stream.next().await {
             let chunk = chunk?;
@@ -254,10 +254,10 @@ mod tests {
 
     #[async_trait]
     impl AgentHandle for TestAgent {
-        fn send_message_stream<'a>(
-            &'a mut self,
-            _message: &'a str,
-        ) -> BoxStream<'a, ChatResult<ChatChunk>> {
+        fn send_message_stream(
+            &mut self,
+            _message: String,
+        ) -> BoxStream<'static, ChatResult<ChatChunk>> {
             let chunks = self.chunks.clone();
             let total = chunks.len();
             Box::pin(futures::stream::iter(chunks.into_iter().enumerate().map(
@@ -285,7 +285,7 @@ mod tests {
         let mut agent = TestAgent {
             chunks: vec!["Hello".to_string()],
         };
-        let mut stream = agent.send_message_stream("test");
+        let mut stream = agent.send_message_stream("test".to_string());
         let chunk = stream.next().await.unwrap().unwrap();
         assert_eq!(chunk.delta, "Hello");
     }

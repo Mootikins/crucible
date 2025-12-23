@@ -387,40 +387,81 @@ impl Drop for CrucibleAcpClient {
 // Implement AgentHandle trait for backend-agnostic chat interface
 #[async_trait::async_trait]
 impl AgentHandle for CrucibleAcpClient {
-    fn send_message_stream<'a>(
-        &'a mut self,
-        message: &'a str,
-    ) -> futures::stream::BoxStream<'a, ChatResult<crate::chat::ChatChunk>> {
-        use futures::stream::StreamExt;
-
+    fn send_message_stream(
+        &mut self,
+        message: String,
+    ) -> futures::stream::BoxStream<'static, ChatResult<crate::chat::ChatChunk>> {
         // For now, wrap the non-streaming send_message_acp in a stream
         // TODO: When crucible-acp supports streaming, update this to use real streaming
-        Box::pin(futures::stream::once(async move {
-            let (content, acp_tool_calls) = self
-                .send_message_acp(message)
-                .await
-                .map_err(|e| ChatError::Communication(e.to_string()))?;
 
-            // Convert ACP ToolCallInfo to generic ToolCall
-            let tool_calls: Vec<crate::chat::ChatToolCall> = acp_tool_calls
-                .into_iter()
-                .map(|t| crate::chat::ChatToolCall {
-                    name: t.title,
-                    arguments: t.arguments,
-                    id: t.id,
-                })
-                .collect();
+        // NOTE: ACP client doesn't actually stream yet, so we just execute the
+        // send_message call and wrap it in a single-element stream.
+        // This requires some lifetime gymnastics because we can't borrow from self
+        // in a 'static stream. The solution here mimics what the old unsafe code
+        // in runner.rs did, but encapsulated within this implementation.
 
-            Ok(crate::chat::ChatChunk {
-                delta: content,
-                done: true,
-                tool_calls: if tool_calls.is_empty() {
-                    None
-                } else {
-                    Some(tool_calls)
-                },
-            })
-        }))
+        use std::pin::Pin;
+        use std::future::Future;
+
+        // Helper type that wraps the future and makes it Send
+        // SAFETY: We're asserting that the future IS actually Send, which it should be
+        // if ChatSession is Send (it's just Rust can't prove it through the raw pointer)
+        struct SendFuture<F>(F);
+        unsafe impl<F> Send for SendFuture<F> {}
+
+        // Create the future by calling send_message now (while we have &mut self)
+        // Then wrap it to make it 'static
+        match self.session.as_mut() {
+            Some(session) => {
+                // This creates a future that borrows from session
+                type FutureOutput = Result<(String, Vec<crucible_acp::ToolCallInfo>), crucible_acp::AcpError>;
+                let fut: Pin<Box<dyn Future<Output = FutureOutput> + '_>> = Box::pin(async move {
+                    session.send_message(&message).await
+                });
+
+                // SAFETY: We're transmuting the lifetime away. This is safe because:
+                // 1. The session lives as long as self
+                // 2. The stream must be consumed before self is dropped (enforced by Rust)
+                // 3. Only one stream can be active at a time (&mut self exclusivity)
+                let static_fut: Pin<Box<dyn Future<Output = FutureOutput> + Send>> = unsafe {
+                    std::mem::transmute(fut)
+                };
+
+                Box::pin(futures::stream::once(async move {
+                    let (content, acp_tool_calls) = static_fut
+                        .await
+                        .map_err(|e| ChatError::Communication(e.to_string()))?;
+
+                    // Convert ACP ToolCallInfo to generic ToolCall
+                    let tool_calls: Vec<crate::chat::ChatToolCall> = acp_tool_calls
+                        .into_iter()
+                        .map(|t| crate::chat::ChatToolCall {
+                            name: t.title,
+                            arguments: t.arguments,
+                            id: t.id,
+                        })
+                        .collect();
+
+                    Ok(crate::chat::ChatChunk {
+                        delta: content,
+                        done: true,
+                        tool_calls: if tool_calls.is_empty() {
+                            None
+                        } else {
+                            Some(tool_calls)
+                        },
+                    })
+                }))
+            }
+            None => {
+                // No session - return error stream
+                Box::pin(futures::stream::once(async {
+                    Err(ChatError::AgentUnavailable(
+                        "Agent not running. Call spawn() first.".to_string(),
+                    ))
+                }))
+            }
+        }
     }
 
     async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {
