@@ -4,6 +4,7 @@ pub mod chat;
 pub mod daemon;
 pub mod mcp;
 pub mod process;
+pub mod skills;
 pub mod tasks;
 
 // Existing commands (kept for compatibility)
