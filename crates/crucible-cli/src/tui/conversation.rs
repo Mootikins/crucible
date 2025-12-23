@@ -346,11 +346,43 @@ impl<'a> ConversationWidget<'a> {
 impl Widget for ConversationWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let lines = self.render_to_lines();
+        let content_height = lines.len();
+        let viewport_height = area.height as usize;
 
-        // Create paragraph with all content
-        let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+        if content_height == 0 {
+            return;
+        }
 
-        paragraph.render(area, buf);
+        // Calculate the scroll position
+        // scroll_offset = 0 means at bottom (newest content visible)
+        // scroll_offset = N means N lines scrolled up from bottom
+
+        if content_height <= viewport_height {
+            // Content fits in viewport - render at bottom
+            let empty_space = viewport_height - content_height;
+            let offset_area = Rect {
+                x: area.x,
+                y: area.y + empty_space as u16,
+                width: area.width,
+                height: content_height as u16,
+            };
+            let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+            paragraph.render(offset_area, buf);
+        } else {
+            // Content exceeds viewport - apply scroll
+            // scroll_offset = 0: show last viewport_height lines
+            // scroll_offset = N: show lines from (content - viewport - N) to (content - N)
+            let max_scroll = content_height - viewport_height;
+            let effective_scroll = self.scroll_offset.min(max_scroll);
+
+            // Convert bottom-relative to top-relative scroll
+            let top_scroll = max_scroll - effective_scroll;
+
+            let paragraph = Paragraph::new(lines)
+                .wrap(Wrap { trim: false })
+                .scroll((top_scroll as u16, 0));
+            paragraph.render(area, buf);
+        }
     }
 }
 
@@ -671,5 +703,125 @@ mod tests {
         });
 
         assert!(has_styling, "Expected markdown formatting to apply styles");
+    }
+
+    // =============================================================================
+    // Bottom-Anchored Rendering Tests
+    // =============================================================================
+
+    #[test]
+    fn test_conversation_widget_bottom_anchored_short() {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+
+        // Create widget with just one message
+        let mut state = ConversationState::new();
+        state.push_user_message("Hello");
+
+        let widget = ConversationWidget::new(&state);
+
+        // Render to a buffer
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                f.render_widget(widget, area);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+
+        // Content should be at bottom, not top
+        // Check that top rows are empty and bottom rows have content
+        let top_line: String = (0..80)
+            .map(|x| buffer.cell((x, 0)).map(|c| c.symbol()).unwrap_or(" "))
+            .collect();
+
+        let bottom_line: String = (0..80)
+            .map(|x| buffer.cell((x, 19)).map(|c| c.symbol()).unwrap_or(" "))
+            .collect();
+
+        // Top line should be mostly empty (whitespace)
+        assert!(
+            top_line.trim().is_empty(),
+            "Expected top line to be empty, got: '{}'",
+            top_line
+        );
+
+        // Bottom area should have content (the user message)
+        // Check a few lines from the bottom for content
+        let has_content = (15..20).any(|y| {
+            let line: String = (0..80)
+                .map(|x| buffer.cell((x, y)).map(|c| c.symbol()).unwrap_or(" "))
+                .collect();
+            line.contains("Hello")
+        });
+
+        assert!(
+            has_content,
+            "Expected 'Hello' to appear near bottom of viewport"
+        );
+    }
+
+    #[test]
+    fn test_conversation_widget_scroll_offset() {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+
+        let mut state = ConversationState::new();
+        for i in 0..30 {
+            state.push_user_message(&format!("Message {}", i));
+        }
+
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        // Test with scroll_offset = 0 (should show newest at bottom)
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                let widget = ConversationWidget::new(&state).scroll_offset(0);
+                f.render_widget(widget, area);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content: String = (0..buffer.area().height)
+            .flat_map(|y| {
+                (0..buffer.area().width)
+                    .map(move |x| buffer.cell((x, y)).map(|c| c.symbol()).unwrap_or(" "))
+            })
+            .collect();
+
+        // Should contain recent messages (29, 28, etc.)
+        assert!(
+            content.contains("Message 29"),
+            "Expected newest message 29 to be visible with scroll_offset=0"
+        );
+
+        // Test with scroll_offset = 10 (should show older messages)
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                let widget = ConversationWidget::new(&state).scroll_offset(10);
+                f.render_widget(widget, area);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content: String = (0..buffer.area().height)
+            .flat_map(|y| {
+                (0..buffer.area().width)
+                    .map(move |x| buffer.cell((x, y)).map(|c| c.symbol()).unwrap_or(" "))
+            })
+            .collect();
+
+        // Should NOT contain the newest message when scrolled up
+        assert!(
+            !content.contains("Message 29"),
+            "Expected message 29 to be scrolled out of view with scroll_offset=10"
+        );
     }
 }
