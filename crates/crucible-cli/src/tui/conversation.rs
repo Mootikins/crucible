@@ -4,13 +4,12 @@
 //! tool calls, and status indicators. Designed for ratatui rendering
 //! with full viewport control.
 
-use crate::tui::styles::{colors, indicators, styles};
+use crate::tui::styles::{indicators, styles};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Widget, Wrap},
+    widgets::{Paragraph, Widget, Wrap},
 };
 
 // =============================================================================
@@ -375,13 +374,8 @@ impl Widget for InputBoxWidget<'_> {
             styles::dim()
         };
 
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(colors::INPUT_ACCENT))
-            .style(style);
-
-        let inner = block.inner(area);
-        block.render(area, buf);
+        // Fill background
+        buf.set_style(area, style);
 
         // Render content with cursor
         let content_with_cursor = if self.cursor_position >= self.content.len() {
@@ -391,12 +385,12 @@ impl Widget for InputBoxWidget<'_> {
         };
 
         let line = Line::from(vec![
-            Span::raw("> "),
+            Span::raw(" > "),
             Span::raw(content_with_cursor),
         ]);
 
         let paragraph = Paragraph::new(line).style(style);
-        paragraph.render(inner, buf);
+        paragraph.render(area, buf);
     }
 }
 
