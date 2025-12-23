@@ -377,7 +377,7 @@ impl Widget for InputBoxWidget<'_> {
         // Fill background
         buf.set_style(area, style);
 
-        // Render content with cursor
+        // Render content with cursor, centered vertically
         let content_with_cursor = if self.cursor_position >= self.content.len() {
             format!("{} ", self.content) // Space for cursor at end
         } else {
@@ -389,8 +389,17 @@ impl Widget for InputBoxWidget<'_> {
             Span::raw(content_with_cursor),
         ]);
 
+        // Center vertically in the area
+        let middle_row = area.y + area.height / 2;
+        let centered_area = Rect {
+            x: area.x,
+            y: middle_row,
+            width: area.width,
+            height: 1,
+        };
+
         let paragraph = Paragraph::new(line).style(style);
-        paragraph.render(area, buf);
+        paragraph.render(centered_area, buf);
     }
 }
 
