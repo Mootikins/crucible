@@ -12,6 +12,9 @@ pub mod types;
 #[cfg(feature = "storage")]
 pub mod storage;
 
+#[cfg(feature = "embeddings")]
+pub mod embedding;
+
 pub use discovery::{FolderDiscovery, SearchPath};
 pub use error::{SkillError, SkillResult};
 pub use parser::SkillParser;
@@ -19,6 +22,9 @@ pub use types::{ResolvedSkill, Skill, SkillScope, SkillSource};
 
 #[cfg(feature = "storage")]
 pub use storage::SkillStore;
+
+#[cfg(feature = "embeddings")]
+pub use embedding::{embed_skill, search_skills_semantic, SkillSearchResult, SkillEmbeddingStore, SkillSearchStore};
 
 #[cfg(feature = "test-utils")]
 pub mod test_utils;
