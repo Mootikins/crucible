@@ -5,7 +5,7 @@
 
 use crate::tui::state::TuiState;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Actions that can be performed from keyboard input
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,6 +95,7 @@ pub fn map_key_event(event: &KeyEvent, state: &TuiState) -> InputAction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
 
     #[test]
     fn test_map_key_enter_sends_message() {
