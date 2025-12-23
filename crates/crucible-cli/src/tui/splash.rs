@@ -2,6 +2,7 @@
 //!
 //! Shows a welcome screen with agent selection when conversation is empty.
 
+use crucible_acp::KnownAgent;
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -16,6 +17,8 @@ pub struct AgentOption {
     pub name: String,
     pub description: String,
     pub is_default: bool,
+    /// Whether the agent is available (checked async)
+    pub available: Option<bool>,
 }
 
 /// Splash screen state
@@ -24,45 +27,130 @@ pub struct SplashState {
     pub agents: Vec<AgentOption>,
     pub selected_index: usize,
     pub cwd: String,
+    /// True when availability has been probed
+    pub probed: bool,
 }
 
 impl SplashState {
+    /// Create splash with known ACP agents (availability unknown until probed)
     pub fn new(cwd: String) -> Self {
-        Self {
-            agents: vec![
-                AgentOption {
-                    name: "claude-code".to_string(),
-                    description: "Claude Code via ACP".to_string(),
-                    is_default: true,
-                },
-                AgentOption {
-                    name: "internal".to_string(),
-                    description: "Direct LLM (Ollama/OpenAI)".to_string(),
-                    is_default: false,
-                },
-            ],
-            selected_index: 0,
-            cwd,
+        let known = crucible_acp::get_known_agents();
+        let mut agents: Vec<AgentOption> = known
+            .into_iter()
+            .map(|ka| AgentOption {
+                name: ka.name,
+                description: ka.description,
+                is_default: false,
+                available: None, // Unknown until probed
+            })
+            .collect();
+
+        // Add "internal" option for direct LLM (always available)
+        agents.push(AgentOption {
+            name: "internal".to_string(),
+            description: "Direct LLM (Ollama/OpenAI)".to_string(),
+            is_default: false,
+            available: Some(true),
+        });
+
+        // Find first available or default to first agent
+        let default_idx = 0;
+        if let Some(agent) = agents.get_mut(default_idx) {
+            agent.is_default = true;
         }
+
+        Self {
+            agents,
+            selected_index: default_idx,
+            cwd,
+            probed: false,
+        }
+    }
+
+    /// Update agent availability from probed results
+    pub fn update_availability(&mut self, probed: Vec<KnownAgent>) {
+        for ka in probed {
+            if let Some(agent) = self.agents.iter_mut().find(|a| a.name == ka.name) {
+                agent.available = Some(ka.available);
+            }
+        }
+        self.probed = true;
+
+        // Update default to first available agent
+        if let Some(idx) = self
+            .agents
+            .iter()
+            .position(|a| a.available == Some(true))
+        {
+            // Clear old default
+            for agent in &mut self.agents {
+                agent.is_default = false;
+            }
+            self.agents[idx].is_default = true;
+            self.selected_index = idx;
+        }
+    }
+
+    /// Check if an agent at index is available (or availability unknown)
+    fn is_selectable(&self, index: usize) -> bool {
+        self.agents
+            .get(index)
+            .map(|a| a.available != Some(false))
+            .unwrap_or(false)
+    }
+
+    /// Find next selectable agent index (skips unavailable)
+    fn next_selectable(&self, from: usize) -> usize {
+        let len = self.agents.len();
+        for i in 1..=len {
+            let idx = (from + i) % len;
+            if self.is_selectable(idx) {
+                return idx;
+            }
+        }
+        from // fallback to current if none available
+    }
+
+    /// Find previous selectable agent index (skips unavailable)
+    fn prev_selectable(&self, from: usize) -> usize {
+        let len = self.agents.len();
+        for i in 1..=len {
+            let idx = (from + len - i) % len;
+            if self.is_selectable(idx) {
+                return idx;
+            }
+        }
+        from // fallback to current if none available
     }
 
     pub fn select_next(&mut self) {
         if !self.agents.is_empty() {
-            self.selected_index = (self.selected_index + 1) % self.agents.len();
+            self.selected_index = self.next_selectable(self.selected_index);
         }
     }
 
     pub fn select_prev(&mut self) {
         if !self.agents.is_empty() {
-            self.selected_index = self
-                .selected_index
-                .checked_sub(1)
-                .unwrap_or(self.agents.len() - 1);
+            self.selected_index = self.prev_selectable(self.selected_index);
+        }
+    }
+
+    /// Select agent by index (0-indexed), only if available
+    pub fn select_index(&mut self, index: usize) {
+        if index < self.agents.len() && self.is_selectable(index) {
+            self.selected_index = index;
         }
     }
 
     pub fn selected_agent(&self) -> Option<&AgentOption> {
         self.agents.get(self.selected_index)
+    }
+
+    /// Check if current selection can be confirmed (is available)
+    pub fn can_confirm(&self) -> bool {
+        self.selected_agent()
+            .map(|a| a.available != Some(false))
+            .unwrap_or(false)
     }
 }
 
@@ -80,7 +168,8 @@ impl<'a> SplashWidget<'a> {
 impl Widget for SplashWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         // Center content vertically
-        let content_height = 12; // Approximate
+        // 4 header lines + agents + 4 footer lines
+        let content_height = 4 + self.state.agents.len() as u16 + 4;
         let vertical_padding = area.height.saturating_sub(content_height) / 2;
 
         let chunks = Layout::default()
@@ -114,21 +203,56 @@ impl Widget for SplashWidget<'_> {
 
         for (i, agent) in self.state.agents.iter().enumerate() {
             let is_selected = i == self.state.selected_index;
-            let prefix = if is_selected { "▸ " } else { "  " };
-            let suffix = if agent.is_default { " (default)" } else { "" };
+            let selector = if is_selected { "▸" } else { " " };
+            let number = i + 1; // 1-indexed for display
 
-            let style = if is_selected {
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD)
+            // Build suffix with availability status
+            let status = match agent.available {
+                Some(true) => " ✓",
+                Some(false) => " ✗",
+                None => " …", // Still checking
+            };
+            let default_marker = if agent.is_default { " (default)" } else { "" };
+
+            // Style based on selection and availability
+            let (name_style, status_style, num_style) = if is_selected {
+                (
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                    match agent.available {
+                        Some(true) => Style::default().fg(Color::Green),
+                        Some(false) => Style::default().fg(Color::Red),
+                        None => Style::default().fg(Color::DarkGray),
+                    },
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                )
             } else {
-                Style::default().fg(Color::Gray)
+                let base = match agent.available {
+                    Some(true) => Style::default().fg(Color::Gray),
+                    Some(false) => Style::default().fg(Color::DarkGray),
+                    None => Style::default().fg(Color::Gray),
+                };
+                (
+                    base,
+                    match agent.available {
+                        Some(true) => Style::default().fg(Color::Green),
+                        Some(false) => Style::default().fg(Color::DarkGray),
+                        None => Style::default().fg(Color::DarkGray),
+                    },
+                    Style::default().fg(Color::DarkGray),
+                )
             };
 
-            lines.push(Line::from(vec![Span::styled(
-                format!("{}{}{}", prefix, agent.name, suffix),
-                style,
-            )]));
+            lines.push(Line::from(vec![
+                Span::styled(format!("{} ", selector), name_style),
+                Span::styled(format!("{}.", number), num_style),
+                Span::styled(format!(" {}", agent.name), name_style),
+                Span::styled(status, status_style),
+                Span::styled(default_marker, name_style),
+            ]));
         }
 
         lines.push(Line::from(""));
@@ -143,11 +267,13 @@ impl Widget for SplashWidget<'_> {
 
         // Help hints
         lines.push(Line::from(vec![
-            Span::styled("[↑↓]", Style::default().fg(Color::DarkGray)),
+            Span::styled("[j/k]", Style::default().fg(Color::DarkGray)),
             Span::raw(" navigate  "),
-            Span::styled("[Enter]", Style::default().fg(Color::DarkGray)),
-            Span::raw(" select  "),
-            Span::styled("[Esc]", Style::default().fg(Color::DarkGray)),
+            Span::styled("[1-9]", Style::default().fg(Color::DarkGray)),
+            Span::raw(" quick select  "),
+            Span::styled("[l/Enter]", Style::default().fg(Color::DarkGray)),
+            Span::raw(" confirm  "),
+            Span::styled("[q]", Style::default().fg(Color::DarkGray)),
             Span::raw(" quit"),
         ]));
 
@@ -161,39 +287,168 @@ impl Widget for SplashWidget<'_> {
 mod tests {
     use super::*;
 
+    /// Get a platform-agnostic temp dir path for tests
+    fn test_cwd() -> String {
+        std::env::temp_dir().display().to_string()
+    }
+
     #[test]
     fn test_splash_state_new() {
-        let state = SplashState::new("/home/test".to_string());
+        let cwd = test_cwd();
+        let state = SplashState::new(cwd.clone());
         assert!(!state.agents.is_empty());
         assert_eq!(state.selected_index, 0);
-        assert_eq!(state.cwd, "/home/test");
+        assert_eq!(state.cwd, cwd);
     }
 
     #[test]
     fn test_splash_navigation() {
-        let mut state = SplashState::new("/tmp".to_string());
+        let mut state = SplashState::new(test_cwd());
+        let num_agents = state.agents.len();
+        assert!(num_agents >= 2, "Should have at least 2 agents");
         assert_eq!(state.selected_index, 0);
 
+        // All agents start with unknown availability (except internal=true)
+        // so navigation should work normally
         state.select_next();
         assert_eq!(state.selected_index, 1);
 
-        state.select_next();
+        // Navigate to end (all unknown = selectable)
+        for _ in 0..num_agents - 1 {
+            state.select_next();
+        }
         assert_eq!(state.selected_index, 0); // Wraps around
 
         state.select_prev();
-        assert_eq!(state.selected_index, 1); // Wraps backward
+        assert_eq!(state.selected_index, num_agents - 1); // Wraps backward
+    }
+
+    #[test]
+    fn test_navigation_skips_unavailable() {
+        let mut state = SplashState::new(test_cwd());
+
+        // Mark agents 1 and 2 as unavailable
+        state.agents[1].available = Some(false);
+        state.agents[2].available = Some(false);
+
+        // Start at 0, next should skip 1 and 2, land on 3
+        state.selected_index = 0;
+        state.select_next();
+        assert_eq!(state.selected_index, 3);
+
+        // Going back should skip 2 and 1, land on 0
+        state.select_prev();
+        assert_eq!(state.selected_index, 0);
+    }
+
+    #[test]
+    fn test_select_index_skips_unavailable() {
+        let mut state = SplashState::new(test_cwd());
+
+        // Mark agent 2 as unavailable
+        state.agents[2].available = Some(false);
+
+        // Trying to select index 2 should be ignored
+        state.selected_index = 0;
+        state.select_index(2);
+        assert_eq!(state.selected_index, 0); // Unchanged
+
+        // Selecting available index should work
+        state.select_index(3);
+        assert_eq!(state.selected_index, 3);
+    }
+
+    #[test]
+    fn test_can_confirm_blocks_unavailable() {
+        let mut state = SplashState::new(test_cwd());
+
+        // Unknown availability = can confirm
+        assert!(state.can_confirm());
+
+        // Mark current selection as unavailable
+        state.agents[0].available = Some(false);
+        assert!(!state.can_confirm());
+
+        // Mark as available
+        state.agents[0].available = Some(true);
+        assert!(state.can_confirm());
     }
 
     #[test]
     fn test_selected_agent() {
-        let state = SplashState::new("/tmp".to_string());
+        let state = SplashState::new(test_cwd());
         let agent = state.selected_agent().unwrap();
-        assert_eq!(agent.name, "claude-code");
+        // First known agent should be opencode
+        assert_eq!(agent.name, "opencode");
+    }
+
+    #[test]
+    fn test_update_availability() {
+        let mut state = SplashState::new(test_cwd());
+
+        // Initially all agents have unknown availability (except internal)
+        let acp_agents: Vec<_> = state
+            .agents
+            .iter()
+            .filter(|a| a.name != "internal")
+            .collect();
+        assert!(
+            acp_agents.iter().all(|a| a.available.is_none()),
+            "ACP agents should start with unknown availability"
+        );
+
+        // Simulate probing results - only opencode available
+        let probed = vec![
+            KnownAgent {
+                name: "opencode".to_string(),
+                description: "".to_string(),
+                available: true,
+            },
+            KnownAgent {
+                name: "claude".to_string(),
+                description: "".to_string(),
+                available: false,
+            },
+        ];
+        state.update_availability(probed);
+
+        // Check availability was updated
+        let opencode = state.agents.iter().find(|a| a.name == "opencode").unwrap();
+        assert_eq!(opencode.available, Some(true));
+        assert!(opencode.is_default, "First available should be default");
+
+        let claude = state.agents.iter().find(|a| a.name == "claude").unwrap();
+        assert_eq!(claude.available, Some(false));
+    }
+
+    #[test]
+    fn test_internal_always_available() {
+        let state = SplashState::new(test_cwd());
+        let internal = state.agents.iter().find(|a| a.name == "internal").unwrap();
+        assert_eq!(internal.available, Some(true));
+    }
+
+    #[test]
+    fn test_select_index() {
+        let mut state = SplashState::new(test_cwd());
+        assert_eq!(state.selected_index, 0);
+
+        // Select by valid index
+        state.select_index(2);
+        assert_eq!(state.selected_index, 2);
+
+        // Out of bounds index is ignored
+        state.select_index(100);
+        assert_eq!(state.selected_index, 2); // Unchanged
+
+        // Select first
+        state.select_index(0);
+        assert_eq!(state.selected_index, 0);
     }
 
     #[test]
     fn test_splash_widget_renders() {
-        let state = SplashState::new("/home/user".to_string());
+        let state = SplashState::new(test_cwd());
         let widget = SplashWidget::new(&state);
 
         let area = Rect::new(0, 0, 80, 24);
