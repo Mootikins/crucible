@@ -214,7 +214,7 @@ impl Widget for DialogWidget<'_> {
             DialogKind::Confirm { .. } => Self::centered_rect(50, 30, area),
             DialogKind::Select { items, .. } => {
                 let height = (items.len() + 4).min(20) as u16;
-                let height_percent = (height * 100 / area.height).max(30).min(80);
+                let height_percent = (height * 100 / area.height).clamp(30, 80);
                 Self::centered_rect(50, height_percent, area)
             }
             DialogKind::Info { .. } => Self::centered_rect(60, 40, area),

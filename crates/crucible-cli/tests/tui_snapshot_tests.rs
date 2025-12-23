@@ -446,7 +446,6 @@ fn popup_with_streaming() {
 
 use crucible_cli::tui::conversation::{
     ConversationState, ConversationWidget, InputBoxWidget, StatusBarWidget, StatusKind,
-    ToolCallDisplay, ToolStatus,
 };
 use ratatui::layout::{Constraint, Direction, Layout};
 
