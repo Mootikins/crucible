@@ -2784,6 +2784,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "crucible-skills"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "crucible-core",
+ "crucible-skills",
+ "dirs 5.0.1",
+ "glob",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+ "walkdir",
+]
+
+[[package]]
 name = "crucible-surrealdb"
 version = "0.1.0"
 dependencies = [
