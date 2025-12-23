@@ -48,6 +48,7 @@ pub use crate::database::{
     Record,
     RecordId,
     SearchResult,
+    UnifiedSearchResult,
 };
 
 // Re-export note types
