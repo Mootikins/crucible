@@ -464,9 +464,9 @@ fn render_conversation_view(
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Min(10),    // Conversation area
-                    Constraint::Length(3),  // Input box
-                    Constraint::Length(1),  // Status bar
+                    Constraint::Min(10),   // Conversation area
+                    Constraint::Length(3), // Input box
+                    Constraint::Length(1), // Status bar
                 ])
                 .split(f.area());
 
@@ -583,7 +583,10 @@ fn conversation_multiple_tools() {
 
     // Second tool - running
     conv.push_tool_running("read src/main.rs");
-    conv.update_tool_output("read src/main.rs", "fn main() {\n    println!(\"Hello\");\n}");
+    conv.update_tool_output(
+        "read src/main.rs",
+        "fn main() {\n    println!(\"Hello\");\n}",
+    );
 
     render_conversation_view(&mut terminal, &conv, "", "act", None, "Tool running");
     assert_snapshot!("conv_multiple_tools", terminal.backend());
