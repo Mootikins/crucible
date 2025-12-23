@@ -5,6 +5,7 @@
 use crate::tui::conversation::{
     ConversationState, ConversationWidget, InputBoxWidget, StatusBarWidget, StatusKind,
 };
+use crate::tui::dialog::{DialogResult, DialogStack, DialogWidget};
 use crate::tui::splash::{SplashState, SplashWidget};
 use crate::tui::state::{PopupItem, PopupState};
 use anyhow::Result;
@@ -94,6 +95,8 @@ pub struct ViewState {
     pub popup: Option<PopupState>,
     /// Splash screen state (Some when conversation is empty)
     pub splash: Option<SplashState>,
+    /// Dialog stack for modal dialogs
+    pub dialog_stack: DialogStack,
 }
 
 impl ViewState {
@@ -115,6 +118,7 @@ impl ViewState {
                     .map(|p| p.display().to_string())
                     .unwrap_or_else(|_| "~".to_string()),
             )),
+            dialog_stack: DialogStack::new(),
         }
     }
 }
@@ -143,8 +147,11 @@ impl RatatuiView {
 
     /// Render to a ratatui frame
     pub fn render_frame(&self, frame: &mut Frame) {
-        // Show splash if conversation is empty AND no popup is active
-        if self.state.conversation.items().is_empty() && self.state.popup.is_none() {
+        // Show splash if conversation is empty AND no popup is active AND no dialog is active
+        if self.state.conversation.items().is_empty()
+            && self.state.popup.is_none()
+            && self.state.dialog_stack.is_empty()
+        {
             if let Some(splash) = &self.state.splash {
                 let widget = SplashWidget::new(splash);
                 frame.render_widget(widget, frame.area());
@@ -207,6 +214,12 @@ impl RatatuiView {
             status_widget = status_widget.token_count(count);
         }
         frame.render_widget(status_widget, chunks[idx]);
+
+        // Render dialog on top if present (overlays everything)
+        if let Some(dialog) = self.state.dialog_stack.current() {
+            let widget = DialogWidget::new(dialog);
+            frame.render_widget(widget, frame.area());
+        }
     }
 
     /// Render popup overlay
@@ -353,6 +366,21 @@ impl RatatuiView {
     /// Mark the last block as complete
     pub fn complete_last_block(&mut self) {
         self.state.conversation.complete_last_block();
+    }
+
+    /// Push a dialog onto the stack
+    pub fn push_dialog(&mut self, dialog: crate::tui::dialog::DialogState) {
+        self.state.dialog_stack.push(dialog);
+    }
+
+    /// Check if a dialog is currently active
+    pub fn has_dialog(&self) -> bool {
+        !self.state.dialog_stack.is_empty()
+    }
+
+    /// Handle key event for the current dialog
+    pub fn handle_dialog_key(&mut self, key: crossterm::event::KeyEvent) -> Option<DialogResult> {
+        self.state.dialog_stack.handle_key(key)
     }
 }
 
