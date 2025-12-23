@@ -42,6 +42,17 @@
 //! }
 //! ```
 
+#![allow(
+    clippy::field_reassign_with_default,
+    clippy::needless_range_loop,
+    clippy::assertions_on_constants,
+    clippy::cloned_ref_to_slice_refs,
+    clippy::manual_strip,
+    clippy::useless_vec,
+    suspicious_double_ref_op,
+    deprecated
+)]
+
 // ============================================================================
 // SOLID ARCHITECTURE: Phase 5 - Private Infrastructure Types
 // ============================================================================

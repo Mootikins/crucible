@@ -121,7 +121,7 @@ mod tests {
         let daemon = TestDaemon::start()
             .await
             .expect("Failed to start test daemon");
-        let socket_path = daemon.socket_path.clone();
+        let _socket_path = daemon.socket_path.clone();
 
         // Drop daemon (should clean up)
         drop(daemon);

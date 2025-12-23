@@ -1,5 +1,7 @@
 //! File event types and related structures.
 
+#![allow(clippy::type_complexity)]
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;

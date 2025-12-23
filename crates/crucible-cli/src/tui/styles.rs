@@ -103,7 +103,7 @@ pub mod indicators {
 // =============================================================================
 
 /// Pre-built styles for common elements
-pub mod styles {
+pub mod presets {
     use super::*;
 
     /// User message style (inverted)
@@ -348,8 +348,8 @@ mod tests {
 
     #[test]
     fn test_mode_style() {
-        let plan_style = styles::mode("plan");
-        let act_style = styles::mode("act");
+        let plan_style = presets::mode("plan");
+        let act_style = presets::mode("act");
         // Just verify they don't panic and return different styles
         assert_ne!(format!("{:?}", plan_style), format!("{:?}", act_style));
     }

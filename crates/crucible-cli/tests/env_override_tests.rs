@@ -1,4 +1,8 @@
 //! Tests for environment variable overrides
+
+#![allow(clippy::field_reassign_with_default)]
+#![allow(deprecated)] // cargo_bin is deprecated but still functional
+
 //!
 //! These tests verify that environment variables properly override config file values
 //! and CLI arguments. Tests are run serially to avoid environment pollution.

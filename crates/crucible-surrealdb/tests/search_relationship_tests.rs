@@ -389,8 +389,8 @@ async fn block_storage() {
 
     // Verify blocks have content and hashes
     for record in &result.records {
-        let has_content = record.data.get("content").is_some();
-        let has_hash = record.data.get("block_hash").is_some();
+        let has_content = record.data.contains_key("content");
+        let has_hash = record.data.contains_key("block_hash");
         assert!(has_content, "Block should have content");
         assert!(has_hash, "Block should have block_hash");
     }
@@ -460,8 +460,8 @@ async fn block_cas_lookup() {
 
     // Verify we can access block content
     let block = &result.records[0];
-    let has_content = block.data.get("content").is_some();
-    let has_type = block.data.get("block_type").is_some();
+    let has_content = block.data.contains_key("content");
+    let has_type = block.data.contains_key("block_type");
 
     assert!(has_content, "Block should have content");
     assert!(has_type, "Block should have block_type");

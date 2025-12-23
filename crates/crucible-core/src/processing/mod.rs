@@ -224,8 +224,8 @@ pub struct JobStats {
 pub enum NoteProcessingResult {
     /// Note was successfully processed and queued for database operations
     Success {
-        /// The processed note
-        note: ProcessedNote,
+        /// The processed note (boxed to reduce enum size)
+        note: Box<ProcessedNote>,
         /// Number of database transactions generated
         transaction_count: usize,
         /// Processing time
@@ -463,7 +463,7 @@ mod tests {
         );
 
         let success = NoteProcessingResult::Success {
-            note: processed,
+            note: Box::new(processed),
             transaction_count: 3,
             processing_time: std::time::Duration::from_millis(100),
         };

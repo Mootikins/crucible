@@ -10,7 +10,7 @@
 //! - Complete line extraction from buffers
 //! - Partial line retention across chunks
 //! - "data: " prefix stripping
-//! - [DONE] marker handling
+//! - \[DONE\] marker handling
 //! - Empty line and comment skipping
 //! - Arbitrary byte-level splits
 //! - UTF-8 boundary handling
@@ -38,6 +38,8 @@
 //!
 //! The test implementations mirror the production code to ensure the actual
 //! streaming parsers handle all edge cases correctly.
+
+#![allow(dead_code, clippy::format_in_format_args)]
 
 use proptest::prelude::*;
 

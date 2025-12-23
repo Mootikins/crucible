@@ -13,7 +13,7 @@ use crucible_surrealdb::{
         get_document_embeddings, initialize_kiln_schema, retrieve_parsed_document, store_embedding,
         store_parsed_document,
     },
-    SurrealClient,
+    test_utils::SurrealClient,
 };
 use std::hint::black_box;
 use std::path::PathBuf;

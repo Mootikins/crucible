@@ -86,9 +86,9 @@ impl InlineRule for WikilinkScanner {
             let target = &target_part[..hash_pos];
             let ref_part = &target_part[hash_pos + 1..];
 
-            if ref_part.starts_with('^') {
+            if let Some(stripped) = ref_part.strip_prefix('^') {
                 // Block reference
-                (target, None, Some(ref_part[1..].to_string()))
+                (target, None, Some(stripped.to_string()))
             } else {
                 // Heading reference
                 (target, Some(ref_part.to_string()), None)

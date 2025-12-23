@@ -426,7 +426,7 @@ pub enum ClusteringError {
     Algorithm(String),
 
     #[error("Database error: {0}")]
-    Database(#[from] surrealdb::Error),
+    Database(#[from] Box<surrealdb::Error>),
 
     #[error("Invalid embedding dimensions: expected {expected}, got {actual}")]
     InvalidEmbeddingDimensions { expected: usize, actual: usize },

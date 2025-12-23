@@ -1,4 +1,7 @@
 //! Agent factory configuration tests
+
+#![allow(clippy::field_reassign_with_default)]
+
 //!
 //! Tests that verify agent creation with various LLM provider configurations.
 //! These tests validate that configurations are properly parsed, validated, and

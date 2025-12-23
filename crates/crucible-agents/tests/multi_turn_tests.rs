@@ -263,6 +263,7 @@ impl LoggingToolExecutor {
         }
     }
 
+    #[allow(dead_code)]
     fn execution_count(&self) -> usize {
         self.executions.lock().unwrap().len()
     }
@@ -346,13 +347,11 @@ async fn test_two_round_tool_execution() {
 
     let mut stream = handle.send_message_stream("What is the answer?".to_string());
     let mut content = String::new();
-    let mut chunk_count = 0;
 
     while let Some(chunk_result) = stream.next().await {
         match chunk_result {
             Ok(chunk) => {
                 content.push_str(&chunk.delta);
-                chunk_count += 1;
             }
             Err(e) => {
                 panic!("Unexpected error: {:?}", e);

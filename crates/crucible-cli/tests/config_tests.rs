@@ -1,5 +1,7 @@
 //! Configuration and error handling integration tests
 
+#![allow(clippy::field_reassign_with_default)]
+
 use crucible_cli::config::CliConfig;
 use crucible_config::EmbeddingProviderType;
 use serial_test::serial;

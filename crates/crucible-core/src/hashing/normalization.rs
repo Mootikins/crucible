@@ -90,6 +90,7 @@ pub fn normalize_block_text(text: &str) -> String {
 }
 
 /// Remove leading markdown markers (lists, blockquotes, headings)
+#[allow(clippy::while_let_loop)] // Complex control flow is clearer with explicit loop
 fn remove_leading_markers(text: &str) -> String {
     let mut remaining = text;
 

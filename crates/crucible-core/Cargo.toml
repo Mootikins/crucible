@@ -63,6 +63,7 @@ futures = "0.3"
 default = ["core"]
 core = []
 parallel-processing = ["rayon"]
+test-utils = []
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "full"] }

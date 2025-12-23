@@ -190,7 +190,11 @@ impl EvalReport {
                 md.push_str(&format!("### Config: {}\n\n", config));
 
                 for result in results.iter() {
-                    let status = if result.validation.success { "" } else { "" };
+                    let status = if result.validation.success {
+                        "✓"
+                    } else {
+                        "✗"
+                    };
                     md.push_str(&format!("- {} **{}**", status, result.fixture_id));
 
                     if !result.validation.errors.is_empty() {
@@ -299,9 +303,11 @@ mod tests {
 
     #[test]
     fn test_config_results_pass_rate() {
-        let mut results = ConfigResults::default();
-        results.passed = 7;
-        results.failed = 3;
+        let results = ConfigResults {
+            passed: 7,
+            failed: 3,
+            ..Default::default()
+        };
         assert!((results.pass_rate() - 70.0).abs() < 0.01);
     }
 

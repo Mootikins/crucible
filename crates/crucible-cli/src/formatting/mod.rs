@@ -28,6 +28,7 @@ pub enum OutputFormat {
 
 impl OutputFormat {
     /// Parse format from string
+    #[allow(clippy::should_implement_trait)] // Infallible parsing with default, not FromStr semantics
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "json" => OutputFormat::Json,

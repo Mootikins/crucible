@@ -175,15 +175,16 @@ pub struct BlockProcessor {
     block_size: BlockSize,
 }
 
+impl Default for BlockProcessor {
+    fn default() -> Self {
+        Self::new(BlockSize::default())
+    }
+}
+
 impl BlockProcessor {
     /// Create a new block processor with the specified block size
     pub fn new(block_size: BlockSize) -> Self {
         Self { block_size }
-    }
-
-    /// Create a block processor with default 4KB block size
-    pub fn default() -> Self {
-        Self::new(BlockSize::default())
     }
 
     /// Process content into hashed blocks

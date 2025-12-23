@@ -665,7 +665,7 @@ pub enum ModelStatus {
 }
 
 /// Provider capabilities
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProviderCapabilities {
     /// Supports text completion
     pub text_completion: bool,

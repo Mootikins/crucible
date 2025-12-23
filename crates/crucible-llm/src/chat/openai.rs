@@ -552,6 +552,7 @@ struct OpenAIDelta {
 struct OpenAIStreamToolCall {
     index: u32,
     id: Option<String>,
+    #[allow(dead_code)]
     #[serde(rename = "type")]
     r#type: Option<String>,
     function: Option<OpenAIStreamFunction>,

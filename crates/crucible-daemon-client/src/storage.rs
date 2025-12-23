@@ -91,7 +91,7 @@ mod tests {
             }
             Err(e) => {
                 // Query failed - expected since kiln doesn't exist or is empty
-                assert!(e.to_string().len() > 0, "Error should have a message");
+                assert!(!e.to_string().is_empty(), "Error should have a message");
             }
         }
     }

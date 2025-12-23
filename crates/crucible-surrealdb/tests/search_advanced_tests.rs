@@ -279,7 +279,7 @@ async fn fuzzy_stemming() {
 #[tokio::test]
 async fn fuzzy_prefix_matching() {
     // Arrange: Partial words that should match full words
-    let _prefix_tests = vec![
+    let _prefix_tests = [
         ("proj", "project"),      // Should match "project", "projects", etc.
         ("tech", "technical"),    // Should match "technical", "technology"
         ("doc", "documentation"), // Should match "document", "documentation"
@@ -463,20 +463,18 @@ async fn link_validation_targets_exist() {
     let mut note_names: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     // Collect all wikilink targets
-    for entry in walkdir::WalkDir::new(&kiln_root) {
-        if let Ok(entry) = entry {
-            if entry.file_type().is_file() && entry.path().extension().is_some_and(|e| e == "md") {
-                // Add note name (without .md)
-                if let Some(stem) = entry.path().file_stem() {
-                    note_names.insert(stem.to_string_lossy().to_string());
-                }
+    for entry in walkdir::WalkDir::new(&kiln_root).into_iter().flatten() {
+        if entry.file_type().is_file() && entry.path().extension().is_some_and(|e| e == "md") {
+            // Add note name (without .md)
+            if let Some(stem) = entry.path().file_stem() {
+                note_names.insert(stem.to_string_lossy().to_string());
+            }
 
-                // Extract wikilink targets
-                if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                    for cap in wikilink_regex.captures_iter(&content) {
-                        if let Some(target) = cap.get(1) {
-                            targets.insert(target.as_str().to_string());
-                        }
+            // Extract wikilink targets
+            if let Ok(content) = std::fs::read_to_string(entry.path()) {
+                for cap in wikilink_regex.captures_iter(&content) {
+                    if let Some(target) = cap.get(1) {
+                        targets.insert(target.as_str().to_string());
                     }
                 }
             }
@@ -529,20 +527,18 @@ async fn link_validation_orphaned_pages() {
     let mut linked_to: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut all_notes: Vec<String> = Vec::new();
 
-    for entry in walkdir::WalkDir::new(&kiln_root) {
-        if let Ok(entry) = entry {
-            if entry.file_type().is_file() && entry.path().extension().is_some_and(|e| e == "md") {
-                // Add note name
-                if let Some(stem) = entry.path().file_stem() {
-                    all_notes.push(stem.to_string_lossy().to_string());
-                }
+    for entry in walkdir::WalkDir::new(&kiln_root).into_iter().flatten() {
+        if entry.file_type().is_file() && entry.path().extension().is_some_and(|e| e == "md") {
+            // Add note name
+            if let Some(stem) = entry.path().file_stem() {
+                all_notes.push(stem.to_string_lossy().to_string());
+            }
 
-                // Extract wikilink targets
-                if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                    for cap in wikilink_regex.captures_iter(&content) {
-                        if let Some(target) = cap.get(1) {
-                            linked_to.insert(target.as_str().to_string());
-                        }
+            // Extract wikilink targets
+            if let Ok(content) = std::fs::read_to_string(entry.path()) {
+                for cap in wikilink_regex.captures_iter(&content) {
+                    if let Some(target) = cap.get(1) {
+                        linked_to.insert(target.as_str().to_string());
                     }
                 }
             }

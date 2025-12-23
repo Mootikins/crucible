@@ -137,7 +137,6 @@ mod tests {
             })
             .unwrap();
 
-        // Verify operations completed without error
-        assert!(true);
+        // Verify operations completed without error (no panics means success)
     }
 }

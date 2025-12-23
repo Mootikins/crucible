@@ -113,7 +113,7 @@ impl FastEmbedReranker {
     }
 
     /// Create a reranker with default configuration (BGE base model)
-    pub fn default() -> Result<Self> {
+    pub fn with_default_config() -> Result<Self> {
         Self::new(FastEmbedRerankerConfig::default())
     }
 
@@ -327,8 +327,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_rerank_empty_documents() {
-        let mut config = FastEmbedRerankerConfig::default();
-        config.cache_dir = Some(test_cache_path());
+        let config = FastEmbedRerankerConfig {
+            cache_dir: Some(test_cache_path()),
+            ..Default::default()
+        };
         let reranker = FastEmbedReranker::new(config).unwrap();
 
         let results = reranker.rerank("test query", vec![], None).await.unwrap();

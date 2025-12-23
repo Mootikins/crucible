@@ -6,7 +6,6 @@
 /// 3. Stored in relations/tags tables with proper metadata
 ///
 /// These tests use `new_isolated_memory()` to ensure complete test isolation.
-
 #[cfg(test)]
 mod edge_cases {
     use super::super::{apply_eav_graph_schema, EAVGraphStore, NoteIngestor};

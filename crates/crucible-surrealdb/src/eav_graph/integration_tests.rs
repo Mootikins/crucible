@@ -8,7 +8,6 @@
 /// - Test multiple components working together
 /// - Verify block storage, metadata, and hierarchy
 /// - Ensure all block types are correctly stored
-
 #[cfg(test)]
 mod tests {
     use crate::eav_graph::{apply_eav_graph_schema, EAVGraphStore, NoteIngestor};

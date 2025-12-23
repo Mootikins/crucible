@@ -823,7 +823,7 @@ impl CrucibleAcpClient {
             _ => {
                 return Err(AcpError::Session(format!(
                     "Unsupported ClientRequest variant: {:?}",
-                    std::any::type_name_of_val(&request)
+                    std::any::type_name::<agent_client_protocol::ClientRequest>()
                 )))
             }
         };
@@ -2342,8 +2342,7 @@ mod tests {
         let mut client = CrucibleAcpClient::new(config);
 
         // 1. Connect
-        let connect_result = client.connect().await;
-        if connect_result.is_ok() {
+        if let Ok(session) = client.connect().await {
             assert!(client.is_connected(), "Should be connected after connect()");
 
             // 2. Send message
@@ -2351,7 +2350,6 @@ mod tests {
             let _send_result = client.send_message(message).await;
 
             // 3. Disconnect
-            let session = connect_result.unwrap();
             let disconnect_result = client.disconnect(&session).await;
 
             if disconnect_result.is_ok() {

@@ -1,4 +1,10 @@
 //! Integration tests for context enrichment
+
+#![allow(
+    clippy::field_reassign_with_default,
+    clippy::unnecessary_literal_unwrap
+)]
+
 //!
 //! These tests verify the context enrichment flow that adds semantic search results
 //! to user queries before sending them to the agent.

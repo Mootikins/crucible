@@ -3,6 +3,7 @@
 //! This module provides shared test infrastructure for setting up databases
 //! with the dev-kiln example vault.
 //!
+#![allow(dead_code)]
 //! Requires the `test-utils` feature to be enabled.
 
 use crucible_core::parser::MarkdownParser;
@@ -37,6 +38,7 @@ pub fn find_test_kiln_markdown_files() -> Vec<PathBuf> {
 }
 
 /// Count markdown files in the dev-kiln.
+#[allow(dead_code)]
 pub fn count_kiln_files() -> usize {
     find_test_kiln_markdown_files().len()
 }

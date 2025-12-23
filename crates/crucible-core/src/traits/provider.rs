@@ -231,23 +231,6 @@ impl ExtendedCapabilities {
     }
 }
 
-impl Default for ProviderCapabilities {
-    fn default() -> Self {
-        Self {
-            text_completion: false,
-            chat_completion: false,
-            streaming: false,
-            function_calling: false,
-            tool_use: false,
-            vision: false,
-            audio: false,
-            max_batch_size: None,
-            input_formats: Vec::new(),
-            output_formats: Vec::new(),
-        }
-    }
-}
-
 /// Base trait for all providers
 ///
 /// This trait defines the common interface shared by all providers,

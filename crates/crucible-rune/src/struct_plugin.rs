@@ -403,11 +403,13 @@ struct PluginInstance {
 
 impl PluginInstance {
     /// Check if this plugin provides a specific tool
+    #[allow(dead_code)]
     pub fn provides_tool(&self, tool_name: &str) -> bool {
         self.tools.iter().any(|t| t.name == tool_name)
     }
 
     /// Check if this plugin should handle a file change
+    #[allow(dead_code)]
     pub fn matches_watch_pattern(&self, path: &str) -> bool {
         self.metadata.watch_patterns.iter().any(|p| p.matches(path))
     }
@@ -473,6 +475,7 @@ impl PluginRegistry {
     }
 
     /// Find plugins that match a watch pattern for a given path
+    #[allow(dead_code)]
     pub fn find_plugins_for_watch(&self, file_path: &str) -> Vec<&PluginInstance> {
         self.instances
             .values()
@@ -489,16 +492,19 @@ impl PluginRegistry {
     }
 
     /// Number of loaded plugins
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.instances.len()
     }
 
     /// Check if registry is empty
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.instances.is_empty()
     }
 
     /// Iterate over all instances
+    #[allow(dead_code)]
     pub fn iter(&self) -> impl Iterator<Item = &PluginInstance> {
         self.instances.values()
     }
@@ -851,6 +857,7 @@ impl StructPluginLoader {
     }
 
     /// Get mutable registry
+    #[allow(dead_code)]
     pub fn registry_mut(&mut self) -> &mut PluginRegistry {
         &mut self.registry
     }
@@ -1774,7 +1781,7 @@ pub fn create() {
 "#;
         std::fs::write(temp.path().join("simple.rn"), plugin).unwrap();
 
-        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
+        let loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         let compile_result = loader.compile("simple.rn", plugin);
         assert!(
             compile_result.is_ok(),
@@ -1833,7 +1840,7 @@ pub fn create() {
 "#;
         std::fs::write(temp.path().join("iter.rn"), plugin).unwrap();
 
-        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
+        let loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         let compile_result = loader.compile("iter.rn", plugin);
         assert!(
             compile_result.is_ok(),
@@ -1902,7 +1909,7 @@ pub fn create() {
 "#;
         std::fs::write(temp.path().join("array.rn"), plugin).unwrap();
 
-        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
+        let loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
         let compile_result = loader.compile("array.rn", plugin);
         assert!(
             compile_result.is_ok(),
@@ -1996,7 +2003,7 @@ pub fn create() {
             return;
         }
 
-        let mut loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
+        let loader = StructPluginLoader::new(ShellPolicy::with_defaults()).unwrap();
 
         // Create a temp dir with just the just.rn plugin
         let temp = TempDir::new().unwrap();

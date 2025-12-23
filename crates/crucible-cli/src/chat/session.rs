@@ -45,6 +45,16 @@ pub struct SessionConfig {
     pub context_size: Option<usize>,
 }
 
+impl Default for SessionConfig {
+    fn default() -> Self {
+        Self {
+            initial_mode_id: "plan".to_string(),
+            context_enabled: true,
+            context_size: Some(DEFAULT_CONTEXT_SIZE),
+        }
+    }
+}
+
 impl SessionConfig {
     /// Create a new session configuration
     pub fn new(
@@ -56,15 +66,6 @@ impl SessionConfig {
             initial_mode_id: initial_mode_id.into(),
             context_enabled,
             context_size,
-        }
-    }
-
-    /// Create default configuration (Plan mode, context enabled, 5 results)
-    pub fn default() -> Self {
-        Self {
-            initial_mode_id: "plan".to_string(),
-            context_enabled: true,
-            context_size: Some(DEFAULT_CONTEXT_SIZE),
         }
     }
 

@@ -31,6 +31,7 @@ pub enum DeviceType {
 
 impl DeviceType {
     /// Parse from string (case-insensitive)
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "auto" => Self::Auto,
@@ -258,6 +259,7 @@ pub struct MockBackend {
 
 #[cfg(any(test, feature = "test-utils"))]
 impl MockBackend {
+    /// Create a new mock backend for testing purposes.
     pub fn new(dimensions: usize) -> Self {
         Self {
             dimensions,

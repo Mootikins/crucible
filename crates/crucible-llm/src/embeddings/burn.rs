@@ -21,6 +21,7 @@ pub struct BurnProvider {
     model_name: String,
     model_dir: String,
     model_search_paths: Vec<String>,
+    #[allow(dead_code)]
     backend_config: BurnBackendConfig,
     dimensions: usize,
     device_type: String,
@@ -29,6 +30,7 @@ pub struct BurnProvider {
 
 /// Internal state for the Burn provider
 #[cfg(not(feature = "burn"))]
+#[allow(dead_code, clippy::large_enum_variant)]
 enum BurnState {
     Uninitialized,
     Initialized {
@@ -48,6 +50,7 @@ enum BurnState {
 
 /// Internal state for the Burn provider (with Burn feature enabled)
 #[cfg(feature = "burn")]
+#[allow(dead_code)]
 enum BurnState {
     Uninitialized,
     Initialized {
@@ -820,6 +823,7 @@ impl BurnProvider {
     }
 
     /// Generate a simple deterministic fallback embedding (synchronous)
+    #[allow(dead_code)]
     fn generate_simple_fallback_embedding(&self, token_ids: &[u32]) -> Vec<f32> {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};

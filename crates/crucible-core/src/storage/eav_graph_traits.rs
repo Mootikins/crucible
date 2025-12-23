@@ -853,10 +853,12 @@ mod tests {
     // PropertyStorage Tests
     // ========================================================================
 
+    type PropertyKey = (String, String, String);
+
     /// Mock implementation of PropertyStorage for testing
     struct MockPropertyStorage {
         // Store properties indexed by (entity_id, namespace, key)
-        properties: Arc<Mutex<HashMap<(String, String, String), Property>>>,
+        properties: Arc<Mutex<HashMap<PropertyKey, Property>>>,
     }
 
     impl MockPropertyStorage {

@@ -8,6 +8,8 @@
 //! cargo test -p crucible-llm --features fastembed --test test_onnx_windows_diagnostics -- --nocapture
 //! ```
 
+#![allow(clippy::needless_range_loop)]
+
 #[cfg(feature = "fastembed")]
 mod fastembed_diagnostics {
 

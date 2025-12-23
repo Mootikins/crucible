@@ -1,5 +1,7 @@
 //! Composite handler that manages multiple handlers with coordination.
 
+#![allow(clippy::type_complexity)]
+
 use crate::{
     error::{Error, Result},
     events::FileEvent,

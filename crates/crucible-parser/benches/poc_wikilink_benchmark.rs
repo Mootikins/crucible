@@ -4,6 +4,8 @@
 //! 1. Pure regex approach
 //! 2. markdown-it with custom plugin
 
+#![allow(deprecated)] // criterion::black_box is deprecated
+
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 const TEST_DOCS: &[(&str, &str)] = &[

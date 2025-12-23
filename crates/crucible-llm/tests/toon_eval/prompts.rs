@@ -6,6 +6,7 @@ use std::fmt;
 
 /// Individual prompt components that can be combined
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub enum PromptComponent {
     // Format explanation
     /// ABNF grammar excerpt from TOON spec
@@ -56,6 +57,7 @@ impl PromptComponent {
 
 /// Pre-defined prompt configurations
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum PromptConfig {
     /// Task only, no spec or examples
     ZeroShot,

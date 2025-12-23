@@ -147,9 +147,7 @@ pub async fn semantic_search(
             continue;
         }
 
-        if score >= similarity_threshold {
-            filtered_results.push((entity_id, score));
-        } else if filtered_results.is_empty() {
+        if score >= similarity_threshold || filtered_results.is_empty() {
             filtered_results.push((entity_id, score));
         }
     }

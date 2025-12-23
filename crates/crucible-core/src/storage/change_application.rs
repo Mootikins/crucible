@@ -247,7 +247,7 @@ impl ChangeApplicationSystem {
     where
         H: ContentHasher,
     {
-        self.apply_changes(tree, &[change.clone()], hasher)
+        self.apply_changes(tree, std::slice::from_ref(change), hasher)
     }
 
     /// Apply multiple changes to a Merkle tree

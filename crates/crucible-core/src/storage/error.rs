@@ -100,11 +100,10 @@ impl StorageError {
 
     /// Check if the error is retryable
     pub fn is_retryable(&self) -> bool {
-        match self {
-            Self::Io(_) | Self::Network(_) | Self::Timeout { .. } => true,
-            Self::ConcurrentAccess(_) => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Self::Io(_) | Self::Network(_) | Self::Timeout { .. } | Self::ConcurrentAccess(_)
+        )
     }
 
     /// Check if the error indicates data corruption
