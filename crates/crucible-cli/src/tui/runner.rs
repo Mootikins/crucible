@@ -274,19 +274,9 @@ impl RatatuiRunner {
                 // Create channel and spawn streaming task
                 let (tx, rx) = create_streaming_channel();
 
-                // SAFETY: We transmute the stream lifetime from 'a to 'static.
-                // This is sound because:
-                // 1. The agent lives for the entire run() method
-                // 2. We ensure streaming_task completes before run() returns
-                // 3. Only one streaming task active at a time
-                // 4. The stream processing happens entirely within the spawned task
-                let stream = agent.send_message_stream(&msg);
-                let static_stream: futures::stream::BoxStream<
-                    'static,
-                    crucible_core::traits::chat::ChatResult<crucible_core::traits::chat::ChatChunk>,
-                > = unsafe { std::mem::transmute(stream) };
-
-                let task = StreamingTask::spawn(tx, static_stream);
+                // Stream is now 'static after API change - no unsafe needed!
+                let stream = agent.send_message_stream(msg.clone());
+                let task = StreamingTask::spawn(tx, stream);
 
                 self.streaming_task = Some(task);
                 self.streaming_rx = Some(rx);

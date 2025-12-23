@@ -12,6 +12,7 @@ use crucible_core::traits::tools::{ExecutionContext, ToolExecutor};
 use crucible_core::types::acp::schema::SessionModeState;
 use crucible_core::types::mode::default_internal_modes;
 use futures::stream::{BoxStream, StreamExt};
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 use crate::prompt::LayeredPromptBuilder;
@@ -25,21 +26,21 @@ const DEFAULT_MAX_TOOL_ITERATIONS: usize = 10;
 /// This handle wraps a `TextGenerationProvider` and provides conversation
 /// management with sliding window context and layered prompts.
 pub struct InternalAgentHandle {
-    /// The LLM provider for generating completions
-    provider: Box<dyn TextGenerationProvider>,
+    /// The LLM provider for generating completions (wrapped in Arc for 'static streams)
+    provider: Arc<Box<dyn TextGenerationProvider>>,
 
-    /// Context manager for conversation history
-    context: Box<dyn ContextManager>,
+    /// Context manager for conversation history (wrapped in Arc<Mutex<>> for shared mutation)
+    context: Arc<Mutex<Box<dyn ContextManager>>>,
 
-    /// Optional tool executor
-    tools: Option<Box<dyn ToolExecutor>>,
+    /// Optional tool executor (wrapped in Arc for 'static streams)
+    tools: Option<Arc<Box<dyn ToolExecutor>>>,
 
     /// Prompt builder for layered system prompts (reserved for future use)
     #[allow(dead_code)]
     prompt_builder: LayeredPromptBuilder,
 
-    /// Token budget tracker
-    token_budget: TokenBudget,
+    /// Token budget tracker (wrapped in Arc<Mutex<>> for shared mutation)
+    token_budget: Arc<Mutex<TokenBudget>>,
 
     /// Mode state advertised by this agent (Plan/Act/Auto)
     mode_state: SessionModeState,
@@ -89,11 +90,11 @@ impl InternalAgentHandle {
         let current_mode_id = mode_state.current_mode_id.0.to_string();
 
         Self {
-            provider,
-            context: new_context,
-            tools,
+            provider: Arc::new(provider),
+            context: Arc::new(Mutex::new(new_context)),
+            tools: tools.map(Arc::new),
             prompt_builder,
-            token_budget,
+            token_budget: Arc::new(Mutex::new(token_budget)),
             mode_state,
             current_mode_id,
             model,
@@ -126,16 +127,11 @@ impl InternalAgentHandle {
     }
 
     /// Execute tool calls and add results to context
-    async fn execute_tool_calls(&mut self, tool_calls: &[LlmToolCall]) -> ChatResult<()> {
-        let tool_executor = match &self.tools {
-            Some(executor) => executor,
-            None => {
-                return Err(ChatError::Internal(
-                    "Tool calls requested but no tool executor available".to_string(),
-                ))
-            }
-        };
-
+    async fn execute_tool_calls(
+        context: &Arc<Mutex<Box<dyn ContextManager>>>,
+        tools: &Arc<Box<dyn ToolExecutor>>,
+        tool_calls: &[LlmToolCall],
+    ) -> ChatResult<()> {
         let execution_context = ExecutionContext::new();
 
         for tool_call in tool_calls {
@@ -146,7 +142,7 @@ impl InternalAgentHandle {
                 })?;
 
             // Execute tool
-            let result = tool_executor
+            let result = tools
                 .execute_tool(&tool_call.function.name, arguments, &execution_context)
                 .await
                 .map_err(|e| ChatError::Internal(format!("Tool execution failed: {}", e)))?;
@@ -154,7 +150,9 @@ impl InternalAgentHandle {
             // Add tool result to context
             let result_str = serde_json::to_string(&result)
                 .unwrap_or_else(|_| "Error serializing tool result".to_string());
-            self.context
+            context
+                .lock()
+                .unwrap()
                 .add_message(LlmMessage::tool(tool_call.id.clone(), result_str));
         }
 
@@ -164,36 +162,45 @@ impl InternalAgentHandle {
 
 #[async_trait]
 impl AgentHandle for InternalAgentHandle {
-    fn send_message_stream<'a>(
-        &'a mut self,
-        message: &'a str,
-    ) -> BoxStream<'a, ChatResult<ChatChunk>> {
+    fn send_message_stream(
+        &mut self,
+        message: String,
+    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
+        // Clone Arc references for the 'static stream
+        let context = Arc::clone(&self.context);
+        let provider = Arc::clone(&self.provider);
+        let tools = self.tools.as_ref().map(Arc::clone);
+        let model = self.model.clone();
+        let max_tool_iterations = self.max_tool_iterations;
+        let token_budget = Arc::clone(&self.token_budget);
+
         Box::pin(async_stream::stream! {
             // Add user message to context
-            self.context.add_message(LlmMessage::user(message));
+            context.lock().unwrap().add_message(LlmMessage::user(&message));
 
             // Tool execution loop - continue until no more tool calls
             let mut tool_iteration = 0;
             loop {
                 // Check for max iterations to prevent infinite loops
-                if tool_iteration >= self.max_tool_iterations {
+                if tool_iteration >= max_tool_iterations {
                     yield Err(ChatError::Internal(format!(
                         "Maximum tool iterations ({}) exceeded - possible infinite loop",
-                        self.max_tool_iterations
+                        max_tool_iterations
                     )));
                     return;
                 }
                 tool_iteration += 1;
                 // Trim context to budget
-                self.context.trim_to_budget(self.token_budget.remaining());
+                let remaining = token_budget.lock().unwrap().remaining();
+                context.lock().unwrap().trim_to_budget(remaining);
 
                 // Build request from context
-                let messages = self.context.get_messages();
-                let request = ChatCompletionRequest::new(self.model.clone(), messages);
+                let messages = context.lock().unwrap().get_messages();
+                let request = ChatCompletionRequest::new(model.clone(), messages);
 
                 // Stream completion from provider
                 // We need to collect chunks into a vec to avoid borrowing issues
-                let stream = self.provider.generate_chat_completion_stream(request);
+                let stream = provider.generate_chat_completion_stream(request);
                 let chunks: Vec<_> = stream.collect().await;
 
                 let mut content = String::new();
@@ -262,19 +269,26 @@ impl AgentHandle for InternalAgentHandle {
 
                 // Add assistant response to context
                 if !accumulated_tool_calls.is_empty() {
-                    self.context.add_message(LlmMessage::assistant_with_tools(
+                    context.lock().unwrap().add_message(LlmMessage::assistant_with_tools(
                         content.clone(),
                         accumulated_tool_calls.clone(),
                     ));
                 } else {
-                    self.context.add_message(LlmMessage::assistant(content.clone()));
+                    context.lock().unwrap().add_message(LlmMessage::assistant(content.clone()));
                 }
 
                 // Check if we need to execute tools
                 if !accumulated_tool_calls.is_empty() && finish_reason.as_deref() == Some("tool_calls") {
-                    // Execute tools
-                    if let Err(e) = self.execute_tool_calls(&accumulated_tool_calls).await {
-                        yield Err(e);
+                    // Execute tools (only if tool executor available)
+                    if let Some(ref tool_executor) = tools {
+                        if let Err(e) = Self::execute_tool_calls(&context, tool_executor, &accumulated_tool_calls).await {
+                            yield Err(e);
+                            return;
+                        }
+                    } else {
+                        yield Err(ChatError::Internal(
+                            "Tool calls requested but no tool executor available".to_string()
+                        ));
                         return;
                     }
                     // Continue loop to get next response
@@ -489,7 +503,7 @@ mod tests {
             1000,
         );
 
-        let mut stream = handle.send_message_stream("Hi");
+        let mut stream = handle.send_message_stream("Hi".to_string());
         let mut collected = Vec::new();
 
         while let Some(result) = stream.next().await {
@@ -568,7 +582,7 @@ mod tests {
 
         // Send message - should trim context automatically
         {
-            let mut stream = handle.send_message_stream("Test message");
+            let mut stream = handle.send_message_stream("Test message".to_string());
             while let Some(_) = stream.next().await {
                 // Consume stream
             }
@@ -579,7 +593,7 @@ mod tests {
         // System prompt "You are a helpful assistant." is ~7 tokens
         // Response is ~2 tokens
         // Total should be well under 100 tokens
-        assert!(handle.context.token_estimate() <= 100);
+        assert!(handle.context.lock().unwrap().token_estimate() <= 100);
     }
 
     // Tool call format conversion tests

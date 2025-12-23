@@ -68,6 +68,7 @@ A knowledge management system where:
 
 ### Medium Priority
 
+- [ ] **TUI Redesign** - Streaming UX, splash screen, bottom-anchored chat (see [[TUI User Stories]])
 - [ ] **Chat Improvements** - File references (`@file`), command history, session stats
 - [ ] **Hook documentation** - How to extend Crucible guide
 
@@ -149,5 +150,7 @@ A knowledge management system where:
 ## Links
 
 - [[Dev Kiln Architecture]] - System architecture
+- [[TUI User Stories]] - Chat interface requirements
+- [[Plugin User Stories]] - Extension system requirements
 - `openspec/SYSTEMS.md` - System boundaries
 - `openspec/changes/` - Active proposals
