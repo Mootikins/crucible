@@ -555,37 +555,28 @@ impl RatatuiRunner {
 
     /// Apply parse events to the view (converts events to content blocks)
     fn apply_parse_events(&mut self, events: Vec<ParseEvent>) {
-        if events.is_empty() {
-            return;
-        }
-
-        let mut blocks = Vec::new();
-
         for event in events {
             match event {
                 ParseEvent::Text(text) => {
-                    blocks.push(ContentBlock::prose(text));
+                    // Text becomes a complete prose block
+                    self.view
+                        .append_streaming_blocks(vec![ContentBlock::prose(text)]);
                 }
                 ParseEvent::CodeBlockStart { lang } => {
-                    blocks.push(ContentBlock::code_partial(lang, ""));
+                    // Start a new partial code block
+                    self.view
+                        .append_streaming_blocks(vec![ContentBlock::code_partial(lang, "")]);
                 }
                 ParseEvent::CodeBlockContent(content) => {
-                    // Append to last block (should be a code block)
-                    if let Some(last_block) = blocks.last_mut() {
-                        last_block.append(&content);
-                    }
+                    // Append to the existing code block in the view
+                    self.view.append_to_last_block(&content);
                 }
                 ParseEvent::CodeBlockEnd => {
-                    // Mark last block as complete
-                    if let Some(last_block) = blocks.last_mut() {
-                        last_block.complete();
-                    }
+                    // Mark the code block as complete
+                    self.view.complete_last_block();
                 }
             }
         }
-
-        // Append blocks to the streaming message
-        self.view.append_streaming_blocks(blocks);
     }
 }
 
