@@ -3,9 +3,9 @@
 use crate::error::{SkillError, SkillResult};
 use crate::parser::SkillParser;
 use crate::types::{ResolvedSkill, Skill, SkillScope, SkillSource};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use sha2::{Sha256, Digest};
 use tracing::debug;
 
 /// A search path with its scope/priority
@@ -18,7 +18,11 @@ pub struct SearchPath {
 
 impl SearchPath {
     pub fn new(path: PathBuf, scope: SkillScope) -> Self {
-        Self { path, scope, agent: None }
+        Self {
+            path,
+            scope,
+            agent: None,
+        }
     }
 
     pub fn with_agent(mut self, agent: impl Into<String>) -> Self {
@@ -37,7 +41,10 @@ impl FolderDiscovery {
     pub fn new(search_paths: Vec<SearchPath>) -> Self {
         let mut paths = search_paths;
         paths.sort_by_key(|p| p.scope);
-        Self { search_paths: paths, parser: SkillParser::new() }
+        Self {
+            search_paths: paths,
+            parser: SkillParser::new(),
+        }
     }
 
     pub fn discover(&self) -> SkillResult<HashMap<String, ResolvedSkill>> {
@@ -51,14 +58,18 @@ impl FolderDiscovery {
 
             for skill in self.discover_in_path(search_path)? {
                 let name = skill.name.clone();
-                resolved.entry(name)
+                resolved
+                    .entry(name)
                     .and_modify(|existing| {
                         if skill.source.scope >= existing.skill.source.scope {
                             existing.shadowed.push(existing.skill.source.path.clone());
                             existing.skill = skill.clone();
                         }
                     })
-                    .or_insert_with(|| ResolvedSkill { skill, shadowed: vec![] });
+                    .or_insert_with(|| ResolvedSkill {
+                        skill,
+                        shadowed: vec![],
+                    });
             }
         }
         Ok(resolved)
@@ -69,12 +80,11 @@ impl FolderDiscovery {
         let pattern = search_path.path.join("*/SKILL.md");
         let pattern_str = pattern.to_string_lossy();
 
-        for entry in glob::glob(&pattern_str).map_err(|e| {
-            SkillError::DiscoveryError(format!("Invalid glob pattern: {}", e))
-        })? {
-            let skill_md_path = entry.map_err(|e| {
-                SkillError::DiscoveryError(format!("Glob error: {}", e))
-            })?;
+        for entry in glob::glob(&pattern_str)
+            .map_err(|e| SkillError::DiscoveryError(format!("Invalid glob pattern: {}", e)))?
+        {
+            let skill_md_path =
+                entry.map_err(|e| SkillError::DiscoveryError(format!("Glob error: {}", e)))?;
 
             match self.parse_skill_file(&skill_md_path, search_path) {
                 Ok(skill) => skills.push(skill),
@@ -108,10 +118,13 @@ pub fn default_discovery_paths(workspace: Option<&Path>, kiln: Option<&Path>) ->
     let mut paths = Vec::new();
 
     if let Some(config_dir) = dirs::config_dir() {
-        paths.push(SearchPath::new(
-            config_dir.join("crucible").join("skills"),
-            SkillScope::Personal,
-        ).with_agent("crucible"));
+        paths.push(
+            SearchPath::new(
+                config_dir.join("crucible").join("skills"),
+                SkillScope::Personal,
+            )
+            .with_agent("crucible"),
+        );
     }
 
     if let Some(ws) = workspace {
