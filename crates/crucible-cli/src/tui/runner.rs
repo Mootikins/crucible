@@ -211,6 +211,34 @@ impl RatatuiRunner {
         bridge: &AgentEventBridge,
         agent: &mut A,
     ) -> Result<bool> {
+        use crossterm::event::KeyCode;
+
+        // Special handling when splash is shown
+        if self.view.is_showing_splash() {
+            match key.code {
+                KeyCode::Up => {
+                    self.view.splash_select_prev();
+                    return Ok(false);
+                }
+                KeyCode::Down => {
+                    self.view.splash_select_next();
+                    return Ok(false);
+                }
+                KeyCode::Enter => {
+                    // Confirm selection and dismiss splash
+                    if let Some(_agent_name) = self.view.splash_confirm() {
+                        // TODO: Use agent_name to configure agent
+                        self.view.dismiss_splash();
+                    }
+                    return Ok(false);
+                }
+                KeyCode::Esc => {
+                    return Ok(true); // Exit
+                }
+                _ => return Ok(false),
+            }
+        }
+
         // Build a minimal TuiState for key mapping (we'll migrate away from this)
         let mut temp_state = TuiState::new(self.view.mode_id());
         temp_state.input_buffer = self.view.input().to_string();
