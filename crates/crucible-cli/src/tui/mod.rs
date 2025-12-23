@@ -6,13 +6,17 @@
 //! - Supports mode switching (Plan/Act/AutoApprove)
 //! - Handles cancellation (Ctrl+C)
 
+pub mod conversation;
+pub mod conversation_view;
 pub mod input;
 pub mod markdown;
 pub mod popup;
 pub mod render;
 pub mod runner;
+pub mod scrollback_runner;
 pub mod state;
 pub mod streaming;
+pub mod styles;
 #[cfg(test)]
 pub mod testing;
 pub mod viewport;
@@ -22,7 +26,7 @@ pub use input::{map_key_event, InputAction};
 pub use markdown::MarkdownRenderer;
 pub use popup::{DynamicPopupProvider, PopupProvider, StaticPopupProvider};
 pub use render::render;
-pub use runner::TuiRunner;
+pub use runner::RatatuiRunner;
 pub use state::TuiState;
 pub use streaming::StreamingBuffer;
 pub use widget::{

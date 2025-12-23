@@ -1,0 +1,28 @@
+---
+source: crates/crucible-cli/tests/tui_snapshot_tests.rs
+expression: terminal.backend()
+---
+"                                                                                "
+" > Find auth files                                                              "
+"                                                                                "
+"✓ glob **/*auth*.rs → 3 files                                                   "
+"  src/auth/mod.rs                                                               "
+"  src/auth/jwt.rs                                                               "
+"  src/auth/session.rs                                                           "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"┌──────────────────────────────────────────────────────────────────────────────┐"
+"│>                                                                             │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"▸ Plan │ Ready                                                                  "

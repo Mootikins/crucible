@@ -439,3 +439,224 @@ fn popup_with_streaming() {
     terminal.draw(|f| render(f, &state)).unwrap();
     assert_snapshot!("popup_with_streaming", terminal.backend());
 }
+
+// =============================================================================
+// NEW: Conversation View Tests (target design)
+// =============================================================================
+
+use crucible_cli::tui::conversation::{
+    ConversationState, ConversationWidget, InputBoxWidget, StatusBarWidget, StatusKind,
+    ToolCallDisplay, ToolStatus,
+};
+use ratatui::layout::{Constraint, Direction, Layout};
+
+/// Helper to render a full conversation view
+fn render_conversation_view(
+    terminal: &mut Terminal<TestBackend>,
+    conversation: &ConversationState,
+    input: &str,
+    mode_id: &str,
+    token_count: Option<usize>,
+    status: &str,
+) {
+    terminal
+        .draw(|f| {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(10),    // Conversation area
+                    Constraint::Length(3),  // Input box
+                    Constraint::Length(1),  // Status bar
+                ])
+                .split(f.area());
+
+            // Conversation
+            let conv_widget = ConversationWidget::new(conversation);
+            f.render_widget(conv_widget, chunks[0]);
+
+            // Input box
+            let input_widget = InputBoxWidget::new(input, input.len());
+            f.render_widget(input_widget, chunks[1]);
+
+            // Status bar
+            let mut status_widget = StatusBarWidget::new(mode_id, status);
+            if let Some(count) = token_count {
+                status_widget = status_widget.token_count(count);
+            }
+            f.render_widget(status_widget, chunks[2]);
+        })
+        .unwrap();
+}
+
+#[test]
+fn conversation_user_message_inverted() {
+    let mut terminal = test_terminal();
+    let mut conv = ConversationState::new();
+    conv.push_user_message("What files handle authentication?");
+
+    render_conversation_view(&mut terminal, &conv, "", "plan", None, "Ready");
+    assert_snapshot!("conv_user_message", terminal.backend());
+}
+
+#[test]
+fn conversation_assistant_response() {
+    let mut terminal = test_terminal();
+    let mut conv = ConversationState::new();
+    conv.push_user_message("Hello");
+    conv.push_assistant_message("Hi! I'm here to help you with your code.");
+
+    render_conversation_view(&mut terminal, &conv, "", "plan", None, "Ready");
+    assert_snapshot!("conv_assistant_response", terminal.backend());
+}
+
+#[test]
+fn conversation_thinking_status() {
+    let mut terminal = test_terminal();
+    let mut conv = ConversationState::new();
+    conv.push_user_message("What is the architecture?");
+    conv.set_status(StatusKind::Thinking);
+
+    render_conversation_view(&mut terminal, &conv, "", "plan", None, "Ready");
+    assert_snapshot!("conv_thinking", terminal.backend());
+}
+
+#[test]
+fn conversation_generating_with_tokens() {
+    let mut terminal = test_terminal();
+    let mut conv = ConversationState::new();
+    conv.push_user_message("Explain this code");
+    conv.set_status(StatusKind::Generating { token_count: 127 });
+
+    render_conversation_view(&mut terminal, &conv, "", "act", Some(127), "Generating");
+    assert_snapshot!("conv_generating_tokens", terminal.backend());
+}
+
+#[test]
+fn conversation_tool_running() {
+    let mut terminal = test_terminal();
+    let mut conv = ConversationState::new();
+    conv.push_user_message("Find auth files");
+    conv.push_assistant_message("Let me search for authentication-related files.");
+    conv.push_tool_running("grep \"auth\" --type rs");
+
+    render_conversation_view(&mut terminal, &conv, "", "act", None, "Tool running");
+    assert_snapshot!("conv_tool_running", terminal.backend());
+}
+
+#[test]
+fn conversation_tool_with_output() {
+    let mut terminal = test_terminal();
+    let mut conv = ConversationState::new();
+    conv.push_user_message("Find auth files");
+    conv.push_tool_running("glob **/*auth*.rs");
+    conv.update_tool_output(
+        "glob **/*auth*.rs",
+        "src/auth/mod.rs\nsrc/auth/jwt.rs\nsrc/auth/session.rs",
+    );
+    conv.complete_tool("glob **/*auth*.rs", Some("3 files".to_string()));
+
+    render_conversation_view(&mut terminal, &conv, "", "plan", None, "Ready");
+    assert_snapshot!("conv_tool_complete", terminal.backend());
+}
+
+#[test]
+fn conversation_tool_error() {
+    let mut terminal = test_terminal();
+    let mut conv = ConversationState::new();
+    conv.push_tool_running("read /nonexistent");
+    conv.error_tool("read /nonexistent", "file not found");
+
+    render_conversation_view(&mut terminal, &conv, "", "plan", None, "Ready");
+    assert_snapshot!("conv_tool_error", terminal.backend());
+}
+
+#[test]
+fn conversation_multiple_tools() {
+    let mut terminal = test_terminal();
+    let mut conv = ConversationState::new();
+    conv.push_user_message("Search the codebase");
+    conv.push_assistant_message("I'll search for relevant files.");
+
+    // First tool - complete
+    conv.push_tool_running("grep pattern");
+    conv.complete_tool("grep pattern", Some("12 matches".to_string()));
+
+    // Second tool - running
+    conv.push_tool_running("read src/main.rs");
+    conv.update_tool_output("read src/main.rs", "fn main() {\n    println!(\"Hello\");\n}");
+
+    render_conversation_view(&mut terminal, &conv, "", "act", None, "Tool running");
+    assert_snapshot!("conv_multiple_tools", terminal.backend());
+}
+
+#[test]
+fn conversation_full_exchange() {
+    let mut terminal = test_terminal();
+    let mut conv = ConversationState::new();
+
+    // User question
+    conv.push_user_message("What files handle authentication?");
+
+    // Assistant response with tool use
+    conv.push_assistant_message("Let me search for authentication-related files.");
+
+    conv.push_tool_running("grep auth");
+    conv.complete_tool("grep auth", Some("found in 3 files".to_string()));
+
+    conv.push_tool_running("glob **/*auth*.rs");
+    conv.update_tool_output("glob **/*auth*.rs", "src/auth/mod.rs\nsrc/auth/jwt.rs");
+    conv.complete_tool("glob **/*auth*.rs", Some("2 files".to_string()));
+
+    // Final response
+    conv.push_assistant_message(
+        "I found these authentication files:\n- src/auth/mod.rs - Main module\n- src/auth/jwt.rs - JWT handling",
+    );
+
+    render_conversation_view(&mut terminal, &conv, "", "plan", Some(256), "Ready");
+    assert_snapshot!("conv_full_exchange", terminal.backend());
+}
+
+#[test]
+fn conversation_input_box_with_content() {
+    let mut terminal = test_terminal();
+    let conv = ConversationState::new();
+
+    render_conversation_view(
+        &mut terminal,
+        &conv,
+        "How do I add a new feature?",
+        "act",
+        None,
+        "Ready",
+    );
+    assert_snapshot!("conv_input_with_content", terminal.backend());
+}
+
+#[test]
+fn conversation_status_bar_modes() {
+    // Test all three modes show correctly
+    let mut terminal = test_terminal();
+    let conv = ConversationState::new();
+
+    // Plan mode
+    render_conversation_view(&mut terminal, &conv, "", "plan", Some(100), "Ready");
+    assert_snapshot!("conv_status_plan", terminal.backend());
+}
+
+#[test]
+fn conversation_status_bar_act_mode() {
+    let mut terminal = test_terminal();
+    let conv = ConversationState::new();
+
+    render_conversation_view(&mut terminal, &conv, "", "act", Some(200), "Ready");
+    assert_snapshot!("conv_status_act", terminal.backend());
+}
+
+#[test]
+fn conversation_status_bar_auto_mode() {
+    let mut terminal = test_terminal();
+    let conv = ConversationState::new();
+
+    render_conversation_view(&mut terminal, &conv, "", "auto", Some(300), "Ready");
+    assert_snapshot!("conv_status_auto", terminal.backend());
+}
