@@ -16,6 +16,7 @@ pub mod runner;
 pub mod scrollback_runner;
 pub mod state;
 pub mod streaming;
+pub mod streaming_channel;
 pub mod styles;
 #[cfg(test)]
 pub mod testing;
@@ -29,6 +30,10 @@ pub use render::render;
 pub use runner::RatatuiRunner;
 pub use state::TuiState;
 pub use streaming::StreamingBuffer;
+pub use streaming_channel::{
+    create_streaming_channel, ChatStream, StreamingEvent, StreamingReceiver, StreamingSender,
+    StreamingTask,
+};
 pub use widget::{
     ansi, calculate_heights, calculate_position, format_help_command, mode_color, mode_icon,
     move_to_widget, render_help_text, render_input_area, render_separator, render_status_line,
