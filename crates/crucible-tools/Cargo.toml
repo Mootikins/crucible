@@ -12,6 +12,7 @@ crucible-core = { workspace = true }
 crucible-config = { workspace = true }
 crucible-llm = { workspace = true, features = ["test-utils"] }
 crucible-rune = { workspace = true }
+crucible-skills = { workspace = true, features = ["storage", "embeddings"] }
 crucible-surrealdb = { workspace = true }
 tq = { workspace = true }
 
