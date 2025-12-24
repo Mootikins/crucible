@@ -12,6 +12,8 @@
 // Dynamic Mode Support (Phase 6)
 // ============================================================================
 
+use super::notification::NotificationLevel;
+
 /// Get the icon for a mode by its ID
 ///
 /// Known modes (plan, act, auto) have specific icons.
@@ -290,7 +292,13 @@ pub fn render_widget_dynamic<W: Write>(
 /// * `writer` - Output writer
 /// * `mode` - Current chat mode
 /// * `width` - Terminal width for padding
-pub fn render_status_line<W: Write>(writer: &mut W, mode_id: &str, _width: u16) -> io::Result<()> {
+/// * `notification` - Optional notification message and level
+pub fn render_status_line<W: Write>(
+    writer: &mut W,
+    mode_id: &str,
+    _width: u16,
+    notification: Option<(&str, NotificationLevel)>,
+) -> io::Result<()> {
     let (mode_str, mode_color) = match mode_id {
         "plan" => ("Plan", ansi::CYAN),
         "act" => ("Act", ansi::YELLOW),
@@ -298,17 +306,23 @@ pub fn render_status_line<W: Write>(writer: &mut W, mode_id: &str, _width: u16) 
         _ => ("Unknown", ansi::RESET),
     };
 
-    // Format: [Mode] │ Ready
+    // Format: [Mode] │ Ready [notification]
     // No trailing newline - this is the bottom line
     write!(
         writer,
-        "{}{}[{}]{} │ Ready{}",
+        "{}{}[{}]{} │ Ready",
         ansi::DIM,
         mode_color,
         mode_str,
         ansi::RESET,
-        ansi::CLEAR_LINE,
-    )
+    )?;
+
+    // Append notification if present
+    if let Some((msg, _level)) = notification {
+        write!(writer, " {}", msg)?;
+    }
+
+    write!(writer, "{}", ansi::CLEAR_LINE)
 }
 
 /// Render a dim horizontal separator
@@ -472,7 +486,7 @@ pub fn render_widget<W: Write>(writer: &mut W, state: &WidgetState) -> io::Resul
     render_separator(writer, state.width)?;
 
     // Status line
-    render_status_line(writer, state.mode_id, state.width)?;
+    render_status_line(writer, state.mode_id, state.width, None)?;
 
     // Position cursor in input area
     // Input is at: start_row + streaming + upper_separator
@@ -768,7 +782,7 @@ mod tests {
     #[test]
     fn test_status_line_plan_mode() {
         let mut buffer = Vec::new();
-        render_status_line(&mut buffer, "plan", 80).unwrap();
+        render_status_line(&mut buffer, "plan", 80, None).unwrap();
         let output = String::from_utf8(buffer).unwrap();
 
         assert!(
@@ -783,7 +797,7 @@ mod tests {
     #[test]
     fn test_status_line_act_mode() {
         let mut buffer = Vec::new();
-        render_status_line(&mut buffer, "act", 80).unwrap();
+        render_status_line(&mut buffer, "act", 80, None).unwrap();
         let output = String::from_utf8(buffer).unwrap();
 
         assert!(
@@ -796,7 +810,7 @@ mod tests {
     #[test]
     fn test_status_line_auto_mode() {
         let mut buffer = Vec::new();
-        render_status_line(&mut buffer, "auto", 80).unwrap();
+        render_status_line(&mut buffer, "auto", 80, None).unwrap();
         let output = String::from_utf8(buffer).unwrap();
 
         assert!(
@@ -1044,6 +1058,25 @@ mod tests {
         // Should preserve the content (including any embedded ANSI)
         assert!(output.contains("Normal text"));
         assert!(output.contains("bold text"));
+    }
+
+    // ========================================================================
+    // 2.1: Notification parameter tests
+    // ========================================================================
+
+    #[test]
+    fn test_status_line_with_notification() {
+        use crate::tui::notification::NotificationLevel;
+        let mut buffer = Vec::new();
+        render_status_line(
+            &mut buffer,
+            "plan",
+            80,
+            Some(("todo.md modified", NotificationLevel::Info)),
+        ).unwrap();
+        let output = String::from_utf8(buffer).unwrap();
+        assert!(output.contains("[Plan]"));
+        assert!(output.contains("todo.md modified"));
     }
 
     // ========================================================================
