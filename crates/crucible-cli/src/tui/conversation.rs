@@ -381,8 +381,11 @@ fn render_user_message(content: &str) -> Vec<Line<'static>> {
 fn render_assistant_blocks(blocks: &[ContentBlock], is_streaming: bool) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
-    // Add blank line for spacing
-    lines.push(Line::from(""));
+    // Only add blank line for spacing if there's content to render
+    // (empty streaming messages shouldn't add extra space)
+    if !blocks.is_empty() {
+        lines.push(Line::from(""));
+    }
 
     // Track if we've added the first-line prefix yet
     let mut first_content_line = true;
