@@ -57,6 +57,7 @@ pub struct PopupState {
     pub query: String,
     pub items: Vec<PopupItem>,
     pub selected: usize,
+    pub viewport_offset: usize,
     pub last_update: Instant,
 }
 
@@ -67,6 +68,7 @@ impl PopupState {
             query: String::new(),
             items: Vec::new(),
             selected: 0,
+            viewport_offset: 0,
             last_update: Instant::now(),
         }
     }
@@ -79,6 +81,19 @@ impl PopupState {
         let len = self.items.len() as isize;
         let new_idx = (self.selected as isize + delta).rem_euclid(len);
         self.selected = new_idx as usize;
+    }
+
+    /// Update viewport offset to keep selection visible
+    /// Call this after changing `selected`
+    pub fn update_viewport(&mut self, visible_count: usize) {
+        // If selection is above viewport, scroll up
+        if self.selected < self.viewport_offset {
+            self.viewport_offset = self.selected;
+        }
+        // If selection is below viewport, scroll down
+        else if self.selected >= self.viewport_offset + visible_count {
+            self.viewport_offset = self.selected - visible_count + 1;
+        }
     }
 }
 
@@ -409,6 +424,10 @@ impl TuiState {
                 self.popup = None;
                 None
             }
+            InputAction::ExecuteSlashCommand(_cmd) => {
+                // TODO: Slash command execution
+                None
+            }
             InputAction::ScrollUp
             | InputAction::ScrollDown
             | InputAction::PageUp
@@ -699,5 +718,134 @@ mod tests {
     fn test_tui_state_has_notifications() {
         let state = TuiState::new("plan");
         assert!(state.notifications.is_empty());
+    }
+
+    // ============================================================================
+    // Viewport Offset Tests (TDD Phase 1A - These tests SHOULD FAIL to compile)
+    // ============================================================================
+
+    #[test]
+    fn test_popup_viewport_initial_state() {
+        // New popup should have viewport_offset: 0
+        let popup = PopupState::new(PopupKind::Command);
+        assert_eq!(popup.viewport_offset, 0);
+    }
+
+    #[test]
+    fn test_popup_viewport_follows_selection_down() {
+        // With 10 items and 5 visible, selecting item 6 should shift offset to 2
+        // (so items 2-6 are visible, with 6 selected)
+        let mut popup = PopupState::new(PopupKind::Command);
+        popup.items = (0..10)
+            .map(|i| PopupItem {
+                kind: PopupItemKind::Command,
+                title: format!("Item {}", i),
+                subtitle: String::new(),
+                token: format!("/{} ", i),
+                score: 1,
+                available: true,
+            })
+            .collect();
+
+        // Select item 6 (index 6)
+        popup.selected = 6;
+        popup.update_viewport(5); // 5 visible items
+
+        // With 5 visible items and selected=6, we want the selection in the bottom slot
+        // Visible window should be [2, 3, 4, 5, 6] with 6 selected
+        assert_eq!(popup.viewport_offset, 2);
+    }
+
+    #[test]
+    fn test_popup_viewport_follows_selection_up() {
+        // With offset at 3, selecting item 0 should shift offset to 0
+        let mut popup = PopupState::new(PopupKind::Command);
+        popup.items = (0..10)
+            .map(|i| PopupItem {
+                kind: PopupItemKind::Command,
+                title: format!("Item {}", i),
+                subtitle: String::new(),
+                token: format!("/{} ", i),
+                score: 1,
+                available: true,
+            })
+            .collect();
+
+        popup.viewport_offset = 3;
+        popup.selected = 0;
+        popup.update_viewport(5); // 5 visible items
+
+        // Selecting item 0 should force viewport to start at 0
+        assert_eq!(popup.viewport_offset, 0);
+    }
+
+    #[test]
+    fn test_popup_viewport_stable_within_window() {
+        // Selecting item 2 when offset is 0 should keep offset at 0
+        let mut popup = PopupState::new(PopupKind::Command);
+        popup.items = (0..10)
+            .map(|i| PopupItem {
+                kind: PopupItemKind::Command,
+                title: format!("Item {}", i),
+                subtitle: String::new(),
+                token: format!("/{} ", i),
+                score: 1,
+                available: true,
+            })
+            .collect();
+
+        popup.viewport_offset = 0;
+        popup.selected = 2;
+        popup.update_viewport(5); // 5 visible items
+
+        // Item 2 is within visible window [0-4], so offset should stay at 0
+        assert_eq!(popup.viewport_offset, 0);
+    }
+
+    #[test]
+    fn test_popup_viewport_wrap_to_end() {
+        // Wrapping selection from 0 to last item should jump viewport
+        let mut popup = PopupState::new(PopupKind::Command);
+        popup.items = (0..10)
+            .map(|i| PopupItem {
+                kind: PopupItemKind::Command,
+                title: format!("Item {}", i),
+                subtitle: String::new(),
+                token: format!("/{} ", i),
+                score: 1,
+                available: true,
+            })
+            .collect();
+
+        popup.viewport_offset = 0;
+        popup.selected = 9; // Last item (wrapped from 0)
+        popup.update_viewport(5); // 5 visible items
+
+        // Last item should be visible at bottom of window
+        // Visible window should be [5, 6, 7, 8, 9] with 9 selected
+        assert_eq!(popup.viewport_offset, 5);
+    }
+
+    #[test]
+    fn test_popup_viewport_wrap_to_start() {
+        // Wrapping selection from last to 0 should reset viewport to 0
+        let mut popup = PopupState::new(PopupKind::Command);
+        popup.items = (0..10)
+            .map(|i| PopupItem {
+                kind: PopupItemKind::Command,
+                title: format!("Item {}", i),
+                subtitle: String::new(),
+                token: format!("/{} ", i),
+                score: 1,
+                available: true,
+            })
+            .collect();
+
+        popup.viewport_offset = 5;
+        popup.selected = 0; // Wrapped from 9 back to 0
+        popup.update_viewport(5); // 5 visible items
+
+        // Selecting first item should reset viewport to 0
+        assert_eq!(popup.viewport_offset, 0);
     }
 }
