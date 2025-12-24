@@ -43,6 +43,8 @@ pub struct SessionConfig {
     pub context_enabled: bool,
     /// Number of context results to include (if context enabled)
     pub context_size: Option<usize>,
+    /// Skip splash screen (e.g., when agent was already selected via picker)
+    pub skip_splash: bool,
 }
 
 impl Default for SessionConfig {
@@ -51,6 +53,7 @@ impl Default for SessionConfig {
             initial_mode_id: "plan".to_string(),
             context_enabled: true,
             context_size: Some(DEFAULT_CONTEXT_SIZE),
+            skip_splash: false,
         }
     }
 }
@@ -66,7 +69,14 @@ impl SessionConfig {
             initial_mode_id: initial_mode_id.into(),
             context_enabled,
             context_size,
+            skip_splash: false,
         }
+    }
+
+    /// Set whether to skip the splash screen
+    pub fn with_skip_splash(mut self, skip: bool) -> Self {
+        self.skip_splash = skip;
+        self
     }
 
     /// Validate configuration
@@ -310,6 +320,11 @@ impl ChatSession {
 
         // Create and run TUI
         let mut runner = RatatuiRunner::new(&self.config.initial_mode_id, popup_provider.clone())?;
+
+        // Skip splash if agent was already selected via picker
+        if self.config.skip_splash {
+            runner.skip_splash();
+        }
 
         runner.run(&bridge, agent).await
     }

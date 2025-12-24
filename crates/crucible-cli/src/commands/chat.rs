@@ -299,6 +299,7 @@ pub async fn execute(
                     context_size,
                     live_progress,
                     available_models,
+                    should_show_picker, // skip_splash if picker was shown
                 )
                 .await?;
 
@@ -358,7 +359,7 @@ pub async fn execute(
                 // Interactive mode with TUI
                 info!("Interactive chat mode (internal agent)");
 
-                run_interactive_session_internal(
+                run_interactive_session(
                     core,
                     &mut handle,
                     initial_mode,
@@ -366,6 +367,7 @@ pub async fn execute(
                     context_size,
                     live_progress,
                     available_models,
+                    should_show_picker, // skip_splash if picker was shown
                 )
                 .await?;
             }
@@ -375,15 +377,17 @@ pub async fn execute(
     Ok(())
 }
 
-/// Run an interactive chat session with mode toggling support (ACP agent)
-async fn run_interactive_session(
+/// Run an interactive chat session with mode toggling support
+#[allow(clippy::too_many_arguments)]
+async fn run_interactive_session<A: crate::chat::AgentHandle>(
     core: Arc<KilnContext>,
-    client: &mut CrucibleAcpClient,
+    agent: &mut A,
     initial_mode: &str,
     no_context: bool,
     context_size: Option<usize>,
     _live_progress: Option<LiveProgress>,
     available_models: Option<Vec<String>>,
+    skip_splash: bool,
 ) -> Result<()> {
     use crate::chat::{ChatSession, SessionConfig};
 
@@ -392,39 +396,14 @@ async fn run_interactive_session(
         initial_mode,
         !no_context, // context_enabled = !no_context
         context_size,
-    );
+    )
+    .with_skip_splash(skip_splash);
 
     // Create session orchestrator
     let mut session = ChatSession::new(session_config, core, available_models);
 
     // Run interactive session
-    session.run(client).await
-}
-
-/// Run an interactive chat session with mode toggling support (internal agent)
-async fn run_interactive_session_internal(
-    core: Arc<KilnContext>,
-    handle: &mut crucible_agents::InternalAgentHandle,
-    initial_mode: &str,
-    no_context: bool,
-    context_size: Option<usize>,
-    _live_progress: Option<LiveProgress>,
-    available_models: Option<Vec<String>>,
-) -> Result<()> {
-    use crate::chat::{ChatSession, SessionConfig};
-
-    // Create session configuration
-    let session_config = SessionConfig::new(
-        initial_mode,
-        !no_context, // context_enabled = !no_context
-        context_size,
-    );
-
-    // Create session orchestrator
-    let mut session = ChatSession::new(session_config, core, available_models);
-
-    // Run interactive session with internal agent
-    session.run(handle).await
+    session.run(agent).await
 }
 
 /// Spawn background watch task for chat mode using the event system
