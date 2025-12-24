@@ -5,11 +5,15 @@
 //!
 //! All tests use the docs kiln at `docs/` for realistic test data.
 //!
+//! Run with: `just test fixtures` or `cargo test --features test-fixtures`
+//!
 //! Test Categories:
 //! - Basic Wikilinks
 //! - Heading Links
 //! - Block Links with Hashes
 //! - Backlinks
+
+#![cfg(feature = "test-fixtures")]
 
 mod common;
 
