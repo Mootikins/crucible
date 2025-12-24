@@ -518,6 +518,9 @@ impl RatatuiRunner {
         *last_seen_seq = bridge.ring.write_sequence();
 
         for event in events {
+            // Handle notification events
+            Self::handle_notification_event(&mut self.view.state_mut().notifications, &event);
+
             match &*event {
                 SessionEvent::TextDelta { delta, .. } => {
                     // Update token count and status
@@ -564,6 +567,9 @@ impl RatatuiRunner {
                 _ => {}
             }
         }
+
+        // Update notification state after processing all events
+        self.view.state_mut().notifications.tick();
     }
 
     /// Update popup based on current input.

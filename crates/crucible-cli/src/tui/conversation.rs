@@ -14,6 +14,7 @@ use once_cell::sync::Lazy;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Paragraph, Widget, Wrap},
 };
@@ -610,6 +611,7 @@ pub struct StatusBarWidget<'a> {
     mode_id: &'a str,
     token_count: Option<usize>,
     status: &'a str,
+    notification: Option<(&'a str, crate::tui::notification::NotificationLevel)>,
 }
 
 impl<'a> StatusBarWidget<'a> {
@@ -618,11 +620,20 @@ impl<'a> StatusBarWidget<'a> {
             mode_id,
             token_count: None,
             status,
+            notification: None,
         }
     }
 
     pub fn token_count(mut self, count: usize) -> Self {
         self.token_count = Some(count);
+        self
+    }
+
+    pub fn notification(
+        mut self,
+        notification: Option<(&'a str, crate::tui::notification::NotificationLevel)>,
+    ) -> Self {
+        self.notification = notification;
         self
     }
 }
@@ -637,24 +648,46 @@ impl Widget for StatusBarWidget<'_> {
             _ => self.mode_id,
         };
 
-        let mut spans = vec![
+        let mut left_spans = vec![
             Span::styled(indicators::MODE_ARROW, presets::dim()),
             Span::raw(" "),
             Span::styled(mode_name, mode_style),
         ];
 
         if let Some(count) = self.token_count {
-            spans.push(Span::styled(" │ ", presets::dim()));
-            spans.push(Span::styled(
+            left_spans.push(Span::styled(" │ ", presets::dim()));
+            left_spans.push(Span::styled(
                 format!("{} tokens", count),
                 presets::metrics(),
             ));
         }
 
-        spans.push(Span::styled(" │ ", presets::dim()));
-        spans.push(Span::styled(self.status.to_string(), presets::dim()));
+        left_spans.push(Span::styled(" │ ", presets::dim()));
+        left_spans.push(Span::styled(self.status.to_string(), presets::dim()));
 
-        let line = Line::from(spans);
+        // Add notification on the right if present
+        if let Some((msg, level)) = self.notification {
+            use crate::tui::notification::NotificationLevel;
+            let style = match level {
+                NotificationLevel::Info => presets::dim(),
+                NotificationLevel::Error => Style::default().fg(Color::Red),
+            };
+
+            // Calculate padding to right-align notification
+            let left_text: String = left_spans.iter().map(|s| s.content.as_ref()).collect();
+            let left_width = left_text.chars().count();
+            let notif_text = format!(" {}", msg);
+            let notif_width = notif_text.chars().count();
+            let available_width = area.width as usize;
+
+            if left_width + notif_width < available_width {
+                let padding = available_width - left_width - notif_width;
+                left_spans.push(Span::raw(" ".repeat(padding)));
+                left_spans.push(Span::styled(notif_text, style));
+            }
+        }
+
+        let line = Line::from(left_spans);
         let paragraph = Paragraph::new(line).style(presets::status_line());
         paragraph.render(area, buf);
     }
