@@ -322,17 +322,31 @@ pub fn render_status_line<W: Write>(
     )?;
 
     // Append notification if present, right-aligned
-    if let Some((msg, _level)) = notification {
+    if let Some((msg, level)) = notification {
         let msg_len = msg.chars().count();
         let total_content_len = left_len + msg_len;
+
+        // Select color based on notification level
+        let notification_color = match level {
+            NotificationLevel::Info => ansi::DIM,
+            NotificationLevel::Error => ansi::RED,
+        };
 
         // Calculate padding needed for right-alignment
         if total_content_len < width as usize {
             let padding = width as usize - total_content_len;
-            write!(writer, "{:padding$}{}", "", msg, padding = padding)?;
+            write!(
+                writer,
+                "{:padding$}{}{}{}",
+                "",
+                notification_color,
+                msg,
+                ansi::RESET,
+                padding = padding
+            )?;
         } else {
             // Not enough space, just add minimal spacing
-            write!(writer, " {}", msg)?;
+            write!(writer, " {}{}{}", notification_color, msg, ansi::RESET)?;
         }
     }
 
@@ -1127,6 +1141,37 @@ mod tests {
             "Should have at least 20 spaces for right-alignment, got {}",
             spaces
         );
+    }
+
+    #[test]
+    fn test_status_line_error_is_red() {
+        use crate::tui::notification::NotificationLevel;
+        let mut buffer = Vec::new();
+        render_status_line(
+            &mut buffer,
+            "plan",
+            80,
+            Some(("✗ parse error", NotificationLevel::Error)),
+        ).unwrap();
+        let output = String::from_utf8(buffer).unwrap();
+        assert!(output.contains(ansi::RED), "Error should use red color");
+        assert!(output.contains("✗ parse error"));
+    }
+
+    #[test]
+    fn test_status_line_info_is_dim() {
+        use crate::tui::notification::NotificationLevel;
+        let mut buffer = Vec::new();
+        render_status_line(
+            &mut buffer,
+            "plan",
+            80,
+            Some(("file.md modified", NotificationLevel::Info)),
+        ).unwrap();
+        let output = String::from_utf8(buffer).unwrap();
+        // Info notifications should use dim styling
+        assert!(output.contains(ansi::DIM), "Info should use dim color");
+        assert!(output.contains("file.md modified"));
     }
 
     /// Strip ANSI escape codes from a string for testing visible content
