@@ -71,6 +71,7 @@ pub trait ConversationView {
     /// Scroll control
     fn scroll_up(&mut self, lines: usize);
     fn scroll_down(&mut self, lines: usize);
+    fn scroll_to_top(&mut self);
     fn scroll_to_bottom(&mut self);
 }
 
@@ -548,6 +549,14 @@ impl ConversationView for RatatuiView {
         if self.state.scroll_offset == 0 {
             self.state.at_bottom = true; // Back at bottom
         }
+    }
+
+    fn scroll_to_top(&mut self) {
+        let max_scroll = self
+            .content_height()
+            .saturating_sub(self.state.height as usize);
+        self.state.scroll_offset = max_scroll;
+        self.state.at_bottom = false;
     }
 
     fn scroll_to_bottom(&mut self) {
