@@ -8,6 +8,7 @@
 
 pub mod agent_picker;
 pub mod content_block;
+pub mod notification;
 pub mod conversation;
 pub mod conversation_view;
 pub mod dialog;
@@ -28,6 +29,9 @@ pub mod testing;
 pub mod viewport;
 pub mod widget;
 
+#[cfg(test)]
+mod runner_picker_tests;
+
 pub use agent_picker::{pick_agent, AgentSelection};
 pub use content_block::{ContentBlock, ParseEvent};
 pub use dialog::{DialogKind, DialogResult, DialogStack, DialogState, DialogWidget};
@@ -44,6 +48,7 @@ pub use streaming_channel::{
     StreamingTask,
 };
 pub use streaming_parser::StreamingParser;
+pub use notification::{NotificationLevel, NotificationState};
 pub use widget::{
     ansi, calculate_heights, calculate_position, format_help_command, mode_color, mode_icon,
     move_to_widget, render_help_text, render_input_area, render_separator, render_status_line,
