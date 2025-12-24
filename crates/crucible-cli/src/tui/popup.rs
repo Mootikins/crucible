@@ -580,3 +580,97 @@ mod skill_popup_tests {
         );
     }
 }
+
+/// Get list of known slash commands
+///
+/// Returns the canonical list of client-handled slash commands.
+/// These match the RESERVED_COMMANDS list in slash_registry.rs.
+pub fn get_known_commands() -> &'static [&'static str] {
+    &["help", "mode", "clear", "exit", "quit", "search", "context"]
+}
+
+/// Extract the command name from input (without the leading /)
+///
+/// Returns None if input doesn't start with /
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// assert_eq!(extract_command_name("/help foo"), Some("help"));
+/// assert_eq!(extract_command_name("/mode"), Some("mode"));
+/// assert_eq!(extract_command_name("not a command"), None);
+/// ```
+pub fn extract_command_name(input: &str) -> Option<&str> {
+    let trimmed = input.trim();
+    if !trimmed.starts_with('/') {
+        return None;
+    }
+    let without_slash = &trimmed[1..];
+    // Get first word (command name)
+    without_slash.split_whitespace().next()
+}
+
+/// Check if input is an exact match for a known slash command
+///
+/// Returns true if the command name (first word after /) matches a known command.
+/// This includes commands with trailing spaces or arguments.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// assert!(is_exact_slash_command("/help"));
+/// assert!(is_exact_slash_command("/help "));
+/// assert!(is_exact_slash_command("/help foo"));
+/// assert!(!is_exact_slash_command("/hel"));  // partial
+/// assert!(!is_exact_slash_command("/foobar"));  // unknown
+/// ```
+pub fn is_exact_slash_command(input: &str) -> bool {
+    if let Some(cmd_name) = extract_command_name(input) {
+        get_known_commands().contains(&cmd_name)
+    } else {
+        false
+    }
+}
+
+#[cfg(test)]
+mod command_tests {
+    use super::*;
+
+    #[test]
+    fn test_is_exact_command_help() {
+        // `/help` should return true (exact match)
+        assert!(is_exact_slash_command("/help"));
+    }
+
+    #[test]
+    fn test_is_exact_command_with_space() {
+        // `/help ` (with trailing space) should return true
+        assert!(is_exact_slash_command("/help "));
+    }
+
+    #[test]
+    fn test_is_exact_command_with_args() {
+        // `/help foo` should return true (command exists, has args)
+        assert!(is_exact_slash_command("/help foo"));
+    }
+
+    #[test]
+    fn test_is_partial_command() {
+        // `/hel` should return false (partial match, not exact)
+        assert!(!is_exact_slash_command("/hel"));
+    }
+
+    #[test]
+    fn test_is_unknown_command() {
+        // `/foobar` should return false (not a known command)
+        assert!(!is_exact_slash_command("/foobar"));
+    }
+
+    #[test]
+    fn test_extract_command_name() {
+        // `/help foo bar` should extract "help"
+        assert_eq!(extract_command_name("/help foo bar"), Some("help"));
+        assert_eq!(extract_command_name("/mode"), Some("mode"));
+        assert_eq!(extract_command_name("not a command"), None);
+    }
+}
