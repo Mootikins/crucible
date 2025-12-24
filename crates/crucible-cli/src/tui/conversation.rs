@@ -621,8 +621,8 @@ impl<'a> ConversationWidget<'a> {
 
 impl Widget for ConversationWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        // Content width minus prefix (" ● " = 3 chars)
-        let content_width = (area.width as usize).saturating_sub(3);
+        // Content width minus prefix (" ● " = 3 chars) and right margin (1 char)
+        let content_width = (area.width as usize).saturating_sub(4);
         let lines = self.render_to_lines(content_width);
         let content_height = lines.len();
         let viewport_height = area.height as usize;
@@ -905,7 +905,7 @@ mod tests {
 
     #[test]
     fn test_render_user_message_lines() {
-        let lines = render_user_message("Hello world");
+        let lines = render_user_message("Hello world", 80);
         assert!(!lines.is_empty());
         // First line is blank for spacing
         // Second line should contain the message
@@ -1080,7 +1080,7 @@ mod tests {
     #[test]
     fn test_user_and_assistant_prefix_alignment() {
         // User messages should have " > " prefix (3 chars: space + > + space)
-        let user_lines = render_user_message("Hello");
+        let user_lines = render_user_message("Hello", 80);
         // Skip the blank line
         let user_content_line = &user_lines[1];
 
@@ -1096,21 +1096,21 @@ mod tests {
             user_text
         );
 
-        // Assistant messages should have " · " prefix (3 chars: space + · + space)
+        // Assistant messages should have " ● " prefix (3 chars: space + ● + space)
         let blocks = vec![crate::tui::ContentBlock::prose("World")];
-        let assistant_lines = render_assistant_blocks(&blocks, false);
+        let assistant_lines = render_assistant_blocks(&blocks, false, 80);
         // Skip the blank line
         let assistant_content_line = &assistant_lines[1];
 
-        // Check assistant prefix starts with " · "
+        // Check assistant prefix starts with " ● "
         let assistant_text: String = assistant_content_line
             .spans
             .iter()
             .map(|s| s.content.as_ref())
             .collect();
         assert!(
-            assistant_text.starts_with(" · "),
-            "Assistant message should start with ' · ', got: '{}'",
+            assistant_text.starts_with(" ● "),
+            "Assistant message should start with ' ● ', got: '{}'",
             assistant_text
         );
     }
@@ -1118,10 +1118,10 @@ mod tests {
     #[test]
     fn test_assistant_multiline_alignment() {
         // Multi-line assistant messages should have:
-        // - First line: " · " prefix
+        // - First line: " ● " prefix
         // - Continuation lines: "   " (3 spaces) indent
         let blocks = vec![crate::tui::ContentBlock::prose("Line one\nLine two\nLine three")];
-        let lines = render_assistant_blocks(&blocks, false);
+        let lines = render_assistant_blocks(&blocks, false, 80);
 
         // Skip blank line, get content lines
         let content_lines: Vec<_> = lines.iter().skip(1).collect();
@@ -1131,8 +1131,8 @@ mod tests {
             let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
             if i == 0 {
                 assert!(
-                    text.starts_with(" · "),
-                    "First line should have ' · ' prefix, got: '{}'",
+                    text.starts_with(" ● "),
+                    "First line should have ' ● ' prefix, got: '{}'",
                     text
                 );
             } else if !text.trim().is_empty() {

@@ -8,6 +8,12 @@
 //! - **Single Responsibility**: Focused on prompt enrichment
 //! - **Dependency Inversion**: Uses traits from crucible-core
 //! - **Open/Closed**: Extensible enrichment strategies
+//!
+//! ## Note on ACP Agents
+//!
+//! Context injection is disabled by default for ACP agents because they receive
+//! tools via MCP protocol. The injected `<crucible_context>` block is redundant
+//! and can confuse some models. Use `/search` commands for explicit context.
 
 use crate::Result;
 use std::collections::HashMap;
@@ -44,6 +50,15 @@ pub struct ContextConfig {
 
     /// Time-to-live for cached results (in seconds)
     pub cache_ttl_secs: u64,
+
+    /// Whether to inject context into prompts automatically
+    ///
+    /// When false (default for ACP agents), the `<crucible_context>` and `<matches>`
+    /// blocks are NOT injected. ACP agents receive tools via MCP, so automatic
+    /// injection is redundant and can confuse some models.
+    ///
+    /// Use `/search` commands for explicit context when needed.
+    pub inject_context: bool,
 }
 
 impl Default for ContextConfig {
@@ -55,6 +70,7 @@ impl Default for ContextConfig {
             rerank_candidates: None,
             enable_cache: true,
             cache_ttl_secs: 300, // 5 minutes default
+            inject_context: false, // Off by default - ACP agents get tools via MCP
         }
     }
 }
@@ -150,7 +166,8 @@ impl PromptEnricher {
     ///
     /// Returns an error if semantic search fails
     pub async fn enrich(&self, query: &str) -> Result<String> {
-        if !self.config.enabled {
+        // Skip all injection if disabled or inject_context is false
+        if !self.config.enabled || !self.config.inject_context {
             return Ok(query.to_string());
         }
 
@@ -278,6 +295,7 @@ mod tests {
             rerank_candidates: Some(30),
             enable_cache: true,
             cache_ttl_secs: 300,
+            inject_context: true,
         };
 
         let enricher = PromptEnricher::new(config);
@@ -303,7 +321,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_enrich_with_context() {
-        let config = ContextConfig::default();
+        let config = ContextConfig {
+            inject_context: true, // Explicitly enable for this test
+            ..Default::default()
+        };
         let enricher = PromptEnricher::new(config);
 
         let query = "How do I create a note?";
@@ -328,6 +349,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_default_no_injection() {
+        // Default config should NOT inject context (for ACP agents)
+        let config = ContextConfig::default();
+        let enricher = PromptEnricher::new(config);
+
+        let query = "How do I create a note?";
+        let result = enricher.enrich(query).await;
+
+        assert!(result.is_ok());
+        let enriched = result.unwrap();
+
+        // Should be passthrough - no injection
+        assert_eq!(enriched, query, "Default should not inject context");
+        assert!(!enriched.contains("<crucible_context>"), "Should not have context block");
+    }
+
+    #[tokio::test]
     async fn test_enriched_format() {
         let config = ContextConfig {
             enabled: true,
@@ -336,6 +374,7 @@ mod tests {
             rerank_candidates: None,
             enable_cache: false, // Disable cache for consistent formatting test
             cache_ttl_secs: 300,
+            inject_context: true, // Enable injection for this test
         };
 
         let enricher = PromptEnricher::new(config);
@@ -359,7 +398,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_no_context_found() {
-        let config = ContextConfig::default();
+        let config = ContextConfig {
+            inject_context: true, // Enable injection for this test
+            ..Default::default()
+        };
         let enricher = PromptEnricher::new(config);
 
         // Query that won't match anything
@@ -378,6 +420,7 @@ mod tests {
         let config = ContextConfig {
             enable_cache: true,
             cache_ttl_secs: 60,
+            inject_context: true, // Enable injection for caching test
             ..Default::default()
         };
 
@@ -440,6 +483,7 @@ mod tests {
         let config = ContextConfig {
             enable_cache: true,
             cache_ttl_secs: 1, // 1 second TTL for fast testing
+            inject_context: true, // Enable injection for caching test
             ..Default::default()
         };
 
@@ -465,6 +509,7 @@ mod tests {
         let config = ContextConfig {
             enable_cache: true,
             cache_ttl_secs: 1,
+            inject_context: true, // Enable injection for caching test
             ..Default::default()
         };
 
@@ -498,6 +543,7 @@ mod xml_format_tests {
             enabled: true,
             context_size: 5,
             enable_cache: false, // Disable cache for consistent testing
+            inject_context: true, // Enable injection for this test
             ..Default::default()
         };
         let enricher = PromptEnricher::new(config);
@@ -526,6 +572,7 @@ mod xml_format_tests {
             enabled: true,
             context_size: 3,
             enable_cache: false,
+            inject_context: true, // Enable injection for this test
             ..Default::default()
         };
         let enricher = PromptEnricher::new(config);
@@ -578,6 +625,7 @@ mod xml_format_tests {
             enabled: true,
             context_size: 2,
             enable_cache: false,
+            inject_context: true, // Enable injection for this test
             ..Default::default()
         };
         let enricher = PromptEnricher::new(config);
@@ -637,6 +685,7 @@ mod xml_format_tests {
             enabled: true,
             context_size: 2,
             enable_cache: false,
+            inject_context: true, // Enable injection for this test
             ..Default::default()
         };
         let enricher = PromptEnricher::new(config);
