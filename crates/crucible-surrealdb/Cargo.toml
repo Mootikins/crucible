@@ -63,6 +63,11 @@ embeddings = ["crucible-llm"]
 # Test utilities - optionally enables LLM test-utils if embeddings feature is enabled
 test-utils = ["crucible-llm?/test-utils", "crucible-config/test-utils"]
 
+# Test tier flags (see justfile for usage)
+test-fixtures = []       # Tests using docs/ kiln or examples/test-kiln
+test-infrastructure = [] # Tests requiring Ollama, embedding endpoints
+test-slow = []           # Performance benchmarks and timing tests
+
 # Always enable test-utils for tests
 [dev-dependencies]
 crucible-surrealdb = { path = ".", features = ["test-utils"] }

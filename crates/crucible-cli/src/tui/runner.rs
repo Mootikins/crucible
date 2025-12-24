@@ -4,6 +4,7 @@
 //! Uses ratatui with alternate screen for full viewport control.
 
 use crate::chat::bridge::AgentEventBridge;
+use crate::tui::agent_picker::AgentSelection;
 use crate::tui::streaming_channel::{
     create_streaming_channel, StreamingEvent, StreamingReceiver, StreamingTask,
 };
@@ -644,6 +645,155 @@ impl RatatuiRunner {
                 }
             }
         }
+    }
+
+    // =========================================================================
+    // Deferred Agent Creation Support
+    // =========================================================================
+
+    /// Run the TUI with deferred agent creation.
+    ///
+    /// This method:
+    /// 1. Enters the TUI (alternate screen)
+    /// 2. If splash is active, runs picker loop and returns selection
+    /// 3. Calls the provided factory to create the agent (while showing status)
+    /// 4. Runs the main chat loop
+    /// 5. Cleans up and exits TUI
+    ///
+    /// The factory receives the agent selection and should create the agent.
+    /// Status updates are shown in the TUI during creation.
+    pub async fn run_with_factory<F, Fut, A>(
+        &mut self,
+        bridge: &AgentEventBridge,
+        create_agent: F,
+    ) -> Result<()>
+    where
+        F: FnOnce(AgentSelection) -> Fut,
+        Fut: std::future::Future<Output = Result<A>>,
+        A: AgentHandle,
+    {
+        // Enter TUI
+        enable_raw_mode()?;
+        let mut stdout = io::stdout();
+        execute!(
+            stdout,
+            EnterAlternateScreen,
+            crossterm::event::EnableMouseCapture
+        )?;
+        let backend = CrosstermBackend::new(stdout);
+        let mut terminal = Terminal::new(backend)?;
+        terminal.clear()?;
+
+        // Phase 1: Agent selection (if splash is shown)
+        let selection = if self.view.is_showing_splash() {
+            self.run_picker_phase(&mut terminal).await?
+        } else {
+            // No splash - use a default/skip selection
+            AgentSelection::Cancelled // This shouldn't happen if used correctly
+        };
+
+        // Handle cancellation
+        if matches!(selection, AgentSelection::Cancelled) {
+            // Cleanup and exit
+            disable_raw_mode()?;
+            execute!(
+                terminal.backend_mut(),
+                crossterm::event::DisableMouseCapture,
+                LeaveAlternateScreen,
+                cursor::Show
+            )?;
+            return Ok(());
+        }
+
+        // Phase 2: Create agent (show status in TUI)
+        self.view.set_status_text("Creating agent...");
+        self.render_frame(&mut terminal)?;
+
+        let mut agent = create_agent(selection).await?;
+
+        self.view.set_status_text("Ready");
+        self.render_frame(&mut terminal)?;
+
+        // Phase 3: Run main loop
+        let result = self.main_loop(&mut terminal, bridge, &mut agent).await;
+
+        // Cleanup
+        disable_raw_mode()?;
+        execute!(
+            terminal.backend_mut(),
+            crossterm::event::DisableMouseCapture,
+            LeaveAlternateScreen,
+            cursor::Show
+        )?;
+
+        result
+    }
+
+    /// Run the picker phase - shows splash and waits for agent selection.
+    async fn run_picker_phase(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    ) -> Result<AgentSelection> {
+        use crossterm::event::KeyCode;
+
+        // Start agent probing
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let agents = crucible_acp::probe_all_agents().await;
+            let _ = tx.send(agents);
+        });
+
+        loop {
+            // Check for probe results
+            if let Ok(agents) = rx.try_recv() {
+                self.view.update_splash_availability(agents);
+            }
+
+            // Render
+            self.render_frame(terminal)?;
+
+            // Handle input
+            if event::poll(Duration::from_millis(50))? {
+                if let Event::Key(key) = event::read()? {
+                    match key.code {
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            self.view.splash_select_prev();
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            self.view.splash_select_next();
+                        }
+                        KeyCode::Char(c @ '1'..='9') => {
+                            let index = (c as usize) - ('1' as usize);
+                            self.view.splash_select_index(index);
+                        }
+                        KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('l') => {
+                            if let Some(agent_name) = self.view.splash_confirm() {
+                                self.view.dismiss_splash();
+                                let selection = if agent_name == "internal" {
+                                    AgentSelection::Internal
+                                } else {
+                                    AgentSelection::Acp(agent_name)
+                                };
+                                return Ok(selection);
+                            }
+                        }
+                        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') => {
+                            return Ok(AgentSelection::Cancelled);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    /// Render a single frame (used during status updates).
+    fn render_frame(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    ) -> Result<()> {
+        terminal.draw(|f| self.view.render_frame(f))?;
+        Ok(())
     }
 }
 

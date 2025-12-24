@@ -73,15 +73,61 @@ docs: update installation instructions
 
 ## Testing
 
-```bash
-# Run all tests
-cargo test --workspace
+### Test Tiers
 
-# Run tests for a specific crate
+Tests are organized into tiers to make contributing easier. By default, only fast unit tests run:
+
+| Tier | Command | Description |
+|------|---------|-------------|
+| `quick` | `just test` | Fast unit tests, no external dependencies (default) |
+| `fixtures` | `just test fixtures` | Tests using docs/ or examples/test-kiln fixtures |
+| `infra` | `just test infra` | Tests requiring Ollama, ACP agents, embedding endpoints |
+| `slow` | `just test slow` | Performance benchmarks and timing-sensitive tests |
+| `all` | `just test all` | All tiered tests (quick + fixtures + infra + slow) |
+| `full` | `just test full` | Everything including ignored tests |
+
+**For contributors:** `just test` should pass with zero external setup. This runs ~4000 fast unit tests.
+
+**For maintainers:** `just test all` runs the full integration suite (requires infrastructure).
+
+### Running Tests
+
+```bash
+# Fast unit tests (default - should always pass for contributors)
+just test
+
+# Include fixture tests (requires docs/ kiln)
+just test fixtures
+
+# Include infrastructure tests (requires Ollama, etc.)
+just test infra
+
+# Run all tiers
+just test all
+
+# Run specific crate
 cargo test -p crucible-core
 
 # Run with output
 cargo test --workspace -- --nocapture
+```
+
+### Feature Flags for Tests
+
+Some tests are gated behind feature flags:
+
+- `test-fixtures` - Tests that use the docs/ kiln or examples/test-kiln
+- `test-infrastructure` - Tests requiring external services (Ollama, ACP agents)
+- `test-slow` - Performance/benchmark tests
+
+To add infrastructure-dependent tests, use:
+
+```rust
+#![cfg(feature = "test-infrastructure")]
+// or for individual tests:
+#[cfg(feature = "test-fixtures")]
+#[tokio::test]
+async fn my_fixture_test() { ... }
 ```
 
 ## Pull Request Process

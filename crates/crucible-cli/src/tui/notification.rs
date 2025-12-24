@@ -48,6 +48,30 @@ impl NotificationState {
     pub fn push_error(&mut self, message: String) {
         self.pending_errors.push(message);
     }
+
+    /// Drain pending events and format a notification
+    ///
+    /// Returns None if no pending events, otherwise returns a message and level.
+    pub fn render_tick(&mut self) -> Option<(String, NotificationLevel)> {
+        if self.pending_changes.is_empty() && self.pending_errors.is_empty() {
+            return None;
+        }
+
+        // Process changes
+        if !self.pending_changes.is_empty() {
+            let path = self.pending_changes.remove(0);
+            self.pending_changes.clear();
+
+            let filename = path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown");
+
+            return Some((format!("{} modified", filename), NotificationLevel::Info));
+        }
+
+        None
+    }
 }
 
 impl Default for NotificationState {
@@ -92,5 +116,16 @@ mod tests {
         let mut state = NotificationState::new();
         state.push_error("parse failed".into());
         assert!(!state.is_empty());
+    }
+
+    #[test]
+    fn test_render_tick_single_file() {
+        let mut state = NotificationState::new();
+        state.push_change(PathBuf::from("/notes/todo.md"));
+        let result = state.render_tick();
+        assert!(result.is_some());
+        let (msg, level) = result.unwrap();
+        assert_eq!(msg, "todo.md modified");
+        assert_eq!(level, NotificationLevel::Info);
     }
 }

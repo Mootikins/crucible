@@ -3,9 +3,13 @@
 //! These tests validate grep-based text search and semantic search functionality
 //! using the docs kiln at `docs/`.
 //!
+//! Run with: `just test fixtures` or `cargo test --features test-fixtures`
+//!
 //! Test Categories:
 //! - Grep-based text search (case sensitivity, regex, scoping)
 //! - Semantic search (vector similarity, reranking)
+
+#![cfg(feature = "test-fixtures")]
 
 mod common;
 

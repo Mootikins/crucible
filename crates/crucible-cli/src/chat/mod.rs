@@ -21,10 +21,14 @@ pub mod bridge;
 pub mod context;
 pub mod diff;
 pub mod display;
+pub mod dynamic_agent;
 pub mod handlers;
 pub mod mode_registry;
 pub mod session;
 pub mod slash_registry;
+
+#[cfg(test)]
+mod dynamic_agent_tests;
 
 // Re-export core traits for convenience
 
@@ -41,3 +45,4 @@ pub use handlers::{ExitHandler, HelpHandler, ModeCycleHandler, ModeHandler, Sear
 pub use mode_registry::{ModeError, ModeRegistry, ModeResult};
 pub use session::{ChatSession, SessionConfig};
 pub use slash_registry::{SlashCommand, SlashCommandRegistry, SlashCommandRegistryBuilder};
+pub use dynamic_agent::DynamicAgent;

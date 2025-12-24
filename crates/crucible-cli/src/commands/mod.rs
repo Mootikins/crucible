@@ -14,3 +14,6 @@ pub mod status;
 pub mod secure_filesystem;
 pub mod stats;
 pub mod storage;
+
+#[cfg(test)]
+mod chat_factory_tests;
