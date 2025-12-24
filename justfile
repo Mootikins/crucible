@@ -25,19 +25,54 @@ release-cli:
 
 # === Test ===
 
-# Run all tests (summary only)
-test:
-    if command -v cargo-nextest >/dev/null 2>&1; then \
-      cargo nextest run --workspace --show-progress none --status-level none --final-status-level none --success-output never --failure-output immediate-final || { \
-        echo "nextest failed; falling back to cargo test" >&2; \
-        cargo test --workspace 2>&1 | awk '/^test result:/ {passed+=$4; failed+=$6} END {print \"✓ PASSED:\", passed, \"✗ FAILED:\", failed}'; \
-      }; \
-    else \
-      echo "cargo-nextest not found; using cargo test" >&2; \
-      cargo test --workspace 2>&1 | awk '/^test result:/ {passed+=$4; failed+=$6} END {print \"✓ PASSED:\", passed, \"✗ FAILED:\", failed}'; \
-    fi
+# Run tests by tier (quick|fixtures|infra|slow|full|all)
+# - quick: Fast unit tests, no external deps (default)
+# - fixtures: Tests using docs/ or examples/test-kiln
+# - infra: Tests requiring Ollama, ACP agents
+# - slow: Performance benchmarks and timing-sensitive tests
+# - full: All tests including ignored
+# - all: Quick + fixtures + infra + slow (no ignored)
+test tier="quick":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "{{tier}}" in
+        quick)
+            echo "Running quick tests (no features)..."
+            cargo nextest run --workspace 2>/dev/null || cargo test --workspace
+            ;;
+        fixtures)
+            echo "Running fixture tests..."
+            cargo nextest run --workspace --features test-fixtures 2>/dev/null || \
+            cargo test --workspace --features test-fixtures
+            ;;
+        infra)
+            echo "Running infrastructure tests..."
+            cargo nextest run --workspace --features test-infrastructure 2>/dev/null || \
+            cargo test --workspace --features test-infrastructure
+            ;;
+        slow)
+            echo "Running slow tests..."
+            cargo nextest run --workspace --features test-slow 2>/dev/null || \
+            cargo test --workspace --features test-slow
+            ;;
+        full)
+            echo "Running ALL tests including ignored..."
+            cargo nextest run --workspace --features test-fixtures,test-infrastructure,test-slow -- --include-ignored 2>/dev/null || \
+            cargo test --workspace --features test-fixtures,test-infrastructure,test-slow -- --ignored
+            ;;
+        all)
+            echo "Running all tiered tests (quick + fixtures + infra + slow)..."
+            cargo nextest run --workspace --features test-fixtures,test-infrastructure,test-slow 2>/dev/null || \
+            cargo test --workspace --features test-fixtures,test-infrastructure,test-slow
+            ;;
+        *)
+            echo "Unknown tier: {{tier}}"
+            echo "Valid tiers: quick, fixtures, infra, slow, full, all"
+            exit 1
+            ;;
+    esac
 
-# Run all tests (full output)
+# Run all tests (full output, legacy alias)
 test-full:
     cargo test --workspace
 

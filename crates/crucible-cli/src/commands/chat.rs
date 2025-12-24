@@ -9,10 +9,12 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 use crate::acp::{ContextEnricher, CrucibleAcpClient};
+use crate::chat::DynamicAgent;
 use crate::config::CliConfig;
 use crate::core_facade::KilnContext;
 use crate::factories;
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
+use crate::tui::AgentSelection;
 use crucible_core::traits::chat::{is_read_only, mode_display_name};
 use crucible_pipeline::NotePipeline;
 use crucible_watch::traits::{DebounceConfig, HandlerConfig, WatchConfig};
@@ -69,36 +71,12 @@ pub async fn execute(
     let default_agent_from_config = config.acp.default_agent.clone();
     let lazy_agent_selection = config.acp.lazy_agent_selection;
 
-    // Determine if we should show agent picker
-    // Show picker if: lazy_agent_selection=true AND no --agent AND not --internal AND interactive mode
-    let should_show_picker =
+    // Determine if we should use deferred agent creation (picker in TUI)
+    // Deferred: lazy_agent_selection=true AND no --agent AND not --internal AND interactive mode
+    let use_deferred_picker =
         lazy_agent_selection && agent_name.is_none() && !use_internal && query.is_none();
 
-    // Run agent picker if needed (before agent creation)
-    // Shadows the input parameters with the resolved selection
-    let (agent_name, use_internal) = if should_show_picker {
-        use crate::tui::{pick_agent, AgentSelection};
-
-        match pick_agent().await? {
-            AgentSelection::Acp(name) => (Some(name), false),
-            AgentSelection::Internal => (None, true),
-            AgentSelection::Cancelled => {
-                // User quit from picker
-                return Ok(());
-            }
-        }
-    } else {
-        (agent_name, use_internal)
-    };
-
-    // Determine agent type based on selection
-    let agent_type = if use_internal {
-        factories::AgentType::Internal
-    } else {
-        factories::AgentType::Acp
-    };
-
-    // Parse env overrides from CLI (KEY=VALUE format)
+    // Parse env overrides from CLI (KEY=VALUE format) - needed for both paths
     let parsed_env: std::collections::HashMap<String, String> = env_overrides
         .iter()
         .filter_map(|s| {
@@ -119,6 +97,32 @@ pub async fn execute(
         let keys: Vec<_> = parsed_env.keys().collect();
         info!("CLI env overrides: {:?}", keys);
     }
+
+    // === DEFERRED PATH: Agent picker in TUI, agent created after selection ===
+    if use_deferred_picker {
+        return run_deferred_chat(
+            config,
+            default_agent_from_config,
+            initial_mode,
+            no_context,
+            no_process,
+            context_size,
+            provider_key,
+            max_context_tokens,
+            parsed_env,
+            status,
+        )
+        .await;
+    }
+
+    // === NON-DEFERRED PATH: Agent created before session ===
+
+    // Determine agent type based on selection
+    let agent_type = if use_internal {
+        factories::AgentType::Internal
+    } else {
+        factories::AgentType::Acp
+    };
 
     // Create agent initialization params
     let agent_params = factories::AgentInitParams::new()
@@ -299,7 +303,7 @@ pub async fn execute(
                     context_size,
                     live_progress,
                     available_models,
-                    should_show_picker, // skip_splash if picker was shown
+                    true, // skip_splash: agent already known in non-deferred path
                 )
                 .await?;
 
@@ -367,7 +371,7 @@ pub async fn execute(
                     context_size,
                     live_progress,
                     available_models,
-                    should_show_picker, // skip_splash if picker was shown
+                    true, // skip_splash: agent already known in non-deferred path
                 )
                 .await?;
             }
@@ -404,6 +408,202 @@ async fn run_interactive_session<A: crate::chat::AgentHandle>(
 
     // Run interactive session
     session.run(agent).await
+}
+
+/// Run chat with deferred agent creation (picker in TUI)
+///
+/// The agent is created AFTER the user selects it in the TUI picker.
+/// This avoids showing a separate picker screen before entering the TUI.
+#[allow(clippy::too_many_arguments)]
+async fn run_deferred_chat(
+    config: CliConfig,
+    default_agent: Option<String>,
+    initial_mode: &str,
+    no_context: bool,
+    no_process: bool,
+    context_size: Option<usize>,
+    provider_key: Option<String>,
+    max_context_tokens: usize,
+    parsed_env: std::collections::HashMap<String, String>,
+    mut status: StatusLine,
+) -> Result<()> {
+    use crate::chat::{ChatSession, SessionConfig};
+
+    info!("Using deferred agent creation (picker in TUI)");
+
+    // Initialize storage only (agent created later by factory)
+    status.update("Initializing storage...");
+    let storage_client = factories::create_surrealdb_storage(&config).await?;
+    factories::initialize_surrealdb_schema(&storage_client).await?;
+
+    // Background processing (same as non-deferred path)
+    let _bg_progress: Option<BackgroundProgress> = if !no_process && !no_context {
+        use crate::sync::quick_sync_check;
+
+        status.update("Checking for file changes...");
+
+        let kiln_path = &config.kiln_path;
+        let sync_status = quick_sync_check(&storage_client, kiln_path).await?;
+
+        if sync_status.needs_processing() {
+            let pending = sync_status.pending_count();
+            status.update(&format!(
+                "Starting background indexing ({} files)...",
+                pending
+            ));
+
+            let pipeline =
+                factories::create_pipeline(storage_client.clone(), &config, false).await?;
+
+            let files_to_process = sync_status.files_to_process();
+            let bg_pipeline = Arc::new(pipeline);
+            let progress = BackgroundProgress::new(pending);
+
+            let bg_pipeline_clone = bg_pipeline.clone();
+            let progress_clone = progress.clone();
+            tokio::spawn(async move {
+                for file in files_to_process {
+                    match bg_pipeline_clone.process(&file).await {
+                        Ok(_) => progress_clone.inc_completed(),
+                        Err(e) => {
+                            tracing::warn!(
+                                "Background process failed for {}: {}",
+                                file.display(),
+                                e
+                            );
+                            progress_clone.inc_failed();
+                        }
+                    }
+                }
+                tracing::debug!("Background file processing completed");
+            });
+
+            let watch_config = config.clone();
+            let watch_pipeline = bg_pipeline;
+            tokio::spawn(async move {
+                if let Err(e) = spawn_background_watch(watch_config, watch_pipeline).await {
+                    tracing::error!("Background watch failed: {}", e);
+                }
+            });
+
+            info!("Background processing spawned for {} files", pending);
+            Some(progress)
+        } else {
+            let pipeline =
+                factories::create_pipeline(storage_client.clone(), &config, false).await?;
+            let watch_config = config.clone();
+            let watch_pipeline = Arc::new(pipeline);
+            tokio::spawn(async move {
+                if let Err(e) = spawn_background_watch(watch_config, watch_pipeline).await {
+                    tracing::error!("Background watch failed: {}", e);
+                }
+            });
+            None
+        }
+    } else {
+        None
+    };
+
+    // Initialize core facade
+    status.update("Initializing core...");
+    let core = Arc::new(KilnContext::from_storage(
+        storage_client.clone(),
+        config.clone(),
+    ));
+
+    // Get cached embedding provider
+    status.update("Initializing embedding provider...");
+    let embedding_provider = factories::get_or_create_embedding_provider(core.config()).await?;
+
+    // Get knowledge repository from storage
+    let knowledge_repo = core.storage().as_knowledge_repository();
+
+    // Status is complete - TUI will take over
+    status.success("Ready");
+
+    // Create session configuration (splash enabled for picker)
+    let session_config = SessionConfig::new(
+        initial_mode,
+        !no_context,
+        context_size,
+    ); // skip_splash defaults to false
+
+    let mut session = ChatSession::new(session_config, core.clone(), None);
+
+    // Create the agent factory closure
+    // This captures all dependencies needed to create the agent after picker selection
+    let config_for_factory = config.clone();
+    let initial_mode_str = initial_mode.to_string();
+    let factory = move |selection: AgentSelection| {
+        let config = config_for_factory.clone();
+        let default_agent = default_agent.clone();
+        let provider_key = provider_key.clone();
+        let parsed_env = parsed_env.clone();
+        let core = core.clone();
+        let embedding_provider = embedding_provider.clone();
+        let knowledge_repo = knowledge_repo.clone();
+        let initial_mode = initial_mode_str.clone();
+
+        async move {
+            match selection {
+                AgentSelection::Acp(agent_name) => {
+                    info!("Creating ACP agent: {}", agent_name);
+
+                    let params = factories::AgentInitParams::new()
+                        .with_type(factories::AgentType::Acp)
+                        .with_agent_name_opt(Some(agent_name).or(default_agent))
+                        .with_provider_opt(provider_key)
+                        .with_read_only(is_read_only(&initial_mode))
+                        .with_max_context_tokens(max_context_tokens)
+                        .with_env_overrides(parsed_env);
+
+                    let agent = factories::create_agent(&config, params).await?;
+
+                    match agent {
+                        factories::InitializedAgent::Acp(client) => {
+                            let kiln_path = core.config().kiln_path.clone();
+                            let mut client = client
+                                .with_kiln_path(kiln_path)
+                                .with_mcp_dependencies(knowledge_repo, embedding_provider);
+                            client.spawn().await?;
+                            Ok(DynamicAgent::acp(client))
+                        }
+                        factories::InitializedAgent::Internal(_) => {
+                            anyhow::bail!("Expected ACP agent but got Internal")
+                        }
+                    }
+                }
+                AgentSelection::Internal => {
+                    info!("Creating internal agent");
+
+                    let params = factories::AgentInitParams::new()
+                        .with_type(factories::AgentType::Internal)
+                        .with_provider_opt(provider_key)
+                        .with_read_only(is_read_only(&initial_mode))
+                        .with_max_context_tokens(max_context_tokens)
+                        .with_env_overrides(parsed_env);
+
+                    let agent = factories::create_agent(&config, params).await?;
+
+                    match agent {
+                        factories::InitializedAgent::Internal(handle) => {
+                            Ok(DynamicAgent::internal(handle))
+                        }
+                        factories::InitializedAgent::Acp(_) => {
+                            anyhow::bail!("Expected Internal agent but got ACP")
+                        }
+                    }
+                }
+                AgentSelection::Cancelled => {
+                    // This shouldn't happen - runner handles cancellation before calling factory
+                    anyhow::bail!("Agent selection was cancelled")
+                }
+            }
+        }
+    };
+
+    // Run deferred session - picker runs in TUI, then factory creates agent
+    session.run_deferred(factory).await
 }
 
 /// Spawn background watch task for chat mode using the event system

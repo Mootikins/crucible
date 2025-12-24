@@ -13,6 +13,11 @@ path = "src/main.rs"
 [features]
 default = []
 
+# Test tier flags (see justfile for usage)
+test-fixtures = []       # Tests using docs/ kiln or examples/test-kiln
+test-infrastructure = [] # Tests requiring Ollama, ACP agents (opencode/claude)
+test-slow = []           # Performance benchmarks and timing tests
+
 [dependencies]
 crucible-core = { path = "../crucible-core" }
 crucible-parser = { path = "../crucible-parser" }

@@ -25,6 +25,11 @@ local-config = ["llama-cpp"]
 # Enable local embedding tests (requires local embedding model)
 local-config-embedding = ["llama-cpp"]
 
+# Test tier flags (see justfile for usage)
+test-fixtures = []       # Tests using docs/ kiln or examples/test-kiln
+test-infrastructure = [] # Tests requiring Ollama, embedding endpoints
+test-slow = []           # Performance benchmarks and timing tests
+
 # FastEmbed local embedding provider (CPU, easy setup, no API keys needed)
 fastembed = ["dep:fastembed"]
 
