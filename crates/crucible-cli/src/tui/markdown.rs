@@ -66,8 +66,16 @@ impl MarkdownRenderer {
         true
     }
 
-    /// Render markdown to ANSI-styled string
+    /// Render markdown to ANSI-styled string (no width constraint)
     pub fn render(&self, markdown: &str) -> String {
+        self.render_with_width(markdown, None)
+    }
+
+    /// Render markdown with optional width constraint for word wrapping
+    ///
+    /// When width is provided, text wraps at word boundaries to fit.
+    /// This should be used for TUI rendering where we know the column width.
+    pub fn render_with_width(&self, markdown: &str, width: Option<usize>) -> String {
         let skin = if self.is_dark {
             &self.skin_dark
         } else {
@@ -77,8 +85,8 @@ impl MarkdownRenderer {
         // Pre-process: add padding spaces inside inline code for visual clarity
         let processed = Self::add_inline_code_padding(markdown);
 
-        // TODO: Extract code blocks and highlight with syntect
-        skin.term_text(&processed).to_string()
+        // Use termimad's word-aware wrapping when width is specified
+        skin.text(&processed, width).to_string()
     }
 
     /// Add padding spaces inside inline code backticks for visual clarity
