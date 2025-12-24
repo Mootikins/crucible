@@ -74,9 +74,71 @@ impl MarkdownRenderer {
             &self.skin_light
         };
 
-        // For now, use termimad directly
+        // Pre-process: add padding spaces inside inline code for visual clarity
+        let processed = Self::add_inline_code_padding(markdown);
+
         // TODO: Extract code blocks and highlight with syntect
-        skin.term_text(markdown).to_string()
+        skin.term_text(&processed).to_string()
+    }
+
+    /// Add padding spaces inside inline code backticks for visual clarity
+    ///
+    /// Transforms `` `code` `` to `` ` code ` `` so the background color
+    /// has visual padding around the text.
+    fn add_inline_code_padding(markdown: &str) -> String {
+        // Match single backtick inline code (not code blocks with triple backticks)
+        // Pattern: single ` not followed by ` or preceded by `
+        let mut result = String::with_capacity(markdown.len() + 64);
+        let mut chars = markdown.chars().peekable();
+        let mut in_code_block = false;
+
+        while let Some(c) = chars.next() {
+            if c == '`' {
+                // Check for triple backtick (code block)
+                if chars.peek() == Some(&'`') {
+                    // Could be code block, check for third
+                    let next = chars.next().unwrap(); // second `
+                    if chars.peek() == Some(&'`') {
+                        // Triple backtick - code block marker
+                        let third = chars.next().unwrap();
+                        result.push(c);
+                        result.push(next);
+                        result.push(third);
+                        in_code_block = !in_code_block;
+                    } else {
+                        // Double backtick inline code
+                        result.push(c);
+                        result.push(next);
+                    }
+                } else if !in_code_block {
+                    // Single backtick - inline code
+                    // Find the closing backtick and add padding
+                    result.push(c);
+                    result.push(' '); // Opening padding
+
+                    // Copy content until closing backtick
+                    let mut found_close = false;
+                    for inner in chars.by_ref() {
+                        if inner == '`' {
+                            result.push(' '); // Closing padding
+                            result.push(inner);
+                            found_close = true;
+                            break;
+                        }
+                        result.push(inner);
+                    }
+                    if !found_close {
+                        // Unclosed backtick - just continue
+                    }
+                } else {
+                    result.push(c);
+                }
+            } else {
+                result.push(c);
+            }
+        }
+
+        result
     }
 
     /// Render a code block with syntax highlighting
@@ -179,5 +241,32 @@ mod tests {
         let result = renderer.render_code_block(code, "rust");
         // Should contain ANSI escape codes
         assert!(result.contains("\x1b["));
+    }
+
+    #[test]
+    fn test_inline_code_padding() {
+        // Simple inline code gets padding
+        assert_eq!(
+            MarkdownRenderer::add_inline_code_padding("Use `cargo` here"),
+            "Use ` cargo ` here"
+        );
+
+        // Multiple inline codes
+        assert_eq!(
+            MarkdownRenderer::add_inline_code_padding("Use `a` and `b`"),
+            "Use ` a ` and ` b `"
+        );
+
+        // Code blocks are not modified
+        assert_eq!(
+            MarkdownRenderer::add_inline_code_padding("```rust\ncode\n```"),
+            "```rust\ncode\n```"
+        );
+
+        // Mixed inline and block
+        assert_eq!(
+            MarkdownRenderer::add_inline_code_padding("Run `cmd`\n```\nblock\n```"),
+            "Run ` cmd `\n```\nblock\n```"
+        );
     }
 }
