@@ -94,6 +94,20 @@ Enable for workflows that require changes. The agent will confirm before destruc
 | `/agent <name>` | Switch to a different agent |
 | `Ctrl+C` | Exit chat |
 
+## Statusline Notifications
+
+The statusline displays notifications when files change in your kiln:
+
+- **File changes** appear dimmed on the right side (e.g., "notes.md modified")
+- **Multiple changes** batch together (e.g., "3 files modified")
+- **Errors** appear in red and stay visible longer
+
+Notification timing:
+- Info notifications: 2 seconds
+- Error notifications: 5 seconds
+
+This provides real-time feedback when other tools or editors modify your notes while you're chatting.
+
 ## Agent Access
 
 In chat mode, the agent has access to these tools:
