@@ -1137,7 +1137,8 @@ mod tests {
             "plan",
             80,
             Some(("todo.md modified", NotificationLevel::Info)),
-        ).unwrap();
+        )
+        .unwrap();
         let output = String::from_utf8(buffer).unwrap();
         assert!(output.contains("[Plan]"));
         assert!(output.contains("todo.md modified"));
@@ -1152,7 +1153,8 @@ mod tests {
             "plan",
             60,
             Some(("test.md modified", NotificationLevel::Info)),
-        ).unwrap();
+        )
+        .unwrap();
         let output = String::from_utf8(buffer).unwrap();
 
         // Strip ANSI codes to check layout
@@ -1188,7 +1190,8 @@ mod tests {
             "plan",
             80,
             Some(("✗ parse error", NotificationLevel::Error)),
-        ).unwrap();
+        )
+        .unwrap();
         let output = String::from_utf8(buffer).unwrap();
         assert!(output.contains(ansi::RED), "Error should use red color");
         assert!(output.contains("✗ parse error"));
@@ -1203,7 +1206,8 @@ mod tests {
             "plan",
             80,
             Some(("file.md modified", NotificationLevel::Info)),
-        ).unwrap();
+        )
+        .unwrap();
         let output = String::from_utf8(buffer).unwrap();
         // Info notifications should use dim styling
         assert!(output.contains(ansi::DIM), "Info should use dim color");
