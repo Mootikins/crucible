@@ -109,7 +109,17 @@ impl NotificationState {
                         .file_name()
                         .and_then(|s| s.to_str())
                         .unwrap_or("unknown");
-                    format!("{} modified", filename)
+
+                    // Truncate long filenames (max 25 chars for filename portion)
+                    // Note: Could distinguish created vs modified if we changed push_change
+                    // to accept FileChangeKind, but that requires API changes. Skipping for now.
+                    let display_name = if filename.len() > 25 {
+                        format!("{}...", &filename[..22])
+                    } else {
+                        filename.to_string()
+                    };
+
+                    format!("{} modified", display_name)
                 } else {
                     format!("{} files modified", count)
                 };
@@ -158,7 +168,15 @@ impl NotificationState {
                         .file_name()
                         .and_then(|s| s.to_str())
                         .unwrap_or("unknown");
-                    format!("{} modified", filename)
+
+                    // Truncate long filenames (max 25 chars for filename portion)
+                    let display_name = if filename.len() > 25 {
+                        format!("{}...", &filename[..22])
+                    } else {
+                        filename.to_string()
+                    };
+
+                    format!("{} modified", display_name)
                 } else {
                     format!("{} files modified", count)
                 };
@@ -265,5 +283,62 @@ mod tests {
         assert!(state.render_tick().is_some());
         state.force_expire_for_testing();
         assert!(state.render_tick().is_none());
+    }
+
+    #[test]
+    fn test_long_filename_truncated() {
+        let mut state = NotificationState::new();
+        state.push_change(PathBuf::from(
+            "/notes/this-is-a-very-long-filename-that-should-be-truncated.md",
+        ));
+
+        let (msg, _) = state.render_tick().unwrap();
+        assert!(msg.len() <= 40, "Message should be truncated: {}", msg);
+        assert!(
+            msg.contains("..."),
+            "Truncated message should contain ellipsis"
+        );
+        assert!(
+            msg.contains("modified"),
+            "Message should contain 'modified'"
+        );
+    }
+
+    #[test]
+    fn test_short_filename_not_truncated() {
+        let mut state = NotificationState::new();
+        state.push_change(PathBuf::from("/notes/short.md"));
+
+        let (msg, _) = state.render_tick().unwrap();
+        assert_eq!(msg, "short.md modified");
+        assert!(
+            !msg.contains("..."),
+            "Short filename should not be truncated"
+        );
+    }
+
+    #[test]
+    fn test_exactly_25_chars_not_truncated() {
+        let mut state = NotificationState::new();
+        // Create a filename that's exactly 25 chars
+        let filename = "1234567890123456789012345"; // 25 chars
+        state.push_change(PathBuf::from(format!("/notes/{}", filename)));
+
+        let (msg, _) = state.render_tick().unwrap();
+        assert_eq!(msg, format!("{} modified", filename));
+        assert!(!msg.contains("..."));
+    }
+
+    #[test]
+    fn test_26_chars_gets_truncated() {
+        let mut state = NotificationState::new();
+        // Create a filename that's 26 chars
+        let filename = "12345678901234567890123456"; // 26 chars
+        state.push_change(PathBuf::from(format!("/notes/{}", filename)));
+
+        let (msg, _) = state.render_tick().unwrap();
+        assert!(msg.contains("..."), "26-char filename should be truncated");
+        // Should be first 22 chars + "..."
+        assert!(msg.starts_with("1234567890123456789012"));
     }
 }
