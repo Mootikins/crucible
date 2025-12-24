@@ -128,12 +128,8 @@ async fn test_factory_closure_captures_environment() {
 
         async move {
             match selection {
-                AgentSelection::Acp(name) => {
-                    Ok(format!("acp:{}:{}", name, captured_config))
-                }
-                AgentSelection::Internal => {
-                    Ok(format!("internal:{}", captured_config))
-                }
+                AgentSelection::Acp(name) => Ok(format!("acp:{}:{}", name, captured_config)),
+                AgentSelection::Internal => Ok(format!("internal:{}", captured_config)),
                 AgentSelection::Cancelled => {
                     anyhow::bail!("Agent selection was cancelled")
                 }
@@ -157,7 +153,10 @@ fn test_agent_selection_exhaustive_match() {
         }
     }
 
-    assert_eq!(handle_selection(AgentSelection::Acp("test".to_string())), "acp");
+    assert_eq!(
+        handle_selection(AgentSelection::Acp("test".to_string())),
+        "acp"
+    );
     assert_eq!(handle_selection(AgentSelection::Internal), "internal");
     assert_eq!(handle_selection(AgentSelection::Cancelled), "cancelled");
 }
