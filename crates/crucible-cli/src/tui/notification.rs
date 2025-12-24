@@ -59,15 +59,20 @@ impl NotificationState {
 
         // Process changes
         if !self.pending_changes.is_empty() {
-            let path = self.pending_changes.remove(0);
+            let count = self.pending_changes.len();
+            let message = if count == 1 {
+                let path = self.pending_changes.remove(0);
+                let filename = path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("unknown");
+                format!("{} modified", filename)
+            } else {
+                format!("{} files modified", count)
+            };
             self.pending_changes.clear();
 
-            let filename = path
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("unknown");
-
-            return Some((format!("{} modified", filename), NotificationLevel::Info));
+            return Some((message, NotificationLevel::Info));
         }
 
         None
@@ -127,5 +132,15 @@ mod tests {
         let (msg, level) = result.unwrap();
         assert_eq!(msg, "todo.md modified");
         assert_eq!(level, NotificationLevel::Info);
+    }
+
+    #[test]
+    fn test_render_tick_multiple_files() {
+        let mut state = NotificationState::new();
+        state.push_change(PathBuf::from("/notes/a.md"));
+        state.push_change(PathBuf::from("/notes/b.md"));
+        state.push_change(PathBuf::from("/notes/c.md"));
+        let (msg, _) = state.render_tick().unwrap();
+        assert_eq!(msg, "3 files modified");
     }
 }
