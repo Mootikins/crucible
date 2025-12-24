@@ -5,6 +5,7 @@
 
 use crate::chat::bridge::AgentEventBridge;
 use crate::tui::agent_picker::AgentSelection;
+use crate::tui::notification::NotificationLevel;
 use crate::tui::streaming_channel::{
     create_streaming_channel, StreamingEvent, StreamingReceiver, StreamingTask,
 };
@@ -24,7 +25,7 @@ use crossterm::{
         disable_raw_mode, enable_raw_mode, size, EnterAlternateScreen, LeaveAlternateScreen,
     },
 };
-use crucible_core::events::SessionEvent;
+use crucible_core::events::{FileChangeKind, SessionEvent};
 use crucible_core::traits::chat::AgentHandle;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
@@ -795,6 +796,25 @@ impl RatatuiRunner {
         terminal.draw(|f| self.view.render_frame(f))?;
         Ok(())
     }
+
+    /// Handle a session event for notifications
+    fn handle_notification_event(
+        notifications: &mut crate::tui::notification::NotificationState,
+        event: &SessionEvent,
+    ) {
+        match event {
+            SessionEvent::FileChanged { path, .. } => {
+                notifications.push_change(path.clone());
+            }
+            SessionEvent::FileDeleted { path } => {
+                notifications.push_change(path.clone());
+            }
+            SessionEvent::EmbeddingFailed { error, .. } => {
+                notifications.push_error(error.clone());
+            }
+            _ => {}
+        }
+    }
 }
 
 #[cfg(test)]
@@ -920,5 +940,45 @@ mod tests {
 
         // View should be accessible
         assert_eq!(runner.view().state().scroll_offset, 0);
+    }
+
+    #[test]
+    fn test_runner_notification_from_file_changed() {
+        use crate::tui::notification::NotificationState;
+        use crucible_core::events::{FileChangeKind, SessionEvent};
+        use std::path::PathBuf;
+
+        let mut notifications = NotificationState::new();
+
+        let event = SessionEvent::FileChanged {
+            path: PathBuf::from("/notes/test.md"),
+            kind: FileChangeKind::Modified,
+        };
+
+        RatatuiRunner::handle_notification_event(&mut notifications, &event);
+
+        assert!(!notifications.is_empty());
+    }
+
+    #[test]
+    fn test_runner_notification_from_embedding_failed() {
+        use crate::tui::notification::{NotificationLevel, NotificationState};
+        use crucible_core::events::SessionEvent;
+
+        let mut notifications = NotificationState::new();
+
+        let event = SessionEvent::EmbeddingFailed {
+            entity_id: "note:test".into(),
+            block_id: None,
+            error: "connection timeout".into(),
+        };
+
+        RatatuiRunner::handle_notification_event(&mut notifications, &event);
+
+        let result = notifications.render_tick();
+        assert!(result.is_some());
+        let (msg, level) = result.unwrap();
+        assert!(matches!(level, NotificationLevel::Error));
+        assert!(msg.contains("connection timeout") || msg.contains("error"));
     }
 }
