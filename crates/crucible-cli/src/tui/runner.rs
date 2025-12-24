@@ -475,6 +475,18 @@ impl RatatuiRunner {
             InputAction::PageDown => {
                 self.view.scroll_down(10);
             }
+            InputAction::HalfPageUp => {
+                self.view.scroll_up(5);
+            }
+            InputAction::HalfPageDown => {
+                self.view.scroll_down(5);
+            }
+            InputAction::ScrollToTop => {
+                self.view.scroll_to_top();
+            }
+            InputAction::ScrollToBottom => {
+                self.view.scroll_to_bottom();
+            }
             InputAction::MovePopupSelection(delta) => {
                 if let Some(ref mut popup) = self.popup {
                     popup.move_selection(delta);

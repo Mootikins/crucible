@@ -432,6 +432,10 @@ impl TuiState {
             | InputAction::ScrollDown
             | InputAction::PageUp
             | InputAction::PageDown
+            | InputAction::HalfPageUp
+            | InputAction::HalfPageDown
+            | InputAction::ScrollToTop
+            | InputAction::ScrollToBottom
             | InputAction::None => None,
         }
     }

@@ -24,6 +24,10 @@ pub enum InputAction {
     ScrollDown,
     PageUp,
     PageDown,
+    HalfPageUp,
+    HalfPageDown,
+    ScrollToTop,
+    ScrollToBottom,
     CycleMode,
     Cancel,
     Exit,
@@ -82,13 +86,25 @@ pub fn map_key_event(event: &KeyEvent, state: &TuiState) -> InputAction {
         // Shift+Tab cycles mode
         (KeyCode::BackTab, _) => InputAction::CycleMode,
 
+        // Scrolling
+        (KeyCode::Up, KeyModifiers::CONTROL) => InputAction::ScrollUp,
+        (KeyCode::Down, KeyModifiers::CONTROL) => InputAction::ScrollDown,
+        (KeyCode::Char('u'), mods) if mods == KeyModifiers::CONTROL.union(KeyModifiers::ALT) => {
+            InputAction::HalfPageUp
+        }
+        (KeyCode::Char('d'), mods) if mods == KeyModifiers::CONTROL.union(KeyModifiers::ALT) => {
+            InputAction::HalfPageDown
+        }
+        (KeyCode::Home, KeyModifiers::NONE) => InputAction::ScrollToTop,
+        (KeyCode::End, KeyModifiers::NONE) => InputAction::ScrollToBottom,
+        (KeyCode::PageUp, _) => InputAction::PageUp,
+        (KeyCode::PageDown, _) => InputAction::PageDown,
+
         // Navigation
         (KeyCode::Up, KeyModifiers::NONE) => InputAction::MovePopupSelection(-1),
         (KeyCode::Down, KeyModifiers::NONE) => InputAction::MovePopupSelection(1),
         (KeyCode::Char('p'), KeyModifiers::CONTROL) => InputAction::MovePopupSelection(-1),
         (KeyCode::Char('n'), KeyModifiers::CONTROL) => InputAction::MovePopupSelection(1),
-        (KeyCode::PageUp, _) => InputAction::PageUp,
-        (KeyCode::PageDown, _) => InputAction::PageDown,
         (KeyCode::Left, KeyModifiers::NONE) => InputAction::MoveCursorLeft,
         (KeyCode::Right, KeyModifiers::NONE) => InputAction::MoveCursorRight,
 
@@ -100,6 +116,65 @@ pub fn map_key_event(event: &KeyEvent, state: &TuiState) -> InputAction {
         (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => InputAction::InsertChar(c),
 
         _ => InputAction::None,
+    }
+}
+
+#[cfg(test)]
+mod scroll_keybinding_tests {
+    use super::*;
+
+    #[test]
+    fn test_ctrl_up_scrolls_up() {
+        let state = TuiState::new("plan");
+        let event = KeyEvent::new(KeyCode::Up, KeyModifiers::CONTROL);
+        let action = map_key_event(&event, &state);
+        assert_eq!(action, InputAction::ScrollUp);
+    }
+
+    #[test]
+    fn test_ctrl_down_scrolls_down() {
+        let state = TuiState::new("plan");
+        let event = KeyEvent::new(KeyCode::Down, KeyModifiers::CONTROL);
+        let action = map_key_event(&event, &state);
+        assert_eq!(action, InputAction::ScrollDown);
+    }
+
+    #[test]
+    fn test_ctrl_alt_u_half_page_up() {
+        let state = TuiState::new("plan");
+        let event = KeyEvent::new(
+            KeyCode::Char('u'),
+            KeyModifiers::CONTROL.union(KeyModifiers::ALT),
+        );
+        let action = map_key_event(&event, &state);
+        assert_eq!(action, InputAction::HalfPageUp);
+    }
+
+    #[test]
+    fn test_ctrl_alt_d_half_page_down() {
+        let state = TuiState::new("plan");
+        let event = KeyEvent::new(
+            KeyCode::Char('d'),
+            KeyModifiers::CONTROL.union(KeyModifiers::ALT),
+        );
+        let action = map_key_event(&event, &state);
+        assert_eq!(action, InputAction::HalfPageDown);
+    }
+
+    #[test]
+    fn test_home_scrolls_to_top() {
+        let state = TuiState::new("plan");
+        let event = KeyEvent::new(KeyCode::Home, KeyModifiers::NONE);
+        let action = map_key_event(&event, &state);
+        assert_eq!(action, InputAction::ScrollToTop);
+    }
+
+    #[test]
+    fn test_end_scrolls_to_bottom() {
+        let state = TuiState::new("plan");
+        let event = KeyEvent::new(KeyCode::End, KeyModifiers::NONE);
+        let action = map_key_event(&event, &state);
+        assert_eq!(action, InputAction::ScrollToBottom);
     }
 }
 
