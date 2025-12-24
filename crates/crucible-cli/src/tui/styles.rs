@@ -91,6 +91,9 @@ pub mod indicators {
     /// User message prefix (for historical messages)
     pub const USER_PREFIX: &str = ">";
 
+    /// Assistant message prefix (aligns with user prefix column)
+    pub const ASSISTANT_PREFIX: &str = "·";
+
     /// Mode indicator arrow
     pub const MODE_ARROW: &str = "▸";
 
@@ -122,6 +125,11 @@ pub mod presets {
     /// Assistant message style (normal, readable)
     pub fn assistant_message() -> Style {
         Style::default().fg(colors::ASSISTANT_FG)
+    }
+
+    /// Assistant message prefix style (subtle, aligns with user prefix)
+    pub fn assistant_prefix() -> Style {
+        Style::default().fg(colors::DIM)
     }
 
     /// Dim text style (status, metadata)
