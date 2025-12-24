@@ -190,6 +190,31 @@ impl ConversationState {
         }
     }
 
+    /// Append text to the last prose block if it exists and is incomplete,
+    /// otherwise create a new prose block. Used for streaming to consolidate text.
+    pub fn append_or_create_prose(&mut self, text: &str) {
+        for item in self.items.iter_mut().rev() {
+            if let ConversationItem::AssistantMessage {
+                blocks,
+                is_streaming,
+            } = item
+            {
+                if *is_streaming {
+                    // Check if last block is an incomplete prose block
+                    if let Some(last_block) = blocks.last_mut() {
+                        if last_block.is_prose() && !last_block.is_complete() {
+                            last_block.append(text);
+                            return;
+                        }
+                    }
+                    // Create new prose block
+                    blocks.push(ContentBlock::prose_partial(text));
+                    return;
+                }
+            }
+        }
+    }
+
     pub fn set_status(&mut self, status: StatusKind) {
         // Remove any existing status
         self.items
@@ -644,6 +669,28 @@ mod tests {
     fn test_conversation_state_new() {
         let state = ConversationState::new();
         assert!(state.items().is_empty());
+    }
+
+    #[test]
+    fn test_append_or_create_prose_consolidates_text() {
+        let mut state = ConversationState::new();
+        state.start_assistant_streaming();
+
+        // First text creates a prose block
+        state.append_or_create_prose("Line 1\n");
+        // Second text appends to the same block
+        state.append_or_create_prose("Line 2\n");
+        // Third text also appends
+        state.append_or_create_prose("Line 3\n");
+
+        // Should have exactly ONE assistant message with ONE block
+        assert_eq!(state.items().len(), 1);
+        if let ConversationItem::AssistantMessage { blocks, .. } = &state.items()[0] {
+            assert_eq!(blocks.len(), 1, "Should have exactly one prose block");
+            assert_eq!(blocks[0].text(), "Line 1\nLine 2\nLine 3\n");
+        } else {
+            panic!("Expected assistant message");
+        }
     }
 
     #[test]
