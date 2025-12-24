@@ -16,7 +16,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Paragraph, Widget, Wrap},
+    widgets::{Paragraph, Widget},
 };
 
 // =============================================================================
@@ -342,20 +342,21 @@ impl ConversationState {
 // =============================================================================
 
 /// Render a conversation item to lines
-pub fn render_item_to_lines(item: &ConversationItem) -> Vec<Line<'static>> {
+pub fn render_item_to_lines(item: &ConversationItem, width: usize) -> Vec<Line<'static>> {
     match item {
-        ConversationItem::UserMessage { content } => render_user_message(content),
+        ConversationItem::UserMessage { content } => render_user_message(content, width),
         ConversationItem::AssistantMessage {
             blocks,
             is_streaming,
-        } => render_assistant_blocks(blocks, *is_streaming),
+        } => render_assistant_blocks(blocks, *is_streaming, width),
         ConversationItem::Status(status) => render_status(status),
         ConversationItem::ToolCall(tool) => render_tool_call(tool),
     }
 }
 
-fn render_user_message(content: &str) -> Vec<Line<'static>> {
+fn render_user_message(content: &str, _width: usize) -> Vec<Line<'static>> {
     // User messages: inverted style with > prefix
+    // Note: User input is typically short, no wrapping applied
     let mut lines = Vec::new();
 
     // Add blank line before user message for spacing
@@ -378,7 +379,11 @@ fn render_user_message(content: &str) -> Vec<Line<'static>> {
 }
 
 /// Render assistant message blocks with streaming indicators
-fn render_assistant_blocks(blocks: &[ContentBlock], is_streaming: bool) -> Vec<Line<'static>> {
+fn render_assistant_blocks(
+    blocks: &[ContentBlock],
+    is_streaming: bool,
+    width: usize,
+) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     // Only add blank line for spacing if there's content to render
@@ -393,8 +398,8 @@ fn render_assistant_blocks(blocks: &[ContentBlock], is_streaming: bool) -> Vec<L
     for (idx, block) in blocks.iter().enumerate() {
         match block {
             ContentBlock::Prose { text, is_complete } => {
-                // Render prose as markdown
-                let markdown_lines = render_markdown_text(text);
+                // Render prose as markdown with word-aware wrapping
+                let markdown_lines = render_markdown_text(text, width);
 
                 // Add prefix/indent to each line, skipping leading empty lines
                 // to prevent orphaned prefix symbols
@@ -420,7 +425,7 @@ fn render_assistant_blocks(blocks: &[ContentBlock], is_streaming: bool) -> Vec<L
                 content,
                 is_complete,
             } => {
-                // Render code block with language
+                // Render code block - no wrapping for code
                 let code_lines = render_code_block(lang.as_deref(), content);
 
                 // Add prefix/indent to each line, skipping leading empty lines
@@ -463,9 +468,11 @@ fn add_assistant_prefix(line: Line<'static>, first_content_line: &mut bool) -> L
     Line::from(spans)
 }
 
-/// Helper to render markdown text
-fn render_markdown_text(content: &str) -> Vec<Line<'static>> {
-    let ansi_output = MARKDOWN_RENDERER.render(content);
+/// Helper to render markdown text with word-aware wrapping
+fn render_markdown_text(content: &str, width: usize) -> Vec<Line<'static>> {
+    // Use width for word-aware wrapping (0 = no wrap)
+    let wrap_width = if width > 0 { Some(width) } else { None };
+    let ansi_output = MARKDOWN_RENDERER.render_with_width(content, wrap_width);
     match ansi_output.into_text() {
         Ok(text) => text.lines,
         Err(_) => {
@@ -475,23 +482,24 @@ fn render_markdown_text(content: &str) -> Vec<Line<'static>> {
     }
 }
 
-/// Helper to render a code block with optional language
+/// Helper to render a code block with optional language (no wrapping)
 fn render_code_block(lang: Option<&str>, content: &str) -> Vec<Line<'static>> {
-    // Format as markdown code block and render
+    // Format as markdown code block and render without wrapping
     let markdown = if let Some(lang) = lang {
         format!("```{}\n{}\n```", lang, content)
     } else {
         format!("```\n{}\n```", content)
     };
 
-    render_markdown_text(&markdown)
+    // Code blocks don't wrap
+    render_markdown_text(&markdown, 0)
 }
 
 /// Legacy function for backward compatibility (now wraps block rendering)
 fn render_assistant_message(content: &str) -> Vec<Line<'static>> {
-    // Convert string to single prose block and render
+    // Convert string to single prose block and render with default width
     let blocks = vec![ContentBlock::prose(content)];
-    render_assistant_blocks(&blocks, false)
+    render_assistant_blocks(&blocks, false, 80) // Default 80 column width for tests
 }
 
 fn render_status(status: &StatusKind) -> Vec<Line<'static>> {
@@ -600,11 +608,11 @@ impl<'a> ConversationWidget<'a> {
         self
     }
 
-    fn render_to_lines(&self) -> Vec<Line<'static>> {
+    fn render_to_lines(&self, width: usize) -> Vec<Line<'static>> {
         let mut all_lines = Vec::new();
 
         for item in self.state.items() {
-            all_lines.extend(render_item_to_lines(item));
+            all_lines.extend(render_item_to_lines(item, width));
         }
 
         all_lines
@@ -613,7 +621,9 @@ impl<'a> ConversationWidget<'a> {
 
 impl Widget for ConversationWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let lines = self.render_to_lines();
+        // Content width minus prefix (" ● " = 3 chars)
+        let content_width = (area.width as usize).saturating_sub(3);
+        let lines = self.render_to_lines(content_width);
         let content_height = lines.len();
         let viewport_height = area.height as usize;
 
@@ -634,7 +644,8 @@ impl Widget for ConversationWidget<'_> {
                 width: area.width,
                 height: content_height as u16,
             };
-            let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+            // No Wrap needed - termimad pre-wraps at word boundaries
+            let paragraph = Paragraph::new(lines);
             paragraph.render(offset_area, buf);
         } else {
             // Content exceeds viewport - apply scroll
@@ -646,9 +657,8 @@ impl Widget for ConversationWidget<'_> {
             // Convert bottom-relative to top-relative scroll
             let top_scroll = max_scroll - effective_scroll;
 
-            let paragraph = Paragraph::new(lines)
-                .wrap(Wrap { trim: false })
-                .scroll((top_scroll as u16, 0));
+            // No Wrap needed - termimad pre-wraps at word boundaries
+            let paragraph = Paragraph::new(lines).scroll((top_scroll as u16, 0));
             paragraph.render(area, buf);
         }
     }
