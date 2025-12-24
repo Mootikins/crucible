@@ -46,7 +46,10 @@ impl DynamicAgent {
 
 #[async_trait]
 impl AgentHandle for DynamicAgent {
-    fn send_message_stream(&mut self, message: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
+    fn send_message_stream(
+        &mut self,
+        message: String,
+    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
         match self {
             Self::Acp(client) => client.send_message_stream(message),
             Self::Internal(handle) => handle.send_message_stream(message),
