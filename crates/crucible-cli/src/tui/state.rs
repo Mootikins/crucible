@@ -3,6 +3,7 @@
 //!
 //! Contains TuiState struct and related types for managing UI state.
 
+use crate::tui::notification::NotificationState;
 use crate::tui::streaming::StreamingBuffer;
 use crate::tui::InputAction;
 use crucible_core::events::SessionEvent;
@@ -248,6 +249,8 @@ pub struct TuiState {
     pub status_error: Option<String>,
     // Inline popup for slash commands / agents / files/notes
     pub popup: Option<PopupState>,
+    // Notification state for file watch events
+    pub notifications: NotificationState,
     #[allow(clippy::type_complexity)] // Complex callback type, not worth a type alias
     output_fn: Option<Box<dyn Fn(&str) + Send + Sync>>,
 }
@@ -269,6 +272,7 @@ impl TuiState {
             last_ctrl_c: None,
             status_error: None,
             popup: None,
+            notifications: NotificationState::new(),
             output_fn: None,
         }
     }
@@ -292,6 +296,7 @@ impl TuiState {
             last_ctrl_c: None,
             status_error: None,
             popup: None,
+            notifications: NotificationState::new(),
             output_fn: Some(Box::new(output_fn)),
         }
     }
@@ -688,5 +693,11 @@ mod tests {
         assert_eq!(state.popup.as_ref().unwrap().selected, 1);
         state.execute_action(InputAction::MovePopupSelection(1));
         assert_eq!(state.popup.as_ref().unwrap().selected, 0);
+    }
+
+    #[test]
+    fn test_tui_state_has_notifications() {
+        let state = TuiState::new("plan");
+        assert!(state.notifications.is_empty());
     }
 }
