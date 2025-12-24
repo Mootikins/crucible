@@ -57,6 +57,8 @@ pub struct RatatuiRunner {
     prev_token_count: usize,
     /// Spinner animation frame (cycles 0-3)
     spinner_frame: usize,
+    /// Animation frame counter for timing (60fps loop)
+    animation_frame: usize,
     /// Track if we're currently streaming
     is_streaming: bool,
     /// Track Ctrl+C for double-press exit
@@ -88,6 +90,7 @@ impl RatatuiRunner {
             token_count: 0,
             prev_token_count: 0,
             spinner_frame: 0,
+            animation_frame: 0,
             is_streaming: false,
             ctrl_c_count: 0,
             last_ctrl_c: None,
@@ -286,6 +289,15 @@ impl RatatuiRunner {
                     let _ = task.await; // Just cleanup, events already processed
                     self.streaming_rx = None;
                 }
+            }
+
+            // 7. Animate spinner during thinking phase (before tokens arrive)
+            // The loop runs at ~60fps (16ms). Animate spinner every ~6 frames (~100ms).
+            self.animation_frame = self.animation_frame.wrapping_add(1);
+            if self.is_streaming && self.token_count == 0 && self.animation_frame % 6 == 0 {
+                self.spinner_frame = self.spinner_frame.wrapping_add(1);
+                self.view
+                    .set_status(StatusKind::Thinking { spinner_frame: self.spinner_frame });
             }
         }
 

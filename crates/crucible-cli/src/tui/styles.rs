@@ -92,7 +92,8 @@ pub mod indicators {
     pub const USER_PREFIX: &str = ">";
 
     /// Assistant message prefix (aligns with user prefix column)
-    pub const ASSISTANT_PREFIX: &str = "·";
+    /// Options considered: · (too subtle), ▸ (used for mode), › (too similar to >)
+    pub const ASSISTANT_PREFIX: &str = "●";
 
     /// Mode indicator arrow
     pub const MODE_ARROW: &str = "▸";
