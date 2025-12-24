@@ -522,11 +522,7 @@ async fn run_deferred_chat(
     status.success("Ready");
 
     // Create session configuration (splash enabled for picker)
-    let session_config = SessionConfig::new(
-        initial_mode,
-        !no_context,
-        context_size,
-    ); // skip_splash defaults to false
+    let session_config = SessionConfig::new(initial_mode, !no_context, context_size); // skip_splash defaults to false
 
     let mut session = ChatSession::new(session_config, core.clone(), None);
 
