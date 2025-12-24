@@ -52,9 +52,23 @@ impl NotificationState {
     /// Drain pending events and format a notification
     ///
     /// Returns None if no pending events, otherwise returns a message and level.
+    /// Errors take priority over file changes.
     pub fn render_tick(&mut self) -> Option<(String, NotificationLevel)> {
         if self.pending_changes.is_empty() && self.pending_errors.is_empty() {
             return None;
+        }
+
+        // Errors take priority - clear pending changes
+        if !self.pending_errors.is_empty() {
+            self.pending_changes.clear();
+            let count = self.pending_errors.len();
+            let message = if count == 1 {
+                format!("✗ error: {}", self.pending_errors.remove(0))
+            } else {
+                format!("✗ {} errors", count)
+            };
+            self.pending_errors.clear();
+            return Some((message, NotificationLevel::Error));
         }
 
         // Process changes
@@ -142,5 +156,15 @@ mod tests {
         state.push_change(PathBuf::from("/notes/c.md"));
         let (msg, _) = state.render_tick().unwrap();
         assert_eq!(msg, "3 files modified");
+    }
+
+    #[test]
+    fn test_errors_take_priority() {
+        let mut state = NotificationState::new();
+        state.push_change(PathBuf::from("/notes/a.md"));
+        state.push_error("parse failed".into());
+        let (msg, level) = state.render_tick().unwrap();
+        assert!(msg.contains("error") || msg.contains("✗"));
+        assert_eq!(level, NotificationLevel::Error);
     }
 }
