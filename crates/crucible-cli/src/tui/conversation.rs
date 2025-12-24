@@ -51,11 +51,24 @@ pub enum ConversationItem {
 #[derive(Debug, Clone, PartialEq)]
 pub enum StatusKind {
     /// Agent is thinking (no output yet)
-    Thinking,
+    Thinking {
+        /// Spinner animation frame (0-3)
+        spinner_frame: usize,
+    },
     /// Agent is generating tokens
-    Generating { token_count: usize },
+    Generating {
+        token_count: usize,
+        /// Previous token count for direction indicator
+        prev_token_count: usize,
+        /// Spinner animation frame (0-3)
+        spinner_frame: usize,
+    },
     /// Processing (generic)
-    Processing { message: String },
+    Processing {
+        message: String,
+        /// Spinner animation frame (0-3)
+        spinner_frame: usize,
+    },
 }
 
 /// Tool call display state
@@ -111,6 +124,24 @@ impl ConversationState {
     }
 
     pub fn push_assistant_message(&mut self, content: impl Into<String>) {
+        // Guard: Don't add a non-streaming message if streaming is active
+        // This prevents double messages from race conditions
+        if self.items.iter().any(|item| {
+            matches!(
+                item,
+                ConversationItem::AssistantMessage {
+                    is_streaming: true,
+                    ..
+                }
+            )
+        }) {
+            // Just append to the streaming message instead
+            let content = content.into();
+            self.append_or_create_prose(&content);
+            self.complete_streaming();
+            return;
+        }
+
         // For non-streaming messages, create a single prose block
         let blocks = vec![ContentBlock::prose(content.into())];
         self.items.push(ConversationItem::AssistantMessage {
@@ -120,7 +151,22 @@ impl ConversationState {
     }
 
     /// Start streaming an assistant message (creates empty blocks list)
+    ///
+    /// If already streaming, does nothing to prevent duplicate messages.
     pub fn start_assistant_streaming(&mut self) {
+        // Guard: Don't start a new streaming message if one is already active
+        if self.items.iter().any(|item| {
+            matches!(
+                item,
+                ConversationItem::AssistantMessage {
+                    is_streaming: true,
+                    ..
+                }
+            )
+        }) {
+            return;
+        }
+
         self.items.push(ConversationItem::AssistantMessage {
             blocks: Vec::new(),
             is_streaming: true,
@@ -338,15 +384,26 @@ fn render_assistant_blocks(blocks: &[ContentBlock], is_streaming: bool) -> Vec<L
     // Add blank line for spacing
     lines.push(Line::from(""));
 
+    // Track if we've added the first-line prefix yet
+    let mut first_content_line = true;
+
     for (idx, block) in blocks.iter().enumerate() {
         match block {
             ContentBlock::Prose { text, is_complete } => {
                 // Render prose as markdown
-                lines.extend(render_markdown_text(text));
+                let markdown_lines = render_markdown_text(text);
+
+                // Add prefix/indent to each line
+                for line in markdown_lines {
+                    lines.push(add_assistant_prefix(line, &mut first_content_line));
+                }
 
                 // Show streaming cursor on incomplete blocks
                 if !is_complete && is_streaming && idx == blocks.len() - 1 {
-                    lines.push(Line::from(Span::styled("▌", presets::streaming())));
+                    lines.push(Line::from(vec![
+                        Span::raw("   "), // Indent to match
+                        Span::styled("▌", presets::streaming()),
+                    ]));
                 }
             }
             ContentBlock::Code {
@@ -355,17 +412,42 @@ fn render_assistant_blocks(blocks: &[ContentBlock], is_streaming: bool) -> Vec<L
                 is_complete,
             } => {
                 // Render code block with language
-                lines.extend(render_code_block(lang.as_deref(), content));
+                let code_lines = render_code_block(lang.as_deref(), content);
+
+                // Add prefix/indent to each line
+                for line in code_lines {
+                    lines.push(add_assistant_prefix(line, &mut first_content_line));
+                }
 
                 // Show streaming cursor on incomplete blocks
                 if !is_complete && is_streaming && idx == blocks.len() - 1 {
-                    lines.push(Line::from(Span::styled("▌", presets::streaming())));
+                    lines.push(Line::from(vec![
+                        Span::raw("   "), // Indent to match
+                        Span::styled("▌", presets::streaming()),
+                    ]));
                 }
             }
         }
     }
 
     lines
+}
+
+/// Add assistant prefix to a line (first line gets " · ", others get "   ")
+fn add_assistant_prefix(line: Line<'static>, first_content_line: &mut bool) -> Line<'static> {
+    let prefix = if *first_content_line {
+        *first_content_line = false;
+        Span::styled(
+            format!(" {} ", indicators::ASSISTANT_PREFIX),
+            presets::assistant_prefix(),
+        )
+    } else {
+        Span::raw("   ") // 3-space indent for continuation
+    };
+
+    let mut spans = vec![prefix];
+    spans.extend(line.spans);
+    Line::from(spans)
 }
 
 /// Helper to render markdown text
@@ -400,28 +482,46 @@ fn render_assistant_message(content: &str) -> Vec<Line<'static>> {
 }
 
 fn render_status(status: &StatusKind) -> Vec<Line<'static>> {
-    let (indicator, text, style) = match status {
-        StatusKind::Thinking => (
-            indicators::THINKING,
-            "Thinking...".to_string(),
-            presets::thinking(),
-        ),
-        StatusKind::Generating { token_count } => {
+    let (spinner_frame, text, style) = match status {
+        StatusKind::Thinking { spinner_frame } => {
+            (*spinner_frame, "Thinking...".to_string(), presets::thinking())
+        }
+        StatusKind::Generating {
+            token_count,
+            prev_token_count,
+            spinner_frame,
+        } => {
             let text = if *token_count > 0 {
-                format!("Generating... ({} tokens)", token_count)
+                // Direction indicator based on token change
+                let direction = if *token_count > *prev_token_count {
+                    "↑"
+                } else if *token_count < *prev_token_count {
+                    "↓"
+                } else {
+                    " "
+                };
+                format!("Generating... {}{} tokens", direction, token_count)
             } else {
                 "Generating...".to_string()
             };
-            (indicators::STREAMING, text, presets::streaming())
+            (*spinner_frame, text, presets::streaming())
         }
-        StatusKind::Processing { message } => {
-            (indicators::STREAMING, message.clone(), presets::streaming())
-        }
+        StatusKind::Processing {
+            message,
+            spinner_frame,
+        } => (*spinner_frame, message.clone(), presets::streaming()),
     };
 
+    // Get spinner character (cycle through frames)
+    let spinner = indicators::SPINNER_FRAMES[spinner_frame % indicators::SPINNER_FRAMES.len()];
+
+    // Format with alignment prefix: " ◐ " aligns with " > " and " · "
     vec![
         Line::from(""),
-        Line::from(vec![Span::styled(format!("{} {}", indicator, text), style)]),
+        Line::from(vec![
+            Span::styled(format!(" {} ", spinner), style),
+            Span::styled(text, style),
+        ]),
     ]
 }
 
@@ -747,8 +847,8 @@ mod tests {
     #[test]
     fn test_set_status_replaces_existing() {
         let mut state = ConversationState::new();
-        state.set_status(StatusKind::Thinking);
-        state.set_status(StatusKind::Generating { token_count: 50 });
+        state.set_status(StatusKind::Thinking { spinner_frame: 0 });
+        state.set_status(StatusKind::Generating { token_count: 50, prev_token_count: 0, spinner_frame: 0 });
 
         let status_count = state
             .items()
@@ -888,6 +988,34 @@ mod tests {
     }
 
     #[test]
+    fn test_inline_code_preserves_spacing() {
+        // Test that inline code doesn't lose leading/trailing spaces
+        let content = "Run `cargo test` and check output.";
+        let lines = render_assistant_message(content);
+
+        // Get the full text content (skip the prefix added by add_assistant_prefix)
+        let text: String = lines
+            .iter()
+            .skip(1) // Skip blank line
+            .flat_map(|line| line.spans.iter().skip(1)) // Skip the prefix span
+            .map(|span| span.content.as_ref())
+            .collect();
+
+        // Should preserve spacing: "Run " + "cargo test" + " and check output."
+        // The inline code should have space before and after
+        assert!(
+            text.contains("Run "),
+            "Expected 'Run ' before inline code, got: '{}'",
+            text
+        );
+        assert!(
+            text.contains(" and check"),
+            "Expected ' and check' after inline code, got: '{}'",
+            text
+        );
+    }
+
+    #[test]
     fn test_assistant_message_plain_text_unchanged() {
         let content = "Just plain text here.";
         let lines = render_assistant_message(content);
@@ -920,6 +1048,80 @@ mod tests {
             .any(|line| line.spans.iter().any(|span| span.style != Style::default()));
 
         assert!(has_styling, "Expected markdown formatting to apply styles");
+    }
+
+    // =============================================================================
+    // Message Alignment Tests
+    // =============================================================================
+
+    #[test]
+    fn test_user_and_assistant_prefix_alignment() {
+        // User messages should have " > " prefix (3 chars: space + > + space)
+        let user_lines = render_user_message("Hello");
+        // Skip the blank line
+        let user_content_line = &user_lines[1];
+
+        // Check user prefix starts with " > "
+        let user_text: String = user_content_line
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            user_text.starts_with(" > "),
+            "User message should start with ' > ', got: '{}'",
+            user_text
+        );
+
+        // Assistant messages should have " · " prefix (3 chars: space + · + space)
+        let blocks = vec![crate::tui::ContentBlock::prose("World")];
+        let assistant_lines = render_assistant_blocks(&blocks, false);
+        // Skip the blank line
+        let assistant_content_line = &assistant_lines[1];
+
+        // Check assistant prefix starts with " · "
+        let assistant_text: String = assistant_content_line
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            assistant_text.starts_with(" · "),
+            "Assistant message should start with ' · ', got: '{}'",
+            assistant_text
+        );
+    }
+
+    #[test]
+    fn test_assistant_multiline_alignment() {
+        // Multi-line assistant messages should have:
+        // - First line: " · " prefix
+        // - Continuation lines: "   " (3 spaces) indent
+        let blocks = vec![crate::tui::ContentBlock::prose("Line one\nLine two\nLine three")];
+        let lines = render_assistant_blocks(&blocks, false);
+
+        // Skip blank line, get content lines
+        let content_lines: Vec<_> = lines.iter().skip(1).collect();
+
+        // All content lines should start with 3-char prefix
+        for (i, line) in content_lines.iter().enumerate() {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            if i == 0 {
+                assert!(
+                    text.starts_with(" · "),
+                    "First line should have ' · ' prefix, got: '{}'",
+                    text
+                );
+            } else if !text.trim().is_empty() {
+                // Continuation lines should have indent
+                assert!(
+                    text.starts_with("   "),
+                    "Continuation line {} should have 3-space indent, got: '{}'",
+                    i,
+                    text
+                );
+            }
+        }
     }
 
     // =============================================================================

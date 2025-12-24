@@ -517,7 +517,7 @@ fn conversation_thinking_status() {
     let mut terminal = test_terminal();
     let mut conv = ConversationState::new();
     conv.push_user_message("What is the architecture?");
-    conv.set_status(StatusKind::Thinking);
+    conv.set_status(StatusKind::Thinking { spinner_frame: 0 });
 
     render_conversation_view(&mut terminal, &conv, "", "plan", None, "Ready");
     assert_snapshot!("conv_thinking", terminal.backend());
@@ -528,7 +528,7 @@ fn conversation_generating_with_tokens() {
     let mut terminal = test_terminal();
     let mut conv = ConversationState::new();
     conv.push_user_message("Explain this code");
-    conv.set_status(StatusKind::Generating { token_count: 127 });
+    conv.set_status(StatusKind::Generating { token_count: 127, prev_token_count: 0, spinner_frame: 0 });
 
     render_conversation_view(&mut terminal, &conv, "", "act", Some(127), "Generating");
     assert_snapshot!("conv_generating_tokens", terminal.backend());
@@ -723,7 +723,7 @@ fn send_message_clears_input() {
     // 2. Add user message to conversation
     view.push_user_message("Hello world").unwrap();
     // 3. Set thinking status
-    view.set_status(StatusKind::Thinking);
+    view.set_status(StatusKind::Thinking { spinner_frame: 0 });
     view.set_status_text("Thinking");
 
     // Capture "after" state
@@ -756,7 +756,7 @@ fn send_message_shows_thinking_status() {
     // Simulate SendMessage flow
     view.push_user_message("What is the project structure?")
         .unwrap();
-    view.set_status(StatusKind::Thinking);
+    view.set_status(StatusKind::Thinking { spinner_frame: 0 });
     view.set_status_text("Thinking");
     view.set_input(""); // Should be cleared
 

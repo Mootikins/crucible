@@ -2,6 +2,16 @@
 //!
 //! Coordinates terminal input, event polling, and rendering.
 //! Uses ratatui with alternate screen for full viewport control.
+//!
+//! ## Debug Logging
+//!
+//! To see full output including prompts and responses:
+//! ```bash
+//! RUST_LOG=crucible_cli::tui::runner=debug cru chat
+//! tail -f ~/.crucible/chat.log  # in another terminal
+//! ```
+
+use tracing::debug;
 
 use crate::chat::bridge::AgentEventBridge;
 use crate::tui::agent_picker::AgentSelection;
@@ -43,6 +53,10 @@ pub struct RatatuiRunner {
     popup_provider: std::sync::Arc<DynamicPopupProvider>,
     /// Token count from current/last response
     token_count: usize,
+    /// Previous token count for direction indicator
+    prev_token_count: usize,
+    /// Spinner animation frame (cycles 0-3)
+    spinner_frame: usize,
     /// Track if we're currently streaming
     is_streaming: bool,
     /// Track Ctrl+C for double-press exit
@@ -72,6 +86,8 @@ impl RatatuiRunner {
             view: RatatuiView::new(mode_id, width, height),
             popup_provider,
             token_count: 0,
+            prev_token_count: 0,
+            spinner_frame: 0,
             is_streaming: false,
             ctrl_c_count: 0,
             last_ctrl_c: None,
@@ -199,9 +215,13 @@ impl RatatuiRunner {
                 while let Ok(event) = rx.try_recv() {
                     match event {
                         StreamingEvent::Delta { text, seq: _ } => {
+                            self.prev_token_count = self.token_count;
                             self.token_count += 1;
+                            self.spinner_frame = self.spinner_frame.wrapping_add(1);
                             self.view.set_status(StatusKind::Generating {
                                 token_count: self.token_count,
+                                prev_token_count: self.prev_token_count,
+                                spinner_frame: self.spinner_frame,
                             });
 
                             // Feed delta through parser
@@ -218,6 +238,7 @@ impl RatatuiRunner {
                         StreamingEvent::Done { full_response } => {
                             self.is_streaming = false;
                             self.view.clear_status();
+                            debug!(response_len = full_response.len(), "Streaming complete");
 
                             // Finalize parser
                             if let Some(parser) = &mut self.streaming_parser {
@@ -378,11 +399,14 @@ impl RatatuiRunner {
 
                 // Add user message to view
                 self.view.push_user_message(&msg)?;
+                debug!(prompt = %msg, "User message sent");
 
                 // Set thinking status
                 self.is_streaming = true;
                 self.token_count = 0;
-                self.view.set_status(StatusKind::Thinking);
+                self.prev_token_count = 0;
+                self.spinner_frame = 0;
+                self.view.set_status(StatusKind::Thinking { spinner_frame: 0 });
                 self.view.set_status_text("Thinking");
 
                 // Initialize streaming parser and start streaming message in view
@@ -511,24 +535,36 @@ impl RatatuiRunner {
                 if let Some(cmd_name) = extract_command_name(&cmd) {
                     match cmd_name {
                         "help" => {
-                            // TODO: Show help dialog or message
-                            self.view.set_status_text("Help command (not yet implemented)");
+                            // Show help via status and/or inject help into chat
+                            let help_text = "Shortcuts: Shift+Tab=mode, Ctrl+C=cancel, ↑↓=scroll, @=context, /=commands";
+                            self.view.set_status_text(help_text);
                         }
                         "clear" => {
-                            // TODO: Clear conversation history
-                            self.view.set_status_text("Clear command (not yet implemented)");
+                            // Clear conversation history
+                            self.view.state_mut().conversation.clear();
+                            self.view.set_status_text("Conversation cleared");
                         }
-                        "mode" => {
-                            // TODO: Parse mode argument and switch mode
-                            self.view.set_status_text("Mode command (not yet implemented)");
+                        "mode" | "plan" | "act" | "auto" => {
+                            // Mode switching via commands is deprecated - use Shift+Tab
+                            self.view.set_status_text("Use Shift+Tab to switch modes");
                         }
                         "search" => {
-                            // TODO: Trigger search
-                            self.view.set_status_text("Search command (not yet implemented)");
+                            // Extract query after /search
+                            let query = cmd.strip_prefix("/search").unwrap_or("").trim();
+                            if query.is_empty() {
+                                self.view.set_status_text("Usage: /search <query> — or just type your search in chat");
+                            } else {
+                                // Set up search prompt in input - user can press Enter to send
+                                let search_prompt = format!("Search my notes for: {}", query);
+                                self.view.set_input(&search_prompt);
+                                self.view.set_cursor_position(search_prompt.len());
+                                self.view.set_status_text("Press Enter to search");
+                                return Ok(false); // Don't clear input
+                            }
                         }
                         "context" => {
-                            // TODO: Show/manage context
-                            self.view.set_status_text("Context command (not yet implemented)");
+                            // Show context management help
+                            self.view.set_status_text("Use @note:<path> or @file:<path> to inject context");
                         }
                         "exit" | "quit" => {
                             // Already handled by Exit action in map_key_event
@@ -584,9 +620,13 @@ impl RatatuiRunner {
             match &*event {
                 SessionEvent::TextDelta { delta, .. } => {
                     // Update token count and status
+                    self.prev_token_count = self.token_count;
                     self.token_count += delta.split_whitespace().count();
+                    self.spinner_frame = self.spinner_frame.wrapping_add(1);
                     self.view.set_status(StatusKind::Generating {
                         token_count: self.token_count,
+                        prev_token_count: self.prev_token_count,
+                        spinner_frame: self.spinner_frame,
                     });
                     self.view.set_status_text("Generating");
                     self.view.set_token_count(Some(self.token_count));

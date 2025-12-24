@@ -52,7 +52,7 @@ pub const RESERVED_COMMANDS: &[&str] = &[
     "search",  // Search knowledge base
     "context", // Context management
     "clear",   // Clear screen/context
-    "mode",    // Mode switching
+    // Note: /mode removed - use Shift+Tab for mode switching
 ];
 
 /// Unshadowable commands that can NEVER be overridden by agents.
@@ -705,7 +705,7 @@ mod tests {
         assert!(is_reserved("search"));
         assert!(is_reserved("context"));
         assert!(is_reserved("clear"));
-        assert!(is_reserved("mode"));
+        // Note: mode removed - use Shift+Tab for mode switching
     }
 
     #[test]
