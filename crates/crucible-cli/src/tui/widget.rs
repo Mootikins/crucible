@@ -296,7 +296,7 @@ pub fn render_widget_dynamic<W: Write>(
 pub fn render_status_line<W: Write>(
     writer: &mut W,
     mode_id: &str,
-    _width: u16,
+    width: u16,
     notification: Option<(&str, NotificationLevel)>,
 ) -> io::Result<()> {
     let (mode_str, mode_color) = match mode_id {
@@ -305,6 +305,10 @@ pub fn render_status_line<W: Write>(
         "auto" => ("Auto", ansi::RED),
         _ => ("Unknown", ansi::RESET),
     };
+
+    // Calculate visible lengths (excluding ANSI codes)
+    let left_content = format!("[{}] │ Ready", mode_str);
+    let left_len = left_content.chars().count();
 
     // Format: [Mode] │ Ready [notification]
     // No trailing newline - this is the bottom line
@@ -317,9 +321,19 @@ pub fn render_status_line<W: Write>(
         ansi::RESET,
     )?;
 
-    // Append notification if present
+    // Append notification if present, right-aligned
     if let Some((msg, _level)) = notification {
-        write!(writer, " {}", msg)?;
+        let msg_len = msg.chars().count();
+        let total_content_len = left_len + msg_len;
+
+        // Calculate padding needed for right-alignment
+        if total_content_len < width as usize {
+            let padding = width as usize - total_content_len;
+            write!(writer, "{:padding$}{}", "", msg, padding = padding)?;
+        } else {
+            // Not enough space, just add minimal spacing
+            write!(writer, " {}", msg)?;
+        }
     }
 
     write!(writer, "{}", ansi::CLEAR_LINE)
@@ -1077,6 +1091,61 @@ mod tests {
         let output = String::from_utf8(buffer).unwrap();
         assert!(output.contains("[Plan]"));
         assert!(output.contains("todo.md modified"));
+    }
+
+    #[test]
+    fn test_status_line_notification_right_aligned() {
+        use crate::tui::notification::NotificationLevel;
+        let mut buffer = Vec::new();
+        render_status_line(
+            &mut buffer,
+            "plan",
+            60,
+            Some(("test.md modified", NotificationLevel::Info)),
+        ).unwrap();
+        let output = String::from_utf8(buffer).unwrap();
+
+        // Strip ANSI codes to check layout
+        let stripped = strip_ansi_codes(&output);
+        assert!(stripped.contains("test.md modified"));
+
+        // The notification should be right-aligned
+        // Expected format: "[Plan] │ Ready" + padding + "test.md modified"
+        // Visible length of "[Plan] │ Ready " is 16 chars
+        // Notification "test.md modified" is 16 chars
+        // Terminal width is 60
+        // So we need: 60 - 16 - 16 = 28 spaces of padding
+        let parts: Vec<&str> = stripped.split("Ready").collect();
+        assert_eq!(parts.len(), 2, "Should have text before and after Ready");
+        let after_ready = parts[1];
+
+        // Count leading spaces after "Ready"
+        let spaces = after_ready.chars().take_while(|c| *c == ' ').count();
+        // Should have significant padding (at least 20 spaces for right-alignment)
+        assert!(
+            spaces >= 20,
+            "Should have at least 20 spaces for right-alignment, got {}",
+            spaces
+        );
+    }
+
+    /// Strip ANSI escape codes from a string for testing visible content
+    fn strip_ansi_codes(s: &str) -> String {
+        let mut result = String::new();
+        let mut chars = s.chars();
+        while let Some(ch) = chars.next() {
+            if ch == '\x1b' {
+                // Skip until we find a letter (end of ANSI sequence)
+                for c in chars.by_ref() {
+                    if c.is_ascii_alphabetic() || c == 'm' {
+                        break;
+                    }
+                }
+            } else {
+                result.push(ch);
+            }
+        }
+        result
     }
 
     // ========================================================================
