@@ -176,6 +176,7 @@ impl RatatuiView {
         let constraints = if popup_height > 0 {
             vec![
                 Constraint::Min(3),               // Conversation area
+                Constraint::Length(1),            // Spacer above input (visual separation)
                 Constraint::Length(popup_height), // Popup
                 Constraint::Length(3),            // Input box
                 Constraint::Length(1),            // Status bar
@@ -183,6 +184,7 @@ impl RatatuiView {
         } else {
             vec![
                 Constraint::Min(3),    // Conversation area
+                Constraint::Length(1), // Spacer above input (visual separation)
                 Constraint::Length(3), // Input box
                 Constraint::Length(1), // Status bar
             ]
@@ -199,6 +201,9 @@ impl RatatuiView {
         let conv_widget = ConversationWidget::new(&self.state.conversation)
             .scroll_offset(self.state.scroll_offset);
         frame.render_widget(conv_widget, chunks[idx]);
+        idx += 1;
+
+        // Spacer (visual separation before input - just skip it, it remains empty)
         idx += 1;
 
         // Popup (if active)
