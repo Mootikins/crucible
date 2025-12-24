@@ -33,6 +33,7 @@ async fn test_full_chat_pipeline() {
             rerank_candidates: Some(10),
             enable_cache: true,
             cache_ttl_secs: 300,
+            inject_context: false,
         },
         streaming: StreamConfig {
             show_thoughts: true,
@@ -745,6 +746,7 @@ async fn baseline_chat_configuration_comprehensive() {
             rerank_candidates: Some(20),
             enable_cache: true,
             cache_ttl_secs: 600,
+            inject_context: false,
         },
         streaming: StreamConfig {
             show_thoughts: true,
@@ -772,6 +774,7 @@ async fn baseline_chat_configuration_comprehensive() {
             rerank_candidates: None,
             enable_cache: false,
             cache_ttl_secs: 0,
+            inject_context: false,
         },
         streaming: StreamConfig {
             show_thoughts: false,
@@ -1313,18 +1316,19 @@ async fn integration_context_enrichment() {
         rerank_candidates: None,
         enable_cache: false,
         cache_ttl_secs: 0,
+        inject_context: false, // Default off for ACP agents
     };
 
     let enricher = PromptEnricher::new(config);
 
-    // Test simple enrichment
+    // Test simple enrichment - with inject_context: false, returns query as-is
     let query = "What is semantic search?";
     let enriched = enricher.enrich(query).await;
     assert!(enriched.is_ok());
 
     let result = enriched.unwrap();
-    // Enriched query should contain original query
-    assert!(result.contains(query) || !result.is_empty());
+    // With inject_context: false, should return original query
+    assert_eq!(result, query);
 }
 
 /// Integration test: PromptEnricher with caching
@@ -1339,6 +1343,7 @@ async fn integration_context_enrichment_with_cache() {
         rerank_candidates: None,
         enable_cache: true,
         cache_ttl_secs: 60,
+        inject_context: false, // Default off - cache still works for passthrough
     };
 
     let enricher = PromptEnricher::new(config);
@@ -1348,13 +1353,13 @@ async fn integration_context_enrichment_with_cache() {
     let result1 = enricher.enrich(query).await;
     assert!(result1.is_ok());
 
-    // Second enrichment (should hit cache)
+    // Second enrichment (with inject_context: false, both just passthrough)
     let result2 = enricher.enrich(query).await;
     assert!(result2.is_ok());
 
-    // Both should succeed
-    assert!(!result1.unwrap().is_empty());
-    assert!(!result2.unwrap().is_empty());
+    // Both should return the original query
+    assert_eq!(result1.unwrap(), query);
+    assert_eq!(result2.unwrap(), query);
 }
 
 /// Integration test: PromptEnricher disabled
@@ -1369,6 +1374,7 @@ async fn integration_context_enrichment_disabled() {
         rerank_candidates: None,
         enable_cache: false,
         cache_ttl_secs: 0,
+        inject_context: false,
     };
 
     let enricher = PromptEnricher::new(config);
@@ -1401,6 +1407,7 @@ async fn integration_stream_with_enrichment() {
         rerank_candidates: None,
         enable_cache: false,
         cache_ttl_secs: 0,
+        inject_context: false, // Default off for ACP
     };
     let enricher = PromptEnricher::new(context_config);
 

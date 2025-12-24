@@ -217,6 +217,7 @@ mod client_tests {
                 rerank_candidates: Some(30),
                 enable_cache: true,
                 cache_ttl_secs: 600,
+                inject_context: false,
             },
             streaming: StreamConfig::default(),
             auto_prune: false,

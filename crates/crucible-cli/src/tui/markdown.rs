@@ -82,11 +82,8 @@ impl MarkdownRenderer {
             &self.skin_light
         };
 
-        // Pre-process: add padding spaces inside inline code for visual clarity
-        let processed = Self::add_inline_code_padding(markdown);
-
         // Use termimad's word-aware wrapping when width is specified
-        skin.text(&processed, width).to_string()
+        skin.text(markdown, width).to_string()
     }
 
     /// Add padding spaces inside inline code backticks for visual clarity
