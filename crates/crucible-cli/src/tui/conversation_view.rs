@@ -378,10 +378,7 @@ impl RatatuiView {
 
     /// Check if splash needs availability probing
     pub fn splash_needs_probing(&self) -> bool {
-        self.state
-            .splash
-            .as_ref()
-            .is_some_and(|s| !s.probed)
+        self.state.splash.as_ref().is_some_and(|s| !s.probed)
     }
 
     /// Update splash screen agent availability
@@ -415,6 +412,13 @@ impl RatatuiView {
     /// Mark the last block as complete
     pub fn complete_last_block(&mut self) {
         self.state.conversation.complete_last_block();
+    }
+
+    /// Append text to the last prose block, or create a new one if needed
+    /// Used for streaming to consolidate continuous prose text
+    pub fn append_or_create_prose(&mut self, text: &str) {
+        self.state.conversation.append_or_create_prose(text);
+        self.scroll_to_bottom();
     }
 
     /// Push a dialog onto the stack

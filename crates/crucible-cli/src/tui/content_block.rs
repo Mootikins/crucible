@@ -64,6 +64,16 @@ impl ContentBlock {
         }
     }
 
+    /// Check if this is a prose block
+    pub fn is_prose(&self) -> bool {
+        matches!(self, Self::Prose { .. })
+    }
+
+    /// Check if this is a code block
+    pub fn is_code(&self) -> bool {
+        matches!(self, Self::Code { .. })
+    }
+
     /// Mark the block as complete
     pub fn complete(&mut self) {
         match self {

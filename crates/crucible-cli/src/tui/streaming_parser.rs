@@ -65,10 +65,10 @@ impl StreamingParser {
 
         match &self.state {
             ParserState::Text => {
-                // Emit any remaining text (content_buffer has complete lines, line_buffer has partial)
-                let text = format!("{}{}", self.content_buffer, self.line_buffer);
-                if !text.is_empty() {
-                    events.push(ParseEvent::Text(text));
+                // Emit any remaining partial line (text before final newline)
+                // Note: complete lines are emitted immediately in process_text_line
+                if !self.line_buffer.is_empty() {
+                    events.push(ParseEvent::Text(std::mem::take(&mut self.line_buffer)));
                 }
             }
             ParserState::InCodeBlock { .. } => {
@@ -147,9 +147,9 @@ impl StreamingParser {
             }
         }
 
-        // Regular text line - accumulate
-        self.content_buffer.push_str(&line);
-        vec![]
+        // Regular text line - emit immediately for responsive streaming
+        // Each line becomes a Text event so the UI updates as content arrives
+        vec![ParseEvent::Text(line)]
     }
 
     fn process_code_line(
@@ -235,13 +235,21 @@ mod tests {
     #[test]
     fn test_plain_text_multiline() {
         let mut parser = StreamingParser::new();
-        parser.feed("Line 1\nLine 2\nLine 3");
+        // Lines are emitted immediately as they complete (on newline)
+        let events = parser.feed("Line 1\nLine 2\nLine 3");
 
-        let events = parser.finalize();
+        // First two lines are complete (end with \n), third is partial
         assert_eq!(
             events,
-            vec![ParseEvent::Text("Line 1\nLine 2\nLine 3".into())]
+            vec![
+                ParseEvent::Text("Line 1\n".into()),
+                ParseEvent::Text("Line 2\n".into()),
+            ]
         );
+
+        // Finalize emits the remaining partial line
+        let final_events = parser.finalize();
+        assert_eq!(final_events, vec![ParseEvent::Text("Line 3".into())]);
     }
 
     #[test]

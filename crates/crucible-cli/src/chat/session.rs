@@ -310,6 +310,7 @@ impl ChatSession {
 
         // Create and run TUI
         let mut runner = RatatuiRunner::new(&self.config.initial_mode_id, popup_provider.clone())?;
+
         runner.run(&bridge, agent).await
     }
 }

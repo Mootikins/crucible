@@ -67,8 +67,31 @@ pub async fn execute(
 
     // Get default agent from config before moving config
     let default_agent_from_config = config.acp.default_agent.clone();
+    let lazy_agent_selection = config.acp.lazy_agent_selection;
 
-    // Determine agent type
+    // Determine if we should show agent picker
+    // Show picker if: lazy_agent_selection=true AND no --agent AND not --internal AND interactive mode
+    let should_show_picker =
+        lazy_agent_selection && agent_name.is_none() && !use_internal && query.is_none();
+
+    // Run agent picker if needed (before agent creation)
+    // Shadows the input parameters with the resolved selection
+    let (agent_name, use_internal) = if should_show_picker {
+        use crate::tui::{pick_agent, AgentSelection};
+
+        match pick_agent().await? {
+            AgentSelection::Acp(name) => (Some(name), false),
+            AgentSelection::Internal => (None, true),
+            AgentSelection::Cancelled => {
+                // User quit from picker
+                return Ok(());
+            }
+        }
+    } else {
+        (agent_name, use_internal)
+    };
+
+    // Determine agent type based on selection
     let agent_type = if use_internal {
         factories::AgentType::Internal
     } else {

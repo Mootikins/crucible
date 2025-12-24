@@ -48,6 +48,19 @@ Specific model to use.
 cru chat --internal --provider ollama --model llama3.2
 ```
 
+### `--agent <AGENT>` (ACP Mode)
+
+Specify which ACP agent to use. Skips the splash screen and connects directly.
+
+```bash
+cru chat --agent opencode
+cru chat --agent claude
+```
+
+Available agents: `opencode`, `claude`, `gemini`, `codex`, `cursor` (requires agent to be installed)
+
+When `--agent` is specified, Crucible bypasses the splash screen and connects directly to the specified agent.
+
 ## Chat Modes
 
 ### Plan Mode (Default)

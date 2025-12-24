@@ -24,6 +24,10 @@ pub struct AcpConfig {
     /// Custom agent profiles with environment variable overrides
     #[serde(default)]
     pub agents: HashMap<String, AgentProfile>,
+    /// Enable lazy agent selection (show splash to pick agent before creating)
+    /// When false, agent is created immediately on startup
+    #[serde(default = "default_true")]
+    pub lazy_agent_selection: bool,
 }
 
 /// Configuration profile for an ACP agent
@@ -62,6 +66,7 @@ impl Default for AcpConfig {
             max_message_size_mb: 25,
             streaming_timeout_minutes: 15,
             agents: HashMap::new(),
+            lazy_agent_selection: true, // Show splash by default
         }
     }
 }
@@ -150,5 +155,36 @@ mod tests {
         assert!(profile.command.is_none());
         assert!(profile.args.is_none());
         assert!(profile.env.is_empty());
+    }
+
+    // =============================================================================
+    // Lazy Agent Selection Config Tests (TDD - RED phase)
+    // =============================================================================
+
+    #[test]
+    fn test_lazy_agent_selection_defaults_to_true() {
+        // By default, agent selection should be lazy (show splash, create agent after)
+        let config = AcpConfig::default();
+        assert!(config.lazy_agent_selection);
+    }
+
+    #[test]
+    fn test_lazy_agent_selection_can_be_disabled() {
+        let toml = r#"
+            lazy_agent_selection = false
+        "#;
+
+        let config: AcpConfig = toml::from_str(toml).expect("should parse");
+        assert!(!config.lazy_agent_selection);
+    }
+
+    #[test]
+    fn test_lazy_agent_selection_explicit_true() {
+        let toml = r#"
+            lazy_agent_selection = true
+        "#;
+
+        let config: AcpConfig = toml::from_str(toml).expect("should parse");
+        assert!(config.lazy_agent_selection);
     }
 }
