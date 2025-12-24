@@ -181,6 +181,7 @@ impl RatatuiRunner {
                     let selected = popup.selected.min(items.len().saturating_sub(1));
                     popup.items = items;
                     popup.selected = selected;
+                    popup.update_viewport(5); // MAX_POPUP_ITEMS
                 }
             }
             // Sync popup state to view for rendering
@@ -477,6 +478,7 @@ impl RatatuiRunner {
             InputAction::MovePopupSelection(delta) => {
                 if let Some(ref mut popup) = self.popup {
                     popup.move_selection(delta);
+                    popup.update_viewport(5); // MAX_POPUP_ITEMS
                 }
             }
             InputAction::ConfirmPopup => {
@@ -488,6 +490,52 @@ impl RatatuiRunner {
                         self.view.set_cursor_position(token.len());
                     }
                 }
+                self.popup = None;
+            }
+            InputAction::ExecuteSlashCommand(cmd) => {
+                // Extract command name and route to handler
+                use crate::tui::popup::extract_command_name;
+
+                if let Some(cmd_name) = extract_command_name(&cmd) {
+                    match cmd_name {
+                        "help" => {
+                            // TODO: Show help dialog or message
+                            self.view.set_status_text("Help command (not yet implemented)");
+                        }
+                        "clear" => {
+                            // TODO: Clear conversation history
+                            self.view.set_status_text("Clear command (not yet implemented)");
+                        }
+                        "mode" => {
+                            // TODO: Parse mode argument and switch mode
+                            self.view.set_status_text("Mode command (not yet implemented)");
+                        }
+                        "search" => {
+                            // TODO: Trigger search
+                            self.view.set_status_text("Search command (not yet implemented)");
+                        }
+                        "context" => {
+                            // TODO: Show/manage context
+                            self.view.set_status_text("Context command (not yet implemented)");
+                        }
+                        "exit" | "quit" => {
+                            // Already handled by Exit action in map_key_event
+                            return Ok(true);
+                        }
+                        _ => {
+                            // Unknown command - should not reach here due to is_exact_slash_command check
+                            self.view.set_status_text(&format!("Unknown command: {}", cmd_name));
+                        }
+                    }
+                }
+
+                // TODO: Slash command arguments not yet implemented
+                // When adding: parse args after command name, validate required args,
+                // show help text for missing required args
+
+                // Clear input after executing
+                self.view.set_input("");
+                self.view.set_cursor_position(0);
                 self.popup = None;
             }
             InputAction::None => {}

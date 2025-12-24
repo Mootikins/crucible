@@ -31,6 +31,7 @@ mod convert;
 mod formatter;
 mod mapper;
 mod query;
+mod tabular;
 
 pub use convert::{parse_input, to_json, to_toon, Format, InputFormat, OutputFormat};
 pub use formatter::{
@@ -41,6 +42,7 @@ pub use mapper::{
     Mapper, MapperRegistry, TruncateMapper,
 };
 pub use query::{compile_filter, run_filter, CompiledFilter};
+pub use tabular::encode_table;
 
 use thiserror::Error;
 

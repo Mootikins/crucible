@@ -3,6 +3,7 @@
 //!
 //! Maps crossterm key events to TUI actions.
 
+use crate::tui::popup::is_exact_slash_command;
 use crate::tui::state::TuiState;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::time::Duration;
@@ -18,6 +19,7 @@ pub enum InputAction {
     MoveCursorRight,
     MovePopupSelection(isize),
     ConfirmPopup,
+    ExecuteSlashCommand(String),
     ScrollUp,
     ScrollDown,
     PageUp,
@@ -60,8 +62,17 @@ pub fn map_key_event(event: &KeyEvent, state: &TuiState) -> InputAction {
                 InputAction::None
             } else if trimmed == "/exit" || trimmed == "/quit" || trimmed == "/q" {
                 InputAction::Exit
-            } else if trimmed.starts_with('/') || trimmed.starts_with('@') {
-                // Popup completion - Tab or Enter confirms
+            } else if trimmed.starts_with('/') {
+                // Check if this is an exact command match
+                if is_exact_slash_command(trimmed) {
+                    InputAction::ExecuteSlashCommand(trimmed.to_string())
+                } else if state.popup.is_some() {
+                    InputAction::ConfirmPopup
+                } else {
+                    // Unknown command, no popup - do nothing
+                    InputAction::None
+                }
+            } else if trimmed.starts_with('@') && state.popup.is_some() {
                 InputAction::ConfirmPopup
             } else {
                 InputAction::SendMessage(state.input_buffer.clone())
@@ -189,5 +200,93 @@ mod tests {
         let action = map_key_event(&event, &state);
 
         assert_eq!(action, InputAction::InsertChar('a'));
+    }
+}
+
+#[cfg(test)]
+mod slash_command_tests {
+    use super::*;
+    use crate::tui::state::{PopupKind, PopupState};
+
+    fn make_enter() -> KeyEvent {
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn test_enter_partial_command_with_popup_confirms() {
+        // Input: "/hel" with popup open
+        // Expected: ConfirmPopup (fill in the completion)
+        let mut state = TuiState::new("plan");
+        state.input_buffer = "/hel".to_string();
+        state.popup = Some(PopupState::new(PopupKind::Command));
+
+        let action = map_key_event(&make_enter(), &state);
+        assert!(
+            matches!(action, InputAction::ConfirmPopup),
+            "Partial command with popup should confirm, got: {:?}",
+            action
+        );
+    }
+
+    #[test]
+    fn test_enter_exact_command_executes() {
+        // Input: "/help" (exact match, no popup needed)
+        // Expected: ExecuteSlashCommand("/help")
+        let mut state = TuiState::new("plan");
+        state.input_buffer = "/help".to_string();
+
+        let action = map_key_event(&make_enter(), &state);
+        assert!(
+            matches!(action, InputAction::ExecuteSlashCommand(ref cmd) if cmd == "/help"),
+            "Exact command should execute, got: {:?}",
+            action
+        );
+    }
+
+    #[test]
+    fn test_enter_exact_command_with_args_executes() {
+        // Input: "/mode code" (command with args)
+        // Expected: ExecuteSlashCommand("/mode code")
+        let mut state = TuiState::new("plan");
+        state.input_buffer = "/mode code".to_string();
+
+        let action = map_key_event(&make_enter(), &state);
+        assert!(
+            matches!(action, InputAction::ExecuteSlashCommand(ref cmd) if cmd == "/mode code"),
+            "Exact command with args should execute, got: {:?}",
+            action
+        );
+    }
+
+    #[test]
+    fn test_enter_unknown_command_no_popup_noop() {
+        // Input: "/xyz" (unknown command, no popup)
+        // Expected: None (do nothing)
+        let mut state = TuiState::new("plan");
+        state.input_buffer = "/xyz".to_string();
+        state.popup = None;
+
+        let action = map_key_event(&make_enter(), &state);
+        assert!(
+            matches!(action, InputAction::None),
+            "Unknown command without popup should do nothing, got: {:?}",
+            action
+        );
+    }
+
+    #[test]
+    fn test_enter_at_with_popup_confirms() {
+        // Input: "@agent" with popup open
+        // Expected: ConfirmPopup
+        let mut state = TuiState::new("plan");
+        state.input_buffer = "@agent".to_string();
+        state.popup = Some(PopupState::new(PopupKind::AgentOrFile));
+
+        let action = map_key_event(&make_enter(), &state);
+        assert!(
+            matches!(action, InputAction::ConfirmPopup),
+            "@ trigger with popup should confirm, got: {:?}",
+            action
+        );
     }
 }

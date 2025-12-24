@@ -244,8 +244,9 @@ impl RatatuiView {
         let lines: Vec<Line> = popup
             .items
             .iter()
-            .take(Self::MAX_POPUP_ITEMS)
             .enumerate()
+            .skip(popup.viewport_offset)
+            .take(Self::MAX_POPUP_ITEMS)
             .map(|(idx, item)| {
                 let mut spans = Vec::new();
                 let marker = if idx == popup.selected { ">" } else { " " };
@@ -622,6 +623,7 @@ mod tests {
                 available: true,
             }],
             selected: 0,
+            viewport_offset: 0,
             last_update: Instant::now(),
         };
         view.set_popup(Some(popup));
@@ -670,6 +672,7 @@ mod tests {
                 available: true,
             }],
             selected: 0,
+            viewport_offset: 0,
             last_update: Instant::now(),
         };
         view.set_popup(Some(popup));
@@ -761,5 +764,179 @@ mod tests {
             !view.state().at_bottom,
             "Should NOT be at_bottom when scroll_offset > 0"
         );
+    }
+
+    // =============================================================================
+    // Viewport Rendering Tests
+    // =============================================================================
+
+    /// Test that render_popup() uses viewport_offset to skip items
+    /// This test should FAIL because render_popup() currently does:
+    ///   popup.items.iter().take(MAX_POPUP_ITEMS)
+    /// instead of:
+    ///   popup.items.iter().skip(viewport_offset).take(MAX_POPUP_ITEMS)
+    #[test]
+    fn test_render_popup_uses_viewport_offset() {
+        let mut view = RatatuiView::new("plan", 80, 24);
+
+        // Create popup with 10 items, viewport_offset=3, selected=5
+        let items = (0..10)
+            .map(|i| PopupItem {
+                kind: PopupItemKind::Command,
+                title: format!("Item {}", i),
+                subtitle: format!("Subtitle {}", i),
+                token: format!("token{}", i),
+                score: 0,
+                available: true,
+            })
+            .collect();
+
+        let popup = PopupState {
+            kind: PopupKind::Command,
+            query: String::new(),
+            items,
+            selected: 5,
+            viewport_offset: 3,
+            last_update: Instant::now(),
+        };
+        view.set_popup(Some(popup));
+
+        // Render to test backend
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| view.render_frame(f)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content: String = (0..buffer.area().height)
+            .flat_map(|y| {
+                (0..buffer.area().width)
+                    .map(move |x| buffer.cell((x, y)).map(|c| c.symbol()).unwrap_or(" "))
+            })
+            .collect();
+
+        // With viewport_offset=3, we should see items 3,4,5,6,7
+        // NOT items 0,1,2,3,4
+        assert!(
+            content.contains("Item 3"),
+            "Viewport should show Item 3 (first visible item). Buffer: {}",
+            content
+        );
+        assert!(
+            content.contains("Item 4"),
+            "Viewport should show Item 4. Buffer: {}",
+            content
+        );
+        assert!(
+            content.contains("Item 5"),
+            "Viewport should show Item 5 (selected). Buffer: {}",
+            content
+        );
+        assert!(
+            content.contains("Item 6"),
+            "Viewport should show Item 6. Buffer: {}",
+            content
+        );
+        assert!(
+            content.contains("Item 7"),
+            "Viewport should show Item 7 (last visible item). Buffer: {}",
+            content
+        );
+
+        // Should NOT show items before viewport
+        assert!(
+            !content.contains("Item 0"),
+            "Viewport should NOT show Item 0 (before viewport_offset). Buffer: {}",
+            content
+        );
+        assert!(
+            !content.contains("Item 1"),
+            "Viewport should NOT show Item 1 (before viewport_offset). Buffer: {}",
+            content
+        );
+        assert!(
+            !content.contains("Item 2"),
+            "Viewport should NOT show Item 2 (before viewport_offset). Buffer: {}",
+            content
+        );
+    }
+
+    /// Test that render_popup() highlights the selected item at correct visual position
+    /// This test should FAIL because the current code uses enumerated index for highlighting,
+    /// not the actual item index. With viewport_offset=3, selected=5, the selected item should
+    /// be at visual position 2 (since we show items 3,4,5,6,7 and item 5 is at index 2).
+    #[test]
+    fn test_render_popup_selected_highlight_correct() {
+        let mut view = RatatuiView::new("plan", 80, 24);
+
+        // Create popup with 10 items, viewport_offset=3, selected=5
+        let items = (0..10)
+            .map(|i| PopupItem {
+                kind: PopupItemKind::Command,
+                title: format!("Item {}", i),
+                subtitle: format!("Subtitle {}", i),
+                token: format!("token{}", i),
+                score: 0,
+                available: true,
+            })
+            .collect();
+
+        let popup = PopupState {
+            kind: PopupKind::Command,
+            query: String::new(),
+            items,
+            selected: 5,
+            viewport_offset: 3,
+            last_update: Instant::now(),
+        };
+        view.set_popup(Some(popup));
+
+        // Render to test backend
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| view.render_frame(f)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+
+        // Find the line containing "Item 5" and check if it has the highlight marker ">"
+        // The highlight marker should be at the start of the line
+        let mut found_item_5 = false;
+        let mut has_highlight_marker = false;
+
+        for y in 0..buffer.area().height {
+            let line: String = (0..buffer.area().width)
+                .map(|x| buffer.cell((x, y)).map(|c| c.symbol()).unwrap_or(" "))
+                .collect();
+
+            if line.contains("Item 5") {
+                found_item_5 = true;
+                // Check if this line has the ">" marker at the start (after border)
+                // The format is: "│> [cmd] Item 5 Subtitle 5..."
+                has_highlight_marker = line.contains("│> ");
+                break;
+            }
+        }
+
+        assert!(found_item_5, "Should render Item 5 in viewport");
+        assert!(
+            has_highlight_marker,
+            "Item 5 should have highlight marker '>' since it's selected"
+        );
+
+        // Additionally, verify that other visible items do NOT have the marker
+        for y in 0..buffer.area().height {
+            let line: String = (0..buffer.area().width)
+                .map(|x| buffer.cell((x, y)).map(|c| c.symbol()).unwrap_or(" "))
+                .collect();
+
+            // Items 3, 4, 6, 7 should NOT have the highlight marker
+            if line.contains("Item 3") || line.contains("Item 4") || line.contains("Item 6") || line.contains("Item 7") {
+                let has_marker = line.contains("│> ");
+                assert!(
+                    !has_marker,
+                    "Non-selected items should NOT have highlight marker '>'. Line: {}",
+                    line
+                );
+            }
+        }
     }
 }

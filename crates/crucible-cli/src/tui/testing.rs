@@ -87,6 +87,7 @@ impl TestStateBuilder {
             query: String::new(),
             items,
             selected: 0,
+            viewport_offset: 0,
             last_update: Instant::now(),
         });
         self

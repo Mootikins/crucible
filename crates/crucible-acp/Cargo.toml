@@ -21,6 +21,9 @@ crucible-config = { path = "../crucible-config" }
 # Crucible tools for execution
 crucible-tools = { path = "../crucible-tools" }
 
+# TOON Query language for tabular encoding
+tq = { path = "../tq" }
+
 # MCP server transport
 rmcp = { version = "0.9.0", features = ["macros", "server", "transport-sse-server"] }
 
@@ -68,6 +71,7 @@ tempfile = { workspace = true }
 tracing-subscriber = { workspace = true }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 which = "8.0"
+regex = "1.11"
 
 # Test binaries for integration testing
 [[test]]
