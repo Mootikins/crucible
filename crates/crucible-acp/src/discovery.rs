@@ -31,9 +31,19 @@ pub struct AgentInfo {
 /// Known ACP-compatible agents (name, command, args, description)
 const KNOWN_AGENTS: &[(&str, &str, &[&str], &str)] = &[
     ("opencode", "opencode", &["acp"], "OpenCode AI (Go)"),
-    ("claude", "npx", &["@zed-industries/claude-code-acp"], "Claude Code via ACP"),
+    (
+        "claude",
+        "npx",
+        &["@zed-industries/claude-code-acp"],
+        "Claude Code via ACP",
+    ),
     ("gemini", "gemini", &[], "Google Gemini CLI"),
-    ("codex", "npx", &["@zed-industries/codex-acp"], "OpenAI Codex via ACP"),
+    (
+        "codex",
+        "npx",
+        &["@zed-industries/codex-acp"],
+        "OpenAI Codex via ACP",
+    ),
     ("cursor", "cursor-acp", &[], "Cursor IDE via ACP"),
 ];
 
@@ -102,7 +112,8 @@ pub async fn discover_agent(preferred: Option<&str>) -> Result<AgentInfo> {
     // If a preferred agent is specified, check it first (single probe)
     if let Some(agent_name) = preferred {
         debug!("Trying preferred agent: {}", agent_name);
-        if let Some((name, cmd, args, _)) = KNOWN_AGENTS.iter().find(|(n, _, _, _)| *n == agent_name)
+        if let Some((name, cmd, args, _)) =
+            KNOWN_AGENTS.iter().find(|(n, _, _, _)| *n == agent_name)
         {
             if is_agent_available(cmd).await {
                 info!("Using preferred agent: {}", agent_name);
@@ -259,10 +270,7 @@ pub async fn is_agent_available(command: &str) -> bool {
 
             // For certain commands, trust PATH check without --version verification
             if TRUST_PATH_COMMANDS.contains(&command) {
-                debug!(
-                    "Agent '{}' trusted without --version check",
-                    command
-                );
+                debug!("Agent '{}' trusted without --version check", command);
                 return true;
             }
 

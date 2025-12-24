@@ -81,6 +81,11 @@ impl RatatuiRunner {
         })
     }
 
+    /// Skip the splash screen (e.g., when agent was pre-specified via CLI)
+    pub fn skip_splash(&mut self) {
+        self.view.dismiss_splash();
+    }
+
     /// Run the TUI main loop with an agent.
     pub async fn run<A: AgentHandle>(
         &mut self,
@@ -307,7 +312,10 @@ impl RatatuiRunner {
                 // Confirm with Enter, Space, or 'l' (vim-style right/accept)
                 KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('l') => {
                     if let Some(_agent_name) = self.view.splash_confirm() {
-                        // TODO: Use agent_name to configure agent
+                        // NOTE: Agent is already created before TUI starts. To support
+                        // splash agent selection, we would need to defer agent creation
+                        // until after selection. For now, use --agent CLI flag instead.
+                        // The splash shows available agents but doesn't switch agents.
                         self.view.dismiss_splash();
                     }
                     return Ok(false);
@@ -519,16 +527,14 @@ impl RatatuiRunner {
                     self.view.set_token_count(Some(self.token_count));
                 }
                 SessionEvent::AgentResponded {
-                    content,
+                    content: _,
                     tool_calls: _,
                 } => {
-                    // Streaming complete
+                    // Streaming complete - message already built via streaming channel
+                    // Don't add another message here to avoid duplicates
                     self.is_streaming = false;
                     self.view.clear_status();
                     self.view.set_status_text("Ready");
-
-                    // Add assistant message
-                    let _ = self.view.push_assistant_message(content);
                 }
                 SessionEvent::ToolCalled { name, args: _ } => {
                     self.view.push_tool_running(name);
@@ -619,9 +625,9 @@ impl RatatuiRunner {
         for event in events {
             match event {
                 ParseEvent::Text(text) => {
-                    // Text becomes a complete prose block
-                    self.view
-                        .append_streaming_blocks(vec![ContentBlock::prose(text)]);
+                    // Append to existing prose block if possible, otherwise create new
+                    // This consolidates streaming text into continuous prose
+                    self.view.append_or_create_prose(&text);
                 }
                 ParseEvent::CodeBlockStart { lang } => {
                     // Start a new partial code block

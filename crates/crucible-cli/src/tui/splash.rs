@@ -77,11 +77,7 @@ impl SplashState {
         self.probed = true;
 
         // Update default to first available agent
-        if let Some(idx) = self
-            .agents
-            .iter()
-            .position(|a| a.available == Some(true))
-        {
+        if let Some(idx) = self.agents.iter().position(|a| a.available == Some(true)) {
             // Clear old default
             for agent in &mut self.agents {
                 agent.is_default = false;
@@ -146,10 +142,10 @@ impl SplashState {
         self.agents.get(self.selected_index)
     }
 
-    /// Check if current selection can be confirmed (is available)
+    /// Check if current selection can be confirmed (must be confirmed available)
     pub fn can_confirm(&self) -> bool {
         self.selected_agent()
-            .map(|a| a.available != Some(false))
+            .map(|a| a.available == Some(true))
             .unwrap_or(false)
     }
 }
@@ -359,11 +355,11 @@ mod tests {
     }
 
     #[test]
-    fn test_can_confirm_blocks_unavailable() {
+    fn test_can_confirm_requires_known_availability() {
         let mut state = SplashState::new(test_cwd());
 
-        // Unknown availability = can confirm
-        assert!(state.can_confirm());
+        // Unknown availability = cannot confirm (must wait for probe)
+        assert!(!state.can_confirm());
 
         // Mark current selection as unavailable
         state.agents[0].available = Some(false);
