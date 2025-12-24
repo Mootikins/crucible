@@ -4,6 +4,7 @@
 //! then formats them as right-aligned notifications in the statusline.
 
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 /// Notification severity level
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,6 +24,12 @@ pub struct NotificationState {
     pending_changes: Vec<PathBuf>,
     /// Pending error messages (accumulated between ticks)
     pending_errors: Vec<String>,
+    /// Current notification message (owned)
+    current_message: String,
+    /// Current notification level
+    current_level: NotificationLevel,
+    /// When the current notification expires
+    expires_at: Option<Instant>,
 }
 
 impl NotificationState {
@@ -31,6 +38,9 @@ impl NotificationState {
         Self {
             pending_changes: Vec::new(),
             pending_errors: Vec::new(),
+            current_message: String::new(),
+            current_level: NotificationLevel::Info,
+            expires_at: None,
         }
     }
 
@@ -51,45 +61,64 @@ impl NotificationState {
 
     /// Drain pending events and format a notification
     ///
-    /// Returns None if no pending events, otherwise returns a message and level.
+    /// Returns None if no pending events or notification expired, otherwise
+    /// returns a reference to the current message and its level.
     /// Errors take priority over file changes.
-    pub fn render_tick(&mut self) -> Option<(String, NotificationLevel)> {
-        if self.pending_changes.is_empty() && self.pending_errors.is_empty() {
-            return None;
+    pub fn render_tick(&mut self) -> Option<(&str, NotificationLevel)> {
+        // Check if current notification has expired
+        if let Some(expires) = self.expires_at {
+            if Instant::now() >= expires {
+                self.expires_at = None;
+                self.current_message.clear();
+            }
         }
 
-        // Errors take priority - clear pending changes
-        if !self.pending_errors.is_empty() {
-            self.pending_changes.clear();
-            let count = self.pending_errors.len();
-            let message = if count == 1 {
-                format!("✗ error: {}", self.pending_errors.remove(0))
-            } else {
-                format!("✗ {} errors", count)
-            };
-            self.pending_errors.clear();
-            return Some((message, NotificationLevel::Error));
+        // If there are new events, drain and format them
+        if !self.pending_changes.is_empty() || !self.pending_errors.is_empty() {
+            // Errors take priority - clear pending changes
+            if !self.pending_errors.is_empty() {
+                self.pending_changes.clear();
+                let count = self.pending_errors.len();
+                self.current_message = if count == 1 {
+                    format!("✗ error: {}", self.pending_errors.remove(0))
+                } else {
+                    format!("✗ {} errors", count)
+                };
+                self.pending_errors.clear();
+                self.current_level = NotificationLevel::Error;
+                self.expires_at = Some(Instant::now() + Duration::from_secs(5));
+            }
+            // Process changes
+            else if !self.pending_changes.is_empty() {
+                let count = self.pending_changes.len();
+                self.current_message = if count == 1 {
+                    let path = self.pending_changes.remove(0);
+                    let filename = path
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("unknown");
+                    format!("{} modified", filename)
+                } else {
+                    format!("{} files modified", count)
+                };
+                self.pending_changes.clear();
+                self.current_level = NotificationLevel::Info;
+                self.expires_at = Some(Instant::now() + Duration::from_secs(2));
+            }
         }
 
-        // Process changes
-        if !self.pending_changes.is_empty() {
-            let count = self.pending_changes.len();
-            let message = if count == 1 {
-                let path = self.pending_changes.remove(0);
-                let filename = path
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("unknown");
-                format!("{} modified", filename)
-            } else {
-                format!("{} files modified", count)
-            };
-            self.pending_changes.clear();
-
-            return Some((message, NotificationLevel::Info));
+        // Return current message if not expired
+        if !self.current_message.is_empty() {
+            Some((&self.current_message, self.current_level))
+        } else {
+            None
         }
+    }
 
-        None
+    /// Force expiry of current notification (for testing)
+    #[cfg(test)]
+    pub fn force_expire_for_testing(&mut self) {
+        self.expires_at = Some(Instant::now() - Duration::from_secs(1));
     }
 }
 
@@ -166,5 +195,14 @@ mod tests {
         let (msg, level) = state.render_tick().unwrap();
         assert!(msg.contains("error") || msg.contains("✗"));
         assert_eq!(level, NotificationLevel::Error);
+    }
+
+    #[test]
+    fn test_notification_expires() {
+        let mut state = NotificationState::new();
+        state.push_change(PathBuf::from("/notes/a.md"));
+        assert!(state.render_tick().is_some());
+        state.force_expire_for_testing();
+        assert!(state.render_tick().is_none());
     }
 }
