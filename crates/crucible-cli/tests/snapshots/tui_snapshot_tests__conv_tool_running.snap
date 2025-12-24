@@ -19,7 +19,7 @@ expression: terminal.backend()
 "                                                                                "
 " > Find auth files                                                              "
 "                                                                                "
-" · Let me search for authentication-related files.                              "
+" ● Let me search for authentication-related files.                              "
 "                                                                                "
 "◐ grep "auth" --type rs                                                         "
 "                                                                                "

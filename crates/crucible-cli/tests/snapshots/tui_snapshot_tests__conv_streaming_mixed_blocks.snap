@@ -18,7 +18,7 @@ expression: terminal.backend()
 "                                                                                "
 " > Explain                                                                      "
 "                                                                                "
-" · First paragraph complete.                                                    "
+" ● First paragraph complete.                                                    "
 "   fn example() {}                                                              "
 "   Now continuin                                                                "
 "   ▌                                                                            "
