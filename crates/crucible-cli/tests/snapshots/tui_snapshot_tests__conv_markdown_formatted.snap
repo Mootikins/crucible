@@ -9,7 +9,7 @@ expression: terminal.backend()
 "                                                                                "
 " > Show me an example                                                           "
 "                                                                                "
-" · Here's a Rust example:                                                       "
+" ● Here's a Rust example:                                                       "
 "                                                                                "
 "                                                                                "
 "   fn main() {                                                                  "

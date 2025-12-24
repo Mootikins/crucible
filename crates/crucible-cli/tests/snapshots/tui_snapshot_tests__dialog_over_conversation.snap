@@ -20,7 +20,7 @@ expression: terminal.backend()
 "                    └──────────────────────────────────────┘                    "
 " > What is the project structure?                                               "
 "                                                                                "
-" · Let me analyze the codebase.                                                 "
+" ● Let me analyze the codebase.                                                 "
 "                                                                                "
 "                                                                                "
 " >                                                                              "

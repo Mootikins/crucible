@@ -14,7 +14,7 @@ expression: terminal.backend()
 "                                                                                "
 " > Search the codebase                                                          "
 "                                                                                "
-" · I'll search for relevant files.                                              "
+" ● I'll search for relevant files.                                              "
 "                                                                                "
 "✓ grep pattern → 12 matches                                                     "
 "                                                                                "
