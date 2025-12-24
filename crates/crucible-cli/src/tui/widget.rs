@@ -186,27 +186,63 @@ pub mod ansi {
 /// * `mode_id` - Mode identifier for icon/color lookup
 /// * `mode_name` - Human-readable mode name for display
 /// * `width` - Terminal width for padding
+/// * `notification` - Optional notification message and level
 pub fn render_status_line_dynamic<W: Write>(
     writer: &mut W,
     mode_id: &str,
     mode_name: &str,
-    _width: u16,
+    width: u16,
+    notification: Option<(&str, NotificationLevel)>,
 ) -> io::Result<()> {
     let icon = mode_icon(mode_id);
     let color = mode_color(mode_id);
 
-    // Format: [icon Mode] │ Ready
+    // Calculate visible lengths (excluding ANSI codes)
+    let left_content = format!("[{} {}] │ Ready", icon, mode_name);
+    let left_len = left_content.chars().count();
+
+    // Format: [icon Mode] │ Ready [notification]
     // No trailing newline - this is the bottom line
     write!(
         writer,
-        "{}{}[{} {}]{} │ Ready{}",
+        "{}{}[{} {}]{} │ Ready",
         ansi::DIM,
         color,
         icon,
         mode_name,
         ansi::RESET,
-        ansi::CLEAR_LINE,
-    )
+    )?;
+
+    // Append notification if present, right-aligned
+    if let Some((msg, level)) = notification {
+        let msg_len = msg.chars().count();
+        let total_content_len = left_len + msg_len;
+
+        // Select color based on notification level
+        let notification_color = match level {
+            NotificationLevel::Info => ansi::DIM,
+            NotificationLevel::Error => ansi::RED,
+        };
+
+        // Calculate padding needed for right-alignment
+        if total_content_len < width as usize {
+            let padding = width as usize - total_content_len;
+            write!(
+                writer,
+                "{:padding$}{}{}{}",
+                "",
+                notification_color,
+                msg,
+                ansi::RESET,
+                padding = padding
+            )?;
+        } else {
+            // Not enough space, just add minimal spacing
+            write!(writer, " {}{}{}", notification_color, msg, ansi::RESET)?;
+        }
+    }
+
+    write!(writer, "{}", ansi::CLEAR_LINE)
 }
 
 /// Widget state for rendering with dynamic mode support
@@ -270,7 +306,7 @@ pub fn render_widget_dynamic<W: Write>(
     render_separator(writer, state.width)?;
 
     // Status line with dynamic mode
-    render_status_line_dynamic(writer, state.mode_id, state.mode_name, state.width)?;
+    render_status_line_dynamic(writer, state.mode_id, state.mode_name, state.width, None)?;
 
     // Position cursor in input area
     let input_row = position.start_row + heights.streaming + heights.upper_separator + 1;
@@ -639,7 +675,7 @@ mod tests {
     #[test]
     fn test_render_status_line_with_mode_id() {
         let mut buffer = Vec::new();
-        render_status_line_dynamic(&mut buffer, "plan", "Plan", 80).unwrap();
+        render_status_line_dynamic(&mut buffer, "plan", "Plan", 80, None).unwrap();
         let output = String::from_utf8(buffer).unwrap();
 
         assert!(output.contains("📖"), "Should contain plan icon");
@@ -650,7 +686,7 @@ mod tests {
     #[test]
     fn test_render_status_line_with_unknown_mode_id() {
         let mut buffer = Vec::new();
-        render_status_line_dynamic(&mut buffer, "agent-custom", "Custom Mode", 80).unwrap();
+        render_status_line_dynamic(&mut buffer, "agent-custom", "Custom Mode", 80, None).unwrap();
         let output = String::from_utf8(buffer).unwrap();
 
         assert!(output.contains("●"), "Should contain fallback icon");
