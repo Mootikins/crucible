@@ -3,7 +3,8 @@
 //! Provides a trait for rendering conversation history with full ratatui control.
 
 use crate::tui::conversation::{
-    ConversationState, ConversationWidget, InputBoxWidget, StatusBarWidget, StatusKind,
+    render_item_to_lines, ConversationState, ConversationWidget, InputBoxWidget, StatusBarWidget,
+    StatusKind,
 };
 use crate::tui::dialog::{DialogResult, DialogStack, DialogWidget};
 use crate::tui::notification::NotificationState;
@@ -331,8 +332,15 @@ impl RatatuiView {
 
     /// Calculate total content height for scroll bounds
     fn content_height(&self) -> usize {
-        // Rough estimate: count items * average lines per item
-        self.state.conversation.items().len() * 3
+        // Content width minus prefix (" · " = 3 chars) and right margin (1 char)
+        // Must match ConversationWidget::render
+        let content_width = (self.state.width as usize).saturating_sub(4);
+        self.state
+            .conversation
+            .items()
+            .iter()
+            .map(|item| render_item_to_lines(item, content_width).len())
+            .sum()
     }
 
     /// Select next agent in splash screen
@@ -600,17 +608,21 @@ mod tests {
     fn test_ratatui_view_scroll() {
         let mut view = RatatuiView::new("plan", 80, 24);
 
-        // Add some content
-        for i in 0..10 {
+        // Add enough content to exceed viewport (24 lines)
+        // Each user message is 2 lines (blank + content), so need >12 messages
+        for i in 0..15 {
             view.push_user_message(&format!("Message {}", i)).unwrap();
         }
 
         // Should be at bottom
         assert_eq!(view.state().scroll_offset, 0);
 
-        // Scroll up
+        // Scroll up - should work since 15 * 2 = 30 lines > 24 viewport
         view.scroll_up(5);
-        assert!(view.state().scroll_offset > 0);
+        assert!(
+            view.state().scroll_offset > 0,
+            "scroll_offset should be > 0 after scrolling up with 30 lines of content"
+        );
 
         // Scroll back down
         view.scroll_to_bottom();
@@ -777,6 +789,55 @@ mod tests {
         assert!(
             !view.state().at_bottom,
             "Should NOT be at_bottom when scroll_offset > 0"
+        );
+    }
+
+    /// Test that scrolling works correctly for messages with many lines.
+    ///
+    /// BUG: content_height() uses items.len() * 3, which severely underestimates
+    /// actual content height for messages with code blocks or multiple paragraphs.
+    /// This causes scroll_up to clamp scroll_offset too early, preventing users
+    /// from scrolling back to see older content.
+    #[test]
+    fn test_scroll_with_multiline_messages() {
+        let mut view = RatatuiView::new("plan", 80, 24);
+
+        // Add 5 messages, each with 10+ lines (code block)
+        // Total content should be ~50+ lines, not 15 (5 * 3)
+        for i in 0..5 {
+            let multiline_content = format!(
+                "Message {} with code:\n```\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\n```",
+                i
+            );
+            view.push_assistant_message(&multiline_content).unwrap();
+        }
+
+        // With viewport height 24 and actual content ~50+ lines,
+        // max_scroll should be ~26+ lines
+        // But buggy content_height() = 5 * 3 = 15
+        // Buggy max_scroll = 15 - 24 = 0 (saturating_sub)
+
+        // Try to scroll up significantly
+        view.scroll_up(100); // Request more than possible
+
+        // scroll_offset should be clamped to actual max_scroll (26+),
+        // not the buggy estimate (0)
+        // If content_height is calculated correctly, we should be able to scroll
+        assert!(
+            view.state().scroll_offset > 0,
+            "Should be able to scroll up when content exceeds viewport. \
+             scroll_offset={}, but expected > 0 (content should be ~50+ lines, viewport 24)",
+            view.state().scroll_offset
+        );
+
+        // More specifically: with 5 messages each having 10+ lines = 50+ content lines,
+        // and viewport of 24, max_scroll should be at least 26.
+        // The buggy implementation gives max_scroll = max(0, 15-24) = 0
+        assert!(
+            view.state().scroll_offset >= 20,
+            "scroll_offset should be at least 20 for 50+ lines of content with viewport 24. \
+             Got scroll_offset={}, which suggests content_height is being underestimated.",
+            view.state().scroll_offset
         );
     }
 

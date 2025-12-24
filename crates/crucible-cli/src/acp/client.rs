@@ -61,6 +61,7 @@ impl CrucibleAcpClient {
                 rerank_candidates: Some(15),
                 enable_cache: true,
                 cache_ttl_secs: 300,
+                inject_context: false, // ACP agents get tools via MCP
             },
             streaming: StreamConfig::default(),
             auto_prune: true,
