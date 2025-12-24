@@ -396,8 +396,14 @@ fn render_assistant_blocks(blocks: &[ContentBlock], is_streaming: bool) -> Vec<L
                 // Render prose as markdown
                 let markdown_lines = render_markdown_text(text);
 
-                // Add prefix/indent to each line
+                // Add prefix/indent to each line, skipping leading empty lines
+                // to prevent orphaned prefix symbols
                 for line in markdown_lines {
+                    // Skip leading empty lines (before any content has been shown)
+                    if first_content_line && line.spans.iter().all(|s| s.content.trim().is_empty())
+                    {
+                        continue;
+                    }
                     lines.push(add_assistant_prefix(line, &mut first_content_line));
                 }
 
@@ -417,8 +423,12 @@ fn render_assistant_blocks(blocks: &[ContentBlock], is_streaming: bool) -> Vec<L
                 // Render code block with language
                 let code_lines = render_code_block(lang.as_deref(), content);
 
-                // Add prefix/indent to each line
+                // Add prefix/indent to each line, skipping leading empty lines
                 for line in code_lines {
+                    if first_content_line && line.spans.iter().all(|s| s.content.trim().is_empty())
+                    {
+                        continue;
+                    }
                     lines.push(add_assistant_prefix(line, &mut first_content_line));
                 }
 

@@ -820,6 +820,60 @@ fn streaming_complete_blocks() {
 }
 
 // =============================================================================
+// Multi-turn Conversation Tests
+// =============================================================================
+// Tests for realistic multi-turn conversations with tool calls
+
+#[test]
+fn conversation_multiturn_with_tools() {
+    let mut terminal = test_terminal();
+    let mut conv = ConversationState::new();
+
+    // Turn 1: User asks, assistant responds with tool
+    conv.push_user_message("Read my note");
+    conv.start_assistant_streaming();
+    // Simulate prose that might have leading newline (common from LLM responses)
+    conv.append_streaming_blocks(vec![
+        ContentBlock::prose("\n▷ read({\"filePath\":\"docs/Note1.md\"})"),
+    ]);
+    conv.complete_streaming();
+
+    // Turn 2: User follows up
+    conv.push_user_message("Try again");
+    conv.push_assistant_message("Let me try a different approach.");
+
+    render_conversation_view(&mut terminal, &conv, "", "plan", None, "Ready");
+    assert_snapshot!("conv_multiturn_tools", terminal.backend());
+}
+
+#[test]
+fn prose_with_leading_newline_should_not_orphan_prefix() {
+    let mut terminal = test_terminal();
+    let mut conv = ConversationState::new();
+    conv.push_user_message("Test");
+    conv.start_assistant_streaming();
+    // Content starts with newline - prefix should NOT be on empty line
+    conv.append_streaming_blocks(vec![
+        ContentBlock::prose("\nThis is the actual content."),
+    ]);
+
+    render_conversation_view(&mut terminal, &conv, "", "plan", None, "Ready");
+
+    // Get the rendered output and check that ● is not on its own line
+    let backend = terminal.backend();
+    let buffer_str = format!("{:?}", backend);
+
+    // The prefix should be followed by content, not just whitespace
+    // If we see " ● " followed by only spaces until newline, that's a bug
+    assert!(
+        !buffer_str.contains("\" ● \""),
+        "Prefix should not be on its own line - got orphaned ● symbol"
+    );
+
+    assert_snapshot!("conv_prose_leading_newline", terminal.backend());
+}
+
+// =============================================================================
 // Dialog System Tests (Phase 5)
 // =============================================================================
 // Tests for modal dialogs with centered overlay rendering
