@@ -6,6 +6,7 @@ use crate::tui::conversation::{
     ConversationState, ConversationWidget, InputBoxWidget, StatusBarWidget, StatusKind,
 };
 use crate::tui::dialog::{DialogResult, DialogStack, DialogWidget};
+use crate::tui::notification::NotificationState;
 use crate::tui::splash::{SplashState, SplashWidget};
 use crate::tui::state::{PopupItem, PopupState};
 use anyhow::Result;
@@ -97,6 +98,8 @@ pub struct ViewState {
     pub splash: Option<SplashState>,
     /// Dialog stack for modal dialogs
     pub dialog_stack: DialogStack,
+    /// Notification state for file watch events
+    pub notifications: NotificationState,
 }
 
 impl ViewState {
@@ -119,6 +122,7 @@ impl ViewState {
                     .unwrap_or_else(|_| "~".to_string()),
             )),
             dialog_stack: DialogStack::new(),
+            notifications: NotificationState::new(),
         }
     }
 }
@@ -209,11 +213,13 @@ impl RatatuiView {
         frame.render_widget(input_widget, input_area);
         idx += 1;
 
-        // Status bar
+        // Status bar with notification support
+        let notification = self.state.notifications.current();
         let mut status_widget = StatusBarWidget::new(&self.state.mode_id, &self.state.status_text);
         if let Some(count) = self.state.token_count {
             status_widget = status_widget.token_count(count);
         }
+        status_widget = status_widget.notification(notification);
         frame.render_widget(status_widget, chunks[idx]);
 
         // Render dialog on top if present (overlays everything)
