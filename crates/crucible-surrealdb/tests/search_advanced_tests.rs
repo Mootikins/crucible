@@ -5,6 +5,10 @@
 //! and link validation.
 //!
 //! All tests use the docs kiln at `docs/` for realistic test data.
+//!
+//! Run with: `just test fixtures` or `cargo test --features test-fixtures`
+
+#![cfg(feature = "test-fixtures")]
 
 mod common;
 

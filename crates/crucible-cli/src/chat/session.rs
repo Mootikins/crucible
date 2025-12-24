@@ -328,6 +328,74 @@ impl ChatSession {
 
         runner.run(&bridge, agent).await
     }
+
+    /// Run the session with deferred agent creation.
+    ///
+    /// Shows splash for agent selection, then creates agent using the factory.
+    /// All happens within a single TUI session (no terminal flicker).
+    pub async fn run_deferred<F, Fut, A>(&mut self, create_agent: F) -> Result<()>
+    where
+        F: FnOnce(crate::tui::AgentSelection) -> Fut,
+        Fut: std::future::Future<Output = Result<A>>,
+        A: AgentHandle,
+    {
+        // NOTE: For deferred creation, we can't get agent commands upfront.
+        // The factory will create the agent after selection.
+
+        // Build popup provider snapshot (without agent commands for now)
+        let command_items = self.command_registry.list_all();
+        let popup_provider = std::sync::Arc::new(DynamicPopupProvider::new());
+        popup_provider.set_commands(command_items);
+
+        // Spawn background indexing for workspace files and kiln notes
+        let popup_provider_files = popup_provider.clone();
+        let popup_provider_notes = popup_provider.clone();
+        let popup_provider_agents = popup_provider.clone();
+        let workspace_root =
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let kiln_root = self.core.config().kiln_path.clone();
+
+        // Workspace files: prefer git ls-files; fallback to walkdir; skip hidden; cap entries
+        tokio::spawn(async move {
+            if let Ok(files) =
+                tokio::task::spawn_blocking(move || index_workspace_files(&workspace_root)).await
+            {
+                popup_provider_files.set_files(files);
+            }
+        });
+
+        // Kiln notes: scan for markdown files; emit note:<path> (single kiln)
+        tokio::spawn(async move {
+            if let Ok(notes) =
+                tokio::task::spawn_blocking(move || index_kiln_notes(&kiln_root)).await
+            {
+                popup_provider_notes.set_notes(notes);
+            }
+        });
+
+        // Agents: include configured default agent (best-effort)
+        if let Some(default_agent) = self.core.config().acp.default_agent.clone() {
+            popup_provider_agents.set_agents(vec![(
+                default_agent,
+                "Configured default agent".to_string(),
+            )]);
+        }
+
+        // Create session for event ring management
+        let session_folder = self.core.session_folder();
+        let session = SessionBuilder::with_generated_id("chat")
+            .with_folder(&session_folder)
+            .build();
+
+        // Create event bridge
+        let ring = session.ring().clone();
+        let bridge = AgentEventBridge::new(session.handle(), ring);
+
+        // Create and run TUI with factory
+        let mut runner = RatatuiRunner::new(&self.config.initial_mode_id, popup_provider.clone())?;
+
+        runner.run_with_factory(&bridge, create_agent).await
+    }
 }
 
 fn index_workspace_files(root: &Path) -> Vec<String> {
