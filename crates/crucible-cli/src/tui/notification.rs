@@ -19,6 +19,7 @@ pub enum NotificationLevel {
 ///
 /// Events are accumulated between render ticks. On each tick, pending
 /// events are drained and formatted into a notification string.
+#[derive(Debug)]
 pub struct NotificationState {
     /// Pending file change paths (accumulated between ticks)
     pending_changes: Vec<PathBuf>,
@@ -57,6 +58,66 @@ impl NotificationState {
     /// Accumulate an error event
     pub fn push_error(&mut self, message: String) {
         self.pending_errors.push(message);
+    }
+
+    /// Get current notification without draining pending events
+    ///
+    /// This is a non-mutating read for rendering. Call `tick()` before
+    /// rendering to update state from pending events.
+    pub fn current(&self) -> Option<(&str, NotificationLevel)> {
+        if !self.current_message.is_empty() {
+            Some((&self.current_message, self.current_level))
+        } else {
+            None
+        }
+    }
+
+    /// Update state from pending events and check expiry
+    ///
+    /// Call this once per render cycle to drain pending events and
+    /// update the current notification. Then use `current()` to read it.
+    pub fn tick(&mut self) {
+        // Check if current notification has expired
+        if let Some(expires) = self.expires_at {
+            if Instant::now() >= expires {
+                self.expires_at = None;
+                self.current_message.clear();
+            }
+        }
+
+        // If there are new events, drain and format them
+        if !self.pending_changes.is_empty() || !self.pending_errors.is_empty() {
+            // Errors take priority - clear pending changes
+            if !self.pending_errors.is_empty() {
+                self.pending_changes.clear();
+                let count = self.pending_errors.len();
+                self.current_message = if count == 1 {
+                    format!("✗ error: {}", self.pending_errors.remove(0))
+                } else {
+                    format!("✗ {} errors", count)
+                };
+                self.pending_errors.clear();
+                self.current_level = NotificationLevel::Error;
+                self.expires_at = Some(Instant::now() + Duration::from_secs(5));
+            }
+            // Process changes
+            else if !self.pending_changes.is_empty() {
+                let count = self.pending_changes.len();
+                self.current_message = if count == 1 {
+                    let path = self.pending_changes.remove(0);
+                    let filename = path
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("unknown");
+                    format!("{} modified", filename)
+                } else {
+                    format!("{} files modified", count)
+                };
+                self.pending_changes.clear();
+                self.current_level = NotificationLevel::Info;
+                self.expires_at = Some(Instant::now() + Duration::from_secs(2));
+            }
+        }
     }
 
     /// Drain pending events and format a notification
