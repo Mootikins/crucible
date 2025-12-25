@@ -83,6 +83,11 @@ Quick help on specific features:
 - **[[Help/Config/storage]]** - Database and storage options
 - **[[Help/Config/agents]]** - Agent card configuration
 
+### Terminal UI
+- **[[Help/TUI/Index]]** - TUI overview and shortcuts
+- **[[Help/TUI/Component Architecture]]** - Widget system design
+- **[[Help/TUI/Rune API]]** - Scripting the TUI (planned)
+
 ### Extending Crucible
 - **[[Help/Extending/Creating Plugins]]** - Create plugins with Rune
 - **[[Help/Extending/Event Hooks]]** - React to kiln events
@@ -113,20 +118,20 @@ See AI agent cards in action:
 Get productive immediately:
 
 ```bash
-# Process your notes and start exploring
-cru
-
-# Search for content
-cru search "knowledge graph"
-
-# Find semantically similar notes
-cru semantic "AI agents"
+# Process your notes
+cru process
 
 # Start an AI chat session
 cru chat
 
 # View kiln statistics
 cru stats
+
+# Check storage status
+cru status
+
+# Start MCP server for external tools
+cru mcp
 ```
 
 ## About This Kiln
