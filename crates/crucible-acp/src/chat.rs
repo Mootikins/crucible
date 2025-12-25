@@ -545,10 +545,7 @@ impl ChatSession {
             callback(StreamingChunk::Text(
                 "This is a mock agent response.".to_string(),
             ));
-            Ok((
-                "This is a mock agent response.".to_string(),
-                vec![],
-            ))
+            Ok(("This is a mock agent response.".to_string(), vec![]))
         }
     }
 

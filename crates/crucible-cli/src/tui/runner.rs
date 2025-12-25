@@ -281,10 +281,7 @@ impl RatatuiRunner {
                             self.view.set_status_text(&format!("Running: {}", name));
 
                             // Push to event ring for session tracking
-                            bridge.ring.push(SessionEvent::ToolCalled {
-                                name,
-                                args,
-                            });
+                            bridge.ring.push(SessionEvent::ToolCalled { name, args });
                         }
                     }
                 }
@@ -322,8 +319,9 @@ impl RatatuiRunner {
             self.animation_frame = self.animation_frame.wrapping_add(1);
             if self.is_streaming && self.token_count == 0 && self.animation_frame % 6 == 0 {
                 self.spinner_frame = self.spinner_frame.wrapping_add(1);
-                self.view
-                    .set_status(StatusKind::Thinking { spinner_frame: self.spinner_frame });
+                self.view.set_status(StatusKind::Thinking {
+                    spinner_frame: self.spinner_frame,
+                });
             }
         }
 
@@ -431,7 +429,7 @@ impl RatatuiRunner {
                 self.ctrl_c_count = 0;
 
                 // Add to history (avoid duplicates for repeated commands)
-                if self.history.last().map_or(true, |last| last != &msg) {
+                if self.history.last() != Some(&msg) {
                     self.history.push(msg.clone());
                 }
                 self.history_index = None;
@@ -451,7 +449,8 @@ impl RatatuiRunner {
                 self.token_count = 0;
                 self.prev_token_count = 0;
                 self.spinner_frame = 0;
-                self.view.set_status(StatusKind::Thinking { spinner_frame: 0 });
+                self.view
+                    .set_status(StatusKind::Thinking { spinner_frame: 0 });
                 self.view.set_status_text("Thinking");
 
                 // Initialize streaming parser and start streaming message in view
@@ -604,8 +603,12 @@ impl RatatuiRunner {
                             "search" => {
                                 if args.is_empty() {
                                     // Show input hint from registry if available
-                                    let hint = descriptor.input_hint.as_deref().unwrap_or("<query>");
-                                    self.view.set_status_text(&format!("Usage: /search {} — or just type your search in chat", hint));
+                                    let hint =
+                                        descriptor.input_hint.as_deref().unwrap_or("<query>");
+                                    self.view.set_status_text(&format!(
+                                        "Usage: /search {} — or just type your search in chat",
+                                        hint
+                                    ));
                                 } else {
                                     let search_prompt = format!("Search my notes for: {}", args);
                                     self.view.set_input(&search_prompt);
@@ -615,7 +618,9 @@ impl RatatuiRunner {
                                 }
                             }
                             "context" => {
-                                self.view.set_status_text("Use @note:<path> or @file:<path> to inject context");
+                                self.view.set_status_text(
+                                    "Use @note:<path> or @file:<path> to inject context",
+                                );
                             }
                             "exit" | "quit" => {
                                 return Ok(true);
@@ -627,7 +632,10 @@ impl RatatuiRunner {
                                     self.view.set_status_text(&format!("Current agent: {}. Use /new to start fresh session with agent picker", current));
                                 } else {
                                     // Suggest /new for switching
-                                    self.view.set_status_text(&format!("Use /new to start a new session. Current agent: {}", current));
+                                    self.view.set_status_text(&format!(
+                                        "Use /new to start a new session. Current agent: {}",
+                                        current
+                                    ));
                                 }
                             }
                             "new" => {
@@ -643,17 +651,23 @@ impl RatatuiRunner {
                                     return Ok(true); // Exit to trigger restart
                                 } else {
                                     // Can't restart without a factory
-                                    self.view.set_status_text("/new requires --lazy-agent-selection or deferred mode");
+                                    self.view.set_status_text(
+                                        "/new requires --lazy-agent-selection or deferred mode",
+                                    );
                                 }
                             }
                             _ => {
                                 // Command exists in registry but no TUI handler yet
-                                self.view.set_status_text(&format!("{}: {}", cmd_name, descriptor.description));
+                                self.view.set_status_text(&format!(
+                                    "{}: {}",
+                                    cmd_name, descriptor.description
+                                ));
                             }
                         }
                     } else {
                         // Not in registry - could be agent command or unknown
-                        self.view.set_status_text(&format!("Unknown command: /{}", cmd_name));
+                        self.view
+                            .set_status_text(&format!("Unknown command: /{}", cmd_name));
                     }
                 }
 
@@ -688,7 +702,8 @@ impl RatatuiRunner {
                         // Exiting history mode - restore saved input
                         self.history_index = None;
                         self.view.set_input(&self.history_saved_input);
-                        self.view.set_cursor_position(self.history_saved_input.len());
+                        self.view
+                            .set_cursor_position(self.history_saved_input.len());
                     } else {
                         let new_index = current + 1;
                         self.history_index = Some(new_index);
@@ -1092,13 +1107,15 @@ mod tests {
 
     #[test]
     fn test_ratatui_runner_creates() {
-        let runner = RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+        let runner =
+            RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
         assert_eq!(runner.view().mode_id(), "plan");
     }
 
     #[test]
     fn test_runner_tracks_current_agent() {
-        let mut runner = RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+        let mut runner =
+            RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
         // Default should be None (unknown)
         assert!(runner.current_agent_name().is_none());
@@ -1209,7 +1226,8 @@ mod tests {
 
     #[test]
     fn test_ratatui_view_scroll() {
-        let runner = RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+        let runner =
+            RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
         // View should be accessible
         assert_eq!(runner.view().state().scroll_offset, 0);
@@ -1360,7 +1378,10 @@ mod tests {
         runner.view.set_popup(runner.popup.clone());
 
         // Verify initial state
-        assert!(runner.view.state().popup.is_some(), "Popup should be set from typing /");
+        assert!(
+            runner.view.state().popup.is_some(),
+            "Popup should be set from typing /"
+        );
         assert_eq!(runner.view.cursor_position(), 4, "Cursor at end of /new");
 
         // Simulate what /new handler does (lines 636-643):
@@ -1372,10 +1393,14 @@ mod tests {
         runner.popup = None;
         runner.view.set_popup(None);
         runner.view.set_input("");
-        runner.view.set_cursor_position(0);  // Critical: reset cursor!
+        runner.view.set_cursor_position(0); // Critical: reset cursor!
 
         // Verify cursor is reset (prevents panic when typing in new session)
-        assert_eq!(runner.view.cursor_position(), 0, "Cursor must be reset to 0");
+        assert_eq!(
+            runner.view.cursor_position(),
+            0,
+            "Cursor must be reset to 0"
+        );
 
         // Now simulate restart preparation (lines 963-965 in run_with_factory)
         runner.view.state_mut().conversation.clear();
@@ -1387,8 +1412,14 @@ mod tests {
             && runner.view.state().dialog_stack.is_empty()
             && runner.view.state().splash.is_some();
 
-        assert!(would_render_splash, "Splash should render after /new clears popup");
-        assert!(runner.view.state().popup.is_none(), "Popup must be None for splash to render");
+        assert!(
+            would_render_splash,
+            "Splash should render after /new clears popup"
+        );
+        assert!(
+            runner.view.state().popup.is_none(),
+            "Popup must be None for splash to render"
+        );
     }
 
     #[test]

@@ -158,7 +158,10 @@ impl Widget for SessionHistoryWidget<'_> {
 
 impl InteractiveWidget for SessionHistoryWidget<'_> {
     fn handle_event(&mut self, event: &Event) -> EventResult {
-        if let Event::Key(KeyEvent { code, modifiers, .. }) = event {
+        if let Event::Key(KeyEvent {
+            code, modifiers, ..
+        }) = event
+        {
             match (*code, *modifiers) {
                 // Ctrl+Up/Down - single line scroll
                 (KeyCode::Up, KeyModifiers::CONTROL) => {
@@ -228,12 +231,15 @@ mod tests {
         // Create a conversation with enough content to allow scrolling
         let mut state = ConversationState::new();
         for i in 0..20 {
-            state.push_user_message(&format!("Message {}", i));
+            state.push_user_message(format!("Message {}", i));
         }
         let mut widget = SessionHistoryWidget::new(&state).viewport_height(24);
 
         widget.scroll_up(5);
-        assert!(widget.scroll_offset >= 5, "scroll_offset should be at least 5");
+        assert!(
+            widget.scroll_offset >= 5,
+            "scroll_offset should be at least 5"
+        );
 
         let prev_offset = widget.scroll_offset;
         widget.scroll_down(3);
@@ -432,10 +438,7 @@ mod tests {
             Terminal::new(TestBackend::new(TEST_WIDTH, TEST_HEIGHT)).unwrap()
         }
 
-        fn render_widget(
-            state: &ConversationState,
-            scroll_offset: usize,
-        ) -> Terminal<TestBackend> {
+        fn render_widget(state: &ConversationState, scroll_offset: usize) -> Terminal<TestBackend> {
             let mut terminal = test_terminal();
             terminal
                 .draw(|f| {
@@ -508,7 +511,7 @@ mod tests {
         fn scroll_offset_at_bottom() {
             let mut state = ConversationState::new();
             for i in 0..10 {
-                state.push_user_message(&format!("Message {}", i));
+                state.push_user_message(format!("Message {}", i));
             }
 
             let terminal = render_widget(&state, 0);
@@ -519,7 +522,7 @@ mod tests {
         fn scroll_offset_middle() {
             let mut state = ConversationState::new();
             for i in 0..15 {
-                state.push_user_message(&format!("Message {}", i));
+                state.push_user_message(format!("Message {}", i));
             }
 
             let terminal = render_widget(&state, 10);
