@@ -10,6 +10,7 @@
 //! - **Open/Closed**: Extensible chat strategies and handlers
 
 use crate::session::AcpSession;
+use crate::streaming::{StreamingCallback, StreamingChunk};
 use crate::{
     discover_crucible_tools, AcpError, ContextConfig, ConversationHistory, CrucibleAcpClient,
     HistoryConfig, HistoryMessage, PromptEnricher, Result, StreamConfig, ToolCallInfo,
@@ -408,6 +409,61 @@ impl ChatSession {
         Ok((agent_response, tool_calls))
     }
 
+    /// Send a user message with streaming callback for real-time display.
+    ///
+    /// This method is similar to `send_message` but invokes the callback
+    /// for each chunk as it arrives from the agent, enabling real-time
+    /// text display in the UI.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_message` - The message from the user
+    /// * `callback` - Callback invoked for each streaming chunk
+    ///
+    /// # Returns
+    ///
+    /// Tuple of (agent_response, tool_calls) - the complete response and any tool calls made
+    pub async fn send_message_with_callback(
+        &mut self,
+        user_message: &str,
+        callback: StreamingCallback,
+    ) -> Result<(String, Vec<ToolCallInfo>)> {
+        validate_message(user_message)?;
+
+        // Step 1: Add user message to history
+        let user_msg = HistoryMessage::user(user_message.to_string());
+        self.history.add_message(user_msg)?;
+
+        // Step 2: Prepare prompt (with or without enrichment)
+        let prompt = if self.config.enrich_prompts {
+            self.enricher.enrich(user_message).await?
+        } else {
+            user_message.to_string()
+        };
+
+        // Step 3: Generate agent response with streaming callback
+        let (agent_response, tool_calls) = self
+            .generate_agent_response_with_callback(&prompt, callback)
+            .await?;
+
+        // Step 4: Add agent response to history
+        let agent_msg = HistoryMessage::agent(agent_response.clone());
+        self.history.add_message(agent_msg)?;
+
+        // Step 5: Auto-prune if enabled
+        if self.config.auto_prune {
+            let pruned = self.history.prune()?;
+            if pruned > 0 {
+                self.state.prune_count += 1;
+            }
+        }
+
+        self.update_state();
+        self.metadata.touch();
+
+        Ok((agent_response, tool_calls))
+    }
+
     /// Update conversation state after a turn
     fn update_state(&mut self) {
         // Increment turn count
@@ -453,6 +509,46 @@ impl ChatSession {
         } else {
             // Mock mode: Return mock response for testing
             Ok(("This is a mock agent response. In a real implementation, this would come from the actual agent.".to_string(), vec![]))
+        }
+    }
+
+    /// Generate a response from the agent with streaming callback.
+    ///
+    /// Similar to `generate_agent_response` but invokes the callback for each chunk.
+    async fn generate_agent_response_with_callback(
+        &mut self,
+        prompt: &str,
+        mut callback: StreamingCallback,
+    ) -> Result<(String, Vec<ToolCallInfo>)> {
+        if let (Some(client), Some(session)) = (&mut self.agent_client, &self.agent_session) {
+            use agent_client_protocol::{ContentBlock, PromptRequest, SessionId};
+
+            let prompt_request = PromptRequest::new(
+                SessionId::from(session.id().to_string()),
+                vec![ContentBlock::from(prompt.to_string())],
+            );
+
+            // Use the callback version for real-time streaming
+            let (content, tool_calls, _stop_reason) = client
+                .send_prompt_with_callback(prompt_request, callback)
+                .await?;
+
+            tracing::debug!(
+                "Streaming complete: {} bytes, {} tool calls",
+                content.len(),
+                tool_calls.len()
+            );
+
+            Ok((content, tool_calls))
+        } else {
+            // Mock mode: Emit mock response through callback then return
+            callback(StreamingChunk::Text(
+                "This is a mock agent response.".to_string(),
+            ));
+            Ok((
+                "This is a mock agent response.".to_string(),
+                vec![],
+            ))
         }
     }
 
