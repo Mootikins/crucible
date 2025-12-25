@@ -280,7 +280,7 @@ async fn create_rig_agent(
                 temperature: config.chat.temperature,
                 max_tokens: config.chat.max_tokens,
                 timeout_secs: config.chat.timeout_secs,
-                api_key_env: None,
+                api_key: None,
             })?
         }
         LlmProvider::OpenAI => {
@@ -291,7 +291,7 @@ async fn create_rig_agent(
                 temperature: config.chat.temperature,
                 max_tokens: config.chat.max_tokens,
                 timeout_secs: config.chat.timeout_secs,
-                api_key_env: Some("OPENAI_API_KEY".to_string()),
+                api_key: Some("OPENAI_API_KEY".to_string()),
             })?
         }
         LlmProvider::Anthropic => {
@@ -302,7 +302,7 @@ async fn create_rig_agent(
                 temperature: config.chat.temperature,
                 max_tokens: config.chat.max_tokens,
                 timeout_secs: config.chat.timeout_secs,
-                api_key_env: Some("ANTHROPIC_API_KEY".to_string()),
+                api_key: Some("ANTHROPIC_API_KEY".to_string()),
             })?
         }
     };

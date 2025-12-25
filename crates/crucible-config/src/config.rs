@@ -666,7 +666,7 @@ impl CliAppConfig {
     /// 3. Default values
     ///
     /// Note: API keys are read from environment variables specified in config
-    /// (e.g., `api_key_env = "OPENAI_API_KEY"`)
+    /// (e.g., `api_key = "OPENAI_API_KEY"`)
     pub fn load(
         config_file: Option<std::path::PathBuf>,
         embedding_url: Option<String>,
@@ -1873,7 +1873,7 @@ allowed_tools = ["search_*"]
                 temperature: Some(0.9),
                 max_tokens: Some(8192),
                 timeout_secs: Some(300),
-                api_key_env: None,
+                api_key: None,
             },
         );
 
@@ -1936,7 +1936,7 @@ timeout_secs = 120
 
 [llm.providers.cloud]
 type = "openai"
-api_key_env = "OPENAI_API_KEY"
+api_key = "OPENAI_API_KEY"
 default_model = "gpt-4o"
 temperature = 0.7
 max_tokens = 4096
@@ -1962,7 +1962,7 @@ max_tokens = 4096
             crate::components::LlmProviderType::OpenAI
         );
         assert_eq!(cloud.model(), "gpt-4o");
-        assert_eq!(cloud.api_key_env, Some("OPENAI_API_KEY".to_string()));
+        assert_eq!(cloud.api_key, Some("OPENAI_API_KEY".to_string()));
     }
 
     #[test]
@@ -1978,7 +1978,7 @@ max_tokens = 4096
                 temperature: Some(0.7),
                 max_tokens: None,
                 timeout_secs: None,
-                api_key_env: None,
+                api_key: None,
             },
         );
 
