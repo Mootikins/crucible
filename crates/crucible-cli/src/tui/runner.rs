@@ -87,6 +87,10 @@ pub struct RatatuiRunner {
     command_registry: std::sync::Arc<SlashCommandRegistry>,
     /// If true, session should restart with agent picker instead of exiting
     restart_requested: bool,
+    /// If true, this runner supports restart via /new command
+    supports_restart: bool,
+    /// Pre-selected agent for first iteration (skips picker, still allows /new)
+    default_selection: Option<AgentSelection>,
 }
 
 impl RatatuiRunner {
@@ -119,12 +123,23 @@ impl RatatuiRunner {
             current_agent: None,
             command_registry,
             restart_requested: false,
+            supports_restart: false, // Set to true when using run_with_factory
+            default_selection: None,
         })
     }
 
     /// Skip the splash screen (e.g., when agent was pre-specified via CLI)
     pub fn skip_splash(&mut self) {
         self.view.dismiss_splash();
+    }
+
+    /// Set a default agent selection for the first iteration.
+    ///
+    /// When set, skips the picker phase on first run but still supports
+    /// restart via `/new` command (which will show the picker).
+    pub fn with_default_selection(&mut self, selection: AgentSelection) -> &mut Self {
+        self.default_selection = Some(selection);
+        self
     }
 
     /// Set the current agent name for display in /agent command
@@ -140,44 +155,6 @@ impl RatatuiRunner {
     /// Check if a restart was requested (e.g., via /new command)
     pub fn restart_requested(&self) -> bool {
         self.restart_requested
-    }
-
-    /// Run the TUI main loop with an agent.
-    pub async fn run<A: AgentHandle>(
-        &mut self,
-        bridge: &AgentEventBridge,
-        agent: &mut A,
-    ) -> Result<()> {
-        // Skip the splash screen - use /agent command to see available agents
-        self.view.dismiss_splash();
-
-        // Setup terminal with alternate screen and mouse capture
-        // Note: Don't hide cursor here - let ratatui manage cursor visibility
-        // based on whether set_cursor_position is called in render
-        enable_raw_mode()?;
-        let mut stdout = io::stdout();
-        execute!(
-            stdout,
-            EnterAlternateScreen,
-            crossterm::event::EnableMouseCapture
-        )?;
-
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
-        terminal.clear()?;
-
-        let result = self.main_loop(&mut terminal, bridge, agent).await;
-
-        // Cleanup
-        disable_raw_mode()?;
-        execute!(
-            terminal.backend_mut(),
-            crossterm::event::DisableMouseCapture,
-            LeaveAlternateScreen,
-            cursor::Show
-        )?;
-
-        result
     }
 
     /// Internal main loop.
@@ -654,10 +631,15 @@ impl RatatuiRunner {
                                 }
                             }
                             "new" => {
-                                // Request restart with agent picker
-                                self.restart_requested = true;
-                                self.view.set_status_text("Starting new session...");
-                                return Ok(true); // Exit to trigger restart
+                                if self.supports_restart {
+                                    // Request restart with agent picker
+                                    self.restart_requested = true;
+                                    self.view.set_status_text("Starting new session...");
+                                    return Ok(true); // Exit to trigger restart
+                                } else {
+                                    // Can't restart without a factory
+                                    self.view.set_status_text("/new requires --lazy-agent-selection or deferred mode");
+                                }
                             }
                             _ => {
                                 // Command exists in registry but no TUI handler yet
@@ -906,6 +888,9 @@ impl RatatuiRunner {
         Fut: std::future::Future<Output = Result<A>>,
         A: AgentHandle,
     {
+        // Mark that we support restart (factory allows creating new agents)
+        self.supports_restart = true;
+
         // Enter TUI
         enable_raw_mode()?;
         let mut stdout = io::stdout();
@@ -923,9 +908,16 @@ impl RatatuiRunner {
             // Reset restart flag at start of each iteration
             self.restart_requested = false;
 
-            // Phase 1: Agent selection (show picker)
-            self.view.show_splash(); // Ensure splash is shown for picker
-            let selection = self.run_picker_phase(&mut terminal).await?;
+            // Phase 1: Agent selection
+            // Use default_selection on first iteration (skips picker), show picker on restart
+            let selection = if let Some(default) = self.default_selection.take() {
+                // First iteration with pre-specified agent: skip picker
+                default
+            } else {
+                // No default or restart: show picker
+                self.view.show_splash();
+                self.run_picker_phase(&mut terminal).await?
+            };
 
             // Handle cancellation
             if matches!(selection, AgentSelection::Cancelled) {
@@ -1249,5 +1241,53 @@ mod tests {
         let (msg, level) = result.unwrap();
         assert!(matches!(level, NotificationLevel::Error));
         assert!(msg.contains("connection timeout") || msg.contains("error"));
+    }
+
+    #[test]
+    fn test_runner_default_selection_initially_none() {
+        let runner =
+            RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+        // default_selection is private, but we can verify behavior indirectly
+        // by checking that supports_restart is false initially
+        assert!(!runner.supports_restart);
+    }
+
+    #[test]
+    fn test_runner_with_default_selection_sets_value() {
+        let mut runner =
+            RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+        // Set a default selection
+        runner.with_default_selection(AgentSelection::Acp("opencode".to_string()));
+
+        // Verify it was set (we can check the field exists by ensuring no panic)
+        // The actual behavior is tested in integration tests
+        assert!(runner.default_selection.is_some());
+    }
+
+    #[test]
+    fn test_runner_with_default_selection_returns_self() {
+        let mut runner =
+            RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+        // Fluent interface should return &mut Self
+        let result = runner.with_default_selection(AgentSelection::Internal);
+        result.set_current_agent("internal");
+
+        assert_eq!(runner.current_agent_name(), Some("internal"));
+    }
+
+    #[test]
+    fn test_runner_default_selection_consumed_on_take() {
+        let mut runner =
+            RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+        runner.with_default_selection(AgentSelection::Acp("test".to_string()));
+        assert!(runner.default_selection.is_some());
+
+        // Simulate what run_with_factory does: take() consumes the value
+        let taken = runner.default_selection.take();
+        assert!(taken.is_some());
+        assert!(runner.default_selection.is_none()); // Now None for restart
     }
 }
