@@ -339,6 +339,61 @@ fn test_fixed_interleaved_order() {
     );
 }
 
+// =============================================================================
+// Tool Call Behavior Tests
+// =============================================================================
+
+/// Test that ConversationState correctly creates separate entries for each push.
+/// This is CORRECT behavior - the same tool name can be called multiple times
+/// in a conversation (e.g., multiple grep searches).
+///
+/// The bug where tools appear twice is in the RUNNER, not ConversationState.
+/// The runner's StreamingEvent::ToolCall and SessionEvent::ToolCalled handlers
+/// both call push_tool_running for the same tool - that's the bug to fix.
+#[test]
+fn test_multiple_tool_calls_with_same_name_are_separate() {
+    let mut state = ConversationState::new();
+
+    state.push_user_message("Search for foo then bar");
+    state.start_assistant_streaming();
+
+    // First grep call
+    state.append_or_create_prose("Searching for foo...\n");
+    state.push_tool_running("grep");
+    state.complete_tool("grep", Some("found foo".into()));
+
+    // Second grep call (legitimately separate)
+    state.append_or_create_prose("Now searching for bar...\n");
+    state.push_tool_running("grep");
+    state.complete_tool("grep", Some("found bar".into()));
+
+    state.complete_streaming();
+
+    // Should have 2 grep tools (both legitimate)
+    let tool_count = state
+        .items()
+        .iter()
+        .filter(|item| matches!(item, ConversationItem::ToolCall(t) if t.name == "grep"))
+        .count();
+
+    assert_eq!(
+        tool_count, 2,
+        "Two separate grep calls should create two tool entries"
+    );
+
+    // Both should be completed
+    let running_count = state
+        .items()
+        .iter()
+        .filter(|item| {
+            matches!(item, ConversationItem::ToolCall(t)
+                if t.name == "grep" && matches!(t.status, ToolStatus::Running))
+        })
+        .count();
+
+    assert_eq!(running_count, 0, "All tools should be completed");
+}
+
 #[cfg(test)]
 mod snapshot_helpers {
     //! Additional helpers for snapshot testing
