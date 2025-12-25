@@ -8,12 +8,13 @@ interface MicButtonProps {
   disabled?: boolean;
 }
 
-type RecordingState = 'idle' | 'recording' | 'processing';
+type RecordingState = 'idle' | 'recording' | 'processing' | 'error';
 
 export const MicButton: Component<MicButtonProps> = (props) => {
   const [state, setState] = createSignal<RecordingState>('idle');
+  const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
   const { isRecording, error: recorderError, startRecording, stopRecording } = useMediaRecorder();
-  const { status: whisperStatus, transcribe, loadModel, progress } = useWhisper();
+  const { status: whisperStatus, transcribe, loadModel, progress, error: whisperError } = useWhisper();
 
   // Preload model on first interaction
   const ensureModelLoaded = async () => {
@@ -29,6 +30,9 @@ export const MicButton: Component<MicButtonProps> = (props) => {
   const handleMouseDown = async () => {
     if (props.disabled || state() !== 'idle') return;
 
+    // Clear any previous error
+    setErrorMessage(null);
+
     // Start loading model in background if not ready
     ensureModelLoaded();
 
@@ -38,7 +42,16 @@ export const MicButton: Component<MicButtonProps> = (props) => {
       setState('recording');
     } catch (err) {
       console.error('Failed to start recording:', err);
-      setState('idle');
+      const message = err instanceof Error ? err.message : 'Failed to access microphone';
+      setErrorMessage(message);
+      setState('error');
+      // Auto-clear error after 3 seconds
+      setTimeout(() => {
+        if (state() === 'error') {
+          setState('idle');
+          setErrorMessage(null);
+        }
+      }, 3000);
     }
   };
 
@@ -64,9 +77,19 @@ export const MicButton: Component<MicButtonProps> = (props) => {
       }
     } catch (err) {
       console.error('Transcription failed:', err);
-    } finally {
-      setState('idle');
+      const message = err instanceof Error ? err.message : 'Transcription failed';
+      setErrorMessage(message);
+      setState('error');
+      // Auto-clear error after 3 seconds
+      setTimeout(() => {
+        if (state() === 'error') {
+          setState('idle');
+          setErrorMessage(null);
+        }
+      }, 3000);
+      return;
     }
+    setState('idle');
   };
 
   const stateStyles = () => {
@@ -75,6 +98,8 @@ export const MicButton: Component<MicButtonProps> = (props) => {
         return 'bg-red-600 animate-pulse';
       case 'processing':
         return 'bg-yellow-600';
+      case 'error':
+        return 'bg-red-800';
       default:
         return whisperStatus() === 'loading'
           ? 'bg-blue-600'
@@ -83,8 +108,14 @@ export const MicButton: Component<MicButtonProps> = (props) => {
   };
 
   const getTitle = () => {
+    if (state() === 'error' && errorMessage()) {
+      return `Error: ${errorMessage()}`;
+    }
     if (whisperStatus() === 'loading') {
       return `Loading speech model... ${progress()}%`;
+    }
+    if (whisperStatus() === 'error' && whisperError()) {
+      return `Model error: ${whisperError()}`;
     }
     if (state() === 'recording') {
       return 'Recording... Release to stop';
@@ -109,14 +140,25 @@ export const MicButton: Component<MicButtonProps> = (props) => {
       data-state={state()}
       title={getTitle()}
     >
-      <Show when={state() === 'processing' || whisperStatus() === 'loading'}>
+      <Show when={state() === 'error'}>
+        {/* Error icon - exclamation mark */}
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          class="w-5 h-5 text-white"
+        >
+          <path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zM12 8.25a.75.75 0 01.75.75v3.75a.75.75 0 01-1.5 0V9a.75.75 0 01.75-.75zm0 8.25a.75.75 0 100-1.5.75.75 0 000 1.5z" clip-rule="evenodd" />
+        </svg>
+      </Show>
+      <Show when={state() !== 'error' && (state() === 'processing' || whisperStatus() === 'loading')}>
         <span class="flex items-center gap-0.5 w-5 h-5 justify-center">
           <span class="w-1 h-1 bg-white rounded-full animate-bounce" />
           <span class="w-1 h-1 bg-white rounded-full animate-bounce delay-75" />
           <span class="w-1 h-1 bg-white rounded-full animate-bounce delay-150" />
         </span>
       </Show>
-      <Show when={state() !== 'processing' && whisperStatus() !== 'loading'}>
+      <Show when={state() !== 'error' && state() !== 'processing' && whisperStatus() !== 'loading'}>
         <svg
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 24 24"
