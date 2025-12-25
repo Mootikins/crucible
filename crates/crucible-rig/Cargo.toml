@@ -37,10 +37,8 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 # MCP/RMCP - needed for workspace tools result types
+# Base features always enabled; server/client features gated behind rmcp-full feature
 rmcp = { version = "0.9.0", features = ["macros"] }
-
-# Additional MCP features (optional) for full server support
-rmcp-full = { package = "rmcp", version = "0.9.0", features = ["macros", "server", "client", "transport-io", "transport-sse-server", "transport-child-process"], optional = true }
 
 [dev-dependencies]
 tokio-test = { workspace = true }
@@ -49,6 +47,6 @@ tempfile = { workspace = true }
 [features]
 default = []
 # Enable full MCP server/client integration
-rmcp-full = ["dep:rmcp-full", "rig-core/rmcp"]
+rmcp-full = ["rmcp/server", "rmcp/client", "rmcp/transport-io", "rmcp/transport-sse-server", "rmcp/transport-child-process", "rig-core/rmcp"]
 # Enable test utilities
 test-utils = []
