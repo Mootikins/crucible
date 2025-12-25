@@ -176,7 +176,7 @@ fn create_openai_client(config: &LlmProviderConfig) -> RigResult<RigClient> {
         let api_key = config.api_key().ok_or_else(|| RigError::MissingApiKey {
             provider: "OpenAI".into(),
             env_var: config
-                .api_key_env
+                .api_key
                 .clone()
                 .unwrap_or_else(|| "OPENAI_API_KEY".into()),
         })?;
@@ -208,7 +208,7 @@ fn create_anthropic_client(config: &LlmProviderConfig) -> RigResult<RigClient> {
     let api_key = config.api_key().ok_or_else(|| RigError::MissingApiKey {
         provider: "Anthropic".into(),
         env_var: config
-            .api_key_env
+            .api_key
             .clone()
             .unwrap_or_else(|| "ANTHROPIC_API_KEY".into()),
     })?;
@@ -235,7 +235,7 @@ mod tests {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key_env: None,
+            api_key: None,
         }
     }
 
@@ -247,7 +247,7 @@ mod tests {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key_env: None,
+            api_key: None,
         }
     }
 
@@ -259,7 +259,7 @@ mod tests {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key_env: Some("TEST_OPENAI_KEY".into()),
+            api_key: Some("TEST_OPENAI_KEY".into()),
         }
     }
 
@@ -271,7 +271,7 @@ mod tests {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key_env: Some("TEST_ANTHROPIC_KEY".into()),
+            api_key: Some("TEST_ANTHROPIC_KEY".into()),
         }
     }
 
@@ -322,7 +322,7 @@ mod tests {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key_env: Some("TEST_OPENAI_KEY_MISSING".into()),
+            api_key: Some("TEST_OPENAI_KEY_MISSING".into()),
         };
 
         let client = create_client(&config);
@@ -359,7 +359,7 @@ mod tests {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key_env: Some("TEST_ANTHROPIC_KEY_MISSING".into()),
+            api_key: Some("TEST_ANTHROPIC_KEY_MISSING".into()),
         };
 
         let client = create_client(&config);
@@ -398,7 +398,7 @@ mod tests {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key_env: None, // No API key needed for local servers
+            api_key: None, // No API key needed for local servers
         };
 
         let client = create_client(&config);
@@ -419,7 +419,7 @@ mod tests {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key_env: Some("NONEXISTENT_API_KEY".into()), // Won't fail even if not set
+            api_key: Some("NONEXISTENT_API_KEY".into()), // Won't fail even if not set
         };
 
         // Should succeed without API key
@@ -440,7 +440,7 @@ mod tests {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key_env: Some("OPENAI_API_KEY_TEST_MISSING".into()),
+            api_key: Some("OPENAI_API_KEY_TEST_MISSING".into()),
         };
 
         let client = create_client(&config);

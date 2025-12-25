@@ -22,7 +22,7 @@ timeout_secs = 120
 # Named provider: cloud OpenAI
 [llm.providers.cloud]
 type = "openai"
-api_key_env = "OPENAI_API_KEY"  # Environment variable containing API key
+api_key = "{env:OPENAI_API_KEY}"  # Reads from environment variable
 endpoint = "https://api.openai.com/v1"  # Optional, uses default if not set
 default_model = "gpt-4o"
 temperature = 0.7
@@ -40,7 +40,7 @@ timeout_secs = 300
 # Named provider: Anthropic Claude
 [llm.providers.anthropic]
 type = "anthropic"
-api_key_env = "ANTHROPIC_API_KEY"
+api_key = "{env:ANTHROPIC_API_KEY}"
 default_model = "claude-3-5-sonnet-20241022"
 temperature = 0.7
 max_tokens = 4096

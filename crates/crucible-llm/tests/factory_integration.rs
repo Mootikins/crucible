@@ -15,7 +15,7 @@ async fn test_factory_from_provider_config_ollama() {
         temperature: Some(0.7),
         max_tokens: Some(4096),
         timeout_secs: Some(120),
-        api_key_env: None,
+        api_key: None,
     };
 
     let provider = from_provider_config(&config).await;
@@ -62,7 +62,7 @@ async fn test_factory_from_config_by_name() {
             temperature: Some(0.7),
             max_tokens: Some(4096),
             timeout_secs: Some(120),
-            api_key_env: None,
+            api_key: None,
         },
     );
 
@@ -111,7 +111,7 @@ async fn test_factory_openai_requires_api_key() {
         temperature: Some(0.7),
         max_tokens: Some(4096),
         timeout_secs: Some(120),
-        api_key_env: None, // No API key
+        api_key: None, // No API key
     };
 
     let provider = from_provider_config(&config).await;

@@ -37,8 +37,8 @@ pub struct LlmProviderConfig {
     /// API timeout in seconds
     pub timeout_secs: Option<u64>,
 
-    /// Environment variable name containing API key (for OpenAI, Anthropic)
-    pub api_key_env: Option<String>,
+    /// API key for this provider (use `{env:VAR}` syntax for env vars)
+    pub api_key: Option<String>,
 }
 
 impl LlmProviderConfig {
@@ -79,11 +79,9 @@ impl LlmProviderConfig {
         self.timeout_secs.unwrap_or(120)
     }
 
-    /// Get the API key from environment variable
+    /// Get the API key (already resolved if `{env:VAR}` was used)
     pub fn api_key(&self) -> Option<String> {
-        self.api_key_env
-            .as_ref()
-            .and_then(|env_var| std::env::var(env_var).ok())
+        self.api_key.clone()
     }
 }
 
@@ -135,7 +133,7 @@ mod tests {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key_env: None,
+            api_key: None,
         };
 
         assert_eq!(ollama.endpoint(), "http://localhost:11434");
@@ -151,7 +149,7 @@ mod tests {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key_env: None,
+            api_key: None,
         };
 
         assert_eq!(openai.endpoint(), "https://api.openai.com/v1");
@@ -164,7 +162,7 @@ mod tests {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key_env: None,
+            api_key: None,
         };
 
         assert_eq!(anthropic.endpoint(), "https://api.anthropic.com/v1");
@@ -180,7 +178,7 @@ mod tests {
             temperature: Some(0.9),
             max_tokens: Some(8192),
             timeout_secs: Some(300),
-            api_key_env: None,
+            api_key: None,
         };
 
         assert_eq!(config.endpoint(), "http://192.168.1.100:11434");
@@ -191,9 +189,8 @@ mod tests {
     }
 
     #[test]
-    fn test_api_key_from_env() {
-        std::env::set_var("TEST_API_KEY", "test-key-123");
-
+    fn test_api_key_direct_value() {
+        // With new model, api_key is the direct value (resolved at config load)
         let config = LlmProviderConfig {
             provider_type: LlmProviderType::OpenAI,
             endpoint: None,
@@ -201,12 +198,10 @@ mod tests {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key_env: Some("TEST_API_KEY".to_string()),
+            api_key: Some("sk-test-key-123".to_string()),
         };
 
-        assert_eq!(config.api_key(), Some("test-key-123".to_string()));
-
-        std::env::remove_var("TEST_API_KEY");
+        assert_eq!(config.api_key(), Some("sk-test-key-123".to_string()));
     }
 
     #[test]
@@ -221,7 +216,7 @@ mod tests {
                 temperature: None,
                 max_tokens: None,
                 timeout_secs: None,
-                api_key_env: None,
+                api_key: None,
             },
         );
         providers.insert(
@@ -233,7 +228,7 @@ mod tests {
                 temperature: None,
                 max_tokens: None,
                 timeout_secs: None,
-                api_key_env: Some("OPENAI_API_KEY".to_string()),
+                api_key: Some("OPENAI_API_KEY".to_string()),
             },
         );
 
@@ -260,7 +255,7 @@ mod tests {
                 temperature: None,
                 max_tokens: None,
                 timeout_secs: None,
-                api_key_env: None,
+                api_key: None,
             },
         );
 
@@ -287,7 +282,7 @@ mod tests {
                 temperature: None,
                 max_tokens: None,
                 timeout_secs: None,
-                api_key_env: None,
+                api_key: None,
             },
         );
         providers.insert(
@@ -299,7 +294,7 @@ mod tests {
                 temperature: None,
                 max_tokens: None,
                 timeout_secs: None,
-                api_key_env: None,
+                api_key: None,
             },
         );
 
@@ -332,7 +327,7 @@ mod tests {
                 temperature: None,
                 max_tokens: None,
                 timeout_secs: None,
-                api_key_env: None,
+                api_key: None,
             },
         );
 
@@ -365,7 +360,7 @@ mod tests {
                 temperature: None,
                 max_tokens: None,
                 timeout_secs: None,
-                api_key_env: None,
+                api_key: None,
             },
         );
 

@@ -28,5 +28,5 @@ pub use llm::*;
 
 // Re-export unified provider types
 pub use backend::BackendType;
-pub use provider::{ApiKeyConfig, ModelConfig, ProviderConfig};
+pub use provider::{ModelConfig, ProviderConfig};
 pub use providers::ProvidersConfig;
