@@ -239,6 +239,10 @@ impl ConversationState {
 
     /// Append text to the last prose block if it exists and is incomplete,
     /// otherwise create a new prose block. Used for streaming to consolidate text.
+    ///
+    /// If no streaming assistant message exists, starts a new one. This handles
+    /// the case where a tool call interrupted streaming - subsequent prose should
+    /// go into a new message to maintain chronological order.
     pub fn append_or_create_prose(&mut self, text: &str) {
         for item in self.items.iter_mut().rev() {
             if let ConversationItem::AssistantMessage {
@@ -260,6 +264,10 @@ impl ConversationState {
                 }
             }
         }
+
+        // No streaming message found - create a new one (e.g., after tool call)
+        self.start_assistant_streaming();
+        self.append_or_create_prose(text);
     }
 
     pub fn set_status(&mut self, status: StatusKind) {
@@ -275,6 +283,10 @@ impl ConversationState {
     }
 
     pub fn push_tool_running(&mut self, name: impl Into<String>) {
+        // Complete any streaming assistant message first, so that subsequent
+        // prose creates a new message (preserves chronological order)
+        self.complete_streaming();
+
         self.items.push(ConversationItem::ToolCall(ToolCallDisplay {
             name: name.into(),
             status: ToolStatus::Running,

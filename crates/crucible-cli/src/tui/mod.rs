@@ -30,6 +30,8 @@ pub mod viewport;
 pub mod widget;
 
 #[cfg(test)]
+mod conversation_ordering_tests;
+#[cfg(test)]
 mod runner_picker_tests;
 
 pub use agent_picker::{pick_agent, AgentSelection};
