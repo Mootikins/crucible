@@ -50,9 +50,33 @@ class MockMediaStream {
 // Mock navigator.mediaDevices
 const mockGetUserMedia = vi.fn();
 
+// Mock AnalyserNode for audio level analysis
+class MockAnalyserNode {
+  fftSize = 256;
+  smoothingTimeConstant = 0.5;
+  getByteTimeDomainData(array: Uint8Array) {
+    // Fill with silence (128 = zero level)
+    array.fill(128);
+  }
+}
+
+// Mock AudioContext with analyser support
+class MockAudioContext {
+  createAnalyser() {
+    return new MockAnalyserNode();
+  }
+  createMediaStreamSource() {
+    return { connect: vi.fn() };
+  }
+  close() {
+    return Promise.resolve();
+  }
+}
+
 describe('useMediaRecorder', () => {
   beforeEach(() => {
     vi.stubGlobal('MediaRecorder', MockMediaRecorder);
+    vi.stubGlobal('AudioContext', MockAudioContext);
     vi.stubGlobal('navigator', {
       mediaDevices: {
         getUserMedia: mockGetUserMedia,
@@ -65,11 +89,12 @@ describe('useMediaRecorder', () => {
     vi.restoreAllMocks();
   });
 
-  it('starts in non-recording state', () => {
+  it('starts in non-recording state with zero audio level', () => {
     createRoot((dispose) => {
-      const { isRecording, error } = useMediaRecorder();
+      const { isRecording, error, audioLevel } = useMediaRecorder();
       expect(isRecording()).toBe(false);
       expect(error()).toBeNull();
+      expect(audioLevel()).toBe(0);
       dispose();
     });
   });
