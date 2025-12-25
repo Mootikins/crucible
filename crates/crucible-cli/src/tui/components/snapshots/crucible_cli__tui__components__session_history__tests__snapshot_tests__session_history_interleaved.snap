@@ -1,0 +1,28 @@
+---
+source: crates/crucible-cli/src/tui/components/session_history.rs
+expression: terminal.backend()
+---
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+" > Read my note                                                                 "
+"                                                                                "
+" ● Let me read that for you.                                                    "
+"                                                                                "
+"✓ read → success                                                                "
+"  Note contents here                                                            "
+"                                                                                "
+" ● I've read the note.                                                          "

@@ -1,0 +1,28 @@
+---
+source: crates/crucible-cli/src/tui/components/session_history.rs
+expression: terminal.backend()
+---
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+" > Search the codebase                                                          "
+"                                                                                "
+"✓ grep → 2 matches                                                              "
+"  match 1                                                                       "
+"  match 2                                                                       "
+"                                                                                "
+"✗ read → file not found                                                         "

@@ -1,0 +1,28 @@
+---
+source: crates/crucible-cli/src/tui/components/session_history.rs
+expression: terminal.backend()
+---
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+" ● Here's code:                                                                 "
+"   fn main() {                                                                  "
+"       // incomplete                                                            "
+"   ▌                                                                            "
