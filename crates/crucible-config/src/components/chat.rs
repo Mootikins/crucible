@@ -15,6 +15,19 @@ pub enum LlmProvider {
     Anthropic,
 }
 
+/// Agent type preference for chat
+///
+/// Controls whether to prefer external ACP agents or Crucible's built-in agents.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentPreference {
+    /// Prefer external ACP agents (claude-code, opencode, etc.)
+    #[default]
+    Acp,
+    /// Prefer Crucible's built-in agents (using Rig or native backend)
+    Crucible,
+}
+
 /// Backend framework for internal (non-ACP) agents
 ///
 /// Controls which agent execution framework is used when running
@@ -46,6 +59,9 @@ pub struct ChatConfig {
     /// LLM provider to use
     #[serde(default)]
     pub provider: LlmProvider,
+    /// Default agent type preference (acp or internal)
+    #[serde(default)]
+    pub agent_preference: AgentPreference,
     /// Backend framework for internal agents
     #[serde(default)]
     pub internal_backend: InternalBackend,
@@ -69,6 +85,7 @@ impl Default for ChatConfig {
             model: None, // Use agent default
             enable_markdown: true,
             provider: LlmProvider::default(),
+            agent_preference: AgentPreference::default(),
             internal_backend: InternalBackend::default(),
             endpoint: None,
             temperature: None,
