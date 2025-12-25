@@ -5,12 +5,15 @@
 //! 1. Explicit CLI flag (--internal or --acp)
 //! 2. Config file setting (agent_type)
 //! 3. Default: ACP agent if available, else internal
+//!
+//! For internal agents, the `internal_backend` config option controls which
+//! framework is used: "native" (InternalAgentHandle) or "rig" (RigAgentHandle).
 
 use anyhow::Result;
 use tracing::{debug, info};
 
 use crucible_agents::{InternalAgentHandle, LayeredPromptBuilder, SlidingWindowContext};
-use crucible_config::CliAppConfig;
+use crucible_config::{CliAppConfig, InternalBackend};
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::traits::tools::ToolExecutor;
 use crucible_llm::text_generation;
@@ -131,7 +134,10 @@ pub enum InitializedAgent {
     /// ACP agent (needs async spawning)
     Acp(crate::acp::CrucibleAcpClient),
     /// Internal agent (ready to use)
-    Internal(InternalAgentHandle),
+    ///
+    /// This is boxed to support both native (InternalAgentHandle) and
+    /// Rig (RigAgentHandle) backends via trait object erasure.
+    Internal(Box<dyn AgentHandle + Send + Sync>),
 }
 
 impl InitializedAgent {
@@ -140,16 +146,37 @@ impl InitializedAgent {
     pub fn into_boxed(self) -> Box<dyn AgentHandle> {
         match self {
             Self::Acp(client) => Box::new(client),
-            Self::Internal(handle) => Box::new(handle),
+            Self::Internal(handle) => handle,
         }
     }
 }
 
 /// Create an internal agent from configuration
+///
+/// Returns either a native `InternalAgentHandle` or a `RigAgentHandle`
+/// based on the `internal_backend` config setting.
 pub async fn create_internal_agent(
     config: &CliAppConfig,
     params: AgentInitParams,
-) -> Result<InternalAgentHandle> {
+) -> Result<Box<dyn AgentHandle + Send + Sync>> {
+    // Check which backend to use
+    match config.chat.internal_backend {
+        InternalBackend::Native => {
+            info!("Creating native internal agent");
+            create_native_agent(config, params).await
+        }
+        InternalBackend::Rig => {
+            info!("Creating Rig-based internal agent");
+            create_rig_agent(config, params).await
+        }
+    }
+}
+
+/// Create a native internal agent using InternalAgentHandle
+async fn create_native_agent(
+    config: &CliAppConfig,
+    params: AgentInitParams,
+) -> Result<Box<dyn AgentHandle + Send + Sync>> {
     // Get LLM provider
     let provider = if let Some(provider_key) = &params.provider_key {
         info!("Creating internal agent with provider: {}", provider_key);
@@ -195,14 +222,100 @@ pub async fn create_internal_agent(
         .clone()
         .unwrap_or_else(|| provider.default_model().to_string());
 
-    Ok(InternalAgentHandle::new(
+    Ok(Box::new(InternalAgentHandle::new(
         provider,
         context,
         params.tool_executor,
         prompt_builder,
         model,
         max_tokens,
-    ))
+    )))
+}
+
+/// Create a Rig-based internal agent using RigAgentHandle
+async fn create_rig_agent(
+    config: &CliAppConfig,
+    _params: AgentInitParams,
+) -> Result<Box<dyn AgentHandle + Send + Sync>> {
+    use crucible_config::LlmProvider;
+    use crucible_rig::{build_agent_with_tools, RigAgentHandle};
+
+    // Get model name from config
+    let model = config.chat.model.clone().unwrap_or_else(|| {
+        match config.chat.provider {
+            LlmProvider::Ollama => "llama3.2".to_string(),
+            LlmProvider::OpenAI => "gpt-4o".to_string(),
+            LlmProvider::Anthropic => "claude-3-5-sonnet-20241022".to_string(),
+        }
+    });
+
+    // Build agent config using new() constructor
+    let agent_config = crucible_rig::AgentConfig::new(
+        &model,
+        "You are a helpful knowledge management assistant with access to workspace tools.",
+    );
+
+    use crucible_config::{LlmProviderConfig, LlmProviderType};
+
+    // Get workspace root (use kiln_path or current directory)
+    let workspace_root = &config.kiln_path;
+
+    // Create Rig client based on provider
+    let client = match config.chat.provider {
+        LlmProvider::Ollama => {
+            let endpoint = config.chat.endpoint.clone()
+                .unwrap_or_else(|| "http://localhost:11434".to_string());
+            crucible_rig::create_client(&LlmProviderConfig {
+                provider_type: LlmProviderType::Ollama,
+                endpoint: Some(endpoint),
+                default_model: Some(model.clone()),
+                temperature: config.chat.temperature,
+                max_tokens: config.chat.max_tokens,
+                timeout_secs: config.chat.timeout_secs,
+                api_key_env: None,
+            })?
+        }
+        LlmProvider::OpenAI => {
+            crucible_rig::create_client(&LlmProviderConfig {
+                provider_type: LlmProviderType::OpenAI,
+                endpoint: config.chat.endpoint.clone(),
+                default_model: Some(model.clone()),
+                temperature: config.chat.temperature,
+                max_tokens: config.chat.max_tokens,
+                timeout_secs: config.chat.timeout_secs,
+                api_key_env: Some("OPENAI_API_KEY".to_string()),
+            })?
+        }
+        LlmProvider::Anthropic => {
+            crucible_rig::create_client(&LlmProviderConfig {
+                provider_type: LlmProviderType::Anthropic,
+                endpoint: config.chat.endpoint.clone(),
+                default_model: Some(model.clone()),
+                temperature: config.chat.temperature,
+                max_tokens: config.chat.max_tokens,
+                timeout_secs: config.chat.timeout_secs,
+                api_key_env: Some("ANTHROPIC_API_KEY".to_string()),
+            })?
+        }
+    };
+
+    info!("Building Rig agent with workspace tools for: {}", workspace_root.display());
+
+    // Build Rig agent with tools based on client type
+    match client {
+        crucible_rig::RigClient::Ollama(ollama_client) => {
+            let agent = build_agent_with_tools(&agent_config, &ollama_client, workspace_root)?;
+            Ok(Box::new(RigAgentHandle::new(agent)))
+        }
+        crucible_rig::RigClient::OpenAI(openai_client) => {
+            let agent = build_agent_with_tools(&agent_config, &openai_client, workspace_root)?;
+            Ok(Box::new(RigAgentHandle::new(agent)))
+        }
+        crucible_rig::RigClient::Anthropic(anthropic_client) => {
+            let agent = build_agent_with_tools(&agent_config, &anthropic_client, workspace_root)?;
+            Ok(Box::new(RigAgentHandle::new(agent)))
+        }
+    }
 }
 
 /// Create an agent based on configuration and parameters

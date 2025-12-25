@@ -20,6 +20,7 @@ members = [
     "crates/crucible-daemon",
     "crates/crucible-daemon-client",
     "crates/crucible-skills",
+    "crates/crucible-rig",
 ]
 default-members = ["crates/crucible-cli"]
 
@@ -170,6 +171,7 @@ crucible-llm = { path = "crates/crucible-llm" }
 crucible-skills = { path = "crates/crucible-skills" }
 crucible-surrealdb = { path = "crates/crucible-surrealdb" }
 crucible-rune = { path = "crates/crucible-rune" }
+crucible-rig = { path = "crates/crucible-rig" }
 crucible-web = { path = "crates/crucible-web" }
 crucible-daemon = { path = "crates/crucible-daemon" }
 crucible-daemon-client = { path = "crates/crucible-daemon-client" }
