@@ -135,7 +135,7 @@ pub enum Commands {
         #[arg(long, default_value = "3847")]
         port: u16,
 
-        /// Override kiln path (default: CRUCIBLE_KILN_PATH)
+        /// Override kiln path
         #[arg(long)]
         kiln_path: Option<std::path::PathBuf>,
 
