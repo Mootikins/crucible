@@ -240,8 +240,6 @@ verbose = false
 
     // Additional comprehensive tests for CLI config reading
 
-
-
     #[test]
     fn test_config_load_preserves_defaults_when_missing() {
         let config = CliConfig::default();

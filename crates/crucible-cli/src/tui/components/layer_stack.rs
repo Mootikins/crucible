@@ -202,7 +202,7 @@ mod tests {
     }
 
     impl InteractiveWidget for TestModal {
-        fn handle_event(&mut self, event: &Event) -> EventResult {
+        fn handle_event(&mut self, _event: &Event) -> EventResult {
             // Modal captures ALL events
             self.handled = true;
             EventResult::Consumed

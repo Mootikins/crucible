@@ -147,8 +147,8 @@ mod tests {
 
     #[test]
     fn test_notification_builder() {
-        let widget =
-            StatusBarWidget::new("auto", "Idle").notification(Some(("File saved", NotificationLevel::Info)));
+        let widget = StatusBarWidget::new("auto", "Idle")
+            .notification(Some(("File saved", NotificationLevel::Info)));
         assert!(widget.notification.is_some());
     }
 

@@ -413,8 +413,9 @@ impl AgentHandle for CrucibleAcpClient {
                 // Create the future that runs the streaming call
                 type FutureOutput =
                     Result<(String, Vec<crucible_acp::ToolCallInfo>), crucible_acp::AcpError>;
-                let fut: Pin<Box<dyn Future<Output = FutureOutput> + '_>> =
-                    Box::pin(async move { session.send_message_with_callback(&message, callback).await });
+                let fut: Pin<Box<dyn Future<Output = FutureOutput> + '_>> = Box::pin(async move {
+                    session.send_message_with_callback(&message, callback).await
+                });
 
                 // SAFETY: Transmuting lifetime - safe because session lives as long as self
                 // and stream must be consumed before self is dropped (&mut self exclusivity)
@@ -499,7 +500,9 @@ impl AgentHandle for CrucibleAcpClient {
                                             "ACP stream completed"
                                         );
                                         if content.is_empty() && acp_tool_calls.is_empty() {
-                                            tracing::warn!("ACP stream completed with empty response");
+                                            tracing::warn!(
+                                                "ACP stream completed with empty response"
+                                            );
                                         }
 
                                         // Emit final chunk with all tool calls, mark terminated
@@ -527,12 +530,17 @@ impl AgentHandle for CrucibleAcpClient {
                                     Ok(Err(e)) => {
                                         tracing::warn!(error = %e, "ACP stream error");
                                         Some((
-                                            Err(ChatError::Communication(format!("ACP error: {}", e))),
+                                            Err(ChatError::Communication(format!(
+                                                "ACP error: {}",
+                                                e
+                                            ))),
                                             None, // Terminate stream after error
                                         ))
                                     }
                                     Err(_) => {
-                                        tracing::warn!("ACP streaming task failed (oneshot dropped)");
+                                        tracing::warn!(
+                                            "ACP streaming task failed (oneshot dropped)"
+                                        );
                                         Some((
                                             Err(ChatError::Communication(
                                                 "ACP streaming task failed".to_string(),

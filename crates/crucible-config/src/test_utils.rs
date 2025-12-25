@@ -1,8 +1,6 @@
 //! Test utilities for configuration testing.
 
-use crate::{
-    Config, DatabaseConfig, Environment, LoggingConfig, ProfileConfig, ServerConfig,
-};
+use crate::{Config, DatabaseConfig, Environment, LoggingConfig, ProfileConfig, ServerConfig};
 use crate::{
     EmbeddingProviderConfig, EnrichmentConfig, OllamaConfig, OpenAIConfig, PipelineConfig,
 };
@@ -392,7 +390,6 @@ impl TempConfig {
     }
 }
 
-
 /// Configuration validation test utilities.
 pub struct ConfigValidation;
 
@@ -427,7 +424,6 @@ impl ConfigValidation {
 
         Ok(())
     }
-
 }
 
 #[cfg(test)]

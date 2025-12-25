@@ -528,7 +528,11 @@ fn conversation_generating_with_tokens() {
     let mut terminal = test_terminal();
     let mut conv = ConversationState::new();
     conv.push_user_message("Explain this code");
-    conv.set_status(StatusKind::Generating { token_count: 127, prev_token_count: 0, spinner_frame: 0 });
+    conv.set_status(StatusKind::Generating {
+        token_count: 127,
+        prev_token_count: 0,
+        spinner_frame: 0,
+    });
 
     render_conversation_view(&mut terminal, &conv, "", "act", Some(127), "Generating");
     assert_snapshot!("conv_generating_tokens", terminal.backend());
@@ -833,9 +837,9 @@ fn conversation_multiturn_with_tools() {
     conv.push_user_message("Read my note");
     conv.start_assistant_streaming();
     // Simulate prose that might have leading newline (common from LLM responses)
-    conv.append_streaming_blocks(vec![
-        ContentBlock::prose("\n▷ read({\"filePath\":\"docs/Note1.md\"})"),
-    ]);
+    conv.append_streaming_blocks(vec![ContentBlock::prose(
+        "\n▷ read({\"filePath\":\"docs/Note1.md\"})",
+    )]);
     conv.complete_streaming();
 
     // Turn 2: User follows up
@@ -853,9 +857,7 @@ fn prose_with_leading_newline_should_not_orphan_prefix() {
     conv.push_user_message("Test");
     conv.start_assistant_streaming();
     // Content starts with newline - prefix should NOT be on empty line
-    conv.append_streaming_blocks(vec![
-        ContentBlock::prose("\nThis is the actual content."),
-    ]);
+    conv.append_streaming_blocks(vec![ContentBlock::prose("\nThis is the actual content.")]);
 
     render_conversation_view(&mut terminal, &conv, "", "plan", None, "Ready");
 

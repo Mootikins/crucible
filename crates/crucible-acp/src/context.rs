@@ -69,7 +69,7 @@ impl Default for ContextConfig {
             use_reranking: false,
             rerank_candidates: None,
             enable_cache: true,
-            cache_ttl_secs: 300, // 5 minutes default
+            cache_ttl_secs: 300,   // 5 minutes default
             inject_context: false, // Off by default - ACP agents get tools via MCP
         }
     }
@@ -362,7 +362,10 @@ mod tests {
 
         // Should be passthrough - no injection
         assert_eq!(enriched, query, "Default should not inject context");
-        assert!(!enriched.contains("<crucible_context>"), "Should not have context block");
+        assert!(
+            !enriched.contains("<crucible_context>"),
+            "Should not have context block"
+        );
     }
 
     #[tokio::test]
@@ -386,8 +389,14 @@ mod tests {
         let enriched = result.unwrap();
 
         // Should have XML formatting
-        assert!(enriched.contains("<crucible_context>"), "Should use XML tags for context");
-        assert!(enriched.contains("</crucible_context>"), "Should close XML tags");
+        assert!(
+            enriched.contains("<crucible_context>"),
+            "Should use XML tags for context"
+        );
+        assert!(
+            enriched.contains("</crucible_context>"),
+            "Should close XML tags"
+        );
 
         // Should have matches in TOON format when results exist
         assert!(
@@ -482,7 +491,7 @@ mod tests {
 
         let config = ContextConfig {
             enable_cache: true,
-            cache_ttl_secs: 1, // 1 second TTL for fast testing
+            cache_ttl_secs: 1,    // 1 second TTL for fast testing
             inject_context: true, // Enable injection for caching test
             ..Default::default()
         };
@@ -542,7 +551,7 @@ mod xml_format_tests {
         let config = ContextConfig {
             enabled: true,
             context_size: 5,
-            enable_cache: false, // Disable cache for consistent testing
+            enable_cache: false,  // Disable cache for consistent testing
             inject_context: true, // Enable injection for this test
             ..Default::default()
         };
@@ -670,8 +679,7 @@ mod xml_format_tests {
 
         // Verify the complete format matches what we expect
         // Should look like: notes[2]{path,line,similarity}:
-        let notes_prefix_pattern = Regex::new(r"notes\[\d+\]\{path,line,similarity\}:")
-            .unwrap();
+        let notes_prefix_pattern = Regex::new(r"notes\[\d+\]\{path,line,similarity\}:").unwrap();
         assert!(
             notes_prefix_pattern.is_match(&result),
             "Should have proper TOON table header format: notes[N]{{path,line,similarity}}:"

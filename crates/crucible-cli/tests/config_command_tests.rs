@@ -185,7 +185,6 @@ fn test_config_show_json_format() {
         .stdout(predicate::str::contains("\"embedding\""));
 }
 
-
 #[test]
 #[serial]
 fn test_config_show_with_file_config() {
@@ -248,7 +247,6 @@ streaming = false
     }
 }
 
-
 // ============================================================================
 // Config Dump Command Tests
 // ============================================================================
@@ -283,11 +281,6 @@ fn test_config_dump_json_format() {
         .stdout(predicate::str::contains("\"kiln_path\""))
         .stdout(predicate::str::contains("\"embedding\""));
 }
-
-
-
-
-
 
 // ============================================================================
 // Edge Cases and Error Handling

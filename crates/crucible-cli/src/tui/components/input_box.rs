@@ -85,10 +85,7 @@ impl Widget for InputBoxWidget<'_> {
             self.buffer.to_string()
         };
 
-        let line = Line::from(vec![
-            Span::raw(self.prompt),
-            Span::raw(content_with_cursor),
-        ]);
+        let line = Line::from(vec![Span::raw(self.prompt), Span::raw(content_with_cursor)]);
 
         // Center vertically in the area
         let middle_row = area.y + area.height / 2;

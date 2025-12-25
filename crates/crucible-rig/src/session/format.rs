@@ -53,11 +53,7 @@ pub fn format_frontmatter(meta: &SessionMetadata) -> String {
 ///
 /// ```
 pub fn format_user_message(content: &str, ts: DateTime<Utc>) -> String {
-    format!(
-        "### User {}\n\n{}\n\n",
-        ts.format("%H:%M"),
-        content
-    )
+    format!("### User {}\n\n{}\n\n", ts.format("%H:%M"), content)
 }
 
 /// Format an agent response as markdown
@@ -71,11 +67,7 @@ pub fn format_user_message(content: &str, ts: DateTime<Utc>) -> String {
 ///
 /// ```
 pub fn format_agent_response(content: &str, ts: DateTime<Utc>) -> String {
-    format!(
-        "### Agent {}\n\n{}\n\n",
-        ts.format("%H:%M:%S"),
-        content
-    )
+    format!("### Agent {}\n\n{}\n\n", ts.format("%H:%M:%S"), content)
 }
 
 /// Format a tool call as markdown
@@ -96,12 +88,7 @@ pub fn format_agent_response(content: &str, ts: DateTime<Utc>) -> String {
 /// ```
 ///
 /// ```
-pub fn format_tool_call(
-    name: &str,
-    args: &Value,
-    result: &Value,
-    ts: DateTime<Utc>,
-) -> String {
+pub fn format_tool_call(name: &str, args: &Value, result: &Value, ts: DateTime<Utc>) -> String {
     let args_pretty = serde_json::to_string_pretty(args).unwrap_or_else(|_| args.to_string());
     let result_pretty = serde_json::to_string_pretty(result).unwrap_or_else(|_| result.to_string());
 
@@ -156,9 +143,15 @@ pub fn format_task_list(tasks: &[Task]) -> String {
 ///
 /// This combines frontmatter, messages, and tasks into a complete
 /// markdown document suitable for saving to disk.
+#[allow(clippy::type_complexity)]
 pub fn format_session(
     meta: &SessionMetadata,
-    messages: &[(String, DateTime<Utc>, super::types::MessageRole, Option<(&str, &Value, &Value)>)],
+    messages: &[(
+        String,
+        DateTime<Utc>,
+        super::types::MessageRole,
+        Option<(&str, &Value, &Value)>,
+    )],
     tasks: &[Task],
 ) -> String {
     use super::types::MessageRole;
@@ -365,10 +358,30 @@ mod tests {
         let args = serde_json::json!({"query": "test"});
         let result = serde_json::json!({"found": true});
 
-        let messages: Vec<(String, DateTime<Utc>, MessageRole, Option<(&str, &Value, &Value)>)> = vec![
-            ("Hello".into(), test_timestamp(10, 0, 0), MessageRole::User, None),
-            ("Hi!".into(), test_timestamp(10, 0, 5), MessageRole::Assistant, None),
-            ("".into(), test_timestamp(10, 0, 10), MessageRole::Tool, Some(("search", &args, &result))),
+        let messages: Vec<(
+            String,
+            DateTime<Utc>,
+            MessageRole,
+            Option<(&str, &Value, &Value)>,
+        )> = vec![
+            (
+                "Hello".into(),
+                test_timestamp(10, 0, 0),
+                MessageRole::User,
+                None,
+            ),
+            (
+                "Hi!".into(),
+                test_timestamp(10, 0, 5),
+                MessageRole::Assistant,
+                None,
+            ),
+            (
+                "".into(),
+                test_timestamp(10, 0, 10),
+                MessageRole::Tool,
+                Some(("search", &args, &result)),
+            ),
         ];
 
         let tasks = vec![Task {

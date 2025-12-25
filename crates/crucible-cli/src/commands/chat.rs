@@ -108,9 +108,7 @@ pub async fn execute(
             Some(AgentSelection::Acp(name.clone()))
         } else if !use_deferred_picker {
             // Agent specified via config default, not CLI
-            default_agent_from_config
-                .clone()
-                .map(|name| AgentSelection::Acp(name))
+            default_agent_from_config.clone().map(AgentSelection::Acp)
         } else {
             None // Show picker
         };

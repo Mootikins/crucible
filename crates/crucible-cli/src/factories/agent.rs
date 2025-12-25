@@ -249,13 +249,15 @@ async fn create_rig_agent(
     use crucible_rig::{build_agent_with_tools, RigAgentHandle};
 
     // Get model name from config
-    let model = config.chat.model.clone().unwrap_or_else(|| {
-        match config.chat.provider {
+    let model = config
+        .chat
+        .model
+        .clone()
+        .unwrap_or_else(|| match config.chat.provider {
             LlmProvider::Ollama => "llama3.2".to_string(),
             LlmProvider::OpenAI => "gpt-4o".to_string(),
             LlmProvider::Anthropic => "claude-3-5-sonnet-20241022".to_string(),
-        }
-    });
+        });
 
     // Build agent config using new() constructor
     let agent_config = crucible_rig::AgentConfig::new(
@@ -271,7 +273,10 @@ async fn create_rig_agent(
     // Create Rig client based on provider
     let client = match config.chat.provider {
         LlmProvider::Ollama => {
-            let endpoint = config.chat.endpoint.clone()
+            let endpoint = config
+                .chat
+                .endpoint
+                .clone()
                 .unwrap_or_else(|| "http://localhost:11434".to_string());
             crucible_rig::create_client(&LlmProviderConfig {
                 provider_type: LlmProviderType::Ollama,
@@ -283,31 +288,30 @@ async fn create_rig_agent(
                 api_key: None,
             })?
         }
-        LlmProvider::OpenAI => {
-            crucible_rig::create_client(&LlmProviderConfig {
-                provider_type: LlmProviderType::OpenAI,
-                endpoint: config.chat.endpoint.clone(),
-                default_model: Some(model.clone()),
-                temperature: config.chat.temperature,
-                max_tokens: config.chat.max_tokens,
-                timeout_secs: config.chat.timeout_secs,
-                api_key: Some("OPENAI_API_KEY".to_string()),
-            })?
-        }
-        LlmProvider::Anthropic => {
-            crucible_rig::create_client(&LlmProviderConfig {
-                provider_type: LlmProviderType::Anthropic,
-                endpoint: config.chat.endpoint.clone(),
-                default_model: Some(model.clone()),
-                temperature: config.chat.temperature,
-                max_tokens: config.chat.max_tokens,
-                timeout_secs: config.chat.timeout_secs,
-                api_key: Some("ANTHROPIC_API_KEY".to_string()),
-            })?
-        }
+        LlmProvider::OpenAI => crucible_rig::create_client(&LlmProviderConfig {
+            provider_type: LlmProviderType::OpenAI,
+            endpoint: config.chat.endpoint.clone(),
+            default_model: Some(model.clone()),
+            temperature: config.chat.temperature,
+            max_tokens: config.chat.max_tokens,
+            timeout_secs: config.chat.timeout_secs,
+            api_key: Some("OPENAI_API_KEY".to_string()),
+        })?,
+        LlmProvider::Anthropic => crucible_rig::create_client(&LlmProviderConfig {
+            provider_type: LlmProviderType::Anthropic,
+            endpoint: config.chat.endpoint.clone(),
+            default_model: Some(model.clone()),
+            temperature: config.chat.temperature,
+            max_tokens: config.chat.max_tokens,
+            timeout_secs: config.chat.timeout_secs,
+            api_key: Some("ANTHROPIC_API_KEY".to_string()),
+        })?,
     };
 
-    info!("Building Rig agent with workspace tools for: {}", workspace_root.display());
+    info!(
+        "Building Rig agent with workspace tools for: {}",
+        workspace_root.display()
+    );
 
     // Build Rig agent with tools based on client type
     match client {
@@ -343,12 +347,12 @@ pub async fn create_agent(
     use crucible_config::AgentPreference;
 
     // Determine agent type from params or config
-    let agent_type = params.agent_type.unwrap_or_else(|| {
-        match config.chat.agent_preference {
+    let agent_type = params
+        .agent_type
+        .unwrap_or(match config.chat.agent_preference {
             AgentPreference::Crucible => AgentType::Internal,
             AgentPreference::Acp => AgentType::Acp,
-        }
-    });
+        });
 
     match agent_type {
         AgentType::Internal => {

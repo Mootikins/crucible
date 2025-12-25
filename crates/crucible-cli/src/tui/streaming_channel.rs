@@ -116,7 +116,11 @@ impl StreamingTask {
                         }
 
                         if chunk.done {
-                            debug!(chunk_count, response_len = full_response.len(), "Stream done");
+                            debug!(
+                                chunk_count,
+                                response_len = full_response.len(),
+                                "Stream done"
+                            );
                             break;
                         }
                     }

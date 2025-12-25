@@ -52,7 +52,7 @@ pub const RESERVED_COMMANDS: &[&str] = &[
     "search",  // Search knowledge base
     "context", // Context management
     "clear",   // Clear screen/context
-    // Note: /mode removed - use Shift+Tab for mode switching
+               // Note: /mode removed - use Shift+Tab for mode switching
 ];
 
 /// Unshadowable commands that can NEVER be overridden by agents.

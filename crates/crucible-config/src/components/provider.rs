@@ -387,8 +387,7 @@ mod tests {
     #[test]
     fn test_api_key_direct() {
         // With new model, api_key is the resolved value
-        let config = ProviderConfig::new(BackendType::OpenAI)
-            .with_api_key("sk-direct-key");
+        let config = ProviderConfig::new(BackendType::OpenAI).with_api_key("sk-direct-key");
         assert_eq!(config.api_key(), Some("sk-direct-key".to_string()));
     }
 

@@ -153,7 +153,6 @@ impl ConfigLoader {
         })
     }
 
-
     /// Parse configuration from a string with specified format.
     fn parse_from_string(content: &str, format: ConfigFormat) -> Result<Config, ConfigError> {
         match format {
@@ -243,7 +242,6 @@ impl ConfigLoader {
         // Fall back to standard parsing (no includes support for YAML/JSON)
         Self::parse_from_string(content, format)
     }
-
 
     /// Save configuration to a file.
     pub async fn save_to_file<P: AsRef<Path>>(config: &Config, path: P) -> Result<(), ConfigError> {

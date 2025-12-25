@@ -186,10 +186,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn create_test_agent() -> rig::agent::Agent<ollama::CompletionModel> {
-        let client = ollama::Client::builder()
-            .api_key(Nothing)
-            .build()
-            .unwrap();
+        let client = ollama::Client::builder().api_key(Nothing).build().unwrap();
 
         client
             .agent("llama3.2")
@@ -203,14 +200,10 @@ mod tests {
         let state_dir = TempDir::new().unwrap();
 
         let agent = create_test_agent();
-        let crucible_agent = CrucibleAgent::new(
-            agent,
-            "test-workspace",
-            kiln_dir.path(),
-            state_dir.path(),
-        )
-        .await
-        .unwrap();
+        let crucible_agent =
+            CrucibleAgent::new(agent, "test-workspace", kiln_dir.path(), state_dir.path())
+                .await
+                .unwrap();
 
         // Should create session directory
         assert!(kiln_dir.path().join("sessions/test-workspace").exists());
@@ -225,14 +218,9 @@ mod tests {
         let state_dir = TempDir::new().unwrap();
 
         let agent = create_test_agent();
-        let crucible_agent = CrucibleAgent::new(
-            agent,
-            "test",
-            kiln_dir.path(),
-            state_dir.path(),
-        )
-        .await
-        .unwrap();
+        let crucible_agent = CrucibleAgent::new(agent, "test", kiln_dir.path(), state_dir.path())
+            .await
+            .unwrap();
 
         // Initially no messages
         assert_eq!(crucible_agent.session_state().messages.len(), 0);
@@ -245,27 +233,18 @@ mod tests {
 
         // Create initial session
         let agent = create_test_agent();
-        let crucible_agent = CrucibleAgent::new(
-            agent,
-            "test",
-            kiln_dir.path(),
-            state_dir.path(),
-        )
-        .await
-        .unwrap();
+        let crucible_agent = CrucibleAgent::new(agent, "test", kiln_dir.path(), state_dir.path())
+            .await
+            .unwrap();
 
         let session_id = crucible_agent.session_id().to_string();
         drop(crucible_agent);
 
         // Resume with new agent
         let new_agent = create_test_agent();
-        let resumed = CrucibleAgent::resume(
-            &session_id,
-            new_agent,
-            state_dir.path(),
-        )
-        .await
-        .unwrap();
+        let resumed = CrucibleAgent::resume(&session_id, new_agent, state_dir.path())
+            .await
+            .unwrap();
 
         assert_eq!(resumed.session_id(), session_id);
     }
@@ -276,14 +255,10 @@ mod tests {
         let state_dir = TempDir::new().unwrap();
 
         let agent = create_test_agent();
-        let mut crucible_agent = CrucibleAgent::new(
-            agent,
-            "test",
-            kiln_dir.path(),
-            state_dir.path(),
-        )
-        .await
-        .unwrap();
+        let mut crucible_agent =
+            CrucibleAgent::new(agent, "test", kiln_dir.path(), state_dir.path())
+                .await
+                .unwrap();
 
         crucible_agent.end_session().await.unwrap();
 
@@ -297,21 +272,15 @@ mod tests {
         let state_dir = TempDir::new().unwrap();
 
         let agent = create_test_agent();
-        let mut crucible_agent = CrucibleAgent::new(
-            agent,
-            "test",
-            kiln_dir.path(),
-            state_dir.path(),
-        )
-        .await
-        .unwrap();
+        let mut crucible_agent =
+            CrucibleAgent::new(agent, "test", kiln_dir.path(), state_dir.path())
+                .await
+                .unwrap();
 
-        let tasks = vec![
-            Task {
-                content: "Task 1".into(),
-                status: crate::session::TaskStatus::InProgress,
-            },
-        ];
+        let tasks = vec![Task {
+            content: "Task 1".into(),
+            status: crate::session::TaskStatus::InProgress,
+        }];
 
         crucible_agent.update_tasks(tasks).await.unwrap();
 
@@ -324,14 +293,9 @@ mod tests {
         let state_dir = TempDir::new().unwrap();
 
         let agent = create_test_agent();
-        let crucible_agent = CrucibleAgent::new(
-            agent,
-            "test",
-            kiln_dir.path(),
-            state_dir.path(),
-        )
-        .await
-        .unwrap();
+        let crucible_agent = CrucibleAgent::new(agent, "test", kiln_dir.path(), state_dir.path())
+            .await
+            .unwrap();
 
         // Can access inner agent
         let _inner = crucible_agent.inner();
@@ -349,14 +313,10 @@ mod tests {
         // This would need a real Ollama instance
         let agent = create_test_agent();
 
-        let mut crucible_agent = CrucibleAgent::new(
-            agent,
-            "test",
-            kiln_dir.path(),
-            state_dir.path(),
-        )
-        .await
-        .unwrap();
+        let mut crucible_agent =
+            CrucibleAgent::new(agent, "test", kiln_dir.path(), state_dir.path())
+                .await
+                .unwrap();
 
         let response = crucible_agent.prompt("Say hello").await.unwrap();
 
