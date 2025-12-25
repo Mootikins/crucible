@@ -516,9 +516,11 @@ fn render_assistant_message(content: &str) -> Vec<Line<'static>> {
 
 fn render_status(status: &StatusKind) -> Vec<Line<'static>> {
     let (spinner_frame, text, style) = match status {
-        StatusKind::Thinking { spinner_frame } => {
-            (*spinner_frame, "Thinking...".to_string(), presets::thinking())
-        }
+        StatusKind::Thinking { spinner_frame } => (
+            *spinner_frame,
+            "Thinking...".to_string(),
+            presets::thinking(),
+        ),
         StatusKind::Generating {
             token_count,
             prev_token_count,
@@ -883,7 +885,11 @@ mod tests {
     fn test_set_status_replaces_existing() {
         let mut state = ConversationState::new();
         state.set_status(StatusKind::Thinking { spinner_frame: 0 });
-        state.set_status(StatusKind::Generating { token_count: 50, prev_token_count: 0, spinner_frame: 0 });
+        state.set_status(StatusKind::Generating {
+            token_count: 50,
+            prev_token_count: 0,
+            spinner_frame: 0,
+        });
 
         let status_count = state
             .items()
@@ -1132,7 +1138,9 @@ mod tests {
         // Multi-line assistant messages should have:
         // - First line: " ● " prefix
         // - Continuation lines: "   " (3 spaces) indent
-        let blocks = vec![crate::tui::ContentBlock::prose("Line one\nLine two\nLine three")];
+        let blocks = vec![crate::tui::ContentBlock::prose(
+            "Line one\nLine two\nLine three",
+        )];
         let lines = render_assistant_blocks(&blocks, false, 80);
 
         // Skip blank line, get content lines

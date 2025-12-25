@@ -1061,7 +1061,11 @@ mod tests {
                 .collect();
 
             // Items 3, 4, 6, 7 should NOT have the highlight marker
-            if line.contains("Item 3") || line.contains("Item 4") || line.contains("Item 6") || line.contains("Item 7") {
+            if line.contains("Item 3")
+                || line.contains("Item 4")
+                || line.contains("Item 6")
+                || line.contains("Item 7")
+            {
                 let has_marker = line.contains("│> ");
                 assert!(
                     !has_marker,

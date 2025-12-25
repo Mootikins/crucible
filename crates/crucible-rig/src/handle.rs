@@ -113,7 +113,10 @@ where
     M: CompletionModel + 'static,
     M::StreamingResponse: Clone + Send + Sync + Unpin + rig::completion::GetTokenUsage,
 {
-    fn send_message_stream(&mut self, message: String) -> BoxStream<'static, ChatResult<ChatChunk>> {
+    fn send_message_stream(
+        &mut self,
+        message: String,
+    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
         use rig::agent::MultiTurnStreamItem;
         use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
 
@@ -611,8 +614,10 @@ mod tests {
             }
         }
 
-        println!("Got {} items, tool_call={}, final={}, text={}",
-                 item_count, got_tool_call, got_final, got_text);
+        println!(
+            "Got {} items, tool_call={}, final={}, text={}",
+            item_count, got_tool_call, got_final, got_text
+        );
 
         // Should have received tool calls and final response
         assert!(got_tool_call, "Expected to receive tool calls");
