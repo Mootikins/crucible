@@ -81,7 +81,10 @@ pub use history::{ConversationHistory, HistoryConfig, HistoryMessage, MessageRol
 pub use mcp_host::InProcessMcpHost;
 pub use protocol::MessageHandler;
 pub use session::{AcpSession, SessionConfig};
-pub use streaming::{humanize_tool_title, StreamConfig, StreamHandler, ToolCallInfo};
+pub use streaming::{
+    channel_callback, humanize_tool_title, StreamConfig, StreamHandler, StreamingCallback,
+    StreamingChunk, ToolCallInfo,
+};
 pub use tools::{
     discover_crucible_tools, get_crucible_system_prompt, ToolDescriptor, ToolExecutor, ToolRegistry,
 };

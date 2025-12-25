@@ -49,6 +49,13 @@ pub fn create_streaming_channel() -> (StreamingSender, StreamingReceiver) {
 /// Wraps streaming task spawning (zero-sized type, just namespace)
 pub struct StreamingTask;
 
+/// Threshold for synthetic streaming (characters). Responses larger than this
+/// that arrive as a single chunk will be broken into smaller pieces for display.
+const SYNTHETIC_STREAM_THRESHOLD: usize = 100;
+
+/// Target chunk size for synthetic streaming (characters per chunk).
+const SYNTHETIC_CHUNK_SIZE: usize = 20;
+
 impl StreamingTask {
     /// Spawn a task that consumes the stream and sends events to channel
     pub fn spawn(tx: StreamingSender, mut stream: ChatStream) -> JoinHandle<()> {
@@ -63,11 +70,19 @@ impl StreamingTask {
                         // Sequence numbers track actual content deltas, not empty stream items
                         if !chunk.delta.is_empty() {
                             full_response.push_str(&chunk.delta);
-                            let _ = tx.send(StreamingEvent::Delta {
-                                text: chunk.delta,
-                                seq,
-                            });
-                            seq += 1;
+
+                            // Detect single-chunk responses (like from ACP) and synthesize streaming
+                            // This provides visual feedback with token count for non-streaming agents
+                            if chunk.done && chunk.delta.len() > SYNTHETIC_STREAM_THRESHOLD {
+                                // Break into smaller chunks for synthetic streaming effect
+                                seq = Self::emit_synthetic_chunks(&tx, &chunk.delta, seq).await;
+                            } else {
+                                let _ = tx.send(StreamingEvent::Delta {
+                                    text: chunk.delta,
+                                    seq,
+                                });
+                                seq += 1;
+                            }
                         }
                         if chunk.done {
                             break;
@@ -84,6 +99,39 @@ impl StreamingTask {
 
             let _ = tx.send(StreamingEvent::Done { full_response });
         })
+    }
+
+    /// Break a large response into smaller chunks and emit with minimal delay.
+    /// Returns the next sequence number after all chunks are emitted.
+    async fn emit_synthetic_chunks(tx: &StreamingSender, text: &str, mut seq: u64) -> u64 {
+        let mut remaining = text;
+
+        while !remaining.is_empty() {
+            // Find a good break point (prefer word boundaries)
+            let chunk_end = if remaining.len() <= SYNTHETIC_CHUNK_SIZE {
+                remaining.len()
+            } else {
+                // Look for space near the target size
+                remaining[..SYNTHETIC_CHUNK_SIZE.min(remaining.len())]
+                    .rfind(' ')
+                    .map(|pos| pos + 1) // Include the space
+                    .unwrap_or(SYNTHETIC_CHUNK_SIZE.min(remaining.len()))
+            };
+
+            let (chunk, rest) = remaining.split_at(chunk_end);
+            remaining = rest;
+
+            let _ = tx.send(StreamingEvent::Delta {
+                text: chunk.to_string(),
+                seq,
+            });
+            seq += 1;
+
+            // Minimal delay to allow UI to update (1ms is enough for visual effect)
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        }
+
+        seq
     }
 }
 

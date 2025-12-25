@@ -14,6 +14,43 @@ use crate::Result;
 // Re-export ToolCallInfo from core for backwards compatibility
 pub use crucible_core::types::acp::ToolCallInfo;
 
+/// A streaming chunk from an ACP agent.
+///
+/// These events are emitted as they arrive from the agent,
+/// enabling real-time display of agent responses.
+#[derive(Debug, Clone)]
+pub enum StreamingChunk {
+    /// Text content from the agent's response
+    Text(String),
+    /// Agent is thinking (for agents that expose thinking)
+    Thinking(String),
+    /// A tool is being called
+    ToolStart {
+        name: String,
+        id: String,
+    },
+    /// Tool execution completed
+    ToolEnd {
+        id: String,
+    },
+}
+
+/// Callback type for receiving streaming chunks.
+///
+/// The callback receives chunks as they arrive from the agent.
+/// Return `true` to continue streaming, `false` to cancel.
+pub type StreamingCallback = Box<dyn FnMut(StreamingChunk) -> bool + Send>;
+
+/// Create a callback that sends chunks to an unbounded channel.
+///
+/// This is useful for integrating with async code that needs to
+/// poll for chunks rather than receive callbacks.
+pub fn channel_callback(
+    tx: tokio::sync::mpsc::UnboundedSender<StreamingChunk>,
+) -> StreamingCallback {
+    Box::new(move |chunk| tx.send(chunk).is_ok())
+}
+
 /// Convert a tool title into a human-readable name by removing MCP schema prefixes.
 pub fn humanize_tool_title(title: &str) -> String {
     if let Some(stripped) = title.strip_prefix("mcp__crucible__") {

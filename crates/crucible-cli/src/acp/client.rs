@@ -7,10 +7,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, info};
 
-use crate::chat::{AgentHandle, ChatError, ChatResult};
+use crate::chat::{AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall};
 use crucible_acp::{
-    AgentInfo, ChatConfig, ChatSession, ContextConfig, CrucibleAcpClient as AcpClient,
-    HistoryConfig, InProcessMcpHost, StreamConfig,
+    channel_callback, AgentInfo, ChatConfig, ChatSession, ContextConfig,
+    CrucibleAcpClient as AcpClient, HistoryConfig, InProcessMcpHost, StreamConfig, StreamingChunk,
 };
 use crucible_config::AcpConfig;
 use crucible_core::enrichment::EmbeddingProvider;
@@ -391,67 +391,122 @@ impl AgentHandle for CrucibleAcpClient {
     fn send_message_stream(
         &mut self,
         message: String,
-    ) -> futures::stream::BoxStream<'static, ChatResult<crate::chat::ChatChunk>> {
-        // For now, wrap the non-streaming send_message_acp in a stream
-        // TODO: When crucible-acp supports streaming, update this to use real streaming
-
-        // NOTE: ACP client doesn't actually stream yet, so we just execute the
-        // send_message call and wrap it in a single-element stream.
-        // This requires some lifetime gymnastics because we can't borrow from self
-        // in a 'static stream. The solution here mimics what the old unsafe code
-        // in runner.rs did, but encapsulated within this implementation.
-
+    ) -> futures::stream::BoxStream<'static, ChatResult<ChatChunk>> {
+        use futures::StreamExt;
         use std::future::Future;
         use std::pin::Pin;
+        use tokio::sync::mpsc;
 
-        // Helper type that wraps the future and makes it Send
-        // SAFETY: We're asserting that the future IS actually Send, which it should be
-        // if ChatSession is Send (it's just Rust can't prove it through the raw pointer)
-        struct SendFuture<F>(F);
-        unsafe impl<F> Send for SendFuture<F> {}
+        // Create channel for streaming chunks
+        let (tx, rx) = mpsc::unbounded_channel::<StreamingChunk>();
 
-        // Create the future by calling send_message now (while we have &mut self)
-        // Then wrap it to make it 'static
         match self.session.as_mut() {
             Some(session) => {
-                // This creates a future that borrows from session
+                // Create a callback that sends chunks to the channel
+                let callback = channel_callback(tx.clone());
+
+                // Create the future that runs the streaming call
                 type FutureOutput =
                     Result<(String, Vec<crucible_acp::ToolCallInfo>), crucible_acp::AcpError>;
                 let fut: Pin<Box<dyn Future<Output = FutureOutput> + '_>> =
-                    Box::pin(async move { session.send_message(&message).await });
+                    Box::pin(async move { session.send_message_with_callback(&message, callback).await });
 
-                // SAFETY: We're transmuting the lifetime away. This is safe because:
-                // 1. The session lives as long as self
-                // 2. The stream must be consumed before self is dropped (enforced by Rust)
-                // 3. Only one stream can be active at a time (&mut self exclusivity)
+                // SAFETY: Transmuting lifetime - safe because session lives as long as self
+                // and stream must be consumed before self is dropped (&mut self exclusivity)
                 let static_fut: Pin<Box<dyn Future<Output = FutureOutput> + Send>> =
                     unsafe { std::mem::transmute(fut) };
 
-                Box::pin(futures::stream::once(async move {
-                    let (content, acp_tool_calls) = static_fut
-                        .await
-                        .map_err(|e| ChatError::Communication(e.to_string()))?;
+                // Spawn a task to run the streaming call in the background
+                // This allows us to yield chunks as they arrive
+                let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+                tokio::spawn(async move {
+                    let result = static_fut.await;
+                    let _ = result_tx.send(result);
+                });
 
-                    // Convert ACP ToolCallInfo to generic ToolCall
-                    let tool_calls: Vec<crate::chat::ChatToolCall> = acp_tool_calls
-                        .into_iter()
-                        .map(|t| crate::chat::ChatToolCall {
-                            name: t.title,
-                            arguments: t.arguments,
-                            id: t.id,
-                        })
-                        .collect();
-
-                    Ok(crate::chat::ChatChunk {
-                        delta: content,
-                        done: true,
-                        tool_calls: if tool_calls.is_empty() {
-                            None
-                        } else {
-                            Some(tool_calls)
-                        },
-                    })
-                }))
+                // Convert the channel receiver into a stream of ChatChunks
+                Box::pin(futures::stream::unfold(
+                    (rx, result_rx, Vec::new()),
+                    move |(mut rx, result_rx, mut tool_calls)| async move {
+                        // Try to receive a chunk
+                        match rx.recv().await {
+                            Some(chunk) => {
+                                let chat_chunk = match chunk {
+                                    StreamingChunk::Text(text) => ChatChunk {
+                                        delta: text,
+                                        done: false,
+                                        tool_calls: None,
+                                    },
+                                    StreamingChunk::Thinking(text) => ChatChunk {
+                                        delta: format!("💭 {}", text), // Show thinking with emoji
+                                        done: false,
+                                        tool_calls: None,
+                                    },
+                                    StreamingChunk::ToolStart { name, id } => {
+                                        tool_calls.push(ChatToolCall {
+                                            name: name.clone(),
+                                            arguments: None,
+                                            id: Some(id),
+                                        });
+                                        ChatChunk {
+                                            delta: String::new(),
+                                            done: false,
+                                            tool_calls: Some(vec![ChatToolCall {
+                                                name,
+                                                arguments: None,
+                                                id: None,
+                                            }]),
+                                        }
+                                    }
+                                    StreamingChunk::ToolEnd { id: _ } => ChatChunk {
+                                        delta: String::new(),
+                                        done: false,
+                                        tool_calls: None,
+                                    },
+                                };
+                                Some((Ok(chat_chunk), (rx, result_rx, tool_calls)))
+                            }
+                            None => {
+                                // Channel closed - check if streaming completed successfully
+                                match result_rx.await {
+                                    Ok(Ok((_content, acp_tool_calls))) => {
+                                        // Emit final chunk with all tool calls
+                                        let final_tool_calls: Vec<ChatToolCall> = acp_tool_calls
+                                            .into_iter()
+                                            .map(|t| ChatToolCall {
+                                                name: t.title,
+                                                arguments: t.arguments,
+                                                id: t.id,
+                                            })
+                                            .collect();
+                                        Some((
+                                            Ok(ChatChunk {
+                                                delta: String::new(),
+                                                done: true,
+                                                tool_calls: if final_tool_calls.is_empty() {
+                                                    None
+                                                } else {
+                                                    Some(final_tool_calls)
+                                                },
+                                            }),
+                                            (rx, tokio::sync::oneshot::channel().1, tool_calls),
+                                        ))
+                                    }
+                                    Ok(Err(e)) => Some((
+                                        Err(ChatError::Communication(e.to_string())),
+                                        (rx, tokio::sync::oneshot::channel().1, tool_calls),
+                                    )),
+                                    Err(_) => Some((
+                                        Err(ChatError::Communication(
+                                            "Streaming task failed".to_string(),
+                                        )),
+                                        (rx, tokio::sync::oneshot::channel().1, tool_calls),
+                                    )),
+                                }
+                            }
+                        }
+                    },
+                ))
             }
             None => {
                 // No session - return error stream
