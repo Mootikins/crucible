@@ -45,7 +45,7 @@ This file provides essential information for AI agents to understand and contrib
 | `crucible-llm` | LLM providers (embeddings, chat) | `EmbeddingProvider`, `TextGenerationProvider` |
 | `crucible-surrealdb` | SurrealDB storage with EAV schema | `SurrealStorage`, `EavGraph` |
 | `crucible-cli` | Command-line interface | CLI commands and REPL |
-| `crucible-web` | Browser chat UI (Svelte 5 + Axum) | HTTP/SSE endpoints |
+| `crucible-web` | Browser chat UI (SolidJS + Axum) | HTTP/SSE endpoints |
 | `crucible-tools` | MCP server and tools | Tool implementations |
 | `crucible-rune` | Rune scripting integration | Script execution |
 | `crucible-watch` | File system watching | Change detection |
@@ -199,6 +199,13 @@ The `docs/` directory is a **reference kiln** — a valid Crucible vault that se
 - `just mcp` - Start MCP server
 
 Run `just` to see all available commands.
+
+**Web frontend uses `bun`**: For crucible-web frontend development, use bun (not npm/yarn):
+- `bun install` - Install dependencies
+- `bun run dev` - Start dev server
+- `bun run build` - Production build
+
+See `crates/crucible-web/web/AGENTS.md` for frontend-specific guidelines.
 
 ### Code Style
 
