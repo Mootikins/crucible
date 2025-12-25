@@ -93,15 +93,17 @@ export const VolumeMeterBar: Component<VolumeMeterProps> = (props) => {
  * No CSS transition for maximum reactivity - updates at 60fps via requestAnimationFrame
  */
 export const VolumeGlow: Component<VolumeMeterProps> = (props) => {
-  const glowIntensity = () => props.level() * 24; // 0-24px blur
-  const glowSpread = () => props.level() * 12; // 0-12px spread
+  // Dramatic glow that really pops on loud audio
+  const glowIntensity = () => props.level() * 40; // 0-40px blur
+  const glowSpread = () => props.level() * 20; // 0-20px spread
+  const opacity = () => 0.4 + props.level() * 0.6; // 0.4-1.0 opacity
 
   return (
     <div
       class="absolute inset-0 rounded-lg pointer-events-none"
       style={{
         'box-shadow': props.active
-          ? `0 0 ${glowIntensity()}px ${glowSpread()}px rgba(239, 68, 68, ${0.3 + props.level() * 0.5})`
+          ? `0 0 ${glowIntensity()}px ${glowSpread()}px rgba(239, 68, 68, ${opacity()})`
           : 'none',
         // No transition - direct updates for instant response
       }}

@@ -41,9 +41,12 @@ export function useMediaRecorder(): UseMediaRecorderResult {
       }
     }
 
-    // Normalize peak to 0-1, with amplification for better visual response
-    // Peak range is 0-128, so divide by 128 and amplify
-    const level = Math.min(1, (peak / 128) * 2);
+    // Normalize peak to 0-1 with high gain and exponential curve for dramatic response
+    // Peak range is 0-128, normalize first
+    const normalized = Math.min(1, (peak / 128) * 3); // 3x gain on raw signal
+    // Exponential curve (x^2): quiet stays quiet, loud EXPLODES
+    // This is the opposite of sqrt - makes variations more dramatic
+    const level = normalized * normalized; // x² for punchy response
     setAudioLevel(level);
 
     if (isRecording()) {
