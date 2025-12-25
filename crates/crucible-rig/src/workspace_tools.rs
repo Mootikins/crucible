@@ -669,6 +669,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires ripgrep"]
     async fn test_grep_tool_call() {
         let (temp, ctx) = create_test_context();
         let tool = GrepTool::new(ctx);
