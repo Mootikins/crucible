@@ -4,6 +4,7 @@ tags:
   - help
   - cli
   - reference
+status: implemented
 ---
 
 # CLI Command Reference
@@ -16,9 +17,8 @@ Complete reference for all Crucible CLI commands.
 |---------|-------------|
 | `cru process` | Process vault and sync to database |
 | `cru stats` | Show vault statistics |
-| `cru search` | Search notes by content |
-| `cru semantic` | Semantic similarity search |
-| `cru fuzzy` | Fuzzy file name search |
+| `cru status` | Show storage status and statistics |
+| `cru config` | Configuration management |
 
 ## Agent Commands
 
@@ -26,24 +26,36 @@ Complete reference for all Crucible CLI commands.
 |---------|-------------|
 | `cru chat` | Interactive chat with agents |
 | `cru agents list` | List available agents |
-| `cru agents info` | Show agent details |
+| `cru agents info <name>` | Show agent details |
+| `cru mcp` | Start MCP server for external tools |
 
-## Database Commands
+## Management Commands
 
 | Command | Description |
 |---------|-------------|
-| `cru repl` | Start SurrealDB REPL |
+| `cru storage` | Storage management and operations |
+| `cru tasks` | Task harness management |
+| `cru daemon` | Daemon management (start, stop, status) |
+| `cru skills` | Agent skills management |
 
 ## Global Options
 
 ```
---kiln, -k <PATH>    Path to kiln (default: $CRUCIBLE_KILN_PATH)
---verbose, -v        Increase verbosity
---quiet, -q          Suppress output
---help, -h           Show help
+-l, --log-level <LEVEL>     Set log level (off, error, warn, info, debug, trace)
+-v, --verbose               Enable verbose logging (--log-level=debug)
+-C, --config <PATH>         Config file path (defaults to ~/.config/crucible/config.toml)
+-f, --format <FORMAT>       Output format: table, json, csv (default: table)
+    --embedding-url <URL>   Embedding service URL (overrides config)
+    --embedding-model <MODEL> Embedding model name (overrides config)
+    --no-process            Skip file processing on startup
+    --process-timeout <SEC> Processing timeout in seconds (default: 300)
+-h, --help                  Show help
+-V, --version               Print version
 ```
 
 ## See Also
 
 - [[Help/CLI/process]] - Processing pipeline details
+- [[Help/CLI/chat]] - Chat command reference
+- [[Help/CLI/stats]] - Statistics command
 - [[Help/Config/storage]] - Storage configuration

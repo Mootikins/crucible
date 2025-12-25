@@ -16,11 +16,10 @@ This guide covers the essential Crucible commands you'll use daily.
 | Command | Purpose |
 |---------|---------|
 | `cru` | Start interactive chat |
-| `cru process` | Index notes for search |
+| `cru process` | Index notes |
 | `cru stats` | View kiln statistics |
-| `cru search` | Search your notes |
-| `cru semantic` | Semantic similarity search |
 | `cru chat` | Chat with context |
+| `cru mcp` | Start MCP server |
 
 ## cru (Default)
 
@@ -50,7 +49,8 @@ This is the primary way to interact with your kiln. The AI agent can search, rea
 - `/plan` - Switch to read-only mode
 - `/act` - Enable write mode
 - `/clear` - Clear conversation history
-- `Ctrl+C` - Exit
+- `Shift+Tab` - Cycle modes
+- `Ctrl+C` - Cancel (double to exit)
 
 ## cru process
 
@@ -107,43 +107,6 @@ Useful for:
 
 See [[Help/CLI/stats]] for full documentation.
 
-## cru search
-
-Text search across your notes:
-
-```bash
-cru search "project planning"
-```
-
-### Options
-
-**Limit results:**
-```bash
-cru search "TODO" --limit 20
-```
-
-**Search in folder:**
-```bash
-cru search "meeting" --folder Projects
-```
-
-## cru semantic
-
-Find semantically similar content:
-
-```bash
-cru semantic "productivity techniques"
-```
-
-This uses embeddings to find conceptually related notes, even without exact keyword matches.
-
-### Options
-
-**Limit results:**
-```bash
-cru semantic "machine learning" --limit 10
-```
-
 ## cru chat
 
 Start chat with a specific message:
@@ -189,6 +152,16 @@ cru mcp --stdio
 
 This exposes your kiln to AI tools like Claude Code.
 
+## cru status
+
+Check storage status:
+
+```bash
+cru status
+```
+
+Shows database connection info and storage statistics.
+
 ## Command Patterns
 
 ### Daily Workflow
@@ -197,7 +170,7 @@ This exposes your kiln to AI tools like Claude Code.
 # Morning: Check what's there
 cru stats
 
-# Working: Search and explore
+# Working: Search and explore via chat
 cru chat "What are my open tasks?"
 
 # Adding notes: Keep index fresh
@@ -206,15 +179,14 @@ cru process --watch
 
 ### Finding Information
 
+All search happens through the chat interface or MCP tools:
+
 ```bash
-# Know the exact term
-cru search "specific phrase"
+# Interactive exploration
+cru chat "Help me find notes about project planning"
 
-# Know the concept
-cru semantic "general idea"
-
-# Explore interactively
-cru chat "Help me find notes about..."
+# Or use MCP with external tools
+cru mcp --stdio
 ```
 
 ### Maintenance
@@ -235,14 +207,17 @@ cru config show
 These work with any command:
 
 ```bash
-# Specify kiln path
-cru --kiln /path/to/notes stats
+# Specify config file
+cru -C /path/to/config.toml stats
 
 # Verbose output
 cru --verbose process
 
 # JSON output (where supported)
 cru stats --format json
+
+# Skip processing on startup
+cru --no-process chat
 ```
 
 ## Getting Help
@@ -253,18 +228,18 @@ cru --help
 
 # Command-specific help
 cru process --help
-cru search --help
+cru chat --help
 ```
 
 ## Next Steps
 
 - [[Getting Started]] - Full setup guide
 - [[Your First Kiln]] - Create a kiln from scratch
-- [[Help/CLI/search]] - Detailed search documentation
+- [[Help/CLI/Index]] - Full CLI reference
 - [[Help/CLI/process]] - Processing options
 
 ## See Also
 
-- `:h search` - Search tool reference
+- `:h cli` - CLI reference
 - `:h process` - Processing reference
 - `:h config` - Configuration options
