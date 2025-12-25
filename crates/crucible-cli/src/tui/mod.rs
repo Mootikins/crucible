@@ -7,6 +7,7 @@
 //! - Handles cancellation (Ctrl+C)
 
 pub mod agent_picker;
+pub mod components;
 pub mod content_block;
 pub mod conversation;
 pub mod conversation_view;
@@ -35,6 +36,7 @@ mod conversation_ordering_tests;
 mod runner_picker_tests;
 
 pub use agent_picker::{pick_agent, AgentSelection};
+pub use components::{DialogAction, EventResult, FocusTarget, InteractiveWidget, TuiAction};
 pub use content_block::{ContentBlock, ParseEvent};
 pub use dialog::{DialogKind, DialogResult, DialogStack, DialogState, DialogWidget};
 pub use input::{map_key_event, InputAction};

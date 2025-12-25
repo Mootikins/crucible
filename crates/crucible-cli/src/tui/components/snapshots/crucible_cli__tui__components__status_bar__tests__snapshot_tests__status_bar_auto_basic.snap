@@ -1,0 +1,5 @@
+---
+source: crates/crucible-cli/src/tui/components/status_bar.rs
+expression: terminal.backend()
+---
+"▸ Auto │ Idle                                                                   "
