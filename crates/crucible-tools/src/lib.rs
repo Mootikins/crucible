@@ -42,6 +42,7 @@ pub mod output_filter;
 pub mod search;
 pub mod toon_response;
 pub mod utils;
+pub mod workspace;
 
 // ===== PUBLIC API EXPORTS =====
 
@@ -51,6 +52,7 @@ pub use mcp_client::{create_stdio_executor, create_stdio_executor_with_env, Rmcp
 pub use mcp_server::CrucibleMcpServer;
 pub use notes::NoteTools;
 pub use search::SearchTools;
+pub use workspace::WorkspaceTools;
 
 /// Crate version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

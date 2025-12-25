@@ -54,6 +54,9 @@ crucible-config = { path = "../crucible-config" }
 # File watching (used by processing module)
 notify = { workspace = true }
 
+# MCP types for tool abstraction (uses workspace version for consistency with rig)
+rmcp = { workspace = true }
+
 # Enhanced change detection dependencies
 parking_lot = "0.12"
 rayon = { version = "1.8", optional = true }

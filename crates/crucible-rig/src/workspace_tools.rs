@@ -1,0 +1,692 @@
+//! Rig-compatible workspace tools
+//!
+//! This module provides Rig `Tool` trait implementations for workspace operations.
+//! These wrap the core `WorkspaceTools` to work seamlessly with Rig agents.
+//!
+//! ## Available Tools
+//!
+//! - `ReadFileTool` - Read file contents with optional line range
+//! - `EditFileTool` - Edit file via search/replace
+//! - `WriteFileTool` - Write content to file
+//! - `BashTool` - Execute shell commands
+//! - `GlobTool` - Find files by pattern
+//! - `GrepTool` - Search file contents with regex
+
+use crucible_tools::WorkspaceTools;
+use rig::completion::ToolDefinition;
+use rig::tool::Tool;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use std::path::PathBuf;
+use std::sync::Arc;
+use thiserror::Error;
+
+/// Error type for workspace tool operations
+#[derive(Debug, Error)]
+pub enum WorkspaceToolError {
+    /// File operation failed
+    #[error("File error: {0}")]
+    File(String),
+
+    /// Command execution failed
+    #[error("Command error: {0}")]
+    Command(String),
+
+    /// Pattern matching failed
+    #[error("Pattern error: {0}")]
+    Pattern(String),
+}
+
+/// Shared workspace context for tools
+#[derive(Clone)]
+pub struct WorkspaceContext {
+    tools: Arc<WorkspaceTools>,
+}
+
+impl WorkspaceContext {
+    /// Create a new workspace context
+    pub fn new(workspace_root: impl Into<PathBuf>) -> Self {
+        Self {
+            tools: Arc::new(WorkspaceTools::new(workspace_root)),
+        }
+    }
+
+    /// Get all workspace tools as a vector for agent building
+    pub fn all_tools(&self) -> Vec<Box<dyn rig::tool::ToolDyn>> {
+        vec![
+            Box::new(ReadFileTool::new(self.clone())),
+            Box::new(EditFileTool::new(self.clone())),
+            Box::new(WriteFileTool::new(self.clone())),
+            Box::new(BashTool::new(self.clone())),
+            Box::new(GlobTool::new(self.clone())),
+            Box::new(GrepTool::new(self.clone())),
+        ]
+    }
+}
+
+// =============================================================================
+// ReadFileTool
+// =============================================================================
+
+/// Arguments for reading a file
+#[derive(Debug, Deserialize)]
+pub struct ReadFileArgs {
+    /// Path to file (absolute or relative to workspace)
+    path: String,
+    /// Line number to start from (1-indexed)
+    offset: Option<usize>,
+    /// Maximum lines to read
+    limit: Option<usize>,
+}
+
+/// Tool for reading file contents
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ReadFileTool {
+    #[serde(skip)]
+    ctx: Option<WorkspaceContext>,
+}
+
+impl ReadFileTool {
+    /// Create a new ReadFileTool
+    pub fn new(ctx: WorkspaceContext) -> Self {
+        Self { ctx: Some(ctx) }
+    }
+}
+
+impl Tool for ReadFileTool {
+    const NAME: &'static str = "read_file";
+    type Error = WorkspaceToolError;
+    type Args = ReadFileArgs;
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: Self::NAME.to_string(),
+            description: "Read file contents. Returns content with line numbers.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to file (absolute or relative to workspace)"
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Line number to start from (1-indexed)"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum lines to read"
+                    }
+                },
+                "required": ["path"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let ctx = self.ctx.as_ref().ok_or_else(|| {
+            WorkspaceToolError::File("Tool not initialized with context".to_string())
+        })?;
+
+        let result = ctx
+            .tools
+            .read_file(args.path, args.offset, args.limit)
+            .await
+            .map_err(|e| WorkspaceToolError::File(e.message.to_string()))?;
+
+        // Extract text content from the result
+        extract_text_content(&result)
+    }
+}
+
+// =============================================================================
+// EditFileTool
+// =============================================================================
+
+/// Arguments for editing a file
+#[derive(Debug, Deserialize)]
+pub struct EditFileArgs {
+    /// Path to file
+    path: String,
+    /// Text to find and replace
+    old_string: String,
+    /// Replacement text
+    new_string: String,
+    /// Replace all occurrences (default: false)
+    replace_all: Option<bool>,
+}
+
+/// Tool for editing files via search/replace
+#[derive(Clone, Serialize, Deserialize)]
+pub struct EditFileTool {
+    #[serde(skip)]
+    ctx: Option<WorkspaceContext>,
+}
+
+impl EditFileTool {
+    /// Create a new EditFileTool
+    pub fn new(ctx: WorkspaceContext) -> Self {
+        Self { ctx: Some(ctx) }
+    }
+}
+
+impl Tool for EditFileTool {
+    const NAME: &'static str = "edit_file";
+    type Error = WorkspaceToolError;
+    type Args = EditFileArgs;
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: Self::NAME.to_string(),
+            description: "Edit file by replacing text. old_string must match exactly.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to file"
+                    },
+                    "old_string": {
+                        "type": "string",
+                        "description": "Text to find and replace"
+                    },
+                    "new_string": {
+                        "type": "string",
+                        "description": "Replacement text"
+                    },
+                    "replace_all": {
+                        "type": "boolean",
+                        "description": "Replace all occurrences (default: false)"
+                    }
+                },
+                "required": ["path", "old_string", "new_string"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let ctx = self.ctx.as_ref().ok_or_else(|| {
+            WorkspaceToolError::File("Tool not initialized with context".to_string())
+        })?;
+
+        let result = ctx
+            .tools
+            .edit_file(args.path, args.old_string, args.new_string, args.replace_all)
+            .await
+            .map_err(|e| WorkspaceToolError::File(e.message.to_string()))?;
+
+        extract_text_content(&result)
+    }
+}
+
+// =============================================================================
+// WriteFileTool
+// =============================================================================
+
+/// Arguments for writing a file
+#[derive(Debug, Deserialize)]
+pub struct WriteFileArgs {
+    /// Path to file
+    path: String,
+    /// Content to write
+    content: String,
+}
+
+/// Tool for writing content to files
+#[derive(Clone, Serialize, Deserialize)]
+pub struct WriteFileTool {
+    #[serde(skip)]
+    ctx: Option<WorkspaceContext>,
+}
+
+impl WriteFileTool {
+    /// Create a new WriteFileTool
+    pub fn new(ctx: WorkspaceContext) -> Self {
+        Self { ctx: Some(ctx) }
+    }
+}
+
+impl Tool for WriteFileTool {
+    const NAME: &'static str = "write_file";
+    type Error = WorkspaceToolError;
+    type Args = WriteFileArgs;
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: Self::NAME.to_string(),
+            description: "Write content to file. Creates parent directories if needed.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to file"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Content to write"
+                    }
+                },
+                "required": ["path", "content"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let ctx = self.ctx.as_ref().ok_or_else(|| {
+            WorkspaceToolError::File("Tool not initialized with context".to_string())
+        })?;
+
+        let result = ctx
+            .tools
+            .write_file(args.path, args.content)
+            .await
+            .map_err(|e| WorkspaceToolError::File(e.message.to_string()))?;
+
+        extract_text_content(&result)
+    }
+}
+
+// =============================================================================
+// BashTool
+// =============================================================================
+
+/// Arguments for executing a bash command
+#[derive(Debug, Deserialize)]
+pub struct BashArgs {
+    /// Command to execute
+    command: String,
+    /// Timeout in milliseconds
+    timeout_ms: Option<u64>,
+}
+
+/// Tool for executing bash commands
+#[derive(Clone, Serialize, Deserialize)]
+pub struct BashTool {
+    #[serde(skip)]
+    ctx: Option<WorkspaceContext>,
+}
+
+impl BashTool {
+    /// Create a new BashTool
+    pub fn new(ctx: WorkspaceContext) -> Self {
+        Self { ctx: Some(ctx) }
+    }
+}
+
+impl Tool for BashTool {
+    const NAME: &'static str = "bash";
+    type Error = WorkspaceToolError;
+    type Args = BashArgs;
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: Self::NAME.to_string(),
+            description: "Execute bash command. Use for git, npm, cargo, etc.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "Bash command to execute"
+                    },
+                    "timeout_ms": {
+                        "type": "integer",
+                        "description": "Timeout in milliseconds (default: 120000)"
+                    }
+                },
+                "required": ["command"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let ctx = self.ctx.as_ref().ok_or_else(|| {
+            WorkspaceToolError::Command("Tool not initialized with context".to_string())
+        })?;
+
+        let result = ctx
+            .tools
+            .bash(args.command, args.timeout_ms)
+            .await
+            .map_err(|e| WorkspaceToolError::Command(e.message.to_string()))?;
+
+        extract_text_content(&result)
+    }
+}
+
+// =============================================================================
+// GlobTool
+// =============================================================================
+
+/// Arguments for glob pattern matching
+#[derive(Debug, Deserialize)]
+pub struct GlobArgs {
+    /// Glob pattern (e.g., '**/*.rs')
+    pattern: String,
+    /// Directory to search (default: workspace root)
+    path: Option<String>,
+    /// Maximum results (default: 100)
+    limit: Option<usize>,
+}
+
+/// Tool for finding files by glob pattern
+#[derive(Clone, Serialize, Deserialize)]
+pub struct GlobTool {
+    #[serde(skip)]
+    ctx: Option<WorkspaceContext>,
+}
+
+impl GlobTool {
+    /// Create a new GlobTool
+    pub fn new(ctx: WorkspaceContext) -> Self {
+        Self { ctx: Some(ctx) }
+    }
+}
+
+impl Tool for GlobTool {
+    const NAME: &'static str = "glob";
+    type Error = WorkspaceToolError;
+    type Args = GlobArgs;
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: Self::NAME.to_string(),
+            description: "Find files matching glob pattern (e.g., '**/*.rs').".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Glob pattern"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Directory to search (default: workspace root)"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum results (default: 100)"
+                    }
+                },
+                "required": ["pattern"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let ctx = self.ctx.as_ref().ok_or_else(|| {
+            WorkspaceToolError::Pattern("Tool not initialized with context".to_string())
+        })?;
+
+        let result = ctx
+            .tools
+            .glob(args.pattern, args.path, args.limit)
+            .await
+            .map_err(|e| WorkspaceToolError::Pattern(e.message.to_string()))?;
+
+        extract_text_content(&result)
+    }
+}
+
+// =============================================================================
+// GrepTool
+// =============================================================================
+
+/// Arguments for grep search
+#[derive(Debug, Deserialize)]
+pub struct GrepArgs {
+    /// Regex pattern to search
+    pattern: String,
+    /// File or directory to search
+    path: Option<String>,
+    /// Filter files by glob (e.g., '*.rs')
+    glob: Option<String>,
+    /// Maximum matches (default: 50)
+    limit: Option<usize>,
+}
+
+/// Tool for searching file contents with regex
+#[derive(Clone, Serialize, Deserialize)]
+pub struct GrepTool {
+    #[serde(skip)]
+    ctx: Option<WorkspaceContext>,
+}
+
+impl GrepTool {
+    /// Create a new GrepTool
+    pub fn new(ctx: WorkspaceContext) -> Self {
+        Self { ctx: Some(ctx) }
+    }
+}
+
+impl Tool for GrepTool {
+    const NAME: &'static str = "grep";
+    type Error = WorkspaceToolError;
+    type Args = GrepArgs;
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: Self::NAME.to_string(),
+            description: "Search file contents with regex. Uses ripgrep.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Regex pattern to search"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "File or directory to search"
+                    },
+                    "glob": {
+                        "type": "string",
+                        "description": "Filter files by glob (e.g., '*.rs')"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum matches (default: 50)"
+                    }
+                },
+                "required": ["pattern"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let ctx = self.ctx.as_ref().ok_or_else(|| {
+            WorkspaceToolError::Pattern("Tool not initialized with context".to_string())
+        })?;
+
+        let result = ctx
+            .tools
+            .grep(args.pattern, args.path, args.glob, args.limit)
+            .await
+            .map_err(|e| WorkspaceToolError::Pattern(e.message.to_string()))?;
+
+        extract_text_content(&result)
+    }
+}
+
+// =============================================================================
+// Helper functions
+// =============================================================================
+
+/// Extract text content from a CallToolResult
+fn extract_text_content(result: &rmcp::model::CallToolResult) -> Result<String, WorkspaceToolError> {
+    // Get first text content from the result
+    for content in &result.content {
+        if let Some(text) = content.as_text() {
+            return Ok(text.text.to_string());
+        }
+    }
+
+    // If no text content, return empty string
+    Ok(String::new())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn create_test_context() -> (TempDir, WorkspaceContext) {
+        let temp = TempDir::new().unwrap();
+        let ctx = WorkspaceContext::new(temp.path());
+        (temp, ctx)
+    }
+
+    #[tokio::test]
+    async fn test_read_file_tool_definition() {
+        let (_temp, ctx) = create_test_context();
+        let tool = ReadFileTool::new(ctx);
+
+        let def = tool.definition("test".to_string()).await;
+        assert_eq!(def.name, "read_file");
+        assert!(def.description.contains("Read file"));
+    }
+
+    #[tokio::test]
+    async fn test_read_file_tool_call() {
+        let (temp, ctx) = create_test_context();
+        let tool = ReadFileTool::new(ctx);
+
+        // Create a test file
+        let file_path = temp.path().join("test.txt");
+        tokio::fs::write(&file_path, "line1\nline2\nline3")
+            .await
+            .unwrap();
+
+        let args = ReadFileArgs {
+            path: "test.txt".to_string(),
+            offset: None,
+            limit: None,
+        };
+
+        let result = tool.call(args).await;
+        assert!(result.is_ok());
+        let content = result.unwrap();
+        assert!(content.contains("line1"));
+        assert!(content.contains("line2"));
+    }
+
+    #[tokio::test]
+    async fn test_edit_file_tool_call() {
+        let (temp, ctx) = create_test_context();
+        let tool = EditFileTool::new(ctx.clone());
+
+        // Create a test file
+        let file_path = temp.path().join("test.txt");
+        tokio::fs::write(&file_path, "hello world").await.unwrap();
+
+        let args = EditFileArgs {
+            path: "test.txt".to_string(),
+            old_string: "world".to_string(),
+            new_string: "rust".to_string(),
+            replace_all: None,
+        };
+
+        let result = tool.call(args).await;
+        assert!(result.is_ok());
+
+        // Verify the file was modified
+        let content = tokio::fs::read_to_string(&file_path).await.unwrap();
+        assert_eq!(content, "hello rust");
+    }
+
+    #[tokio::test]
+    async fn test_write_file_tool_call() {
+        let (temp, ctx) = create_test_context();
+        let tool = WriteFileTool::new(ctx);
+
+        let args = WriteFileArgs {
+            path: "new_file.txt".to_string(),
+            content: "hello from rig".to_string(),
+        };
+
+        let result = tool.call(args).await;
+        assert!(result.is_ok());
+
+        // Verify the file was created
+        let content = tokio::fs::read_to_string(temp.path().join("new_file.txt"))
+            .await
+            .unwrap();
+        assert_eq!(content, "hello from rig");
+    }
+
+    #[tokio::test]
+    async fn test_bash_tool_call() {
+        let (_temp, ctx) = create_test_context();
+        let tool = BashTool::new(ctx);
+
+        let args = BashArgs {
+            command: "echo hello".to_string(),
+            timeout_ms: None,
+        };
+
+        let result = tool.call(args).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("hello"));
+    }
+
+    #[tokio::test]
+    async fn test_glob_tool_call() {
+        let (temp, ctx) = create_test_context();
+        let tool = GlobTool::new(ctx);
+
+        // Create some test files
+        tokio::fs::write(temp.path().join("a.rs"), "").await.unwrap();
+        tokio::fs::write(temp.path().join("b.rs"), "").await.unwrap();
+
+        let args = GlobArgs {
+            pattern: "*.rs".to_string(),
+            path: None,
+            limit: None,
+        };
+
+        let result = tool.call(args).await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(output.contains("a.rs"));
+        assert!(output.contains("b.rs"));
+    }
+
+    #[tokio::test]
+    async fn test_grep_tool_call() {
+        let (temp, ctx) = create_test_context();
+        let tool = GrepTool::new(ctx);
+
+        // Create a test file
+        tokio::fs::write(temp.path().join("test.txt"), "hello\nworld\nhello again")
+            .await
+            .unwrap();
+
+        let args = GrepArgs {
+            pattern: "hello".to_string(),
+            path: Some("test.txt".to_string()),
+            glob: None,
+            limit: None,
+        };
+
+        let result = tool.call(args).await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(output.contains("hello"));
+    }
+
+    #[test]
+    fn test_workspace_context_all_tools() {
+        let temp = TempDir::new().unwrap();
+        let ctx = WorkspaceContext::new(temp.path());
+        let tools = ctx.all_tools();
+
+        assert_eq!(tools.len(), 6);
+    }
+}

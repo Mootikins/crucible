@@ -1,0 +1,54 @@
+[package]
+name = "crucible-rig"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Rig LLM framework integration for Crucible"
+
+[dependencies]
+# Rig framework
+rig-core = { version = "0.27", features = [] }
+
+# Crucible dependencies
+crucible-config = { path = "../crucible-config" }
+crucible-core = { path = "../crucible-core" }
+crucible-tools = { path = "../crucible-tools" }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+async-stream = { version = "0.3" }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Date/time handling (for AgentCard)
+chrono = { workspace = true }
+uuid = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# MCP/RMCP - needed for workspace tools result types
+rmcp = { version = "0.9.0", features = ["macros"] }
+
+# Additional MCP features (optional) for full server support
+rmcp-full = { package = "rmcp", version = "0.9.0", features = ["macros", "server", "client", "transport-io", "transport-sse-server", "transport-child-process"], optional = true }
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+tempfile = { workspace = true }
+
+[features]
+default = []
+# Enable full MCP server/client integration
+rmcp-full = ["dep:rmcp-full", "rig-core/rmcp"]
+# Enable test utilities
+test-utils = []
