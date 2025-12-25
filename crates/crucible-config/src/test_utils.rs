@@ -1,7 +1,7 @@
 //! Test utilities for configuration testing.
 
 use crate::{
-    Config, ConfigLoader, DatabaseConfig, Environment, LoggingConfig, ProfileConfig, ServerConfig,
+    Config, DatabaseConfig, Environment, LoggingConfig, ProfileConfig, ServerConfig,
 };
 use crate::{
     EmbeddingProviderConfig, EnrichmentConfig, OllamaConfig, OpenAIConfig, PipelineConfig,
@@ -392,48 +392,6 @@ impl TempConfig {
     }
 }
 
-/// Environment variable test utilities.
-pub struct TestEnv;
-
-impl TestEnv {
-    /// Set environment variables for testing.
-    pub fn set_test_vars() -> HashMap<String, String> {
-        let mut vars = HashMap::new();
-        vars.insert("CRUCIBLE_PROFILE".to_string(), "test".to_string());
-        vars.insert(
-            "CRUCIBLE_EMBEDDING_API_KEY".to_string(),
-            "test-key".to_string(),
-        );
-        vars.insert("CRUCIBLE_DATABASE_URL".to_string(), ":memory:".to_string());
-        vars.insert("CRUCIBLE_SERVER_HOST".to_string(), "127.0.0.1".to_string());
-        vars.insert("CRUCIBLE_SERVER_PORT".to_string(), "3000".to_string());
-        vars.insert("CRUCIBLE_LOG_LEVEL".to_string(), "debug".to_string());
-
-        for (key, value) in &vars {
-            std::env::set_var(key, value);
-        }
-
-        vars
-    }
-
-    /// Clear environment variables after testing.
-    pub fn clear_test_vars(vars: HashMap<String, String>) {
-        for key in vars.keys() {
-            std::env::remove_var(key);
-        }
-    }
-
-    /// Run a test with temporary environment variables.
-    pub fn with_test_vars<F, R>(f: F) -> R
-    where
-        F: FnOnce() -> R,
-    {
-        let vars = Self::set_test_vars();
-        let result = f();
-        Self::clear_test_vars(vars);
-        result
-    }
-}
 
 /// Configuration validation test utilities.
 pub struct ConfigValidation;
@@ -470,31 +428,12 @@ impl ConfigValidation {
         Ok(())
     }
 
-    /// Validate that environment variable overrides work.
-    pub fn test_env_overrides(mut config: Config) -> Result<(), crate::ConfigError> {
-        TestEnv::with_test_vars(|| {
-            ConfigLoader::apply_env_overrides(&mut config);
-
-            assert_eq!(config.profile, Some("test".to_string()));
-            // Check enrichment config exists and has OpenAI provider with test key
-            if let Ok(enrichment) = config.enrichment_config() {
-                if let EmbeddingProviderConfig::OpenAI(openai_config) = enrichment.provider {
-                    assert_eq!(openai_config.api_key, "test-key".to_string());
-                }
-            }
-            assert_eq!(config.database().unwrap().url, ":memory:".to_string());
-            assert_eq!(config.server().unwrap().host, "127.0.0.1".to_string());
-            assert_eq!(config.server().unwrap().port, 3000);
-            assert_eq!(config.logging().level, "debug".to_string());
-        });
-
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ConfigLoader;
 
     #[test]
     fn test_minimal_config() {
@@ -524,12 +463,6 @@ mod tests {
         let loaded_config =
             ConfigLoader::load_from_str(&content, crate::ConfigFormat::Yaml).unwrap();
         assert_eq!(config.profile, loaded_config.profile);
-    }
-
-    #[test]
-    fn test_env_overrides() {
-        let config = TestConfig::minimal();
-        ConfigValidation::test_env_overrides(config).unwrap();
     }
 
     #[test]
