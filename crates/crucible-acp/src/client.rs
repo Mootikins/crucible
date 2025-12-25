@@ -622,6 +622,7 @@ impl CrucibleAcpClient {
             .config
             .working_dir
             .clone()
+            .or_else(|| std::env::current_dir().ok())
             .unwrap_or_else(|| PathBuf::from("/"));
 
         let session_request = NewSessionRequest::new(cwd).mcp_servers(vec![crucible_mcp_server]);
@@ -681,6 +682,7 @@ impl CrucibleAcpClient {
             .config
             .working_dir
             .clone()
+            .or_else(|| std::env::current_dir().ok())
             .unwrap_or_else(|| PathBuf::from("/"));
 
         let session_request = NewSessionRequest::new(cwd).mcp_servers(vec![crucible_mcp_server]);
