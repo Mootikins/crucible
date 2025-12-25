@@ -5,7 +5,7 @@
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::chat::{AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall};
 use crucible_acp::{
@@ -474,7 +474,17 @@ impl AgentHandle for CrucibleAcpClient {
                             None => {
                                 // Channel closed - check if streaming completed successfully
                                 match result_rx.await {
-                                    Ok(Ok((_content, acp_tool_calls))) => {
+                                    Ok(Ok((content, acp_tool_calls))) => {
+                                        // Log completion details for debugging
+                                        tracing::debug!(
+                                            content_len = content.len(),
+                                            tool_count = acp_tool_calls.len(),
+                                            "ACP stream completed"
+                                        );
+                                        if content.is_empty() && acp_tool_calls.is_empty() {
+                                            tracing::warn!("ACP stream completed with empty response");
+                                        }
+
                                         // Emit final chunk with all tool calls
                                         let final_tool_calls: Vec<ChatToolCall> = acp_tool_calls
                                             .into_iter()
@@ -497,16 +507,22 @@ impl AgentHandle for CrucibleAcpClient {
                                             (rx, tokio::sync::oneshot::channel().1, tool_calls),
                                         ))
                                     }
-                                    Ok(Err(e)) => Some((
-                                        Err(ChatError::Communication(e.to_string())),
-                                        (rx, tokio::sync::oneshot::channel().1, tool_calls),
-                                    )),
-                                    Err(_) => Some((
-                                        Err(ChatError::Communication(
-                                            "Streaming task failed".to_string(),
-                                        )),
-                                        (rx, tokio::sync::oneshot::channel().1, tool_calls),
-                                    )),
+                                    Ok(Err(e)) => {
+                                        tracing::warn!(error = %e, "ACP stream error");
+                                        Some((
+                                            Err(ChatError::Communication(format!("ACP error: {}", e))),
+                                            (rx, tokio::sync::oneshot::channel().1, tool_calls),
+                                        ))
+                                    }
+                                    Err(_) => {
+                                        tracing::warn!("ACP streaming task failed (oneshot dropped)");
+                                        Some((
+                                            Err(ChatError::Communication(
+                                                "ACP streaming task failed".to_string(),
+                                            )),
+                                            (rx, tokio::sync::oneshot::channel().1, tool_calls),
+                                        ))
+                                    }
                                 }
                             }
                         }
