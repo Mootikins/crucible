@@ -586,7 +586,9 @@ mod skill_popup_tests {
 /// Returns the canonical list of client-handled slash commands.
 /// These match the RESERVED_COMMANDS list in slash_registry.rs.
 pub fn get_known_commands() -> &'static [&'static str] {
-    &["help", "mode", "clear", "exit", "quit", "search", "context", "agent", "new"]
+    &[
+        "help", "mode", "clear", "exit", "quit", "search", "context", "agent", "new",
+    ]
 }
 
 /// Extract the command name from input (without the leading /)

@@ -65,8 +65,7 @@ fn test_complete_session_workflow() {
     assert!(json.contains("\"workspace\": \"my-project\""));
 
     // Deserialize back
-    let deserialized: SessionState =
-        serde_json::from_str(&json).expect("deserialization failed");
+    let deserialized: SessionState = serde_json::from_str(&json).expect("deserialization failed");
     assert_eq!(deserialized.messages.len(), state.messages.len());
     assert_eq!(deserialized.tasks.len(), state.tasks.len());
 }
@@ -106,8 +105,7 @@ fn test_session_index_management() {
 
     // Serialize index
     let json = serde_json::to_string_pretty(&index).expect("serialization failed");
-    let deserialized: SessionIndex =
-        serde_json::from_str(&json).expect("deserialization failed");
+    let deserialized: SessionIndex = serde_json::from_str(&json).expect("deserialization failed");
     assert_eq!(deserialized.sessions.len(), 2);
 }
 
@@ -134,14 +132,10 @@ fn test_tool_call_message() {
     let json = serde_json::to_string(&tool_msg).expect("serialization failed");
 
     // Deserialize
-    let deserialized: SessionMessage =
-        serde_json::from_str(&json).expect("deserialization failed");
+    let deserialized: SessionMessage = serde_json::from_str(&json).expect("deserialization failed");
 
     assert_eq!(deserialized.role, MessageRole::Tool);
-    assert_eq!(
-        deserialized.tool_name,
-        Some("web_search".to_string())
-    );
+    assert_eq!(deserialized.tool_name, Some("web_search".to_string()));
     assert!(deserialized.tool_args.is_some());
     assert!(deserialized.tool_result.is_some());
 }

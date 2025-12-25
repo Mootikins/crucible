@@ -352,7 +352,11 @@ impl ChatSession {
 
         // Create and run TUI with factory
         let registry = std::sync::Arc::new(self.command_registry.clone());
-        let mut runner = RatatuiRunner::new(&self.config.initial_mode_id, popup_provider.clone(), registry)?;
+        let mut runner = RatatuiRunner::new(
+            &self.config.initial_mode_id,
+            popup_provider.clone(),
+            registry,
+        )?;
 
         // Set default selection if pre-specified (skips picker first time, allows /new restart)
         if let Some(selection) = self.config.default_selection.clone() {
