@@ -7,8 +7,8 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use crucible_core::events::SessionEvent;
-use crucible_core::traits::chat::AgentHandle;
+use crucible_core::events::{SessionEvent, ToolCall};
+use crucible_core::traits::chat::{AgentHandle, ChatToolCall};
 use crucible_rune::{EventRing, SessionHandle};
 use futures::StreamExt;
 
@@ -32,7 +32,8 @@ impl AgentEventBridge {
     /// Emits:
     /// - MessageReceived (user message)
     /// - TextDelta (for each streaming chunk)
-    /// - AgentResponded (final response)
+    /// - ToolCalled (for each tool call)
+    /// - AgentResponded (final response with accumulated tool calls)
     pub async fn send_message<A: AgentHandle>(
         &self,
         message: &str,
@@ -44,14 +45,16 @@ impl AgentEventBridge {
             participant_id: "user".to_string(),
         });
 
-        // 2. Stream response, emitting TextDeltas
+        // 2. Stream response, emitting TextDeltas and ToolCalled events
         let mut stream = agent.send_message_stream(message.to_string());
         let mut full_response = String::new();
+        let mut accumulated_tool_calls: Vec<ToolCall> = Vec::new();
         let mut seq = 0u64;
 
         while let Some(chunk_result) = stream.next().await {
             let chunk = chunk_result.map_err(|e| anyhow::anyhow!("{}", e))?;
 
+            // Emit text deltas
             if !chunk.delta.is_empty() {
                 self.ring.push(SessionEvent::TextDelta {
                     delta: chunk.delta.clone(),
@@ -61,18 +64,48 @@ impl AgentEventBridge {
                 seq += 1;
             }
 
+            // Handle tool calls - emit ToolCalled events and accumulate for final response
+            if let Some(ref tool_calls) = chunk.tool_calls {
+                for tc in tool_calls {
+                    let tool_call = convert_chat_tool_call(tc);
+
+                    // Emit ToolCalled event for each tool call
+                    self.ring.push(SessionEvent::ToolCalled {
+                        name: tool_call.name.clone(),
+                        args: tool_call.args.clone(),
+                    });
+
+                    accumulated_tool_calls.push(tool_call);
+                }
+            }
+
             if chunk.done {
                 break;
             }
         }
 
-        // 3. Emit final response
+        // 3. Emit final response with accumulated tool calls
         self.ring.push(SessionEvent::AgentResponded {
             content: full_response.clone(),
-            tool_calls: vec![],
+            tool_calls: accumulated_tool_calls,
         });
 
         Ok(full_response)
+    }
+}
+
+/// Convert a ChatToolCall to a ToolCall for SessionEvent
+fn convert_chat_tool_call(tc: &ChatToolCall) -> ToolCall {
+    // Use arguments directly (already serde_json::Value)
+    let args = tc
+        .arguments
+        .clone()
+        .unwrap_or(serde_json::Value::Null);
+
+    ToolCall {
+        name: tc.name.clone(),
+        args,
+        call_id: tc.id.clone(),
     }
 }
 
@@ -300,5 +333,151 @@ mod tests {
         assert!(
             matches!(events[3].as_ref(), SessionEvent::AgentResponded { content, .. } if content == "AB")
         );
+    }
+
+    /// Mock agent that returns tool calls in the final chunk
+    struct MockAgentWithTools {
+        text_chunks: Vec<String>,
+        tool_calls: Vec<ChatToolCall>,
+    }
+
+    impl MockAgentWithTools {
+        fn new(text_chunks: Vec<String>, tool_calls: Vec<ChatToolCall>) -> Self {
+            Self {
+                text_chunks,
+                tool_calls,
+            }
+        }
+    }
+
+    #[async_trait]
+    impl AgentHandle for MockAgentWithTools {
+        fn send_message_stream(
+            &mut self,
+            _message: String,
+        ) -> BoxStream<'static, ChatResult<ChatChunk>> {
+            let chunks = self.text_chunks.clone();
+            let tool_calls = self.tool_calls.clone();
+            let len = chunks.len();
+
+            Box::pin(stream::iter(chunks.into_iter().enumerate().map(
+                move |(i, delta)| {
+                    let is_last = i == len - 1;
+                    Ok(ChatChunk {
+                        delta,
+                        done: is_last,
+                        // Include tool calls in final chunk
+                        tool_calls: if is_last && !tool_calls.is_empty() {
+                            Some(tool_calls.clone())
+                        } else {
+                            None
+                        },
+                    })
+                },
+            )))
+        }
+
+        async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
+            Ok(())
+        }
+
+        fn is_connected(&self) -> bool {
+            true
+        }
+    }
+
+    #[tokio::test]
+    async fn test_bridge_emits_tool_called_events() {
+        use crucible_core::events::SessionEvent;
+        use crucible_rune::SessionBuilder;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let session = SessionBuilder::new("test-tools")
+            .with_folder(temp.path())
+            .build();
+
+        let ring = session.ring().clone();
+        let bridge = AgentEventBridge::new(session.handle(), ring.clone());
+
+        let tool_calls = vec![ChatToolCall {
+            name: "read_file".to_string(),
+            arguments: Some(serde_json::json!({"path": "test.txt"})),
+            id: Some("call_123".to_string()),
+        }];
+        let mut agent = MockAgentWithTools::new(vec!["Reading file...".into()], tool_calls);
+
+        bridge.send_message("Read test.txt", &mut agent).await.unwrap();
+
+        let events: Vec<_> = ring.iter().collect();
+
+        // Should have: MessageReceived, TextDelta, ToolCalled, AgentResponded
+        assert_eq!(events.len(), 4);
+
+        // Check ToolCalled event
+        let tool_event = events
+            .iter()
+            .find(|e| matches!(e.as_ref(), SessionEvent::ToolCalled { .. }))
+            .expect("Should have ToolCalled event");
+
+        match tool_event.as_ref() {
+            SessionEvent::ToolCalled { name, args } => {
+                assert_eq!(name, "read_file");
+                assert_eq!(args["path"], "test.txt");
+            }
+            _ => panic!("Expected ToolCalled"),
+        }
+
+        // Check AgentResponded includes tool calls
+        let responded = events.last().expect("Should have events");
+        match responded.as_ref() {
+            SessionEvent::AgentResponded { tool_calls, .. } => {
+                assert_eq!(tool_calls.len(), 1);
+                assert_eq!(tool_calls[0].name, "read_file");
+                assert_eq!(tool_calls[0].call_id, Some("call_123".to_string()));
+            }
+            _ => panic!("Expected AgentResponded"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_bridge_handles_multiple_tool_calls() {
+        use crucible_core::events::SessionEvent;
+        use crucible_rune::SessionBuilder;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let session = SessionBuilder::new("test-multi-tools")
+            .with_folder(temp.path())
+            .build();
+
+        let ring = session.ring().clone();
+        let bridge = AgentEventBridge::new(session.handle(), ring.clone());
+
+        let tool_calls = vec![
+            ChatToolCall {
+                name: "read_file".to_string(),
+                arguments: Some(serde_json::json!({"path": "a.txt"})),
+                id: Some("call_1".to_string()),
+            },
+            ChatToolCall {
+                name: "write_file".to_string(),
+                arguments: Some(serde_json::json!({"path": "b.txt", "content": "hello"})),
+                id: Some("call_2".to_string()),
+            },
+        ];
+        let mut agent = MockAgentWithTools::new(vec!["Done".into()], tool_calls);
+
+        bridge.send_message("Do stuff", &mut agent).await.unwrap();
+
+        let events: Vec<_> = ring.iter().collect();
+
+        // Count ToolCalled events
+        let tool_events: Vec<_> = events
+            .iter()
+            .filter(|e| matches!(e.as_ref(), SessionEvent::ToolCalled { .. }))
+            .collect();
+
+        assert_eq!(tool_events.len(), 2, "Should have 2 ToolCalled events");
     }
 }
