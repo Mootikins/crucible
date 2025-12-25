@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",
-    "dockview-core": "^4.12.0",
+    "dockview-core": "1.8.5",
     "solid-dockview": "^1.0.1",
     "solid-js": "^1.9.3"
   },
