@@ -66,7 +66,7 @@ pub async fn from_provider_config(
         LlmProviderType::OpenAI => {
             let api_key = config.api_key().ok_or_else(|| {
                 EmbeddingError::ConfigError(
-                    "API key not set. Configure api_key_env in provider config or set OPENAI_API_KEY".to_string(),
+                    "API key not set. Configure api_key in provider config or set OPENAI_API_KEY".to_string(),
                 )
             })?;
 
@@ -169,7 +169,7 @@ mod tests {
             temperature: Some(0.7),
             max_tokens: Some(4096),
             timeout_secs: Some(120),
-            api_key_env: None,
+            api_key: None,
         };
 
         let provider = from_provider_config(&config).await;
@@ -189,7 +189,7 @@ mod tests {
             temperature: Some(0.7),
             max_tokens: Some(4096),
             timeout_secs: Some(120),
-            api_key_env: None,
+            api_key: None,
         };
 
         let provider = from_provider_config(&config).await;
@@ -214,7 +214,7 @@ mod tests {
             temperature: Some(0.7),
             max_tokens: Some(4096),
             timeout_secs: Some(120),
-            api_key_env: Some("TEST_OPENAI_KEY".to_string()),
+            api_key: Some("TEST_OPENAI_KEY".to_string()),
         };
 
         let provider = from_provider_config(&config).await;
@@ -237,7 +237,7 @@ mod tests {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key_env: None,
+            api_key: None,
         };
 
         let provider = from_provider_config(&config).await;
@@ -327,7 +327,7 @@ mod tests {
                 temperature: Some(0.7),
                 max_tokens: Some(4096),
                 timeout_secs: Some(120),
-                api_key_env: None,
+                api_key: None,
             },
         );
 

@@ -3,52 +3,16 @@
 //! This module defines the `ProviderConfig` struct that represents a single
 //! provider instance configuration. A provider is a named instance of a backend
 //! with specific settings like endpoint, models, and authentication.
+//!
+//! API keys can be specified using:
+//! - Direct value: `api_key = "sk-123..."`
+//! - Environment variable: `api_key = "{env:OPENAI_API_KEY}"`
+//! - File reference: `api_key = "{file:~/.secrets/openai.key}"`
+//!
+//! The `{env:}` and `{file:}` patterns are resolved at config load time.
 
 use super::backend::BackendType;
 use serde::{Deserialize, Serialize};
-
-/// Configuration for API key authentication
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum ApiKeyConfig {
-    /// API key value provided directly (not recommended for production)
-    Value(String),
-    /// API key from environment variable (recommended)
-    EnvVar {
-        /// Environment variable name containing the API key
-        env: String,
-    },
-}
-
-impl ApiKeyConfig {
-    /// Create an ApiKeyConfig from an environment variable name
-    pub fn from_env(env_var: &str) -> Self {
-        Self::EnvVar {
-            env: env_var.to_string(),
-        }
-    }
-
-    /// Create an ApiKeyConfig from a direct value
-    pub fn from_value(value: &str) -> Self {
-        Self::Value(value.to_string())
-    }
-
-    /// Resolve the API key value
-    ///
-    /// For `EnvVar`, reads from the environment variable.
-    /// For `Value`, returns the value directly.
-    pub fn resolve(&self) -> Option<String> {
-        match self {
-            Self::Value(v) => Some(v.clone()),
-            Self::EnvVar { env } => std::env::var(env).ok(),
-        }
-    }
-
-    /// Check if the API key is available (can be resolved)
-    pub fn is_available(&self) -> bool {
-        self.resolve().is_some()
-    }
-}
 
 /// Model configuration for a provider
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -100,9 +64,9 @@ pub struct ProviderConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
 
-    /// API key configuration (required for cloud providers)
+    /// API key (resolved from `{env:VAR}` or `{file:path}` at load time)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub api_key: Option<ApiKeyConfig>,
+    pub api_key: Option<String>,
 
     /// Timeout for API calls in seconds
     #[serde(default = "default_timeout")]
@@ -194,14 +158,9 @@ impl ProviderConfig {
         self.batch_size.unwrap_or(16)
     }
 
-    /// Resolve the API key
+    /// Get the API key (already resolved from `{env:}` or `{file:}` at load time)
     pub fn api_key(&self) -> Option<String> {
-        self.api_key.as_ref().and_then(|k| k.resolve()).or_else(|| {
-            // Fallback to default env var for the backend
-            self.backend
-                .default_api_key_env()
-                .and_then(|env| std::env::var(env).ok())
-        })
+        self.api_key.clone()
     }
 
     /// Check if this provider supports embeddings
@@ -242,17 +201,9 @@ impl ProviderConfig {
         self
     }
 
-    /// Set the API key from environment variable
-    pub fn with_api_key_env(mut self, env_var: impl Into<String>) -> Self {
-        self.api_key = Some(ApiKeyConfig::EnvVar {
-            env: env_var.into(),
-        });
-        self
-    }
-
-    /// Set the API key directly
+    /// Set the API key (use `{env:VAR}` syntax for env vars)
     pub fn with_api_key(mut self, key: impl Into<String>) -> Self {
-        self.api_key = Some(ApiKeyConfig::Value(key.into()));
+        self.api_key = Some(key.into());
         self
     }
 
@@ -434,23 +385,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_api_key_from_env() {
-        std::env::set_var("TEST_PROVIDER_KEY", "secret-key-123");
-
-        let config = ApiKeyConfig::from_env("TEST_PROVIDER_KEY");
-        assert_eq!(config.resolve(), Some("secret-key-123".to_string()));
-        assert!(config.is_available());
-
-        std::env::remove_var("TEST_PROVIDER_KEY");
-        assert!(config.resolve().is_none());
-        assert!(!config.is_available());
-    }
-
-    #[test]
-    fn test_api_key_value() {
-        let config = ApiKeyConfig::from_value("direct-key");
-        assert_eq!(config.resolve(), Some("direct-key".to_string()));
-        assert!(config.is_available());
+    fn test_api_key_direct() {
+        // With new model, api_key is the resolved value
+        let config = ProviderConfig::new(BackendType::OpenAI)
+            .with_api_key("sk-direct-key");
+        assert_eq!(config.api_key(), Some("sk-direct-key".to_string()));
     }
 
     #[test]

@@ -158,7 +158,7 @@ impl BackendType {
     }
 
     /// Get default environment variable name for API key
-    pub fn default_api_key_env(&self) -> Option<&'static str> {
+    pub fn default_api_key(&self) -> Option<&'static str> {
         match self {
             Self::OpenAI => Some("OPENAI_API_KEY"),
             Self::Anthropic => Some("ANTHROPIC_API_KEY"),

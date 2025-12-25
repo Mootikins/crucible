@@ -86,7 +86,7 @@ fn test_llm_config_with_single_ollama_provider() {
             temperature: Some(0.7),
             max_tokens: Some(4096),
             timeout_secs: Some(120),
-            api_key_env: None,
+            api_key: None,
         },
     );
 
@@ -115,7 +115,7 @@ fn test_llm_config_with_multiple_providers() {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key_env: None,
+            api_key: None,
         },
     );
 
@@ -128,7 +128,7 @@ fn test_llm_config_with_multiple_providers() {
             temperature: Some(0.5),
             max_tokens: Some(8192),
             timeout_secs: Some(300),
-            api_key_env: Some("OPENAI_API_KEY".to_string()),
+            api_key: Some("OPENAI_API_KEY".to_string()),
         },
     );
 
@@ -170,7 +170,7 @@ fn test_llm_config_invalid_default_provider() {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key_env: None,
+            api_key: None,
         },
     );
 
@@ -194,7 +194,7 @@ fn test_provider_type_ollama_defaults() {
         temperature: None,
         max_tokens: None,
         timeout_secs: None,
-        api_key_env: None,
+        api_key: None,
     };
 
     assert_eq!(provider.endpoint(), "http://localhost:11434");
@@ -213,7 +213,7 @@ fn test_provider_type_openai_defaults() {
         temperature: None,
         max_tokens: None,
         timeout_secs: None,
-        api_key_env: None,
+        api_key: None,
     };
 
     assert_eq!(provider.endpoint(), "https://api.openai.com/v1");
@@ -232,7 +232,7 @@ fn test_provider_type_anthropic_defaults() {
         temperature: None,
         max_tokens: None,
         timeout_secs: None,
-        api_key_env: None,
+        api_key: None,
     };
 
     assert_eq!(provider.endpoint(), "https://api.anthropic.com/v1");
@@ -251,7 +251,7 @@ fn test_provider_custom_overrides() {
         temperature: Some(0.9),
         max_tokens: Some(8192),
         timeout_secs: Some(300),
-        api_key_env: None,
+        api_key: None,
     };
 
     assert_eq!(provider.endpoint(), "http://192.168.1.100:11434");
@@ -357,7 +357,7 @@ async fn test_create_internal_agent_with_named_provider() {
             temperature: Some(0.7),
             max_tokens: Some(4096),
             timeout_secs: Some(120),
-            api_key_env: None,
+            api_key: None,
         },
     );
 
@@ -418,7 +418,7 @@ fn test_model_name_from_named_provider() {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key_env: None,
+            api_key: None,
         },
     );
 
@@ -574,10 +574,8 @@ fn test_config_timeout_boundary_values() {
 // ============================================================================
 
 #[test]
-fn test_provider_api_key_from_env() {
-    // Set test environment variable
-    std::env::set_var("TEST_CRUCIBLE_API_KEY", "test-key-12345");
-
+fn test_provider_api_key_direct_value() {
+    // With new model, api_key is the resolved value (not an env var name)
     let provider = LlmProviderConfig {
         provider_type: LlmProviderType::OpenAI,
         endpoint: None,
@@ -585,29 +583,10 @@ fn test_provider_api_key_from_env() {
         temperature: None,
         max_tokens: None,
         timeout_secs: None,
-        api_key_env: Some("TEST_CRUCIBLE_API_KEY".to_string()),
+        api_key: Some("sk-test-key-12345".to_string()),
     };
 
-    assert_eq!(provider.api_key(), Some("test-key-12345".to_string()));
-
-    // Cleanup
-    std::env::remove_var("TEST_CRUCIBLE_API_KEY");
-}
-
-#[test]
-fn test_provider_api_key_env_not_set() {
-    let provider = LlmProviderConfig {
-        provider_type: LlmProviderType::OpenAI,
-        endpoint: None,
-        default_model: None,
-        temperature: None,
-        max_tokens: None,
-        timeout_secs: None,
-        api_key_env: Some("NONEXISTENT_ENV_VAR_FOR_TESTING".to_string()),
-    };
-
-    // Should return None if env var doesn't exist
-    assert_eq!(provider.api_key(), None);
+    assert_eq!(provider.api_key(), Some("sk-test-key-12345".to_string()));
 }
 
 #[test]
@@ -619,10 +598,10 @@ fn test_provider_no_api_key_configured() {
         temperature: None,
         max_tokens: None,
         timeout_secs: None,
-        api_key_env: None,
+        api_key: None,
     };
 
-    // Should return None if no api_key_env configured
+    // Should return None if no api_key configured
     assert_eq!(provider.api_key(), None);
 }
 
@@ -642,7 +621,7 @@ fn test_realistic_ollama_config() {
             temperature: Some(0.7),
             max_tokens: Some(4096),
             timeout_secs: Some(120),
-            api_key_env: None,
+            api_key: None,
         },
     );
 
@@ -667,7 +646,7 @@ fn test_realistic_openai_config() {
             temperature: Some(0.5),
             max_tokens: Some(8192),
             timeout_secs: Some(300),
-            api_key_env: Some("OPENAI_API_KEY".to_string()),
+            api_key: Some("OPENAI_API_KEY".to_string()),
         },
     );
 
@@ -696,7 +675,7 @@ fn test_realistic_multi_provider_config() {
             temperature: Some(0.7),
             max_tokens: Some(4096),
             timeout_secs: Some(120),
-            api_key_env: None,
+            api_key: None,
         },
     );
 
@@ -710,7 +689,7 @@ fn test_realistic_multi_provider_config() {
             temperature: Some(0.5),
             max_tokens: Some(8192),
             timeout_secs: Some(300),
-            api_key_env: Some("OPENAI_API_KEY".to_string()),
+            api_key: Some("OPENAI_API_KEY".to_string()),
         },
     );
 
@@ -724,7 +703,7 @@ fn test_realistic_multi_provider_config() {
             temperature: Some(0.7),
             max_tokens: Some(4096),
             timeout_secs: Some(300),
-            api_key_env: Some("ANTHROPIC_API_KEY".to_string()),
+            api_key: Some("ANTHROPIC_API_KEY".to_string()),
         },
     );
 

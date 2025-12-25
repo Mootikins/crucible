@@ -29,11 +29,30 @@ mkdir -p ~/.config/crucible
 └── profiles.toml     # Environment profiles (optional)
 ```
 
-## File References
+## Dynamic Values
 
-Crucible supports two ways to include external files:
+Crucible supports dynamic value references that are resolved at config load time.
 
-### `{file:path}` References (Recommended)
+### `{env:VAR}` Environment Variables
+
+Use `{env:VAR}` to read values from environment variables:
+
+```toml
+[providers.openai]
+backend = "openai"
+api_key = "{env:OPENAI_API_KEY}"
+
+[providers.anthropic]
+backend = "anthropic"
+api_key = "{env:ANTHROPIC_API_KEY}"
+```
+
+This is the recommended way to handle API keys and secrets:
+- Store secrets in your shell profile, `.env` file, or secret manager
+- Reference them in config with `{env:VAR}` syntax
+- The config file itself contains no secrets
+
+### `{file:path}` File References
 
 Use `{file:path}` **anywhere** in your config to pull in external content:
 
@@ -57,6 +76,17 @@ secret = "{file:secret.txt}"
 **How it works:**
 - If the file has a `.toml` extension → parsed as structured TOML data
 - Otherwise → file content is used as a string (whitespace trimmed)
+
+### Combining Both
+
+You can use `{env:}` and `{file:}` references throughout your config:
+
+```toml
+[providers.cloud]
+backend = "openai"
+api_key = "{env:OPENAI_API_KEY}"           # From environment
+endpoint = "{file:~/.config/endpoint.txt}"  # From file
+```
 
 ### `[include]` Section (Legacy)
 
@@ -130,16 +160,21 @@ blocked_tools = ["delete_*"]           # Blacklist (takes priority)
 
 ## Environment Variables
 
-Override configuration with environment variables:
+Crucible uses a minimal set of environment variables for system-level configuration:
 
 | Variable | Description |
 |----------|-------------|
-| `CRUCIBLE_KILN_PATH` | Path to your kiln (Obsidian vault) |
-| `CRUCIBLE_EMBEDDING_URL` | Embedding provider API URL |
-| `CRUCIBLE_EMBEDDING_MODEL` | Model name for embeddings |
-| `CRUCIBLE_EMBEDDING_PROVIDER` | Provider type (fastembed, ollama, openai) |
-| `CRUCIBLE_PROFILE` | Active profile name |
+| `CRUCIBLE_CONFIG` | Path to config file (default: `~/.config/crucible/config.toml`) |
+| `CRUCIBLE_CONFIG_DIR` | Config directory path |
 | `CRUCIBLE_LOG_LEVEL` | Logging level (off, error, warn, info, debug, trace) |
+| `CRUCIBLE_TEST_MODE` | Enable test mode (for development) |
+
+**For API keys and secrets**, use `{env:VAR}` syntax in your config file instead of dedicated Crucible environment variables. This gives you full control over which environment variables to use:
+
+```toml
+[providers.openai]
+api_key = "{env:OPENAI_API_KEY}"  # or any env var you prefer
+```
 
 ## Profiles
 
@@ -157,7 +192,7 @@ profile = "development"  # Active profile
 
 ## Tips
 
-1. **Secure API keys**: Store `mcps.toml` with `chmod 600` if it contains tokens
-2. **Use environment variables** for secrets in shared configs
+1. **Secure API keys**: Use `{env:VAR}` syntax so secrets never appear in config files
+2. **Use file references** for shared configs: `gateway = "{file:mcps.toml}"`
 3. **Test your config**: Run `cru config show` to see effective configuration
 4. **Validate**: Run `cru config validate` to check for errors
