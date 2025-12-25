@@ -2,6 +2,7 @@ import { Component, createSignal, Show } from 'solid-js';
 import { useMediaRecorder } from '@/hooks/useMediaRecorder';
 import { useWhisper } from '@/contexts/WhisperContext';
 import { playRecordingStartSound, playRecordingEndSound } from '@/lib/sounds';
+import { VolumeGlow } from './VolumeMeter';
 
 interface MicButtonProps {
   onTranscription: (text: string) => void;
@@ -13,7 +14,7 @@ type RecordingState = 'idle' | 'recording' | 'processing' | 'error';
 export const MicButton: Component<MicButtonProps> = (props) => {
   const [state, setState] = createSignal<RecordingState>('idle');
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
-  const { isRecording, error: recorderError, startRecording, stopRecording } = useMediaRecorder();
+  const { isRecording, error: recorderError, audioLevel, startRecording, stopRecording } = useMediaRecorder();
   const { status: whisperStatus, transcribe, loadModel, progress, error: whisperError } = useWhisper();
 
   // Preload model on first interaction
@@ -95,7 +96,7 @@ export const MicButton: Component<MicButtonProps> = (props) => {
   const stateStyles = () => {
     switch (state()) {
       case 'recording':
-        return 'bg-red-600 animate-pulse';
+        return 'bg-red-600'; // No animate-pulse, we use VolumeGlow instead
       case 'processing':
         return 'bg-yellow-600';
       case 'error':
@@ -135,11 +136,14 @@ export const MicButton: Component<MicButtonProps> = (props) => {
       onTouchStart={handleMouseDown}
       onTouchEnd={handleMouseUp}
       disabled={props.disabled || whisperStatus() === 'loading'}
-      class={`p-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${stateStyles()}`}
+      class={`relative p-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${stateStyles()}`}
       data-testid="mic-button"
       data-state={state()}
       title={getTitle()}
     >
+      {/* Audio level glow effect */}
+      <VolumeGlow level={audioLevel} active={state() === 'recording'} />
+
       <Show when={state() === 'error'}>
         {/* Error icon - exclamation mark */}
         <svg

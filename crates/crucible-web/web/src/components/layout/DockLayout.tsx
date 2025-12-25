@@ -67,15 +67,15 @@ export const DockLayout: Component<DockLayoutProps> = (props) => {
   return (
     <DockView
       class="dockview-theme-abyss"
-      style={{ height: '100vh', width: '100vw' }}
+      style="height: 100vh; width: 100vw;"
     >
       <DockPanel id="chat" title="Chat">
         <props.chatContent />
       </DockPanel>
-      <DockPanel id="preview" title="Preview" params={{ position: { referencePanel: 'chat', direction: 'right' } }}>
+      <DockPanel id="preview" title="Preview">
         <PreviewPanel />
       </DockPanel>
-      <DockPanel id="editor" title="Editor" params={{ position: { referencePanel: 'preview', direction: 'below' } }}>
+      <DockPanel id="editor" title="Editor">
         <EditorPanel />
       </DockPanel>
     </DockView>
