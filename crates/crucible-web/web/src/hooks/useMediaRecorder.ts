@@ -69,8 +69,8 @@ export function useMediaRecorder(): UseMediaRecorderResult {
       // Set up audio analysis
       audioContext = new AudioContext();
       analyser = audioContext.createAnalyser();
-      analyser.fftSize = 128; // Smaller = faster response
-      analyser.smoothingTimeConstant = 0.1; // Less smoothing = more reactive
+      analyser.fftSize = 256; // Good balance of speed and accuracy
+      analyser.smoothingTimeConstant = 0; // NO smoothing - raw values only
 
       const source = audioContext.createMediaStreamSource(stream);
       source.connect(analyser);

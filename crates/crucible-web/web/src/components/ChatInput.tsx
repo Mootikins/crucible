@@ -35,16 +35,20 @@ export const ChatInput: Component = () => {
     });
   };
 
-  // Gradient glow intensity based on audio level
-  const glowIntensity = () => audioLevel() * 30; // 0-30px blur
-  const glowSpread = () => audioLevel() * 15; // 0-15px spread
-  const glowOpacity = () => 0.3 + audioLevel() * 0.7; // 0.3-1.0 opacity
+  // Rising gradient fill based on audio level
+  // Level 0 = gradient at bottom (invisible), Level 1 = gradient fills container
+  const fillPercent = () => Math.round(audioLevel() * 100);
 
   const containerStyle = () => {
     if (!isRecording()) return {};
+    // Gradient rises from bottom based on audio level
+    // Using a sharp cutoff for a "fill" effect rather than smooth gradient
     return {
-      'box-shadow': `0 0 ${glowIntensity()}px ${glowSpread()}px rgba(59, 130, 246, ${glowOpacity()})`,
-      'border-color': `rgba(59, 130, 246, ${0.5 + audioLevel() * 0.5})`,
+      background: `linear-gradient(to top,
+        rgba(59, 130, 246, 0.4) 0%,
+        rgba(59, 130, 246, 0.2) ${fillPercent()}%,
+        transparent ${fillPercent()}%)`,
+      'border-color': 'rgba(59, 130, 246, 0.6)',
     };
   };
 
