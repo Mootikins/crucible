@@ -153,19 +153,6 @@ impl ConfigLoader {
         })
     }
 
-    /// Load configuration with environment variable overrides.
-    pub async fn load_with_env_overrides<P: AsRef<Path>>(path: P) -> Result<Config, ConfigError> {
-        let mut config = Self::load_from_file(path).await?;
-        Self::apply_env_overrides(&mut config);
-        Ok(config)
-    }
-
-    /// Load configuration with environment variable overrides (synchronous).
-    pub fn load_with_env_overrides_sync<P: AsRef<Path>>(path: P) -> Result<Config, ConfigError> {
-        let mut config = Self::load_from_file_sync(path)?;
-        Self::apply_env_overrides(&mut config);
-        Ok(config)
-    }
 
     /// Parse configuration from a string with specified format.
     fn parse_from_string(content: &str, format: ConfigFormat) -> Result<Config, ConfigError> {
@@ -257,94 +244,6 @@ impl ConfigLoader {
         Self::parse_from_string(content, format)
     }
 
-    /// Apply environment variable overrides to configuration.
-    pub fn apply_env_overrides(config: &mut Config) {
-        // Override profile
-        if let Ok(profile) = std::env::var("CRUCIBLE_PROFILE") {
-            config.profile = Some(profile);
-        }
-
-        // Override embedding provider API key
-        if let Ok(api_key) = std::env::var("CRUCIBLE_EMBEDDING_API_KEY") {
-            use crate::{EmbeddingProviderConfig, EnrichmentConfig, OpenAIConfig, PipelineConfig};
-
-            if config.enrichment.is_none() {
-                // Create a default OpenAI provider configuration
-                config.enrichment = Some(EnrichmentConfig {
-                    provider: EmbeddingProviderConfig::OpenAI(OpenAIConfig {
-                        api_key: api_key.clone(),
-                        model: "text-embedding-3-small".to_string(),
-                        base_url: "https://api.openai.com/v1".to_string(),
-                        timeout_seconds: 30,
-                        retry_attempts: 3,
-                        dimensions: 1536,
-                        headers: Default::default(),
-                    }),
-                    pipeline: PipelineConfig::default(),
-                });
-            } else if let Some(ref mut enrichment) = config.enrichment {
-                // Update API key if using OpenAI provider
-                if let EmbeddingProviderConfig::OpenAI(ref mut openai_config) = enrichment.provider
-                {
-                    openai_config.api_key = api_key;
-                }
-            }
-        }
-
-        // Override database URL
-        if let Ok(database_url) = std::env::var("CRUCIBLE_DATABASE_URL") {
-            if config.database.is_none() {
-                config.database = Some(crate::DatabaseConfig {
-                    db_type: crate::DatabaseType::Sqlite,
-                    url: database_url.clone(),
-                    max_connections: Some(5),
-                    timeout_seconds: Some(30),
-                    options: std::collections::HashMap::new(),
-                });
-            } else if let Some(ref mut database) = config.database {
-                database.url = database_url;
-            }
-        }
-
-        // Override server host
-        if let Ok(host) = std::env::var("CRUCIBLE_SERVER_HOST") {
-            if config.server.is_none() {
-                config.server = Some(crate::ServerConfig::default());
-            }
-            if let Some(ref mut server) = config.server {
-                server.host = host;
-            }
-        }
-
-        // Override server port
-        if let Ok(port) = std::env::var("CRUCIBLE_SERVER_PORT") {
-            if let Ok(port) = port.parse::<u16>() {
-                if config.server.is_none() {
-                    config.server = Some(crate::ServerConfig::default());
-                }
-                if let Some(ref mut server) = config.server {
-                    server.port = port;
-                }
-            }
-        }
-
-        // Override logging level
-        if let Ok(level) = std::env::var("CRUCIBLE_LOG_LEVEL") {
-            if config.logging.is_none() {
-                config.logging = Some(crate::LoggingConfig {
-                    level: level.clone(),
-                    format: "text".to_string(),
-                    file: false,
-                    file_path: None,
-                    max_file_size: None,
-                    max_files: None,
-                    ..Default::default()
-                });
-            } else if let Some(ref mut logging) = config.logging {
-                logging.level = level;
-            }
-        }
-    }
 
     /// Save configuration to a file.
     pub async fn save_to_file<P: AsRef<Path>>(config: &Config, path: P) -> Result<(), ConfigError> {

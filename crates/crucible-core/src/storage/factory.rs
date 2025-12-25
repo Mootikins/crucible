@@ -638,6 +638,7 @@ impl StorageFactory {
     ///
     /// # Returns
     /// A storage backend instance or error if environment is invalid
+    #[deprecated(note = "Use create_from_config() instead")]
     pub async fn create_from_env() -> StorageResult<Arc<dyn ContentAddressedStorage>> {
         let backend_type =
             std::env::var("STORAGE_BACKEND").unwrap_or_else(|_| "in_memory".to_string());

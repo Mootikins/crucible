@@ -40,7 +40,7 @@ pub struct McpArgs {
     #[arg(long, default_value = "3847")]
     pub port: u16,
 
-    /// Override kiln path (default: CRUCIBLE_KILN_PATH)
+    /// Override kiln path
     #[arg(long)]
     pub kiln_path: Option<PathBuf>,
 
