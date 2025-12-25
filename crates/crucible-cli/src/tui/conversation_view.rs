@@ -2,10 +2,8 @@
 //!
 //! Provides a trait for rendering conversation history with full ratatui control.
 
-use crate::tui::conversation::{
-    render_item_to_lines, ConversationState, ConversationWidget, InputBoxWidget, StatusBarWidget,
-    StatusKind,
-};
+use crate::tui::components::{InputBoxWidget, SessionHistoryWidget, StatusBarWidget};
+use crate::tui::conversation::{render_item_to_lines, ConversationState, StatusKind};
 use crate::tui::dialog::{DialogResult, DialogStack, DialogWidget};
 use crate::tui::notification::NotificationState;
 use crate::tui::splash::{SplashState, SplashWidget};
@@ -198,10 +196,12 @@ impl RatatuiView {
 
         let mut idx = 0;
 
-        // Conversation
-        let conv_widget = ConversationWidget::new(&self.state.conversation)
-            .scroll_offset(self.state.scroll_offset);
-        frame.render_widget(conv_widget, chunks[idx]);
+        // Conversation (using SessionHistoryWidget)
+        let conv_area = chunks[idx];
+        let conv_widget = SessionHistoryWidget::new(&self.state.conversation)
+            .scroll_offset(self.state.scroll_offset)
+            .viewport_height(conv_area.height);
+        frame.render_widget(conv_widget, conv_area);
         idx += 1;
 
         // Spacer (visual separation before input - just skip it, it remains empty)
@@ -465,6 +465,53 @@ impl RatatuiView {
     /// Handle key event for the current dialog
     pub fn handle_dialog_key(&mut self, key: crossterm::event::KeyEvent) -> Option<DialogResult> {
         self.state.dialog_stack.handle_key(key)
+    }
+
+    /// Example: Route events using LayerStack for composable event handling
+    ///
+    /// This demonstrates how LayerStack can be used to route events through
+    /// the layer hierarchy (base → popup → modal) with proper focus management.
+    ///
+    /// Note: Currently unused, as the runner uses direct event handling.
+    /// Kept as reference for the component architecture pattern.
+    #[allow(dead_code)]
+    fn route_event_via_layer_stack(
+        &mut self,
+        event: &crossterm::event::Event,
+    ) -> crate::tui::components::EventResult {
+        use crate::tui::components::{FocusTarget, LayerStack};
+
+        // Determine current focus based on active layers
+        let focus = if self.state.dialog_stack.current().is_some() {
+            FocusTarget::Dialog
+        } else if self.state.popup.is_some() {
+            FocusTarget::Popup
+        } else {
+            FocusTarget::Input
+        };
+
+        // Create layer stack for event routing
+        let mut stack = LayerStack::new(focus);
+
+        // Add popup layer if active
+        // Note: This is a demonstration pattern. Actual popup widgets would need
+        // to implement InteractiveWidget trait.
+        // if let Some(popup) = &mut self.state.popup {
+        //     stack.set_popup(popup_widget);
+        // }
+
+        // Add modal layer if active
+        // if let Some(dialog) = self.state.dialog_stack.current_mut() {
+        //     stack.set_modal(dialog_widget);
+        // }
+
+        // Route the event through the stack
+        stack.route_event(event)
+
+        // In practice, the runner would then handle the EventResult:
+        // - Consumed: event was handled, stop propagation
+        // - Ignored: continue to base layer handlers
+        // - Action(action): process the requested action
     }
 }
 
