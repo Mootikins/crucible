@@ -429,10 +429,27 @@ impl AgentHandle for CrucibleAcpClient {
                     let _ = result_tx.send(result);
                 });
 
+                // State for unfold: Option contains (rx, result_rx, tool_calls, terminated_flag)
+                // When terminated_flag is true, the next poll will return None to end stream
+                type UnfoldState = Option<(
+                    mpsc::UnboundedReceiver<StreamingChunk>,
+                    tokio::sync::oneshot::Receiver<
+                        Result<(String, Vec<crucible_acp::ToolCallInfo>), crucible_acp::AcpError>,
+                    >,
+                    Vec<ChatToolCall>,
+                    bool, // terminated
+                )>;
+
                 // Convert the channel receiver into a stream of ChatChunks
                 Box::pin(futures::stream::unfold(
-                    (rx, result_rx, Vec::new()),
-                    move |(mut rx, result_rx, mut tool_calls)| async move {
+                    Some((rx, result_rx, Vec::new(), false)) as UnfoldState,
+                    move |state| async move {
+                        // Check if we're in terminated state or no state
+                        let (mut rx, result_rx, mut tool_calls, terminated) = state?;
+                        if terminated {
+                            return None; // Stream properly terminated
+                        }
+
                         // Try to receive a chunk
                         match rx.recv().await {
                             Some(chunk) => {
@@ -469,7 +486,7 @@ impl AgentHandle for CrucibleAcpClient {
                                         tool_calls: None,
                                     },
                                 };
-                                Some((Ok(chat_chunk), (rx, result_rx, tool_calls)))
+                                Some((Ok(chat_chunk), Some((rx, result_rx, tool_calls, false))))
                             }
                             None => {
                                 // Channel closed - check if streaming completed successfully
@@ -485,7 +502,7 @@ impl AgentHandle for CrucibleAcpClient {
                                             tracing::warn!("ACP stream completed with empty response");
                                         }
 
-                                        // Emit final chunk with all tool calls
+                                        // Emit final chunk with all tool calls, mark terminated
                                         let final_tool_calls: Vec<ChatToolCall> = acp_tool_calls
                                             .into_iter()
                                             .map(|t| ChatToolCall {
@@ -504,14 +521,14 @@ impl AgentHandle for CrucibleAcpClient {
                                                     Some(final_tool_calls)
                                                 },
                                             }),
-                                            (rx, tokio::sync::oneshot::channel().1, tool_calls),
+                                            None, // Terminate stream after this
                                         ))
                                     }
                                     Ok(Err(e)) => {
                                         tracing::warn!(error = %e, "ACP stream error");
                                         Some((
                                             Err(ChatError::Communication(format!("ACP error: {}", e))),
-                                            (rx, tokio::sync::oneshot::channel().1, tool_calls),
+                                            None, // Terminate stream after error
                                         ))
                                     }
                                     Err(_) => {
@@ -520,7 +537,7 @@ impl AgentHandle for CrucibleAcpClient {
                                             Err(ChatError::Communication(
                                                 "ACP streaming task failed".to_string(),
                                             )),
-                                            (rx, tokio::sync::oneshot::channel().1, tool_calls),
+                                            None, // Terminate stream after error
                                         ))
                                     }
                                 }
