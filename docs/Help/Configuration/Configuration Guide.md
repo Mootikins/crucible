@@ -77,15 +77,46 @@ secret = "{file:secret.txt}"
 - If the file has a `.toml` extension → parsed as structured TOML data
 - Otherwise → file content is used as a string (whitespace trimmed)
 
-### Combining Both
+### `{dir:path}` Directory References (config.d style)
 
-You can use `{env:}` and `{file:}` references throughout your config:
+Use `{dir:path}` to merge all `.toml` files from a directory:
+
+```toml
+# Include all provider configs from a directory
+providers = "{dir:~/.config/crucible/providers.d/}"
+
+# Drop-in MCP server configs
+gateway = "{dir:mcps.d/}"
+```
+
+Files are processed in sorted order (alphabetically), allowing predictable overrides:
+
+```
+~/.config/crucible/providers.d/
+├── 00-base.toml      # Processed first (defaults)
+├── 10-local.toml     # Local Ollama config
+├── 20-cloud.toml     # Cloud providers
+└── 99-override.toml  # Processed last (overrides)
+```
+
+- Only `.toml` files are processed
+- Hidden files (starting with `.`) are ignored
+- Later files override earlier ones for conflicting keys
+- Tables are deep-merged, arrays are appended
+
+### Combining All Three
+
+You can use `{env:}`, `{file:}`, and `{dir:}` references throughout your config:
 
 ```toml
 [providers.cloud]
 backend = "openai"
 api_key = "{env:OPENAI_API_KEY}"           # From environment
 endpoint = "{file:~/.config/endpoint.txt}"  # From file
+
+# Modular provider configs
+[llm]
+providers = "{dir:~/.config/crucible/providers.d/}"
 ```
 
 ### `[include]` Section (Legacy)
