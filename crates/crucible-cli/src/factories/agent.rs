@@ -326,13 +326,21 @@ async fn create_rig_agent(
 ///
 /// Selection priority:
 /// 1. Explicit agent_type in params
-/// 2. Config file setting
-/// 3. Default: ACP if available, internal otherwise
+/// 2. Config file setting (chat.agent_preference)
+/// 3. Default: ACP
 pub async fn create_agent(
     config: &CliAppConfig,
     params: AgentInitParams,
 ) -> Result<InitializedAgent> {
-    let agent_type = params.agent_type.unwrap_or(AgentType::Acp);
+    use crucible_config::AgentPreference;
+
+    // Determine agent type from params or config
+    let agent_type = params.agent_type.unwrap_or_else(|| {
+        match config.chat.agent_preference {
+            AgentPreference::Crucible => AgentType::Internal,
+            AgentPreference::Acp => AgentType::Acp,
+        }
+    });
 
     match agent_type {
         AgentType::Internal => {
