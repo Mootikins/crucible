@@ -7,8 +7,29 @@ html, body, #root {
   height: 100%;
   margin: 0;
   padding: 0;
+  overflow: hidden;
 }
 
 body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: #171717; /* neutral-900 */
+}
+
+/* Dockview theme overrides for dark mode */
+.dockview-theme-abyss {
+  --dv-activegroup-visiblepanel-tab-background-color: #262626;
+  --dv-activegroup-hiddenpanel-tab-background-color: #171717;
+  --dv-inactivegroup-visiblepanel-tab-background-color: #1f1f1f;
+  --dv-inactivegroup-hiddenpanel-tab-background-color: #171717;
+  --dv-tab-divider-color: #404040;
+  --dv-activegroup-visiblepanel-tab-color: #fafafa;
+  --dv-activegroup-hiddenpanel-tab-color: #a3a3a3;
+  --dv-inactivegroup-visiblepanel-tab-color: #d4d4d4;
+  --dv-inactivegroup-hiddenpanel-tab-color: #737373;
+  --dv-background-color: #171717;
+  --dv-paneview-header-border-color: #404040;
+  --dv-tabs-and-actions-container-background-color: #171717;
+  --dv-tabs-container-scrollbar-color: #525252;
+  --dv-group-view-background-color: #171717;
+  --dv-separator-border: #404040;
 }
