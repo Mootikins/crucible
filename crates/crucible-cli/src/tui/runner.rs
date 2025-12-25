@@ -14,6 +14,7 @@
 use tracing::debug;
 
 use crate::chat::bridge::AgentEventBridge;
+use crate::chat::slash_registry::SlashCommandRegistry;
 use crate::tui::agent_picker::AgentSelection;
 use crate::tui::notification::NotificationLevel;
 use crate::tui::streaming_channel::{
@@ -74,6 +75,18 @@ pub struct RatatuiRunner {
     streaming_parser: Option<StreamingParser>,
     /// Receiver for agent availability probing results
     agent_probe_rx: Option<tokio::sync::oneshot::Receiver<Vec<crucible_acp::KnownAgent>>>,
+    /// Command history (most recent last)
+    history: Vec<String>,
+    /// Current position in history (None = not browsing history)
+    history_index: Option<usize>,
+    /// Saved input when entering history mode
+    history_saved_input: String,
+    /// Current agent name (for display in /agent command)
+    current_agent: Option<String>,
+    /// Command registry for slash command lookup
+    command_registry: std::sync::Arc<SlashCommandRegistry>,
+    /// If true, session should restart with agent picker instead of exiting
+    restart_requested: bool,
 }
 
 impl RatatuiRunner {
@@ -81,6 +94,7 @@ impl RatatuiRunner {
     pub fn new(
         mode_id: &str,
         popup_provider: std::sync::Arc<DynamicPopupProvider>,
+        command_registry: std::sync::Arc<SlashCommandRegistry>,
     ) -> Result<Self> {
         let (width, height) = size().unwrap_or((80, 24));
 
@@ -99,6 +113,12 @@ impl RatatuiRunner {
             streaming_rx: None,
             streaming_parser: None,
             agent_probe_rx: None,
+            history: Vec::new(),
+            history_index: None,
+            history_saved_input: String::new(),
+            current_agent: None,
+            command_registry,
+            restart_requested: false,
         })
     }
 
@@ -107,12 +127,30 @@ impl RatatuiRunner {
         self.view.dismiss_splash();
     }
 
+    /// Set the current agent name for display in /agent command
+    pub fn set_current_agent(&mut self, name: &str) {
+        self.current_agent = Some(name.to_string());
+    }
+
+    /// Get the current agent name
+    pub fn current_agent_name(&self) -> Option<&str> {
+        self.current_agent.as_deref()
+    }
+
+    /// Check if a restart was requested (e.g., via /new command)
+    pub fn restart_requested(&self) -> bool {
+        self.restart_requested
+    }
+
     /// Run the TUI main loop with an agent.
     pub async fn run<A: AgentHandle>(
         &mut self,
         bridge: &AgentEventBridge,
         agent: &mut A,
     ) -> Result<()> {
+        // Skip the splash screen - use /agent command to see available agents
+        self.view.dismiss_splash();
+
         // Setup terminal with alternate screen and mouse capture
         // Note: Don't hide cursor here - let ratatui manage cursor visibility
         // based on whether set_cursor_position is called in render
@@ -260,6 +298,17 @@ impl RatatuiRunner {
                             self.is_streaming = false;
                             streaming_error = Some(message);
                         }
+                        StreamingEvent::ToolCall { id: _, name, args } => {
+                            // Display tool call in the TUI
+                            self.view.push_tool_running(&name);
+                            self.view.set_status_text(&format!("Running: {}", name));
+
+                            // Push to event ring for session tracking
+                            bridge.ring.push(SessionEvent::ToolCalled {
+                                name,
+                                args,
+                            });
+                        }
                     }
                 }
             }
@@ -404,6 +453,13 @@ impl RatatuiRunner {
                 // Reset Ctrl+C tracking
                 self.ctrl_c_count = 0;
 
+                // Add to history (avoid duplicates for repeated commands)
+                if self.history.last().map_or(true, |last| last != &msg) {
+                    self.history.push(msg.clone());
+                }
+                self.history_index = None;
+                self.history_saved_input.clear();
+
                 // Clear input IMMEDIATELY (before any async work)
                 self.view.set_input("");
                 self.view.set_cursor_position(0);
@@ -541,62 +597,118 @@ impl RatatuiRunner {
                 self.popup = None;
             }
             InputAction::ExecuteSlashCommand(cmd) => {
-                // Extract command name and route to handler
+                // Extract command name and args, route via registry
                 use crate::tui::popup::extract_command_name;
 
                 if let Some(cmd_name) = extract_command_name(&cmd) {
-                    match cmd_name {
-                        "help" => {
-                            // Show help via status and/or inject help into chat
-                            let help_text = "Shortcuts: Shift+Tab=mode, Ctrl+C=cancel, ↑↓=scroll, @=context, /=commands";
-                            self.view.set_status_text(help_text);
-                        }
-                        "clear" => {
-                            // Clear conversation history
-                            self.view.state_mut().conversation.clear();
-                            self.view.set_status_text("Conversation cleared");
-                        }
-                        "mode" | "plan" | "act" | "auto" => {
-                            // Mode switching via commands is deprecated - use Shift+Tab
-                            self.view.set_status_text("Use Shift+Tab to switch modes");
-                        }
-                        "search" => {
-                            // Extract query after /search
-                            let query = cmd.strip_prefix("/search").unwrap_or("").trim();
-                            if query.is_empty() {
-                                self.view.set_status_text("Usage: /search <query> — or just type your search in chat");
-                            } else {
-                                // Set up search prompt in input - user can press Enter to send
-                                let search_prompt = format!("Search my notes for: {}", query);
-                                self.view.set_input(&search_prompt);
-                                self.view.set_cursor_position(search_prompt.len());
-                                self.view.set_status_text("Press Enter to search");
-                                return Ok(false); // Don't clear input
+                    // Extract args (everything after /command)
+                    let args = cmd
+                        .strip_prefix("/")
+                        .and_then(|s| s.strip_prefix(cmd_name))
+                        .map(|s| s.trim())
+                        .unwrap_or("");
+
+                    // Look up command in registry
+                    if let Some(descriptor) = self.command_registry.get_descriptor(cmd_name) {
+                        // For now, handle TUI-specific implementations inline
+                        // TODO: Phase 2 - use TuiChatContext and call handler.execute()
+                        match cmd_name {
+                            "help" => {
+                                let help_text = "Shortcuts: Shift+Tab=mode, Ctrl+C=cancel, ↑↓=scroll, @=context, /=commands";
+                                self.view.set_status_text(help_text);
+                            }
+                            "clear" => {
+                                self.view.state_mut().conversation.clear();
+                                self.view.set_status_text("Conversation cleared");
+                            }
+                            "mode" | "plan" | "act" | "auto" => {
+                                self.view.set_status_text("Use Shift+Tab to switch modes");
+                            }
+                            "search" => {
+                                if args.is_empty() {
+                                    // Show input hint from registry if available
+                                    let hint = descriptor.input_hint.as_deref().unwrap_or("<query>");
+                                    self.view.set_status_text(&format!("Usage: /search {} — or just type your search in chat", hint));
+                                } else {
+                                    let search_prompt = format!("Search my notes for: {}", args);
+                                    self.view.set_input(&search_prompt);
+                                    self.view.set_cursor_position(search_prompt.len());
+                                    self.view.set_status_text("Press Enter to search");
+                                    return Ok(false);
+                                }
+                            }
+                            "context" => {
+                                self.view.set_status_text("Use @note:<path> or @file:<path> to inject context");
+                            }
+                            "exit" | "quit" => {
+                                return Ok(true);
+                            }
+                            "agent" => {
+                                let current = self.current_agent_name().unwrap_or("unknown");
+                                if args.is_empty() {
+                                    // Show current agent
+                                    self.view.set_status_text(&format!("Current agent: {}. Use /new to start fresh session with agent picker", current));
+                                } else {
+                                    // Suggest /new for switching
+                                    self.view.set_status_text(&format!("Use /new to start a new session. Current agent: {}", current));
+                                }
+                            }
+                            "new" => {
+                                // Request restart with agent picker
+                                self.restart_requested = true;
+                                self.view.set_status_text("Starting new session...");
+                                return Ok(true); // Exit to trigger restart
+                            }
+                            _ => {
+                                // Command exists in registry but no TUI handler yet
+                                self.view.set_status_text(&format!("{}: {}", cmd_name, descriptor.description));
                             }
                         }
-                        "context" => {
-                            // Show context management help
-                            self.view.set_status_text("Use @note:<path> or @file:<path> to inject context");
-                        }
-                        "exit" | "quit" => {
-                            // Already handled by Exit action in map_key_event
-                            return Ok(true);
-                        }
-                        _ => {
-                            // Unknown command - should not reach here due to is_exact_slash_command check
-                            self.view.set_status_text(&format!("Unknown command: {}", cmd_name));
-                        }
+                    } else {
+                        // Not in registry - could be agent command or unknown
+                        self.view.set_status_text(&format!("Unknown command: /{}", cmd_name));
                     }
                 }
-
-                // TODO: Slash command arguments not yet implemented
-                // When adding: parse args after command name, validate required args,
-                // show help text for missing required args
 
                 // Clear input after executing
                 self.view.set_input("");
                 self.view.set_cursor_position(0);
                 self.popup = None;
+            }
+            InputAction::HistoryPrev => {
+                if !self.history.is_empty() {
+                    let new_index = match self.history_index {
+                        None => {
+                            // Entering history mode - save current input
+                            self.history_saved_input = self.view.input().to_string();
+                            self.history.len() - 1
+                        }
+                        Some(0) => 0, // Already at oldest
+                        Some(i) => i - 1,
+                    };
+                    self.history_index = Some(new_index);
+                    if let Some(cmd) = self.history.get(new_index) {
+                        self.view.set_input(cmd);
+                        self.view.set_cursor_position(cmd.len());
+                    }
+                }
+            }
+            InputAction::HistoryNext => {
+                if let Some(current) = self.history_index {
+                    if current + 1 >= self.history.len() {
+                        // Exiting history mode - restore saved input
+                        self.history_index = None;
+                        self.view.set_input(&self.history_saved_input);
+                        self.view.set_cursor_position(self.history_saved_input.len());
+                    } else {
+                        let new_index = current + 1;
+                        self.history_index = Some(new_index);
+                        if let Some(cmd) = self.history.get(new_index) {
+                            self.view.set_input(cmd);
+                            self.view.set_cursor_position(cmd.len());
+                        }
+                    }
+                }
             }
             InputAction::None => {}
         }
@@ -781,13 +893,16 @@ impl RatatuiRunner {
     ///
     /// The factory receives the agent selection and should create the agent.
     /// Status updates are shown in the TUI during creation.
+    ///
+    /// Supports `/new` command for restarting with a different agent - the factory
+    /// is called again with the new selection and conversation is cleared.
     pub async fn run_with_factory<F, Fut, A>(
         &mut self,
         bridge: &AgentEventBridge,
         create_agent: F,
     ) -> Result<()>
     where
-        F: FnOnce(AgentSelection) -> Fut,
+        F: Fn(AgentSelection) -> Fut,
         Fut: std::future::Future<Output = Result<A>>,
         A: AgentHandle,
     {
@@ -803,38 +918,53 @@ impl RatatuiRunner {
         let mut terminal = Terminal::new(backend)?;
         terminal.clear()?;
 
-        // Phase 1: Agent selection (if splash is shown)
-        let selection = if self.view.is_showing_splash() {
-            self.run_picker_phase(&mut terminal).await?
-        } else {
-            // No splash - use a default/skip selection
-            AgentSelection::Cancelled // This shouldn't happen if used correctly
-        };
+        // Main session loop - supports restart via /new command
+        loop {
+            // Reset restart flag at start of each iteration
+            self.restart_requested = false;
 
-        // Handle cancellation
-        if matches!(selection, AgentSelection::Cancelled) {
-            // Cleanup and exit
-            disable_raw_mode()?;
-            execute!(
-                terminal.backend_mut(),
-                crossterm::event::DisableMouseCapture,
-                LeaveAlternateScreen,
-                cursor::Show
-            )?;
-            return Ok(());
+            // Phase 1: Agent selection (show picker)
+            self.view.show_splash(); // Ensure splash is shown for picker
+            let selection = self.run_picker_phase(&mut terminal).await?;
+
+            // Handle cancellation
+            if matches!(selection, AgentSelection::Cancelled) {
+                break; // Exit the loop and cleanup
+            }
+
+            // Phase 2: Create agent (show status in TUI)
+            self.view.set_status_text("Creating agent...");
+            self.render_frame(&mut terminal)?;
+
+            // Extract agent name from selection before consuming it
+            let agent_name = match &selection {
+                AgentSelection::Acp(name) => name.clone(),
+                AgentSelection::Internal => "internal".to_string(),
+                AgentSelection::Cancelled => "unknown".to_string(), // shouldn't reach here
+            };
+
+            let mut agent = create_agent(selection).await?;
+
+            // Set current agent for /agent command
+            self.set_current_agent(&agent_name);
+
+            // Clear conversation for fresh start
+            self.view.state_mut().conversation.clear();
+            self.view.set_status_text("Ready");
+            self.render_frame(&mut terminal)?;
+
+            // Phase 3: Run main loop
+            self.main_loop(&mut terminal, bridge, &mut agent).await?;
+
+            // Check if restart was requested (via /new command)
+            if !self.restart_requested {
+                break; // Normal exit, don't restart
+            }
+
+            // Restart requested - loop back to show picker again
+            self.view.set_status_text("Restarting session...");
+            self.render_frame(&mut terminal)?;
         }
-
-        // Phase 2: Create agent (show status in TUI)
-        self.view.set_status_text("Creating agent...");
-        self.render_frame(&mut terminal)?;
-
-        let mut agent = create_agent(selection).await?;
-
-        self.view.set_status_text("Ready");
-        self.render_frame(&mut terminal)?;
-
-        // Phase 3: Run main loop
-        let result = self.main_loop(&mut terminal, bridge, &mut agent).await;
 
         // Cleanup
         disable_raw_mode()?;
@@ -845,7 +975,7 @@ impl RatatuiRunner {
             cursor::Show
         )?;
 
-        result
+        Ok(())
     }
 
     /// Run the picker phase - shows splash and waits for agent selection.
@@ -938,9 +1068,15 @@ impl RatatuiRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chat::slash_registry::SlashCommandRegistryBuilder;
+    use crucible_core::RegistryBuilder;
 
     fn test_popup_provider() -> std::sync::Arc<DynamicPopupProvider> {
         std::sync::Arc::new(DynamicPopupProvider::new())
+    }
+
+    fn test_command_registry() -> std::sync::Arc<SlashCommandRegistry> {
+        std::sync::Arc::new(SlashCommandRegistryBuilder::default().build())
     }
 
     #[test]
@@ -952,8 +1088,23 @@ mod tests {
 
     #[test]
     fn test_ratatui_runner_creates() {
-        let runner = RatatuiRunner::new("plan", test_popup_provider()).unwrap();
+        let runner = RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
         assert_eq!(runner.view().mode_id(), "plan");
+    }
+
+    #[test]
+    fn test_runner_tracks_current_agent() {
+        let mut runner = RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+        // Default should be None (unknown)
+        assert!(runner.current_agent_name().is_none());
+
+        // Can set current agent
+        runner.set_current_agent("internal");
+        assert_eq!(runner.current_agent_name(), Some("internal"));
+
+        runner.set_current_agent("opencode");
+        assert_eq!(runner.current_agent_name(), Some("opencode"));
     }
 
     #[tokio::test]
@@ -1054,7 +1205,7 @@ mod tests {
 
     #[test]
     fn test_ratatui_view_scroll() {
-        let runner = RatatuiRunner::new("plan", test_popup_provider()).unwrap();
+        let runner = RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
         // View should be accessible
         assert_eq!(runner.view().state().scroll_offset, 0);

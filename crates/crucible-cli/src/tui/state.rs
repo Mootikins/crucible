@@ -436,6 +436,8 @@ impl TuiState {
             | InputAction::HalfPageDown
             | InputAction::ScrollToTop
             | InputAction::ScrollToBottom
+            | InputAction::HistoryPrev
+            | InputAction::HistoryNext
             | InputAction::None => None,
         }
     }

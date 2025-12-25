@@ -45,6 +45,8 @@ pub struct SessionConfig {
     pub context_size: Option<usize>,
     /// Skip splash screen (e.g., when agent was already selected via picker)
     pub skip_splash: bool,
+    /// Current agent name for display (e.g., "internal", "opencode", "claude")
+    pub agent_name: Option<String>,
 }
 
 impl Default for SessionConfig {
@@ -54,6 +56,7 @@ impl Default for SessionConfig {
             context_enabled: true,
             context_size: Some(DEFAULT_CONTEXT_SIZE),
             skip_splash: false,
+            agent_name: None,
         }
     }
 }
@@ -70,12 +73,19 @@ impl SessionConfig {
             context_enabled,
             context_size,
             skip_splash: false,
+            agent_name: None,
         }
     }
 
     /// Set whether to skip the splash screen
     pub fn with_skip_splash(mut self, skip: bool) -> Self {
         self.skip_splash = skip;
+        self
+    }
+
+    /// Set the current agent name for display
+    pub fn with_agent_name(mut self, name: impl Into<String>) -> Self {
+        self.agent_name = Some(name.into());
         self
     }
 
@@ -166,6 +176,16 @@ impl ChatSession {
                 Arc::new(handlers::CommitHandler),
                 "Smart git commit workflow (smart/quick/review/wip)",
                 Some("mode [message]".to_string()),
+            )
+            .command(
+                "agent",
+                Arc::new(handlers::AgentHandler::new(None)),
+                "Show current agent and list available agents",
+            )
+            .command(
+                "new",
+                Arc::new(handlers::NewHandler),
+                "Start a new session with agent picker",
             );
 
         // Register /models command if models are available (e.g., from OpenCode)
@@ -319,11 +339,17 @@ impl ChatSession {
         let bridge = AgentEventBridge::new(session.handle(), ring);
 
         // Create and run TUI
-        let mut runner = RatatuiRunner::new(&self.config.initial_mode_id, popup_provider.clone())?;
+        let registry = std::sync::Arc::new(self.command_registry.clone());
+        let mut runner = RatatuiRunner::new(&self.config.initial_mode_id, popup_provider.clone(), registry)?;
 
         // Skip splash if agent was already selected via picker
         if self.config.skip_splash {
             runner.skip_splash();
+        }
+
+        // Set current agent name for /agent command display
+        if let Some(ref name) = self.config.agent_name {
+            runner.set_current_agent(name);
         }
 
         runner.run(&bridge, agent).await
@@ -335,7 +361,7 @@ impl ChatSession {
     /// All happens within a single TUI session (no terminal flicker).
     pub async fn run_deferred<F, Fut, A>(&mut self, create_agent: F) -> Result<()>
     where
-        F: FnOnce(crate::tui::AgentSelection) -> Fut,
+        F: Fn(crate::tui::AgentSelection) -> Fut,
         Fut: std::future::Future<Output = Result<A>>,
         A: AgentHandle,
     {
@@ -392,7 +418,8 @@ impl ChatSession {
         let bridge = AgentEventBridge::new(session.handle(), ring);
 
         // Create and run TUI with factory
-        let mut runner = RatatuiRunner::new(&self.config.initial_mode_id, popup_provider.clone())?;
+        let registry = std::sync::Arc::new(self.command_registry.clone());
+        let mut runner = RatatuiRunner::new(&self.config.initial_mode_id, popup_provider.clone(), registry)?;
 
         runner.run_with_factory(&bridge, create_agent).await
     }
