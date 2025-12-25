@@ -11,6 +11,7 @@
     "test:ui": "vitest --ui"
   },
   "dependencies": {
+    "@huggingface/transformers": "^3.8.1",
     "solid-js": "^1.9.3"
   },
   "devDependencies": {
