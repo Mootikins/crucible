@@ -1,6 +1,7 @@
 import { Component, createSignal, Show } from 'solid-js';
 import { useMediaRecorder } from '@/hooks/useMediaRecorder';
 import { useWhisper } from '@/contexts/WhisperContext';
+import { playRecordingStartSound, playRecordingEndSound } from '@/lib/sounds';
 
 interface MicButtonProps {
   onTranscription: (text: string) => void;
@@ -33,6 +34,7 @@ export const MicButton: Component<MicButtonProps> = (props) => {
 
     try {
       await startRecording();
+      playRecordingStartSound();
       setState('recording');
     } catch (err) {
       console.error('Failed to start recording:', err);
@@ -44,6 +46,7 @@ export const MicButton: Component<MicButtonProps> = (props) => {
     if (state() !== 'recording') return;
 
     setState('processing');
+    playRecordingEndSound();
 
     try {
       const audioBlob = await stopRecording();
