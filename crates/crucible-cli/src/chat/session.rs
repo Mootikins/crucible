@@ -19,6 +19,7 @@ use crate::chat::mode_registry::ModeRegistry;
 use crate::chat::slash_registry::{SlashCommandRegistry, SlashCommandRegistryBuilder};
 use crate::chat::{AgentHandle, ChatError, ChatResult};
 use crate::core_facade::KilnContext;
+use crate::tui::agent_picker::AgentSelection;
 use crate::tui::DynamicPopupProvider;
 use crate::tui::RatatuiRunner;
 use crucible_core::traits::registry::{Registry, RegistryBuilder};
@@ -47,6 +48,8 @@ pub struct SessionConfig {
     pub skip_splash: bool,
     /// Current agent name for display (e.g., "internal", "opencode", "claude")
     pub agent_name: Option<String>,
+    /// Pre-selected agent for first iteration (skips picker, still allows /new restart)
+    pub default_selection: Option<AgentSelection>,
 }
 
 impl Default for SessionConfig {
@@ -57,6 +60,7 @@ impl Default for SessionConfig {
             context_size: Some(DEFAULT_CONTEXT_SIZE),
             skip_splash: false,
             agent_name: None,
+            default_selection: None,
         }
     }
 }
@@ -74,6 +78,7 @@ impl SessionConfig {
             context_size,
             skip_splash: false,
             agent_name: None,
+            default_selection: None,
         }
     }
 
@@ -86,6 +91,15 @@ impl SessionConfig {
     /// Set the current agent name for display
     pub fn with_agent_name(mut self, name: impl Into<String>) -> Self {
         self.agent_name = Some(name.into());
+        self
+    }
+
+    /// Set the default agent selection for first iteration.
+    ///
+    /// When set, skips the picker phase on first run but still supports
+    /// restart via `/new` command (which will show the picker).
+    pub fn with_default_selection(mut self, selection: AgentSelection) -> Self {
+        self.default_selection = Some(selection);
         self
     }
 
@@ -274,87 +288,6 @@ impl ChatSession {
         Ok(())
     }
 
-    /// Run the interactive session loop
-    ///
-    /// Creates a TUI-based chat interface with streaming agent responses.
-    /// Events flow through:
-    /// - User input → TuiRunner → AgentEventBridge → Agent
-    /// - Agent response → TextDelta events → Ring → TuiRunner display
-    pub async fn run<A: AgentHandle>(&mut self, agent: &mut A) -> Result<()> {
-        // Incorporate agent-provided commands into the registry (if any)
-        let agent_commands = agent.get_commands();
-        if !agent_commands.is_empty() {
-            self.command_registry = self
-                .command_registry
-                .with_agent_commands(agent_commands.to_vec());
-        }
-
-        // Build popup provider snapshot (commands now include agent commands)
-        let command_items = self.command_registry.list_all();
-        let popup_provider = std::sync::Arc::new(DynamicPopupProvider::new());
-        popup_provider.set_commands(command_items);
-
-        // Spawn background indexing for workspace files and kiln notes
-        let popup_provider_files = popup_provider.clone();
-        let popup_provider_notes = popup_provider.clone();
-        let popup_provider_agents = popup_provider.clone();
-        let workspace_root =
-            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        let kiln_root = self.core.config().kiln_path.clone();
-
-        // Workspace files: prefer git ls-files; fallback to walkdir; skip hidden; cap entries
-        tokio::spawn(async move {
-            if let Ok(files) =
-                tokio::task::spawn_blocking(move || index_workspace_files(&workspace_root)).await
-            {
-                popup_provider_files.set_files(files);
-            }
-        });
-
-        // Kiln notes: scan for markdown files; emit note:<path> (single kiln)
-        tokio::spawn(async move {
-            if let Ok(notes) =
-                tokio::task::spawn_blocking(move || index_kiln_notes(&kiln_root)).await
-            {
-                popup_provider_notes.set_notes(notes);
-            }
-        });
-
-        // Agents: include configured default agent (best-effort)
-        if let Some(default_agent) = self.core.config().acp.default_agent.clone() {
-            popup_provider_agents.set_agents(vec![(
-                default_agent,
-                "Configured default agent".to_string(),
-            )]);
-        }
-
-        // Create session for event ring management
-        let session_folder = self.core.session_folder();
-        let session = SessionBuilder::with_generated_id("chat")
-            .with_folder(&session_folder)
-            .build();
-
-        // Create event bridge
-        let ring = session.ring().clone();
-        let bridge = AgentEventBridge::new(session.handle(), ring);
-
-        // Create and run TUI
-        let registry = std::sync::Arc::new(self.command_registry.clone());
-        let mut runner = RatatuiRunner::new(&self.config.initial_mode_id, popup_provider.clone(), registry)?;
-
-        // Skip splash if agent was already selected via picker
-        if self.config.skip_splash {
-            runner.skip_splash();
-        }
-
-        // Set current agent name for /agent command display
-        if let Some(ref name) = self.config.agent_name {
-            runner.set_current_agent(name);
-        }
-
-        runner.run(&bridge, agent).await
-    }
-
     /// Run the session with deferred agent creation.
     ///
     /// Shows splash for agent selection, then creates agent using the factory.
@@ -420,6 +353,11 @@ impl ChatSession {
         // Create and run TUI with factory
         let registry = std::sync::Arc::new(self.command_registry.clone());
         let mut runner = RatatuiRunner::new(&self.config.initial_mode_id, popup_provider.clone(), registry)?;
+
+        // Set default selection if pre-specified (skips picker first time, allows /new restart)
+        if let Some(selection) = self.config.default_selection.clone() {
+            runner.with_default_selection(selection);
+        }
 
         runner.run_with_factory(&bridge, create_agent).await
     }
@@ -672,6 +610,49 @@ mod tests {
     fn test_session_config_validate_min_context_size() {
         let config = SessionConfig::new("plan", true, Some(1));
         assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_session_config_default_selection_initially_none() {
+        let config = SessionConfig::default();
+        assert!(config.default_selection.is_none());
+    }
+
+    #[test]
+    fn test_session_config_with_default_selection_acp() {
+        let config = SessionConfig::new("plan", true, Some(5))
+            .with_default_selection(AgentSelection::Acp("opencode".to_string()));
+
+        assert!(config.default_selection.is_some());
+        assert!(matches!(
+            config.default_selection,
+            Some(AgentSelection::Acp(ref name)) if name == "opencode"
+        ));
+    }
+
+    #[test]
+    fn test_session_config_with_default_selection_internal() {
+        let config = SessionConfig::new("plan", true, Some(5))
+            .with_default_selection(AgentSelection::Internal);
+
+        assert!(matches!(
+            config.default_selection,
+            Some(AgentSelection::Internal)
+        ));
+    }
+
+    #[test]
+    fn test_session_config_builder_chain() {
+        // Verify all builder methods can be chained
+        let config = SessionConfig::new("act", true, Some(10))
+            .with_skip_splash(true)
+            .with_agent_name("test-agent")
+            .with_default_selection(AgentSelection::Internal);
+
+        assert_eq!(config.initial_mode_id, "act");
+        assert!(config.skip_splash);
+        assert_eq!(config.agent_name, Some("test-agent".to_string()));
+        assert!(config.default_selection.is_some());
     }
 
     // Phase 5: Session Integration Tests
