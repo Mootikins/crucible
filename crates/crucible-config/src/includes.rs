@@ -39,7 +39,24 @@
 //! - The env var must be set or config loading will fail
 //! - Use this for secrets that shouldn't be in files
 //!
-//! ## 3. Include Section (legacy)
+//! ## 3. Directory References: `{dir:path}` (config.d style)
+//!
+//! Use `{dir:path}` to merge all `.toml` files from a directory:
+//!
+//! ```toml
+//! # Include all provider configs from a directory
+//! providers = "{dir:~/.config/crucible/providers.d/}"
+//! ```
+//!
+//! Files in the directory are processed in sorted order (alphabetically),
+//! allowing predictable override behavior with numeric prefixes:
+//! - `00-base.toml` - processed first
+//! - `10-cloud.toml` - processed second
+//! - `99-override.toml` - processed last, overrides earlier values
+//!
+//! Non-`.toml` files and hidden files (starting with `.`) are ignored.
+//!
+//! ## 4. Include Section (legacy)
 //!
 //! The `[include]` section merges files into specific top-level sections:
 //!
@@ -238,6 +255,10 @@ const FILE_REF_SUFFIX: &str = "}";
 const ENV_REF_PREFIX: &str = "{env:";
 const ENV_REF_SUFFIX: &str = "}";
 
+/// Pattern for directory references: {dir:path}
+const DIR_REF_PREFIX: &str = "{dir:";
+const DIR_REF_SUFFIX: &str = "}";
+
 /// Check if a string is a file reference
 fn is_file_reference(s: &str) -> bool {
     s.starts_with(FILE_REF_PREFIX) && s.ends_with(FILE_REF_SUFFIX)
@@ -261,6 +282,20 @@ fn extract_file_path(s: &str) -> Option<&str> {
 fn extract_env_var(s: &str) -> Option<&str> {
     if is_env_reference(s) {
         Some(&s[ENV_REF_PREFIX.len()..s.len() - ENV_REF_SUFFIX.len()])
+    } else {
+        None
+    }
+}
+
+/// Check if a string is a directory reference
+fn is_dir_reference(s: &str) -> bool {
+    s.starts_with(DIR_REF_PREFIX) && s.ends_with(DIR_REF_SUFFIX)
+}
+
+/// Extract the path from a directory reference
+fn extract_dir_path(s: &str) -> Option<&str> {
+    if is_dir_reference(s) {
+        Some(&s[DIR_REF_PREFIX.len()..s.len() - DIR_REF_SUFFIX.len()])
     } else {
         None
     }
@@ -294,11 +329,85 @@ fn read_file_as_value(path: &Path) -> Result<toml::Value, IncludeError> {
     }
 }
 
-/// Process all `{file:path}` and `{env:VAR}` references in a TOML value tree
+/// Read all .toml files from a directory and merge them
+///
+/// Files are processed in sorted order (alphabetically by filename),
+/// allowing predictable override behavior with numeric prefixes:
+/// - `00-base.toml` is processed first
+/// - `99-override.toml` is processed last and overrides earlier values
+///
+/// Non-.toml files are ignored.
+#[cfg(feature = "toml")]
+fn read_dir_as_value(
+    dir_path: &Path,
+    base_dir: &Path,
+    errors: &mut Vec<IncludeError>,
+) -> Result<toml::Value, IncludeError> {
+    if !dir_path.exists() {
+        return Err(IncludeError::DirNotFound(dir_path.to_path_buf()));
+    }
+
+    if !dir_path.is_dir() {
+        return Err(IncludeError::NotADirectory(dir_path.to_path_buf()));
+    }
+
+    // Collect and sort .toml files
+    let mut toml_files: Vec<PathBuf> = std::fs::read_dir(dir_path)
+        .map_err(|e| IncludeError::Io {
+            path: dir_path.to_path_buf(),
+            error: e.to_string(),
+        })?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_file()
+                && path.extension().is_some_and(|ext| ext == "toml")
+                && !path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with('.'))
+        })
+        .collect();
+
+    toml_files.sort();
+
+    debug!(
+        "Reading {} .toml files from {}",
+        toml_files.len(),
+        dir_path.display()
+    );
+
+    // Start with an empty table
+    let mut result = toml::Value::Table(toml::map::Map::new());
+
+    // Merge each file in order
+    for file_path in toml_files {
+        debug!("Processing config fragment: {}", file_path.display());
+
+        match read_file_as_value(&file_path) {
+            Ok(mut file_value) => {
+                // Recursively process any refs in this file
+                process_refs_recursive(&mut file_value, base_dir, errors);
+
+                // Merge into result
+                merge_toml_values(&mut result, &file_value);
+            }
+            Err(e) => {
+                warn!("Failed to read config fragment {}: {}", file_path.display(), e);
+                errors.push(e);
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+/// Process all `{file:path}`, `{env:VAR}`, and `{dir:path}` references in a TOML value tree
 ///
 /// Walks the entire TOML value tree and replaces:
 /// - `{file:path}` with the content of the referenced file
 /// - `{env:VAR}` with the value of the environment variable
+/// - `{dir:path}` with merged content of all .toml files in the directory (config.d style)
 #[cfg(feature = "toml")]
 pub fn process_file_references(
     value: &mut toml::Value,
@@ -354,6 +463,25 @@ fn process_refs_recursive(
                         errors.push(IncludeError::EnvVarNotFound {
                             var_name: var_name.to_string(),
                         });
+                    }
+                }
+            }
+            // Handle {dir:path} references (config.d style)
+            else if let Some(dir_path) = extract_dir_path(s) {
+                let resolved = resolve_include_path(dir_path, base_dir);
+                debug!(
+                    "Processing dir reference: {} -> {}",
+                    dir_path,
+                    resolved.display()
+                );
+
+                match read_dir_as_value(&resolved, base_dir, errors) {
+                    Ok(dir_value) => {
+                        *value = dir_value;
+                    }
+                    Err(e) => {
+                        warn!("Failed to load dir reference {}: {}", dir_path, e);
+                        errors.push(e);
                     }
                 }
             }
@@ -475,6 +603,12 @@ pub enum IncludeError {
     /// Include file not found
     FileNotFound(PathBuf),
 
+    /// Include directory not found
+    DirNotFound(PathBuf),
+
+    /// Path is not a directory
+    NotADirectory(PathBuf),
+
     /// IO error reading include file
     Io {
         /// Path to the file
@@ -503,6 +637,12 @@ impl std::fmt::Display for IncludeError {
         match self {
             IncludeError::FileNotFound(path) => {
                 write!(f, "Include file not found: {}", path.display())
+            }
+            IncludeError::DirNotFound(path) => {
+                write!(f, "Include directory not found: {}", path.display())
+            }
+            IncludeError::NotADirectory(path) => {
+                write!(f, "Path is not a directory: {}", path.display())
             }
             IncludeError::Io { path, error } => {
                 write!(f, "IO error reading {}: {}", path.display(), error)
@@ -1073,5 +1213,434 @@ model = "{file:model.txt}"
 
         // Cleanup
         std::env::remove_var("CRUCIBLE_TEST_MIXED_KEY");
+    }
+
+    // ========================================================================
+    // Directory reference tests ({dir:path} - config.d style)
+    // ========================================================================
+
+    #[test]
+    fn test_is_dir_reference() {
+        assert!(is_dir_reference("{dir:~/.config/crucible/providers.d/}"));
+        assert!(is_dir_reference("{dir:providers.d}"));
+        assert!(is_dir_reference("{dir:/etc/crucible/conf.d}"));
+
+        assert!(!is_dir_reference("providers.d"));
+        assert!(!is_dir_reference("{dir:missing-end"));
+        assert!(!is_dir_reference("dir:path}"));
+        assert!(!is_dir_reference(""));
+        assert!(!is_dir_reference("{file:test.toml}"));
+        assert!(!is_dir_reference("{env:VAR}"));
+    }
+
+    #[test]
+    fn test_extract_dir_path() {
+        assert_eq!(extract_dir_path("{dir:providers.d}"), Some("providers.d"));
+        assert_eq!(
+            extract_dir_path("{dir:~/.config/crucible/conf.d/}"),
+            Some("~/.config/crucible/conf.d/")
+        );
+        assert_eq!(extract_dir_path("not-a-ref"), None);
+    }
+
+    #[test]
+    fn test_dir_ref_merges_toml_files() {
+        let temp = TempDir::new().unwrap();
+
+        // Create a directory with config fragments
+        let providers_dir = temp.path().join("providers.d");
+        fs::create_dir(&providers_dir).unwrap();
+
+        // Files are sorted alphabetically, so use numeric prefixes
+        fs::write(
+            providers_dir.join("00-local.toml"),
+            r#"
+[local]
+backend = "ollama"
+endpoint = "http://localhost:11434"
+"#,
+        )
+        .unwrap();
+
+        fs::write(
+            providers_dir.join("10-cloud.toml"),
+            r#"
+[cloud]
+backend = "openai"
+api_key = "sk-test"
+"#,
+        )
+        .unwrap();
+
+        let config_content = r#"
+providers = "{dir:providers.d}"
+"#;
+        let mut config: toml::Value = toml::from_str(config_content).unwrap();
+
+        let result = process_file_references(&mut config, temp.path());
+        assert!(result.is_ok(), "Should succeed: {:?}", result);
+
+        // Should have merged both files
+        let providers = config.get("providers").expect("providers should exist");
+        assert!(providers.is_table());
+
+        let local = providers.get("local").expect("local should exist");
+        assert_eq!(local.get("backend").unwrap().as_str(), Some("ollama"));
+
+        let cloud = providers.get("cloud").expect("cloud should exist");
+        assert_eq!(cloud.get("backend").unwrap().as_str(), Some("openai"));
+    }
+
+    #[test]
+    fn test_dir_ref_sorted_order() {
+        let temp = TempDir::new().unwrap();
+
+        let conf_dir = temp.path().join("conf.d");
+        fs::create_dir(&conf_dir).unwrap();
+
+        // Same key in multiple files - later files should override
+        fs::write(
+            conf_dir.join("00-base.toml"),
+            r#"
+name = "base"
+timeout = 30
+"#,
+        )
+        .unwrap();
+
+        fs::write(
+            conf_dir.join("99-override.toml"),
+            r#"
+name = "override"
+"#,
+        )
+        .unwrap();
+
+        let config_content = r#"
+settings = "{dir:conf.d}"
+"#;
+        let mut config: toml::Value = toml::from_str(config_content).unwrap();
+
+        let result = process_file_references(&mut config, temp.path());
+        assert!(result.is_ok());
+
+        let settings = config.get("settings").unwrap();
+        // 99-override.toml should override 00-base.toml
+        assert_eq!(settings.get("name").unwrap().as_str(), Some("override"));
+        // But timeout from 00-base.toml should remain
+        assert_eq!(settings.get("timeout").unwrap().as_integer(), Some(30));
+    }
+
+    #[test]
+    fn test_dir_ref_ignores_non_toml() {
+        let temp = TempDir::new().unwrap();
+
+        let conf_dir = temp.path().join("conf.d");
+        fs::create_dir(&conf_dir).unwrap();
+
+        fs::write(
+            conf_dir.join("config.toml"),
+            r#"
+key = "value"
+"#,
+        )
+        .unwrap();
+
+        // These should be ignored
+        fs::write(conf_dir.join("README.md"), "# Documentation").unwrap();
+        fs::write(conf_dir.join(".hidden"), "hidden file").unwrap();
+        fs::write(conf_dir.join("backup.toml.bak"), "backup").unwrap();
+
+        let config_content = r#"
+settings = "{dir:conf.d}"
+"#;
+        let mut config: toml::Value = toml::from_str(config_content).unwrap();
+
+        let result = process_file_references(&mut config, temp.path());
+        assert!(result.is_ok());
+
+        let settings = config.get("settings").unwrap();
+        assert_eq!(settings.get("key").unwrap().as_str(), Some("value"));
+        // Only 1 key from the one .toml file
+        assert_eq!(settings.as_table().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_dir_ref_empty_directory() {
+        let temp = TempDir::new().unwrap();
+
+        let empty_dir = temp.path().join("empty.d");
+        fs::create_dir(&empty_dir).unwrap();
+
+        let config_content = r#"
+settings = "{dir:empty.d}"
+"#;
+        let mut config: toml::Value = toml::from_str(config_content).unwrap();
+
+        let result = process_file_references(&mut config, temp.path());
+        assert!(result.is_ok());
+
+        // Should be an empty table
+        let settings = config.get("settings").unwrap();
+        assert!(settings.is_table());
+        assert!(settings.as_table().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_dir_ref_not_found() {
+        let temp = TempDir::new().unwrap();
+
+        let config_content = r#"
+settings = "{dir:nonexistent.d}"
+"#;
+        let mut config: toml::Value = toml::from_str(config_content).unwrap();
+
+        let result = process_file_references(&mut config, temp.path());
+        assert!(result.is_err());
+
+        let errors = result.unwrap_err();
+        assert!(matches!(errors[0], IncludeError::DirNotFound(_)));
+    }
+
+    #[test]
+    fn test_dir_ref_with_nested_refs() {
+        let temp = TempDir::new().unwrap();
+
+        // Set up env var for nested ref
+        std::env::set_var("CRUCIBLE_TEST_DIR_KEY", "nested-secret");
+
+        let conf_dir = temp.path().join("conf.d");
+        fs::create_dir(&conf_dir).unwrap();
+
+        // File with {env:} reference inside
+        fs::write(
+            conf_dir.join("secrets.toml"),
+            r#"
+api_key = "{env:CRUCIBLE_TEST_DIR_KEY}"
+"#,
+        )
+        .unwrap();
+
+        let config_content = r#"
+settings = "{dir:conf.d}"
+"#;
+        let mut config: toml::Value = toml::from_str(config_content).unwrap();
+
+        let result = process_file_references(&mut config, temp.path());
+        assert!(result.is_ok());
+
+        let settings = config.get("settings").unwrap();
+        assert_eq!(
+            settings.get("api_key").unwrap().as_str(),
+            Some("nested-secret")
+        );
+
+        std::env::remove_var("CRUCIBLE_TEST_DIR_KEY");
+    }
+
+    #[test]
+    fn test_dir_ref_with_home_path() {
+        // Test that ~ paths are resolved (will fail with DirNotFound since dir doesn't exist)
+        let temp = TempDir::new().unwrap();
+
+        let config_content = r#"
+settings = "{dir:~/.config/crucible/nonexistent.d/}"
+"#;
+        let mut config: toml::Value = toml::from_str(config_content).unwrap();
+
+        let result = process_file_references(&mut config, temp.path());
+        assert!(result.is_err());
+
+        let errors = result.unwrap_err();
+        assert!(matches!(errors[0], IncludeError::DirNotFound(_)));
+
+        // Verify path was resolved to home directory
+        if let IncludeError::DirNotFound(path) = &errors[0] {
+            if let Some(home) = dirs::home_dir() {
+                assert!(path.starts_with(home), "Path should start with home dir");
+            }
+        }
+    }
+
+    #[test]
+    fn test_dir_ref_ignores_subdirectories() {
+        let temp = TempDir::new().unwrap();
+
+        let conf_dir = temp.path().join("conf.d");
+        fs::create_dir(&conf_dir).unwrap();
+
+        // Create a toml file
+        fs::write(
+            conf_dir.join("config.toml"),
+            r#"
+key = "value"
+"#,
+        )
+        .unwrap();
+
+        // Create a subdirectory with toml files (should be ignored)
+        let sub_dir = conf_dir.join("subdir");
+        fs::create_dir(&sub_dir).unwrap();
+        fs::write(
+            sub_dir.join("nested.toml"),
+            r#"
+nested_key = "nested_value"
+"#,
+        )
+        .unwrap();
+
+        let config_content = r#"
+settings = "{dir:conf.d}"
+"#;
+        let mut config: toml::Value = toml::from_str(config_content).unwrap();
+
+        let result = process_file_references(&mut config, temp.path());
+        assert!(result.is_ok());
+
+        let settings = config.get("settings").unwrap();
+        // Should only have the top-level key, not nested
+        assert_eq!(settings.get("key").unwrap().as_str(), Some("value"));
+        assert!(settings.get("nested_key").is_none(), "Subdirs should be ignored");
+    }
+
+    #[test]
+    fn test_dir_ref_parse_error_continues() {
+        let temp = TempDir::new().unwrap();
+
+        let conf_dir = temp.path().join("conf.d");
+        fs::create_dir(&conf_dir).unwrap();
+
+        // Valid file
+        fs::write(
+            conf_dir.join("00-valid.toml"),
+            r#"
+valid_key = "valid_value"
+"#,
+        )
+        .unwrap();
+
+        // Invalid TOML file
+        fs::write(conf_dir.join("50-invalid.toml"), "invalid = [[[").unwrap();
+
+        // Another valid file
+        fs::write(
+            conf_dir.join("99-also-valid.toml"),
+            r#"
+another_key = "another_value"
+"#,
+        )
+        .unwrap();
+
+        let config_content = r#"
+settings = "{dir:conf.d}"
+"#;
+        let mut config: toml::Value = toml::from_str(config_content).unwrap();
+
+        let result = process_file_references(&mut config, temp.path());
+        // Should have errors from the invalid file
+        assert!(result.is_err());
+
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], IncludeError::Parse { .. }));
+    }
+
+    #[test]
+    fn test_dir_ref_deep_merge_tables() {
+        let temp = TempDir::new().unwrap();
+
+        let conf_dir = temp.path().join("conf.d");
+        fs::create_dir(&conf_dir).unwrap();
+
+        // First file with nested table
+        fs::write(
+            conf_dir.join("00-base.toml"),
+            r#"
+[server]
+host = "localhost"
+port = 8080
+
+[server.tls]
+enabled = false
+"#,
+        )
+        .unwrap();
+
+        // Second file adds to nested table
+        fs::write(
+            conf_dir.join("10-tls.toml"),
+            r#"
+[server.tls]
+enabled = true
+cert = "/path/to/cert.pem"
+"#,
+        )
+        .unwrap();
+
+        let config_content = r#"
+settings = "{dir:conf.d}"
+"#;
+        let mut config: toml::Value = toml::from_str(config_content).unwrap();
+
+        let result = process_file_references(&mut config, temp.path());
+        assert!(result.is_ok(), "Should succeed: {:?}", result);
+
+        let settings = config.get("settings").unwrap();
+        let server = settings.get("server").unwrap();
+
+        // Original values preserved
+        assert_eq!(server.get("host").unwrap().as_str(), Some("localhost"));
+        assert_eq!(server.get("port").unwrap().as_integer(), Some(8080));
+
+        // TLS section was deep-merged
+        let tls = server.get("tls").unwrap();
+        assert_eq!(tls.get("enabled").unwrap().as_bool(), Some(true)); // Overridden
+        assert_eq!(tls.get("cert").unwrap().as_str(), Some("/path/to/cert.pem")); // Added
+    }
+
+    #[test]
+    fn test_dir_ref_appends_arrays() {
+        let temp = TempDir::new().unwrap();
+
+        let conf_dir = temp.path().join("mcps.d");
+        fs::create_dir(&conf_dir).unwrap();
+
+        // First file with servers array
+        fs::write(
+            conf_dir.join("00-github.toml"),
+            r#"
+[[servers]]
+name = "github"
+prefix = "gh_"
+"#,
+        )
+        .unwrap();
+
+        // Second file adds more servers
+        fs::write(
+            conf_dir.join("10-gitlab.toml"),
+            r#"
+[[servers]]
+name = "gitlab"
+prefix = "gl_"
+"#,
+        )
+        .unwrap();
+
+        let config_content = r#"
+gateway = "{dir:mcps.d}"
+"#;
+        let mut config: toml::Value = toml::from_str(config_content).unwrap();
+
+        let result = process_file_references(&mut config, temp.path());
+        assert!(result.is_ok(), "Should succeed: {:?}", result);
+
+        let gateway = config.get("gateway").unwrap();
+        let servers = gateway.get("servers").unwrap().as_array().unwrap();
+
+        // Both servers should be present (arrays appended)
+        assert_eq!(servers.len(), 2);
+        assert_eq!(servers[0].get("name").unwrap().as_str(), Some("github"));
+        assert_eq!(servers[1].get("name").unwrap().as_str(), Some("gitlab"));
     }
 }
