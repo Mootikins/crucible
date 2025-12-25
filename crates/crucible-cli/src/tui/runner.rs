@@ -912,6 +912,7 @@ impl RatatuiRunner {
             // Use default_selection on first iteration (skips picker), show picker on restart
             let selection = if let Some(default) = self.default_selection.take() {
                 // First iteration with pre-specified agent: skip picker
+                self.view.dismiss_splash(); // Ensure splash is hidden for input
                 default
             } else {
                 // No default or restart: show picker
