@@ -1,6 +1,6 @@
 //! Simple TOML include mechanism
 //!
-//! This module provides two ways to include external files into configuration:
+//! This module provides ways to include external content into configuration:
 //!
 //! ## 1. File References: `{file:path}`
 //!
@@ -23,7 +23,23 @@
 //! - Otherwise, the file content is used as a string value (trimmed)
 //! - Paths can be relative, absolute, or use `~` for home directory
 //!
-//! ## 2. Include Section (legacy)
+//! ## 2. Environment Variables: `{env:VAR}`
+//!
+//! Use `{env:VAR}` to read values from environment variables:
+//!
+//! ```toml
+//! [embedding]
+//! provider = "openai"
+//! api_key = "{env:OPENAI_API_KEY}"
+//!
+//! [providers.anthropic]
+//! api_key = "{env:ANTHROPIC_API_KEY}"
+//! ```
+//!
+//! - The env var must be set or config loading will fail
+//! - Use this for secrets that shouldn't be in files
+//!
+//! ## 3. Include Section (legacy)
 //!
 //! The `[include]` section merges files into specific top-level sections:
 //!
@@ -218,15 +234,33 @@ pub fn read_include_file(path: &Path) -> Result<toml::Value, IncludeError> {
 const FILE_REF_PREFIX: &str = "{file:";
 const FILE_REF_SUFFIX: &str = "}";
 
+/// Pattern for env references: {env:VAR}
+const ENV_REF_PREFIX: &str = "{env:";
+const ENV_REF_SUFFIX: &str = "}";
+
 /// Check if a string is a file reference
 fn is_file_reference(s: &str) -> bool {
     s.starts_with(FILE_REF_PREFIX) && s.ends_with(FILE_REF_SUFFIX)
+}
+
+/// Check if a string is an env reference
+fn is_env_reference(s: &str) -> bool {
+    s.starts_with(ENV_REF_PREFIX) && s.ends_with(ENV_REF_SUFFIX)
 }
 
 /// Extract the path from a file reference
 fn extract_file_path(s: &str) -> Option<&str> {
     if is_file_reference(s) {
         Some(&s[FILE_REF_PREFIX.len()..s.len() - FILE_REF_SUFFIX.len()])
+    } else {
+        None
+    }
+}
+
+/// Extract the variable name from an env reference
+fn extract_env_var(s: &str) -> Option<&str> {
+    if is_env_reference(s) {
+        Some(&s[ENV_REF_PREFIX.len()..s.len() - ENV_REF_SUFFIX.len()])
     } else {
         None
     }
@@ -260,17 +294,18 @@ fn read_file_as_value(path: &Path) -> Result<toml::Value, IncludeError> {
     }
 }
 
-/// Process all `{file:path}` references in a TOML value tree
+/// Process all `{file:path}` and `{env:VAR}` references in a TOML value tree
 ///
-/// Walks the entire TOML value tree and replaces any string matching
-/// `{file:path}` with the content of the referenced file.
+/// Walks the entire TOML value tree and replaces:
+/// - `{file:path}` with the content of the referenced file
+/// - `{env:VAR}` with the value of the environment variable
 #[cfg(feature = "toml")]
 pub fn process_file_references(
     value: &mut toml::Value,
     base_dir: &Path,
 ) -> Result<(), Vec<IncludeError>> {
     let mut errors = Vec::new();
-    process_file_refs_recursive(value, base_dir, &mut errors);
+    process_refs_recursive(value, base_dir, &mut errors);
 
     if errors.is_empty() {
         Ok(())
@@ -280,13 +315,14 @@ pub fn process_file_references(
 }
 
 #[cfg(feature = "toml")]
-fn process_file_refs_recursive(
+fn process_refs_recursive(
     value: &mut toml::Value,
     base_dir: &Path,
     errors: &mut Vec<IncludeError>,
 ) {
     match value {
         toml::Value::String(s) => {
+            // Handle {file:path} references
             if let Some(file_path) = extract_file_path(s) {
                 let resolved = resolve_include_path(file_path, base_dir);
                 debug!(
@@ -305,18 +341,34 @@ fn process_file_refs_recursive(
                     }
                 }
             }
+            // Handle {env:VAR} references
+            else if let Some(var_name) = extract_env_var(s) {
+                debug!("Processing env reference: {}", var_name);
+
+                match std::env::var(var_name) {
+                    Ok(env_value) => {
+                        *value = toml::Value::String(env_value);
+                    }
+                    Err(_) => {
+                        warn!("Environment variable not found: {}", var_name);
+                        errors.push(IncludeError::EnvVarNotFound {
+                            var_name: var_name.to_string(),
+                        });
+                    }
+                }
+            }
         }
         toml::Value::Array(arr) => {
             for item in arr.iter_mut() {
-                process_file_refs_recursive(item, base_dir, errors);
+                process_refs_recursive(item, base_dir, errors);
             }
         }
         toml::Value::Table(table) => {
             for (_key, val) in table.iter_mut() {
-                process_file_refs_recursive(val, base_dir, errors);
+                process_refs_recursive(val, base_dir, errors);
             }
         }
-        // Other types (Integer, Float, Boolean, Datetime) don't contain file refs
+        // Other types (Integer, Float, Boolean, Datetime) don't contain refs
         _ => {}
     }
 }
@@ -438,6 +490,12 @@ pub enum IncludeError {
         /// Error message
         error: String,
     },
+
+    /// Environment variable not found
+    EnvVarNotFound {
+        /// Name of the environment variable
+        var_name: String,
+    },
 }
 
 impl std::fmt::Display for IncludeError {
@@ -451,6 +509,13 @@ impl std::fmt::Display for IncludeError {
             }
             IncludeError::Parse { path, error } => {
                 write!(f, "Parse error in {}: {}", path.display(), error)
+            }
+            IncludeError::EnvVarNotFound { var_name } => {
+                write!(
+                    f,
+                    "Environment variable not found: {} (referenced as {{env:{}}})",
+                    var_name, var_name
+                )
             }
         }
     }
@@ -877,5 +942,136 @@ api_key = "{file:~/.secrets/test.key}"
                 assert!(path.starts_with(home));
             }
         }
+    }
+
+    // ========================================================================
+    // Environment variable reference tests
+    // ========================================================================
+
+    #[test]
+    fn test_is_env_reference() {
+        assert!(is_env_reference("{env:OPENAI_API_KEY}"));
+        assert!(is_env_reference("{env:MY_VAR}"));
+        assert!(is_env_reference("{env:A}"));
+
+        assert!(!is_env_reference("OPENAI_API_KEY"));
+        assert!(!is_env_reference("{env:missing-end"));
+        assert!(!is_env_reference("env:VAR}"));
+        assert!(!is_env_reference(""));
+        assert!(!is_env_reference("{file:test.toml}"));
+    }
+
+    #[test]
+    fn test_extract_env_var() {
+        assert_eq!(extract_env_var("{env:OPENAI_API_KEY}"), Some("OPENAI_API_KEY"));
+        assert_eq!(extract_env_var("{env:MY_VAR}"), Some("MY_VAR"));
+        assert_eq!(extract_env_var("not-a-ref"), None);
+    }
+
+    #[test]
+    fn test_env_ref_string_value() {
+        let temp = TempDir::new().unwrap();
+
+        // Set an env var for testing
+        std::env::set_var("CRUCIBLE_TEST_API_KEY", "sk-test-key-12345");
+
+        let config_content = r#"
+[embedding]
+provider = "openai"
+api_key = "{env:CRUCIBLE_TEST_API_KEY}"
+"#;
+        let mut config: toml::Value = toml::from_str(config_content).unwrap();
+
+        let result = process_file_references(&mut config, temp.path());
+        assert!(result.is_ok());
+
+        let embedding = config.get("embedding").unwrap();
+        assert_eq!(
+            embedding.get("api_key").unwrap().as_str().unwrap(),
+            "sk-test-key-12345"
+        );
+
+        // Cleanup
+        std::env::remove_var("CRUCIBLE_TEST_API_KEY");
+    }
+
+    #[test]
+    fn test_env_ref_not_found() {
+        let temp = TempDir::new().unwrap();
+
+        let config_content = r#"
+api_key = "{env:CRUCIBLE_NONEXISTENT_VAR_12345}"
+"#;
+        let mut config: toml::Value = toml::from_str(config_content).unwrap();
+
+        let result = process_file_references(&mut config, temp.path());
+        assert!(result.is_err());
+
+        let errors = result.unwrap_err();
+        assert!(matches!(errors[0], IncludeError::EnvVarNotFound { .. }));
+
+        if let IncludeError::EnvVarNotFound { var_name } = &errors[0] {
+            assert_eq!(var_name, "CRUCIBLE_NONEXISTENT_VAR_12345");
+        }
+    }
+
+    #[test]
+    fn test_env_ref_in_array() {
+        let temp = TempDir::new().unwrap();
+
+        std::env::set_var("CRUCIBLE_TEST_PATH1", "/opt/tools");
+        std::env::set_var("CRUCIBLE_TEST_PATH2", "/usr/local/tools");
+
+        let config_content = r#"
+extra_paths = ["{env:CRUCIBLE_TEST_PATH1}", "{env:CRUCIBLE_TEST_PATH2}", "/static/path"]
+"#;
+        let mut config: toml::Value = toml::from_str(config_content).unwrap();
+
+        let result = process_file_references(&mut config, temp.path());
+        assert!(result.is_ok());
+
+        let paths = config.get("extra_paths").unwrap().as_array().unwrap();
+        assert_eq!(paths[0].as_str().unwrap(), "/opt/tools");
+        assert_eq!(paths[1].as_str().unwrap(), "/usr/local/tools");
+        assert_eq!(paths[2].as_str().unwrap(), "/static/path");
+
+        // Cleanup
+        std::env::remove_var("CRUCIBLE_TEST_PATH1");
+        std::env::remove_var("CRUCIBLE_TEST_PATH2");
+    }
+
+    #[test]
+    fn test_mixed_file_and_env_refs() {
+        let temp = TempDir::new().unwrap();
+
+        // Create a file
+        fs::write(temp.path().join("model.txt"), "gpt-4").unwrap();
+
+        // Set an env var
+        std::env::set_var("CRUCIBLE_TEST_MIXED_KEY", "sk-mixed-key");
+
+        let config_content = r#"
+[embedding]
+provider = "openai"
+api_key = "{env:CRUCIBLE_TEST_MIXED_KEY}"
+model = "{file:model.txt}"
+"#;
+        let mut config: toml::Value = toml::from_str(config_content).unwrap();
+
+        let result = process_file_references(&mut config, temp.path());
+        assert!(result.is_ok());
+
+        let embedding = config.get("embedding").unwrap();
+        assert_eq!(
+            embedding.get("api_key").unwrap().as_str().unwrap(),
+            "sk-mixed-key"
+        );
+        assert_eq!(
+            embedding.get("model").unwrap().as_str().unwrap(),
+            "gpt-4"
+        );
+
+        // Cleanup
+        std::env::remove_var("CRUCIBLE_TEST_MIXED_KEY");
     }
 }
