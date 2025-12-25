@@ -277,12 +277,34 @@ mod tests {
     use rig::providers::ollama;
 
     fn create_test_agent() -> Agent<ollama::CompletionModel> {
-        let client = ollama::Client::builder().api_key(Nothing).build().unwrap();
+        let client = create_test_client();
 
         client
             .agent("llama3.2")
             .preamble("You are a test assistant.")
             .build()
+    }
+
+    fn create_test_client() -> ollama::Client {
+        ollama::Client::builder().api_key(Nothing).build().unwrap()
+    }
+
+    fn create_remote_client() -> ollama::Client {
+        ollama::Client::builder()
+            .api_key(Nothing)
+            .base_url("https://llama.krohnos.io")
+            .build()
+            .unwrap()
+    }
+
+    fn create_openai_compatible_client() -> rig::providers::openai::CompletionsClient {
+        // Use CompletionsClient for standard /chat/completions API
+        // (not the new OpenAI "responses" API)
+        rig::providers::openai::CompletionsClient::builder()
+            .api_key("not-needed")
+            .base_url("https://llama.krohnos.io/v1")
+            .build()
+            .unwrap()
     }
 
     #[tokio::test]
@@ -362,5 +384,267 @@ mod tests {
         // History should be updated
         let history = handle.get_history().await;
         assert_eq!(history.len(), 2); // User + Assistant
+    }
+
+    // Test streaming with tools - reproduce the empty response issue
+    #[tokio::test]
+    #[ignore = "requires running Ollama with tool-capable model"]
+    async fn test_rig_agent_streaming_with_tools() {
+        use crate::workspace_tools::{ReadFileTool, WorkspaceContext};
+        use rig::streaming::StreamingPrompt;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let ctx = WorkspaceContext::new(temp.path());
+
+        // Create a test file
+        std::fs::write(temp.path().join("test.txt"), "Hello from test").unwrap();
+
+        // Build agent with tool
+        let client = create_remote_client();
+
+        let agent = client
+            .agent("qwen3-4b-instruct-2507-q8_0")
+            .preamble("You are a helpful assistant. Use the read_file tool to read files.")
+            .tool(ReadFileTool::new(ctx))
+            .build();
+
+        println!("=== Testing direct Rig streaming (bypassing RigAgentHandle) ===");
+
+        // Test directly with Rig's stream_prompt
+        let mut stream = agent
+            .stream_prompt("Read the file test.txt")
+            .multi_turn(5)
+            .await;
+
+        let mut items = Vec::new();
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok(item) => {
+                    println!("Direct item: {:?}", item);
+                    items.push(format!("{:?}", item));
+                }
+                Err(e) => {
+                    println!("Direct error: {:?}", e);
+                    panic!("Stream error: {:?}", e);
+                }
+            }
+        }
+
+        println!("Got {} items", items.len());
+
+        // The issue: if we get an empty FinalResponse immediately, something is wrong
+        assert!(
+            items.len() > 1 || !items[0].contains("FinalResponse"),
+            "Expected more than just an empty FinalResponse. Got: {:?}",
+            items
+        );
+    }
+
+    // Test streaming WITHOUT tools to verify basic streaming works
+    #[tokio::test]
+    #[ignore = "requires running Ollama"]
+    async fn test_rig_agent_streaming_without_tools() {
+        use rig::streaming::StreamingPrompt;
+
+        let client = create_remote_client();
+
+        let agent = client
+            .agent("qwen3-4b-instruct-2507-q8_0")
+            .preamble("You are a helpful assistant.")
+            .build();
+
+        println!("=== Testing streaming WITHOUT tools ===");
+
+        let mut stream = agent.stream_prompt("Say hello in one word").await;
+
+        let mut items = Vec::new();
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok(item) => {
+                    println!("Item: {:?}", item);
+                    items.push(format!("{:?}", item));
+                }
+                Err(e) => {
+                    println!("Error: {:?}", e);
+                    panic!("Stream error: {:?}", e);
+                }
+            }
+        }
+
+        println!("Got {} items", items.len());
+        assert!(items.len() > 1, "Expected multiple stream items");
+    }
+
+    // Test NON-streaming with tools to verify tools work without streaming
+    #[tokio::test]
+    #[ignore = "requires running Ollama with tool-capable model"]
+    async fn test_rig_agent_prompt_with_tools() {
+        use crate::workspace_tools::{ReadFileTool, WorkspaceContext};
+        use rig::completion::Prompt;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let ctx = WorkspaceContext::new(temp.path());
+
+        // Create a test file
+        std::fs::write(temp.path().join("test.txt"), "Hello from test").unwrap();
+
+        let client = create_remote_client();
+
+        let agent = client
+            .agent("qwen3-4b-instruct-2507-q8_0")
+            .preamble("You are a helpful assistant. Use the read_file tool to read files.")
+            .tool(ReadFileTool::new(ctx))
+            .build();
+
+        println!("=== Testing NON-streaming prompt with tools ===");
+
+        match agent.prompt("Read the file test.txt").await {
+            Ok(response) => {
+                println!("Response: {}", response);
+                assert!(
+                    !response.is_empty(),
+                    "Expected non-empty response when using tools"
+                );
+            }
+            Err(e) => {
+                println!("Error: {:?}", e);
+                panic!("Prompt error: {:?}", e);
+            }
+        }
+    }
+
+    // Test OpenAI-compatible endpoint for streaming with tools
+    #[tokio::test]
+    #[ignore = "requires llama.cpp with OpenAI-compatible endpoint"]
+    async fn test_rig_openai_streaming_with_tools() {
+        use crate::workspace_tools::{ReadFileTool, WorkspaceContext};
+        use rig::streaming::StreamingPrompt;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let ctx = WorkspaceContext::new(temp.path());
+
+        // Create a test file
+        std::fs::write(temp.path().join("test.txt"), "Hello from test").unwrap();
+
+        // Use OpenAI provider with custom endpoint (llama.cpp)
+        let client = create_openai_compatible_client();
+
+        let agent = client
+            .agent("qwen3-4b-instruct-2507-q8_0")
+            .preamble("You are a helpful assistant. Use the read_file tool to read files.")
+            .tool(ReadFileTool::new(ctx))
+            .build();
+
+        println!("=== Testing OpenAI-compatible streaming with tools ===");
+
+        let mut stream = agent
+            .stream_prompt("Read the file test.txt")
+            .multi_turn(5)
+            .await;
+
+        use rig::agent::MultiTurnStreamItem;
+
+        let mut item_count = 0;
+        let mut got_tool_call = false;
+        let mut got_final = false;
+        let mut got_text = false;
+
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok(MultiTurnStreamItem::StreamAssistantItem(content)) => {
+                    item_count += 1;
+                    use rig::streaming::StreamedAssistantContent;
+                    match content {
+                        StreamedAssistantContent::Text(t) => {
+                            println!("Text: {}", t.text);
+                            got_text = true;
+                        }
+                        StreamedAssistantContent::ToolCall(tc) => {
+                            println!("ToolCall: {} ({:?})", tc.function.name, tc.call_id);
+                            got_tool_call = true;
+                        }
+                        _ => {
+                            println!("Other content");
+                        }
+                    }
+                }
+                Ok(MultiTurnStreamItem::FinalResponse(final_resp)) => {
+                    println!("FinalResponse: {}", final_resp.response());
+                    got_final = true;
+                    item_count += 1;
+                }
+                Ok(MultiTurnStreamItem::StreamUserItem(_)) => {
+                    println!("StreamUserItem (tool result)");
+                    item_count += 1;
+                }
+                Ok(_) => {
+                    println!("Unknown item");
+                    item_count += 1;
+                }
+                Err(e) => {
+                    println!("Error: {:?}", e);
+                    panic!("Streaming error: {:?}", e);
+                }
+            }
+        }
+
+        println!("Got {} items, tool_call={}, final={}, text={}",
+                 item_count, got_tool_call, got_final, got_text);
+
+        // Should have received tool calls and final response
+        assert!(got_tool_call, "Expected to receive tool calls");
+        assert!(got_final, "Expected to receive final response");
+    }
+
+    // Test streaming with tools WITHOUT multi_turn()
+    #[tokio::test]
+    #[ignore = "requires running Ollama with tool-capable model"]
+    async fn test_rig_agent_streaming_tools_no_multiturn() {
+        use crate::workspace_tools::{ReadFileTool, WorkspaceContext};
+        use rig::streaming::StreamingPrompt;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let ctx = WorkspaceContext::new(temp.path());
+
+        // Create a test file
+        std::fs::write(temp.path().join("test.txt"), "Hello from test").unwrap();
+
+        let client = create_remote_client();
+
+        let agent = client
+            .agent("qwen3-4b-instruct-2507-q8_0")
+            .preamble("You are a helpful assistant. Use the read_file tool to read files.")
+            .tool(ReadFileTool::new(ctx))
+            .build();
+
+        println!("=== Testing streaming with tools WITHOUT multi_turn() ===");
+
+        // Try streaming without multi_turn() to see if that's the issue
+        let mut stream = agent.stream_prompt("Read the file test.txt").await;
+
+        let mut items = Vec::new();
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok(item) => {
+                    println!("Item: {:?}", item);
+                    items.push(format!("{:?}", item));
+                }
+                Err(e) => {
+                    println!("Error: {:?}", e);
+                    // Don't panic - just note the error
+                    items.push(format!("Error: {:?}", e));
+                }
+            }
+        }
+
+        println!("Got {} items", items.len());
+        // Just print what we got - this is exploratory
+        for (i, item) in items.iter().enumerate() {
+            println!("  [{}] {}", i, item);
+        }
     }
 }
