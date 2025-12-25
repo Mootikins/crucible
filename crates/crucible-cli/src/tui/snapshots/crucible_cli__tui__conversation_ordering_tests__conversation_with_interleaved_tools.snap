@@ -1,0 +1,39 @@
+---
+source: crates/crucible-cli/src/tui/conversation_ordering_tests.rs
+expression: output
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ > Help me understand the codebase
+
+ ● I'll explore the project structure.
+
+✓ ls → 15 files
+
+ ● Found 15 files. Let me check the main module.
+
+✓ cat main.rs → 200 lines
+
+ ● The main module handles initialization.
