@@ -583,7 +583,7 @@ async fn run_deferred_chat(
 
                     match agent {
                         factories::InitializedAgent::Internal(handle) => {
-                            Ok(DynamicAgent::internal(handle))
+                            Ok(DynamicAgent::local(handle))
                         }
                         factories::InitializedAgent::Acp(_) => {
                             anyhow::bail!("Expected Internal agent but got ACP")

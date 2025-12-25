@@ -15,6 +15,26 @@ pub enum LlmProvider {
     Anthropic,
 }
 
+/// Backend framework for internal (non-ACP) agents
+///
+/// Controls which agent execution framework is used when running
+/// local LLM agents. Both backends use the same LLM providers
+/// (Ollama, OpenAI, etc.) but differ in their agent loop implementation.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum InternalBackend {
+    /// Native Crucible agent loop (InternalAgentHandle)
+    ///
+    /// Uses crucible-agents with custom tool execution and context management.
+    #[default]
+    Native,
+    /// Rig framework agent loop (RigAgentHandle)
+    ///
+    /// Uses the Rig LLM framework for agent execution, with Crucible tools
+    /// bridged via MCP. Provides streaming, multi-turn tool use, and hooks.
+    Rig,
+}
+
 /// Simple chat configuration - only essential user settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatConfig {
@@ -26,6 +46,9 @@ pub struct ChatConfig {
     /// LLM provider to use
     #[serde(default)]
     pub provider: LlmProvider,
+    /// Backend framework for internal agents
+    #[serde(default)]
+    pub internal_backend: InternalBackend,
     /// LLM endpoint URL (for Ollama/compatible providers)
     pub endpoint: Option<String>,
     /// Temperature for generation (0.0-2.0)
@@ -46,6 +69,7 @@ impl Default for ChatConfig {
             model: None, // Use agent default
             enable_markdown: true,
             provider: LlmProvider::default(),
+            internal_backend: InternalBackend::default(),
             endpoint: None,
             temperature: None,
             max_tokens: None,

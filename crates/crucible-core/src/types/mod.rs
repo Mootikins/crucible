@@ -19,6 +19,7 @@ pub mod acp;
 pub mod grammar;
 pub mod hashing;
 pub mod mode;
+pub mod tool_ref;
 
 // Re-export parser domain types
 pub use crate::parser::types::{
@@ -87,3 +88,6 @@ pub use crate::traits::tools::{ExecutionContext, ToolDefinition, ToolExample};
 
 // Re-export grammar types
 pub use crate::types::grammar::{Grammar, GrammarError, GrammarResult};
+
+// Re-export tool reference types
+pub use crate::types::tool_ref::{ToolRef, ToolSource};

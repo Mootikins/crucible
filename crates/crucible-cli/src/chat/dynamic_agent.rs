@@ -4,14 +4,13 @@
 //! enabling runtime polymorphism for the deferred agent creation pattern.
 
 use async_trait::async_trait;
-use crucible_agents::InternalAgentHandle;
 use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatError, ChatResult};
 use crucible_core::types::acp::schema::{AvailableCommand, SessionModeState};
 use futures::stream::BoxStream;
 
 use crate::acp::CrucibleAcpClient;
 
-/// Dynamic agent handle that wraps either ACP or Internal agents.
+/// Dynamic agent handle that wraps either ACP or Local agents.
 ///
 /// This enables deferred agent creation where the concrete type
 /// is determined at runtime based on user selection.
@@ -20,8 +19,11 @@ use crate::acp::CrucibleAcpClient;
 pub enum DynamicAgent {
     /// External ACP agent (Claude Code, OpenCode, etc.)
     Acp(Box<CrucibleAcpClient>),
-    /// Internal LLM agent (Ollama, OpenAI direct)
-    Internal(Box<InternalAgentHandle>),
+    /// Local/in-process LLM agent (Rig-based, InternalAgentHandle, etc.)
+    ///
+    /// This variant accepts any type implementing `AgentHandle`, enabling
+    /// both legacy `InternalAgentHandle` and newer `RigAgentHandle<M>`.
+    Local(Box<dyn AgentHandle + Send + Sync>),
 }
 
 impl DynamicAgent {
@@ -30,16 +32,28 @@ impl DynamicAgent {
         Self::Acp(Box::new(client))
     }
 
-    /// Create from an internal handle
-    pub fn internal(handle: InternalAgentHandle) -> Self {
-        Self::Internal(Box::new(handle))
+    /// Create from any local agent handle (InternalAgentHandle, RigAgentHandle, etc.)
+    ///
+    /// Accepts a boxed trait object for flexibility with factory patterns.
+    pub fn local(handle: Box<dyn AgentHandle + Send + Sync>) -> Self {
+        Self::Local(handle)
+    }
+
+    /// Create from a concrete agent handle type
+    ///
+    /// Convenience method that boxes the handle automatically.
+    pub fn local_from<H>(handle: H) -> Self
+    where
+        H: AgentHandle + Send + Sync + 'static,
+    {
+        Self::Local(Box::new(handle))
     }
 
     /// Shutdown the underlying agent
     pub async fn shutdown(&mut self) -> anyhow::Result<()> {
         match self {
             Self::Acp(client) => client.shutdown().await,
-            Self::Internal(_) => Ok(()), // Internal agents don't need explicit shutdown
+            Self::Local(_) => Ok(()), // Local agents don't need explicit shutdown
         }
     }
 }
@@ -52,49 +66,49 @@ impl AgentHandle for DynamicAgent {
     ) -> BoxStream<'static, ChatResult<ChatChunk>> {
         match self {
             Self::Acp(client) => client.send_message_stream(message),
-            Self::Internal(handle) => handle.send_message_stream(message),
+            Self::Local(handle) => handle.send_message_stream(message),
         }
     }
 
     fn is_connected(&self) -> bool {
         match self {
             Self::Acp(client) => client.is_connected(),
-            Self::Internal(handle) => handle.is_connected(),
+            Self::Local(handle) => handle.is_connected(),
         }
     }
 
     fn supports_streaming(&self) -> bool {
         match self {
             Self::Acp(client) => client.supports_streaming(),
-            Self::Internal(handle) => handle.supports_streaming(),
+            Self::Local(handle) => handle.supports_streaming(),
         }
     }
 
     fn get_modes(&self) -> Option<&SessionModeState> {
         match self {
             Self::Acp(client) => client.get_modes(),
-            Self::Internal(handle) => handle.get_modes(),
+            Self::Local(handle) => handle.get_modes(),
         }
     }
 
     fn get_mode_id(&self) -> &str {
         match self {
             Self::Acp(client) => client.get_mode_id(),
-            Self::Internal(handle) => handle.get_mode_id(),
+            Self::Local(handle) => handle.get_mode_id(),
         }
     }
 
     async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {
         match self {
             Self::Acp(client) => client.set_mode_str(mode_id).await,
-            Self::Internal(handle) => handle.set_mode_str(mode_id).await,
+            Self::Local(handle) => handle.set_mode_str(mode_id).await,
         }
     }
 
     fn get_commands(&self) -> &[AvailableCommand] {
         match self {
             Self::Acp(client) => client.get_commands(),
-            Self::Internal(handle) => handle.get_commands(),
+            Self::Local(handle) => handle.get_commands(),
         }
     }
 
@@ -104,7 +118,7 @@ impl AgentHandle for DynamicAgent {
     ) -> ChatResult<()> {
         match self {
             Self::Acp(client) => client.on_commands_update(commands).await,
-            Self::Internal(handle) => handle.on_commands_update(commands).await,
+            Self::Local(handle) => handle.on_commands_update(commands).await,
         }
     }
 }
@@ -113,7 +127,7 @@ impl std::fmt::Debug for DynamicAgent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Acp(_) => write!(f, "DynamicAgent::Acp(..)"),
-            Self::Internal(_) => write!(f, "DynamicAgent::Internal(..)"),
+            Self::Local(_) => write!(f, "DynamicAgent::Local(..)"),
         }
     }
 }
