@@ -21,6 +21,7 @@ use rig::completion::CompletionModel;
 use rig::message::Message;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing::{debug, warn};
 
 /// Rig-based agent handle implementing `AgentHandle` trait.
 ///
@@ -140,8 +141,12 @@ where
 
             let mut accumulated_text = String::new();
             let mut tool_calls: Vec<ChatToolCall> = Vec::new();
+            let mut item_count = 0u64;
+
+            debug!(message_len = message.len(), "Rig stream starting");
 
             while let Some(item) = stream.next().await {
+                item_count += 1;
                 match item {
                     Ok(MultiTurnStreamItem::StreamAssistantItem(content)) => {
                         match content {
@@ -154,6 +159,7 @@ where
                                 });
                             }
                             StreamedAssistantContent::ToolCall(tc) => {
+                                debug!(tool = %tc.function.name, "Rig tool call");
                                 // Accumulate tool call info
                                 tool_calls.push(ChatToolCall {
                                     name: tc.function.name.clone(),
@@ -198,6 +204,13 @@ where
                         // Tool results - Rig handles internally
                     }
                     Ok(MultiTurnStreamItem::FinalResponse(final_resp)) => {
+                        debug!(
+                            item_count,
+                            response_len = final_resp.response().len(),
+                            tool_count = tool_calls.len(),
+                            "Rig stream complete"
+                        );
+
                         // Add assistant response to history
                         {
                             let mut h = history.write().await;
@@ -216,7 +229,14 @@ where
                         });
                     }
                     Err(e) => {
-                        yield Err(ChatError::Communication(format!("Stream error: {}", e)));
+                        // Log full error details for debugging
+                        warn!(
+                            item_count,
+                            error = ?e,
+                            error_display = %e,
+                            "Rig stream error"
+                        );
+                        yield Err(ChatError::Communication(format!("Rig LLM error: {}", e)));
                         return;
                     }
                     // Catch-all for future MultiTurnStreamItem variants (non-exhaustive enum)

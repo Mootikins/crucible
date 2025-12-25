@@ -24,6 +24,7 @@ use futures::{Stream, StreamExt};
 use std::pin::Pin;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
+use tracing::{debug, warn};
 
 pub type ChatStream = Pin<Box<dyn Stream<Item = ChatResult<ChatChunk>> + Send>>;
 
@@ -68,10 +69,22 @@ impl StreamingTask {
         tokio::spawn(async move {
             let mut full_response = String::new();
             let mut seq = 0u64;
+            let mut chunk_count = 0u64;
+
+            debug!("StreamingTask started, awaiting chunks");
 
             while let Some(result) = stream.next().await {
+                chunk_count += 1;
                 match result {
                     Ok(chunk) => {
+                        debug!(
+                            chunk_num = chunk_count,
+                            delta_len = chunk.delta.len(),
+                            done = chunk.done,
+                            has_tool_calls = chunk.tool_calls.is_some(),
+                            "Received chunk"
+                        );
+
                         // Only send Delta events for non-empty chunks
                         // Sequence numbers track actual content deltas, not empty stream items
                         if !chunk.delta.is_empty() {
@@ -103,16 +116,26 @@ impl StreamingTask {
                         }
 
                         if chunk.done {
+                            debug!(chunk_count, response_len = full_response.len(), "Stream done");
                             break;
                         }
                     }
                     Err(e) => {
+                        warn!(
+                            chunk_count,
+                            error = %e,
+                            "Stream error"
+                        );
                         let _ = tx.send(StreamingEvent::Error {
                             message: e.to_string(),
                         });
                         return;
                     }
                 }
+            }
+
+            if full_response.is_empty() && chunk_count > 0 {
+                warn!(chunk_count, "Stream completed with empty response");
             }
 
             let _ = tx.send(StreamingEvent::Done { full_response });
