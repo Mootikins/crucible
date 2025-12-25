@@ -784,6 +784,7 @@ mod tests {
     // =========================================================================
 
     #[tokio::test]
+    #[ignore = "requires ripgrep"]
     async fn test_grep_finds_matches() {
         let (temp, tools) = create_workspace();
         tokio::fs::write(temp.path().join("test.txt"), "hello\nworld\nhello again")
@@ -806,6 +807,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires ripgrep"]
     async fn test_grep_with_glob_filter() {
         let (temp, tools) = create_workspace();
         tokio::fs::write(temp.path().join("test.rs"), "fn main() {}")
