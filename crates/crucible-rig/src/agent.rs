@@ -67,10 +67,7 @@ impl AgentConfig {
                 field: "model".into(),
             })?;
 
-        let temperature = card
-            .config
-            .get("temperature")
-            .and_then(|v| v.as_f64());
+        let temperature = card.config.get("temperature").and_then(|v| v.as_f64());
 
         let max_tokens = card
             .config
@@ -135,10 +132,7 @@ impl AgentConfig {
 ///
 /// let response = agent.prompt("Hello!").await?;
 /// ```
-pub fn build_agent<C>(
-    card: &AgentCard,
-    client: &C,
-) -> AgentBuildResult<Agent<C::CompletionModel>>
+pub fn build_agent<C>(card: &AgentCard, client: &C) -> AgentBuildResult<Agent<C::CompletionModel>>
 where
     C: CompletionClient,
     C::CompletionModel: CompletionModel<Client = C>,
@@ -246,10 +240,7 @@ mod tests {
 
     // Helper to create a test Ollama client (with explicit type)
     fn test_ollama_client() -> ollama::Client {
-        ollama::Client::builder()
-            .api_key(Nothing)
-            .build()
-            .unwrap()
+        ollama::Client::builder().api_key(Nothing).build().unwrap()
     }
 
     fn make_test_card(model: &str, system_prompt: &str) -> AgentCard {
@@ -348,8 +339,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_build_agent_from_config() {
-        let config = AgentConfig::new("llama3.2", "You are a test assistant.")
-            .with_temperature(0.8);
+        let config =
+            AgentConfig::new("llama3.2", "You are a test assistant.").with_temperature(0.8);
 
         let client = test_ollama_client();
 

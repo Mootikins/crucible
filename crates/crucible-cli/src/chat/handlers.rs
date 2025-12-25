@@ -741,16 +741,27 @@ impl CommandHandler for AgentHandler {
         if args.is_empty() {
             // List current and available agents
             println!("\n{}", "Agent Information:".bright_cyan().bold());
-            println!("  {} {}", "Current:".white(), current_name.bright_white().bold());
+            println!(
+                "  {} {}",
+                "Current:".white(),
+                current_name.bright_white().bold()
+            );
             println!();
             println!("  {}", "Available agents:".white());
             println!("    {} {}", "•".green(), "internal".white());
             for name in &acp_names {
-                let indicator = if *name == current_name { "✓".green() } else { "•".dimmed() };
+                let indicator = if *name == current_name {
+                    "✓".green()
+                } else {
+                    "•".dimmed()
+                };
                 println!("    {} {}", indicator, name.white());
             }
             println!();
-            println!("  {}", "Use --agent <name> when starting chat to switch agents".dimmed());
+            println!(
+                "  {}",
+                "Use --agent <name> when starting chat to switch agents".dimmed()
+            );
             Ok(())
         } else {
             // Attempted agent switch - not supported mid-session

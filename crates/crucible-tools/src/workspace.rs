@@ -14,6 +14,10 @@
 //! - Uses `ToolRef` for unified tool representation
 //! - Compatible with both Rig (direct) and MCP (gateway) modes
 
+#![allow(clippy::missing_errors_doc)] // Tool methods have obvious error conditions
+#![allow(clippy::doc_markdown)] // Parameter names in docs don't need backticks
+#![allow(clippy::needless_pass_by_value)] // Tools take owned strings for JSON compat
+
 use rmcp::model::{CallToolResult, Content, Tool};
 use std::borrow::Cow;
 use std::path::PathBuf;
@@ -56,6 +60,7 @@ impl WorkspaceTools {
     }
 
     /// Get tool definitions for registration
+    #[must_use]
     pub fn tool_definitions() -> Vec<Tool> {
         vec![
             Self::read_file_definition(),
@@ -74,24 +79,29 @@ impl WorkspaceTools {
             description: Some(Cow::Borrowed(
                 "Read file contents. Returns content with line numbers.",
             )),
-            input_schema: Arc::new(serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path to file (absolute or relative to workspace)"
+            input_schema: Arc::new(
+                serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Path to file (absolute or relative to workspace)"
+                        },
+                        "offset": {
+                            "type": "integer",
+                            "description": "Line number to start from (1-indexed)"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum lines to read"
+                        }
                     },
-                    "offset": {
-                        "type": "integer",
-                        "description": "Line number to start from (1-indexed)"
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Maximum lines to read"
-                    }
-                },
-                "required": ["path"]
-            }).as_object().unwrap().clone()),
+                    "required": ["path"]
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
             output_schema: None,
             annotations: None,
             icons: None,
@@ -106,28 +116,33 @@ impl WorkspaceTools {
             description: Some(Cow::Borrowed(
                 "Edit file by replacing text. old_string must match exactly.",
             )),
-            input_schema: Arc::new(serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path to file"
+            input_schema: Arc::new(
+                serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Path to file"
+                        },
+                        "old_string": {
+                            "type": "string",
+                            "description": "Text to find and replace"
+                        },
+                        "new_string": {
+                            "type": "string",
+                            "description": "Replacement text"
+                        },
+                        "replace_all": {
+                            "type": "boolean",
+                            "description": "Replace all occurrences (default: false)"
+                        }
                     },
-                    "old_string": {
-                        "type": "string",
-                        "description": "Text to find and replace"
-                    },
-                    "new_string": {
-                        "type": "string",
-                        "description": "Replacement text"
-                    },
-                    "replace_all": {
-                        "type": "boolean",
-                        "description": "Replace all occurrences (default: false)"
-                    }
-                },
-                "required": ["path", "old_string", "new_string"]
-            }).as_object().unwrap().clone()),
+                    "required": ["path", "old_string", "new_string"]
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
             output_schema: None,
             annotations: None,
             icons: None,
@@ -142,20 +157,25 @@ impl WorkspaceTools {
             description: Some(Cow::Borrowed(
                 "Write content to file. Creates parent directories if needed.",
             )),
-            input_schema: Arc::new(serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path to file"
+            input_schema: Arc::new(
+                serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Path to file"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "Content to write"
+                        }
                     },
-                    "content": {
-                        "type": "string",
-                        "description": "Content to write"
-                    }
-                },
-                "required": ["path", "content"]
-            }).as_object().unwrap().clone()),
+                    "required": ["path", "content"]
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
             output_schema: None,
             annotations: None,
             icons: None,
@@ -170,20 +190,25 @@ impl WorkspaceTools {
             description: Some(Cow::Borrowed(
                 "Execute bash command. Use for git, npm, cargo, etc.",
             )),
-            input_schema: Arc::new(serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "Bash command to execute"
+            input_schema: Arc::new(
+                serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": "Bash command to execute"
+                        },
+                        "timeout_ms": {
+                            "type": "integer",
+                            "description": "Timeout in milliseconds (default: 120000)"
+                        }
                     },
-                    "timeout_ms": {
-                        "type": "integer",
-                        "description": "Timeout in milliseconds (default: 120000)"
-                    }
-                },
-                "required": ["command"]
-            }).as_object().unwrap().clone()),
+                    "required": ["command"]
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
             output_schema: None,
             annotations: None,
             icons: None,
@@ -198,24 +223,29 @@ impl WorkspaceTools {
             description: Some(Cow::Borrowed(
                 "Find files matching glob pattern (e.g., '**/*.rs').",
             )),
-            input_schema: Arc::new(serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "pattern": {
-                        "type": "string",
-                        "description": "Glob pattern"
+            input_schema: Arc::new(
+                serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "pattern": {
+                            "type": "string",
+                            "description": "Glob pattern"
+                        },
+                        "path": {
+                            "type": "string",
+                            "description": "Directory to search (default: workspace root)"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum results (default: 100)"
+                        }
                     },
-                    "path": {
-                        "type": "string",
-                        "description": "Directory to search (default: workspace root)"
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Maximum results (default: 100)"
-                    }
-                },
-                "required": ["pattern"]
-            }).as_object().unwrap().clone()),
+                    "required": ["pattern"]
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
             output_schema: None,
             annotations: None,
             icons: None,
@@ -230,28 +260,33 @@ impl WorkspaceTools {
             description: Some(Cow::Borrowed(
                 "Search file contents with regex. Uses ripgrep.",
             )),
-            input_schema: Arc::new(serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "pattern": {
-                        "type": "string",
-                        "description": "Regex pattern to search"
+            input_schema: Arc::new(
+                serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "pattern": {
+                            "type": "string",
+                            "description": "Regex pattern to search"
+                        },
+                        "path": {
+                            "type": "string",
+                            "description": "File or directory to search"
+                        },
+                        "glob": {
+                            "type": "string",
+                            "description": "Filter files by glob (e.g., '*.rs')"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum matches (default: 50)"
+                        }
                     },
-                    "path": {
-                        "type": "string",
-                        "description": "File or directory to search"
-                    },
-                    "glob": {
-                        "type": "string",
-                        "description": "Filter files by glob (e.g., '*.rs')"
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Maximum matches (default: 50)"
-                    }
-                },
-                "required": ["pattern"]
-            }).as_object().unwrap().clone()),
+                    "required": ["pattern"]
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
             output_schema: None,
             annotations: None,
             icons: None,
@@ -273,7 +308,7 @@ impl WorkspaceTools {
 
         let content = tokio::fs::read_to_string(&resolved)
             .await
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Read error: {}", e), None))?;
+            .map_err(|e| rmcp::ErrorData::internal_error(format!("Read error: {e}"), None))?;
 
         let lines: Vec<&str> = content.lines().collect();
         let total_lines = lines.len();
@@ -311,7 +346,7 @@ impl WorkspaceTools {
 
         let content = tokio::fs::read_to_string(&resolved)
             .await
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Read error: {}", e), None))?;
+            .map_err(|e| rmcp::ErrorData::internal_error(format!("Read error: {e}"), None))?;
 
         if !content.contains(&old_string) {
             return Ok(CallToolResult::success(vec![Content::text(
@@ -328,11 +363,10 @@ impl WorkspaceTools {
 
         tokio::fs::write(&resolved, &new_content)
             .await
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Write error: {}", e), None))?;
+            .map_err(|e| rmcp::ErrorData::internal_error(format!("Write error: {e}"), None))?;
 
         Ok(CallToolResult::success(vec![Content::text(format!(
-            "Replaced {} occurrence(s)",
-            count
+            "Replaced {count} occurrence(s)"
         ))]))
     }
 
@@ -348,12 +382,12 @@ impl WorkspaceTools {
         if let Some(parent) = resolved.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
-                .map_err(|e| rmcp::ErrorData::internal_error(format!("Mkdir error: {}", e), None))?;
+                .map_err(|e| rmcp::ErrorData::internal_error(format!("Mkdir error: {e}"), None))?;
         }
 
         tokio::fs::write(&resolved, &content)
             .await
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Write error: {}", e), None))?;
+            .map_err(|e| rmcp::ErrorData::internal_error(format!("Write error: {e}"), None))?;
 
         Ok(CallToolResult::success(vec![Content::text(format!(
             "Written {} bytes to {}",
@@ -383,48 +417,44 @@ impl WorkspaceTools {
                     None,
                 )
             })?
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Exec error: {}", e), None))?;
+            .map_err(|e| rmcp::ErrorData::internal_error(format!("Exec error: {e}"), None))?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         let exit_code = output.status.code().unwrap_or(-1);
 
         let result = if output.status.success() {
-            format!("{}", stdout)
+            stdout.to_string()
         } else {
-            format!(
-                "Exit code: {}\nStdout:\n{}\nStderr:\n{}",
-                exit_code, stdout, stderr
-            )
+            format!("Exit code: {exit_code}\nStdout:\n{stdout}\nStderr:\n{stderr}")
         };
 
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 
     /// Find files matching glob pattern (e.g., '**/*.rs')
-    pub async fn glob(
+    pub fn glob(
         &self,
         pattern: String,
         path: Option<String>,
         limit: Option<usize>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let search_path = path
-            .map(|p| self.resolve_path(&p))
-            .unwrap_or_else(|| self.workspace_root.clone());
+        let search_path =
+            path.map_or_else(|| self.workspace_root.clone(), |p| self.resolve_path(&p));
 
         let full_pattern = search_path.join(&pattern);
         let pattern_str = full_pattern.to_string_lossy();
         let max_results = limit.unwrap_or(100);
 
         let paths: Vec<String> = glob::glob(&pattern_str)
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Glob error: {}", e), None))?
-            .filter_map(|entry| entry.ok())
+            .map_err(|e| rmcp::ErrorData::internal_error(format!("Glob error: {e}"), None))?
+            .filter_map(std::result::Result::ok)
             .take(max_results + 1)
             .map(|p| p.display().to_string())
             .collect();
 
         let truncated = paths.len() > max_results;
-        let files: Vec<&str> = paths.iter().take(max_results).map(|s| s.as_str()).collect();
+        let files: Vec<&str> = paths.iter().take(max_results).map(String::as_str).collect();
 
         let result = if truncated {
             format!(
@@ -448,9 +478,8 @@ impl WorkspaceTools {
         glob: Option<String>,
         limit: Option<usize>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let search_path = path
-            .map(|p| self.resolve_path(&p))
-            .unwrap_or_else(|| self.workspace_root.clone());
+        let search_path =
+            path.map_or_else(|| self.workspace_root.clone(), |p| self.resolve_path(&p));
 
         let max_matches = limit.unwrap_or(50);
 
@@ -469,7 +498,7 @@ impl WorkspaceTools {
         let output = cmd
             .output()
             .await
-            .map_err(|e| rmcp::ErrorData::internal_error(format!("Grep error: {}", e), None))?;
+            .map_err(|e| rmcp::ErrorData::internal_error(format!("Grep error: {e}"), None))?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let lines: Vec<&str> = stdout.lines().take(max_matches + 1).collect();
@@ -519,7 +548,9 @@ mod tests {
     async fn test_read_file_returns_content_with_line_numbers() {
         let (temp, tools) = create_workspace();
         let file = temp.path().join("test.txt");
-        tokio::fs::write(&file, "line1\nline2\nline3").await.unwrap();
+        tokio::fs::write(&file, "line1\nline2\nline3")
+            .await
+            .unwrap();
 
         let result = tools.read_file("test.txt".to_string(), None, None).await;
 
@@ -595,7 +626,9 @@ mod tests {
     async fn test_edit_file_replace_all() {
         let (temp, tools) = create_workspace();
         let file = temp.path().join("test.txt");
-        tokio::fs::write(&file, "foo bar foo baz foo").await.unwrap();
+        tokio::fs::write(&file, "foo bar foo baz foo")
+            .await
+            .unwrap();
 
         let result = tools
             .edit_file(
@@ -710,11 +743,17 @@ mod tests {
     #[tokio::test]
     async fn test_glob_finds_files() {
         let (temp, tools) = create_workspace();
-        tokio::fs::write(temp.path().join("a.rs"), "").await.unwrap();
-        tokio::fs::write(temp.path().join("b.rs"), "").await.unwrap();
-        tokio::fs::write(temp.path().join("c.txt"), "").await.unwrap();
+        tokio::fs::write(temp.path().join("a.rs"), "")
+            .await
+            .unwrap();
+        tokio::fs::write(temp.path().join("b.rs"), "")
+            .await
+            .unwrap();
+        tokio::fs::write(temp.path().join("c.txt"), "")
+            .await
+            .unwrap();
 
-        let result = tools.glob("*.rs".to_string(), None, None).await;
+        let result = tools.glob("*.rs".to_string(), None, None);
 
         assert!(result.is_ok());
         let content = format!("{:?}", result.unwrap().content);
@@ -732,7 +771,7 @@ mod tests {
                 .unwrap();
         }
 
-        let result = tools.glob("*.rs".to_string(), None, Some(3)).await;
+        let result = tools.glob("*.rs".to_string(), None, Some(3));
 
         assert!(result.is_ok());
         let content = format!("{:?}", result.unwrap().content);
@@ -752,7 +791,12 @@ mod tests {
             .unwrap();
 
         let result = tools
-            .grep("hello".to_string(), Some("test.txt".to_string()), None, None)
+            .grep(
+                "hello".to_string(),
+                Some("test.txt".to_string()),
+                None,
+                None,
+            )
             .await;
 
         assert!(result.is_ok());

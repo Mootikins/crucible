@@ -42,7 +42,10 @@ pub use context::CliChatContext;
 pub use diff::DiffRenderer;
 pub use display::{format_tool_args, Display, ToolCallDisplay};
 pub use dynamic_agent::DynamicAgent;
-pub use handlers::{AgentHandler, ExitHandler, HelpHandler, ModeCycleHandler, ModeHandler, NewHandler, SearchHandler};
+pub use handlers::{
+    AgentHandler, ExitHandler, HelpHandler, ModeCycleHandler, ModeHandler, NewHandler,
+    SearchHandler,
+};
 pub use mode_registry::{ModeError, ModeRegistry, ModeResult};
 pub use session::{ChatSession, SessionConfig};
 pub use slash_registry::{SlashCommand, SlashCommandRegistry, SlashCommandRegistryBuilder};

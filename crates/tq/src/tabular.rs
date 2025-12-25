@@ -65,7 +65,10 @@ pub fn encode_table(name: &str, items: &[Value], columns: &[&str]) -> String {
     // Rows
     for item in items {
         result.push_str("  ");
-        let values: Vec<String> = columns.iter().map(|col| format_value(item.get(*col))).collect();
+        let values: Vec<String> = columns
+            .iter()
+            .map(|col| format_value(item.get(*col)))
+            .collect();
         result.push_str(&values.join(","));
         result.push('\n');
     }

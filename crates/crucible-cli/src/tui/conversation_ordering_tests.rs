@@ -7,11 +7,11 @@
 //! chronological order - prose is grouped together, tool calls are grouped
 //! separately, breaking conversational flow.
 
+use super::content_block::ContentBlock;
 use super::conversation::{
     render_item_to_lines, ConversationItem, ConversationState, ConversationWidget, StatusKind,
     ToolCallDisplay, ToolStatus,
 };
-use super::content_block::ContentBlock;
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 
@@ -183,7 +183,11 @@ fn test_interleaved_conversation_snapshot() {
         "First prose should be in output: {}",
         output
     );
-    assert!(tool_pos.is_some(), "Tool call should be in output: {}", output);
+    assert!(
+        tool_pos.is_some(),
+        "Tool call should be in output: {}",
+        output
+    );
     assert!(
         prose2_pos.is_some(),
         "Second prose should be in output: {}",

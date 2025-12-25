@@ -733,7 +733,6 @@ impl CliAppConfig {
         Ok(config)
     }
 
-
     /// Log the effective configuration for debugging
     pub fn log_config(&self) {
         info!("Effective configuration:");

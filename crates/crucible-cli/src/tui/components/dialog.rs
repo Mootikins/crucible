@@ -246,7 +246,10 @@ impl InteractiveWidget for DialogWidget<'_> {
             match result {
                 DialogResult::Confirm(_value) => {
                     // For select dialogs, parse the selected index
-                    if let DialogKind::Select { items: _, selected, .. } = &self.state.kind {
+                    if let DialogKind::Select {
+                        items: _, selected, ..
+                    } = &self.state.kind
+                    {
                         EventResult::Action(TuiAction::CloseDialog(DialogAction::Select(*selected)))
                     } else {
                         EventResult::Action(TuiAction::CloseDialog(DialogAction::Confirm))
@@ -547,7 +550,9 @@ mod tests {
         let text = content.join("");
 
         assert!(
-            text.contains("Information") || text.contains("informational") || text.contains("message")
+            text.contains("Information")
+                || text.contains("informational")
+                || text.contains("message")
         );
     }
 

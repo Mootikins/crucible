@@ -393,7 +393,11 @@ fn read_dir_as_value(
                 merge_toml_values(&mut result, &file_value);
             }
             Err(e) => {
-                warn!("Failed to read config fragment {}: {}", file_path.display(), e);
+                warn!(
+                    "Failed to read config fragment {}: {}",
+                    file_path.display(),
+                    e
+                );
                 errors.push(e);
             }
         }
@@ -1103,7 +1107,10 @@ api_key = "{file:~/.secrets/test.key}"
 
     #[test]
     fn test_extract_env_var() {
-        assert_eq!(extract_env_var("{env:OPENAI_API_KEY}"), Some("OPENAI_API_KEY"));
+        assert_eq!(
+            extract_env_var("{env:OPENAI_API_KEY}"),
+            Some("OPENAI_API_KEY")
+        );
         assert_eq!(extract_env_var("{env:MY_VAR}"), Some("MY_VAR"));
         assert_eq!(extract_env_var("not-a-ref"), None);
     }
@@ -1206,10 +1213,7 @@ model = "{file:model.txt}"
             embedding.get("api_key").unwrap().as_str().unwrap(),
             "sk-mixed-key"
         );
-        assert_eq!(
-            embedding.get("model").unwrap().as_str().unwrap(),
-            "gpt-4"
-        );
+        assert_eq!(embedding.get("model").unwrap().as_str().unwrap(), "gpt-4");
 
         // Cleanup
         std::env::remove_var("CRUCIBLE_TEST_MIXED_KEY");
@@ -1500,7 +1504,10 @@ settings = "{dir:conf.d}"
         let settings = config.get("settings").unwrap();
         // Should only have the top-level key, not nested
         assert_eq!(settings.get("key").unwrap().as_str(), Some("value"));
-        assert!(settings.get("nested_key").is_none(), "Subdirs should be ignored");
+        assert!(
+            settings.get("nested_key").is_none(),
+            "Subdirs should be ignored"
+        );
     }
 
     #[test]
@@ -1595,7 +1602,8 @@ settings = "{dir:conf.d}"
         // TLS section was deep-merged
         let tls = server.get("tls").unwrap();
         assert_eq!(tls.get("enabled").unwrap().as_bool(), Some(true)); // Overridden
-        assert_eq!(tls.get("cert").unwrap().as_str(), Some("/path/to/cert.pem")); // Added
+        assert_eq!(tls.get("cert").unwrap().as_str(), Some("/path/to/cert.pem"));
+        // Added
     }
 
     #[test]

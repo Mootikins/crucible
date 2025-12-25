@@ -91,10 +91,7 @@ impl SessionLogger {
 
         // Create directory paths
         let session_dir = kiln_path.join("sessions").join(workspace).join(&timestamp);
-        let state_dir = state_base
-            .join("sessions")
-            .join("state")
-            .join(workspace);
+        let state_dir = state_base.join("sessions").join("state").join(workspace);
 
         // Create directories
         fs::create_dir_all(&session_dir).await?;

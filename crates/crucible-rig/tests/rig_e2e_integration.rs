@@ -33,12 +33,13 @@ async fn test_rig_agent_basic_prompt() {
     let config = create_test_config();
     let temp_dir = TempDir::new().unwrap();
 
-    let agent = build_agent_with_tools(&config, &client, temp_dir.path())
-        .expect("Failed to build agent");
+    let agent =
+        build_agent_with_tools(&config, &client, temp_dir.path()).expect("Failed to build agent");
     let mut handle = RigAgentHandle::new(agent);
 
     // Send a simple message and collect response
-    let mut stream = handle.send_message_stream("What is 2+2? Answer with just the number.".to_string());
+    let mut stream =
+        handle.send_message_stream("What is 2+2? Answer with just the number.".to_string());
     let mut response = String::new();
     let mut got_done = false;
 
@@ -80,12 +81,13 @@ async fn test_rig_agent_with_read_file_tool() {
     let test_file = temp_dir.path().join("test.txt");
     std::fs::write(&test_file, "Hello from the test file!").expect("Failed to write test file");
 
-    let agent = build_agent_with_tools(&config, &client, temp_dir.path())
-        .expect("Failed to build agent");
+    let agent =
+        build_agent_with_tools(&config, &client, temp_dir.path()).expect("Failed to build agent");
     let mut handle = RigAgentHandle::new(agent);
 
     // Ask the agent to read the file
-    let mut stream = handle.send_message_stream("Read the file test.txt and tell me what it says.".to_string());
+    let mut stream =
+        handle.send_message_stream("Read the file test.txt and tell me what it says.".to_string());
     let mut response = String::new();
     let mut tool_calls = Vec::new();
 
@@ -119,14 +121,13 @@ async fn test_rig_agent_streaming_multiple_chunks() {
     let config = create_test_config();
     let temp_dir = TempDir::new().unwrap();
 
-    let agent = build_agent_with_tools(&config, &client, temp_dir.path())
-        .expect("Failed to build agent");
+    let agent =
+        build_agent_with_tools(&config, &client, temp_dir.path()).expect("Failed to build agent");
     let mut handle = RigAgentHandle::new(agent);
 
     // Ask for a slightly longer response
-    let mut stream = handle.send_message_stream(
-        "Count from 1 to 5, each number on a new line.".to_string(),
-    );
+    let mut stream =
+        handle.send_message_stream("Count from 1 to 5, each number on a new line.".to_string());
 
     let mut chunks: Vec<ChatChunk> = Vec::new();
 
@@ -171,8 +172,8 @@ async fn test_rig_agent_history_preserved() {
     let config = create_test_config();
     let temp_dir = TempDir::new().unwrap();
 
-    let agent = build_agent_with_tools(&config, &client, temp_dir.path())
-        .expect("Failed to build agent");
+    let agent =
+        build_agent_with_tools(&config, &client, temp_dir.path()).expect("Failed to build agent");
     let mut handle = RigAgentHandle::new(agent);
 
     // First message - introduce a fact
@@ -190,9 +191,8 @@ async fn test_rig_agent_history_preserved() {
     assert!(!history.is_empty(), "History should not be empty");
 
     // Second message - ask about the fact
-    let mut stream2 = handle.send_message_stream(
-        "What is my favorite color? Answer with just the color.".to_string(),
-    );
+    let mut stream2 = handle
+        .send_message_stream("What is my favorite color? Answer with just the color.".to_string());
     let mut response = String::new();
     while let Some(result) = stream2.next().await {
         match result {

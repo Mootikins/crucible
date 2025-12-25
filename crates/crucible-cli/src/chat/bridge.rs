@@ -97,10 +97,7 @@ impl AgentEventBridge {
 /// Convert a ChatToolCall to a ToolCall for SessionEvent
 fn convert_chat_tool_call(tc: &ChatToolCall) -> ToolCall {
     // Use arguments directly (already serde_json::Value)
-    let args = tc
-        .arguments
-        .clone()
-        .unwrap_or(serde_json::Value::Null);
+    let args = tc.arguments.clone().unwrap_or(serde_json::Value::Null);
 
     ToolCall {
         name: tc.name.clone(),
@@ -407,7 +404,10 @@ mod tests {
         }];
         let mut agent = MockAgentWithTools::new(vec!["Reading file...".into()], tool_calls);
 
-        bridge.send_message("Read test.txt", &mut agent).await.unwrap();
+        bridge
+            .send_message("Read test.txt", &mut agent)
+            .await
+            .unwrap();
 
         let events: Vec<_> = ring.iter().collect();
 

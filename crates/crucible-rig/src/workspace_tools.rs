@@ -213,7 +213,12 @@ impl Tool for EditFileTool {
 
         let result = ctx
             .tools
-            .edit_file(args.path, args.old_string, args.new_string, args.replace_all)
+            .edit_file(
+                args.path,
+                args.old_string,
+                args.new_string,
+                args.replace_all,
+            )
             .await
             .map_err(|e| WorkspaceToolError::File(e.message.to_string()))?;
 
@@ -427,7 +432,6 @@ impl Tool for GlobTool {
         let result = ctx
             .tools
             .glob(args.pattern, args.path, args.limit)
-            .await
             .map_err(|e| WorkspaceToolError::Pattern(e.message.to_string()))?;
 
         extract_text_content(&result)
@@ -520,7 +524,9 @@ impl Tool for GrepTool {
 // =============================================================================
 
 /// Extract text content from a CallToolResult
-fn extract_text_content(result: &rmcp::model::CallToolResult) -> Result<String, WorkspaceToolError> {
+fn extract_text_content(
+    result: &rmcp::model::CallToolResult,
+) -> Result<String, WorkspaceToolError> {
     // Get first text content from the result
     for content in &result.content {
         if let Some(text) = content.as_text() {
@@ -642,8 +648,12 @@ mod tests {
         let tool = GlobTool::new(ctx);
 
         // Create some test files
-        tokio::fs::write(temp.path().join("a.rs"), "").await.unwrap();
-        tokio::fs::write(temp.path().join("b.rs"), "").await.unwrap();
+        tokio::fs::write(temp.path().join("a.rs"), "")
+            .await
+            .unwrap();
+        tokio::fs::write(temp.path().join("b.rs"), "")
+            .await
+            .unwrap();
 
         let args = GlobArgs {
             pattern: "*.rs".to_string(),

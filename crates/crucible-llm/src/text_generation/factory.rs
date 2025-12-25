@@ -66,7 +66,8 @@ pub async fn from_provider_config(
         LlmProviderType::OpenAI => {
             let api_key = config.api_key().ok_or_else(|| {
                 EmbeddingError::ConfigError(
-                    "API key not set. Configure api_key in provider config or set OPENAI_API_KEY".to_string(),
+                    "API key not set. Configure api_key in provider config or set OPENAI_API_KEY"
+                        .to_string(),
                 )
             })?;
 

@@ -34,8 +34,7 @@ use crate::streaming::{humanize_tool_title, StreamingCallback, StreamingChunk};
 use crate::{AcpError, Result};
 use agent_client_protocol::{
     AvailableCommand, ContentBlock, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SessionNotification, SessionUpdate, ToolCallContent,
-    ToolCallStatus,
+    RequestPermissionResponse, SessionNotification, SessionUpdate, ToolCallContent, ToolCallStatus,
 };
 use crucible_core::traits::acp::{AcpResult, SessionManager};
 use crucible_core::types::acp::{FileDiff, SessionConfig, SessionId, ToolCallInfo};
@@ -1004,7 +1003,10 @@ impl CrucibleAcpClient {
         use serde_json::json;
 
         let request_id = REQUEST_ID.fetch_add(1, Ordering::SeqCst);
-        tracing::info!("Starting streaming request with callback, ID {}", request_id);
+        tracing::info!(
+            "Starting streaming request with callback, ID {}",
+            request_id
+        );
 
         let json_request = json!({
             "jsonrpc": "2.0",
@@ -1184,7 +1186,9 @@ impl CrucibleAcpClient {
                 let tool_id = update.tool_call_id.to_string();
                 // Tool updates often indicate completion
                 if update.fields.status == Some(ToolCallStatus::Completed) {
-                    callback(StreamingChunk::ToolEnd { id: tool_id.clone() });
+                    callback(StreamingChunk::ToolEnd {
+                        id: tool_id.clone(),
+                    });
                 }
 
                 // Check if update has interesting fields (title, raw_input, or content with diffs)

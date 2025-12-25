@@ -442,6 +442,9 @@ mod tests {
 
         let client = create_client(&config);
         assert!(client.is_err());
-        assert!(matches!(client.unwrap_err(), RigError::MissingApiKey { .. }));
+        assert!(matches!(
+            client.unwrap_err(),
+            RigError::MissingApiKey { .. }
+        ));
     }
 }
