@@ -98,8 +98,23 @@ pub async fn execute(
         info!("CLI env overrides: {:?}", keys);
     }
 
-    // === DEFERRED PATH: Agent picker in TUI, agent created after selection ===
-    if use_deferred_picker {
+    // === INTERACTIVE MODE: Always use factory path for /new restart support ===
+    let is_interactive = query.is_none();
+    if is_interactive {
+        // Compute preselected agent from CLI args
+        let preselected_agent = if use_internal {
+            Some(AgentSelection::Internal)
+        } else if let Some(ref name) = agent_name {
+            Some(AgentSelection::Acp(name.clone()))
+        } else if !use_deferred_picker {
+            // Agent specified via config default, not CLI
+            default_agent_from_config
+                .clone()
+                .map(|name| AgentSelection::Acp(name))
+        } else {
+            None // Show picker
+        };
+
         return run_deferred_chat(
             config,
             default_agent_from_config,
@@ -111,11 +126,12 @@ pub async fn execute(
             max_context_tokens,
             parsed_env,
             status,
+            preselected_agent,
         )
         .await;
     }
 
-    // === NON-DEFERRED PATH: Agent created before session ===
+    // === ONE-SHOT MODE: Agent created before query execution ===
 
     // Determine agent type based on selection
     let agent_type = if use_internal {
@@ -133,8 +149,8 @@ pub async fn execute(
         .with_max_context_tokens(max_context_tokens)
         .with_env_overrides(parsed_env);
 
-    // Fetch available models for OpenCode before creating agent
-    let available_models = if agent_type == factories::AgentType::Acp {
+    // Fetch available models for OpenCode (unused in one-shot mode, but kept for future use)
+    let _available_models = if agent_type == factories::AgentType::Acp {
         let effective_agent = agent_name.clone().or(default_agent_from_config);
         if effective_agent.as_deref() == Some("opencode") {
             status.update("Fetching available models from OpenCode...");
@@ -268,151 +284,76 @@ pub async fn execute(
             // Finalize startup status
             status.success("Ready");
 
-            // Start live progress display if we have background processing
-            let live_progress = bg_progress.map(LiveProgress::start);
+            // One-shot mode - query is guaranteed Some here (interactive returned early)
+            let query_text = query.expect("query should be Some in one-shot path");
+            info!("One-shot query mode");
+            let _live_progress = bg_progress.map(LiveProgress::start);
 
-            // Handle query
-            if let Some(query_text) = query {
-                // One-shot mode
-                info!("One-shot query mode");
-
-                let prompt = if no_context {
-                    info!("Context enrichment disabled");
-                    query_text
-                } else {
-                    // Enrich with context
-                    info!("Enriching query with context...");
-                    let enricher = ContextEnricher::new(core.clone(), context_size);
-                    enricher.enrich(&query_text).await?
-                };
-
-                // Start chat with enriched prompt
-                client.start_chat(&prompt).await?;
-
-                // Cleanup
-                client.shutdown().await?;
+            let prompt = if no_context {
+                info!("Context enrichment disabled");
+                query_text
             } else {
-                // Interactive mode with TUI
-                info!("Interactive chat mode");
+                // Enrich with context
+                info!("Enriching query with context...");
+                let enricher = ContextEnricher::new(core.clone(), context_size);
+                enricher.enrich(&query_text).await?
+            };
 
-                let agent_name = client.agent_name().to_string();
-                run_interactive_session(
-                    core,
-                    &mut client,
-                    initial_mode,
-                    no_context,
-                    context_size,
-                    live_progress,
-                    available_models,
-                    true, // skip_splash: agent already known in non-deferred path
-                    &agent_name,
-                )
-                .await?;
+            // Start chat with enriched prompt
+            client.start_chat(&prompt).await?;
 
-                // Cleanup
-                client.shutdown().await?;
-            }
+            // Cleanup
+            client.shutdown().await?;
         }
         factories::InitializedAgent::Internal(mut handle) => {
             // Internal agent is ready immediately
             status.success("Ready");
 
-            // Start live progress display if we have background processing
-            let live_progress = bg_progress.map(LiveProgress::start);
+            // One-shot mode - query is guaranteed Some here (interactive returned early)
+            let query_text = query.expect("query should be Some in one-shot path");
+            info!("One-shot query mode (internal agent)");
+            let _live_progress = bg_progress.map(LiveProgress::start);
 
-            // Handle query
-            if let Some(query_text) = query {
-                // One-shot mode
-                info!("One-shot query mode (internal agent)");
+            let prompt = if no_context {
+                info!("Context enrichment disabled");
+                query_text
+            } else {
+                // Enrich with context
+                info!("Enriching query with context...");
+                let enricher = ContextEnricher::new(core.clone(), context_size);
+                enricher.enrich(&query_text).await?
+            };
 
-                let prompt = if no_context {
-                    info!("Context enrichment disabled");
-                    query_text
-                } else {
-                    // Enrich with context
-                    info!("Enriching query with context...");
-                    let enricher = ContextEnricher::new(core.clone(), context_size);
-                    enricher.enrich(&query_text).await?
-                };
+            // Send message and stream response, accumulate for markdown rendering
+            use crate::tui::MarkdownRenderer;
+            use crucible_core::traits::chat::AgentHandle;
+            use futures::StreamExt;
 
-                // Send message and stream response, accumulate for markdown rendering
-                use crate::tui::MarkdownRenderer;
-                use crucible_core::traits::chat::AgentHandle;
-                use futures::StreamExt;
+            let renderer = MarkdownRenderer::new();
+            let mut response_content = String::new();
 
-                let renderer = MarkdownRenderer::new();
-                let mut response_content = String::new();
-
-                let mut stream = handle.send_message_stream(prompt.clone());
-                while let Some(result) = stream.next().await {
-                    match result {
-                        Ok(chunk) => {
-                            if !chunk.done {
-                                response_content.push_str(&chunk.delta);
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("\nError: {}", e);
-                            return Err(e.into());
+            let mut stream = handle.send_message_stream(prompt.clone());
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(chunk) => {
+                        if !chunk.done {
+                            response_content.push_str(&chunk.delta);
                         }
                     }
+                    Err(e) => {
+                        eprintln!("\nError: {}", e);
+                        return Err(e.into());
+                    }
                 }
-
-                // Render and print the complete response with markdown
-                let rendered = renderer.render(&response_content);
-                println!("{}", rendered);
-            } else {
-                // Interactive mode with TUI
-                info!("Interactive chat mode (internal agent)");
-
-                run_interactive_session(
-                    core,
-                    &mut handle,
-                    initial_mode,
-                    no_context,
-                    context_size,
-                    live_progress,
-                    available_models,
-                    true, // skip_splash: agent already known in non-deferred path
-                    "internal",
-                )
-                .await?;
             }
+
+            // Render and print the complete response with markdown
+            let rendered = renderer.render(&response_content);
+            println!("{}", rendered);
         }
     }
 
     Ok(())
-}
-
-/// Run an interactive chat session with mode toggling support
-#[allow(clippy::too_many_arguments)]
-async fn run_interactive_session<A: crate::chat::AgentHandle>(
-    core: Arc<KilnContext>,
-    agent: &mut A,
-    initial_mode: &str,
-    no_context: bool,
-    context_size: Option<usize>,
-    _live_progress: Option<LiveProgress>,
-    available_models: Option<Vec<String>>,
-    skip_splash: bool,
-    agent_name: &str,
-) -> Result<()> {
-    use crate::chat::{ChatSession, SessionConfig};
-
-    // Create session configuration
-    let session_config = SessionConfig::new(
-        initial_mode,
-        !no_context, // context_enabled = !no_context
-        context_size,
-    )
-    .with_skip_splash(skip_splash)
-    .with_agent_name(agent_name);
-
-    // Create session orchestrator
-    let mut session = ChatSession::new(session_config, core, available_models);
-
-    // Run interactive session
-    session.run(agent).await
 }
 
 /// Run chat with deferred agent creation (picker in TUI)
@@ -431,6 +372,8 @@ async fn run_deferred_chat(
     max_context_tokens: usize,
     parsed_env: std::collections::HashMap<String, String>,
     mut status: StatusLine,
+    // Pre-selected agent for first iteration (skips picker, still allows /new restart)
+    preselected_agent: Option<AgentSelection>,
 ) -> Result<()> {
     use crate::chat::{ChatSession, SessionConfig};
 
@@ -526,8 +469,13 @@ async fn run_deferred_chat(
     // Status is complete - TUI will take over
     status.success("Ready");
 
-    // Create session configuration (splash enabled for picker)
-    let session_config = SessionConfig::new(initial_mode, !no_context, context_size); // skip_splash defaults to false
+    // Create session configuration
+    let mut session_config = SessionConfig::new(initial_mode, !no_context, context_size);
+
+    // Set preselected agent if provided (skips picker first time, allows /new restart)
+    if let Some(selection) = preselected_agent {
+        session_config = session_config.with_default_selection(selection);
+    }
 
     let mut session = ChatSession::new(session_config, core.clone(), None);
 
