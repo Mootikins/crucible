@@ -2,8 +2,9 @@
 //!
 //! Tests the type-erased wrapper that enables deferred agent creation.
 //!
-//! Since DynamicAgent requires concrete types (CrucibleAcpClient and InternalAgentHandle),
-//! these tests verify the enum structure and pattern matching behavior.
+//! Since DynamicAgent requires concrete types (CrucibleAcpClient for ACP and
+//! any AgentHandle impl for Local), these tests verify the enum structure
+//! and pattern matching behavior.
 
 use super::DynamicAgent;
 
@@ -39,10 +40,10 @@ fn test_dynamic_agent_has_correct_variants() {
     // Verify the enum has the expected variants by checking compilation
     // This is a compile-time test - if the variants don't exist, this won't compile
 
-    fn check_acp_variant(_agent: DynamicAgent) {
+    fn check_variants(_agent: DynamicAgent) {
         match _agent {
             DynamicAgent::Acp(_) => {}
-            DynamicAgent::Internal(_) => {}
+            DynamicAgent::Local(_) => {}
         }
     }
 
@@ -92,7 +93,7 @@ fn test_dynamic_agent_pattern_matching() {
     fn handle_agent(agent: DynamicAgent) -> &'static str {
         match agent {
             DynamicAgent::Acp(_) => "acp",
-            DynamicAgent::Internal(_) => "internal",
+            DynamicAgent::Local(_) => "local",
         }
     }
 
@@ -103,7 +104,7 @@ fn test_dynamic_agent_pattern_matching() {
 //
 // Full integration tests for DynamicAgent trait dispatch would require:
 // - Creating a real CrucibleAcpClient (requires spawning an ACP agent)
-// - Creating a real InternalAgentHandle (requires LLM provider setup)
+// - Creating a real local agent handle (RigAgentHandle, InternalAgentHandle, etc.)
 //
 // These are tested indirectly through:
 // - The deferred chat flow tests (factory closure creates DynamicAgent)
@@ -112,6 +113,6 @@ fn test_dynamic_agent_pattern_matching() {
 //
 // The key guarantees we get from Rust:
 // 1. If DynamicAgent::acp() compiles, it creates the Acp variant correctly
-// 2. If DynamicAgent::internal() compiles, it creates the Internal variant correctly
+// 2. If DynamicAgent::local() compiles, it creates the Local variant correctly
 // 3. If the AgentHandle impl compiles, trait dispatch will work at runtime
 // 4. Pattern matching is exhaustive (compiler enforced)

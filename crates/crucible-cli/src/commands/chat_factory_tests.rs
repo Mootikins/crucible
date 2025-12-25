@@ -193,7 +193,7 @@ async fn test_factory_propagates_errors() {
 //
 // The actual factory closure in run_deferred_chat() creates real agents:
 // - AgentSelection::Acp -> factories::create_agent() -> DynamicAgent::acp()
-// - AgentSelection::Internal -> factories::create_agent() -> DynamicAgent::internal()
+// - AgentSelection::Internal -> factories::create_agent() -> DynamicAgent::local()
 // - AgentSelection::Cancelled -> Error
 //
 // These tests verify the factory pattern structure and behavior.

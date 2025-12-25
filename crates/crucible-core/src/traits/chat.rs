@@ -130,6 +130,49 @@ pub trait AgentHandle: Send + Sync {
     }
 }
 
+/// Blanket implementation for boxed trait objects
+///
+/// This allows `Box<dyn AgentHandle + Send + Sync>` to be used anywhere
+/// an `AgentHandle` is expected, enabling factory patterns that return
+/// type-erased agents.
+#[async_trait]
+impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
+    fn send_message_stream(
+        &mut self,
+        message: String,
+    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
+        (**self).send_message_stream(message)
+    }
+
+    fn is_connected(&self) -> bool {
+        (**self).is_connected()
+    }
+
+    fn supports_streaming(&self) -> bool {
+        (**self).supports_streaming()
+    }
+
+    async fn on_commands_update(&mut self, commands: Vec<CommandDescriptor>) -> ChatResult<()> {
+        (**self).on_commands_update(commands).await
+    }
+
+    fn get_modes(&self) -> Option<&SessionModeState> {
+        (**self).get_modes()
+    }
+
+    fn get_mode_id(&self) -> &str {
+        (**self).get_mode_id()
+    }
+
+    async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {
+        (**self).set_mode_str(mode_id).await
+    }
+
+    fn get_commands(&self) -> &[AvailableCommand] {
+        (**self).get_commands()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatResponse {
     pub content: String,
