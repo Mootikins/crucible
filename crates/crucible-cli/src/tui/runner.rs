@@ -755,7 +755,9 @@ impl RatatuiRunner {
                     self.view.set_status_text("Ready");
                 }
                 SessionEvent::ToolCalled { name, args: _ } => {
-                    self.view.push_tool_running(name);
+                    // NOTE: Tool already displayed via StreamingEvent::ToolCall handler
+                    // which also emits to the ring buffer. Don't push again here.
+                    // Just update status text (ring events may come from other sources).
                     self.view.set_status_text(&format!("Running: {}", name));
                 }
                 SessionEvent::ToolCompleted {
