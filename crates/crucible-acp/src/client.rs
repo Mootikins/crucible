@@ -181,6 +181,8 @@ pub type BoxedReader = Pin<Box<dyn AsyncBufRead + Send + Sync + Unpin>>;
 /// the primary interface for sending requests to agents.
 pub struct CrucibleAcpClient {
     config: ClientConfig,
+    /// Agent name (e.g., "opencode", "claude") for display
+    agent_name: String,
     /// Current active session ID, if any
     active_session: Option<SessionId>,
     /// Agent process handle, if spawned (None for in-process transports)
@@ -202,6 +204,7 @@ impl std::fmt::Debug for CrucibleAcpClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CrucibleAcpClient")
             .field("config", &self.config)
+            .field("agent_name", &self.agent_name)
             .field("active_session", &self.active_session)
             .field("agent_process", &self.agent_process.is_some())
             .field("agent_stdin", &self.agent_stdin.is_some())
@@ -233,8 +236,14 @@ impl CrucibleAcpClient {
     /// let client = CrucibleAcpClient::new(config);
     /// ```
     pub fn new(config: ClientConfig) -> Self {
+        Self::with_name(config, "acp".to_string())
+    }
+
+    /// Create a new ACP client with a specific agent name
+    pub fn with_name(config: ClientConfig, agent_name: String) -> Self {
         Self {
             config,
+            agent_name,
             active_session: None,
             agent_process: None,
             agent_stdin: None,
@@ -243,6 +252,11 @@ impl CrucibleAcpClient {
             boxed_reader: None,
             available_commands: Vec::new(),
         }
+    }
+
+    /// Get the agent name for display
+    pub fn agent_name(&self) -> &str {
+        &self.agent_name
     }
 
     /// Get the latest slash commands advertised by the agent
@@ -277,6 +291,7 @@ impl CrucibleAcpClient {
     pub fn with_transport(config: ClientConfig, writer: BoxedWriter, reader: BoxedReader) -> Self {
         Self {
             config,
+            agent_name: "mock".to_string(),
             active_session: None,
             agent_process: None,
             agent_stdin: None,

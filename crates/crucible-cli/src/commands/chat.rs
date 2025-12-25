@@ -295,6 +295,7 @@ pub async fn execute(
                 // Interactive mode with TUI
                 info!("Interactive chat mode");
 
+                let agent_name = client.agent_name().to_string();
                 run_interactive_session(
                     core,
                     &mut client,
@@ -304,6 +305,7 @@ pub async fn execute(
                     live_progress,
                     available_models,
                     true, // skip_splash: agent already known in non-deferred path
+                    &agent_name,
                 )
                 .await?;
 
@@ -372,6 +374,7 @@ pub async fn execute(
                     live_progress,
                     available_models,
                     true, // skip_splash: agent already known in non-deferred path
+                    "internal",
                 )
                 .await?;
             }
@@ -392,6 +395,7 @@ async fn run_interactive_session<A: crate::chat::AgentHandle>(
     _live_progress: Option<LiveProgress>,
     available_models: Option<Vec<String>>,
     skip_splash: bool,
+    agent_name: &str,
 ) -> Result<()> {
     use crate::chat::{ChatSession, SessionConfig};
 
@@ -401,7 +405,8 @@ async fn run_interactive_session<A: crate::chat::AgentHandle>(
         !no_context, // context_enabled = !no_context
         context_size,
     )
-    .with_skip_splash(skip_splash);
+    .with_skip_splash(skip_splash)
+    .with_agent_name(agent_name);
 
     // Create session orchestrator
     let mut session = ChatSession::new(session_config, core, available_models);

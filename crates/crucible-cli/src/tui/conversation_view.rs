@@ -392,6 +392,16 @@ impl RatatuiView {
         self.state.splash = None;
     }
 
+    /// Show/reset the splash screen for agent picker
+    ///
+    /// Used when starting a new session via /new command.
+    pub fn show_splash(&mut self) {
+        let cwd = std::env::current_dir()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "~".to_string());
+        self.state.splash = Some(SplashState::new(cwd));
+    }
+
     /// Check if splash is currently showing
     pub fn is_showing_splash(&self) -> bool {
         self.state.splash.is_some() && self.state.conversation.items().is_empty()
