@@ -130,11 +130,8 @@ export const WhisperProvider: ParentComponent = (props) => {
       const audioData = await decodeAudioBlob(audioBlob);
       console.log(`Audio decoded: ${audioData.length} samples at 16kHz (${(audioData.length / 16000).toFixed(2)}s)`);
 
-      // Transcribe the audio
-      const result = await transcriber(audioData, {
-        language: 'en',
-        task: 'transcribe',
-      });
+      // Transcribe the audio (no language/task options for English-only model)
+      const result = await transcriber(audioData);
 
       setStatus('ready');
 
