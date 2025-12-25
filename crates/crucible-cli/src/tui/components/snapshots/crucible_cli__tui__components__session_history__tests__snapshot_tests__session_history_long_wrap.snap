@@ -1,0 +1,28 @@
+---
+source: crates/crucible-cli/src/tui/components/session_history.rs
+expression: terminal.backend()
+---
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+" ● This is a very long message that should wrap across multiple lines. The      "
+"   widget needs to handle word wrapping correctly to ensure that content is     "
+"   displayed properly within the viewport width constraints.                    "
