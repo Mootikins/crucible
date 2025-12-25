@@ -43,13 +43,18 @@ export const WhisperProvider: ParentComponent = (props) => {
         pipeline = transformers.pipeline;
       }
 
+      // Detect WebGPU support
+      const hasWebGPU = typeof navigator !== 'undefined' && 'gpu' in navigator;
+      const device = hasWebGPU ? 'webgpu' : 'wasm';
+      console.log(`Loading Whisper with device: ${device}`);
+
       // Load the Whisper model
       // Using whisper-tiny for faster loading, can upgrade to whisper-base for better quality
       transcriber = await pipeline(
         'automatic-speech-recognition',
         'onnx-community/whisper-tiny.en',
         {
-          device: 'webgpu', // Use WebGPU if available, falls back to WASM
+          device,
           progress_callback: (progressData: { progress?: number; status?: string }) => {
             if (progressData.progress !== undefined) {
               setProgress(Math.round(progressData.progress));
