@@ -1989,6 +1989,8 @@ allowed_tools = ["search_*"]
                 model: Some("gpt-4o".to_string()),
                 enable_markdown: true,
                 provider: crate::components::LlmProvider::OpenAI,
+                agent_preference: crate::components::AgentPreference::default(),
+                internal_backend: crate::components::InternalBackend::default(),
                 endpoint: Some("https://api.openai.com/v1".to_string()),
                 temperature: Some(0.8),
                 max_tokens: Some(4096),
