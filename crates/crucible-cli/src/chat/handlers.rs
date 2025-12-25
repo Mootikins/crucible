@@ -703,6 +703,80 @@ impl CommandHandler for ModelsHandler {
     }
 }
 
+/// Agent handler - show current agent and available alternatives
+///
+/// Displays the currently active agent and lists alternatives.
+/// Agent switching requires a new session (can't switch mid-conversation).
+pub struct AgentHandler {
+    /// Current agent name
+    current_agent: Arc<std::sync::RwLock<Option<String>>>,
+}
+
+impl AgentHandler {
+    /// Create a new agent handler with the current agent name
+    pub fn new(current_agent: Option<String>) -> Self {
+        Self {
+            current_agent: Arc::new(std::sync::RwLock::new(current_agent)),
+        }
+    }
+
+    /// Update the current agent name
+    pub fn set_current(&self, name: &str) {
+        let mut current = self.current_agent.write().unwrap();
+        *current = Some(name.to_string());
+    }
+}
+
+#[async_trait]
+impl CommandHandler for AgentHandler {
+    async fn execute(&self, args: &str, _ctx: &mut dyn ChatContext) -> ChatResult<()> {
+        let args = args.trim();
+        let current = self.current_agent.read().unwrap();
+        let current_name = current.as_deref().unwrap_or("unknown");
+
+        // Get known ACP agents
+        let acp_agents = crucible_acp::get_known_agents();
+        let acp_names: Vec<&str> = acp_agents.iter().map(|a| a.name.as_str()).collect();
+
+        if args.is_empty() {
+            // List current and available agents
+            println!("\n{}", "Agent Information:".bright_cyan().bold());
+            println!("  {} {}", "Current:".white(), current_name.bright_white().bold());
+            println!();
+            println!("  {}", "Available agents:".white());
+            println!("    {} {}", "•".green(), "internal".white());
+            for name in &acp_names {
+                let indicator = if *name == current_name { "✓".green() } else { "•".dimmed() };
+                println!("    {} {}", indicator, name.white());
+            }
+            println!();
+            println!("  {}", "Use --agent <name> when starting chat to switch agents".dimmed());
+            Ok(())
+        } else {
+            // Attempted agent switch - not supported mid-session
+            Err(ChatError::InvalidInput(
+                "Agent switching requires starting a new chat session. Use: cru chat --agent <name>".to_string()
+            ))
+        }
+    }
+}
+
+/// Handler for /new command - starts a new session with agent picker
+///
+/// This is a placeholder that tells the user to use the TUI.
+/// The actual restart logic is handled in the TUI runner.
+pub struct NewHandler;
+
+#[async_trait]
+impl CommandHandler for NewHandler {
+    async fn execute(&self, _args: &str, _ctx: &mut dyn ChatContext) -> ChatResult<()> {
+        // In TUI mode, the runner handles this directly
+        // This handler exists for completeness in non-TUI contexts
+        println!("\nUse /new in the TUI to start a new session with agent selection.\n");
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -29,6 +29,8 @@ pub enum InputAction {
     ScrollToTop,
     ScrollToBottom,
     CycleMode,
+    HistoryPrev,
+    HistoryNext,
     Cancel,
     Exit,
     None,
@@ -100,9 +102,21 @@ pub fn map_key_event(event: &KeyEvent, state: &TuiState) -> InputAction {
         (KeyCode::PageUp, _) => InputAction::PageUp,
         (KeyCode::PageDown, _) => InputAction::PageDown,
 
-        // Navigation
-        (KeyCode::Up, KeyModifiers::NONE) => InputAction::MovePopupSelection(-1),
-        (KeyCode::Down, KeyModifiers::NONE) => InputAction::MovePopupSelection(1),
+        // Navigation: Up/Down depend on whether popup is active
+        (KeyCode::Up, KeyModifiers::NONE) => {
+            if state.popup.is_some() {
+                InputAction::MovePopupSelection(-1)
+            } else {
+                InputAction::HistoryPrev
+            }
+        }
+        (KeyCode::Down, KeyModifiers::NONE) => {
+            if state.popup.is_some() {
+                InputAction::MovePopupSelection(1)
+            } else {
+                InputAction::HistoryNext
+            }
+        }
         (KeyCode::Char('p'), KeyModifiers::CONTROL) => InputAction::MovePopupSelection(-1),
         (KeyCode::Char('n'), KeyModifiers::CONTROL) => InputAction::MovePopupSelection(1),
         (KeyCode::Left, KeyModifiers::NONE) => InputAction::MoveCursorLeft,
@@ -275,6 +289,48 @@ mod tests {
         let action = map_key_event(&event, &state);
 
         assert_eq!(action, InputAction::InsertChar('a'));
+    }
+}
+
+#[cfg(test)]
+mod history_tests {
+    use super::*;
+
+    #[test]
+    fn test_up_without_popup_recalls_history() {
+        // When no popup is active, Up should recall previous command from history
+        let state = TuiState::new("plan");
+        // popup is None by default
+
+        let event = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        let action = map_key_event(&event, &state);
+
+        assert_eq!(action, InputAction::HistoryPrev);
+    }
+
+    #[test]
+    fn test_down_without_popup_advances_history() {
+        // When no popup is active, Down should go forward in history
+        let state = TuiState::new("plan");
+
+        let event = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        let action = map_key_event(&event, &state);
+
+        assert_eq!(action, InputAction::HistoryNext);
+    }
+
+    #[test]
+    fn test_up_with_popup_moves_selection() {
+        // When popup is active, Up should move popup selection (not history)
+        use crate::tui::state::{PopupKind, PopupState};
+
+        let mut state = TuiState::new("plan");
+        state.popup = Some(PopupState::new(PopupKind::Command));
+
+        let event = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        let action = map_key_event(&event, &state);
+
+        assert_eq!(action, InputAction::MovePopupSelection(-1));
     }
 }
 

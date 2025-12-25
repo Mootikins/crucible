@@ -111,6 +111,11 @@ impl CrucibleAcpClient {
         self
     }
 
+    /// Get the agent name for display
+    pub fn agent_name(&self) -> &str {
+        &self.agent.name
+    }
+
     /// Create a new ACP client with custom chat configuration
     ///
     /// # Arguments

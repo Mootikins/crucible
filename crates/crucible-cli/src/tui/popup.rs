@@ -586,7 +586,7 @@ mod skill_popup_tests {
 /// Returns the canonical list of client-handled slash commands.
 /// These match the RESERVED_COMMANDS list in slash_registry.rs.
 pub fn get_known_commands() -> &'static [&'static str] {
-    &["help", "mode", "clear", "exit", "quit", "search", "context"]
+    &["help", "mode", "clear", "exit", "quit", "search", "context", "agent", "new"]
 }
 
 /// Extract the command name from input (without the leading /)
@@ -672,5 +672,16 @@ mod command_tests {
         assert_eq!(extract_command_name("/help foo bar"), Some("help"));
         assert_eq!(extract_command_name("/mode"), Some("mode"));
         assert_eq!(extract_command_name("not a command"), None);
+    }
+
+    #[test]
+    fn test_agent_command_is_known() {
+        assert!(is_exact_slash_command("/agent"));
+        assert!(is_exact_slash_command("/agent opencode"));
+    }
+
+    #[test]
+    fn test_new_command_is_known() {
+        assert!(is_exact_slash_command("/new"));
     }
 }

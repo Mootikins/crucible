@@ -141,6 +141,14 @@ pub enum InitializedAgent {
 }
 
 impl InitializedAgent {
+    /// Get the display name for this agent type
+    pub fn display_name(&self) -> &str {
+        match self {
+            Self::Acp(client) => client.agent_name(),
+            Self::Internal(_) => "internal",
+        }
+    }
+
     /// Get as AgentHandle trait object for unified usage
     /// Note: For ACP agents, must call spawn() first
     pub fn into_boxed(self) -> Box<dyn AgentHandle> {

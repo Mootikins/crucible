@@ -32,6 +32,12 @@ pub type ChatStream = Pin<Box<dyn Stream<Item = ChatResult<ChatChunk>> + Send>>;
 pub enum StreamingEvent {
     /// Text delta received from LLM
     Delta { text: String, seq: u64 },
+    /// Tool call received from LLM
+    ToolCall {
+        id: Option<String>,
+        name: String,
+        args: serde_json::Value,
+    },
     /// Streaming complete
     Done { full_response: String },
     /// Error during streaming
@@ -84,6 +90,18 @@ impl StreamingTask {
                                 seq += 1;
                             }
                         }
+
+                        // Forward tool calls to the TUI
+                        if let Some(tool_calls) = chunk.tool_calls {
+                            for tc in tool_calls {
+                                let _ = tx.send(StreamingEvent::ToolCall {
+                                    id: tc.id,
+                                    name: tc.name,
+                                    args: tc.arguments.unwrap_or(serde_json::Value::Null),
+                                });
+                            }
+                        }
+
                         if chunk.done {
                             break;
                         }
@@ -245,5 +263,60 @@ mod tests {
 
         let e2 = rx.recv().await.unwrap();
         assert!(matches!(&e2, StreamingEvent::Error { message } if message.contains("Connection")));
+    }
+
+    #[tokio::test]
+    async fn test_streaming_task_forwards_tool_calls() {
+        use crucible_core::traits::chat::ChatToolCall;
+        use futures::stream;
+        use serde_json::json;
+
+        let (tx, mut rx) = create_streaming_channel();
+
+        let tool_call = ChatToolCall {
+            id: Some("call_123".to_string()),
+            name: "read_file".to_string(),
+            arguments: Some(json!({"path": "/test.txt"})),
+        };
+
+        let chunks: Vec<ChatResult<ChatChunk>> = vec![
+            Ok(ChatChunk {
+                delta: "Let me read that file.".to_string(),
+                done: false,
+                tool_calls: None,
+            }),
+            Ok(ChatChunk {
+                delta: "".to_string(),
+                done: false,
+                tool_calls: Some(vec![tool_call]),
+            }),
+            Ok(ChatChunk {
+                delta: "".to_string(),
+                done: true,
+                tool_calls: None,
+            }),
+        ];
+        let stream = stream::iter(chunks);
+
+        let handle = StreamingTask::spawn(tx, Box::pin(stream));
+        handle.await.unwrap();
+
+        // First event: text delta
+        let e1 = rx.recv().await.unwrap();
+        assert!(matches!(e1, StreamingEvent::Delta { .. }));
+
+        // Second event: tool call
+        let e2 = rx.recv().await.unwrap();
+        match e2 {
+            StreamingEvent::ToolCall { name, args, .. } => {
+                assert_eq!(name, "read_file");
+                assert_eq!(args["path"], "/test.txt");
+            }
+            other => panic!("Expected ToolCall event, got {:?}", other),
+        }
+
+        // Third event: done
+        let e3 = rx.recv().await.unwrap();
+        assert!(matches!(e3, StreamingEvent::Done { .. }));
     }
 }
