@@ -524,17 +524,17 @@ fn create_test_kiln_scenario() -> Vec<DocumentInfo> {
     ]
 }
 
-/// Integration test for user vault (optional, requires CRUCIBLE_KILN_PATH)
+/// Integration test for user vault (optional, requires TEST_VAULT_PATH)
 #[tokio::test]
-#[ignore = "Requires CRUCIBLE_KILN_PATH environment variable"]
+#[ignore = "Requires TEST_VAULT_PATH environment variable"]
 async fn test_user_vault_clustering() {
     // This test allows developers to test clustering on their own vault
-    // Run with: CRUCIBLE_KILN_PATH=/path/to/your/vault cargo test -- --ignored test_user_vault_clustering
+    // Run with: TEST_VAULT_PATH=/path/to/your/vault cargo test -- --ignored test_user_vault_clustering
 
-    let vault_path = match std::env::var("CRUCIBLE_KILN_PATH") {
+    let vault_path = match std::env::var("TEST_VAULT_PATH") {
         Ok(path) => PathBuf::from(path),
         Err(_) => {
-            println!("Skipping test - CRUCIBLE_KILN_PATH not set");
+            println!("Skipping test - TEST_VAULT_PATH not set");
             return;
         }
     };
@@ -636,12 +636,12 @@ async fn test_user_vault_clustering() {
 
 /// Integration test for user vault with different algorithms
 #[tokio::test]
-#[ignore = "Requires CRUCIBLE_KILN_PATH environment variable"]
+#[ignore = "Requires TEST_VAULT_PATH environment variable"]
 async fn test_user_vault_algorithm_comparison() {
-    let vault_path = match std::env::var("CRUCIBLE_KILN_PATH") {
+    let vault_path = match std::env::var("TEST_VAULT_PATH") {
         Ok(path) => PathBuf::from(path),
         Err(_) => {
-            println!("Skipping test - CRUCIBLE_KILN_PATH not set");
+            println!("Skipping test - TEST_VAULT_PATH not set");
             return;
         }
     };

@@ -661,10 +661,12 @@ impl CliAppConfig {
     /// Load CLI configuration from file with env var and CLI flag overrides
     ///
     /// Priority (highest to lowest):
-    /// 1. CLI flags (--embedding-url, --embedding-model)
-    /// 2. Environment variables (CRUCIBLE_KILN_PATH, CRUCIBLE_EMBEDDING_URL, CRUCIBLE_EMBEDDING_MODEL)
-    /// 3. Config file (~/.config/crucible/config.toml)
-    /// 4. Default values
+    /// 1. CLI flags (--kiln-path, --embedding-url, --embedding-model)
+    /// 2. Config file (~/.config/crucible/config.toml)
+    /// 3. Default values
+    ///
+    /// Note: API keys are read from environment variables specified in config
+    /// (e.g., `api_key_env = "OPENAI_API_KEY"`)
     pub fn load(
         config_file: Option<std::path::PathBuf>,
         embedding_url: Option<String>,
@@ -718,9 +720,6 @@ impl CliAppConfig {
             Self::default()
         };
 
-        // Apply environment variable overrides (priority 2)
-        Self::apply_env_overrides(&mut config);
-
         // Apply CLI flag overrides (priority 1 - highest)
         if let Some(url) = embedding_url {
             debug!("Overriding embedding.api_url from CLI flag: {}", url);
@@ -734,64 +733,6 @@ impl CliAppConfig {
         Ok(config)
     }
 
-    /// Apply environment variable overrides to configuration
-    ///
-    /// Supported env vars:
-    /// - CRUCIBLE_KILN_PATH: Path to the kiln (Obsidian vault)
-    /// - CRUCIBLE_EMBEDDING_URL: Embedding provider API URL
-    /// - CRUCIBLE_EMBEDDING_MODEL: Embedding model name
-    /// - CRUCIBLE_EMBEDDING_PROVIDER: Embedding provider type (fastembed, ollama, openai)
-    fn apply_env_overrides(config: &mut Self) {
-        // Kiln path override
-        if let Ok(kiln_path) = std::env::var("CRUCIBLE_KILN_PATH") {
-            debug!("Overriding kiln_path from env: {}", kiln_path);
-            config.kiln_path = std::path::PathBuf::from(kiln_path);
-        }
-
-        // Embedding API URL override
-        if let Ok(url) = std::env::var("CRUCIBLE_EMBEDDING_URL") {
-            debug!("Overriding embedding.api_url from env: {}", url);
-            config.embedding.api_url = Some(url);
-        }
-
-        // Embedding model override
-        if let Ok(model) = std::env::var("CRUCIBLE_EMBEDDING_MODEL") {
-            debug!("Overriding embedding.model from env: {}", model);
-            config.embedding.model = Some(model);
-        }
-
-        // Embedding provider override
-        if let Ok(provider) = std::env::var("CRUCIBLE_EMBEDDING_PROVIDER") {
-            debug!("Overriding embedding.provider from env: {}", provider);
-            config.embedding.provider = match provider.to_lowercase().as_str() {
-                "fastembed" => EmbeddingProviderType::FastEmbed,
-                "ollama" => EmbeddingProviderType::Ollama,
-                "openai" => EmbeddingProviderType::OpenAI,
-                "anthropic" => EmbeddingProviderType::Anthropic,
-                "cohere" => EmbeddingProviderType::Cohere,
-                "vertexai" => EmbeddingProviderType::VertexAI,
-                "custom" => EmbeddingProviderType::Custom,
-                "mock" => EmbeddingProviderType::Mock,
-                "burn" => EmbeddingProviderType::Burn,
-                "llamacpp" | "llama-cpp" | "llama_cpp" => EmbeddingProviderType::LlamaCpp,
-                _ => {
-                    warn!(
-                        "Unknown embedding provider '{}', keeping current: {:?}",
-                        provider, config.embedding.provider
-                    );
-                    config.embedding.provider.clone()
-                }
-            };
-        }
-
-        // Max concurrent embedding jobs override
-        if let Ok(max_concurrent) = std::env::var("CRUCIBLE_EMBEDDING_MAX_CONCURRENT") {
-            if let Ok(n) = max_concurrent.parse::<usize>() {
-                debug!("Overriding embedding.max_concurrent from env: {}", n);
-                config.embedding.max_concurrent = Some(n);
-            }
-        }
-    }
 
     /// Log the effective configuration for debugging
     pub fn log_config(&self) {
@@ -884,20 +825,6 @@ impl CliAppConfig {
             .default_value("acp.default_agent")
             .default_value("chat.model")
             .default_value("cli.verbose");
-
-        // Check environment overrides
-        if std::env::var("CRUCIBLE_KILN_PATH").is_ok() {
-            builder = builder.env_value("kiln_path", "CRUCIBLE_KILN_PATH");
-        }
-        if std::env::var("CRUCIBLE_EMBEDDING_PROVIDER").is_ok() {
-            builder = builder.env_value("embedding.provider", "CRUCIBLE_EMBEDDING_PROVIDER");
-        }
-        if std::env::var("CRUCIBLE_EMBEDDING_MODEL").is_ok() {
-            builder = builder.env_value("embedding.model", "CRUCIBLE_EMBEDDING_MODEL");
-        }
-        if std::env::var("CRUCIBLE_EMBEDDING_URL").is_ok() {
-            builder = builder.env_value("embedding.api_url", "CRUCIBLE_EMBEDDING_URL");
-        }
 
         let source_map = builder.build();
 
@@ -1009,20 +936,6 @@ impl CliAppConfig {
             .default_value("acp.default_agent")
             .default_value("chat.model")
             .default_value("cli.verbose");
-
-        // Check environment overrides
-        if std::env::var("CRUCIBLE_KILN_PATH").is_ok() {
-            builder = builder.env_value("kiln_path", "CRUCIBLE_KILN_PATH");
-        }
-        if std::env::var("CRUCIBLE_EMBEDDING_PROVIDER").is_ok() {
-            builder = builder.env_value("embedding.provider", "CRUCIBLE_EMBEDDING_PROVIDER");
-        }
-        if std::env::var("CRUCIBLE_EMBEDDING_MODEL").is_ok() {
-            builder = builder.env_value("embedding.model", "CRUCIBLE_EMBEDDING_MODEL");
-        }
-        if std::env::var("CRUCIBLE_EMBEDDING_URL").is_ok() {
-            builder = builder.env_value("embedding.api_url", "CRUCIBLE_EMBEDDING_URL");
-        }
 
         let source_map = builder.build();
 
