@@ -12,6 +12,7 @@ vi.mock('@/hooks/useMediaRecorder', () => ({
   useMediaRecorder: () => ({
     isRecording: () => false,
     error: () => null,
+    audioLevel: () => 0,
     startRecording: mockStartRecording,
     stopRecording: mockStopRecording,
   }),
