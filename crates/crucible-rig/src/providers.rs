@@ -312,17 +312,16 @@ mod tests {
 
     #[test]
     fn test_create_openai_client_missing_api_key() {
-        // Ensure env var is not set
-        std::env::remove_var("TEST_OPENAI_KEY_MISSING");
-
+        // With the new {env:VAR} system, api_key is None if no key is provided
+        // (env var resolution happens at config load time, not client creation time)
         let config = LlmProviderConfig {
             provider_type: LlmProviderType::OpenAI,
-            endpoint: None,
+            endpoint: None, // Real OpenAI endpoint requires API key
             default_model: Some("gpt-4o".into()),
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key: Some("TEST_OPENAI_KEY_MISSING".into()),
+            api_key: None, // No API key provided
         };
 
         let client = create_client(&config);
@@ -349,9 +348,8 @@ mod tests {
 
     #[test]
     fn test_create_anthropic_client_missing_api_key() {
-        // Ensure env var is not set
-        std::env::remove_var("TEST_ANTHROPIC_KEY_MISSING");
-
+        // With the new {env:VAR} system, api_key is None if no key is provided
+        // (env var resolution happens at config load time, not client creation time)
         let config = LlmProviderConfig {
             provider_type: LlmProviderType::Anthropic,
             endpoint: None,
@@ -359,7 +357,7 @@ mod tests {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key: Some("TEST_ANTHROPIC_KEY_MISSING".into()),
+            api_key: None, // No API key provided
         };
 
         let client = create_client(&config);
@@ -431,8 +429,7 @@ mod tests {
     #[test]
     fn test_real_openai_requires_api_key() {
         // Real OpenAI API (default endpoint) requires API key
-        std::env::remove_var("OPENAI_API_KEY_TEST_MISSING");
-
+        // With the new {env:VAR} system, api_key is None if no key is provided
         let config = LlmProviderConfig {
             provider_type: LlmProviderType::OpenAI,
             endpoint: None, // Uses default https://api.openai.com/v1
@@ -440,7 +437,7 @@ mod tests {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
-            api_key: Some("OPENAI_API_KEY_TEST_MISSING".into()),
+            api_key: None, // No API key provided
         };
 
         let client = create_client(&config);
