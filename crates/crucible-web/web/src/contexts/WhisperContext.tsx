@@ -73,6 +73,46 @@ export const WhisperProvider: ParentComponent = (props) => {
     }
   };
 
+  // Convert audio blob to Float32Array at 16kHz (Whisper's expected format)
+  const decodeAudioBlob = async (blob: Blob): Promise<Float32Array> => {
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioContext = new AudioContext({ sampleRate: 16000 });
+
+    try {
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+      // Get mono channel (use first channel or mix down)
+      let audioData: Float32Array;
+      if (audioBuffer.numberOfChannels === 1) {
+        audioData = audioBuffer.getChannelData(0);
+      } else {
+        // Mix stereo to mono
+        const left = audioBuffer.getChannelData(0);
+        const right = audioBuffer.getChannelData(1);
+        audioData = new Float32Array(left.length);
+        for (let i = 0; i < left.length; i++) {
+          audioData[i] = (left[i] + right[i]) / 2;
+        }
+      }
+
+      // Resample to 16kHz if needed
+      if (audioBuffer.sampleRate !== 16000) {
+        const ratio = audioBuffer.sampleRate / 16000;
+        const newLength = Math.round(audioData.length / ratio);
+        const resampled = new Float32Array(newLength);
+        for (let i = 0; i < newLength; i++) {
+          const srcIndex = Math.floor(i * ratio);
+          resampled[i] = audioData[srcIndex];
+        }
+        return resampled;
+      }
+
+      return audioData;
+    } finally {
+      await audioContext.close();
+    }
+  };
+
   const transcribe = async (audioBlob: Blob): Promise<string> => {
     if (status() !== 'ready' || !transcriber) {
       // Auto-load model if not ready
@@ -86,11 +126,12 @@ export const WhisperProvider: ParentComponent = (props) => {
     setStatus('transcribing');
 
     try {
-      // Convert Blob to ArrayBuffer for transcription
-      const arrayBuffer = await audioBlob.arrayBuffer();
+      // Decode audio blob to Float32Array at 16kHz
+      const audioData = await decodeAudioBlob(audioBlob);
+      console.log(`Audio decoded: ${audioData.length} samples at 16kHz (${(audioData.length / 16000).toFixed(2)}s)`);
 
       // Transcribe the audio
-      const result = await transcriber(arrayBuffer, {
+      const result = await transcriber(audioData, {
         language: 'en',
         task: 'transcribe',
       });
