@@ -25,23 +25,25 @@ export function useMediaRecorder(): UseMediaRecorderResult {
   let audioChunks: Blob[] = [];
   let resolveStop: ((blob: Blob) => void) | null = null;
 
-  // Analyze audio levels in real-time
+  // Analyze audio levels in real-time using peak detection
   const updateAudioLevel = () => {
     if (!analyser) return;
 
     const dataArray = new Uint8Array(analyser.fftSize);
     analyser.getByteTimeDomainData(dataArray);
 
-    // Calculate RMS (root mean square) for a smoother level
-    let sum = 0;
+    // Peak detection - find max deviation from center (128)
+    let peak = 0;
     for (let i = 0; i < dataArray.length; i++) {
-      const value = (dataArray[i] - 128) / 128; // Normalize to -1 to 1
-      sum += value * value;
+      const amplitude = Math.abs(dataArray[i] - 128);
+      if (amplitude > peak) {
+        peak = amplitude;
+      }
     }
-    const rms = Math.sqrt(sum / dataArray.length);
 
-    // Normalize to 0-1, with some amplification for better visual response
-    const level = Math.min(1, rms * 3);
+    // Normalize peak to 0-1, with amplification for better visual response
+    // Peak range is 0-128, so divide by 128 and amplify
+    const level = Math.min(1, (peak / 128) * 2);
     setAudioLevel(level);
 
     if (isRecording()) {
@@ -64,8 +66,8 @@ export function useMediaRecorder(): UseMediaRecorderResult {
       // Set up audio analysis
       audioContext = new AudioContext();
       analyser = audioContext.createAnalyser();
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.5;
+      analyser.fftSize = 128; // Smaller = faster response
+      analyser.smoothingTimeConstant = 0.1; // Less smoothing = more reactive
 
       const source = audioContext.createMediaStreamSource(stream);
       source.connect(analyser);
