@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, screen } from '@solidjs/testing-library';
+import { createSignal } from 'solid-js';
 import { MicButton } from './MicButton';
 
 // Mock the hooks and contexts
@@ -7,16 +8,6 @@ const mockStartRecording = vi.fn();
 const mockStopRecording = vi.fn();
 const mockTranscribe = vi.fn();
 const mockLoadModel = vi.fn();
-
-vi.mock('@/hooks/useMediaRecorder', () => ({
-  useMediaRecorder: () => ({
-    isRecording: () => false,
-    error: () => null,
-    audioLevel: () => 0,
-    startRecording: mockStartRecording,
-    stopRecording: mockStopRecording,
-  }),
-}));
 
 vi.mock('@/contexts/WhisperContext', () => ({
   useWhisper: () => ({
@@ -33,6 +24,17 @@ vi.mock('@/lib/sounds', () => ({
   playRecordingEndSound: vi.fn(),
 }));
 
+// Helper to create test props
+const createTestProps = () => {
+  const [isRecording] = createSignal(false);
+  return {
+    onTranscription: vi.fn(),
+    startRecording: mockStartRecording,
+    stopRecording: mockStopRecording,
+    isRecording,
+  };
+};
+
 describe('MicButton', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -42,22 +44,22 @@ describe('MicButton', () => {
   });
 
   it('renders mic button', () => {
-    const onTranscription = vi.fn();
-    render(() => <MicButton onTranscription={onTranscription} />);
+    const props = createTestProps();
+    render(() => <MicButton {...props} />);
 
     expect(screen.getByTestId('mic-button')).toBeInTheDocument();
   });
 
   it('starts in idle state', () => {
-    const onTranscription = vi.fn();
-    render(() => <MicButton onTranscription={onTranscription} />);
+    const props = createTestProps();
+    render(() => <MicButton {...props} />);
 
     expect(screen.getByTestId('mic-button')).toHaveAttribute('data-state', 'idle');
   });
 
   it('shows recording state on mouseDown', async () => {
-    const onTranscription = vi.fn();
-    render(() => <MicButton onTranscription={onTranscription} />);
+    const props = createTestProps();
+    render(() => <MicButton {...props} />);
 
     const button = screen.getByTestId('mic-button');
     await fireEvent.mouseDown(button);
@@ -66,10 +68,10 @@ describe('MicButton', () => {
   });
 
   it('calls onTranscription with text after recording', async () => {
-    const onTranscription = vi.fn();
     mockTranscribe.mockResolvedValue('hello world');
+    const props = createTestProps();
 
-    render(() => <MicButton onTranscription={onTranscription} />);
+    render(() => <MicButton {...props} />);
 
     const button = screen.getByTestId('mic-button');
 
@@ -82,13 +84,13 @@ describe('MicButton', () => {
 
     // Wait for transcription
     await vi.waitFor(() => {
-      expect(onTranscription).toHaveBeenCalledWith('hello world');
+      expect(props.onTranscription).toHaveBeenCalledWith('hello world');
     });
   });
 
   it('shows correct title for hold-to-talk', () => {
-    const onTranscription = vi.fn();
-    render(() => <MicButton onTranscription={onTranscription} />);
+    const props = createTestProps();
+    render(() => <MicButton {...props} />);
 
     expect(screen.getByTestId('mic-button')).toHaveAttribute(
       'title',
@@ -97,17 +99,17 @@ describe('MicButton', () => {
   });
 
   it('is disabled when disabled prop is true', () => {
-    const onTranscription = vi.fn();
-    render(() => <MicButton onTranscription={onTranscription} disabled={true} />);
+    const props = createTestProps();
+    render(() => <MicButton {...props} disabled={true} />);
 
     expect(screen.getByTestId('mic-button')).toBeDisabled();
   });
 
   it('handles recording errors', async () => {
     mockStartRecording.mockRejectedValue(new Error('Mic access denied'));
+    const props = createTestProps();
 
-    const onTranscription = vi.fn();
-    render(() => <MicButton onTranscription={onTranscription} />);
+    render(() => <MicButton {...props} />);
 
     const button = screen.getByTestId('mic-button');
     await fireEvent.mouseDown(button);
@@ -119,9 +121,9 @@ describe('MicButton', () => {
 
   it('handles transcription errors', async () => {
     mockTranscribe.mockRejectedValue(new Error('Transcription failed'));
+    const props = createTestProps();
 
-    const onTranscription = vi.fn();
-    render(() => <MicButton onTranscription={onTranscription} />);
+    render(() => <MicButton {...props} />);
 
     const button = screen.getByTestId('mic-button');
 
@@ -135,16 +137,16 @@ describe('MicButton', () => {
 
   it('does not call onTranscription for empty transcripts', async () => {
     mockTranscribe.mockResolvedValue('   '); // Whitespace only
+    const props = createTestProps();
 
-    const onTranscription = vi.fn();
-    render(() => <MicButton onTranscription={onTranscription} />);
+    render(() => <MicButton {...props} />);
 
     const button = screen.getByTestId('mic-button');
     await fireEvent.mouseDown(button);
     await fireEvent.mouseUp(button);
 
     await vi.waitFor(() => {
-      expect(onTranscription).not.toHaveBeenCalled();
+      expect(props.onTranscription).not.toHaveBeenCalled();
     });
   });
 });
