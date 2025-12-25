@@ -1,10 +1,12 @@
 import { Component, createSignal } from 'solid-js';
 import { useChat } from '@/contexts/ChatContext';
+import { useMediaRecorder } from '@/hooks/useMediaRecorder';
 import { MicButton } from './MicButton';
 
 export const ChatInput: Component = () => {
   const { sendMessage, isLoading } = useChat();
   const [input, setInput] = createSignal('');
+  const { isRecording, audioLevel, startRecording, stopRecording } = useMediaRecorder();
 
   const handleSubmit = async (e: Event) => {
     e.preventDefault();
@@ -33,13 +35,29 @@ export const ChatInput: Component = () => {
     });
   };
 
+  // Gradient glow intensity based on audio level
+  const glowIntensity = () => audioLevel() * 30; // 0-30px blur
+  const glowSpread = () => audioLevel() * 15; // 0-15px spread
+  const glowOpacity = () => 0.3 + audioLevel() * 0.7; // 0.3-1.0 opacity
+
+  const containerStyle = () => {
+    if (!isRecording()) return {};
+    return {
+      'box-shadow': `0 0 ${glowIntensity()}px ${glowSpread()}px rgba(59, 130, 246, ${glowOpacity()})`,
+      'border-color': `rgba(59, 130, 246, ${0.5 + audioLevel() * 0.5})`,
+    };
+  };
+
   return (
     <form
       onSubmit={handleSubmit}
       class="border-t border-neutral-800 p-4"
       data-testid="chat-input-form"
     >
-      <div class="flex items-end gap-2 bg-neutral-900 rounded-xl p-2">
+      <div
+        class="relative flex items-end gap-2 bg-neutral-900 rounded-xl p-2 border-2 border-transparent transition-[border-color]"
+        style={containerStyle()}
+      >
         <textarea
           value={input()}
           onInput={(e) => setInput(e.currentTarget.value)}
@@ -54,6 +72,9 @@ export const ChatInput: Component = () => {
         <MicButton
           onTranscription={handleTranscription}
           disabled={isLoading()}
+          startRecording={startRecording}
+          stopRecording={stopRecording}
+          isRecording={isRecording}
         />
 
         <button

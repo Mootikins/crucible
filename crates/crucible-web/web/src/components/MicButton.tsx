@@ -1,20 +1,21 @@
-import { Component, createSignal, Show } from 'solid-js';
-import { useMediaRecorder } from '@/hooks/useMediaRecorder';
+import { Component, createSignal, Show, Accessor } from 'solid-js';
 import { useWhisper } from '@/contexts/WhisperContext';
 import { playRecordingStartSound, playRecordingEndSound } from '@/lib/sounds';
-import { VolumeGlow } from './VolumeMeter';
 
 interface MicButtonProps {
   onTranscription: (text: string) => void;
   disabled?: boolean;
+  // Recording controls passed from parent (ChatInput owns the recorder)
+  startRecording: () => Promise<void>;
+  stopRecording: () => Promise<Blob>;
+  isRecording: Accessor<boolean>;
 }
 
-type RecordingState = 'idle' | 'recording' | 'processing' | 'error';
+export type RecordingState = 'idle' | 'recording' | 'processing' | 'error';
 
 export const MicButton: Component<MicButtonProps> = (props) => {
   const [state, setState] = createSignal<RecordingState>('idle');
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
-  const { isRecording, error: recorderError, audioLevel, startRecording, stopRecording } = useMediaRecorder();
   const { status: whisperStatus, transcribe, loadModel, progress, error: whisperError } = useWhisper();
 
   // Preload model on first interaction
@@ -38,7 +39,7 @@ export const MicButton: Component<MicButtonProps> = (props) => {
     ensureModelLoaded();
 
     try {
-      await startRecording();
+      await props.startRecording();
       playRecordingStartSound();
       setState('recording');
     } catch (err) {
@@ -63,7 +64,7 @@ export const MicButton: Component<MicButtonProps> = (props) => {
     playRecordingEndSound();
 
     try {
-      const audioBlob = await stopRecording();
+      const audioBlob = await props.stopRecording();
 
       // Ensure model is ready
       if (whisperStatus() !== 'ready') {
@@ -96,9 +97,9 @@ export const MicButton: Component<MicButtonProps> = (props) => {
   const stateStyles = () => {
     switch (state()) {
       case 'recording':
-        return 'bg-red-600'; // No animate-pulse, we use VolumeGlow instead
+        return 'bg-white'; // Inverted: white bg, black icon
       case 'processing':
-        return 'bg-yellow-600';
+        return 'bg-blue-500';
       case 'error':
         return 'bg-red-800';
       default:
@@ -106,6 +107,10 @@ export const MicButton: Component<MicButtonProps> = (props) => {
           ? 'bg-blue-600'
           : 'bg-neutral-700 hover:bg-neutral-600';
     }
+  };
+
+  const iconColor = () => {
+    return state() === 'recording' ? 'text-neutral-900' : 'text-white';
   };
 
   const getTitle = () => {
@@ -141,33 +146,35 @@ export const MicButton: Component<MicButtonProps> = (props) => {
       data-state={state()}
       title={getTitle()}
     >
-      {/* Audio level glow effect */}
-      <VolumeGlow level={audioLevel} active={state() === 'recording'} />
-
       <Show when={state() === 'error'}>
         {/* Error icon - exclamation mark */}
         <svg
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 24 24"
           fill="currentColor"
-          class="w-5 h-5 text-white"
+          class={`w-5 h-5 ${iconColor()}`}
         >
           <path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zM12 8.25a.75.75 0 01.75.75v3.75a.75.75 0 01-1.5 0V9a.75.75 0 01.75-.75zm0 8.25a.75.75 0 100-1.5.75.75 0 000 1.5z" clip-rule="evenodd" />
         </svg>
       </Show>
       <Show when={state() !== 'error' && (state() === 'processing' || whisperStatus() === 'loading')}>
-        <span class="flex items-center gap-0.5 w-5 h-5 justify-center">
-          <span class="w-1 h-1 bg-white rounded-full animate-bounce" />
-          <span class="w-1 h-1 bg-white rounded-full animate-bounce delay-75" />
-          <span class="w-1 h-1 bg-white rounded-full animate-bounce delay-150" />
-        </span>
+        {/* Spinner */}
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          class={`w-5 h-5 ${iconColor()} animate-spin`}
+        >
+          <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" stroke-opacity="0.25" />
+          <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        </svg>
       </Show>
       <Show when={state() !== 'error' && state() !== 'processing' && whisperStatus() !== 'loading'}>
         <svg
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 24 24"
           fill="currentColor"
-          class="w-5 h-5 text-white"
+          class={`w-5 h-5 ${iconColor()}`}
         >
           <path d="M8.25 4.5a3.75 3.75 0 117.5 0v8.25a3.75 3.75 0 11-7.5 0V4.5z" />
           <path d="M6 10.5a.75.75 0 01.75.75v1.5a5.25 5.25 0 1010.5 0v-1.5a.75.75 0 011.5 0v1.5a6.751 6.751 0 01-6 6.709v2.291h3a.75.75 0 010 1.5h-7.5a.75.75 0 010-1.5h3v-2.291a6.751 6.751 0 01-6-6.709v-1.5A.75.75 0 016 10.5z" />
