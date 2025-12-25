@@ -39,8 +39,11 @@ pub type RigResult<T> = Result<T, RigError>;
 pub enum RigClient {
     /// Ollama client for local LLM inference
     Ollama(ollama::Client),
-    /// OpenAI client
+    /// OpenAI client (new responses API)
     OpenAI(openai::Client),
+    /// OpenAI-compatible client (standard /chat/completions API)
+    /// Use this for llama.cpp, vLLM, or other OpenAI-compatible servers
+    OpenAICompat(openai::CompletionsClient),
     /// Anthropic client
     Anthropic(anthropic::Client),
 }
@@ -51,6 +54,7 @@ impl RigClient {
         match self {
             RigClient::Ollama(_) => "ollama",
             RigClient::OpenAI(_) => "openai",
+            RigClient::OpenAICompat(_) => "openai-compat",
             RigClient::Anthropic(_) => "anthropic",
         }
     }
@@ -75,6 +79,18 @@ impl RigClient {
     pub fn as_anthropic(&self) -> Option<&anthropic::Client> {
         match self {
             RigClient::Anthropic(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// Get the inner OpenAI-compatible client, if this is an OpenAI-compatible client.
+    ///
+    /// This client uses the standard `/chat/completions` API rather than the
+    /// newer "responses" API, making it compatible with llama.cpp, vLLM,
+    /// and other OpenAI-compatible servers.
+    pub fn as_openai_compat(&self) -> Option<&openai::CompletionsClient> {
+        match self {
+            RigClient::OpenAICompat(c) => Some(c),
             _ => None,
         }
     }
@@ -145,32 +161,46 @@ fn create_ollama_client(config: &LlmProviderConfig) -> RigResult<RigClient> {
 }
 
 /// Create an OpenAI client
+///
+/// For custom endpoints (llama.cpp, vLLM, etc.), this returns an OpenAICompat
+/// client using the standard `/chat/completions` API. For the real OpenAI API,
+/// it returns the standard OpenAI client.
 fn create_openai_client(config: &LlmProviderConfig) -> RigResult<RigClient> {
-    let api_key = config.api_key().ok_or_else(|| RigError::MissingApiKey {
-        provider: "OpenAI".into(),
-        env_var: config
-            .api_key_env
-            .clone()
-            .unwrap_or_else(|| "OPENAI_API_KEY".into()),
-    })?;
-
     let endpoint = config.endpoint();
+    let is_real_openai = endpoint == "https://api.openai.com/v1";
 
-    tracing::debug!(endpoint = %endpoint, "Creating OpenAI client");
+    tracing::debug!(endpoint = %endpoint, is_real_openai, "Creating OpenAI client");
 
-    // Use builder pattern
-    let mut builder = openai::Client::builder().api_key(&api_key);
+    if is_real_openai {
+        // Real OpenAI - requires API key, uses responses API
+        let api_key = config.api_key().ok_or_else(|| RigError::MissingApiKey {
+            provider: "OpenAI".into(),
+            env_var: config
+                .api_key_env
+                .clone()
+                .unwrap_or_else(|| "OPENAI_API_KEY".into()),
+        })?;
 
-    // Check if custom base URL
-    if endpoint != "https://api.openai.com/v1" {
-        builder = builder.base_url(&endpoint);
+        let client = openai::Client::builder()
+            .api_key(&api_key)
+            .build()
+            .map_err(|e| RigError::ClientCreation(e.to_string()))?;
+
+        Ok(RigClient::OpenAI(client))
+    } else {
+        // OpenAI-compatible endpoint (llama.cpp, vLLM, etc.)
+        // Use CompletionsClient for standard /chat/completions API
+        // API key is optional for local servers
+        let api_key = config.api_key().unwrap_or_else(|| "not-needed".to_string());
+
+        let client = openai::CompletionsClient::builder()
+            .api_key(&api_key)
+            .base_url(&endpoint)
+            .build()
+            .map_err(|e| RigError::ClientCreation(e.to_string()))?;
+
+        Ok(RigClient::OpenAICompat(client))
     }
-
-    let client = builder
-        .build()
-        .map_err(|e| RigError::ClientCreation(e.to_string()))?;
-
-    Ok(RigClient::OpenAI(client))
 }
 
 /// Create an Anthropic client
@@ -356,5 +386,65 @@ mod tests {
         let anthropic = create_client(&anthropic_config_with_key()).unwrap();
         assert_eq!(anthropic.provider_name(), "anthropic");
         std::env::remove_var("TEST_ANTHROPIC_KEY");
+    }
+
+    #[test]
+    fn test_create_openai_compat_client_with_custom_endpoint() {
+        // OpenAI with custom endpoint should return OpenAICompat variant
+        let config = LlmProviderConfig {
+            provider_type: LlmProviderType::OpenAI,
+            endpoint: Some("https://llama.example.com/v1".into()),
+            default_model: Some("qwen3-8b".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key_env: None, // No API key needed for local servers
+        };
+
+        let client = create_client(&config);
+        assert!(client.is_ok());
+        let client = client.unwrap();
+        assert_eq!(client.provider_name(), "openai-compat");
+        assert!(client.as_openai_compat().is_some());
+        assert!(client.as_openai().is_none());
+    }
+
+    #[test]
+    fn test_create_openai_compat_no_api_key_required() {
+        // OpenAI-compatible endpoints don't require API key
+        let config = LlmProviderConfig {
+            provider_type: LlmProviderType::OpenAI,
+            endpoint: Some("http://localhost:8080/v1".into()),
+            default_model: Some("local-model".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key_env: Some("NONEXISTENT_API_KEY".into()), // Won't fail even if not set
+        };
+
+        // Should succeed without API key
+        let client = create_client(&config);
+        assert!(client.is_ok());
+        assert_eq!(client.unwrap().provider_name(), "openai-compat");
+    }
+
+    #[test]
+    fn test_real_openai_requires_api_key() {
+        // Real OpenAI API (default endpoint) requires API key
+        std::env::remove_var("OPENAI_API_KEY_TEST_MISSING");
+
+        let config = LlmProviderConfig {
+            provider_type: LlmProviderType::OpenAI,
+            endpoint: None, // Uses default https://api.openai.com/v1
+            default_model: Some("gpt-4o".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key_env: Some("OPENAI_API_KEY_TEST_MISSING".into()),
+        };
+
+        let client = create_client(&config);
+        assert!(client.is_err());
+        assert!(matches!(client.unwrap_err(), RigError::MissingApiKey { .. }));
     }
 }

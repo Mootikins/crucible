@@ -311,6 +311,10 @@ async fn create_rig_agent(
             let agent = build_agent_with_tools(&agent_config, &openai_client, workspace_root)?;
             Ok(Box::new(RigAgentHandle::new(agent)))
         }
+        crucible_rig::RigClient::OpenAICompat(compat_client) => {
+            let agent = build_agent_with_tools(&agent_config, &compat_client, workspace_root)?;
+            Ok(Box::new(RigAgentHandle::new(agent)))
+        }
         crucible_rig::RigClient::Anthropic(anthropic_client) => {
             let agent = build_agent_with_tools(&agent_config, &anthropic_client, workspace_root)?;
             Ok(Box::new(RigAgentHandle::new(agent)))
