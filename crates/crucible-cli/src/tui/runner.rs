@@ -634,6 +634,11 @@ impl RatatuiRunner {
                                 if self.supports_restart {
                                     // Request restart with agent picker
                                     self.restart_requested = true;
+                                    // Clear popup/input state before restart (so splash can render)
+                                    self.popup = None;
+                                    self.view.set_popup(None);
+                                    self.view.set_input("");
+                                    self.view.set_cursor_position(0);
                                     self.view.set_status_text("Starting new session...");
                                     return Ok(true); // Exit to trigger restart
                                 } else {
@@ -656,6 +661,8 @@ impl RatatuiRunner {
                 self.view.set_input("");
                 self.view.set_cursor_position(0);
                 self.popup = None;
+                // Sync popup to view immediately (needed for /new to show splash)
+                self.view.set_popup(None);
             }
             InputAction::HistoryPrev => {
                 if !self.history.is_empty() {
@@ -955,6 +962,8 @@ impl RatatuiRunner {
             }
 
             // Restart requested - loop back to show picker again
+            // Clear conversation BEFORE showing picker (is_showing_splash checks this)
+            self.view.state_mut().conversation.clear();
             self.view.set_status_text("Restarting session...");
             self.render_frame(&mut terminal)?;
         }
@@ -1290,5 +1299,140 @@ mod tests {
         let taken = runner.default_selection.take();
         assert!(taken.is_some());
         assert!(runner.default_selection.is_none()); // Now None for restart
+    }
+
+    #[test]
+    fn test_splash_visible_after_restart_with_empty_conversation() {
+        // BUG REPRODUCTION: /new command shows "Restarting session..." but picker doesn't appear
+        // This simulates the state after restart is requested
+        let mut runner =
+            RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+        // Simulate first iteration: consume default_selection
+        runner.with_default_selection(AgentSelection::Acp("opencode".to_string()));
+        let _ = runner.default_selection.take();
+
+        // Simulate restart preparation (what happens at lines 958-961)
+        runner.view.state_mut().conversation.clear();
+        runner.view.show_splash();
+
+        // The splash should be visible
+        assert!(
+            runner.view.is_showing_splash(),
+            "Splash should be visible after restart preparation"
+        );
+
+        // Verify the conditions for splash rendering
+        assert!(
+            runner.view.state().conversation.items().is_empty(),
+            "Conversation should be empty"
+        );
+        assert!(
+            runner.view.state().splash.is_some(),
+            "Splash state should exist"
+        );
+        assert!(
+            runner.view.state().popup.is_none(),
+            "No popup should be active"
+        );
+        assert!(
+            runner.view.state().dialog_stack.is_empty(),
+            "No dialogs should be active"
+        );
+    }
+
+    #[test]
+    fn test_new_command_clears_popup_before_restart() {
+        // BUG: /new command doesn't show picker because popup isn't cleared
+        // When user types "/new", a command popup exists from typing "/".
+        // The /new handler must clear popup BEFORE returning (early return).
+        use crate::tui::state::{PopupKind, PopupState};
+
+        let mut runner =
+            RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+        // Simulate: user typed "/new" which created a command popup
+        runner.view.set_input("/new");
+        runner.view.set_cursor_position(4); // After "/new"
+        runner.popup = Some(PopupState::new(PopupKind::Command));
+        runner.view.set_popup(runner.popup.clone());
+
+        // Verify initial state
+        assert!(runner.view.state().popup.is_some(), "Popup should be set from typing /");
+        assert_eq!(runner.view.cursor_position(), 4, "Cursor at end of /new");
+
+        // Simulate what /new handler does (lines 636-643):
+        // 1. Set restart_requested
+        // 2. Clear popup (MUST happen before early return)
+        // 3. Clear input AND cursor position
+        // 4. Return Ok(true)
+        runner.restart_requested = true;
+        runner.popup = None;
+        runner.view.set_popup(None);
+        runner.view.set_input("");
+        runner.view.set_cursor_position(0);  // Critical: reset cursor!
+
+        // Verify cursor is reset (prevents panic when typing in new session)
+        assert_eq!(runner.view.cursor_position(), 0, "Cursor must be reset to 0");
+
+        // Now simulate restart preparation (lines 963-965 in run_with_factory)
+        runner.view.state_mut().conversation.clear();
+        runner.view.show_splash();
+
+        // Check the rendering condition (same as render_frame)
+        let would_render_splash = runner.view.state().conversation.items().is_empty()
+            && runner.view.state().popup.is_none()
+            && runner.view.state().dialog_stack.is_empty()
+            && runner.view.state().splash.is_some();
+
+        assert!(would_render_splash, "Splash should render after /new clears popup");
+        assert!(runner.view.state().popup.is_none(), "Popup must be None for splash to render");
+    }
+
+    #[test]
+    fn test_insert_char_with_proper_cursor_reset() {
+        // Verifies that after clearing input AND resetting cursor, insert works
+        let mut runner =
+            RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+        // Simulate: input was "/new", cursor at position 4
+        runner.view.set_input("/new");
+        runner.view.set_cursor_position(4);
+        assert_eq!(runner.view.input(), "/new");
+        assert_eq!(runner.view.cursor_position(), 4);
+
+        // Proper cleanup: clear input AND reset cursor
+        runner.view.set_input("");
+        runner.view.set_cursor_position(0);
+
+        // Now insert should work without panic
+        let mut input = runner.view.input().to_string();
+        let pos = runner.view.cursor_position();
+        assert_eq!(pos, 0, "Cursor must be 0 after reset");
+        assert!(pos <= input.len(), "Cursor must be valid");
+
+        input.insert(pos, 'a');
+        assert_eq!(input, "a");
+    }
+
+    #[test]
+    #[should_panic(expected = "assertion failed")]
+    fn test_insert_char_panics_without_cursor_reset() {
+        // Demonstrates the bug: clearing input without resetting cursor causes panic
+        let mut runner =
+            RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+        // Simulate: input was "/new", cursor at position 4
+        runner.view.set_input("/new");
+        runner.view.set_cursor_position(4);
+
+        // BUG: clear input but forget cursor reset
+        runner.view.set_input("");
+        // runner.view.set_cursor_position(0); // Missing!
+
+        // This panics: cursor=4, but input is empty (len=0)
+        let mut input = runner.view.input().to_string();
+        let pos = runner.view.cursor_position();
+        input.insert(pos, 'a'); // PANIC: assertion failed: self.is_char_boundary(idx)
     }
 }
