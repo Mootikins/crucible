@@ -46,6 +46,8 @@
 
 pub mod fixtures;
 mod harness;
+#[cfg(test)]
+mod harness_tests;
 mod state_builder;
 
 pub use harness::Harness;
