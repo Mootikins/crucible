@@ -45,6 +45,9 @@ pub struct AgentInitParams {
     /// Environment variable overrides for ACP agents
     /// These are merged with any env vars from config profiles
     pub env_overrides: std::collections::HashMap<String, String>,
+    /// Working directory for the agent (where it should operate)
+    /// Distinct from kiln_path which is where knowledge is stored.
+    pub working_dir: Option<std::path::PathBuf>,
 }
 
 impl AgentInitParams {
@@ -57,7 +60,16 @@ impl AgentInitParams {
             max_context_tokens: None,
             tool_executor: None,
             env_overrides: std::collections::HashMap::new(),
+            working_dir: None,
         }
+    }
+
+    /// Set the working directory for the agent
+    ///
+    /// This is where the agent will operate (for file operations, git, etc.).
+    pub fn with_working_dir(mut self, path: std::path::PathBuf) -> Self {
+        self.working_dir = Some(path);
+        self
     }
 
     pub fn with_type(mut self, agent_type: AgentType) -> Self {
@@ -389,8 +401,14 @@ pub async fn create_agent(
             }
 
             // Create ACP client
-            let client =
+            let mut client =
                 CrucibleAcpClient::with_acp_config(agent, params.read_only, config.acp.clone());
+
+            // Set working directory if provided
+            if let Some(working_dir) = params.working_dir {
+                info!("Setting agent working directory: {}", working_dir.display());
+                client = client.with_working_dir(working_dir);
+            }
 
             Ok(InitializedAgent::Acp(client))
         }
