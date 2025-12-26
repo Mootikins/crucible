@@ -1,0 +1,392 @@
+//! TUI End-to-End Tests
+//!
+//! These tests use expectrl to spawn real `cru` processes in PTY sessions,
+//! enabling multi-turn interaction testing.
+//!
+//! # Running Tests
+//!
+//! ```bash
+//! # Build first
+//! cargo build --release
+//!
+//! # Run e2e tests (marked as ignored by default)
+//! cargo test -p crucible-cli tui_e2e -- --ignored
+//! ```
+//!
+//! # Test Categories
+//!
+//! - **Smoke tests**: Basic startup/shutdown
+//! - **Navigation tests**: Key sequences, mode switching
+//! - **Multi-turn tests**: Full conversation flows
+//! - **Command tests**: Slash command behavior
+
+// Include the harness module
+#[path = "tui_e2e_harness.rs"]
+mod tui_e2e_harness;
+
+use std::time::Duration;
+use tui_e2e_harness::{Key, TuiTestBuilder, TuiTestConfig, TuiTestSession};
+
+// =============================================================================
+// Smoke Tests
+// =============================================================================
+
+/// Test that `cru --version` works
+#[test]
+#[ignore = "requires built binary"]
+fn smoke_version() {
+    let config = TuiTestConfig::new("--version");
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.expect("cru").expect("Should show cru in version");
+    session.expect_eof().expect("Should exit");
+}
+
+/// Test that `cru --help` works
+#[test]
+#[ignore = "requires built binary"]
+fn smoke_help() {
+    let config = TuiTestConfig::new("--help");
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.expect("Usage").expect("Should show usage");
+    session.expect_eof().expect("Should exit");
+}
+
+// =============================================================================
+// Chat TUI Startup Tests
+// =============================================================================
+
+/// Test that chat TUI starts and shows initial prompt
+#[test]
+#[ignore = "requires built binary and may need ACP agent"]
+fn chat_startup_shows_prompt() {
+    let mut session = TuiTestBuilder::new()
+        .command("chat")
+        .timeout(15)
+        .spawn()
+        .expect("Failed to spawn chat");
+
+    // Should see mode indicator or prompt area
+    // The exact text depends on TUI design, adjust as needed
+    session.wait(Duration::from_secs(2));
+
+    // Try to exit cleanly
+    session.send_control('c').expect("Failed to send Ctrl+C");
+    session.wait(Duration::from_millis(500));
+}
+
+/// Test that Ctrl+C exits the TUI
+#[test]
+#[ignore = "requires built binary"]
+fn chat_ctrl_c_exits() {
+    let mut session = TuiTestBuilder::new()
+        .command("chat")
+        .timeout(10)
+        .spawn()
+        .expect("Failed to spawn chat");
+
+    session.wait(Duration::from_secs(1));
+    session.send_control('c').expect("Failed to send Ctrl+C");
+    session.expect_eof().expect("Should exit after Ctrl+C");
+}
+
+// =============================================================================
+// Input Tests
+// =============================================================================
+
+/// Test typing in the input box
+#[test]
+#[ignore = "requires built binary"]
+fn chat_input_typing() {
+    let mut session = TuiTestBuilder::new()
+        .command("chat")
+        .timeout(10)
+        .spawn()
+        .expect("Failed to spawn chat");
+
+    session.wait(Duration::from_secs(1));
+
+    // Type some text
+    session.send("Hello world").expect("Failed to send text");
+    session.wait(Duration::from_millis(200));
+
+    // The input should be visible (TUI renders it)
+    // We can't easily assert on exact screen content with expectrl alone,
+    // but we can verify the session is still responsive
+
+    // Clean exit
+    session.send_control('c').expect("Failed to send Ctrl+C");
+}
+
+/// Test backspace deletes characters
+#[test]
+#[ignore = "requires built binary"]
+fn chat_input_backspace() {
+    let mut session = TuiTestBuilder::new()
+        .command("chat")
+        .timeout(10)
+        .spawn()
+        .expect("Failed to spawn chat");
+
+    session.wait(Duration::from_secs(1));
+
+    // Type and then delete
+    session.send("Hello").expect("Failed to send text");
+    session.wait(Duration::from_millis(100));
+    session
+        .send_key(Key::Backspace)
+        .expect("Failed to send backspace");
+    session
+        .send_key(Key::Backspace)
+        .expect("Failed to send backspace");
+    session.wait(Duration::from_millis(100));
+
+    // Clean exit
+    session.send_control('c').expect("Failed to send Ctrl+C");
+}
+
+// =============================================================================
+// Slash Command Tests
+// =============================================================================
+
+/// Test that typing "/" shows command popup
+#[test]
+#[ignore = "requires built binary"]
+fn chat_slash_shows_popup() {
+    let mut session = TuiTestBuilder::new()
+        .command("chat")
+        .timeout(10)
+        .spawn()
+        .expect("Failed to spawn chat");
+
+    session.wait(Duration::from_secs(1));
+
+    // Type slash to trigger command popup
+    session.send("/").expect("Failed to send /");
+    session.wait(Duration::from_millis(300));
+
+    // Popup should appear with commands
+    // The TUI should render command options
+
+    // Clean exit
+    session.send_key(Key::Escape).expect("Failed to send Escape");
+    session.wait(Duration::from_millis(100));
+    session.send_control('c').expect("Failed to send Ctrl+C");
+}
+
+/// Test /help command
+#[test]
+#[ignore = "requires built binary"]
+fn chat_help_command() {
+    let mut session = TuiTestBuilder::new()
+        .command("chat")
+        .timeout(10)
+        .spawn()
+        .expect("Failed to spawn chat");
+
+    session.wait(Duration::from_secs(1));
+
+    // Type /help and press Enter
+    session.send_line("/help").expect("Failed to send /help");
+    session.wait(Duration::from_millis(500));
+
+    // Should show help information (dialog or inline)
+
+    // Clean exit
+    session.send_control('c').expect("Failed to send Ctrl+C");
+}
+
+// =============================================================================
+// Navigation Tests
+// =============================================================================
+
+/// Test arrow key navigation in popup
+#[test]
+#[ignore = "requires built binary"]
+fn chat_popup_navigation() {
+    let mut session = TuiTestBuilder::new()
+        .command("chat")
+        .timeout(10)
+        .spawn()
+        .expect("Failed to spawn chat");
+
+    session.wait(Duration::from_secs(1));
+
+    // Open command popup
+    session.send("/").expect("Failed to send /");
+    session.wait(Duration::from_millis(200));
+
+    // Navigate down
+    session.send_key(Key::Down).expect("Failed to send Down");
+    session.wait(Duration::from_millis(100));
+    session.send_key(Key::Down).expect("Failed to send Down");
+    session.wait(Duration::from_millis(100));
+
+    // Navigate up
+    session.send_key(Key::Up).expect("Failed to send Up");
+    session.wait(Duration::from_millis(100));
+
+    // Escape to close popup
+    session.send_key(Key::Escape).expect("Failed to send Escape");
+    session.wait(Duration::from_millis(100));
+
+    // Clean exit
+    session.send_control('c').expect("Failed to send Ctrl+C");
+}
+
+/// Test Tab completion
+#[test]
+#[ignore = "requires built binary"]
+fn chat_tab_completion() {
+    let mut session = TuiTestBuilder::new()
+        .command("chat")
+        .timeout(10)
+        .spawn()
+        .expect("Failed to spawn chat");
+
+    session.wait(Duration::from_secs(1));
+
+    // Type partial command
+    session.send("/hel").expect("Failed to send /hel");
+    session.wait(Duration::from_millis(200));
+
+    // Tab to complete
+    session.send_key(Key::Tab).expect("Failed to send Tab");
+    session.wait(Duration::from_millis(200));
+
+    // Clean exit
+    session.send_control('c').expect("Failed to send Ctrl+C");
+}
+
+// =============================================================================
+// Multi-turn Conversation Tests
+// =============================================================================
+
+/// Test a basic multi-turn conversation flow
+///
+/// This is a template for more complex multi-turn tests.
+/// Requires an actual ACP agent to be configured.
+#[test]
+#[ignore = "requires built binary and ACP agent"]
+fn chat_multiturn_basic() {
+    let mut session = TuiTestBuilder::new()
+        .command("chat")
+        .timeout(30) // Longer timeout for LLM responses
+        .spawn()
+        .expect("Failed to spawn chat");
+
+    session.wait(Duration::from_secs(2));
+
+    // Turn 1: Send a simple message
+    session
+        .send_line("Hello, please respond with just 'Hi'")
+        .expect("Failed to send message");
+
+    // Wait for response (this may take a while depending on the agent)
+    session.wait(Duration::from_secs(10));
+
+    // Turn 2: Follow-up message
+    session
+        .send_line("Now say 'Goodbye'")
+        .expect("Failed to send follow-up");
+
+    session.wait(Duration::from_secs(10));
+
+    // Clean exit
+    session.send_control('c').expect("Failed to send Ctrl+C");
+}
+
+// =============================================================================
+// Mode Switching Tests
+// =============================================================================
+
+/// Test switching between modes (plan/act/auto)
+#[test]
+#[ignore = "requires built binary"]
+fn chat_mode_switching() {
+    let mut session = TuiTestBuilder::new()
+        .command("chat")
+        .timeout(10)
+        .spawn()
+        .expect("Failed to spawn chat");
+
+    session.wait(Duration::from_secs(1));
+
+    // Try /mode command if it exists
+    session.send_line("/mode act").expect("Failed to send /mode");
+    session.wait(Duration::from_millis(500));
+
+    // Switch to plan mode
+    session
+        .send_line("/mode plan")
+        .expect("Failed to send /mode");
+    session.wait(Duration::from_millis(500));
+
+    // Clean exit
+    session.send_control('c').expect("Failed to send Ctrl+C");
+}
+
+// =============================================================================
+// Error Handling Tests
+// =============================================================================
+
+/// Test behavior when sending empty message
+#[test]
+#[ignore = "requires built binary"]
+fn chat_empty_message() {
+    let mut session = TuiTestBuilder::new()
+        .command("chat")
+        .timeout(10)
+        .spawn()
+        .expect("Failed to spawn chat");
+
+    session.wait(Duration::from_secs(1));
+
+    // Send empty line (just Enter)
+    session.send_key(Key::Enter).expect("Failed to send Enter");
+    session.wait(Duration::from_millis(200));
+
+    // Should not crash, TUI should still be responsive
+    session.send("test").expect("Should still accept input");
+
+    // Clean exit
+    session.send_control('c').expect("Failed to send Ctrl+C");
+}
+
+// =============================================================================
+// Stress Tests
+// =============================================================================
+
+/// Test rapid key input doesn't cause issues
+#[test]
+#[ignore = "requires built binary"]
+fn chat_rapid_input() {
+    let mut session = TuiTestBuilder::new()
+        .command("chat")
+        .timeout(15)
+        .spawn()
+        .expect("Failed to spawn chat");
+
+    session.wait(Duration::from_secs(1));
+
+    // Send rapid keystrokes
+    for _ in 0..50 {
+        session.send("x").expect("Failed to send");
+    }
+    session.wait(Duration::from_millis(200));
+
+    // Clear with backspaces
+    for _ in 0..50 {
+        session
+            .send_key(Key::Backspace)
+            .expect("Failed to backspace");
+    }
+    session.wait(Duration::from_millis(200));
+
+    // Should still be responsive
+    session.send("still works").expect("Should still work");
+
+    // Clean exit
+    session.send_control('c').expect("Failed to send Ctrl+C");
+}

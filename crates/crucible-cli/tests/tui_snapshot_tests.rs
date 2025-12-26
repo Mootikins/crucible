@@ -1,143 +1,15 @@
 //! TUI Snapshot Tests
-
-#![allow(clippy::field_reassign_with_default)]
-
 //!
 //! Uses insta for snapshot testing of TUI rendering.
 //! Run `cargo insta review` to interactively review snapshot changes.
 
+#![allow(clippy::field_reassign_with_default)]
+
 use crucible_cli::tui::render::render;
-use crucible_cli::tui::state::{PopupItem, PopupItemKind, PopupKind, PopupState, TuiState};
-use crucible_cli::tui::streaming::StreamingBuffer;
+use crucible_cli::tui::state::{PopupItem, PopupKind};
+use crucible_cli::tui::testing::{test_terminal, TestStateBuilder, TEST_HEIGHT, TEST_WIDTH};
 use insta::assert_snapshot;
 use ratatui::{backend::TestBackend, Terminal};
-use std::time::Instant;
-
-// Test utilities (duplicated here since testing.rs is cfg(test) only within the crate)
-
-const TEST_WIDTH: u16 = 80;
-const TEST_HEIGHT: u16 = 24;
-
-fn test_terminal() -> Terminal<TestBackend> {
-    Terminal::new(TestBackend::new(TEST_WIDTH, TEST_HEIGHT)).unwrap()
-}
-
-struct TestStateBuilder {
-    mode_id: String,
-    input_buffer: String,
-    cursor_position: usize,
-    popup: Option<PopupState>,
-    streaming_content: Option<String>,
-    status_error: Option<String>,
-}
-
-impl TestStateBuilder {
-    fn new(mode: &str) -> Self {
-        Self {
-            mode_id: mode.to_string(),
-            input_buffer: String::new(),
-            cursor_position: 0,
-            popup: None,
-            streaming_content: None,
-            status_error: None,
-        }
-    }
-
-    fn with_input(mut self, text: &str) -> Self {
-        self.input_buffer = text.to_string();
-        self.cursor_position = text.len();
-        self
-    }
-
-    fn with_popup_items(mut self, kind: PopupKind, items: Vec<PopupItem>) -> Self {
-        self.popup = Some(PopupState {
-            kind,
-            query: String::new(),
-            items,
-            selected: 0,
-            viewport_offset: 0,
-            last_update: Instant::now(),
-        });
-        self
-    }
-
-    fn with_popup_selected(mut self, index: usize) -> Self {
-        if let Some(ref mut popup) = self.popup {
-            popup.selected = index.min(popup.items.len().saturating_sub(1));
-        }
-        self
-    }
-
-    fn with_streaming(mut self, content: &str) -> Self {
-        self.streaming_content = Some(content.to_string());
-        self
-    }
-
-    fn with_error(mut self, error: &str) -> Self {
-        self.status_error = Some(error.to_string());
-        self
-    }
-
-    fn build(self) -> TuiState {
-        let mut state = TuiState::new(&self.mode_id);
-        state.input_buffer = self.input_buffer;
-        state.cursor_position = self.cursor_position;
-        state.popup = self.popup;
-        state.status_error = self.status_error;
-
-        if let Some(content) = self.streaming_content {
-            let mut buf = StreamingBuffer::new();
-            buf.append(&content);
-            state.streaming = Some(buf);
-        }
-
-        state
-    }
-}
-
-fn popup_item_command(name: &str, desc: &str) -> PopupItem {
-    PopupItem {
-        kind: PopupItemKind::Command,
-        title: format!("/{}", name),
-        subtitle: desc.to_string(),
-        token: format!("/{} ", name),
-        score: 0,
-        available: true,
-    }
-}
-
-fn popup_item_agent(id: &str, desc: &str) -> PopupItem {
-    PopupItem {
-        kind: PopupItemKind::Agent,
-        title: format!("@{}", id),
-        subtitle: desc.to_string(),
-        token: format!("@{}", id),
-        score: 0,
-        available: true,
-    }
-}
-
-fn popup_item_file(path: &str, subtitle: &str) -> PopupItem {
-    PopupItem {
-        kind: PopupItemKind::File,
-        title: path.to_string(),
-        subtitle: subtitle.to_string(),
-        token: path.to_string(),
-        score: 0,
-        available: true,
-    }
-}
-
-fn popup_item_note(path: &str, subtitle: &str) -> PopupItem {
-    PopupItem {
-        kind: PopupItemKind::Note,
-        title: path.to_string(),
-        subtitle: subtitle.to_string(),
-        token: path.to_string(),
-        score: 0,
-        available: true,
-    }
-}
 
 // =============================================================================
 // Popup Visibility Tests
@@ -160,9 +32,9 @@ fn popup_visible_with_commands() {
         .with_popup_items(
             PopupKind::Command,
             vec![
-                popup_item_command("help", "Show help information"),
-                popup_item_command("exit", "Exit the chat"),
-                popup_item_command("clear", "Clear the screen"),
+                PopupItem::command("help", "Show help information"),
+                PopupItem::command("exit", "Exit the chat"),
+                PopupItem::command("clear", "Clear the screen"),
             ],
         )
         .build();
@@ -179,9 +51,9 @@ fn popup_visible_with_agents_and_files() {
         .with_popup_items(
             PopupKind::AgentOrFile,
             vec![
-                popup_item_agent("dev-helper", "Developer assistant"),
-                popup_item_agent("test-runner", "Test automation"),
-                popup_item_file("src/main.rs", "workspace"),
+                PopupItem::agent("dev-helper", "Developer assistant"),
+                PopupItem::agent("test-runner", "Test automation"),
+                PopupItem::file("src/main.rs", "workspace"),
             ],
         )
         .build();
@@ -202,8 +74,8 @@ fn popup_first_item_selected_by_default() {
         .with_popup_items(
             PopupKind::Command,
             vec![
-                popup_item_command("help", "Show help"),
-                popup_item_command("exit", "Exit"),
+                PopupItem::command("help", "Show help"),
+                PopupItem::command("exit", "Exit"),
             ],
         )
         .build();
@@ -220,9 +92,9 @@ fn popup_second_item_selected() {
         .with_popup_items(
             PopupKind::Command,
             vec![
-                popup_item_command("help", "Show help"),
-                popup_item_command("exit", "Exit"),
-                popup_item_command("clear", "Clear screen"),
+                PopupItem::command("help", "Show help"),
+                PopupItem::command("exit", "Exit"),
+                PopupItem::command("clear", "Clear screen"),
             ],
         )
         .with_popup_selected(1)
@@ -240,9 +112,9 @@ fn popup_last_item_selected() {
         .with_popup_items(
             PopupKind::AgentOrFile,
             vec![
-                popup_item_agent("agent1", "First agent"),
-                popup_item_agent("agent2", "Second agent"),
-                popup_item_file("README.md", "workspace"),
+                PopupItem::agent("agent1", "First agent"),
+                PopupItem::agent("agent2", "Second agent"),
+                PopupItem::file("README.md", "workspace"),
             ],
         )
         .with_popup_selected(2)
@@ -264,9 +136,9 @@ fn popup_shows_mixed_type_labels() {
         .with_popup_items(
             PopupKind::AgentOrFile,
             vec![
-                popup_item_agent("helper", "AI Helper"),
-                popup_item_file("README.md", "workspace"),
-                popup_item_note("note:project/todo.md", "note"),
+                PopupItem::agent("helper", "AI Helper"),
+                PopupItem::file("README.md", "workspace"),
+                PopupItem::note("note:project/todo.md", "note"),
             ],
         )
         .build();
@@ -284,8 +156,8 @@ fn popup_command_type_labels() {
         .with_popup_items(
             PopupKind::Command,
             vec![
-                popup_item_command("search", "Search files"),
-                popup_item_command("stats", "Show statistics"),
+                PopupItem::command("search", "Search files"),
+                PopupItem::command("stats", "Show statistics"),
             ],
         )
         .build();
@@ -302,7 +174,7 @@ fn popup_command_type_labels() {
 fn popup_truncates_to_max_five_items() {
     let mut terminal = test_terminal();
     let items: Vec<_> = (0..10)
-        .map(|i| popup_item_command(&format!("cmd{i}"), &format!("Command {i}")))
+        .map(|i| PopupItem::command(&format!("cmd{i}"), &format!("Command {i}")))
         .collect();
 
     let state = TestStateBuilder::new("plan")
@@ -320,7 +192,7 @@ fn popup_single_item() {
     let mut terminal = test_terminal();
     let state = TestStateBuilder::new("plan")
         .with_input("/exit")
-        .with_popup_items(PopupKind::Command, vec![popup_item_command("exit", "Exit")])
+        .with_popup_items(PopupKind::Command, vec![PopupItem::command("exit", "Exit")])
         .build();
 
     terminal.draw(|f| render(f, &state)).unwrap();
@@ -433,8 +305,8 @@ fn popup_with_streaming() {
         .with_popup_items(
             PopupKind::Command,
             vec![
-                popup_item_command("help", "Show help"),
-                popup_item_command("exit", "Exit"),
+                PopupItem::command("help", "Show help"),
+                PopupItem::command("exit", "Exit"),
             ],
         )
         .with_streaming("Processing your request...")

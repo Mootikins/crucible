@@ -25,7 +25,7 @@ pub mod streaming;
 pub mod streaming_channel;
 pub mod streaming_parser;
 pub mod styles;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 pub mod testing;
 pub mod viewport;
 pub mod widget;
