@@ -57,22 +57,17 @@ mod wasm {
 
         fn update(&mut self, event: Event) -> bool {
             match event {
-                Event::SessionUpdate(session_info, _) => {
-                    // Build inbox path from session name
-                    let session_name = session_info.name;
-                    let base = dirs::data_local_dir()
-                        .unwrap_or_else(|| PathBuf::from("/tmp"))
-                        .join("zellij-inbox");
-                    self.inbox_path = Some(base.join(format!("{}.md", session_name)));
+                Event::SessionUpdate(session_list, _) => {
+                    // Find the current session (the one marked as is_current_session)
+                    if let Some(current) = session_list.iter().find(|s| s.is_current_session) {
+                        let session_name = &current.name;
+                        self.inbox_path = Some(file::inbox_path_for_session(session_name));
 
-                    // Watch the file
-                    if let Some(ref path) = self.inbox_path {
-                        if let Some(path_str) = path.to_str() {
-                            watch_filesystem_root(path_str);
-                        }
+                        // Watch for file changes
+                        watch_filesystem();
+
+                        self.load_inbox();
                     }
-
-                    self.load_inbox();
                     true
                 }
 
@@ -81,29 +76,32 @@ mod wasm {
                     true
                 }
 
-                Event::Key(Key::Up | Key::Char('k')) => {
-                    self.selected = self.selected.saturating_sub(1);
-                    true
-                }
-
-                Event::Key(Key::Down | Key::Char('j')) => {
-                    if !self.inbox.is_empty() {
-                        self.selected = (self.selected + 1).min(self.inbox.items.len() - 1);
+                Event::Key(key) if key.has_no_modifiers() => {
+                    match key.bare_key {
+                        BareKey::Up | BareKey::Char('k') => {
+                            self.selected = self.selected.saturating_sub(1);
+                            true
+                        }
+                        BareKey::Down | BareKey::Char('j') => {
+                            if !self.inbox.is_empty() {
+                                self.selected =
+                                    (self.selected + 1).min(self.inbox.items.len() - 1);
+                            }
+                            true
+                        }
+                        BareKey::Enter => {
+                            if let Some(pane_id) = self.selected_pane_id() {
+                                focus_terminal_pane(pane_id, true);
+                            }
+                            hide_self();
+                            false
+                        }
+                        BareKey::Esc | BareKey::Char('q') => {
+                            hide_self();
+                            false
+                        }
+                        _ => false,
                     }
-                    true
-                }
-
-                Event::Key(Key::Enter) => {
-                    if let Some(pane_id) = self.selected_pane_id() {
-                        focus_terminal_pane(pane_id as i32, true);
-                    }
-                    hide_self();
-                    false
-                }
-
-                Event::Key(Key::Esc | Key::Char('q')) => {
-                    hide_self();
-                    false
                 }
 
                 _ => false,
@@ -116,13 +114,13 @@ mod wasm {
 
             // Top border
             println!(
-                "┌─ {} {}",
+                "+-  {} {}",
                 title,
-                "─".repeat(width.saturating_sub(title.len() + 4))
+                "-".repeat(width.saturating_sub(title.len() + 4))
             );
 
             if self.inbox.is_empty() {
-                println!("│ (no items)");
+                println!("| (no items)");
             } else {
                 let mut current_status: Option<Status> = None;
                 let mut current_project: Option<&str> = None;
@@ -134,32 +132,32 @@ mod wasm {
                     if current_status != Some(item.status) {
                         current_status = Some(item.status);
                         current_project = None;
-                        println!("│ {}", item.status.section_name());
+                        println!("| {}", item.status.section_name());
                     }
 
                     // Project header
                     if current_project != Some(&item.project) {
                         current_project = Some(&item.project);
-                        println!("│   {}", item.project);
+                        println!("|   {}", item.project);
                     }
 
                     // Item
                     let marker = if item_index == self.selected {
-                        "▸"
+                        ">"
                     } else {
                         " "
                     };
                     let text: String = item.text.chars().take(width - 8).collect();
-                    println!("│ {} {}", marker, text);
+                    println!("| {} {}", marker, text);
 
                     item_index += 1;
                 }
             }
 
             // Bottom border with help
-            println!("│");
-            println!("│ j/k navigate  ⏎ focus  esc close");
-            println!("└{}", "─".repeat(width));
+            println!("|");
+            println!("| j/k navigate  Enter focus  esc close");
+            println!("+{}", "-".repeat(width));
         }
     }
 }
