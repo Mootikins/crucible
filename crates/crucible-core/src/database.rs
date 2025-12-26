@@ -964,8 +964,7 @@ pub struct SearchResult {
 ///
 /// # Usage Example
 ///
-/// ```rust,no_run
-/// # use crucible_core::types::{UnifiedSearchResult, SearchResult, DocumentId};
+/// ```rust,ignore
 /// // Collect results from both sources
 /// let mut results: Vec<UnifiedSearchResult> = Vec::new();
 ///
