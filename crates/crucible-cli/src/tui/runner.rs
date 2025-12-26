@@ -23,6 +23,7 @@ use crate::tui::streaming_channel::{
 
 use crate::tui::conversation::StatusKind;
 use crate::tui::conversation_view::{ConversationView, RatatuiView};
+use crate::tui::state::{find_word_start_backward, find_word_start_forward};
 use crate::tui::{
     map_key_event, ContentBlock, DynamicPopupProvider, InputAction, ParseEvent, PopupProvider,
     StreamingParser, TuiState,
@@ -712,6 +713,96 @@ impl RatatuiRunner {
                             self.view.set_cursor_position(cmd.len());
                         }
                     }
+                }
+            }
+            // Readline-style editing (emacs mode)
+            InputAction::DeleteWordBackward => {
+                let input = self.view.input().to_string();
+                let cursor = self.view.cursor_position();
+                if cursor > 0 {
+                    let before = &input[..cursor];
+                    let word_start = find_word_start_backward(before);
+                    let mut new_input = input.clone();
+                    new_input.drain(word_start..cursor);
+                    self.view.set_input(&new_input);
+                    self.view.set_cursor_position(word_start);
+                    self.update_popup();
+                }
+            }
+            InputAction::DeleteToLineStart => {
+                let input = self.view.input().to_string();
+                let cursor = self.view.cursor_position();
+                if cursor > 0 {
+                    let new_input = input[cursor..].to_string();
+                    self.view.set_input(&new_input);
+                    self.view.set_cursor_position(0);
+                    self.update_popup();
+                }
+            }
+            InputAction::DeleteToLineEnd => {
+                let input = self.view.input().to_string();
+                let cursor = self.view.cursor_position();
+                if cursor < input.len() {
+                    let new_input = input[..cursor].to_string();
+                    self.view.set_input(&new_input);
+                    self.update_popup();
+                }
+            }
+            InputAction::MoveCursorToStart => {
+                self.view.set_cursor_position(0);
+            }
+            InputAction::MoveCursorToEnd => {
+                let len = self.view.input().len();
+                self.view.set_cursor_position(len);
+            }
+            InputAction::MoveWordBackward => {
+                let input = self.view.input();
+                let cursor = self.view.cursor_position();
+                if cursor > 0 {
+                    let before = &input[..cursor];
+                    self.view
+                        .set_cursor_position(find_word_start_backward(before));
+                }
+            }
+            InputAction::MoveWordForward => {
+                let input = self.view.input();
+                let cursor = self.view.cursor_position();
+                if cursor < input.len() {
+                    let after = &input[cursor..];
+                    self.view
+                        .set_cursor_position(cursor + find_word_start_forward(after));
+                }
+            }
+            InputAction::TransposeChars => {
+                let input = self.view.input().to_string();
+                let cursor = self.view.cursor_position();
+                let len = input.chars().count();
+                if len >= 2 && cursor > 0 {
+                    let chars: Vec<char> = input.chars().collect();
+                    let char_pos = input[..cursor].chars().count();
+
+                    let (i, j) = if char_pos >= len {
+                        (len - 2, len - 1)
+                    } else {
+                        (char_pos - 1, char_pos)
+                    };
+
+                    let mut new_chars = chars.clone();
+                    new_chars.swap(i, j);
+                    let new_input: String = new_chars.into_iter().collect();
+
+                    let new_cursor = if char_pos < len {
+                        new_input
+                            .char_indices()
+                            .nth(char_pos + 1)
+                            .map(|(idx, _)| idx)
+                            .unwrap_or(new_input.len())
+                    } else {
+                        new_input.len()
+                    };
+
+                    self.view.set_input(&new_input);
+                    self.view.set_cursor_position(new_cursor);
                 }
             }
             InputAction::None => {}
