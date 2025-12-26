@@ -170,7 +170,9 @@ fn chat_slash_shows_popup() {
     // The TUI should render command options
 
     // Clean exit
-    session.send_key(Key::Escape).expect("Failed to send Escape");
+    session
+        .send_key(Key::Escape)
+        .expect("Failed to send Escape");
     session.wait(Duration::from_millis(100));
     session.send_control('c').expect("Failed to send Ctrl+C");
 }
@@ -228,7 +230,9 @@ fn chat_popup_navigation() {
     session.wait(Duration::from_millis(100));
 
     // Escape to close popup
-    session.send_key(Key::Escape).expect("Failed to send Escape");
+    session
+        .send_key(Key::Escape)
+        .expect("Failed to send Escape");
     session.wait(Duration::from_millis(100));
 
     // Clean exit
@@ -314,7 +318,9 @@ fn chat_mode_switching() {
     session.wait(Duration::from_secs(1));
 
     // Try /mode command if it exists
-    session.send_line("/mode act").expect("Failed to send /mode");
+    session
+        .send_line("/mode act")
+        .expect("Failed to send /mode");
     session.wait(Duration::from_millis(500));
 
     // Switch to plan mode

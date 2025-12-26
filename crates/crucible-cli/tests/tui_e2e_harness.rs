@@ -1,6 +1,9 @@
 //! TUI End-to-End Test Harness
 //!
 //! Uses expectrl for PTY-based testing of the TUI application.
+
+// Allow unused items - these are test utilities meant for future use
+#![allow(dead_code)]
 //! This enables multi-turn interaction testing with real terminal emulation.
 //!
 //! # Architecture
@@ -208,7 +211,7 @@ impl TuiTestSession {
     /// Send a control character (e.g., Ctrl+C = '\x03')
     pub fn send_control(&mut self, c: char) -> Result<(), expectrl::Error> {
         let ctrl_char = (c as u8 - b'a' + 1) as char;
-        self.session.send(&ctrl_char.to_string())?;
+        self.session.send(ctrl_char.to_string())?;
         Ok(())
     }
 
@@ -235,7 +238,8 @@ impl TuiTestSession {
 
     /// Check if output contains a pattern (non-blocking)
     pub fn output_contains(&mut self, pattern: &str) -> Result<bool, expectrl::Error> {
-        self.session.set_expect_timeout(Some(Duration::from_millis(100)));
+        self.session
+            .set_expect_timeout(Some(Duration::from_millis(100)));
         match self.session.expect(pattern) {
             Ok(_) => Ok(true),
             Err(expectrl::Error::ExpectTimeout) => Ok(false),
