@@ -28,7 +28,7 @@ export const defaultSettings: AppSettings = {
   transcription: {
     provider: 'local',
     serverUrl: 'https://llama.krohnos.io',
-    model: 'whisper-1',
+    model: 'whisper-large-v3-turbo',
     language: 'auto',
   },
 };
