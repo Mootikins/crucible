@@ -13,6 +13,47 @@ use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use std::time::Instant;
 
+// =============================================================================
+// Word boundary helpers for readline-style editing
+// =============================================================================
+
+/// Find the byte position of the start of the previous word.
+/// Skips trailing whitespace, then finds where the word begins.
+pub(crate) fn find_word_start_backward(s: &str) -> usize {
+    let mut chars = s.char_indices().rev().peekable();
+
+    // Skip trailing whitespace
+    while chars.peek().is_some_and(|(_, c)| c.is_whitespace()) {
+        chars.next();
+    }
+
+    // Skip word characters
+    while chars.peek().is_some_and(|(_, c)| !c.is_whitespace()) {
+        chars.next();
+    }
+
+    // Return position after the whitespace (start of the word we skipped)
+    chars.next().map(|(i, c)| i + c.len_utf8()).unwrap_or(0)
+}
+
+/// Find the byte offset to the start of the next word.
+/// Skips current word, then whitespace.
+pub(crate) fn find_word_start_forward(s: &str) -> usize {
+    let mut chars = s.char_indices().peekable();
+
+    // Skip current word
+    while chars.peek().is_some_and(|(_, c)| !c.is_whitespace()) {
+        chars.next();
+    }
+
+    // Skip whitespace
+    while chars.peek().is_some_and(|(_, c)| c.is_whitespace()) {
+        chars.next();
+    }
+
+    chars.peek().map(|(i, _)| *i).unwrap_or(s.len())
+}
+
 /// Role of a message in the conversation
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MessageRole {
@@ -426,6 +467,86 @@ impl TuiState {
             }
             InputAction::ExecuteSlashCommand(_cmd) => {
                 // TODO: Slash command execution
+                None
+            }
+            // Readline-style editing (emacs mode)
+            InputAction::DeleteWordBackward => {
+                if self.cursor_position > 0 {
+                    let before = &self.input_buffer[..self.cursor_position];
+                    let word_start = find_word_start_backward(before);
+                    self.input_buffer.drain(word_start..self.cursor_position);
+                    self.cursor_position = word_start;
+                    self.update_popup_on_edit();
+                }
+                None
+            }
+            InputAction::DeleteToLineStart => {
+                if self.cursor_position > 0 {
+                    self.input_buffer.drain(..self.cursor_position);
+                    self.cursor_position = 0;
+                    self.update_popup_on_edit();
+                }
+                None
+            }
+            InputAction::DeleteToLineEnd => {
+                if self.cursor_position < self.input_buffer.len() {
+                    self.input_buffer.truncate(self.cursor_position);
+                    self.update_popup_on_edit();
+                }
+                None
+            }
+            InputAction::MoveCursorToStart => {
+                self.cursor_position = 0;
+                None
+            }
+            InputAction::MoveCursorToEnd => {
+                self.cursor_position = self.input_buffer.len();
+                None
+            }
+            InputAction::MoveWordBackward => {
+                if self.cursor_position > 0 {
+                    let before = &self.input_buffer[..self.cursor_position];
+                    self.cursor_position = find_word_start_backward(before);
+                }
+                None
+            }
+            InputAction::MoveWordForward => {
+                if self.cursor_position < self.input_buffer.len() {
+                    let after = &self.input_buffer[self.cursor_position..];
+                    self.cursor_position += find_word_start_forward(after);
+                }
+                None
+            }
+            InputAction::TransposeChars => {
+                // Swap the character before cursor with the one at cursor
+                // If at end, swap the two chars before cursor
+                let len = self.input_buffer.chars().count();
+                if len >= 2 && self.cursor_position > 0 {
+                    let chars: Vec<char> = self.input_buffer.chars().collect();
+                    let char_pos = self.input_buffer[..self.cursor_position].chars().count();
+
+                    let (i, j) = if char_pos >= len {
+                        // At end: swap last two chars
+                        (len - 2, len - 1)
+                    } else {
+                        // Swap char before cursor with char at cursor
+                        (char_pos - 1, char_pos)
+                    };
+
+                    let mut new_chars = chars.clone();
+                    new_chars.swap(i, j);
+                    self.input_buffer = new_chars.into_iter().collect();
+
+                    // Move cursor forward (or stay at end)
+                    if char_pos < len {
+                        self.cursor_position = self
+                            .input_buffer
+                            .char_indices()
+                            .nth(char_pos + 1)
+                            .map(|(idx, _)| idx)
+                            .unwrap_or(self.input_buffer.len());
+                    }
+                }
                 None
             }
             InputAction::ScrollUp
@@ -853,5 +974,104 @@ mod tests {
 
         // Selecting first item should reset viewport to 0
         assert_eq!(popup.viewport_offset, 0);
+    }
+
+    // =========================================================================
+    // Readline Action Tests
+    // =========================================================================
+
+    #[test]
+    fn test_delete_word_backward() {
+        let mut s = TuiState::new("plan");
+        s.input_buffer = "hello world".into();
+        s.cursor_position = 11; // at end
+        s.execute_action(InputAction::DeleteWordBackward);
+        assert_eq!(s.input_buffer, "hello ");
+        assert_eq!(s.cursor_position, 6);
+    }
+
+    #[test]
+    fn test_delete_word_backward_multiple_spaces() {
+        let mut s = TuiState::new("plan");
+        s.input_buffer = "hello   world".into();
+        s.cursor_position = 13;
+        s.execute_action(InputAction::DeleteWordBackward);
+        assert_eq!(s.input_buffer, "hello   ");
+        assert_eq!(s.cursor_position, 8);
+    }
+
+    #[test]
+    fn test_delete_to_line_start() {
+        let mut s = TuiState::new("plan");
+        s.input_buffer = "hello world".into();
+        s.cursor_position = 6;
+        s.execute_action(InputAction::DeleteToLineStart);
+        assert_eq!(s.input_buffer, "world");
+        assert_eq!(s.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_delete_to_line_end() {
+        let mut s = TuiState::new("plan");
+        s.input_buffer = "hello world".into();
+        s.cursor_position = 5;
+        s.execute_action(InputAction::DeleteToLineEnd);
+        assert_eq!(s.input_buffer, "hello");
+        assert_eq!(s.cursor_position, 5);
+    }
+
+    #[test]
+    fn test_move_cursor_to_start() {
+        let mut s = TuiState::new("plan");
+        s.input_buffer = "hello world".into();
+        s.cursor_position = 6;
+        s.execute_action(InputAction::MoveCursorToStart);
+        assert_eq!(s.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_move_cursor_to_end() {
+        let mut s = TuiState::new("plan");
+        s.input_buffer = "hello world".into();
+        s.cursor_position = 0;
+        s.execute_action(InputAction::MoveCursorToEnd);
+        assert_eq!(s.cursor_position, 11);
+    }
+
+    #[test]
+    fn test_move_word_backward() {
+        let mut s = TuiState::new("plan");
+        s.input_buffer = "hello world".into();
+        s.cursor_position = 11;
+        s.execute_action(InputAction::MoveWordBackward);
+        assert_eq!(s.cursor_position, 6); // After space, at "world"
+    }
+
+    #[test]
+    fn test_move_word_forward() {
+        let mut s = TuiState::new("plan");
+        s.input_buffer = "hello world foo".into();
+        s.cursor_position = 0;
+        s.execute_action(InputAction::MoveWordForward);
+        assert_eq!(s.cursor_position, 6); // After "hello ", at "world"
+    }
+
+    #[test]
+    fn test_transpose_chars_middle() {
+        let mut s = TuiState::new("plan");
+        s.input_buffer = "abcd".into();
+        s.cursor_position = 2; // Between b and c
+        s.execute_action(InputAction::TransposeChars);
+        assert_eq!(s.input_buffer, "acbd");
+        assert_eq!(s.cursor_position, 3); // Cursor moves forward
+    }
+
+    #[test]
+    fn test_transpose_chars_at_end() {
+        let mut s = TuiState::new("plan");
+        s.input_buffer = "abcd".into();
+        s.cursor_position = 4; // At end
+        s.execute_action(InputAction::TransposeChars);
+        assert_eq!(s.input_buffer, "abdc"); // Swaps last two
     }
 }
