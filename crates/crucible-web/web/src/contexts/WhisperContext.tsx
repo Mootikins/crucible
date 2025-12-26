@@ -3,8 +3,10 @@ import {
   useContext,
   ParentComponent,
   createSignal,
-  onMount,
+  createEffect,
 } from 'solid-js';
+import { useSettings } from './SettingsContext';
+import { createServerTranscriber } from '@/lib/transcription';
 
 export type WhisperStatus = 'idle' | 'loading' | 'ready' | 'error' | 'transcribing';
 
@@ -23,16 +25,39 @@ let pipeline: typeof import('@huggingface/transformers').pipeline | null = null;
 let transcriber: Awaited<ReturnType<typeof import('@huggingface/transformers').pipeline>> | null = null;
 
 export const WhisperProvider: ParentComponent = (props) => {
-  const [status, setStatus] = createSignal<WhisperStatus>('idle');
+  const { settings } = useSettings();
+  const [localStatus, setLocalStatus] = createSignal<WhisperStatus>('idle');
   const [progress, setProgress] = createSignal(0);
   const [error, setError] = createSignal<string | null>(null);
 
+  // Compute effective status based on provider
+  // Server provider is always "ready" since no model loading is needed
+  const status = (): WhisperStatus => {
+    if (settings.transcription.provider === 'server') {
+      // For server, only show transcribing state, otherwise ready
+      return localStatus() === 'transcribing' ? 'transcribing' : 'ready';
+    }
+    return localStatus();
+  };
+
+  // Reset status when provider changes
+  createEffect(() => {
+    const provider = settings.transcription.provider;
+    // Clear any error when switching providers
+    setError(null);
+  });
+
   const loadModel = async (): Promise<void> => {
-    if (status() === 'ready' || status() === 'loading') {
+    // Skip loading for server provider
+    if (settings.transcription.provider === 'server') {
       return;
     }
 
-    setStatus('loading');
+    if (localStatus() === 'ready' || localStatus() === 'loading') {
+      return;
+    }
+
+    setLocalStatus('loading');
     setError(null);
     setProgress(0);
 
@@ -64,11 +89,11 @@ export const WhisperProvider: ParentComponent = (props) => {
       );
 
       setProgress(100);
-      setStatus('ready');
+      setLocalStatus('ready');
     } catch (err) {
       console.error('Failed to load Whisper model:', err);
       setError(err instanceof Error ? err.message : 'Failed to load speech model');
-      setStatus('error');
+      setLocalStatus('error');
       throw err;
     }
   };
@@ -113,8 +138,19 @@ export const WhisperProvider: ParentComponent = (props) => {
     }
   };
 
-  const transcribe = async (audioBlob: Blob): Promise<string> => {
-    if (status() !== 'ready' || !transcriber) {
+  // Transcribe using server-side OpenAI-compatible endpoint
+  const transcribeServer = async (audioBlob: Blob): Promise<string> => {
+    const transcribeFunc = createServerTranscriber({
+      url: settings.transcription.serverUrl,
+      model: settings.transcription.model,
+      language: settings.transcription.language,
+    });
+    return transcribeFunc(audioBlob);
+  };
+
+  // Transcribe using local transformers.js model
+  const transcribeLocal = async (audioBlob: Blob): Promise<string> => {
+    if (localStatus() !== 'ready' || !transcriber) {
       // Auto-load model if not ready
       await loadModel();
     }
@@ -123,33 +159,45 @@ export const WhisperProvider: ParentComponent = (props) => {
       throw new Error('Whisper model not loaded');
     }
 
-    setStatus('transcribing');
+    // Decode audio blob to Float32Array at 16kHz
+    const audioData = await decodeAudioBlob(audioBlob);
+    console.log(`Audio decoded: ${audioData.length} samples at 16kHz (${(audioData.length / 16000).toFixed(2)}s)`);
+
+    // Transcribe the audio (no language/task options for English-only model)
+    const result = await transcriber(audioData);
+
+    // Handle different result formats
+    if (typeof result === 'string') {
+      return result;
+    }
+    if (Array.isArray(result)) {
+      return result.map((r) => r.text || '').join(' ');
+    }
+    if (result && typeof result === 'object' && 'text' in result) {
+      return (result as { text: string }).text;
+    }
+
+    return '';
+  };
+
+  const transcribe = async (audioBlob: Blob): Promise<string> => {
+    setLocalStatus('transcribing');
 
     try {
-      // Decode audio blob to Float32Array at 16kHz
-      const audioData = await decodeAudioBlob(audioBlob);
-      console.log(`Audio decoded: ${audioData.length} samples at 16kHz (${(audioData.length / 16000).toFixed(2)}s)`);
+      let result: string;
 
-      // Transcribe the audio (no language/task options for English-only model)
-      const result = await transcriber(audioData);
-
-      setStatus('ready');
-
-      // Handle different result formats
-      if (typeof result === 'string') {
-        return result;
-      }
-      if (Array.isArray(result)) {
-        return result.map((r) => r.text || '').join(' ');
-      }
-      if (result && typeof result === 'object' && 'text' in result) {
-        return (result as { text: string }).text;
+      if (settings.transcription.provider === 'server') {
+        result = await transcribeServer(audioBlob);
+      } else {
+        result = await transcribeLocal(audioBlob);
       }
 
-      return '';
+      setLocalStatus('ready');
+      return result;
     } catch (err) {
       console.error('Transcription failed:', err);
-      setStatus('ready'); // Reset to ready so user can try again
+      setLocalStatus(settings.transcription.provider === 'server' ? 'ready' : 'error');
+      setError(err instanceof Error ? err.message : 'Transcription failed');
       throw err;
     }
   };
