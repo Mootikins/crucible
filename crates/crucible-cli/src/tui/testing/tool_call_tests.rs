@@ -401,6 +401,108 @@ mod harness_tests {
 }
 
 // =============================================================================
+// Regression Tests
+// =============================================================================
+
+mod regression_tests {
+    use super::*;
+    use crate::tui::conversation_view::ConversationView;
+    use crate::tui::streaming_channel::StreamingEvent;
+
+    /// Regression test: Tool calls should show tool name, never empty
+    /// Bug: Orphan spinner " ◐" appeared with no tool name
+    /// Fix: Empty tool names now render nothing (no lines at all)
+    #[test]
+    fn tool_call_with_empty_name_not_rendered() {
+        let tool = ConversationItem::ToolCall(ToolCallDisplay {
+            name: "".to_string(),
+            status: ToolStatus::Running,
+            output_lines: vec![],
+        });
+
+        let lines = render_item_to_lines(&tool, 80);
+
+        // Empty name should render NO lines (not even blank spacing line)
+        assert!(
+            lines.is_empty(),
+            "Tool call with empty name should render nothing. Got {} lines",
+            lines.len()
+        );
+
+        // Double-check no spinner appears
+        let has_spinner = lines.iter().any(|l| {
+            let text: String = l.spans.iter().map(|s| s.content.as_ref()).collect();
+            text.contains("◐")
+        });
+        assert!(!has_spinner, "Empty tool name should not render spinner");
+    }
+
+    /// Regression test: Simulate the exact sequence from the bug report
+    /// Tool runs, then there's an orphan spinner, then assistant message
+    #[test]
+    fn tool_completion_flow_no_orphan_spinner() {
+        let mut h = Harness::new(80, 24);
+
+        // User asks a question
+        h.view
+            .state_mut()
+            .conversation
+            .push_user_message("what folder are you in?");
+
+        // Tool starts running
+        h.view.push_tool_running("crucible_get_kiln_info");
+
+        // Render and check - should have exactly one tool running
+        let output = h.render();
+        let spinner_count = output.matches(" ◐ ").count();
+        assert_eq!(
+            spinner_count, 1,
+            "Should have exactly one running tool spinner. Got {} in:\n{}",
+            spinner_count, output
+        );
+
+        // Tool completes
+        h.view.complete_tool(
+            "crucible_get_kiln_info",
+            Some("kiln path returned".to_string()),
+        );
+
+        // Render again - should have green dot, no spinners
+        let output = h.render();
+        let spinner_count = output.matches(" ◐ ").count();
+        assert_eq!(
+            spinner_count, 0,
+            "Completed tool should have no spinners. Got {} in:\n{}",
+            spinner_count, output
+        );
+
+        // Should have green dot
+        assert!(
+            output.contains(" ● crucible_get_kiln_info"),
+            "Completed tool should show green dot. Got:\n{}",
+            output
+        );
+    }
+
+    /// Test that harness properly injects ToolCall events
+    #[test]
+    fn harness_tool_call_event_creates_running_tool() {
+        let mut h = Harness::new(80, 24);
+
+        // Inject tool call event (simulating StreamingEvent::ToolCall)
+        h.event(StreamingEvent::ToolCall {
+            id: Some("call_123".to_string()),
+            name: "test_tool".to_string(),
+            args: serde_json::Value::Null,
+        });
+
+        // Verify tool is tracked in state
+        assert_eq!(h.state.pending_tools.len(), 1);
+        assert_eq!(h.state.pending_tools[0].name, "test_tool");
+    }
+}
+
+// =============================================================================
 // Style Verification Tests
 // =============================================================================
 

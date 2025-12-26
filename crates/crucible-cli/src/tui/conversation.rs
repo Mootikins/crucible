@@ -563,6 +563,11 @@ fn render_status(status: &StatusKind) -> Vec<Line<'static>> {
 fn render_tool_call(tool: &ToolCallDisplay) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
+    // Skip tool calls with empty names (prevents orphan spinner bug)
+    if tool.name.is_empty() {
+        return lines;
+    }
+
     // Add blank line for spacing
     lines.push(Line::from(""));
 
