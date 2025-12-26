@@ -165,8 +165,25 @@ User-facing requirements for the Crucible chat TUI. These define **what** users 
 
 ---
 
+## Testing User Stories
+
+User stories can be verified using the [[Help/TUI/E2E Testing|TUI E2E test harness]], which provides:
+
+- PTY-based testing with real terminal emulation
+- Multi-turn interaction testing
+- Input/navigation verification
+- Future: flicker detection via timestamped recording
+
+Key test categories map to user stories:
+- **Input tests** verify US-2 (input responsiveness)
+- **Navigation tests** verify popup/dialog behavior (US-12)
+- **Stress tests** verify rapid input handling (US-2)
+
+---
+
 ## See Also
 
 - [[Plugin User Stories]] - Extension system requirements
 - [[Roadmap]] - Feature prioritization
 - [[docs/plans/2025-12-23-tui-redesign]] - Implementation plan
+- [[Help/TUI/E2E Testing]] - Test harness for verification

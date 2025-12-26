@@ -53,6 +53,7 @@ A knowledge management system where:
 - [x] ACP Integration - Working (enables Cursor, external agents)
 - [x] Chat CLI - Primary interface
 - [x] Embeddings - Semantic search working
+- [x] TUI E2E Testing - expectrl-based test harness for PTY testing (see [[Help/TUI/E2E Testing]])
 
 ---
 
