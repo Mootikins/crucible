@@ -1,0 +1,28 @@
+---
+source: crates/crucible-cli/src/tui/testing/tool_call_tests.rs
+expression: render_conversation(&state)
+---
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ > Find and read the config                                                     
+                                                                                
+ ● I'll search for config files first.                                          
+                                                                                
+✓ glob → 3 files                                                                
+                                                                                
+✓ read_file → 127 lines                                                         
+                                                                                
+ ● Found the config with database settings.

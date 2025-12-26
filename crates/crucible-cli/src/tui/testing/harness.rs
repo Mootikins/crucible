@@ -59,9 +59,16 @@ impl Harness {
     }
 
     /// Builder: set initial conversation
+    ///
+    /// Populates both the harness's conversation state and the view's internal
+    /// conversation state so rendering works correctly.
     pub fn with_session(mut self, items: Vec<ConversationItem>) -> Self {
-        for item in items {
+        for item in items.clone() {
             self.conversation.push(item);
+        }
+        // Also sync to view's internal conversation for rendering
+        for item in items {
+            self.view.state_mut().conversation.push(item);
         }
         self
     }

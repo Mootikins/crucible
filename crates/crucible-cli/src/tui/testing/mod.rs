@@ -49,6 +49,8 @@ mod harness;
 #[cfg(test)]
 mod harness_tests;
 mod state_builder;
+#[cfg(test)]
+mod tool_call_tests;
 
 pub use harness::Harness;
 pub use state_builder::{
