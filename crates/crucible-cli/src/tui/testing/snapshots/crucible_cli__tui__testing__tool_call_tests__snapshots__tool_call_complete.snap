@@ -25,4 +25,4 @@ expression: render_conversation(&state)
                                                                                 
  ● Let me check.                                                                
                                                                                 
-✓ glob → 42 files
+ ● glob → 42 files

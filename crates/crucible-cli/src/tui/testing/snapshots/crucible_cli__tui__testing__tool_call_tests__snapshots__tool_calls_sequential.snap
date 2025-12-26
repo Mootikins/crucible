@@ -21,8 +21,8 @@ expression: render_conversation(&state)
                                                                                 
  ● I'll search for config files first.                                          
                                                                                 
-✓ glob → 3 files                                                                
+ ● glob → 3 files                                                               
                                                                                 
-✓ read_file → 127 lines                                                         
+ ● read_file → 127 lines                                                        
                                                                                 
  ● Found the config with database settings.

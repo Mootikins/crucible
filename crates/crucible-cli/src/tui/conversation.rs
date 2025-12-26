@@ -566,11 +566,11 @@ fn render_tool_call(tool: &ToolCallDisplay) -> Vec<Line<'static>> {
     // Add blank line for spacing
     lines.push(Line::from(""));
 
-    // Tool status line
+    // Tool status line - use " X " prefix to align with " > " and " ● " message prefixes
     let (indicator, style) = match &tool.status {
         ToolStatus::Running => (indicators::SPINNER_FRAMES[0], presets::tool_running()),
-        ToolStatus::Complete { .. } => (indicators::COMPLETE, presets::tool_complete()),
-        ToolStatus::Error { .. } => (indicators::ERROR, presets::tool_error()),
+        ToolStatus::Complete { .. } => (indicators::TOOL_COMPLETE, presets::tool_complete()),
+        ToolStatus::Error { .. } => (indicators::TOOL_ERROR, presets::tool_error()),
     };
 
     let status_suffix = match &tool.status {
@@ -582,17 +582,22 @@ fn render_tool_call(tool: &ToolCallDisplay) -> Vec<Line<'static>> {
         ToolStatus::Error { message } => format!(" → {}", message),
     };
 
+    // Use " X " prefix format to align with user/assistant message prefixes
     lines.push(Line::from(vec![Span::styled(
-        format!("{} {}{}", indicator, tool.name, status_suffix),
+        format!(" {} {}{}", indicator, tool.name, status_suffix),
         style,
     )]));
 
-    // Tool output lines (indented)
-    for line in &tool.output_lines {
-        lines.push(Line::from(vec![Span::styled(
-            format!("  {}", line),
-            presets::tool_output(),
-        )]));
+    // Tool output lines - only show while running (max 3 lines)
+    // Output disappears when tool completes (shrinks to single line)
+    if matches!(tool.status, ToolStatus::Running) {
+        let output_lines: Vec<_> = tool.output_lines.iter().rev().take(3).collect();
+        for line in output_lines.into_iter().rev() {
+            lines.push(Line::from(vec![Span::styled(
+                format!("    {}", line),
+                presets::tool_output(),
+            )]));
+        }
     }
 
     lines

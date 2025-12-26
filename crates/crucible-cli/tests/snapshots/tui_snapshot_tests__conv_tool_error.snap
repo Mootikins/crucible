@@ -21,7 +21,7 @@ expression: terminal.backend()
 "                                                                                "
 "                                                                                "
 "                                                                                "
-"✗ read /nonexistent → file not found                                            "
+" ✗ read /nonexistent → file not found                                           "
 "                                                                                "
 " >                                                                              "
 "                                                                                "
