@@ -511,3 +511,79 @@ mod env_passthrough_tests {
         assert!(config.env_vars.is_none(), "Empty env_vars should be None");
     }
 }
+
+#[cfg(test)]
+mod working_dir_tests {
+    use super::super::*;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    /// Documents current behavior: working_dir is None by default.
+    /// This causes fallback to std::env::current_dir() at connect time.
+    #[test]
+    fn test_client_config_working_dir_is_none_by_default() {
+        let agent = AgentInfo {
+            name: "test-agent".to_string(),
+            command: "test-cmd".to_string(),
+            args: vec![],
+            env_vars: HashMap::new(),
+        };
+
+        let client = CrucibleAcpClient::new(agent, false);
+        let config = client.build_client_config();
+
+        // Current behavior: working_dir is always None
+        assert!(
+            config.working_dir.is_none(),
+            "Default working_dir should be None"
+        );
+    }
+
+    /// TDD: Working directory should be capturable at construction time.
+    ///
+    /// This test will FAIL until we add `with_working_dir()` method.
+    /// The working directory should be passed through to the ClientConfig
+    /// so the agent operates in the correct directory.
+    #[test]
+    fn test_client_with_explicit_working_dir() {
+        let agent = AgentInfo {
+            name: "test-agent".to_string(),
+            command: "test-cmd".to_string(),
+            args: vec![],
+            env_vars: HashMap::new(),
+        };
+
+        let workspace = PathBuf::from("/home/user/my-project");
+
+        // This should set the working directory for the agent
+        let client = CrucibleAcpClient::new(agent, false).with_working_dir(workspace.clone());
+
+        let config = client.build_client_config();
+
+        // The working_dir should be passed through to ClientConfig
+        assert_eq!(
+            config.working_dir,
+            Some(workspace),
+            "ClientConfig should contain the explicit working_dir"
+        );
+    }
+
+    /// TDD: AgentInitParams should capture working_dir for ACP agents.
+    ///
+    /// When an agent is initialized, the working directory should be captured
+    /// and passed to the ACP client.
+    #[test]
+    fn test_agent_init_params_has_working_dir() {
+        use crate::factories::agent::AgentInitParams;
+
+        let workspace = PathBuf::from("/home/user/workspace");
+
+        let params = AgentInitParams::new().with_working_dir(workspace.clone());
+
+        assert_eq!(
+            params.working_dir,
+            Some(workspace),
+            "AgentInitParams should store working_dir"
+        );
+    }
+}
