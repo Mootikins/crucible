@@ -13,7 +13,7 @@ name = "zellij-inbox"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 dirs = "5"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
