@@ -23,6 +23,6 @@ expression: render_conversation(&state)
                                                                                 
  > Find TODO comments                                                           
                                                                                 
-◐ grep                                                                          
-  src/main.rs:42: TODO: fix this                                                
-  src/lib.rs:17: TODO: optimize
+ ◐ grep                                                                         
+    src/main.rs:42: TODO: fix this                                              
+    src/lib.rs:17: TODO: optimize

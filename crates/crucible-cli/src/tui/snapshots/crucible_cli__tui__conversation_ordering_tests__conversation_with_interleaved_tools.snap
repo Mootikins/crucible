@@ -30,10 +30,10 @@ expression: output
 
  ● I'll explore the project structure.
 
-✓ ls → 15 files
+ ● ls → 15 files
 
  ● Found 15 files. Let me check the main module.
 
-✓ cat main.rs → 200 lines
+ ● cat main.rs → 200 lines
 
  ● The main module handles initialization.

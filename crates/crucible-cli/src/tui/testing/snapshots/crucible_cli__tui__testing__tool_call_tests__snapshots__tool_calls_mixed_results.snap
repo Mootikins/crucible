@@ -19,10 +19,10 @@ expression: render_conversation(&state)
                                                                                 
  ● I'll read each config file.                                                  
                                                                                 
-✓ read_file → config.toml - 45 lines                                            
+ ● read_file → config.toml - 45 lines                                           
                                                                                 
-✗ read_file → .env: File not found                                              
+ ✗ read_file → .env: File not found                                             
                                                                                 
-✓ read_file → settings.json - 12 lines                                          
+ ● read_file → settings.json - 12 lines                                         
                                                                                 
  ● Read 2 of 3 config files. The .env file doesn't exist.

@@ -144,17 +144,23 @@ mod unit_tests {
             })
             .expect("Should find grep line");
 
-        // Should contain spinner character
+        // Should contain spinner character with alignment prefix
         let text: String = tool_line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(
             text.contains(indicators::SPINNER_FRAMES[0]),
             "Running tool should show spinner. Got: {}",
             text
         );
+        // Should be aligned with " X " prefix pattern
+        assert!(
+            text.starts_with(" "),
+            "Tool call should start with space for alignment. Got: '{}'",
+            text
+        );
     }
 
     #[test]
-    fn complete_tool_shows_checkmark() {
+    fn complete_tool_shows_green_dot() {
         let tool = ConversationItem::ToolCall(ToolCallDisplay {
             name: "glob".to_string(),
             status: ToolStatus::Complete {
@@ -175,9 +181,10 @@ mod unit_tests {
             .expect("Should find glob line");
 
         let text: String = tool_line.spans.iter().map(|s| s.content.as_ref()).collect();
+        // Complete tool shows green dot (●) not checkmark
         assert!(
-            text.contains(indicators::COMPLETE),
-            "Complete tool should show checkmark. Got: {}",
+            text.contains(indicators::TOOL_COMPLETE),
+            "Complete tool should show green dot (●). Got: {}",
             text
         );
         assert!(
@@ -210,7 +217,7 @@ mod unit_tests {
 
         let text: String = tool_line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(
-            text.contains(indicators::ERROR),
+            text.contains(indicators::TOOL_ERROR),
             "Error tool should show X mark. Got: {}",
             text
         );
@@ -222,41 +229,110 @@ mod unit_tests {
     }
 
     #[test]
-    fn tool_output_lines_are_indented() {
-        let tool = ConversationItem::ToolCall(ToolCallDisplay {
+    fn tool_output_only_shown_while_running() {
+        // Running tool should show output
+        let running_tool = ConversationItem::ToolCall(ToolCallDisplay {
             name: "grep".to_string(),
             status: ToolStatus::Running,
             output_lines: vec!["match 1".to_string(), "match 2".to_string()],
         });
 
+        let running_lines = render_item_to_lines(&running_tool, 80);
+        let running_has_output = running_lines.iter().any(|l| {
+            let text: String = l.spans.iter().map(|s| s.content.as_ref()).collect();
+            text.contains("match")
+        });
+        assert!(running_has_output, "Running tool should show output");
+
+        // Complete tool should NOT show output (shrinks)
+        let complete_tool = ConversationItem::ToolCall(ToolCallDisplay {
+            name: "grep".to_string(),
+            status: ToolStatus::Complete {
+                summary: Some("2 matches".to_string()),
+            },
+            output_lines: vec!["match 1".to_string(), "match 2".to_string()],
+        });
+
+        let complete_lines = render_item_to_lines(&complete_tool, 80);
+        let complete_has_output = complete_lines.iter().any(|l| {
+            let text: String = l.spans.iter().map(|s| s.content.as_ref()).collect();
+            text.contains("match 1") || text.contains("match 2")
+        });
+        assert!(
+            !complete_has_output,
+            "Complete tool should hide output (shrink)"
+        );
+    }
+
+    #[test]
+    fn tool_output_max_3_lines() {
+        let tool = ConversationItem::ToolCall(ToolCallDisplay {
+            name: "grep".to_string(),
+            status: ToolStatus::Running,
+            output_lines: vec![
+                "line 1".to_string(),
+                "line 2".to_string(),
+                "line 3".to_string(),
+                "line 4".to_string(),
+                "line 5".to_string(),
+            ],
+        });
+
         let lines = render_item_to_lines(&tool, 80);
 
-        // Should have blank line + tool line + 2 output lines = 4 total
-        assert!(
-            lines.len() >= 3,
-            "Should have tool line and output. Got {} lines",
-            lines.len()
-        );
-
-        // Find output lines (should be indented)
-        let output_lines: Vec<_> = lines
+        // Count output lines (those containing "line")
+        let output_count = lines
             .iter()
             .filter(|l| {
                 let text: String = l.spans.iter().map(|s| s.content.as_ref()).collect();
+                text.contains("line")
+            })
+            .count();
+
+        assert_eq!(
+            output_count, 3,
+            "Should show max 3 output lines. Got: {}",
+            output_count
+        );
+
+        // Should show the LAST 3 lines (most recent)
+        let has_line_5 = lines.iter().any(|l| {
+            let text: String = l.spans.iter().map(|s| s.content.as_ref()).collect();
+            text.contains("line 5")
+        });
+        assert!(has_line_5, "Should show most recent line (line 5)");
+    }
+
+    #[test]
+    fn tool_output_lines_are_indented() {
+        let tool = ConversationItem::ToolCall(ToolCallDisplay {
+            name: "grep".to_string(),
+            status: ToolStatus::Running,
+            output_lines: vec!["match 1".to_string()],
+        });
+
+        let lines = render_item_to_lines(&tool, 80);
+
+        // Find output line
+        let output_line = lines
+            .iter()
+            .find(|l| {
+                let text: String = l.spans.iter().map(|s| s.content.as_ref()).collect();
                 text.contains("match")
             })
+            .expect("Should find output line");
+
+        let text: String = output_line
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
             .collect();
-
-        assert_eq!(output_lines.len(), 2, "Should have 2 output lines");
-
-        for line in output_lines {
-            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-            assert!(
-                text.starts_with("  "),
-                "Output lines should be indented. Got: '{}'",
-                text
-            );
-        }
+        // Should be indented with 4 spaces to align under tool name
+        assert!(
+            text.starts_with("    "),
+            "Output lines should be indented 4 spaces. Got: '{}'",
+            text
+        );
     }
 
     #[test]
@@ -304,10 +380,11 @@ mod harness_tests {
 
         let output = h.render();
 
-        // Should contain checkmark indicator
+        // Should contain green dot indicator (●)
         assert!(
-            output.contains("✓") || output.contains(crate::tui::styles::indicators::COMPLETE),
-            "Should show complete indicator"
+            output.contains("●") || output.contains(crate::tui::styles::indicators::TOOL_COMPLETE),
+            "Should show complete indicator (green dot). Got: {}",
+            output
         );
     }
 
@@ -333,10 +410,10 @@ mod style_tests {
     use ratatui::style::Color;
 
     #[test]
-    fn tool_running_uses_yellow() {
+    fn tool_running_uses_white() {
         let style = presets::tool_running();
         assert_eq!(style.fg, Some(colors::TOOL_RUNNING));
-        assert_eq!(colors::TOOL_RUNNING, Color::Yellow);
+        assert_eq!(colors::TOOL_RUNNING, Color::White);
     }
 
     #[test]

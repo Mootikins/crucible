@@ -54,8 +54,8 @@ pub mod colors {
     /// Generating/streaming indicator
     pub const STREAMING: Color = Color::Green;
 
-    /// Tool running indicator
-    pub const TOOL_RUNNING: Color = Color::Yellow;
+    /// Tool running indicator (white spinner)
+    pub const TOOL_RUNNING: Color = Color::White;
 
     /// Tool complete indicator
     pub const TOOL_COMPLETE: Color = Color::Green;
@@ -82,11 +82,14 @@ pub mod indicators {
     /// Tool running spinner frames
     pub const SPINNER_FRAMES: &[&str] = &["◐", "◓", "◑", "◒"];
 
-    /// Tool complete checkmark
-    pub const COMPLETE: &str = "✓";
+    /// Tool complete indicator (dot, matches assistant prefix)
+    pub const TOOL_COMPLETE: &str = "●";
 
     /// Tool error X
-    pub const ERROR: &str = "✗";
+    pub const TOOL_ERROR: &str = "✗";
+
+    /// Legacy checkmark (kept for backwards compatibility)
+    pub const COMPLETE: &str = "✓";
 
     /// User message prefix (for historical messages)
     pub const USER_PREFIX: &str = ">";
@@ -243,7 +246,7 @@ pub fn format_tool_complete(name: &str, summary: Option<&str>) -> String {
 
 /// Format tool error
 pub fn format_tool_error(name: &str, error: &str) -> String {
-    format!("{} {} → {}", indicators::ERROR, name, error)
+    format!("{} {} → {}", indicators::TOOL_ERROR, name, error)
 }
 
 /// Format status line
@@ -327,7 +330,7 @@ mod tests {
     #[test]
     fn test_format_tool_error() {
         let status = format_tool_error("read", "file not found");
-        assert!(status.contains(indicators::ERROR));
+        assert!(status.contains(indicators::TOOL_ERROR));
         assert!(status.contains("file not found"));
     }
 
