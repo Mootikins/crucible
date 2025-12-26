@@ -27,6 +27,9 @@ pub struct CrucibleAcpClient {
     config: ChatConfig,
     acp_config: AcpConfig,
     kiln_path: Option<PathBuf>,
+    /// Working directory for the agent (where it should operate)
+    /// This is distinct from kiln_path which is where knowledge is stored.
+    working_dir: Option<PathBuf>,
     /// Knowledge repository for semantic search (required for in-process MCP)
     knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
     /// Embedding provider for vector operations (required for in-process MCP)
@@ -81,10 +84,23 @@ impl CrucibleAcpClient {
             config,
             acp_config,
             kiln_path: None,
+            working_dir: None,
             knowledge_repo: None,
             embedding_provider: None,
             mcp_host: None,
         }
+    }
+
+    /// Set the working directory for the agent
+    ///
+    /// This is where the agent will operate (for file operations, git, etc.).
+    /// It is distinct from the kiln path, which is where knowledge is stored.
+    ///
+    /// # Arguments
+    /// * `path` - The directory where the agent should work
+    pub fn with_working_dir(mut self, path: PathBuf) -> Self {
+        self.working_dir = Some(path);
+        self
     }
 
     /// Set the kiln path for tool initialization
@@ -136,6 +152,7 @@ impl CrucibleAcpClient {
             config,
             acp_config: AcpConfig::default(),
             kiln_path: None,
+            working_dir: None,
             knowledge_repo: None,
             embedding_provider: None,
             mcp_host: None,
@@ -176,7 +193,7 @@ impl CrucibleAcpClient {
         crucible_acp::client::ClientConfig {
             agent_path,
             agent_args,
-            working_dir: None,
+            working_dir: self.working_dir.clone(),
             env_vars,
             timeout_ms: Some(timeout_ms),
             max_retries: None,

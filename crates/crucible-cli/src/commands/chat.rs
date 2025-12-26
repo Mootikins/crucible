@@ -98,6 +98,11 @@ pub async fn execute(
         info!("CLI env overrides: {:?}", keys);
     }
 
+    // Capture current working directory for agent initialization
+    // This ensures the agent operates in the user's current directory (where they invoked cru)
+    // This is distinct from the kiln path, which is where knowledge is stored.
+    let working_dir = std::env::current_dir().ok();
+
     // === INTERACTIVE MODE: Always use factory path for /new restart support ===
     let is_interactive = query.is_none();
     if is_interactive {
@@ -123,6 +128,7 @@ pub async fn execute(
             provider_key,
             max_context_tokens,
             parsed_env,
+            working_dir.clone(),
             status,
             preselected_agent,
         )
@@ -139,13 +145,18 @@ pub async fn execute(
     };
 
     // Create agent initialization params
-    let agent_params = factories::AgentInitParams::new()
+    let mut agent_params = factories::AgentInitParams::new()
         .with_type(agent_type)
         .with_agent_name_opt(agent_name.clone().or(default_agent_from_config.clone()))
         .with_provider_opt(provider_key)
         .with_read_only(is_read_only(initial_mode))
         .with_max_context_tokens(max_context_tokens)
         .with_env_overrides(parsed_env);
+
+    // Set working directory if available
+    if let Some(ref wd) = working_dir {
+        agent_params = agent_params.with_working_dir(wd.clone());
+    }
 
     // Fetch available models for OpenCode (unused in one-shot mode, but kept for future use)
     let _available_models = if agent_type == factories::AgentType::Acp {
@@ -369,6 +380,7 @@ async fn run_deferred_chat(
     provider_key: Option<String>,
     max_context_tokens: usize,
     parsed_env: std::collections::HashMap<String, String>,
+    working_dir: Option<std::path::PathBuf>,
     mut status: StatusLine,
     // Pre-selected agent for first iteration (skips picker, still allows /new restart)
     preselected_agent: Option<AgentSelection>,
@@ -481,6 +493,7 @@ async fn run_deferred_chat(
     // This captures all dependencies needed to create the agent after picker selection
     let config_for_factory = config.clone();
     let initial_mode_str = initial_mode.to_string();
+    let working_dir_for_factory = working_dir.clone();
     let factory = move |selection: AgentSelection| {
         let config = config_for_factory.clone();
         let default_agent = default_agent.clone();
@@ -490,19 +503,25 @@ async fn run_deferred_chat(
         let embedding_provider = embedding_provider.clone();
         let knowledge_repo = knowledge_repo.clone();
         let initial_mode = initial_mode_str.clone();
+        let working_dir = working_dir_for_factory.clone();
 
         async move {
             match selection {
                 AgentSelection::Acp(agent_name) => {
                     info!("Creating ACP agent: {}", agent_name);
 
-                    let params = factories::AgentInitParams::new()
+                    let mut params = factories::AgentInitParams::new()
                         .with_type(factories::AgentType::Acp)
                         .with_agent_name_opt(Some(agent_name).or(default_agent))
                         .with_provider_opt(provider_key)
                         .with_read_only(is_read_only(&initial_mode))
                         .with_max_context_tokens(max_context_tokens)
                         .with_env_overrides(parsed_env);
+
+                    // Set working directory if available
+                    if let Some(wd) = working_dir.clone() {
+                        params = params.with_working_dir(wd);
+                    }
 
                     let agent = factories::create_agent(&config, params).await?;
 
@@ -523,12 +542,17 @@ async fn run_deferred_chat(
                 AgentSelection::Internal => {
                     info!("Creating internal agent");
 
-                    let params = factories::AgentInitParams::new()
+                    let mut params = factories::AgentInitParams::new()
                         .with_type(factories::AgentType::Internal)
                         .with_provider_opt(provider_key)
                         .with_read_only(is_read_only(&initial_mode))
                         .with_max_context_tokens(max_context_tokens)
                         .with_env_overrides(parsed_env);
+
+                    // Set working directory if available (for future use with internal agents)
+                    if let Some(wd) = working_dir {
+                        params = params.with_working_dir(wd);
+                    }
 
                     let agent = factories::create_agent(&config, params).await?;
 
