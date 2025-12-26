@@ -65,8 +65,13 @@ See [[Help/TUI/Rune API]] for scripting TUI behavior.
 | `@` | Open agent/file popup |
 | `Esc` | Dismiss popup/dialog |
 
+## Testing
+
+For developers contributing to the TUI, see [[Help/TUI/E2E Testing]] for information on the expectrl-based test harness that enables PTY-based end-to-end testing.
+
 ## See Also
 
 - [[Help/TUI/Component Architecture]] - Widget system details
 - [[Help/TUI/Rune API]] - Scripting interface
+- [[Help/TUI/E2E Testing]] - End-to-end test harness
 - [[Help/CLI/chat]] - Chat command reference
