@@ -5,7 +5,9 @@ use std::{env, fs};
 
 use thiserror::Error;
 
-use crate::{parse, render, Inbox};
+use crate::{parse, Inbox};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::render;
 
 #[derive(Debug, Error)]
 pub enum FileError {
@@ -16,6 +18,7 @@ pub enum FileError {
 }
 
 /// Get the inbox file path for the current session
+#[cfg(not(target_arch = "wasm32"))]
 pub fn inbox_path() -> Result<PathBuf, FileError> {
     // Check override first
     if let Ok(path) = env::var("ZELLIJ_INBOX_FILE") {
@@ -33,6 +36,16 @@ pub fn inbox_path() -> Result<PathBuf, FileError> {
     Ok(base.join(format!("{}.md", session)))
 }
 
+/// Build inbox path from session name (for WASM)
+#[cfg(target_arch = "wasm32")]
+pub fn inbox_path_for_session(session: &str) -> PathBuf {
+    // In WASM we can't use dirs crate, use XDG default
+    let base = PathBuf::from("/home")
+        .join(env::var("USER").unwrap_or_else(|_| "user".to_string()))
+        .join(".local/share/zellij-inbox");
+    base.join(format!("{}.md", session))
+}
+
 /// Load inbox from file (returns empty inbox if file doesn't exist)
 pub fn load(path: &Path) -> Result<Inbox, FileError> {
     match fs::read_to_string(path) {
@@ -43,6 +56,7 @@ pub fn load(path: &Path) -> Result<Inbox, FileError> {
 }
 
 /// Save inbox to file (creates parent dirs, deletes file if empty)
+#[cfg(not(target_arch = "wasm32"))]
 pub fn save(path: &Path, inbox: &Inbox) -> Result<(), FileError> {
     if inbox.is_empty() {
         // Delete file if it exists
@@ -62,7 +76,7 @@ pub fn save(path: &Path, inbox: &Inbox) -> Result<(), FileError> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::{InboxItem, Status};
