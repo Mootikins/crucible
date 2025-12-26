@@ -1,0 +1,28 @@
+---
+source: crates/crucible-cli/src/tui/testing/tool_call_tests.rs
+expression: render_conversation(&state)
+---
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ > List files                                                                   
+                                                                                
+ ● Let me check.                                                                
+                                                                                
+✓ glob → 42 files
