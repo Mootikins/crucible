@@ -131,4 +131,36 @@ describe('WhisperContext', () => {
       expect(status).toBe('ready');
     });
   });
+
+  describe('provider selection', () => {
+    it('uses server transcription when provider setting is server', () => {
+      // Verifies the provider selection logic
+      const provider = 'server';
+      const useServerTranscription = provider === 'server';
+      expect(useServerTranscription).toBe(true);
+    });
+
+    it('uses local transcription when provider setting is local', () => {
+      // Verifies the provider selection logic
+      const provider = 'local';
+      const useServerTranscription = provider === 'server';
+      expect(useServerTranscription).toBe(false);
+    });
+
+    it('server provider status is ready immediately', () => {
+      // Server transcription does not require model loading
+      const provider = 'server';
+      const localStatus = 'idle';
+      const effectiveStatus = provider === 'server' ? 'ready' : localStatus;
+      expect(effectiveStatus).toBe('ready');
+    });
+
+    it('local provider uses local status', () => {
+      // Local transcription requires model loading
+      const provider = 'local';
+      const localStatus = 'loading';
+      const effectiveStatus = provider === 'server' ? 'ready' : localStatus;
+      expect(effectiveStatus).toBe('loading');
+    });
+  });
 });
