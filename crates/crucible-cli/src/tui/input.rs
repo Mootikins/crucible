@@ -33,6 +33,15 @@ pub enum InputAction {
     HistoryNext,
     Cancel,
     Exit,
+    // Readline-style editing (emacs mode)
+    DeleteWordBackward, // Ctrl+W
+    DeleteToLineStart,  // Ctrl+U
+    DeleteToLineEnd,    // Ctrl+K
+    MoveCursorToStart,  // Ctrl+A
+    MoveCursorToEnd,    // Ctrl+E
+    MoveWordBackward,   // Alt+B
+    MoveWordForward,    // Alt+F
+    TransposeChars,     // Ctrl+T
     None,
 }
 
@@ -60,6 +69,16 @@ pub fn map_key_event(event: &KeyEvent, state: &TuiState) -> InputAction {
 
         // Ctrl+J inserts newline
         (KeyCode::Char('j'), KeyModifiers::CONTROL) => InputAction::InsertNewline,
+
+        // Readline-style editing (emacs mode)
+        (KeyCode::Char('w'), KeyModifiers::CONTROL) => InputAction::DeleteWordBackward,
+        (KeyCode::Char('u'), KeyModifiers::CONTROL) => InputAction::DeleteToLineStart,
+        (KeyCode::Char('k'), KeyModifiers::CONTROL) => InputAction::DeleteToLineEnd,
+        (KeyCode::Char('a'), KeyModifiers::CONTROL) => InputAction::MoveCursorToStart,
+        (KeyCode::Char('e'), KeyModifiers::CONTROL) => InputAction::MoveCursorToEnd,
+        (KeyCode::Char('b'), KeyModifiers::ALT) => InputAction::MoveWordBackward,
+        (KeyCode::Char('f'), KeyModifiers::ALT) => InputAction::MoveWordForward,
+        (KeyCode::Char('t'), KeyModifiers::CONTROL) => InputAction::TransposeChars,
 
         // Enter: confirm popup if active with / or @, otherwise send message
         (KeyCode::Enter, KeyModifiers::NONE) => {
@@ -419,5 +438,74 @@ mod slash_command_tests {
             "@ trigger with popup should confirm, got: {:?}",
             action
         );
+    }
+}
+
+#[cfg(test)]
+mod readline_tests {
+    use super::*;
+
+    #[test]
+    fn test_ctrl_w_delete_word_backward() {
+        let state = TuiState::new("plan");
+        let event = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL);
+        let action = map_key_event(&event, &state);
+        assert_eq!(action, InputAction::DeleteWordBackward);
+    }
+
+    #[test]
+    fn test_ctrl_u_delete_to_line_start() {
+        let state = TuiState::new("plan");
+        let event = KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL);
+        let action = map_key_event(&event, &state);
+        assert_eq!(action, InputAction::DeleteToLineStart);
+    }
+
+    #[test]
+    fn test_ctrl_k_delete_to_line_end() {
+        let state = TuiState::new("plan");
+        let event = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        let action = map_key_event(&event, &state);
+        assert_eq!(action, InputAction::DeleteToLineEnd);
+    }
+
+    #[test]
+    fn test_ctrl_a_move_to_start() {
+        let state = TuiState::new("plan");
+        let event = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL);
+        let action = map_key_event(&event, &state);
+        assert_eq!(action, InputAction::MoveCursorToStart);
+    }
+
+    #[test]
+    fn test_ctrl_e_move_to_end() {
+        let state = TuiState::new("plan");
+        let event = KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL);
+        let action = map_key_event(&event, &state);
+        assert_eq!(action, InputAction::MoveCursorToEnd);
+    }
+
+    #[test]
+    fn test_alt_b_move_word_backward() {
+        let state = TuiState::new("plan");
+        let event = KeyEvent::new(KeyCode::Char('b'), KeyModifiers::ALT);
+        let action = map_key_event(&event, &state);
+        assert_eq!(action, InputAction::MoveWordBackward);
+    }
+
+    #[test]
+    fn test_alt_f_move_word_forward() {
+        let state = TuiState::new("plan");
+        let event = KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT);
+        let action = map_key_event(&event, &state);
+        assert_eq!(action, InputAction::MoveWordForward);
+    }
+
+    #[test]
+    fn test_ctrl_t_transpose_chars() {
+        let state = TuiState::new("plan");
+        let event = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL);
+        let action = map_key_event(&event, &state);
+        assert_eq!(action, InputAction::TransposeChars);
     }
 }
