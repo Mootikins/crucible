@@ -427,7 +427,10 @@ impl RatatuiView {
     /// Append content blocks to the streaming assistant message
     pub fn append_streaming_blocks(&mut self, blocks: Vec<crate::tui::ContentBlock>) {
         self.state.conversation.append_streaming_blocks(blocks);
-        self.scroll_to_bottom();
+        // Only auto-scroll if user was at bottom (allows reading while streaming)
+        if self.state.at_bottom {
+            self.scroll_to_bottom();
+        }
     }
 
     /// Mark the streaming assistant message as complete
@@ -449,7 +452,10 @@ impl RatatuiView {
     /// Used for streaming to consolidate continuous prose text
     pub fn append_or_create_prose(&mut self, text: &str) {
         self.state.conversation.append_or_create_prose(text);
-        self.scroll_to_bottom();
+        // Only auto-scroll if user was at bottom (allows reading while streaming)
+        if self.state.at_bottom {
+            self.scroll_to_bottom();
+        }
     }
 
     /// Push a dialog onto the stack
@@ -524,7 +530,10 @@ impl ConversationView for RatatuiView {
 
     fn push_assistant_message(&mut self, content: &str) -> Result<()> {
         self.state.conversation.push_assistant_message(content);
-        self.scroll_to_bottom();
+        // Only auto-scroll if user was at bottom (allows reading while assistant responds)
+        if self.state.at_bottom {
+            self.scroll_to_bottom();
+        }
         Ok(())
     }
 
@@ -847,6 +856,62 @@ mod tests {
             !view.state().at_bottom,
             "Should NOT be at_bottom when scroll_offset > 0"
         );
+    }
+
+    /// Test that new content doesn't auto-scroll when user has scrolled up.
+    ///
+    /// Regression test for: auto-scroll ignoring at_bottom flag.
+    /// Users should be able to read old messages while new content streams.
+    #[test]
+    fn test_no_auto_scroll_when_scrolled_up() {
+        let mut view = RatatuiView::new("plan", 80, 24);
+
+        // Add initial content
+        for i in 0..20 {
+            view.push_user_message(&format!("Message {}", i)).unwrap();
+        }
+
+        // User scrolls up to read older messages
+        view.scroll_up(10);
+        assert!(!view.state().at_bottom);
+        let offset_before = view.state().scroll_offset;
+        assert!(offset_before > 0);
+
+        // New assistant message arrives (simulating streaming)
+        view.push_assistant_message("New content from assistant")
+            .unwrap();
+
+        // Scroll position should NOT change - user should stay where they were
+        assert_eq!(
+            view.state().scroll_offset,
+            offset_before,
+            "Scroll offset should remain unchanged when user scrolled up. \
+             Got {} but expected {} (the position before new content)",
+            view.state().scroll_offset,
+            offset_before
+        );
+        assert!(
+            !view.state().at_bottom,
+            "at_bottom should remain false when user has scrolled up"
+        );
+    }
+
+    /// Test that new content DOES auto-scroll when user is at bottom.
+    #[test]
+    fn test_auto_scroll_when_at_bottom() {
+        let mut view = RatatuiView::new("plan", 80, 24);
+
+        // Add initial content - user starts at bottom
+        view.push_user_message("First message").unwrap();
+        assert!(view.state().at_bottom);
+        assert_eq!(view.state().scroll_offset, 0);
+
+        // New assistant message arrives
+        view.push_assistant_message("Response").unwrap();
+
+        // Should remain at bottom
+        assert!(view.state().at_bottom);
+        assert_eq!(view.state().scroll_offset, 0);
     }
 
     /// Test that scrolling works correctly for messages with many lines.
