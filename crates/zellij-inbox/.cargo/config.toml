@@ -1,0 +1,6 @@
+[build]
+# Default target for `cargo build` (native)
+# Use `cargo build --target wasm32-wasi` for plugin
+
+[target.wasm32-wasi]
+runner = "zellij"
