@@ -272,6 +272,63 @@ Tests handle missing infrastructure gracefully with runtime checks.
 - Use `crucible_core::test_support::nonexistent_path()` for paths that don't need to exist
 - Never use hardcoded `/tmp` paths (not portable to Windows)
 
+### TUI Testing Workflow
+
+When fixing TUI bugs or implementing UX changes, follow this pattern:
+
+**1. Write failing test first:**
+```rust
+use crate::tui::testing::{Harness, fixtures::sessions};
+use crossterm::event::KeyCode;
+
+#[test]
+fn popup_should_close_on_escape() {
+    let mut h = Harness::new(80, 24);
+    h.key(KeyCode::Char('/'));
+    assert!(h.has_popup());
+
+    h.key(KeyCode::Esc);
+    assert!(!h.has_popup());
+}
+```
+
+**2. Run test, confirm it fails:**
+```bash
+cargo test -p crucible-cli --features test-utils popup_should_close
+```
+
+**3. Fix implementation** - Make minimal changes to pass the test.
+
+**4. Add snapshot if visual:**
+```rust
+insta::assert_snapshot!(h.render(), @"popup_closed");
+```
+
+**5. Run full test suite:**
+```bash
+cargo test -p crucible-cli --features test-utils tui::testing
+```
+
+**Fixture reuse:** Before creating new fixtures, check `tui/testing/fixtures/`:
+- `sessions.rs` - Conversation histories
+- `registries.rs` - Commands, agents
+- `events.rs` - Event sequences
+
+Extend existing fixtures rather than duplicating.
+
+**Cross-component tests:** When an event should affect multiple components, test them together:
+```rust
+#[test]
+fn streaming_affects_status_and_history() {
+    let mut h = Harness::new(80, 24);
+    h.events(fixtures::events::streaming_chunks("Hello world"));
+
+    // Verify ALL expected effects
+    assert!(!h.has_error());
+    insta::assert_snapshot!(h.render());
+}
+```
+
 ### Quality Checklist
 
 Before submitting changes:
