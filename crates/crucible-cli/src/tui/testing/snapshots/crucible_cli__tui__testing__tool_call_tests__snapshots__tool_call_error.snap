@@ -25,4 +25,4 @@ expression: render_conversation(&state)
                                                                                 
  ● I'll try to read that.                                                       
                                                                                 
-✗ read_file → Permission denied
+ ✗ read_file → Permission denied
