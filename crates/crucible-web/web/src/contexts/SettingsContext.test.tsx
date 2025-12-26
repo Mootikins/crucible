@@ -40,7 +40,7 @@ describe('SettingsContext', () => {
         const { settings } = useSettings();
         expect(settings.transcription.provider).toBe('server');
         expect(settings.transcription.serverUrl).toBe('https://custom.url');
-        expect(settings.transcription.model).toBe('whisper-1');
+        expect(settings.transcription.model).toBe('whisper-large-v3-turbo');
         return null;
       };
 

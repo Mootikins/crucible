@@ -25,8 +25,8 @@ describe('settings', () => {
       expect(defaultSettings.transcription.serverUrl).toBe('https://llama.krohnos.io');
     });
 
-    it('has whisper-1 as default model', () => {
-      expect(defaultSettings.transcription.model).toBe('whisper-1');
+    it('has whisper-large-v3-turbo as default model', () => {
+      expect(defaultSettings.transcription.model).toBe('whisper-large-v3-turbo');
     });
 
     it('has auto as default language', () => {
@@ -57,7 +57,7 @@ describe('settings', () => {
 
       const settings = loadSettings();
       expect(settings.transcription.provider).toBe('server');
-      expect(settings.transcription.model).toBe('whisper-1');
+      expect(settings.transcription.model).toBe('whisper-large-v3-turbo');
     });
 
     it('returns defaults on invalid JSON', () => {
