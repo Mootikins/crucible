@@ -15,14 +15,14 @@ expression: render_conversation(&state)
                                                                                 
  ● Let me explore the structure.                                                
                                                                                 
-✓ glob → src/**/*.rs - 24 files                                                 
+ ● glob → src/**/*.rs - 24 files                                                
                                                                                 
  ● I found 24 Rust files. Let me check the main entry point.                    
                                                                                 
-✓ read_file → src/main.rs                                                       
+ ● read_file → src/main.rs                                                      
                                                                                 
  ● The main.rs initializes the CLI. Now checking dependencies.                  
                                                                                 
-✓ read_file → Cargo.toml                                                        
+ ● read_file → Cargo.toml                                                       
                                                                                 
  ● This project uses tokio for async runtime and clap for CLI parsing.
