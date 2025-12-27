@@ -6,16 +6,14 @@ use crate::tui::streaming_channel::StreamingEvent;
 
 /// Streaming response broken into word chunks
 pub fn streaming_chunks(text: &str) -> Vec<StreamingEvent> {
-    let mut events = Vec::new();
-    let mut seq = 0u64;
-
-    for word in text.split_inclusive(' ') {
-        events.push(StreamingEvent::Delta {
+    let mut events: Vec<StreamingEvent> = text
+        .split_inclusive(' ')
+        .enumerate()
+        .map(|(seq, word)| StreamingEvent::Delta {
             text: word.to_string(),
-            seq,
-        });
-        seq += 1;
-    }
+            seq: seq as u64,
+        })
+        .collect();
 
     events.push(StreamingEvent::Done {
         full_response: text.to_string(),
@@ -25,16 +23,14 @@ pub fn streaming_chunks(text: &str) -> Vec<StreamingEvent> {
 
 /// Character-by-character streaming (for detailed tests)
 pub fn streaming_chars(text: &str) -> Vec<StreamingEvent> {
-    let mut events = Vec::new();
-    let mut seq = 0u64;
-
-    for c in text.chars() {
-        events.push(StreamingEvent::Delta {
+    let mut events: Vec<StreamingEvent> = text
+        .chars()
+        .enumerate()
+        .map(|(seq, c)| StreamingEvent::Delta {
             text: c.to_string(),
-            seq,
-        });
-        seq += 1;
-    }
+            seq: seq as u64,
+        })
+        .collect();
 
     events.push(StreamingEvent::Done {
         full_response: text.to_string(),
@@ -53,16 +49,14 @@ pub fn tool_call_event(name: impl Into<String>) -> StreamingEvent {
 
 /// Error during streaming
 pub fn streaming_error(partial: &str, error: &str) -> Vec<StreamingEvent> {
-    let mut events = Vec::new();
-    let mut seq = 0u64;
-
-    for word in partial.split_inclusive(' ') {
-        events.push(StreamingEvent::Delta {
+    let mut events: Vec<StreamingEvent> = partial
+        .split_inclusive(' ')
+        .enumerate()
+        .map(|(seq, word)| StreamingEvent::Delta {
             text: word.to_string(),
-            seq,
-        });
-        seq += 1;
-    }
+            seq: seq as u64,
+        })
+        .collect();
 
     events.push(StreamingEvent::Error {
         message: error.to_string(),

@@ -81,7 +81,7 @@ burn-import = { version = "0.19", optional = true }
 tokenizers = { version = "0.22", default-features = false, features = ["progressbar", "onig"] }
 
 # SafeTensors for model loading
-safetensors = "0.6"
+safetensors = "0.7"
 
 # GGUF file format support
 gguf = "0.1"

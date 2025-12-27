@@ -179,7 +179,10 @@ pub fn tool_call_with_output() -> Vec<ConversationItem> {
         tool_with_output(
             "grep",
             ToolStatus::Running,
-            vec!["src/main.rs:42: TODO: fix this", "src/lib.rs:17: TODO: optimize"],
+            vec![
+                "src/main.rs:42: TODO: fix this",
+                "src/lib.rs:17: TODO: optimize",
+            ],
         ),
     ]
 }

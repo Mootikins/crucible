@@ -86,33 +86,30 @@ mod wasm {
                     true
                 }
 
-                Event::Key(key) if key.has_no_modifiers() => {
-                    match key.bare_key {
-                        BareKey::Up | BareKey::Char('k') => {
-                            self.selected = self.selected.saturating_sub(1);
-                            true
-                        }
-                        BareKey::Down | BareKey::Char('j') => {
-                            if !self.inbox.is_empty() {
-                                self.selected =
-                                    (self.selected + 1).min(self.inbox.items.len() - 1);
-                            }
-                            true
-                        }
-                        BareKey::Enter => {
-                            if let Some(pane_id) = self.selected_pane_id() {
-                                focus_terminal_pane(pane_id, true);
-                            }
-                            hide_self();
-                            false
-                        }
-                        BareKey::Esc | BareKey::Char('q') => {
-                            hide_self();
-                            false
-                        }
-                        _ => false,
+                Event::Key(key) if key.has_no_modifiers() => match key.bare_key {
+                    BareKey::Up | BareKey::Char('k') => {
+                        self.selected = self.selected.saturating_sub(1);
+                        true
                     }
-                }
+                    BareKey::Down | BareKey::Char('j') => {
+                        if !self.inbox.is_empty() {
+                            self.selected = (self.selected + 1).min(self.inbox.items.len() - 1);
+                        }
+                        true
+                    }
+                    BareKey::Enter => {
+                        if let Some(pane_id) = self.selected_pane_id() {
+                            focus_terminal_pane(pane_id, true);
+                        }
+                        hide_self();
+                        false
+                    }
+                    BareKey::Esc | BareKey::Char('q') => {
+                        hide_self();
+                        false
+                    }
+                    _ => false,
+                },
 
                 _ => false,
             }
@@ -120,12 +117,12 @@ mod wasm {
 
         fn render(&mut self, _rows: usize, cols: usize) {
             // Box-drawing characters for clean UI
-            const TOP_LEFT: &str = "\u{250c}";     // ┌
-            const TOP_RIGHT: &str = "\u{2510}";    // ┐
-            const BOTTOM_LEFT: &str = "\u{2514}";  // └
+            const TOP_LEFT: &str = "\u{250c}"; // ┌
+            const TOP_RIGHT: &str = "\u{2510}"; // ┐
+            const BOTTOM_LEFT: &str = "\u{2514}"; // └
             const BOTTOM_RIGHT: &str = "\u{2518}"; // ┘
-            const HORIZONTAL: &str = "\u{2500}";   // ─
-            const VERTICAL: &str = "\u{2502}";     // │
+            const HORIZONTAL: &str = "\u{2500}"; // ─
+            const VERTICAL: &str = "\u{2502}"; // │
 
             let title = " Agent Inbox ";
             let width = cols.min(50);

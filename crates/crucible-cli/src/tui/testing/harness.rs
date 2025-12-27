@@ -273,14 +273,16 @@ impl Harness {
             }
             StreamingEvent::ToolCall { name, args, .. } => {
                 // Just track in state for now
-                self.state.pending_tools.push(crate::tui::state::ToolCallInfo {
-                    name,
-                    args,
-                    call_id: None,
-                    completed: false,
-                    result: None,
-                    error: None,
-                });
+                self.state
+                    .pending_tools
+                    .push(crate::tui::state::ToolCallInfo {
+                        name,
+                        args,
+                        call_id: None,
+                        completed: false,
+                        result: None,
+                        error: None,
+                    });
             }
         }
     }
