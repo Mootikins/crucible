@@ -22,7 +22,7 @@ crucible-config = { path = "../crucible-config" }
 crucible-tools = { path = "../crucible-tools" }
 
 # TOON Query language for tabular encoding
-tq = { path = "../tq" }
+oq = { workspace = true }
 
 # MCP server transport
 rmcp = { version = "0.9.0", features = ["macros", "server", "transport-sse-server"] }

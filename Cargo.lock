@@ -2734,6 +2734,7 @@ dependencies = [
  "crucible-tools",
  "futures",
  "once_cell",
+ "oq",
  "rand 0.9.2",
  "regex",
  "reqwest",
@@ -2746,7 +2747,6 @@ dependencies = [
  "tokio",
  "tokio-test",
  "tokio-util",
- "tq",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -3006,6 +3006,7 @@ dependencies = [
  "full_moon",
  "glob",
  "mlua",
+ "oq",
  "regex",
  "serde",
  "serde_json",
@@ -3014,7 +3015,6 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "toml 0.8.23",
- "tq",
  "tracing",
 ]
 
@@ -3111,6 +3111,7 @@ dependencies = [
  "dirs 6.0.0",
  "glob",
  "humantime-serde",
+ "oq",
  "parking_lot",
  "regex",
  "rune",
@@ -3125,7 +3126,6 @@ dependencies = [
  "tokio-test",
  "toml 0.9.10+spec-1.1.0",
  "toon-format",
- "tq",
  "tracing",
  "tracing-subscriber",
 ]
@@ -3219,6 +3219,7 @@ dependencies = [
  "lazy_static",
  "ndarray 0.17.1",
  "num_cpus",
+ "oq",
  "parking_lot",
  "pathdiff",
  "rand 0.9.2",
@@ -3235,7 +3236,6 @@ dependencies = [
  "tokio",
  "tokio-test",
  "tokio-util",
- "tq",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -8982,6 +8982,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
+name = "oq"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "959e058e993bc1ba3255308133efa44cd486f531cb7ad4ad4d8174d640f4f65f"
+dependencies = [
+ "clap 4.5.53",
+ "jaq-core",
+ "jaq-json",
+ "jaq-std",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.17",
+ "toml 0.8.23",
+ "toon-format",
+ "yansi",
+]
+
+[[package]]
 name = "ordered-float"
 version = "2.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13303,22 +13321,6 @@ name = "tower-service"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
-
-[[package]]
-name = "tq"
-version = "0.1.0"
-dependencies = [
- "assert_cmd",
- "clap 4.5.53",
- "jaq-core",
- "jaq-json",
- "jaq-std",
- "predicates",
- "serde_json",
- "thiserror 2.0.17",
- "toon-format",
- "yansi",
-]
 
 [[package]]
 name = "tracel-llvm"

@@ -262,9 +262,9 @@ fn query(input: String, expr: String) -> Result<Value, RuneOqError> {
     let json = parse_as_format(&input, format).map_err(RuneOqError::new)?;
 
     // Compile and run jq filter
-    let filter = tq::compile_filter(&expr).map_err(|e| RuneOqError::new(format!("{}", e)))?;
+    let filter = oq::compile_filter(&expr).map_err(|e| RuneOqError::new(format!("{}", e)))?;
 
-    let results = tq::run_filter(&filter, json).map_err(|e| RuneOqError::new(format!("{}", e)))?;
+    let results = oq::run_filter(&filter, json).map_err(|e| RuneOqError::new(format!("{}", e)))?;
 
     // Return first result, or null if empty
     let result = if results.is_empty() {

@@ -49,7 +49,7 @@
 use crate::error::LuaError;
 use mlua::{Lua, Value};
 use serde_json::Value as JsonValue;
-use tq::{compile_filter, format_tool_response, format_tool_response_with, run_filter, ToolType};
+use oq::{compile_filter, format_tool_response, format_tool_response_with, run_filter, ToolType};
 
 /// Supported data formats
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -204,7 +204,7 @@ pub fn parse_with_format(s: &str, format: Format) -> Result<JsonValue, String> {
             let toml_value: toml::Value = toml::from_str(s).map_err(|e| e.to_string())?;
             toml_to_json(toml_value)
         }
-        Format::Toon => tq::parse_auto(s).map_err(|e| e.to_string()),
+        Format::Toon => oq::parse_auto(s).map_err(|e| e.to_string()),
     }
 }
 
@@ -276,7 +276,7 @@ pub fn encode_to_format(value: &JsonValue, format: Format) -> Result<String, Str
             let toml_value = json_to_toml(value)?;
             toml::to_string(&toml_value).map_err(|e| e.to_string())
         }
-        Format::Toon => tq::json_to_toon(value.clone()).map_err(|e| e.to_string()),
+        Format::Toon => oq::json_to_toon(value.clone()).map_err(|e| e.to_string()),
     }
 }
 
@@ -317,7 +317,7 @@ pub fn register_data_module(lua: &Lua) -> Result<(), LuaError> {
     // data.toon(table) -> string (TOON format)
     let toon_fn = lua.create_function(|lua, value: Value| {
         let json = lua_to_json(lua, value).map_err(|e| mlua::Error::external(e))?;
-        tq::json_to_toon(json).map_err(|e| mlua::Error::external(e))
+        oq::json_to_toon(json).map_err(|e| mlua::Error::external(e))
     })?;
     data.set("toon", toon_fn)?;
 
