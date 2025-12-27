@@ -18,7 +18,7 @@ describe('SettingsContext', () => {
       const TestComponent = () => {
         const { settings } = useSettings();
         expect(settings.transcription.provider).toBe('local');
-        expect(settings.transcription.serverUrl).toBe('https://llama.krohnos.io');
+        expect(settings.transcription.serverUrl).toBe('');
         return null;
       };
 
