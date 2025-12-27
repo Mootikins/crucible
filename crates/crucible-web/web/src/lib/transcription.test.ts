@@ -20,7 +20,7 @@ describe('createServerTranscriber', () => {
     });
 
     const transcribe = createServerTranscriber({
-      url: 'https://llm.example.com',
+      url: 'https://whisper.example.com',
       model: 'whisper-1',
       language: 'auto',
     });
@@ -30,7 +30,7 @@ describe('createServerTranscriber', () => {
 
     expect(result).toBe('hello world');
     expect(mockFetch).toHaveBeenCalledWith(
-      'https://llm.example.com/v1/audio/transcriptions',
+      'https://whisper.example.com/v1/audio/transcriptions',
       expect.objectContaining({ method: 'POST' })
     );
   });

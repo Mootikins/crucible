@@ -19,7 +19,7 @@ export interface ServerTranscriptionConfig {
  * @example
  * ```typescript
  * const transcribe = createServerTranscriber({
- *   url: 'https://llm.example.com',
+ *   url: 'https://whisper.example.com',
  *   model: 'whisper-1',
  *   language: 'auto',
  * });

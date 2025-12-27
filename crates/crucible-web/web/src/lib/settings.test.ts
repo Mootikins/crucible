@@ -21,8 +21,8 @@ describe('settings', () => {
       expect(defaultSettings.transcription.provider).toBe('local');
     });
 
-    it('has llm.example.com as default server URL', () => {
-      expect(defaultSettings.transcription.serverUrl).toBe('https://llm.example.com');
+    it('has empty default server URL', () => {
+      expect(defaultSettings.transcription.serverUrl).toBe('');
     });
 
     it('has whisper-large-v3-turbo as default model', () => {

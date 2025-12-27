@@ -27,7 +27,7 @@ export interface AppSettings {
 export const defaultSettings: AppSettings = {
   transcription: {
     provider: 'local',
-    serverUrl: 'https://llm.example.com',
+    serverUrl: '',
     model: 'whisper-large-v3-turbo',
     language: 'auto',
   },
