@@ -57,7 +57,10 @@ pub fn standard_commands() -> Vec<PopupItem> {
 
 /// Minimal command set for focused tests
 pub fn minimal_commands() -> Vec<PopupItem> {
-    vec![command("search", "Search notes"), command("help", "Show help")]
+    vec![
+        command("search", "Search notes"),
+        command("help", "Show help"),
+    ]
 }
 
 /// Test agents
@@ -72,7 +75,12 @@ pub fn test_agents() -> Vec<PopupItem> {
 /// Large list for scroll/filter testing
 pub fn many_commands() -> Vec<PopupItem> {
     (0..20)
-        .map(|i| command(format!("command{i}"), format!("Description for command {i}")))
+        .map(|i| {
+            command(
+                format!("command{i}"),
+                format!("Description for command {i}"),
+            )
+        })
         .collect()
 }
 
