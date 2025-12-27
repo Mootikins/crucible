@@ -14,7 +14,6 @@ members = [
     "crates/crucible-llm",
     "crates/crucible-tools",
     "crates/crucible-watch",
-    "crates/tq",
     "crates/crucible-rune",
     "crates/crucible-lua",
     "crates/crucible-web",
@@ -178,7 +177,7 @@ crucible-rig = { path = "crates/crucible-rig" }
 crucible-web = { path = "crates/crucible-web" }
 crucible-daemon = { path = "crates/crucible-daemon" }
 crucible-daemon-client = { path = "crates/crucible-daemon-client" }
-tq = { path = "crates/tq" }
+oq = "0.1"
 
 # Workspace-level test feature flags
 # These control which test tiers are enabled

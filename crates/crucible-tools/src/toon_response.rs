@@ -29,7 +29,7 @@ use rmcp::model::{CallToolResult, Content};
 /// Falls back to JSON if TOON encoding fails.
 #[must_use]
 pub fn toon_success(value: serde_json::Value) -> CallToolResult {
-    let formatted = tq::format_tool_response(&value);
+    let formatted = oq::format_tool_response(&value);
     CallToolResult::success(vec![Content::text(formatted)])
 }
 
@@ -38,7 +38,7 @@ pub fn toon_success(value: serde_json::Value) -> CallToolResult {
 /// Extracts long content fields (like file content) into readable blocks.
 #[must_use]
 pub fn toon_success_smart(value: serde_json::Value) -> CallToolResult {
-    let formatted = tq::format_tool_response_smart(&value);
+    let formatted = oq::format_tool_response_smart(&value);
     CallToolResult::success(vec![Content::text(formatted)])
 }
 
@@ -47,8 +47,8 @@ pub fn toon_success_smart(value: serde_json::Value) -> CallToolResult {
 /// Uses the tool name to determine optimal formatting strategy.
 #[must_use]
 pub fn toon_success_for_tool(tool_name: &str, value: serde_json::Value) -> CallToolResult {
-    let tool_type = tq::ToolType::from_name(tool_name);
-    let formatted = tq::format_tool_response_with(&value, tool_type);
+    let tool_type = oq::ToolType::from_name(tool_name);
+    let formatted = oq::format_tool_response_with(&value, tool_type);
     CallToolResult::success(vec![Content::text(formatted)])
 }
 
@@ -59,7 +59,7 @@ pub fn toon_success_for_tool(tool_name: &str, value: serde_json::Value) -> CallT
 pub fn content_to_toon(content: &Content) -> Content {
     if let Some(text_content) = content.as_text() {
         // Try to parse as JSON and convert to TOON
-        let formatted = tq::format_content(&text_content.text);
+        let formatted = oq::format_content(&text_content.text);
         Content::text(formatted)
     } else {
         // Return as-is if not text content
@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn test_tool_type_detection_read_variants() {
-        use tq::ToolType;
+        use oq::ToolType;
 
         assert_eq!(ToolType::from_name("read_note"), ToolType::ReadFile);
         assert_eq!(ToolType::from_name("read_file"), ToolType::ReadFile);
@@ -255,7 +255,7 @@ mod tests {
 
     #[test]
     fn test_tool_type_detection_search_variants() {
-        use tq::ToolType;
+        use oq::ToolType;
 
         // search_notes should be Search, NOT ReadFile (even though it contains "note")
         assert_eq!(ToolType::from_name("search_notes"), ToolType::Search);
@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn test_tool_type_detection_command_variants() {
-        use tq::ToolType;
+        use oq::ToolType;
 
         assert_eq!(ToolType::from_name("exec_command"), ToolType::Command);
         assert_eq!(ToolType::from_name("run_script"), ToolType::Command);
@@ -277,7 +277,7 @@ mod tests {
 
     #[test]
     fn test_tool_type_detection_generic_fallback() {
-        use tq::ToolType;
+        use oq::ToolType;
 
         assert_eq!(ToolType::from_name("get_info"), ToolType::Generic);
         assert_eq!(ToolType::from_name("list_tags"), ToolType::Generic);
@@ -287,7 +287,7 @@ mod tests {
 
     #[test]
     fn test_tool_type_case_insensitive() {
-        use tq::ToolType;
+        use oq::ToolType;
 
         assert_eq!(ToolType::from_name("READ_FILE"), ToolType::ReadFile);
         assert_eq!(ToolType::from_name("SEARCH_NOTES"), ToolType::Search);

@@ -28,7 +28,7 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 
 # TOON query for oq module
-tq = { path = "../tq" }
+oq = { workspace = true }
 toon-format = "0.4"
 serde_yaml = "0.9"
 toml = "0.9"
