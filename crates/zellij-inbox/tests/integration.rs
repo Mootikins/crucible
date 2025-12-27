@@ -15,16 +15,21 @@ fn cli_add_list_remove() {
 
     // Add item (--file must come before subcommand)
     let output = zellij_inbox()
-        .args([&file_arg, "add", "test: hello", "--pane", "42", "--project", "test"])
+        .args([
+            &file_arg,
+            "add",
+            "test: hello",
+            "--pane",
+            "42",
+            "--project",
+            "test",
+        ])
         .output()
         .unwrap();
     assert!(output.status.success(), "add failed: {:?}", output);
 
     // List
-    let output = zellij_inbox()
-        .args([&file_arg, "list"])
-        .output()
-        .unwrap();
+    let output = zellij_inbox().args([&file_arg, "list"]).output().unwrap();
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("test: hello"));
@@ -47,10 +52,7 @@ fn cli_add_list_remove() {
     assert!(output.status.success());
 
     // List empty
-    let output = zellij_inbox()
-        .args([&file_arg, "list"])
-        .output()
-        .unwrap();
+    let output = zellij_inbox().args([&file_arg, "list"]).output().unwrap();
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("(no items)"));
@@ -73,17 +75,11 @@ fn cli_clear() {
         .unwrap();
 
     // Clear
-    let output = zellij_inbox()
-        .args([&file_arg, "clear"])
-        .output()
-        .unwrap();
+    let output = zellij_inbox().args([&file_arg, "clear"]).output().unwrap();
     assert!(output.status.success());
 
     // Verify empty
-    let output = zellij_inbox()
-        .args([&file_arg, "list"])
-        .output()
-        .unwrap();
+    let output = zellij_inbox().args([&file_arg, "list"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("(no items)"));
 }
@@ -107,10 +103,7 @@ fn cli_upsert_same_pane() {
         .unwrap();
 
     // Should have only one item with "second"
-    let output = zellij_inbox()
-        .args([&file_arg, "list"])
-        .output()
-        .unwrap();
+    let output = zellij_inbox().args([&file_arg, "list"]).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("second"));
     assert!(!stdout.contains("first"));

@@ -137,11 +137,7 @@ mod unit_tests {
         // Find line containing tool name
         let tool_line = lines
             .iter()
-            .find(|l| {
-                l.spans
-                    .iter()
-                    .any(|s| s.content.as_ref().contains("grep"))
-            })
+            .find(|l| l.spans.iter().any(|s| s.content.as_ref().contains("grep")))
             .expect("Should find grep line");
 
         // Should contain spinner character with alignment prefix
@@ -173,11 +169,7 @@ mod unit_tests {
 
         let tool_line = lines
             .iter()
-            .find(|l| {
-                l.spans
-                    .iter()
-                    .any(|s| s.content.as_ref().contains("glob"))
-            })
+            .find(|l| l.spans.iter().any(|s| s.content.as_ref().contains("glob")))
             .expect("Should find glob line");
 
         let text: String = tool_line.spans.iter().map(|s| s.content.as_ref()).collect();
@@ -208,11 +200,7 @@ mod unit_tests {
 
         let tool_line = lines
             .iter()
-            .find(|l| {
-                l.spans
-                    .iter()
-                    .any(|s| s.content.as_ref().contains("read"))
-            })
+            .find(|l| l.spans.iter().any(|s| s.content.as_ref().contains("read")))
             .expect("Should find read line");
 
         let text: String = tool_line.spans.iter().map(|s| s.content.as_ref()).collect();
@@ -531,9 +519,7 @@ mod style_tests {
         assert_eq!(style.fg, Some(colors::TOOL_ERROR));
         assert_eq!(colors::TOOL_ERROR, Color::Red);
         assert!(
-            style
-                .add_modifier
-                .contains(ratatui::style::Modifier::BOLD),
+            style.add_modifier.contains(ratatui::style::Modifier::BOLD),
             "Error style should be bold"
         );
     }

@@ -37,7 +37,7 @@
 //!
 //! For now, it provides multi-turn verification with pattern matching.
 
-use expectrl::{spawn, Eof, Regex, Session};
+use expectrl::{session::OsSession, spawn, Eof, Expect, Regex};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -137,7 +137,7 @@ impl TuiTestConfig {
 
 /// A test session wrapping an expectrl PTY session
 pub struct TuiTestSession {
-    session: Session,
+    session: OsSession,
     config: TuiTestConfig,
     /// Captured output chunks with timestamps (for future flicker detection)
     #[allow(dead_code)]
@@ -253,7 +253,7 @@ impl TuiTestSession {
     }
 
     /// Get the underlying session for advanced operations
-    pub fn inner(&mut self) -> &mut Session {
+    pub fn inner(&mut self) -> &mut OsSession {
         &mut self.session
     }
 }
