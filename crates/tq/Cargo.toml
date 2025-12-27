@@ -21,8 +21,8 @@ path = "src/main.rs"
 toon-format = "0.4"
 
 # jq implementation in Rust
-jaq-core = "3.0.0-alpha"
-jaq-std = "3.0.0-alpha"
+jaq-core = "3.0.0-beta"
+jaq-std = "3.0.0-beta"
 jaq-json = { version = "2.0.0-alpha", features = ["serde_json"] }
 
 # CLI and serialization
