@@ -202,7 +202,7 @@ impl PromptEnricher {
                 })
                 .collect();
 
-            let table = tq::encode_table("notes", &items, &["path", "line", "similarity"]);
+            let table = oq::encode_table("notes", &items, &["path", "line", "similarity"]);
 
             output.push_str("<matches>\n");
             output.push_str(&table);
