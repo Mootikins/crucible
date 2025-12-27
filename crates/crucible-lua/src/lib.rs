@@ -35,7 +35,7 @@
 //!                            ▼
 //!             ┌─────────────────────────────────┐
 //!             │  mlua/Luau Runtime              │
-//!             │  + shell, json modules          │
+//!             │  + data, shell, json modules    │
 //!             └─────────────────────────────────┘
 //! ```
 //!
@@ -80,7 +80,7 @@ pub use error::LuaError;
 pub use executor::LuaExecutor;
 #[cfg(feature = "fennel")]
 pub use fennel::FennelCompiler;
-pub use json_query::{json_to_lua, lua_to_json, register_json_module};
+pub use json_query::{json_to_lua, lua_to_json, register_data_module, register_json_module};
 pub use registry::LuaToolRegistry;
 pub use schema::{extract_signatures, generate_input_schema, type_to_string, FunctionSignature, LuauType};
 pub use shell::{register_shell_module, ExecResult, ShellPolicy};
