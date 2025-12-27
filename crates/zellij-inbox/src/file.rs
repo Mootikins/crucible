@@ -39,11 +39,20 @@ pub fn inbox_path() -> Result<PathBuf, FileError> {
 /// Build inbox path from session name (for WASM)
 #[cfg(target_arch = "wasm32")]
 pub fn inbox_path_for_session(session: &str) -> PathBuf {
-    // In WASM we can't use dirs crate, use XDG default
-    let base = PathBuf::from("/home")
-        .join(env::var("USER").unwrap_or_else(|_| "user".to_string()))
-        .join(".local/share/zellij-inbox");
-    base.join(format!("{}.md", session))
+    // In WASM we can't use dirs crate, check XDG_DATA_HOME then fall back
+    let data_dir = env::var("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            // Fall back to ~/.local/share (XDG default)
+            env::var("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("/home").join(
+                    env::var("USER").unwrap_or_else(|_| "user".to_string())
+                ))
+                .join(".local/share")
+        });
+
+    data_dir.join("zellij-inbox").join(format!("{}.md", session))
 }
 
 /// Load inbox from file (returns empty inbox if file doesn't exist)
