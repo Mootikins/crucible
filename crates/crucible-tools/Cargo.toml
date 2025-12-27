@@ -14,7 +14,7 @@ crucible-llm = { workspace = true, features = ["test-utils"] }
 crucible-rune = { workspace = true }
 crucible-skills = { workspace = true, features = ["storage", "embeddings"] }
 crucible-surrealdb = { workspace = true }
-tq = { workspace = true }
+oq = { workspace = true }
 
 # MCP support (server for hosting, client for calling upstream)
 rmcp = { version = "0.9.0", features = ["macros", "server", "client", "transport-io", "transport-sse-server", "transport-child-process", "transport-sse-client"] }
