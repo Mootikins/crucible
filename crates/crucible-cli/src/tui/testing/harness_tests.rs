@@ -11,7 +11,8 @@ use crossterm::event::KeyCode;
 /// Test: Popup navigation works correctly
 #[test]
 fn popup_navigation() {
-    let mut h = Harness::new(80, 24).with_popup_items(PopupKind::Command, registries::standard_commands());
+    let mut h =
+        Harness::new(80, 24).with_popup_items(PopupKind::Command, registries::standard_commands());
 
     // Initially selected index is 0
     assert_eq!(h.popup_selected(), Some(0));
@@ -50,7 +51,8 @@ fn popup_query_typing() {
 /// Test: Selecting popup item inserts token
 #[test]
 fn popup_selection_inserts_token() {
-    let mut h = Harness::new(80, 24).with_popup_items(PopupKind::Command, registries::minimal_commands());
+    let mut h =
+        Harness::new(80, 24).with_popup_items(PopupKind::Command, registries::minimal_commands());
 
     // Select first item (search)
     h.key(KeyCode::Enter);

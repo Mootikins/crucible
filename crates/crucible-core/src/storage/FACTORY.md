@@ -69,17 +69,6 @@ let config = StorageConfig {
 let storage = StorageFactory::create(config).await?;
 ```
 
-### Environment-Based Creation
-
-```rust
-// Set environment variables
-std::env::set_var("STORAGE_BACKEND", "in_memory");
-std::env::set_var("STORAGE_MEMORY_LIMIT", "1073741824");  // 1GB
-
-// Create storage from environment
-let storage = StorageFactory::create_from_env().await?;
-```
-
 ### JSON Configuration
 
 ```json
@@ -333,7 +322,6 @@ Static factory for creating storage backends.
 
 **Methods:**
 - `create(config: StorageConfig) -> Result<Arc<dyn ContentAddressedStorage>>`
-- `create_from_env() -> Result<Arc<dyn ContentAddressedStorage>>`
 
 ### `StorageConfig`
 

@@ -5,9 +5,9 @@ use std::{env, fs};
 
 use thiserror::Error;
 
-use crate::{parse, Inbox};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::render;
+use crate::{parse, Inbox};
 
 #[derive(Debug, Error)]
 pub enum FileError {
@@ -46,13 +46,16 @@ pub fn inbox_path_for_session(session: &str) -> PathBuf {
             // Fall back to ~/.local/share (XDG default)
             env::var("HOME")
                 .map(PathBuf::from)
-                .unwrap_or_else(|_| PathBuf::from("/home").join(
-                    env::var("USER").unwrap_or_else(|_| "user".to_string())
-                ))
+                .unwrap_or_else(|_| {
+                    PathBuf::from("/home")
+                        .join(env::var("USER").unwrap_or_else(|_| "user".to_string()))
+                })
                 .join(".local/share")
         });
 
-    data_dir.join("zellij-inbox").join(format!("{}.md", session))
+    data_dir
+        .join("zellij-inbox")
+        .join(format!("{}.md", session))
 }
 
 /// Load inbox from file (returns empty inbox if file doesn't exist)

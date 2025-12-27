@@ -41,23 +41,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let storage2 = StorageFactory::create(config2).await?;
     demo_storage_operations(&storage2, "InMemory Custom").await?;
 
-    // Example 3: Create storage from environment variables
-    println!("\n3. Creating storage from environment...");
-    std::env::set_var("STORAGE_BACKEND", "in_memory");
-    std::env::set_var("STORAGE_MEMORY_LIMIT", "75000000");
-
-    match StorageFactory::create_from_env().await {
-        Ok(storage3) => {
-            demo_storage_operations(&storage3, "InMemory from Env").await?;
-        }
-        Err(e) => {
-            println!("   Failed to create from env: {}", e);
-        }
-    }
-
-    // Clean up environment
-    std::env::remove_var("STORAGE_BACKEND");
-    std::env::remove_var("STORAGE_MEMORY_LIMIT");
+    // Example 3: Create storage with different hash algorithm
+    println!("\n3. Creating storage with SHA-256 hash algorithm...");
+    let config3 = StorageConfig {
+        backend: BackendConfig::InMemory {
+            memory_limit: Some(75 * 1024 * 1024), // 75MB
+            enable_lru_eviction: false,
+            enable_stats_tracking: true,
+        },
+        hash_algorithm: HashAlgorithm::Sha256,
+        enable_deduplication: true,
+        enable_maintenance: false,
+        validate_config: true,
+    };
+    let storage3 = StorageFactory::create(config3).await?;
+    demo_storage_operations(&storage3, "InMemory SHA-256").await?;
 
     // Example 4: Demonstrate configuration validation
     println!("\n4. Demonstrating configuration validation...");
