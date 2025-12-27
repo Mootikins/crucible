@@ -57,7 +57,7 @@ export const SettingsPanel: Component = () => {
                   value={settings.transcription.serverUrl}
                   onInput={handleUrlChange}
                   class={`${inputClass} w-64`}
-                  placeholder="https://llm.example.com"
+                  placeholder="https://whisper.example.com"
                 />
               </td>
             </tr>
