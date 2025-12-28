@@ -11,6 +11,7 @@ description = "SurrealDB backend for the Crucible knowledge management system"
 # Parser implementations are injected by higher-level crates
 crucible-core = { path = "../crucible-core" }
 crucible-merkle = { path = "../crucible-merkle" }
+crucible-query = { path = "../crucible-query" }
 
 # Enrichment types (EnrichedNoteWithTree)
 crucible-enrichment = { path = "../crucible-enrichment" }
