@@ -12,7 +12,6 @@ pub mod note;
 pub mod parser;
 pub mod processing;
 pub mod properties;
-pub mod sink;
 pub mod storage;
 pub mod test_support;
 pub mod traits;
@@ -179,10 +178,6 @@ pub use parser::{
     // Note: MarkdownParser trait is exported from traits:: module above
 };
 pub use properties::{AttributeValue, PropertyMap};
-pub use sink::{
-    CircuitBreaker, CircuitBreakerConfig, CircuitState, OutputSink, SinkError, SinkHealth,
-    SinkResult,
-};
 
 // Re-export event system types
 pub use events::{
