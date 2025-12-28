@@ -69,6 +69,7 @@ mod error;
 mod executor;
 #[cfg(feature = "fennel")]
 mod fennel;
+mod graph;
 mod json_query;
 mod registry;
 pub mod schema;
@@ -82,9 +83,10 @@ pub use executor::LuaExecutor;
 pub use fennel::FennelCompiler;
 pub use json_query::{
     detect_format, encode_to_format, json_to_lua, lua_to_json, parse_auto, parse_with_format,
-    register_data_module, register_json_module, Format,
+    register_oq_module, Format,
 };
 pub use registry::LuaToolRegistry;
 pub use schema::{extract_signatures, generate_input_schema, type_to_string, FunctionSignature, LuauType};
+pub use graph::register_graph_module;
 pub use shell::{register_shell_module, ExecResult, ShellPolicy};
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
