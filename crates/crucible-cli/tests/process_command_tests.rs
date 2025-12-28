@@ -23,7 +23,7 @@ use tokio::time::{sleep, Duration};
 
 /// Helper to create a test kiln with sample markdown files
 fn create_test_kiln() -> Result<TempDir> {
-    Ok(create_kiln(KilnFixture::Custom {
+    create_kiln(KilnFixture::Custom {
         files: vec![
             (
                 "note1.md",
@@ -38,7 +38,7 @@ fn create_test_kiln() -> Result<TempDir> {
                 "# Note 3\n\n[[note1]] is linked here.\n\n#tag1 #tag2",
             ),
         ],
-    })?)
+    })
 }
 
 /// Helper to create test CLI config
