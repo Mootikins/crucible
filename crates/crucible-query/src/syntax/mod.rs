@@ -68,7 +68,7 @@ impl QuerySyntaxRegistry {
     pub fn register(&mut self, syntax: Arc<dyn QuerySyntax>) {
         self.syntaxes.push(syntax);
         self.syntaxes
-            .sort_by(|a, b| b.priority().cmp(&a.priority()));
+            .sort_by_key(|s| std::cmp::Reverse(s.priority()));
     }
 
     /// Parse using first matching syntax
