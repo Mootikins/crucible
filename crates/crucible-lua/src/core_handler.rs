@@ -67,10 +67,7 @@ pub struct LuaHandlerMeta {
 
 impl LuaHandlerMeta {
     /// Create new handler metadata.
-    pub fn new(
-        script_path: impl Into<PathBuf>,
-        function_name: impl Into<String>,
-    ) -> Self {
+    pub fn new(script_path: impl Into<PathBuf>, function_name: impl Into<String>) -> Self {
         Self {
             script_path: script_path.into(),
             function_name: function_name.into(),
@@ -109,11 +106,7 @@ impl LuaHandlerMeta {
     ///
     /// Format: `lua:<script_path>:<function_name>`
     pub fn handler_name(&self) -> String {
-        format!(
-            "lua:{}:{}",
-            self.script_path.display(),
-            self.function_name
-        )
+        format!("lua:{}:{}", self.script_path.display(), self.function_name)
     }
 }
 
@@ -162,10 +155,7 @@ impl LuaHandler {
     /// Create a handler with a pre-loaded script source.
     ///
     /// Use this when you've already read the script.
-    pub fn with_source(
-        meta: LuaHandlerMeta,
-        script_source: String,
-    ) -> Result<Self, LuaError> {
+    pub fn with_source(meta: LuaHandlerMeta, script_source: String) -> Result<Self, LuaError> {
         let name = meta.handler_name();
 
         // Convert dependencies to static strings (leaked for trait compatibility)
@@ -237,8 +227,8 @@ impl Handler for LuaHandler {
         let handler_name = self.name.clone();
 
         // Serialize context metadata and event to JSON
-        let ctx_json = serde_json::to_value(ctx.metadata())
-            .unwrap_or(JsonValue::Object(Default::default()));
+        let ctx_json =
+            serde_json::to_value(ctx.metadata()).unwrap_or(JsonValue::Object(Default::default()));
         let event_json = match serde_json::to_value(&event) {
             Ok(j) => j,
             Err(e) => {
@@ -522,7 +512,10 @@ mod tests {
     #[test]
     fn test_lua_handler_meta_name() {
         let meta = LuaHandlerMeta::new("plugins/auth.lua", "check_permissions");
-        assert_eq!(meta.handler_name(), "lua:plugins/auth.lua:check_permissions");
+        assert_eq!(
+            meta.handler_name(),
+            "lua:plugins/auth.lua:check_permissions"
+        );
     }
 
     #[tokio::test]
@@ -530,11 +523,15 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let script_path = temp.path().join("test_handler.lua");
 
-        fs::write(&script_path, r#"
+        fs::write(
+            &script_path,
+            r#"
 function test_handler(ctx, event)
     return event
 end
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let meta = LuaHandlerMeta::new(&script_path, "test_handler");
         let handler = LuaHandler::new(meta).expect("Failed to create handler");
@@ -551,11 +548,15 @@ end
         let script_path = temp.path().join("passthrough.lua");
 
         // Handler that just returns the event unchanged
-        fs::write(&script_path, r#"
+        fs::write(
+            &script_path,
+            r#"
 function passthrough(ctx, event)
     return event
 end
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let meta = LuaHandlerMeta::new(&script_path, "passthrough");
         let handler = LuaHandler::new(meta).unwrap();
@@ -584,11 +585,15 @@ end
         let script_path = temp.path().join("canceller.lua");
 
         // Handler that cancels events
-        fs::write(&script_path, r#"
+        fs::write(
+            &script_path,
+            r#"
 function canceller(ctx, event)
     return { cancel = true }
 end
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let meta = LuaHandlerMeta::new(&script_path, "canceller");
         let handler = LuaHandler::new(meta).unwrap();
@@ -609,14 +614,17 @@ end
         let temp = TempDir::new().unwrap();
         let script_path = temp.path().join("disabled.lua");
 
-        fs::write(&script_path, r#"
+        fs::write(
+            &script_path,
+            r#"
 function disabled_handler(ctx, event)
     return { cancel = true }
 end
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
-        let meta = LuaHandlerMeta::new(&script_path, "disabled_handler")
-            .with_enabled(false);
+        let meta = LuaHandlerMeta::new(&script_path, "disabled_handler").with_enabled(false);
         let handler = LuaHandler::new(meta).unwrap();
 
         let mut ctx = HandlerContext::new();
@@ -635,14 +643,17 @@ end
         let temp = TempDir::new().unwrap();
         let script_path = temp.path().join("priority.lua");
 
-        fs::write(&script_path, r#"
+        fs::write(
+            &script_path,
+            r#"
 function priority_handler(ctx, event)
     return event
 end
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
-        let meta = LuaHandlerMeta::new(&script_path, "priority_handler")
-            .with_priority(10);
+        let meta = LuaHandlerMeta::new(&script_path, "priority_handler").with_priority(10);
         let handler = LuaHandler::new(meta).unwrap();
 
         assert_eq!(handler.priority(), 10);
@@ -653,11 +664,15 @@ end
         let temp = TempDir::new().unwrap();
         let script_path = temp.path().join("deps.lua");
 
-        fs::write(&script_path, r#"
+        fs::write(
+            &script_path,
+            r#"
 function dependent_handler(ctx, event)
     return event
 end
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let meta = LuaHandlerMeta::new(&script_path, "dependent_handler")
             .with_dependencies(vec!["persist".into(), "validate".into()]);
@@ -674,14 +689,17 @@ end
         let temp = TempDir::new().unwrap();
         let script_path = temp.path().join("pattern.lua");
 
-        fs::write(&script_path, r#"
+        fs::write(
+            &script_path,
+            r#"
 function tool_handler(ctx, event)
     return event
 end
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
-        let meta = LuaHandlerMeta::new(&script_path, "tool_handler")
-            .with_event_pattern("tool:*");
+        let meta = LuaHandlerMeta::new(&script_path, "tool_handler").with_event_pattern("tool:*");
         let handler = LuaHandler::new(meta).unwrap();
 
         assert_eq!(handler.event_pattern(), "tool:*");
@@ -693,12 +711,16 @@ end
         let script_path = temp.path().join("modifier.lua");
 
         // Handler that modifies the event
-        fs::write(&script_path, r#"
+        fs::write(
+            &script_path,
+            r#"
 function modifier(ctx, event)
     event.payload.modified = true
     return event
 end
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let meta = LuaHandlerMeta::new(&script_path, "modifier");
         let handler = LuaHandler::new(meta).unwrap();
@@ -727,12 +749,16 @@ end
         let script_path = temp.path().join("nil_return.lua");
 
         // Handler that returns nil (should pass through unchanged)
-        fs::write(&script_path, r#"
+        fs::write(
+            &script_path,
+            r#"
 function nil_handler(ctx, event)
     -- Do some processing but return nil to pass through
     return nil
 end
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let meta = LuaHandlerMeta::new(&script_path, "nil_handler");
         let handler = LuaHandler::new(meta).unwrap();
