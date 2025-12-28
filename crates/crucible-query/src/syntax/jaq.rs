@@ -21,8 +21,7 @@ static JAQ_FUNCTION_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"^\s*(outlinks|inlinks|find|neighbors)\s*\("#).unwrap());
 
 /// Pattern for arrow traversals: ->edge[], <-edge[], <->edge[]
-static ARROW_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^(<->|->|<-)(\w+)\[\]$").unwrap());
+static ARROW_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(<->|->|<-)(\w+)\[\]$").unwrap());
 
 /// jaq-style syntax parser
 pub struct JaqSyntax;
@@ -372,7 +371,9 @@ mod tests {
     #[test]
     fn test_parse_with_multiple_arrows() {
         let syntax = JaqSyntax;
-        let ir = syntax.parse(r#"find("Index") | ->wikilink[] | ->embed[]"#).unwrap();
+        let ir = syntax
+            .parse(r#"find("Index") | ->wikilink[] | ->embed[]"#)
+            .unwrap();
 
         assert_eq!(ir.pattern.elements.len(), 2);
 
@@ -415,7 +416,9 @@ mod tests {
     #[test]
     fn test_parse_with_jaq_filter() {
         let syntax = JaqSyntax;
-        let ir = syntax.parse(r#"outlinks("Index") | select(.tags)"#).unwrap();
+        let ir = syntax
+            .parse(r#"outlinks("Index") | select(.tags)"#)
+            .unwrap();
 
         assert_eq!(ir.post_filter, Some("select(.tags)".to_string()));
     }
@@ -423,7 +426,9 @@ mod tests {
     #[test]
     fn test_parse_with_complex_filter() {
         let syntax = JaqSyntax;
-        let ir = syntax.parse(r#"find("Index") | ->wikilink[] | select(.tags | contains("project"))"#).unwrap();
+        let ir = syntax
+            .parse(r#"find("Index") | ->wikilink[] | select(.tags | contains("project"))"#)
+            .unwrap();
 
         assert_eq!(ir.pattern.elements.len(), 1);
         assert_eq!(
