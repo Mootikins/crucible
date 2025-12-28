@@ -1,9 +1,48 @@
 //! Unified Event Bus for Crucible
 //!
+//! **TRANSITIONAL**: This module is being consolidated into `crucible_core::events::Reactor`.
+//! The Reactor pattern provides:
+//! - Unified handler registration (Rust, Rune, Lua in one loop)
+//! - Dependency-based ordering via `DependencyGraph`
+//! - Better error handling with `HandlerResult` enum
+//!
+//! ## Migration
+//!
+//! Instead of:
+//! ```rust,ignore
+//! use crucible_rune::event_bus::{EventBus, Handler};
+//!
+//! let mut bus = EventBus::new();
+//! bus.register(Handler::new("log_tools", EventType::ToolAfter, "*", |ctx, event| { ... }));
+//! bus.emit(event).await?;
+//! ```
+//!
+//! Use:
+//! ```rust,ignore
+//! use crucible_core::events::{Reactor, Handler, HandlerResult, SessionEvent};
+//!
+//! let mut reactor = Reactor::new();
+//! reactor.register(Box::new(MyHandler))?;
+//! let result = reactor.emit(event).await?;
+//! ```
+//!
+//! Or use `ReactorEventEmitter` as an adapter for code expecting `EventEmitter`:
+//! ```rust,ignore
+//! use crucible_core::events::{Reactor, ReactorEventEmitter, EventEmitter};
+//!
+//! let reactor = Arc::new(RwLock::new(Reactor::new()));
+//! let emitter = ReactorEventEmitter::new(reactor);
+//! emitter.emit(event).await?;
+//! ```
+//!
+//! ---
+//!
+//! ## Legacy Documentation
+//!
 //! This module provides the core event system that powers hooks, interceptors,
 //! and all event-driven functionality in Crucible.
 //!
-//! ## Event Types
+//! ### Event Types
 //!
 //! - `tool:before` - Before tool execution (can modify args or cancel)
 //! - `tool:after` - After tool execution (can transform result)
@@ -14,7 +53,7 @@
 //! - `note:modified` - Note content changed
 //! - `mcp:attached` - Upstream MCP server connected
 //!
-//! ## Usage
+//! ### Usage
 //!
 //! ```rust,ignore
 //! use crucible_rune::event_bus::{EventBus, Event, EventType, Handler};

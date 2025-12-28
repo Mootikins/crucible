@@ -32,6 +32,7 @@
 mod attribute_discovery;
 pub mod builtin_hooks;
 pub mod compaction;
+pub mod core_handler;
 pub mod dependency_graph;
 mod discovery;
 mod discovery_paths;
@@ -75,6 +76,7 @@ pub use builtin_hooks::{
     BuiltinHooksConfig, EventEmitConfig, HookToggle, ToolSelectorConfig,
 };
 pub use compaction::{CompactionConfig, CompactionMetrics, CompactionReason, CompactionTrigger};
+pub use core_handler::{RuneHandler, RuneHandlerMeta};
 pub use dependency_graph::{
     DependencyError, DependencyGraph, DependencyResult, GraphNode, HandlerGraph,
 };
