@@ -73,7 +73,11 @@ impl ShellPolicy {
     /// Check if a command is allowed
     pub fn is_allowed(&self, cmd: &str) -> bool {
         // Check blocked list first
-        if self.blocked_commands.iter().any(|b| cmd == b || cmd.ends_with(&format!("/{}", b))) {
+        if self
+            .blocked_commands
+            .iter()
+            .any(|b| cmd == b || cmd.ends_with(&format!("/{}", b)))
+        {
             return false;
         }
 
@@ -83,7 +87,9 @@ impl ShellPolicy {
         }
 
         // Check allowed list
-        self.allowed_commands.iter().any(|a| cmd == a || cmd.ends_with(&format!("/{}", a)))
+        self.allowed_commands
+            .iter()
+            .any(|a| cmd == a || cmd.ends_with(&format!("/{}", a)))
     }
 }
 
@@ -145,10 +151,12 @@ pub async fn exec_command(
         command.output(),
     )
     .await
-    .map_err(|_| LuaError::Runtime(format!(
-        "Command '{}' timed out after {} seconds",
-        cmd, policy.timeout_secs
-    )))?
+    .map_err(|_| {
+        LuaError::Runtime(format!(
+            "Command '{}' timed out after {} seconds",
+            cmd, policy.timeout_secs
+        ))
+    })?
     .map_err(|e| LuaError::Runtime(format!("Failed to execute '{}': {}", cmd, e)))?;
 
     let exit_code = output.status.code().unwrap_or(-1);
@@ -172,50 +180,46 @@ pub fn register_shell_module(lua: &Lua, policy: ShellPolicy) -> Result<(), LuaEr
 
     // shell.exec(cmd, args, options) -> result table
     let policy_clone = policy.clone();
-    let exec_fn = lua.create_async_function(move |lua, (cmd, args, options): (String, Vec<String>, Option<Table>)| {
-        let policy = policy_clone.clone();
-        async move {
-            // Parse options
-            let mut cwd = None;
-            let mut env = None;
+    let exec_fn = lua.create_async_function(
+        move |lua, (cmd, args, options): (String, Vec<String>, Option<Table>)| {
+            let policy = policy_clone.clone();
+            async move {
+                // Parse options
+                let mut cwd = None;
+                let mut env = None;
 
-            if let Some(opts) = options {
-                if let Ok(dir) = opts.get::<String>("cwd") {
-                    cwd = Some(dir);
-                }
-
-                if let Ok(env_table) = opts.get::<Table>("env") {
-                    let mut env_map = HashMap::new();
-                    for pair in env_table.pairs::<String, String>() {
-                        if let Ok((k, v)) = pair {
-                            env_map.insert(k, v);
-                        }
+                if let Some(opts) = options {
+                    if let Ok(dir) = opts.get::<String>("cwd") {
+                        cwd = Some(dir);
                     }
-                    env = Some(env_map);
+
+                    if let Ok(env_table) = opts.get::<Table>("env") {
+                        let mut env_map = HashMap::new();
+                        for pair in env_table.pairs::<String, String>() {
+                            if let Ok((k, v)) = pair {
+                                env_map.insert(k, v);
+                            }
+                        }
+                        env = Some(env_map);
+                    }
                 }
+
+                // Execute command
+                let result = exec_command(&cmd, &args, cwd.as_deref(), env.as_ref(), &policy)
+                    .await
+                    .map_err(|e| mlua::Error::external(e))?;
+
+                // Build result table
+                let result_table = lua.create_table()?;
+                result_table.set("success", result.success)?;
+                result_table.set("exit_code", result.exit_code)?;
+                result_table.set("stdout", result.stdout)?;
+                result_table.set("stderr", result.stderr)?;
+
+                Ok(result_table)
             }
-
-            // Execute command
-            let result = exec_command(
-                &cmd,
-                &args,
-                cwd.as_deref(),
-                env.as_ref(),
-                &policy,
-            )
-            .await
-            .map_err(|e| mlua::Error::external(e))?;
-
-            // Build result table
-            let result_table = lua.create_table()?;
-            result_table.set("success", result.success)?;
-            result_table.set("exit_code", result.exit_code)?;
-            result_table.set("stdout", result.stdout)?;
-            result_table.set("stderr", result.stderr)?;
-
-            Ok(result_table)
-        }
-    })?;
+        },
+    )?;
     shell.set("exec", exec_fn)?;
 
     // shell.which(cmd) -> path or nil (simple PATH lookup)
@@ -225,14 +229,18 @@ pub fn register_shell_module(lua: &Lua, policy: ShellPolicy) -> Result<(), LuaEr
             for dir in path.split(sep) {
                 let full_path = PathBuf::from(dir).join(&cmd);
                 if full_path.exists() {
-                    return Ok(Value::String(lua.create_string(full_path.to_string_lossy().as_ref())?));
+                    return Ok(Value::String(
+                        lua.create_string(full_path.to_string_lossy().as_ref())?,
+                    ));
                 }
                 // Check with .exe on Windows
                 #[cfg(windows)]
                 {
                     let exe_path = full_path.with_extension("exe");
                     if exe_path.exists() {
-                        return Ok(Value::String(lua.create_string(exe_path.to_string_lossy().as_ref())?));
+                        return Ok(Value::String(
+                            lua.create_string(exe_path.to_string_lossy().as_ref())?,
+                        ));
                     }
                 }
             }
@@ -296,8 +304,14 @@ mod tests {
     #[tokio::test]
     async fn test_exec_blocked_command() {
         let policy = ShellPolicy::default();
-        let result = exec_command("rm", &["-rf".to_string(), "/".to_string()], None, None, &policy)
-            .await;
+        let result = exec_command(
+            "rm",
+            &["-rf".to_string(), "/".to_string()],
+            None,
+            None,
+            &policy,
+        )
+        .await;
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not allowed"));

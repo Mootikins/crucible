@@ -268,10 +268,7 @@ fn json_to_lua_value(lua: &Lua, value: &serde_json::Value) -> Result<Value, mlua
 }
 
 /// Convert a JSON array to a Lua table
-fn json_array_to_lua_table(
-    lua: &Lua,
-    values: &[serde_json::Value],
-) -> Result<Value, mlua::Error> {
+fn json_array_to_lua_table(lua: &Lua, values: &[serde_json::Value]) -> Result<Value, mlua::Error> {
     let table = lua.create_table()?;
     for (i, v) in values.iter().enumerate() {
         table.set(i + 1, json_to_lua_value(lua, v)?)?;

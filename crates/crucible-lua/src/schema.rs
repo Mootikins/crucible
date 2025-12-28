@@ -227,9 +227,7 @@ impl<'a> SignatureExtractor<'a> {
             TypeInfo::Basic(token) => {
                 let name = token.to_string().trim().to_string();
                 match name.as_str() {
-                    "string" | "number" | "boolean" | "nil" => {
-                        LuauType::Primitive { name }
-                    }
+                    "string" | "number" | "boolean" | "nil" => LuauType::Primitive { name },
                     "any" => LuauType::Any,
                     _ => LuauType::Named { name },
                 }
@@ -254,7 +252,9 @@ impl<'a> SignatureExtractor<'a> {
                         }
                     })
                     .collect();
-                LuauType::Table { fields: parsed_fields }
+                LuauType::Table {
+                    fields: parsed_fields,
+                }
             }
             TypeInfo::Union(type_union) => {
                 let types: Vec<LuauType> = type_union
@@ -264,7 +264,11 @@ impl<'a> SignatureExtractor<'a> {
                     .collect();
                 LuauType::Union { types }
             }
-            TypeInfo::Callback { arguments, return_type, .. } => {
+            TypeInfo::Callback {
+                arguments,
+                return_type,
+                ..
+            } => {
                 let params: Vec<LuauType> = arguments
                     .iter()
                     .map(|arg| self.parse_type_info(arg.type_info()))
