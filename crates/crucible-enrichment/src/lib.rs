@@ -53,8 +53,8 @@ pub use types::{
     BlockEmbedding, EnrichedNoteWithTree, EnrichmentMetadata, InferredRelation, RelationType,
 };
 
-// Re-export event handler
-pub use event_handler::EmbeddingHandler;
+// Re-export event handler and adapter
+pub use event_handler::{EmbeddingHandler, EmbeddingHandlerAdapter};
 
 // Re-export constants (configuration values)
 pub use service::{DEFAULT_MAX_BATCH_SIZE, DEFAULT_MIN_WORDS_FOR_EMBEDDING};

@@ -198,6 +198,68 @@ impl EmbeddingHandler {
     pub const PRIORITY: i64 = 200;
 }
 
+/// Adapter wrapping EmbeddingHandler to implement the core Handler trait.
+///
+/// This allows EmbeddingHandler to be registered with the Reactor.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use crucible_enrichment::{EmbeddingHandler, EmbeddingHandlerAdapter};
+/// use crucible_core::events::Reactor;
+///
+/// let handler = EmbeddingHandler::new(service);
+/// let mut reactor = Reactor::new();
+/// reactor.register(Box::new(EmbeddingHandlerAdapter::new(handler)))?;
+/// ```
+pub struct EmbeddingHandlerAdapter {
+    inner: Arc<EmbeddingHandler>,
+}
+
+impl EmbeddingHandlerAdapter {
+    /// Create a new adapter wrapping an EmbeddingHandler.
+    pub fn new(handler: EmbeddingHandler) -> Self {
+        Self {
+            inner: Arc::new(handler),
+        }
+    }
+
+    /// Create a new adapter from an Arc-wrapped EmbeddingHandler.
+    pub fn from_arc(handler: Arc<EmbeddingHandler>) -> Self {
+        Self { inner: handler }
+    }
+}
+
+#[async_trait::async_trait]
+impl crucible_core::events::Handler for EmbeddingHandlerAdapter {
+    fn name(&self) -> &str {
+        "embedding_handler"
+    }
+
+    fn priority(&self) -> i32 {
+        EmbeddingHandler::PRIORITY as i32
+    }
+
+    fn dependencies(&self) -> &[&str] {
+        // EmbeddingHandler depends on storage and tag handlers
+        &["storage_handler", "tag_handler"]
+    }
+
+    fn event_pattern(&self) -> &str {
+        "*"
+    }
+
+    async fn handle(
+        &self,
+        _ctx: &mut crucible_core::events::HandlerContext,
+        event: SessionEvent,
+    ) -> crucible_core::events::HandlerResult<SessionEvent> {
+        // Delegate to the inner handler
+        self.inner.handle_event(&event).await;
+        crucible_core::events::HandlerResult::ok(event)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

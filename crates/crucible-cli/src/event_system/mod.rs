@@ -1,12 +1,14 @@
 //! Event System Runtime Wiring
 //!
-//! This module provides the unified event system initialization for Crucible CLI.
+//! This module provides the unified event system initialization for Crucible CLI
+//! using the Reactor pattern from `crucible_core::events`.
+//!
 //! It wires together:
-//! - `EventBus` from `crucible-rune` for event dispatch
+//! - `Reactor` from `crucible-core` for unified event dispatch
 //! - `StorageHandler` and `TagHandler` from `crucible-surrealdb` for database events
 //! - `EmbeddingHandler` from `crucible-enrichment` for embedding generation
 //! - `WatchManager` from `crucible-watch` for file system monitoring
-//! - Rune handlers from kiln `.crucible/handlers/` directory
+//! - `RuneHandler` from `crucible-rune` for user scripts
 //!
 //! # Event Flow
 //!
@@ -16,12 +18,13 @@
 //!    Watch       Parser         Storage         Storage           Embedding            Embedding
 //! ```
 //!
-//! # Handler Priorities
+//! # Handler Dependencies
 //!
-//! - 100: StorageHandler (entity persistence)
-//! - 110: TagHandler (tag association)
-//! - 200: EmbeddingHandler (embedding generation)
-//! - 500+: Rune handlers (custom logic)
+//! Handlers declare dependencies for proper ordering:
+//! - StorageHandler: no dependencies (runs first)
+//! - TagHandler: depends on `storage_handler`
+//! - EmbeddingHandler: depends on `storage_handler`, `tag_handler`
+//! - Rune handlers: run after all built-in handlers (priority 500+)
 //!
 //! # Usage
 //!
