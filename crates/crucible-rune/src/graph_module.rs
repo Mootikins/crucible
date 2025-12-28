@@ -538,4 +538,224 @@ mod tests {
         assert_eq!(second_hop.len(), 1);
         assert_eq!(second_hop[0]["title"], "Sub Page");
     }
+
+    // =========================================================================
+    // escape_quotes tests
+    // =========================================================================
+
+    #[test]
+    fn test_escape_quotes_empty() {
+        assert_eq!(escape_quotes(""), "");
+    }
+
+    #[test]
+    fn test_escape_quotes_no_special_chars() {
+        assert_eq!(escape_quotes("simple title"), "simple title");
+    }
+
+    #[test]
+    fn test_escape_quotes_with_quotes() {
+        assert_eq!(escape_quotes(r#"Note "A""#), r#"Note \"A\""#);
+    }
+
+    #[test]
+    fn test_escape_quotes_with_backslash() {
+        assert_eq!(escape_quotes(r#"C:\path"#), r#"C:\\path"#);
+    }
+
+    #[test]
+    fn test_escape_quotes_with_both() {
+        // Backslash before quote
+        assert_eq!(escape_quotes(r#"say \"hello\""#), r#"say \\\"hello\\\""#);
+    }
+
+    #[test]
+    fn test_escape_quotes_unicode() {
+        assert_eq!(escape_quotes("日本語"), "日本語");
+        assert_eq!(escape_quotes("émojis 🎉"), "émojis 🎉");
+    }
+}
+
+#[cfg(test)]
+mod db_tests {
+    use super::*;
+    use async_trait::async_trait;
+    use crucible_core::traits::{GraphQueryError, GraphQueryExecutor, GraphQueryResult};
+    use serde_json::json;
+
+    /// Mock executor that returns predetermined results
+    struct MockDbExecutor {
+        results: Vec<serde_json::Value>,
+    }
+
+    #[async_trait]
+    impl GraphQueryExecutor for MockDbExecutor {
+        async fn execute(&self, _query: &str) -> GraphQueryResult<Vec<serde_json::Value>> {
+            Ok(self.results.clone())
+        }
+    }
+
+    /// Mock executor that always fails
+    struct FailingExecutor {
+        message: String,
+    }
+
+    #[async_trait]
+    impl GraphQueryExecutor for FailingExecutor {
+        async fn execute(&self, query: &str) -> GraphQueryResult<Vec<serde_json::Value>> {
+            Err(GraphQueryError::with_query(&self.message, query))
+        }
+    }
+
+    /// Helper to compile and run async Rune script
+    async fn run_rune_async(
+        module: Module,
+        script: &str,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+        use rune::termcolor::{ColorChoice, StandardStream};
+        use rune::{Context, Diagnostics, Source, Sources, Vm};
+
+        let mut context = Context::with_default_modules()?;
+        context.install(module)?;
+        let runtime = std::sync::Arc::new(context.runtime()?);
+
+        let mut sources = Sources::new();
+        sources.insert(Source::new("test", script)?)?;
+
+        let mut diagnostics = Diagnostics::new();
+        let result = rune::prepare(&mut sources)
+            .with_context(&context)
+            .with_diagnostics(&mut diagnostics)
+            .build();
+
+        if !diagnostics.is_empty() {
+            let mut writer = StandardStream::stderr(ColorChoice::Always);
+            diagnostics.emit(&mut writer, &sources)?;
+        }
+
+        let unit = result?;
+        let unit = std::sync::Arc::new(unit);
+
+        // Use send_execute for async functions - this properly handles await
+        let vm = Vm::new(runtime, unit);
+        let execution = vm.send_execute(["main"], ())?;
+        let output = execution.async_complete().await.into_result()?;
+
+        // Convert to JSON
+        let json = crate::mcp_types::rune_to_json(&output)?;
+        Ok(json)
+    }
+
+    #[tokio::test]
+    async fn test_db_find_returns_note() {
+        let executor: Arc<dyn GraphQueryExecutor> = Arc::new(MockDbExecutor {
+            results: vec![json!({"title": "Index", "path": "Index.md"})],
+        });
+
+        let module = graph_module_with_executor(executor).unwrap();
+
+        let script = r#"
+            use graph::db_find;
+
+            pub async fn main() {
+                db_find("Index").await
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await.unwrap();
+        assert_eq!(result["title"], "Index");
+        assert_eq!(result["path"], "Index.md");
+    }
+
+    #[tokio::test]
+    async fn test_db_find_returns_empty_when_not_found() {
+        let executor: Arc<dyn GraphQueryExecutor> = Arc::new(MockDbExecutor { results: vec![] });
+
+        let module = graph_module_with_executor(executor).unwrap();
+
+        let script = r#"
+            use graph::db_find;
+
+            pub async fn main() {
+                let result = db_find("Missing").await;
+                // Unit () becomes null in JSON
+                result
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await.unwrap();
+        assert!(result.is_null());
+    }
+
+    #[tokio::test]
+    async fn test_db_outlinks_returns_array() {
+        let executor: Arc<dyn GraphQueryExecutor> = Arc::new(MockDbExecutor {
+            results: vec![
+                json!({"title": "Project A", "path": "a.md"}),
+                json!({"title": "Project B", "path": "b.md"}),
+            ],
+        });
+
+        let module = graph_module_with_executor(executor).unwrap();
+
+        let script = r#"
+            use graph::db_outlinks;
+
+            pub async fn main() {
+                db_outlinks("Index").await
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await.unwrap();
+        let arr = result.as_array().expect("Should be array");
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["title"], "Project A");
+    }
+
+    #[tokio::test]
+    async fn test_db_query_with_raw_query() {
+        let executor: Arc<dyn GraphQueryExecutor> = Arc::new(MockDbExecutor {
+            results: vec![json!({"title": "Found"})],
+        });
+
+        let module = graph_module_with_executor(executor).unwrap();
+
+        let script = r#"
+            use graph::db_query;
+
+            pub async fn main() {
+                db_query("find(\"Index\") | ->wikilink[]").await
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await.unwrap();
+        let arr = result.as_array().expect("Should be array");
+        assert_eq!(arr.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_db_error_propagation() {
+        let executor: Arc<dyn GraphQueryExecutor> = Arc::new(FailingExecutor {
+            message: "Connection failed".to_string(),
+        });
+
+        let module = graph_module_with_executor(executor).unwrap();
+
+        let script = r#"
+            use graph::db_find;
+
+            pub async fn main() {
+                db_find("Index").await
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("Connection failed"),
+            "Expected error message, got: {}",
+            err
+        );
+    }
 }
