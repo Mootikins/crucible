@@ -28,7 +28,11 @@
 //! # }
 //! ```
 
+pub mod fixtures;
 pub mod mocks;
+
+// Re-export common fixture types for convenience
+pub use fixtures::{create_kiln, KilnFixture};
 
 use anyhow::{Context, Result};
 use std::path::Path;
