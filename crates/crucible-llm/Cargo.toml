@@ -143,7 +143,3 @@ wiremock = { workspace = true }
 futures-util = { workspace = true }
 proptest = "1.4"
 
-# Example dependencies
-[[example]]
-name = "simple_agent_chat"
-required-features = []

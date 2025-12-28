@@ -46,7 +46,6 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
-pub mod agent_runtime;
 pub mod chat;
 pub mod embeddings;
 pub mod model_discovery;
@@ -101,9 +100,6 @@ pub use text_generation::{
     TokenUsage,
     // REMOVED: OllamaTextProvider, OpenAITextProvider - use create_text_provider() instead
 };
-
-// Re-export agent runtime
-pub use agent_runtime::AgentRuntime;
 
 // Re-export chat providers and factory functions
 pub use chat::{
