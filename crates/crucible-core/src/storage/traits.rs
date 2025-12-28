@@ -2,6 +2,41 @@
 //!
 //! This module defines the fundamental traits that enable content-addressed storage
 //! with pluggable backends and hash algorithms.
+//!
+//! # Trait Hierarchy
+//!
+//! ## Foundation Traits (Low-Level)
+//!
+//! - **`BlockOperations`** - Store and retrieve individual content blocks by hash
+//! - **`TreeOperations`** - Store and retrieve Merkle tree structures
+//! - **`StorageManagement`** - Database maintenance, statistics, and lifecycle
+//!
+//! These traits follow the Interface Segregation Principle, allowing implementations
+//! to pick and choose capabilities.
+//!
+//! ## Composite Trait (Mid-Level)
+//!
+//! - **`ContentAddressedStorage`** - Combines all foundation traits
+//!
+//! This is the primary trait for content-addressed storage backends. Implementers
+//! typically implement this rather than the individual foundation traits.
+//!
+//! ## Usage Guidance
+//!
+//! **When to use `ContentAddressedStorage`:**
+//! - Implementing a storage backend (SurrealDB, in-memory, etc.)
+//! - Working with content-addressed blocks and Merkle trees
+//! - Need change detection and incremental updates
+//!
+//! **When to use individual traits (`BlockOperations`, `TreeOperations`, etc.):**
+//! - Testing with mock implementations
+//! - Implementing specialized storage with partial capabilities
+//! - Reducing coupling to unused operations
+//!
+//! # Related Traits
+//!
+//! - `crate::traits::storage::Storage` - Database query operations (SurrealQL, stats)
+//! - `crate::traits::knowledge::KnowledgeRepository` - Semantic note operations (search, retrieval)
 
 use crate::storage::{MerkleTree, StorageResult};
 use async_trait::async_trait;

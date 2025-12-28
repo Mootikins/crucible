@@ -1,3 +1,57 @@
+//! Knowledge Repository trait for semantic note operations
+//!
+//! This trait provides high-level operations for working with knowledge stored in the kiln.
+//!
+//! # Purpose
+//!
+//! `KnowledgeRepository` decouples agents and tools from storage implementation details,
+//! enabling:
+//! - Testing without a full database backend
+//! - Future storage backend changes (SurrealDB → something else)
+//! - Consistent API across different storage mechanisms
+//!
+//! # Relationship to Other Storage Traits
+//!
+//! Crucible has multiple storage-related traits organized by abstraction level:
+//!
+//! ## High-Level: Knowledge Operations (This Module)
+//!
+//! - **`KnowledgeRepository`** - Semantic note operations
+//!   - `get_note_by_name()` - Retrieve parsed notes by name/wikilink
+//!   - `list_notes()` - Browse notes with filtering
+//!   - `search_vectors()` - Semantic search with embeddings
+//!
+//! ## Mid-Level: Database Operations
+//!
+//! - **`crate::traits::storage::Storage`** - Database queries
+//!   - Raw SurrealQL/SQL queries
+//!   - Statistics and metadata
+//!   - Schema management
+//!
+//! ## Low-Level: Content-Addressed Storage
+//!
+//! - **`crate::storage::ContentAddressedStorage`** - Blocks and trees
+//!   - Content-addressed block storage
+//!   - Merkle tree operations
+//!   - Change detection
+//!
+//! # Usage Guidance
+//!
+//! **When to use `KnowledgeRepository`:**
+//! - **Agents and tools** - High-level note operations without database details
+//! - **Semantic search** - Finding relevant notes using embeddings
+//! - **Tests** - Mock implementations for deterministic behavior
+//! - **Cross-cutting concerns** - Code that works with notes but doesn't care about storage
+//!
+//! **When to use lower-level traits:**
+//! - **`Storage`** - Need raw database queries or schema management
+//! - - **`ContentAddressedStorage`** - Need Merkle trees or change detection
+//!
+//! # Implementation Notes
+//!
+//! `SurrealClient` implements `KnowledgeRepository`, providing the primary
+//! implementation used throughout Crucible.
+
 use crate::parser::ParsedNote;
 use crate::types::SearchResult;
 use crate::Result;

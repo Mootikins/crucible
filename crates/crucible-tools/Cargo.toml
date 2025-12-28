@@ -10,10 +10,8 @@ description = "System and Rune tools for Crucible knowledge management with dyna
 # Core crates
 crucible-core = { workspace = true }
 crucible-config = { workspace = true }
-crucible-llm = { workspace = true, features = ["test-utils"] }
 crucible-rune = { workspace = true }
 crucible-skills = { workspace = true, features = ["storage", "embeddings"] }
-crucible-surrealdb = { workspace = true }
 oq = { workspace = true }
 
 # MCP support (server for hosting, client for calling upstream)

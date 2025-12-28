@@ -1,16 +1,50 @@
-//! Storage abstraction trait
+//! Storage abstraction trait for database operations
 //!
-//! This trait combines the concerns of RelationalDB, GraphDB, and DocumentDB
-//! into a unified Storage interface that matches what CrucibleCore actually needs.
+//! This trait defines query and schema operations for storage backends.
 //!
-//! The original three traits (RelationalDB, GraphDB, DocumentDB) remain in
-//! `database.rs` as implementation references, but this trait is what Core uses.
+//! # Relationship to Other Storage Traits
 //!
-//! ## Type Ownership
+//! Crucible has multiple storage-related traits organized by purpose:
 //!
-//! This module re-exports types from `database.rs` to avoid duplication:
-//! - `DbError` is the canonical error type for database operations
-//! - `QueryResult`, `Record`, `RecordId` are re-exported from database.rs
+//! ## Database Operations (This Module)
+//!
+//! - **`Storage`** - Database queries, statistics, and schema management
+//!   - `query()` - Execute database queries (SurrealQL, SQL, etc.)
+//!   - `get_stats()` - Database statistics and metadata
+//!   - `list_tables()` - Introspection and autocomplete
+//!   - `initialize_schema()` - Setup tables and indexes
+//!
+//! ## Content-Addressed Storage (`crate::storage::traits`)
+//!
+//! - **`ContentAddressedStorage`** - Block and Merkle tree operations
+//! - **`BlockOperations`** - Individual content blocks
+//! - **`TreeOperations`** - Merkle tree structures
+//! - **`StorageManagement`** - Maintenance and lifecycle
+//!
+//! ## Semantic Knowledge Operations (`crate::traits::knowledge`)
+//!
+//! - **`KnowledgeRepository`** - High-level note operations
+//!   - `get_note_by_name()` - Retrieve parsed notes
+//!   - `list_notes()` - Browse and filter notes
+//!   - `search_vectors()` - Semantic search with embeddings
+//!
+//! # Usage Guidance
+//!
+//! **When to use `Storage` (this trait):**
+//! - Executing raw database queries
+//! - Getting database statistics and metadata
+//! - Initializing database schema
+//! - Working directly with the database backend
+//!
+//! **When to use `ContentAddressedStorage`:**
+//! - Storing and retrieving content blocks
+//! - Computing and comparing Merkle trees
+//! - Change detection and incremental updates
+//!
+//! **When to use `KnowledgeRepository`:**
+//! - High-level note operations in agents/tools
+//! - Semantic search and retrieval
+//! - Working with parsed notes and metadata
 
 use async_trait::async_trait;
 use std::collections::HashMap;

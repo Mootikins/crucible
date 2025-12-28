@@ -35,7 +35,6 @@ uuid = { workspace = true }
 
 # Internal crates
 crucible-acp = { workspace = true }
-crucible-config = { workspace = true }
 
 # Asset embedding (release builds)
 rust-embed = { version = "8", features = ["interpolate-folder-path"] }
