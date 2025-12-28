@@ -92,28 +92,37 @@ impl AnnotationParser {
     pub fn new() -> Self {
         Self {
             // Match Lua function: function name(...) or local function name(...)
-            lua_function_re: Regex::new(
-                r"(?m)^[ \t]*(?:local\s+)?function\s+(\w+)\s*\("
-            ).unwrap(),
+            lua_function_re: Regex::new(r"(?m)^[ \t]*(?:local\s+)?function\s+(\w+)\s*\(").unwrap(),
             // Match Fennel function: (fn name [...] or (defn name [...]
-            fennel_function_re: Regex::new(
-                r"(?m)\((?:fn|defn)\s+(\w+)\s*\["
-            ).unwrap(),
+            fennel_function_re: Regex::new(r"(?m)\((?:fn|defn)\s+(\w+)\s*\[").unwrap(),
         }
     }
 
     /// Parse tools from Lua source
-    pub fn parse_lua_tools(&self, source: &str, path: &Path) -> Result<Vec<DiscoveredTool>, LuaError> {
+    pub fn parse_lua_tools(
+        &self,
+        source: &str,
+        path: &Path,
+    ) -> Result<Vec<DiscoveredTool>, LuaError> {
         self.parse_tools(source, path, false)
     }
 
     /// Parse tools from Fennel source
-    pub fn parse_fennel_tools(&self, source: &str, path: &Path) -> Result<Vec<DiscoveredTool>, LuaError> {
+    pub fn parse_fennel_tools(
+        &self,
+        source: &str,
+        path: &Path,
+    ) -> Result<Vec<DiscoveredTool>, LuaError> {
         self.parse_tools(source, path, true)
     }
 
     /// Parse tools from source (Lua or Fennel)
-    fn parse_tools(&self, source: &str, path: &Path, is_fennel: bool) -> Result<Vec<DiscoveredTool>, LuaError> {
+    fn parse_tools(
+        &self,
+        source: &str,
+        path: &Path,
+        is_fennel: bool,
+    ) -> Result<Vec<DiscoveredTool>, LuaError> {
         let mut tools = Vec::new();
         let blocks = self.find_annotated_blocks(source, is_fennel);
 
@@ -128,7 +137,12 @@ impl AnnotationParser {
     }
 
     /// Parse hooks from source
-    pub fn parse_hooks(&self, source: &str, path: &Path, is_fennel: bool) -> Result<Vec<DiscoveredHook>, LuaError> {
+    pub fn parse_hooks(
+        &self,
+        source: &str,
+        path: &Path,
+        is_fennel: bool,
+    ) -> Result<Vec<DiscoveredHook>, LuaError> {
         let mut hooks = Vec::new();
         let blocks = self.find_annotated_blocks(source, is_fennel);
 
@@ -143,7 +157,12 @@ impl AnnotationParser {
     }
 
     /// Parse plugins from source
-    pub fn parse_plugins(&self, source: &str, path: &Path, is_fennel: bool) -> Result<Vec<DiscoveredPlugin>, LuaError> {
+    pub fn parse_plugins(
+        &self,
+        source: &str,
+        path: &Path,
+        is_fennel: bool,
+    ) -> Result<Vec<DiscoveredPlugin>, LuaError> {
         let mut plugins = Vec::new();
         let blocks = self.find_annotated_blocks(source, is_fennel);
 
@@ -180,8 +199,10 @@ impl AnnotationParser {
                 i += 1;
 
                 // Collect continuation comments
-                while i < lines.len() && lines[i].trim().starts_with(comment_prefix)
-                    && !lines[i].trim().starts_with(doc_prefix) {
+                while i < lines.len()
+                    && lines[i].trim().starts_with(comment_prefix)
+                    && !lines[i].trim().starts_with(doc_prefix)
+                {
                     let line = lines[i].trim().trim_start_matches(comment_prefix).trim();
                     if line.starts_with('@') {
                         annotations.push(line.to_string());
@@ -425,13 +446,17 @@ impl From<DiscoveredTool> for LuaTool {
         LuaTool {
             name: tool.name,
             description: tool.description,
-            params: tool.params.into_iter().map(|p| ToolParam {
-                name: p.name,
-                param_type: p.param_type,
-                description: p.description,
-                required: !p.optional,
-                default: None,
-            }).collect(),
+            params: tool
+                .params
+                .into_iter()
+                .map(|p| ToolParam {
+                    name: p.name,
+                    param_type: p.param_type,
+                    description: p.description,
+                    required: !p.optional,
+                    default: None,
+                })
+                .collect(),
             source_path: tool.source_path,
             is_fennel: tool.is_fennel,
         }
@@ -455,7 +480,9 @@ end
 "#;
 
         let parser = AnnotationParser::new();
-        let tools = parser.parse_lua_tools(source, Path::new("test.lua")).unwrap();
+        let tools = parser
+            .parse_lua_tools(source, Path::new("test.lua"))
+            .unwrap();
 
         assert_eq!(tools.len(), 1);
         let tool = &tools[0];
@@ -483,7 +510,9 @@ end
 "#;
 
         let parser = AnnotationParser::new();
-        let tools = parser.parse_lua_tools(source, Path::new("test.lua")).unwrap();
+        let tools = parser
+            .parse_lua_tools(source, Path::new("test.lua"))
+            .unwrap();
 
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0].description, "Custom description");
@@ -500,7 +529,9 @@ end
 "#;
 
         let parser = AnnotationParser::new();
-        let tools = parser.parse_lua_tools(source, Path::new("test.lua")).unwrap();
+        let tools = parser
+            .parse_lua_tools(source, Path::new("test.lua"))
+            .unwrap();
 
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0].name, "helper");
@@ -517,7 +548,9 @@ end
 "#;
 
         let parser = AnnotationParser::new();
-        let tools = parser.parse_fennel_tools(source, Path::new("test.fnl")).unwrap();
+        let tools = parser
+            .parse_fennel_tools(source, Path::new("test.fnl"))
+            .unwrap();
 
         assert_eq!(tools.len(), 1);
         let tool = &tools[0];
@@ -539,7 +572,9 @@ end
 "#;
 
         let parser = AnnotationParser::new();
-        let hooks = parser.parse_hooks(source, Path::new("test.lua"), false).unwrap();
+        let hooks = parser
+            .parse_hooks(source, Path::new("test.lua"), false)
+            .unwrap();
 
         assert_eq!(hooks.len(), 1);
         let hook = &hooks[0];
@@ -563,7 +598,9 @@ end
 "#;
 
         let parser = AnnotationParser::new();
-        let plugins = parser.parse_plugins(source, Path::new("test.lua"), false).unwrap();
+        let plugins = parser
+            .parse_plugins(source, Path::new("test.lua"), false)
+            .unwrap();
 
         assert_eq!(plugins.len(), 1);
         let plugin = &plugins[0];
@@ -594,7 +631,9 @@ end
 "#;
 
         let parser = AnnotationParser::new();
-        let tools = parser.parse_lua_tools(source, Path::new("test.lua")).unwrap();
+        let tools = parser
+            .parse_lua_tools(source, Path::new("test.lua"))
+            .unwrap();
 
         assert_eq!(tools.len(), 2);
         assert_eq!(tools[0].name, "tool_one");
@@ -606,14 +645,12 @@ end
         let discovered = DiscoveredTool {
             name: "test".to_string(),
             description: "A test tool".to_string(),
-            params: vec![
-                DiscoveredParam {
-                    name: "x".to_string(),
-                    param_type: "number".to_string(),
-                    description: "Input".to_string(),
-                    optional: false,
-                },
-            ],
+            params: vec![DiscoveredParam {
+                name: "x".to_string(),
+                param_type: "number".to_string(),
+                description: "Input".to_string(),
+                optional: false,
+            }],
             return_type: Some("number".to_string()),
             source_path: "test.lua".to_string(),
             is_fennel: false,

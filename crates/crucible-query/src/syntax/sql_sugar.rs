@@ -179,7 +179,9 @@ mod tests {
     #[test]
     fn test_parse_find() {
         let syntax = SqlSugarSyntax;
-        let ir = syntax.parse("SELECT * FROM notes WHERE title = 'MyNote'").unwrap();
+        let ir = syntax
+            .parse("SELECT * FROM notes WHERE title = 'MyNote'")
+            .unwrap();
 
         assert_eq!(ir.source, QuerySource::ByTitle("MyNote".to_string()));
         assert!(ir.pattern.elements.is_empty());

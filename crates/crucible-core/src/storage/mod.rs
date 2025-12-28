@@ -47,8 +47,8 @@ pub use deduplication_traits::{
 };
 pub use deduplicator::{
     BlockUsagePattern, DeduplicationAnalysis, DeduplicationStats, Deduplicator,
-    DocumentDuplicationPattern, DocumentSimilarity, DuplicateGroup,
-    StorageSavings, StorageSavingsByType, UsageEvent, UsageEventType,
+    DocumentDuplicationPattern, DocumentSimilarity, DuplicateGroup, StorageSavings,
+    StorageSavingsByType, UsageEvent, UsageEventType,
 };
 pub use diff::{
     CacheStats as DiffCacheStats, ChangeMetadata, ChangeSource, DiffConfig, EnhancedChangeDetector,

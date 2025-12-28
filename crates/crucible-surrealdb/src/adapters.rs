@@ -306,7 +306,10 @@ impl GraphQueryExecutor for SurrealGraphExecutor {
         // Execute against SurrealDB
         let result = self
             .client
-            .query(&rendered.sql, &[serde_json::to_value(&rendered.params).unwrap_or_default()])
+            .query(
+                &rendered.sql,
+                &[serde_json::to_value(&rendered.params).unwrap_or_default()],
+            )
             .await
             .map_err(|e| GraphQueryError::with_query(e.to_string(), query))?;
 
@@ -399,7 +402,11 @@ mod graph_executor_tests {
             .await
             .unwrap();
         let counts: Vec<serde_json::Value> = result.take(0).unwrap();
-        let count = counts.first().and_then(|v| v.get("c")).and_then(|v| v.as_i64()).unwrap_or(0);
+        let count = counts
+            .first()
+            .and_then(|v| v.get("c"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
         assert_eq!(count, 4, "Should have 4 entities");
 
         // Verify relation count
@@ -409,7 +416,11 @@ mod graph_executor_tests {
             .await
             .unwrap();
         let counts: Vec<serde_json::Value> = result.take(0).unwrap();
-        let count = counts.first().and_then(|v| v.get("c")).and_then(|v| v.as_i64()).unwrap_or(0);
+        let count = counts
+            .first()
+            .and_then(|v| v.get("c"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
         assert_eq!(count, 4, "Should have 4 relations");
 
         // Verify relation structure: `in`.title accesses the linked entity's title field
@@ -428,7 +439,12 @@ mod graph_executor_tests {
 
         let results = executor.execute(r#"find("Index")"#).await.unwrap();
 
-        assert_eq!(results.len(), 1, "find(Index) should return 1 result, got: {:?}", results);
+        assert_eq!(
+            results.len(),
+            1,
+            "find(Index) should return 1 result, got: {:?}",
+            results
+        );
         assert_eq!(results[0]["title"], "Index");
         assert_eq!(results[0]["path"], "Index.md");
     }
@@ -448,7 +464,12 @@ mod graph_executor_tests {
 
         let results = executor.execute(r#"outlinks("Index")"#).await.unwrap();
 
-        assert_eq!(results.len(), 2, "outlinks(Index) should return 2, got {:?}", results);
+        assert_eq!(
+            results.len(),
+            2,
+            "outlinks(Index) should return 2, got {:?}",
+            results
+        );
 
         // The results are entities nested under "out" key from the SELECT out ... FETCH out pattern
         let mut titles: Vec<&str> = results
@@ -467,7 +488,12 @@ mod graph_executor_tests {
         // Index has inlink from Sub Page
         let results = executor.execute(r#"inlinks("Index")"#).await.unwrap();
 
-        assert_eq!(results.len(), 1, "inlinks(Index) should return 1, got {:?}", results);
+        assert_eq!(
+            results.len(),
+            1,
+            "inlinks(Index) should return 1, got {:?}",
+            results
+        );
         // Result is nested under "in" key from SELECT `in` ... FETCH `in` pattern
         assert_eq!(results[0]["in"]["title"], "Sub Page");
     }
@@ -491,13 +517,20 @@ mod graph_executor_tests {
         // Project A has: outlinks to Sub Page, inlinks from Index
         let results = executor.execute(r#"neighbors("Project A")"#).await.unwrap();
 
-        assert_eq!(results.len(), 2, "neighbors(Project A) should return 2, got {:?}", results);
+        assert_eq!(
+            results.len(),
+            2,
+            "neighbors(Project A) should return 2, got {:?}",
+            results
+        );
 
         // Neighbors returns mixed "out" and "in" keys due to UNION
         let mut titles: Vec<&str> = results
             .iter()
             .filter_map(|r| {
-                r["out"]["title"].as_str().or_else(|| r["in"]["title"].as_str())
+                r["out"]["title"]
+                    .as_str()
+                    .or_else(|| r["in"]["title"].as_str())
             })
             .collect();
         titles.sort();

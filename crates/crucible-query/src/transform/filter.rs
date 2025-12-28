@@ -46,10 +46,8 @@ static STARTSWITH_RE: Lazy<Regex> = Lazy::new(|| {
 
 /// Pattern: select(.field | endswith("value"))
 static ENDSWITH_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(
-        r#"^\s*select\s*\(\s*\.(\w+)\s*\|\s*endswith\s*\(\s*["']([^"']+)["']\s*\)\s*\)\s*$"#,
-    )
-    .unwrap()
+    Regex::new(r#"^\s*select\s*\(\s*\.(\w+)\s*\|\s*endswith\s*\(\s*["']([^"']+)["']\s*\)\s*\)\s*$"#)
+        .unwrap()
 });
 
 /// Pattern: select(.field) - existence check

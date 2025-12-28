@@ -18,15 +18,10 @@ pub enum KilnFixture<'a> {
     },
 
     /// Multi-level hierarchy with cross-references
-    Complex {
-        domains: usize,
-        depth: usize,
-    },
+    Complex { domains: usize, depth: usize },
 
     /// Custom files for specific test scenarios
-    Custom {
-        files: Vec<(&'a str, &'a str)>,
-    },
+    Custom { files: Vec<(&'a str, &'a str)> },
 }
 
 impl KilnFixture<'_> {
@@ -44,7 +39,11 @@ impl KilnFixture<'_> {
     pub fn estimated_file_count(&self) -> usize {
         match self {
             KilnFixture::Basic => 5,
-            KilnFixture::Clustering { moc_count, content_count, .. } => moc_count + content_count,
+            KilnFixture::Clustering {
+                moc_count,
+                content_count,
+                ..
+            } => moc_count + content_count,
             KilnFixture::Complex { domains, depth } => {
                 let mut total = 0;
                 let mut level_count = *domains;
@@ -92,7 +91,11 @@ fn create_basic_kiln() -> Result<TempDir> {
     ])
 }
 
-fn create_clustering_kiln(moc_count: usize, content_count: usize, links_per_moc: usize) -> Result<TempDir> {
+fn create_clustering_kiln(
+    moc_count: usize,
+    content_count: usize,
+    links_per_moc: usize,
+) -> Result<TempDir> {
     let mut files: Vec<(String, String)> = Vec::new();
 
     for i in 0..moc_count {
@@ -125,7 +128,10 @@ Linked from [[moc_{}.md]]
         files.push((format!("content_{}.md", i), content));
     }
 
-    let files: Vec<(&str, &str)> = files.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let files: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
     create_kiln_with_files(&files)
 }
 
@@ -172,7 +178,10 @@ fn create_complex_kiln(domains: usize, _depth: usize) -> Result<TempDir> {
     }
     files.push(("Hub.md".to_string(), hub_content));
 
-    let files: Vec<(&str, &str)> = files.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let files: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
     create_kiln_with_files(&files)
 }
 
@@ -238,7 +247,12 @@ mod tests {
     #[test]
     fn create_basic_kiln_creates_five_files() {
         let kiln = create_kiln(KilnFixture::Basic).unwrap();
-        let entries: Vec<_> = kiln.path().read_dir().unwrap().map(|e| e.unwrap().file_name()).collect();
+        let entries: Vec<_> = kiln
+            .path()
+            .read_dir()
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
         assert_eq!(entries.len(), 5);
     }
 

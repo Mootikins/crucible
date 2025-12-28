@@ -42,6 +42,7 @@ mod event_pipeline;
 mod event_ring;
 mod events;
 mod executor;
+mod graph_module;
 pub mod handler;
 pub mod handler_chain;
 pub mod handler_wiring;
@@ -54,7 +55,6 @@ pub mod mcp_module;
 pub mod mcp_types;
 pub mod note_events;
 mod oq_module;
-mod graph_module;
 pub mod persistence_handler;
 mod plugin_loader;
 mod plugin_types;
@@ -93,6 +93,7 @@ pub use events::{
     ContentBlock, CrucibleEvent, EnrichedRecipe, RecipeEnrichment, RecipeParameter, ToolResultEvent,
 };
 pub use executor::RuneExecutor;
+pub use graph_module::{graph_module, graph_module_with_executor};
 pub use handler::{
     BoxedRingHandler, RingHandler, RingHandlerContext, RingHandlerError, RingHandlerInfo,
     RingHandlerResult,
@@ -120,7 +121,6 @@ pub use note_events::{
     WikilinkInfo,
 };
 pub use oq_module::oq_module;
-pub use graph_module::{graph_module, graph_module_with_executor};
 pub use persistence_handler::PersistenceHandler;
 pub use plugin_loader::PluginLoader;
 pub use plugin_types::{HookConfig, PluginManifest, RegisteredHook};

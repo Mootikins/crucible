@@ -55,7 +55,11 @@ impl LuaToolRegistry {
 
             match self.discover_tool(&path, is_fennel).await {
                 Ok(Some(tool)) => {
-                    info!("Discovered Lua tool: {} ({} params)", tool.name, tool.params.len());
+                    info!(
+                        "Discovered Lua tool: {} ({} params)",
+                        tool.name,
+                        tool.params.len()
+                    );
                     self.tools.insert(tool.name.clone(), tool);
                     count += 1;
                 }
@@ -83,7 +87,9 @@ impl LuaToolRegistry {
         // For Fennel, we'd need to compile first then extract
         // For now, only support Luau type extraction on .lua files
         if is_fennel {
-            return self.discover_tool_from_comments(&source, &source_path, true).await;
+            return self
+                .discover_tool_from_comments(&source, &source_path, true)
+                .await;
         }
 
         // Try to extract from Luau type annotations first
@@ -126,7 +132,8 @@ impl LuaToolRegistry {
         }
 
         // Fall back to comment-based discovery
-        self.discover_tool_from_comments(&source, &source_path, false).await
+        self.discover_tool_from_comments(&source, &source_path, false)
+            .await
     }
 
     /// Fallback: discover tool from @tool/@param comments
@@ -190,11 +197,7 @@ impl LuaToolRegistry {
     }
 
     /// Execute a tool by name
-    pub async fn execute(
-        &self,
-        name: &str,
-        args: JsonValue,
-    ) -> Result<ToolResult, LuaError> {
+    pub async fn execute(&self, name: &str, args: JsonValue) -> Result<ToolResult, LuaError> {
         let tool = self
             .tools
             .get(name)
@@ -228,7 +231,10 @@ fn parse_param(s: &str) -> Option<ToolParam> {
 
     let (description, required) = if description.ends_with("(optional)") {
         (
-            description.trim_end_matches("(optional)").trim().to_string(),
+            description
+                .trim_end_matches("(optional)")
+                .trim()
+                .to_string(),
             false,
         )
     } else {

@@ -33,7 +33,10 @@ fn create_test_kiln() -> Result<TempDir> {
                 "note2.md",
                 "# Note 2\n\nThis is the second test note.\n\n## Section\n\nWith multiple blocks.",
             ),
-            ("note3.md", "# Note 3\n\n[[note1]] is linked here.\n\n#tag1 #tag2"),
+            (
+                "note3.md",
+                "# Note 3\n\n[[note1]] is linked here.\n\n#tag1 #tag2",
+            ),
         ],
     })?)
 }

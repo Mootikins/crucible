@@ -48,8 +48,8 @@
 
 use crate::error::LuaError;
 use mlua::{Lua, Value};
-use serde_json::Value as JsonValue;
 use oq::{compile_filter, format_tool_response, format_tool_response_with, run_filter, ToolType};
+use serde_json::Value as JsonValue;
 
 /// Supported data formats
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -359,7 +359,8 @@ pub fn register_oq_module(lua: &Lua) -> Result<(), LuaError> {
         let filter =
             compile_filter(&filter_str).map_err(|e| mlua::Error::external(e.to_string()))?;
 
-        let results = run_filter(&filter, json).map_err(|e| mlua::Error::external(e.to_string()))?;
+        let results =
+            run_filter(&filter, json).map_err(|e| mlua::Error::external(e.to_string()))?;
 
         // Return single value or array of results
         if results.len() == 1 {
@@ -372,23 +373,24 @@ pub fn register_oq_module(lua: &Lua) -> Result<(), LuaError> {
     oq.set("query", query_fn)?;
 
     // oq.format(table, options?) -> string (smart TOON formatting)
-    let format_fn = lua.create_function(|lua, (value, options): (Value, Option<mlua::Table>)| {
-        let json = lua_to_json(lua, value).map_err(|e| mlua::Error::external(e))?;
+    let format_fn =
+        lua.create_function(|lua, (value, options): (Value, Option<mlua::Table>)| {
+            let json = lua_to_json(lua, value).map_err(|e| mlua::Error::external(e))?;
 
-        let result = if let Some(opts) = options {
-            // Check for tool type hint
-            if let Ok(tool_name) = opts.get::<String>("tool") {
-                let tool_type = ToolType::from_name(&tool_name);
-                format_tool_response_with(&json, tool_type)
+            let result = if let Some(opts) = options {
+                // Check for tool type hint
+                if let Ok(tool_name) = opts.get::<String>("tool") {
+                    let tool_type = ToolType::from_name(&tool_name);
+                    format_tool_response_with(&json, tool_type)
+                } else {
+                    format_tool_response(&json)
+                }
             } else {
                 format_tool_response(&json)
-            }
-        } else {
-            format_tool_response(&json)
-        };
+            };
 
-        Ok(result)
-    })?;
+            Ok(result)
+        })?;
     oq.set("format", format_fn)?;
 
     // oq.null constant
@@ -519,10 +521,7 @@ mod tests {
     #[test]
     fn test_oq_parse_array() {
         let lua = setup_lua();
-        let result: Table = lua
-            .load(r#"return oq.parse('[1, 2, 3]')"#)
-            .eval()
-            .unwrap();
+        let result: Table = lua.load(r#"return oq.parse('[1, 2, 3]')"#).eval().unwrap();
 
         assert_eq!(result.get::<i64>(1).unwrap(), 1);
         assert_eq!(result.get::<i64>(2).unwrap(), 2);
@@ -884,10 +883,7 @@ serde = "1.0"
     fn test_oq_detect_function() {
         let lua = setup_lua();
 
-        let json: String = lua
-            .load(r#"return oq.detect('{"x": 1}')"#)
-            .eval()
-            .unwrap();
+        let json: String = lua.load(r#"return oq.detect('{"x": 1}')"#).eval().unwrap();
         assert_eq!(json, "json");
 
         let toml: String = lua

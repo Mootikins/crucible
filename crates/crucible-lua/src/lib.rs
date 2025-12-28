@@ -81,12 +81,14 @@ pub use error::LuaError;
 pub use executor::LuaExecutor;
 #[cfg(feature = "fennel")]
 pub use fennel::FennelCompiler;
+pub use graph::{register_graph_module, register_graph_module_with_executor};
 pub use json_query::{
     detect_format, encode_to_format, json_to_lua, lua_to_json, parse_auto, parse_with_format,
     register_oq_module, Format,
 };
 pub use registry::LuaToolRegistry;
-pub use schema::{extract_signatures, generate_input_schema, type_to_string, FunctionSignature, LuauType};
-pub use graph::{register_graph_module, register_graph_module_with_executor};
+pub use schema::{
+    extract_signatures, generate_input_schema, type_to_string, FunctionSignature, LuauType,
+};
 pub use shell::{register_shell_module, ExecResult, ShellPolicy};
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
