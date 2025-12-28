@@ -8,7 +8,7 @@
 
 use crucible_lua::{
     AnnotationParser, LuaExecutor, LuaToolRegistry,
-    register_json_module, register_shell_module, ShellPolicy,
+    register_oq_module, register_shell_module, ShellPolicy,
 };
 use serde_json::json;
 use std::path::Path;
@@ -103,24 +103,24 @@ end
 }
 
 #[tokio::test]
-async fn test_lua_tool_with_json_module() {
+async fn test_lua_tool_with_oq_module() {
     let executor = LuaExecutor::new().unwrap();
 
-    // Register JSON module
-    register_json_module(executor.lua()).unwrap();
+    // Register oq module
+    register_oq_module(executor.lua()).unwrap();
 
     let source = r#"
 function handler(args)
     -- Parse JSON string
-    local data = json.parse(args.json_str)
+    local data = oq.parse(args.json_str)
 
     -- Modify and encode back
     data.processed = true
     data.count = (data.count or 0) + 1
 
     return {
-        encoded = json.encode(data),
-        pretty = json.pretty(data)
+        encoded = oq.json(data),
+        pretty = oq.json_pretty(data)
     }
 end
 "#;
