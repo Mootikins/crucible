@@ -158,6 +158,13 @@ pub use clustering::{
 pub mod event_handlers;
 pub use event_handlers::{StorageHandler, TagHandler};
 
+// Graph query translation (jaq syntax → SurrealQL)
+pub mod graph_query;
+pub use graph_query::{
+    execute_graph_query, ArrowDirection, ArrowTraversal, GraphFunction, GraphQuery,
+    GraphQueryTranslator, ParsedGraphQuery,
+};
+
 // ============================================================================
 // PRIVATE infrastructure modules - use factory functions instead!
 // ============================================================================
