@@ -1,0 +1,349 @@
+//! Lua script executor
+//!
+//! Executes Lua (and Fennel) scripts with async support and
+//! optional thread safety via the `send` feature.
+
+use crate::error::LuaError;
+#[cfg(feature = "fennel")]
+use crate::fennel::FennelCompiler;
+use crate::types::{LuaExecutionResult, LuaTool, ToolResult};
+use mlua::{Function, Lua, Result as LuaResult, Value};
+use serde_json::Value as JsonValue;
+use std::path::Path;
+use std::time::Instant;
+use tracing::instrument;
+
+/// Lua script executor
+///
+/// With the `send` feature enabled, this can be wrapped in Arc<Mutex<>>
+/// for multi-threaded use.
+pub struct LuaExecutor {
+    lua: Lua,
+    #[cfg(feature = "fennel")]
+    fennel: Option<FennelCompiler>,
+}
+
+impl LuaExecutor {
+    /// Create a new Lua executor
+    pub fn new() -> Result<Self, LuaError> {
+        let lua = Lua::new();
+
+        // Set up safe globals and Crucible API
+        Self::setup_globals(&lua)?;
+
+        // Try to load Fennel - it's optional (may not have vendor/fennel.lua)
+        #[cfg(feature = "fennel")]
+        let fennel = FennelCompiler::new(&lua).ok();
+
+        Ok(Self {
+            lua,
+            #[cfg(feature = "fennel")]
+            fennel,
+        })
+    }
+
+    /// Set up global functions available to scripts
+    fn setup_globals(lua: &Lua) -> Result<(), LuaError> {
+        let globals = lua.globals();
+
+        // Create crucible namespace
+        let crucible = lua.create_table()?;
+
+        // crucible.log(level, message)
+        let log_fn = lua.create_function(|_, (level, msg): (String, String)| {
+            match level.as_str() {
+                "debug" => tracing::debug!("{}", msg),
+                "info" => tracing::info!("{}", msg),
+                "warn" => tracing::warn!("{}", msg),
+                "error" => tracing::error!("{}", msg),
+                _ => tracing::info!("{}", msg),
+            }
+            Ok(())
+        })?;
+        crucible.set("log", log_fn)?;
+
+        // crucible.json_encode(value) -> string
+        let json_encode = lua.create_function(|lua, value: Value| {
+            let json = lua_to_json(lua, value).map_err(|e| mlua::Error::external(e))?;
+            serde_json::to_string(&json).map_err(|e| mlua::Error::external(e))
+        })?;
+        crucible.set("json_encode", json_encode)?;
+
+        // crucible.json_decode(string) -> value
+        let json_decode = lua.create_function(|lua, s: String| {
+            let json: JsonValue =
+                serde_json::from_str(&s).map_err(|e| mlua::Error::external(e))?;
+            json_to_lua(lua, json)
+        })?;
+        crucible.set("json_decode", json_decode)?;
+
+        globals.set("crucible", crucible)?;
+
+        Ok(())
+    }
+
+    /// Execute a Lua or Fennel file
+    #[instrument(skip(self, args), fields(path = %path.as_ref().display()))]
+    pub async fn execute_file(
+        &self,
+        path: impl AsRef<Path>,
+        args: JsonValue,
+    ) -> Result<LuaExecutionResult, LuaError> {
+        let path = path.as_ref();
+        let source = tokio::fs::read_to_string(path).await?;
+
+        let is_fennel = path
+            .extension()
+            .map(|e| e == "fnl")
+            .unwrap_or(false);
+
+        self.execute_source(&source, is_fennel, args).await
+    }
+
+    /// Execute Lua or Fennel source code
+    pub async fn execute_source(
+        &self,
+        source: &str,
+        is_fennel: bool,
+        args: JsonValue,
+    ) -> Result<LuaExecutionResult, LuaError> {
+        let start = Instant::now();
+
+        // Compile Fennel to Lua if needed
+        #[cfg(feature = "fennel")]
+        let lua_source = if is_fennel {
+            match &self.fennel {
+                Some(fennel) => fennel.compile_with_lua(&self.lua, source)?,
+                None => {
+                    return Err(LuaError::FennelCompile(
+                        "Fennel compiler not available. Download fennel.lua from \
+                        https://fennel-lang.org/downloads and place in \
+                        crates/crucible-lua/vendor/fennel.lua".into(),
+                    ));
+                }
+            }
+        } else {
+            source.to_string()
+        };
+
+        #[cfg(not(feature = "fennel"))]
+        let lua_source = if is_fennel {
+            return Err(LuaError::FennelCompile(
+                "Fennel support not enabled (compile with 'fennel' feature)".into(),
+            ));
+        } else {
+            source.to_string()
+        };
+
+        // Execute the script
+        let result = self.execute_lua(&lua_source, args);
+
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        match result {
+            Ok(content) => Ok(LuaExecutionResult {
+                success: true,
+                content: Some(content),
+                error: None,
+                duration_ms,
+            }),
+            Err(e) => Ok(LuaExecutionResult {
+                success: false,
+                content: None,
+                error: Some(e.to_string()),
+                duration_ms,
+            }),
+        }
+    }
+
+    /// Execute Lua source and call the main/handler function
+    fn execute_lua(&self, source: &str, args: JsonValue) -> Result<JsonValue, LuaError> {
+        // Load and execute the chunk (defines functions)
+        self.lua.load(source).exec()?;
+
+        // Look for handler or main function
+        let globals = self.lua.globals();
+
+        let handler: Function = globals
+            .get("handler")
+            .or_else(|_| globals.get("main"))
+            .map_err(|_| {
+                LuaError::InvalidTool("No 'handler' or 'main' function found".into())
+            })?;
+
+        // Convert args to Lua
+        let lua_args = json_to_lua(&self.lua, args)?;
+
+        // Call handler
+        let result: Value = handler.call(lua_args)?;
+
+        // Convert result back to JSON
+        lua_to_json(&self.lua, result)
+    }
+
+    /// Execute a tool by name from the registry
+    pub async fn execute_tool(
+        &self,
+        tool: &LuaTool,
+        args: JsonValue,
+    ) -> Result<ToolResult, LuaError> {
+        let result = self.execute_file(&tool.source_path, args).await?;
+
+        if result.success {
+            Ok(ToolResult::ok(result.content.unwrap_or(JsonValue::Null)))
+        } else {
+            Ok(ToolResult::err(
+                result.error.unwrap_or_else(|| "Unknown error".into()),
+            ))
+        }
+    }
+
+    /// Get a reference to the underlying Lua state
+    ///
+    /// Use this for advanced integration (e.g., registering custom functions).
+    pub fn lua(&self) -> &Lua {
+        &self.lua
+    }
+}
+
+/// Convert a Lua value to JSON
+fn lua_to_json(lua: &Lua, value: Value) -> Result<JsonValue, LuaError> {
+    match value {
+        Value::Nil => Ok(JsonValue::Null),
+        Value::Boolean(b) => Ok(JsonValue::Bool(b)),
+        Value::Integer(i) => Ok(JsonValue::Number(i.into())),
+        Value::Number(n) => Ok(serde_json::Number::from_f64(n)
+            .map(JsonValue::Number)
+            .unwrap_or(JsonValue::Null)),
+        Value::String(s) => Ok(JsonValue::String(s.to_str()?.to_string())),
+        Value::Table(t) => {
+            // Check if it's an array (sequential integer keys starting at 1)
+            let is_array = t.clone().pairs::<i64, Value>().all(|pair| pair.is_ok());
+            let len = t.raw_len();
+
+            if is_array && len > 0 {
+                // It's an array
+                let mut arr = Vec::with_capacity(len);
+                for i in 1..=len {
+                    let v: Value = t.get(i)?;
+                    arr.push(lua_to_json(lua, v)?);
+                }
+                Ok(JsonValue::Array(arr))
+            } else {
+                // It's an object
+                let mut map = serde_json::Map::new();
+                for pair in t.pairs::<String, Value>() {
+                    let (k, v) = pair?;
+                    map.insert(k, lua_to_json(lua, v)?);
+                }
+                Ok(JsonValue::Object(map))
+            }
+        }
+        // Functions, userdata, etc. become null
+        _ => Ok(JsonValue::Null),
+    }
+}
+
+/// Convert JSON to a Lua value
+fn json_to_lua(lua: &Lua, value: JsonValue) -> LuaResult<Value> {
+    match value {
+        JsonValue::Null => Ok(Value::Nil),
+        JsonValue::Bool(b) => Ok(Value::Boolean(b)),
+        JsonValue::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Ok(Value::Integer(i))
+            } else if let Some(f) = n.as_f64() {
+                Ok(Value::Number(f))
+            } else {
+                Ok(Value::Nil)
+            }
+        }
+        JsonValue::String(s) => Ok(Value::String(lua.create_string(&s)?)),
+        JsonValue::Array(arr) => {
+            let table = lua.create_table()?;
+            for (i, v) in arr.into_iter().enumerate() {
+                table.set(i + 1, json_to_lua(lua, v)?)?;
+            }
+            Ok(Value::Table(table))
+        }
+        JsonValue::Object(obj) => {
+            let table = lua.create_table()?;
+            for (k, v) in obj {
+                table.set(k, json_to_lua(lua, v)?)?;
+            }
+            Ok(Value::Table(table))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_execute_simple_lua() {
+        let executor = LuaExecutor::new().unwrap();
+
+        let source = r#"
+            function handler(args)
+                return { result = args.x + args.y }
+            end
+        "#;
+
+        let args = serde_json::json!({ "x": 1, "y": 2 });
+        let result = executor.execute_source(source, false, args).await.unwrap();
+
+        assert!(result.success);
+        assert_eq!(
+            result.content,
+            Some(serde_json::json!({ "result": 3 }))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_crucible_log() {
+        let executor = LuaExecutor::new().unwrap();
+
+        let source = r#"
+            function handler(args)
+                crucible.log("info", "Hello from Lua!")
+                return { logged = true }
+            end
+        "#;
+
+        let result = executor
+            .execute_source(source, false, serde_json::json!({}))
+            .await
+            .unwrap();
+
+        assert!(result.success);
+    }
+
+    #[tokio::test]
+    async fn test_json_roundtrip() {
+        let executor = LuaExecutor::new().unwrap();
+
+        let source = r#"
+            function handler(args)
+                local encoded = crucible.json_encode(args)
+                local decoded = crucible.json_decode(encoded)
+                return decoded
+            end
+        "#;
+
+        let args = serde_json::json!({
+            "string": "hello",
+            "number": 42,
+            "array": [1, 2, 3],
+            "nested": { "key": "value" }
+        });
+
+        let result = executor
+            .execute_source(source, false, args.clone())
+            .await
+            .unwrap();
+
+        assert!(result.success);
+        assert_eq!(result.content, Some(args));
+    }
+}
