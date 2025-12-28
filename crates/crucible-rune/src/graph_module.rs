@@ -225,7 +225,10 @@ fn inlinks(graph: HashMap<String, Value>, title: String) -> Result<Value, RuneGr
 // Module Registration
 // =============================================================================
 
-/// Create the graph module for Rune
+/// Create the graph module for Rune (in-memory mode)
+///
+/// This version operates on in-memory graph structures passed from Rune.
+/// For database-backed queries, use `graph_module_with_executor`.
 pub fn graph_module() -> Result<Module, ContextError> {
     let mut module = Module::with_crate("graph")?;
 
@@ -238,6 +241,162 @@ pub fn graph_module() -> Result<Module, ContextError> {
     module.function_meta(inlinks)?;
 
     Ok(module)
+}
+
+// =============================================================================
+// Database-backed Module Registration
+// =============================================================================
+
+use crucible_core::traits::GraphQueryExecutor;
+use std::sync::Arc;
+
+/// Create a graph module backed by a database executor
+///
+/// This version uses async functions that query the actual database
+/// via the `GraphQueryExecutor` trait.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use crucible_core::traits::GraphQueryExecutor;
+/// use crucible_rune::graph_module_with_executor;
+///
+/// let executor: Arc<dyn GraphQueryExecutor> = create_graph_executor(client);
+/// let module = graph_module_with_executor(executor)?;
+///
+/// // In Rune scripts:
+/// // let note = graph::db_find("Index").await?;
+/// // let links = graph::db_outlinks("Index").await?;
+/// ```
+pub fn graph_module_with_executor(
+    executor: Arc<dyn GraphQueryExecutor>,
+) -> Result<Module, ContextError> {
+    let mut module = Module::with_crate("graph")?;
+
+    // Register the error type
+    module.ty::<RuneGraphError>()?;
+
+    // Keep in-memory functions for backward compatibility
+    module.function_meta(find)?;
+    module.function_meta(outlinks)?;
+    module.function_meta(inlinks)?;
+
+    // Add database-backed async functions with db_ prefix
+    // These query the actual database instead of in-memory structures
+
+    // db_find - Find a note by title in the database
+    let exec = executor.clone();
+    module
+        .function("db_find", move |title: String| {
+            let exec = exec.clone();
+            async move {
+                let query = format!(r#"find("{}")"#, escape_quotes(&title));
+                match exec.execute(&query).await {
+                    Ok(results) => {
+                        if let Some(first) = results.into_iter().next() {
+                            json_to_rune(&first)
+                        } else {
+                            VmResult::Ok(Value::empty())
+                        }
+                    }
+                    Err(e) => VmResult::Err(rune::runtime::VmError::panic(format!(
+                        "Graph query error: {}",
+                        e
+                    ))),
+                }
+            }
+        })
+        .build()?;
+
+    // db_outlinks - Get outlinks from database
+    let exec = executor.clone();
+    module
+        .function("db_outlinks", move |title: String| {
+            let exec = exec.clone();
+            async move {
+                let query = format!(r#"outlinks("{}")"#, escape_quotes(&title));
+                match exec.execute(&query).await {
+                    Ok(results) => {
+                        let array = JsonValue::Array(results);
+                        json_to_rune(&array)
+                    }
+                    Err(e) => VmResult::Err(rune::runtime::VmError::panic(format!(
+                        "Graph query error: {}",
+                        e
+                    ))),
+                }
+            }
+        })
+        .build()?;
+
+    // db_inlinks - Get inlinks from database
+    let exec = executor.clone();
+    module
+        .function("db_inlinks", move |title: String| {
+            let exec = exec.clone();
+            async move {
+                let query = format!(r#"inlinks("{}")"#, escape_quotes(&title));
+                match exec.execute(&query).await {
+                    Ok(results) => {
+                        let array = JsonValue::Array(results);
+                        json_to_rune(&array)
+                    }
+                    Err(e) => VmResult::Err(rune::runtime::VmError::panic(format!(
+                        "Graph query error: {}",
+                        e
+                    ))),
+                }
+            }
+        })
+        .build()?;
+
+    // db_neighbors - Get all connected notes from database
+    let exec = executor.clone();
+    module
+        .function("db_neighbors", move |title: String| {
+            let exec = exec.clone();
+            async move {
+                let query = format!(r#"neighbors("{}")"#, escape_quotes(&title));
+                match exec.execute(&query).await {
+                    Ok(results) => {
+                        let array = JsonValue::Array(results);
+                        json_to_rune(&array)
+                    }
+                    Err(e) => VmResult::Err(rune::runtime::VmError::panic(format!(
+                        "Graph query error: {}",
+                        e
+                    ))),
+                }
+            }
+        })
+        .build()?;
+
+    // db_query - Execute arbitrary graph query
+    let exec = executor.clone();
+    module
+        .function("db_query", move |query: String| {
+            let exec = exec.clone();
+            async move {
+                match exec.execute(&query).await {
+                    Ok(results) => {
+                        let array = JsonValue::Array(results);
+                        json_to_rune(&array)
+                    }
+                    Err(e) => VmResult::Err(rune::runtime::VmError::panic(format!(
+                        "Graph query error: {}",
+                        e
+                    ))),
+                }
+            }
+        })
+        .build()?;
+
+    Ok(module)
+}
+
+/// Escape double quotes in a string for safe embedding in queries
+fn escape_quotes(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 #[cfg(test)]
