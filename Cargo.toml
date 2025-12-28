@@ -21,6 +21,7 @@ members = [
     "crates/crucible-daemon-client",
     "crates/crucible-skills",
     "crates/crucible-rig",
+    "crates/crucible-query",
     "crates/zellij-inbox",
 ]
 default-members = ["crates/crucible-cli"]
