@@ -3174,6 +3174,7 @@ dependencies = [
  "fake",
  "futures",
  "hex",
+ "jaq-syn",
  "ndarray 0.17.1",
  "num_cpus",
  "once_cell",
@@ -7034,6 +7035,15 @@ dependencies = [
  "log",
  "regex-bites",
  "urlencoding",
+]
+
+[[package]]
+name = "jaq-syn"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ba44fe4428c71304604261ecbae047ee9cfb60c4f1a6bd222ebbb31726d3948"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
