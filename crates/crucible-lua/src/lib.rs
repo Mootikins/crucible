@@ -87,6 +87,6 @@ pub use json_query::{
 };
 pub use registry::LuaToolRegistry;
 pub use schema::{extract_signatures, generate_input_schema, type_to_string, FunctionSignature, LuauType};
-pub use graph::register_graph_module;
+pub use graph::{register_graph_module, register_graph_module_with_executor};
 pub use shell::{register_shell_module, ExecResult, ShellPolicy};
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
