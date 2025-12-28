@@ -35,6 +35,55 @@ impl OllamaChatProvider {
             timeout: Duration::from_secs(timeout_secs),
         }
     }
+
+    /// Convert an LlmMessage to the JSON format expected by Ollama/OpenAI-compatible APIs.
+    ///
+    /// This handles:
+    /// - Tool messages: includes tool_call_id
+    /// - Assistant messages with tool_calls: includes the tool_calls array
+    fn message_to_json(msg: &LlmMessage) -> serde_json::Value {
+        let role = match msg.role {
+            MessageRole::System => "system",
+            MessageRole::User => "user",
+            MessageRole::Assistant => "assistant",
+            MessageRole::Function => "assistant", // Map to assistant
+            MessageRole::Tool => "tool",
+        };
+
+        let mut json = serde_json::json!({
+            "role": role,
+            "content": msg.content.clone(),
+        });
+
+        // Include tool_call_id for tool messages (required by OpenAI-compatible APIs)
+        if msg.role == MessageRole::Tool {
+            if let Some(ref tool_call_id) = msg.tool_call_id {
+                json["tool_call_id"] = serde_json::json!(tool_call_id);
+            }
+        }
+
+        // Include tool_calls for assistant messages that made tool calls
+        if msg.role == MessageRole::Assistant {
+            if let Some(ref tool_calls) = msg.tool_calls {
+                let calls: Vec<serde_json::Value> = tool_calls
+                    .iter()
+                    .map(|tc| {
+                        serde_json::json!({
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            }
+                        })
+                    })
+                    .collect();
+                json["tool_calls"] = serde_json::json!(calls);
+            }
+        }
+
+        json
+    }
 }
 
 #[async_trait]
@@ -66,18 +115,7 @@ impl TextGenerationProvider for OllamaChatProvider {
         // Build Ollama API request
         let mut api_request = serde_json::json!({
             "model": self.default_model,
-            "messages": request.messages.iter().map(|m| {
-                serde_json::json!({
-                    "role": match m.role {
-                        MessageRole::System => "system",
-                        MessageRole::User => "user",
-                        MessageRole::Assistant => "assistant",
-                        MessageRole::Function => "assistant", // Map to assistant
-                        MessageRole::Tool => "tool",
-                    },
-                    "content": m.content.clone(),
-                })
-            }).collect::<Vec<_>>(),
+            "messages": request.messages.iter().map(Self::message_to_json).collect::<Vec<_>>(),
             "stream": false,
         });
 
@@ -208,21 +246,16 @@ impl TextGenerationProvider for OllamaChatProvider {
 
         let url = format!("{}/api/chat", self.base_url);
 
-        // Build Ollama API request
+        // Build Ollama API request - use helper for proper message serialization
+        let messages: Vec<serde_json::Value> = request
+            .messages
+            .iter()
+            .map(Self::message_to_json)
+            .collect();
+
         let mut api_request = serde_json::json!({
             "model": self.default_model,
-            "messages": request.messages.iter().map(|m| {
-                serde_json::json!({
-                    "role": match m.role {
-                        MessageRole::System => "system",
-                        MessageRole::User => "user",
-                        MessageRole::Assistant => "assistant",
-                        MessageRole::Function => "assistant", // Map to assistant
-                        MessageRole::Tool => "tool",
-                    },
-                    "content": m.content.clone(),
-                })
-            }).collect::<Vec<_>>(),
+            "messages": messages,
             "stream": true,
         });
 
@@ -508,6 +541,54 @@ mod tests {
 
         assert_eq!(provider.provider_name(), "Ollama");
         assert_eq!(provider.default_model(), "llama3.2");
+    }
+
+    #[test]
+    fn test_message_to_json_tool_message() {
+        // Tool messages must include tool_call_id for OpenAI-compatible APIs
+        let tool_msg = LlmMessage::tool("call_123", "tool result");
+        let json = OllamaChatProvider::message_to_json(&tool_msg);
+
+        assert_eq!(json["role"], "tool");
+        assert_eq!(json["tool_call_id"], "call_123");
+        assert_eq!(json["content"], "tool result");
+    }
+
+    #[test]
+    fn test_message_to_json_assistant_with_tool_calls() {
+        // Assistant messages with tool_calls must include the calls array
+        let tool_calls = vec![ToolCall::new("call_456", "get_weather", r#"{"city":"NYC"}"#.to_string())];
+        let assistant_msg = LlmMessage::assistant_with_tools("Let me check that", tool_calls);
+        let json = OllamaChatProvider::message_to_json(&assistant_msg);
+
+        assert_eq!(json["role"], "assistant");
+        assert_eq!(json["content"], "Let me check that");
+
+        let calls = json["tool_calls"].as_array().expect("tool_calls should be array");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0]["id"], "call_456");
+        assert_eq!(calls[0]["type"], "function");
+        assert_eq!(calls[0]["function"]["name"], "get_weather");
+    }
+
+    #[test]
+    fn test_message_to_json_plain_assistant() {
+        // Plain assistant messages should NOT have tool_calls field
+        let msg = LlmMessage::assistant("Hello there");
+        let json = OllamaChatProvider::message_to_json(&msg);
+
+        assert_eq!(json["role"], "assistant");
+        assert_eq!(json["content"], "Hello there");
+        assert!(json.get("tool_calls").is_none());
+    }
+
+    #[test]
+    fn test_message_to_json_user() {
+        let msg = LlmMessage::user("Hello");
+        let json = OllamaChatProvider::message_to_json(&msg);
+
+        assert_eq!(json["role"], "user");
+        assert_eq!(json["content"], "Hello");
     }
 
     // Integration tests will be in tests/ directory
