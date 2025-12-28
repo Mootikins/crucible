@@ -12,7 +12,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true, optional = true }
 toml = { version = "0.9", optional = true }
-uuid = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
@@ -20,7 +19,6 @@ tokio = { workspace = true, features = ["fs"] }
 tempfile = { workspace = true, optional = true }
 schemars = { workspace = true }
 num_cpus = "1.16"
-sysinfo = "0.37"
 dirs = "6.0"
 
 [features]

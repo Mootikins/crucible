@@ -25,9 +25,6 @@ thiserror = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
 
-# For clustering algorithms
-petgraph = "0.8"
-
 # SurrealDB with in-memory and RocksDB backends
 surrealdb = { version = "2", features = ["kv-mem", "kv-rocksdb"] }
 chrono = { workspace = true }
@@ -36,23 +33,11 @@ comfy-table = "7.2"
 urlencoding = "2.1"
 regex = "1.11"
 
-# Vector operations
-ndarray = { workspace = true }
-
-# Thread pool management
-num_cpus = "1.16"
-
 # For static data in algorithms
 once_cell = "1.19"
-futures = "0.3"
-rayon = { workspace = true }
-
-# jaq for query parsing and translation
-jaq-syn = "1.6"
 
 # File system operations
 walkdir = "2.4"
-sha2 = "0.10"
 blake3 = "1.0"
 hex = "0.4"
 bincode = { version = "2.0", features = ["serde"] }
@@ -76,7 +61,6 @@ test-slow = []           # Performance benchmarks and timing tests
 crucible-surrealdb = { path = ".", features = ["test-utils"] }
 tempfile = "3.24"
 tokio-test = "0.4"
-num_cpus = "1.16"
 tracing-test = "0.2"
 criterion = { version = "0.8", features = ["async_tokio"] }
 fake = { version = "4.4", features = ["derive"] }

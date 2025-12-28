@@ -28,14 +28,11 @@ crucible-parser = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 
 # Async utilities
-futures = { workspace = true }
-tokio-stream = { workspace = true }
 flume = { workspace = true }
 
 # Pattern matching
 globset = { workspace = true }
 glob = { workspace = true }
-regex = { workspace = true }
 
 # CPU information
 num_cpus = { workspace = true }
