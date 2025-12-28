@@ -217,4 +217,47 @@ mod tests {
         let result = executor.execute_one("find(\"Missing\")").await.unwrap();
         assert!(result.is_none());
     }
+
+    // =========================================================================
+    // Error propagation tests
+    // =========================================================================
+
+    /// Mock executor that always returns an error
+    struct FailingExecutor {
+        error_message: String,
+    }
+
+    #[async_trait]
+    impl GraphQueryExecutor for FailingExecutor {
+        async fn execute(&self, query: &str) -> GraphQueryResult<Vec<Value>> {
+            Err(GraphQueryError::with_query(&self.error_message, query))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_error_propagation() {
+        let executor = FailingExecutor {
+            error_message: "Connection failed".to_string(),
+        };
+
+        let result = executor.execute("outlinks(\"X\")").await;
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        assert!(err.message.contains("Connection failed"));
+        assert_eq!(err.query, Some("outlinks(\"X\")".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_error_propagation_through_execute_one() {
+        let executor = FailingExecutor {
+            error_message: "Database offline".to_string(),
+        };
+
+        let result = executor.execute_one("find(\"Note\")").await;
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        assert!(err.message.contains("Database offline"));
+    }
 }
