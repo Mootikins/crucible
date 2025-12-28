@@ -294,18 +294,19 @@ impl SurrealGraphExecutor {
 #[async_trait]
 impl GraphQueryExecutor for SurrealGraphExecutor {
     async fn execute(&self, query: &str) -> GraphQueryResult<Vec<serde_json::Value>> {
-        use crate::graph_query::GraphQueryTranslator;
+        use crate::graph_query::create_default_pipeline;
 
-        // Translate jaq query to SurrealQL
-        let translator = GraphQueryTranslator::new();
-        let graph_query = translator
-            .translate(query)
+        // Use the new composable query pipeline
+        // Supports: MATCH patterns (priority 50), SQL sugar (40), jaq-style (30)
+        let pipeline = create_default_pipeline();
+        let rendered = pipeline
+            .execute(query)
             .map_err(|e| GraphQueryError::with_query(e.to_string(), query))?;
 
         // Execute against SurrealDB
         let result = self
             .client
-            .query(&graph_query.surql, &[serde_json::to_value(&graph_query.params).unwrap_or_default()])
+            .query(&rendered.sql, &[serde_json::to_value(&rendered.params).unwrap_or_default()])
             .await
             .map_err(|e| GraphQueryError::with_query(e.to_string(), query))?;
 
