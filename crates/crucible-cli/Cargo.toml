@@ -47,7 +47,6 @@ async-trait = { workspace = true }
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml = { workspace = true }
 
 # Table formatting
 tabled = "0.20"
@@ -86,22 +85,15 @@ walkdir = "2.4"
 # Fuzzy search removed - was for TUI completion
 
 # Additional dependencies for REPL
-csv = { workspace = true }
-nu-ansi-term = { workspace = true }
 regex = { workspace = true }
 
 # Path manipulation
 dirs = { workspace = true }
 
-# Configuration
-toml = { workspace = true }
-
-
 # Markdown parsing for terminal rendering
 markdown-it = { workspace = true }
 
-# HTTP client & streaming
-reqwest = { workspace = true, features = ["json", "stream"] }
+# Async utilities
 futures = { workspace = true }
 
 # Terminal utilities (kept for progress.rs, markdown_renderer.rs)
@@ -115,13 +107,6 @@ ansi-to-tui = "8.0"
 
 # Diff rendering
 similar = "2.7"
-
-# UUID generation
-uuid = { workspace = true, features = ["v4", "serde"] }
-
-# File watching
-notify = { workspace = true }
-notify-debouncer-mini = "0.7"
 
 # Concurrency
 parking_lot = { workspace = true }
