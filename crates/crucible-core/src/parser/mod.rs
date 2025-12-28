@@ -13,9 +13,6 @@
 //! The `crucible-parser` crate depends on these types and provides implementations.
 
 pub mod adapter;
-// TODO: bridge module disabled - it depends on crucible_parser implementation
-// Should be moved to a higher-level crate that depends on both core and parser
-// pub mod bridge;
 pub mod coordinator;
 pub mod eav_document;
 pub mod error;
@@ -26,7 +23,6 @@ pub mod traits;
 pub mod types;
 
 pub use adapter::SurrealDBAdapter;
-// pub use bridge::{create_parser, create_parser_with_config, ParserAdapter, ParserConfig};
 pub use coordinator::{
     factory as coordinator_factory, BatchOperationResult, BatchStatistics, CoordinatorConfig,
     CoordinatorStatistics, DefaultParserStorageCoordinator, OperationMetadata, OperationPriority,

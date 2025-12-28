@@ -16,7 +16,6 @@ crucible-query = { path = "../crucible-query" }
 # Enrichment types (EnrichedNoteWithTree)
 crucible-enrichment = { path = "../crucible-enrichment" }
 crucible-llm = { workspace = true, optional = true }
-crucible-config = { workspace = true, features = ["test-utils"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = "0.9"
@@ -65,7 +64,7 @@ default = ["embeddings"]
 # Enable embedding functionality (brings in LLM dependencies including ort-sys)
 embeddings = ["crucible-llm"]
 # Test utilities - optionally enables LLM test-utils if embeddings feature is enabled
-test-utils = ["crucible-llm?/test-utils", "crucible-config/test-utils"]
+test-utils = ["crucible-llm?/test-utils"]
 
 # Test tier flags (see justfile for usage)
 test-fixtures = []       # Tests using docs/ kiln or examples/test-kiln
