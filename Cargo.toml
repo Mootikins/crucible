@@ -15,7 +15,6 @@ members = [
     "crates/crucible-tools",
     "crates/crucible-watch",
     "crates/crucible-rune",
-    "crates/crucible-lua",
     "crates/crucible-web",
     "crates/crucible-daemon",
     "crates/crucible-daemon-client",
