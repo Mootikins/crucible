@@ -16,9 +16,6 @@ pub use registry::{
 };
 
 #[cfg(test)]
-pub mod test_utils;
-
-#[cfg(test)]
 mod tests;
 
 #[cfg(test)]
