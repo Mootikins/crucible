@@ -16,33 +16,26 @@ use crucible_config::{
     AcpConfig, ChatConfig, EmbeddingConfig, EmbeddingProviderType, LlmConfig, ProcessingConfig,
     ProvidersConfig,
 };
+use crucible_core::test_support::fixtures::{create_kiln, KilnFixture};
 use std::path::PathBuf;
 use tempfile::TempDir;
 use tokio::time::{sleep, Duration};
 
 /// Helper to create a test kiln with sample markdown files
 fn create_test_kiln() -> Result<TempDir> {
-    let temp_dir = TempDir::new()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
-    std::fs::create_dir_all(&kiln_path)?;
-
-    // Create sample markdown files with different content
-    std::fs::write(
-        kiln_path.join("note1.md"),
-        "# Note 1\n\nThis is the first test note with some content.",
-    )?;
-
-    std::fs::write(
-        kiln_path.join("note2.md"),
-        "# Note 2\n\nThis is the second test note.\n\n## Section\n\nWith multiple blocks.",
-    )?;
-
-    std::fs::write(
-        kiln_path.join("note3.md"),
-        "# Note 3\n\n[[note1]] is linked here.\n\n#tag1 #tag2",
-    )?;
-
-    Ok(temp_dir)
+    Ok(create_kiln(KilnFixture::Custom {
+        files: vec![
+            (
+                "note1.md",
+                "# Note 1\n\nThis is the first test note with some content.",
+            ),
+            (
+                "note2.md",
+                "# Note 2\n\nThis is the second test note.\n\n## Section\n\nWith multiple blocks.",
+            ),
+            ("note3.md", "# Note 3\n\n[[note1]] is linked here.\n\n#tag1 #tag2"),
+        ],
+    })?)
 }
 
 /// Helper to create test CLI config
@@ -74,7 +67,7 @@ fn create_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfig {
 async fn test_process_executes_pipeline() -> Result<()> {
     // Given: A test kiln with markdown files
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -102,7 +95,7 @@ async fn test_process_executes_pipeline() -> Result<()> {
 async fn test_storage_persists_across_runs() -> Result<()> {
     // Given: A test kiln and persistent database
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -134,7 +127,7 @@ async fn test_storage_persists_across_runs() -> Result<()> {
 async fn test_change_detection_skips_unchanged_files() -> Result<()> {
     // Given: A processed kiln
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -185,7 +178,7 @@ async fn test_change_detection_skips_unchanged_files() -> Result<()> {
 async fn test_force_flag_overrides_change_detection() -> Result<()> {
     // Given: A processed kiln with no file changes
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -217,7 +210,7 @@ async fn test_force_flag_overrides_change_detection() -> Result<()> {
 async fn test_process_single_file() -> Result<()> {
     // Given: A test kiln with multiple files
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
     let target_file = kiln_path.join("note1.md");
 
     let db_dir = TempDir::new()?;
@@ -252,7 +245,7 @@ async fn test_process_single_file() -> Result<()> {
 async fn test_all_pipeline_phases_execute() -> Result<()> {
     // Given: A test kiln
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -304,7 +297,7 @@ async fn test_output_consistency_with_chat_preprocessing() -> Result<()> {
 async fn test_verbose_without_flag_is_quiet() -> Result<()> {
     // GIVEN: Test kiln
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -329,7 +322,7 @@ async fn test_verbose_without_flag_is_quiet() -> Result<()> {
 async fn test_verbose_shows_phase_timings() -> Result<()> {
     // GIVEN: Test kiln with files
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -357,7 +350,7 @@ async fn test_verbose_shows_phase_timings() -> Result<()> {
 async fn test_verbose_shows_detailed_parse_info() -> Result<()> {
     // GIVEN: Note with wikilinks, tags, callouts
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -383,7 +376,7 @@ async fn test_verbose_shows_detailed_parse_info() -> Result<()> {
 async fn test_verbose_shows_merkle_diff_details() -> Result<()> {
     // GIVEN: Initially processed file
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -421,7 +414,7 @@ async fn test_verbose_shows_merkle_diff_details() -> Result<()> {
 async fn test_verbose_shows_enrichment_progress() -> Result<()> {
     // GIVEN: Files requiring embeddings
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -447,7 +440,7 @@ async fn test_verbose_shows_enrichment_progress() -> Result<()> {
 async fn test_verbose_shows_storage_operations() -> Result<()> {
     // GIVEN: Processing files
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -477,7 +470,7 @@ async fn test_verbose_shows_storage_operations() -> Result<()> {
 async fn test_dry_run_discovers_files_without_processing() -> Result<()> {
     // GIVEN: A test kiln with markdown files
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -506,7 +499,7 @@ async fn test_dry_run_discovers_files_without_processing() -> Result<()> {
 async fn test_dry_run_respects_change_detection() -> Result<()> {
     // GIVEN: A processed kiln (files already in DB)
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -537,7 +530,7 @@ async fn test_dry_run_respects_change_detection() -> Result<()> {
 async fn test_dry_run_with_force_shows_all_files() -> Result<()> {
     // GIVEN: A processed kiln
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -568,7 +561,7 @@ async fn test_dry_run_with_force_shows_all_files() -> Result<()> {
 async fn test_dry_run_shows_detailed_preview() -> Result<()> {
     // GIVEN: A test kiln with varied content
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -594,7 +587,7 @@ async fn test_dry_run_shows_detailed_preview() -> Result<()> {
 async fn test_dry_run_with_verbose() -> Result<()> {
     // GIVEN: A test kiln
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -631,7 +624,7 @@ async fn test_dry_run_with_verbose() -> Result<()> {
 async fn test_watch_mode_starts_and_runs() -> Result<()> {
     // GIVEN: A test kiln with initial processing complete
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -661,7 +654,7 @@ async fn test_watch_mode_starts_and_runs() -> Result<()> {
 async fn test_watch_detects_file_modification() -> Result<()> {
     // GIVEN: A test kiln with initial processing
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -707,7 +700,7 @@ async fn test_watch_detects_file_modification() -> Result<()> {
 async fn test_watch_detects_new_file_creation() -> Result<()> {
     // GIVEN: A test kiln with watch mode starting
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -749,7 +742,7 @@ async fn test_watch_detects_new_file_creation() -> Result<()> {
 async fn test_watch_detects_file_deletion() -> Result<()> {
     // GIVEN: A test kiln with initial processing
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -792,7 +785,7 @@ async fn test_watch_detects_file_deletion() -> Result<()> {
 async fn test_watch_ignores_non_markdown_files() -> Result<()> {
     // GIVEN: A test kiln with watch mode active
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -822,7 +815,7 @@ async fn test_watch_ignores_non_markdown_files() -> Result<()> {
 async fn test_watch_handles_rapid_changes_with_debounce() -> Result<()> {
     // GIVEN: A test kiln with watch mode enabled
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -856,7 +849,7 @@ async fn test_watch_handles_rapid_changes_with_debounce() -> Result<()> {
 async fn test_watch_handles_errors_gracefully() -> Result<()> {
     // GIVEN: A test kiln with watch mode
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -886,7 +879,7 @@ async fn test_watch_handles_errors_gracefully() -> Result<()> {
 async fn test_watch_can_be_cancelled() -> Result<()> {
     // GIVEN: A test kiln with watch mode running
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -914,7 +907,7 @@ async fn test_watch_can_be_cancelled() -> Result<()> {
 async fn test_watch_respects_change_detection() -> Result<()> {
     // GIVEN: A test kiln with change detection enabled
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
@@ -952,7 +945,7 @@ async fn test_watch_respects_change_detection() -> Result<()> {
 async fn test_watch_with_verbose() -> Result<()> {
     // GIVEN: A test kiln
     let temp_dir = create_test_kiln()?;
-    let kiln_path = temp_dir.path().join("test-kiln");
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let db_dir = TempDir::new()?;
     let db_path = db_dir.path().join("test.db");
