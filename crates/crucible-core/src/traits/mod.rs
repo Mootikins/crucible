@@ -30,6 +30,7 @@ pub mod acp;
 pub mod change_detection;
 pub mod chat;
 pub mod context;
+pub mod graph_query;
 pub mod input;
 pub mod knowledge;
 pub mod llm;
@@ -44,6 +45,7 @@ pub mod tools;
 // Re-export key traits
 pub use acp::{FilesystemHandler, SessionManager, StreamHandler, ToolBridge};
 pub use change_detection::{ChangeDetector, ContentHasher, HashLookupStorage};
+pub use graph_query::{GraphQueryError, GraphQueryExecutor, GraphQueryResult};
 
 pub use chat::{
     AgentHandle, ChatChunk, ChatContext, ChatError, ChatResponse, ChatResult, ChatToolCall,
