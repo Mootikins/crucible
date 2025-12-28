@@ -29,9 +29,80 @@
 //! ```
 
 use anyhow::{anyhow, Result};
+use crucible_query::{
+    render::SurrealRenderer,
+    syntax::JaqSyntax,
+    syntax::PgqSyntax,
+    syntax::QuerySyntaxRegistryBuilder,
+    syntax::SqlSugarSyntax,
+    transform::{FilterTransform, ValidateTransform},
+    QueryPipeline, QueryPipelineBuilder,
+};
+use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::Value;
+use std::borrow::Cow;
 use std::collections::HashMap;
+
+// ============================================================================
+// Pipeline Factory (New Architecture)
+// ============================================================================
+
+/// Create the default Crucible query pipeline.
+///
+/// This pipeline supports multiple query syntaxes:
+/// - SQL/PGQ MATCH (priority 50): `MATCH (a {title: 'X'})-[:wikilink]->(b)`
+/// - SQL sugar (priority 40): `SELECT outlinks FROM 'Title'`
+/// - jaq-style (priority 30): `outlinks("Title")`
+///
+/// And renders to SurrealQL for execution.
+pub fn create_default_pipeline() -> QueryPipeline {
+    create_pipeline_with_tables("entities", "relations")
+}
+
+/// Create a query pipeline with custom table names.
+pub fn create_pipeline_with_tables(
+    entity_table: impl Into<String>,
+    relation_table: impl Into<String>,
+) -> QueryPipeline {
+    let syntax_registry = QuerySyntaxRegistryBuilder::new()
+        .with_syntax(PgqSyntax) // Priority 50 - SQL/PGQ MATCH
+        .with_syntax(SqlSugarSyntax) // Priority 40
+        .with_syntax(JaqSyntax) // Priority 30
+        .build();
+
+    QueryPipelineBuilder::new()
+        .syntax_registry(syntax_registry)
+        .transform(ValidateTransform)
+        .transform(FilterTransform)
+        .renderer(SurrealRenderer::with_tables(entity_table, relation_table))
+        .build()
+}
+
+// ============================================================================
+// SQL Alias Patterns (Phase 1 - LLM-friendly syntax)
+// ============================================================================
+
+/// Pattern: SELECT outlinks FROM 'title' or SELECT outlinks FROM "title"
+static SQL_OUTLINKS_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?i)^\s*SELECT\s+outlinks\s+FROM\s+['"]([^'"]+)['"]\s*$"#).unwrap()
+});
+
+/// Pattern: SELECT inlinks FROM 'title' or SELECT inlinks FROM "title"
+static SQL_INLINKS_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?i)^\s*SELECT\s+inlinks\s+FROM\s+['"]([^'"]+)['"]\s*$"#).unwrap()
+});
+
+/// Pattern: SELECT neighbors FROM 'title' or SELECT neighbors FROM "title"
+static SQL_NEIGHBORS_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?i)^\s*SELECT\s+neighbors\s+FROM\s+['"]([^'"]+)['"]\s*$"#).unwrap()
+});
+
+/// Pattern: SELECT * FROM notes WHERE title = 'title' (any table name accepted)
+static SQL_FIND_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?i)^\s*SELECT\s+\*\s+FROM\s+\w+\s+WHERE\s+title\s*=\s*['"]([^'"]+)['"]\s*$"#)
+        .unwrap()
+});
 
 /// Result of parsing a graph query
 #[derive(Debug, Clone)]
@@ -122,19 +193,59 @@ impl GraphQueryTranslator {
     /// # Arguments
     ///
     /// * `query` - A jaq-style query string like `outlinks("Index")`
+    ///             or SQL-style like `SELECT outlinks FROM 'Index'`
     ///
     /// # Returns
     ///
     /// A `GraphQuery` containing the SurrealQL and parameters
     pub fn translate(&self, query: &str) -> Result<GraphQuery> {
-        // First, try to parse as a simple graph function call
-        if let Some(func) = self.parse_graph_function(query)? {
+        // First, rewrite SQL-style aliases to jaq-style
+        let query = self.rewrite_sql_aliases(query);
+
+        // Try to parse as a simple graph function call
+        if let Some(func) = self.parse_graph_function(&query)? {
             return self.translate_function(func);
         }
 
         // Try hybrid parsing: extract arrows, leave rest for jaq
-        let parsed = self.parse_hybrid(query)?;
+        let parsed = self.parse_hybrid(&query)?;
         self.translate_hybrid(&parsed)
+    }
+
+    /// Rewrite SQL-style aliases to jaq-style syntax
+    ///
+    /// This provides an LLM-friendly interface using familiar SQL patterns:
+    /// - `SELECT outlinks FROM 'Title'` → `outlinks("Title")`
+    /// - `SELECT inlinks FROM 'Title'` → `inlinks("Title")`
+    /// - `SELECT neighbors FROM 'Title'` → `neighbors("Title")`
+    /// - `SELECT * FROM notes WHERE title = 'Title'` → `find("Title")`
+    fn rewrite_sql_aliases<'a>(&self, query: &'a str) -> Cow<'a, str> {
+        // SELECT outlinks FROM 'title'
+        if let Some(caps) = SQL_OUTLINKS_RE.captures(query) {
+            let title = &caps[1];
+            return Cow::Owned(format!(r#"outlinks("{title}")"#));
+        }
+
+        // SELECT inlinks FROM 'title'
+        if let Some(caps) = SQL_INLINKS_RE.captures(query) {
+            let title = &caps[1];
+            return Cow::Owned(format!(r#"inlinks("{title}")"#));
+        }
+
+        // SELECT neighbors FROM 'title'
+        if let Some(caps) = SQL_NEIGHBORS_RE.captures(query) {
+            let title = &caps[1];
+            return Cow::Owned(format!(r#"neighbors("{title}")"#));
+        }
+
+        // SELECT * FROM notes WHERE title = 'title'
+        if let Some(caps) = SQL_FIND_RE.captures(query) {
+            let title = &caps[1];
+            return Cow::Owned(format!(r#"find("{title}")"#));
+        }
+
+        // No SQL alias matched - return original
+        Cow::Borrowed(query)
     }
 
     /// Parse a hybrid query with arrows and jaq filters
@@ -789,5 +900,156 @@ mod tests {
         let query = translator.translate(r#"outlinks("日本語ノート")"#).unwrap();
 
         assert_eq!(query.params.get("title"), Some(&Value::String("日本語ノート".to_string())));
+    }
+
+    // =========================================================================
+    // SQL alias tests (Phase 1 - SQL-like syntax for LLM compatibility)
+    // =========================================================================
+
+    #[test]
+    fn test_sql_alias_select_outlinks() {
+        let translator = GraphQueryTranslator::new();
+        let query = translator.translate("SELECT outlinks FROM 'Index'").unwrap();
+
+        // Should translate to same query as outlinks("Index")
+        assert!(query.surql.contains("SELECT"));
+        assert!(query.surql.contains("FETCH out"));
+        assert_eq!(query.params.get("title"), Some(&Value::String("Index".to_string())));
+    }
+
+    #[test]
+    fn test_sql_alias_select_inlinks() {
+        let translator = GraphQueryTranslator::new();
+        let query = translator.translate("SELECT inlinks FROM 'Project'").unwrap();
+
+        // Should translate to same query as inlinks("Project")
+        assert!(query.surql.contains("SELECT"));
+        assert!(query.surql.contains("FETCH `in`"));
+        assert_eq!(query.params.get("title"), Some(&Value::String("Project".to_string())));
+    }
+
+    #[test]
+    fn test_sql_alias_select_neighbors() {
+        let translator = GraphQueryTranslator::new();
+        let query = translator.translate("SELECT neighbors FROM 'Hub'").unwrap();
+
+        // Should translate to same query as neighbors("Hub")
+        assert!(query.surql.contains("array::concat"));
+        assert_eq!(query.params.get("title"), Some(&Value::String("Hub".to_string())));
+    }
+
+    #[test]
+    fn test_sql_alias_select_star_where_title() {
+        let translator = GraphQueryTranslator::new();
+        let query = translator.translate("SELECT * FROM notes WHERE title = 'MyNote'").unwrap();
+
+        // Should translate to find("MyNote")
+        assert!(query.surql.contains("SELECT * FROM"));
+        assert!(query.surql.contains("WHERE title = $title"));
+        assert_eq!(query.params.get("title"), Some(&Value::String("MyNote".to_string())));
+    }
+
+    #[test]
+    fn test_sql_alias_case_insensitive() {
+        let translator = GraphQueryTranslator::new();
+
+        // SELECT can be lowercase, uppercase, or mixed
+        let q1 = translator.translate("select outlinks from 'Index'").unwrap();
+        let q2 = translator.translate("SELECT OUTLINKS FROM 'Index'").unwrap();
+
+        assert_eq!(q1.params.get("title"), Some(&Value::String("Index".to_string())));
+        assert_eq!(q2.params.get("title"), Some(&Value::String("Index".to_string())));
+    }
+
+    #[test]
+    fn test_sql_alias_with_double_quotes() {
+        let translator = GraphQueryTranslator::new();
+        let query = translator.translate(r#"SELECT outlinks FROM "Index""#).unwrap();
+
+        assert_eq!(query.params.get("title"), Some(&Value::String("Index".to_string())));
+    }
+
+    #[test]
+    fn test_sql_alias_whitespace_handling() {
+        let translator = GraphQueryTranslator::new();
+        let query = translator.translate("  SELECT   outlinks   FROM   'Index'  ").unwrap();
+
+        assert_eq!(query.params.get("title"), Some(&Value::String("Index".to_string())));
+    }
+
+    // =========================================================================
+    // Pipeline integration tests (new architecture)
+    // =========================================================================
+
+    #[test]
+    fn test_pipeline_sql_sugar() {
+        let pipeline = create_default_pipeline();
+        let result = pipeline.execute("SELECT outlinks FROM 'Index'").unwrap();
+
+        assert!(result.sql.contains("SELECT"));
+        assert!(result.sql.contains("FETCH out"));
+        assert_eq!(
+            result.params.get("title"),
+            Some(&Value::String("Index".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_pipeline_jaq_style() {
+        let pipeline = create_default_pipeline();
+        let result = pipeline.execute(r#"outlinks("Index")"#).unwrap();
+
+        assert!(result.sql.contains("SELECT"));
+        assert!(result.sql.contains("FETCH out"));
+        assert_eq!(
+            result.params.get("title"),
+            Some(&Value::String("Index".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_pipeline_inlinks() {
+        let pipeline = create_default_pipeline();
+        let result = pipeline.execute("SELECT inlinks FROM 'Project'").unwrap();
+
+        assert!(result.sql.contains("FETCH `in`"));
+        assert_eq!(
+            result.params.get("title"),
+            Some(&Value::String("Project".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_pipeline_neighbors() {
+        let pipeline = create_default_pipeline();
+        let result = pipeline.execute("SELECT neighbors FROM 'Hub'").unwrap();
+
+        assert!(result.sql.contains("array::concat"));
+    }
+
+    #[test]
+    fn test_pipeline_find() {
+        let pipeline = create_default_pipeline();
+        let result = pipeline.execute("SELECT * FROM notes WHERE title = 'MyNote'").unwrap();
+
+        assert!(result.sql.contains("SELECT * FROM entities"));
+        assert!(result.sql.contains("WHERE title = $title"));
+    }
+
+    #[test]
+    fn test_pipeline_custom_tables() {
+        let pipeline = create_pipeline_with_tables("notes", "wikilinks");
+        let result = pipeline.execute("SELECT * FROM notes WHERE title = 'Test'").unwrap();
+
+        assert!(result.sql.contains("FROM notes"));
+    }
+
+    #[test]
+    fn test_pipeline_jaq_find() {
+        let pipeline = create_default_pipeline();
+        let result = pipeline.execute(r#"find("MyNote")"#).unwrap();
+
+        assert!(result.sql.contains("SELECT * FROM entities"));
+        assert!(result.sql.contains("WHERE title = $title"));
     }
 }
