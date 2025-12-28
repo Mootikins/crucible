@@ -65,6 +65,7 @@
 //! - `send`: Enable `Send+Sync` on Lua state for multi-threaded use
 
 pub mod annotations;
+pub mod core_handler;
 mod error;
 mod executor;
 #[cfg(feature = "fennel")]
@@ -77,6 +78,7 @@ mod shell;
 mod types;
 
 pub use annotations::{AnnotationParser, DiscoveredHook, DiscoveredPlugin, DiscoveredTool};
+pub use core_handler::{LuaHandler, LuaHandlerMeta};
 pub use error::LuaError;
 pub use executor::LuaExecutor;
 #[cfg(feature = "fennel")]
