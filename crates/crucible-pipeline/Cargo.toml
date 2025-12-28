@@ -17,7 +17,6 @@ test-slow = []           # Performance benchmarks and timing tests
 crucible-core = { path = "../crucible-core" }
 crucible-parser = { path = "../crucible-parser" }
 crucible-merkle = { path = "../crucible-merkle" }
-crucible-enrichment = { path = "../crucible-enrichment" }
 
 # Async runtime
 tokio = { version = "1.42", features = ["full"] }

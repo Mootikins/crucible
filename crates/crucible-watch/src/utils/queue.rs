@@ -3,9 +3,12 @@
 use crate::{error::Result, events::FileEvent};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use tracing::{debug, warn};
+use tracing::debug;
 
 /// Bounded event queue with backpressure handling.
+///
+/// When the queue is full, it automatically drops the oldest event to make room
+/// for new events (DropOldest strategy).
 pub struct EventQueue {
     /// Internal queue storage
     queue: VecDeque<FileEvent>,
@@ -17,25 +20,6 @@ pub struct EventQueue {
     processed_events: std::sync::atomic::AtomicU64,
     /// Current queue size (for atomic access)
     size: std::sync::atomic::AtomicUsize,
-    /// Backpressure strategy
-    backpressure_strategy: BackpressureStrategy,
-}
-
-/// Strategy for handling backpressure when queue is full.
-#[derive(Debug, Clone, Default)]
-pub enum BackpressureStrategy {
-    /// Drop new events
-    #[allow(dead_code)]
-    DropNew,
-    /// Drop oldest events
-    #[default]
-    DropOldest,
-    /// Block until space is available
-    #[allow(dead_code)]
-    Block,
-    /// Drop events with lowest priority
-    #[allow(dead_code)]
-    DropLowPriority,
 }
 
 impl EventQueue {
@@ -47,15 +31,7 @@ impl EventQueue {
             dropped_events: AtomicU64::new(0),
             processed_events: AtomicU64::new(0),
             size: AtomicUsize::new(0),
-            backpressure_strategy: BackpressureStrategy::DropOldest,
         }
-    }
-
-    /// Set the backpressure strategy.
-    #[allow(dead_code)]
-    pub fn with_backpressure_strategy(mut self, strategy: BackpressureStrategy) -> Self {
-        self.backpressure_strategy = strategy;
-        self
     }
 
     /// Push an event to the queue.
@@ -70,83 +46,21 @@ impl EventQueue {
         }
     }
 
-    /// Handle backpressure based on the configured strategy.
+    /// Handle backpressure by dropping the oldest event.
     async fn handle_backpressure(&mut self, event: FileEvent) -> Result<()> {
-        match self.backpressure_strategy {
-            BackpressureStrategy::DropNew => {
-                self.dropped_events.fetch_add(1, Ordering::Relaxed);
-                warn!("Dropping new event due to queue overflow: {:?}", event.kind);
-                Err(crate::error::Error::QueueFull(self.capacity))
-            }
-            BackpressureStrategy::DropOldest => {
-                if let Some(removed) = self.queue.pop_front() {
-                    debug!(
-                        "Dropping oldest event due to queue overflow: {:?}",
-                        removed.kind
-                    );
-                    self.queue.push_back(event);
-                    // Size remains the same
-                    self.dropped_events.fetch_add(1, Ordering::Relaxed);
-                    Ok(())
-                } else {
-                    // Queue is empty but capacity is 0, drop new event
-                    self.dropped_events.fetch_add(1, Ordering::Relaxed);
-                    Err(crate::error::Error::QueueFull(self.capacity))
-                }
-            }
-            BackpressureStrategy::Block => {
-                // In a real implementation, this would use async waiting
-                // For now, we'll just wait for space to become available
-                while self.len() >= self.capacity {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-                }
-                self.queue.push_back(event);
-                self.size.fetch_add(1, Ordering::Relaxed);
-                Ok(())
-            }
-            BackpressureStrategy::DropLowPriority => {
-                // Find and remove the lowest priority event
-                if let Some(lowest_priority_index) = self.find_lowest_priority_index() {
-                    self.queue.remove(lowest_priority_index);
-                    self.queue.push_back(event);
-                    self.dropped_events.fetch_add(1, Ordering::Relaxed);
-                    debug!("Dropped low priority event due to queue overflow");
-                    Ok(())
-                } else {
-                    // No suitable event to drop, use drop new strategy
-                    self.dropped_events.fetch_add(1, Ordering::Relaxed);
-                    Err(crate::error::Error::QueueFull(self.capacity))
-                }
-            }
-        }
-    }
-
-    /// Find the index of the lowest priority event.
-    fn find_lowest_priority_index(&self) -> Option<usize> {
-        if self.queue.is_empty() {
-            return None;
-        }
-
-        let mut lowest_index = 0;
-        let mut lowest_priority = self.get_event_priority(&self.queue[0]);
-
-        for (index, event) in self.queue.iter().enumerate().skip(1) {
-            let priority = self.get_event_priority(event);
-            if priority < lowest_priority {
-                lowest_priority = priority;
-                lowest_index = index;
-            }
-        }
-
-        Some(lowest_index)
-    }
-
-    /// Get priority value for an event (higher = more important).
-    fn get_event_priority(&self, event: &FileEvent) -> u8 {
-        if crate::utils::EventUtils::is_high_priority(event) {
-            10 // High priority
+        if let Some(removed) = self.queue.pop_front() {
+            debug!(
+                "Dropping oldest event due to queue overflow: {:?}",
+                removed.kind
+            );
+            self.queue.push_back(event);
+            // Size remains the same
+            self.dropped_events.fetch_add(1, Ordering::Relaxed);
+            Ok(())
         } else {
-            1 // Normal priority
+            // Queue is empty but capacity is 0, drop new event
+            self.dropped_events.fetch_add(1, Ordering::Relaxed);
+            Err(crate::error::Error::QueueFull(self.capacity))
         }
     }
 
