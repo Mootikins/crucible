@@ -831,7 +831,11 @@ mod tests {
         let mut ctx = HandlerContext::new();
 
         ctx.record_handler("handler1", std::time::Duration::from_millis(10));
-        ctx.record_handler_with_outcome("handler2", std::time::Duration::from_millis(20), "cancelled");
+        ctx.record_handler_with_outcome(
+            "handler2",
+            std::time::Duration::from_millis(20),
+            "cancelled",
+        );
 
         let trace = ctx.trace();
         assert_eq!(trace.len(), 2);
