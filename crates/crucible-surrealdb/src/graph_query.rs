@@ -318,41 +318,36 @@ impl GraphQueryTranslator {
     }
 
     fn build_outlinks_query(&self) -> String {
+        // Use record link field traversal with FETCH to expand the target entity
+        // The FETCH clause replaces the record link with the full record
         format!(
-            r#"SELECT * FROM {entities} WHERE id IN (
-                SELECT out FROM {relations}
-                WHERE in IN (SELECT id FROM {entities} WHERE title = $title)
+            r#"SELECT out FROM {relations}
+                WHERE `in`.title = $title
                 AND relation_type = "wikilink"
-            )"#,
-            entities = self.entity_table,
+                FETCH out"#,
             relations = self.relation_table,
         )
     }
 
     fn build_inlinks_query(&self) -> String {
+        // Use record link field traversal for inlinks (reversed direction)
         format!(
-            r#"SELECT * FROM {entities} WHERE id IN (
-                SELECT in FROM {relations}
-                WHERE out IN (SELECT id FROM {entities} WHERE title = $title)
+            r#"SELECT `in` FROM {relations}
+                WHERE out.title = $title
                 AND relation_type = "wikilink"
-            )"#,
-            entities = self.entity_table,
+                FETCH `in`"#,
             relations = self.relation_table,
         )
     }
 
     fn build_neighbors_query(&self) -> String {
+        // Use array concatenation instead of UNION which has syntax issues
+        // This returns all outlinks and inlinks in a single result set
         format!(
-            r#"SELECT * FROM {entities} WHERE id IN (
-                SELECT out FROM {relations}
-                WHERE in IN (SELECT id FROM {entities} WHERE title = $title)
-                AND relation_type = "wikilink"
-            ) OR id IN (
-                SELECT in FROM {relations}
-                WHERE out IN (SELECT id FROM {entities} WHERE title = $title)
-                AND relation_type = "wikilink"
+            r#"array::concat(
+                (SELECT out FROM {relations} WHERE `in`.title = $title AND relation_type = "wikilink" FETCH out),
+                (SELECT `in` FROM {relations} WHERE out.title = $title AND relation_type = "wikilink" FETCH `in`)
             )"#,
-            entities = self.entity_table,
             relations = self.relation_table,
         )
     }
@@ -432,27 +427,11 @@ impl GraphQueryTranslator {
         let surql = match func {
             GraphFunction::Outlinks(title) => {
                 params.insert("title".to_string(), Value::String(title));
-                format!(
-                    r#"SELECT * FROM {entities} WHERE id IN (
-                        SELECT out FROM {relations}
-                        WHERE in IN (SELECT id FROM {entities} WHERE title = $title)
-                        AND relation_type = "wikilink"
-                    )"#,
-                    entities = self.entity_table,
-                    relations = self.relation_table,
-                )
+                self.build_outlinks_query()
             }
             GraphFunction::Inlinks(title) => {
                 params.insert("title".to_string(), Value::String(title));
-                format!(
-                    r#"SELECT * FROM {entities} WHERE id IN (
-                        SELECT in FROM {relations}
-                        WHERE out IN (SELECT id FROM {entities} WHERE title = $title)
-                        AND relation_type = "wikilink"
-                    )"#,
-                    entities = self.entity_table,
-                    relations = self.relation_table,
-                )
+                self.build_inlinks_query()
             }
             GraphFunction::Find(title) => {
                 params.insert("title".to_string(), Value::String(title));
@@ -463,20 +442,7 @@ impl GraphQueryTranslator {
             }
             GraphFunction::Neighbors(title) => {
                 params.insert("title".to_string(), Value::String(title));
-                // Union of outlinks and inlinks
-                format!(
-                    r#"SELECT * FROM {entities} WHERE id IN (
-                        SELECT out FROM {relations}
-                        WHERE in IN (SELECT id FROM {entities} WHERE title = $title)
-                        AND relation_type = "wikilink"
-                    ) OR id IN (
-                        SELECT in FROM {relations}
-                        WHERE out IN (SELECT id FROM {entities} WHERE title = $title)
-                        AND relation_type = "wikilink"
-                    )"#,
-                    entities = self.entity_table,
-                    relations = self.relation_table,
-                )
+                self.build_neighbors_query()
             }
         };
 
@@ -605,8 +571,8 @@ mod tests {
         let query = translator.translate(r#"outlinks("Index")"#).unwrap();
 
         assert!(query.surql.contains("SELECT"));
-        assert!(query.surql.contains("entities"));
-        assert!(query.surql.contains("relations"));
+        assert!(query.surql.contains("FROM relations")); // Query is FROM relations
+        assert!(query.surql.contains("FETCH out")); // With FETCH to expand entity
         assert!(query.surql.contains("$title"));
         assert_eq!(query.params.get("title"), Some(&Value::String("Index".to_string())));
     }
@@ -635,8 +601,10 @@ mod tests {
         let translator = GraphQueryTranslator::new();
         let query = translator.translate(r#"neighbors("Hub")"#).unwrap();
 
-        // Should have both outlinks and inlinks logic
-        assert!(query.surql.contains("OR"));
+        // Should use array::concat to combine outlinks and inlinks
+        assert!(query.surql.contains("array::concat"));
+        assert!(query.surql.contains("FETCH out"));
+        assert!(query.surql.contains("FETCH `in`"));
     }
 
     #[test]
@@ -644,8 +612,10 @@ mod tests {
         let translator = GraphQueryTranslator::with_tables("notes", "wikilinks");
         let query = translator.translate(r#"outlinks("Index")"#).unwrap();
 
-        assert!(query.surql.contains("notes"));
-        assert!(query.surql.contains("wikilinks"));
+        // The new query pattern uses record link field traversal on the relation table
+        // and doesn't reference the entity table directly in FROM clause
+        assert!(query.surql.contains("FROM wikilinks"));
+        assert!(!query.surql.contains("FROM notes"));
         assert!(!query.surql.contains("entities"));
     }
 
