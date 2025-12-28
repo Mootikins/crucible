@@ -7,8 +7,8 @@
 //! 4. Verify results
 
 use crucible_lua::{
-    AnnotationParser, LuaExecutor, LuaToolRegistry,
-    register_oq_module, register_shell_module, ShellPolicy,
+    register_oq_module, register_shell_module, AnnotationParser, LuaExecutor, LuaToolRegistry,
+    ShellPolicy,
 };
 use serde_json::json;
 use std::path::Path;
@@ -55,7 +55,10 @@ end
     assert_eq!(tools.len(), 1);
 
     // Execute the tool
-    let result = registry.execute("handler", json!({"x": 10, "y": 5})).await.unwrap();
+    let result = registry
+        .execute("handler", json!({"x": 10, "y": 5}))
+        .await
+        .unwrap();
     assert!(result.success);
     assert_eq!(result.content, json!({"result": 15}));
 }
@@ -92,12 +95,18 @@ end
     registry.discover_from(dir.path()).await.unwrap();
 
     // Test uppercase
-    let result = registry.execute("handler", json!({"text": "hello", "mode": "upper"})).await.unwrap();
+    let result = registry
+        .execute("handler", json!({"text": "hello", "mode": "upper"}))
+        .await
+        .unwrap();
     assert!(result.success);
     assert_eq!(result.content["result"], "HELLO");
 
     // Test reverse
-    let result = registry.execute("handler", json!({"text": "hello", "mode": "reverse"})).await.unwrap();
+    let result = registry
+        .execute("handler", json!({"text": "hello", "mode": "reverse"}))
+        .await
+        .unwrap();
     assert!(result.success);
     assert_eq!(result.content["result"], "olleh");
 }
@@ -125,17 +134,21 @@ function handler(args)
 end
 "#;
 
-    let result = executor.execute_source(
-        source,
-        false,
-        json!({"json_str": r#"{"name":"test","count":5}"#}),
-    ).await.unwrap();
+    let result = executor
+        .execute_source(
+            source,
+            false,
+            json!({"json_str": r#"{"name":"test","count":5}"#}),
+        )
+        .await
+        .unwrap();
 
     assert!(result.success);
     let content = result.content.unwrap();
 
     // Verify the encoded result
-    let encoded: serde_json::Value = serde_json::from_str(content["encoded"].as_str().unwrap()).unwrap();
+    let encoded: serde_json::Value =
+        serde_json::from_str(content["encoded"].as_str().unwrap()).unwrap();
     assert_eq!(encoded["name"], "test");
     assert_eq!(encoded["count"], 6);
     assert_eq!(encoded["processed"], true);
@@ -167,7 +180,10 @@ function handler(args)
 end
 "#;
 
-    let result = executor.execute_source(source, false, json!({})).await.unwrap();
+    let result = executor
+        .execute_source(source, false, json!({}))
+        .await
+        .unwrap();
     assert!(result.success);
     let content = result.content.unwrap();
     assert!(content["found"].as_bool().unwrap());
@@ -188,7 +204,10 @@ function handler(args)
 end
 "#;
 
-    let result = executor.execute_source(source, false, json!({})).await.unwrap();
+    let result = executor
+        .execute_source(source, false, json!({}))
+        .await
+        .unwrap();
 
     // The shell.exec should fail due to policy
     assert!(!result.success);
@@ -226,7 +245,9 @@ function format_search_results(ctx, event)
 end
 "#;
 
-    let tools = parser.parse_lua_tools(source, Path::new("multi.lua")).unwrap();
+    let tools = parser
+        .parse_lua_tools(source, Path::new("multi.lua"))
+        .unwrap();
     assert_eq!(tools.len(), 2, "Should find 2 tools");
 
     // Verify search tool
@@ -238,7 +259,9 @@ end
     assert!(search.params[1].param_type.contains("number"));
 
     // Verify hooks
-    let hooks = parser.parse_hooks(source, Path::new("multi.lua"), false).unwrap();
+    let hooks = parser
+        .parse_hooks(source, Path::new("multi.lua"), false)
+        .unwrap();
     assert_eq!(hooks.len(), 1);
     assert_eq!(hooks[0].event_type, "tool:after");
     assert_eq!(hooks[0].pattern, "search*");
@@ -266,14 +289,18 @@ fn test_annotation_parser_fennel_syntax() {
   event)
 "#;
 
-    let tools = parser.parse_fennel_tools(source, Path::new("math.fnl")).unwrap();
+    let tools = parser
+        .parse_fennel_tools(source, Path::new("math.fnl"))
+        .unwrap();
     assert_eq!(tools.len(), 1);
     assert!(tools[0].is_fennel);
     assert_eq!(tools[0].name, "factorial");
     assert_eq!(tools[0].params.len(), 1);
     assert_eq!(tools[0].params[0].name, "n");
 
-    let hooks = parser.parse_hooks(source, Path::new("math.fnl"), true).unwrap();
+    let hooks = parser
+        .parse_hooks(source, Path::new("math.fnl"), true)
+        .unwrap();
     assert_eq!(hooks.len(), 1);
     assert_eq!(hooks[0].name, "log_call");
 }
@@ -298,7 +325,9 @@ function init(config)
 end
 "#;
 
-    let plugins = parser.parse_plugins(source, Path::new("git.lua"), false).unwrap();
+    let plugins = parser
+        .parse_plugins(source, Path::new("git.lua"), false)
+        .unwrap();
     assert_eq!(plugins.len(), 1);
     assert_eq!(plugins[0].name, "git_tools");
     assert_eq!(plugins[0].description, "Git integration plugin");
@@ -340,7 +369,9 @@ function handler(args)
 end
 "#;
 
-    fs::write(dir.path().join("transform.lua"), tool_source).await.unwrap();
+    fs::write(dir.path().join("transform.lua"), tool_source)
+        .await
+        .unwrap();
 
     // Create and populate registry
     let mut registry = LuaToolRegistry::new().unwrap();
@@ -382,24 +413,32 @@ function handler(args)
 end
 "#;
 
-    fs::write(dir.path().join("may_error.lua"), tool_source).await.unwrap();
+    fs::write(dir.path().join("may_error.lua"), tool_source)
+        .await
+        .unwrap();
 
     let mut registry = LuaToolRegistry::new().unwrap();
     registry.discover_from(dir.path()).await.unwrap();
 
     // Test success case
-    let result = registry.execute("handler", json!({"should_error": false})).await.unwrap();
+    let result = registry
+        .execute("handler", json!({"should_error": false}))
+        .await
+        .unwrap();
     assert!(result.success);
 
     // Test error case
-    let result = registry.execute("handler", json!({"should_error": true})).await.unwrap();
+    let result = registry
+        .execute("handler", json!({"should_error": true}))
+        .await
+        .unwrap();
     assert!(!result.success);
     assert!(result.error.unwrap().contains("Intentional error"));
 }
 
 #[tokio::test]
 async fn test_tool_schema_generation() {
-    use crucible_lua::{LuaTool, ToolParam, generate_input_schema};
+    use crucible_lua::{generate_input_schema, LuaTool, ToolParam};
 
     // Test schema generation directly from a LuaTool
     let tool = LuaTool {
@@ -468,7 +507,9 @@ mod fennel_tests {
    :language "fennel"})
 "#;
 
-        let result = executor.execute_source(source, true, json!({"x": 5, "y": 3})).await;
+        let result = executor
+            .execute_source(source, true, json!({"x": 5, "y": 3}))
+            .await;
 
         // If Fennel is available, verify execution
         if let Ok(res) = result {

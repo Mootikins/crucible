@@ -78,11 +78,7 @@ fn get_title_json(note: &JsonValue) -> Result<&str, String> {
 fn get_links_json(note: &JsonValue) -> Vec<&str> {
     note.get("links")
         .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str())
-                .collect::<Vec<_>>()
-        })
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
         .unwrap_or_default()
 }
 
@@ -157,9 +153,7 @@ fn find(graph: HashMap<String, Value>, title: String) -> Result<Value, RuneGraph
         .map_err(|e| RuneGraphError::new(format!("Failed to convert to JSON: {:?}", e)))?;
 
     // Perform operation on JSON
-    match find_impl_json(&graph_json, &title)
-        .map_err(|e| RuneGraphError::new(e))?
-    {
+    match find_impl_json(&graph_json, &title).map_err(|e| RuneGraphError::new(e))? {
         Some(note_json) => {
             // Convert back to Rune
             match json_to_rune(&note_json) {
@@ -185,8 +179,8 @@ fn outlinks(graph: HashMap<String, Value>, title: String) -> Result<Value, RuneG
         .map_err(|e| RuneGraphError::new(format!("Failed to convert to JSON: {:?}", e)))?;
 
     // Perform operation on JSON
-    let result_json = outlinks_impl_json(&graph_json, &title)
-        .map_err(|e| RuneGraphError::new(e))?;
+    let result_json =
+        outlinks_impl_json(&graph_json, &title).map_err(|e| RuneGraphError::new(e))?;
 
     // Convert back to Rune
     let result_array = JsonValue::Array(result_json);
@@ -210,8 +204,7 @@ fn inlinks(graph: HashMap<String, Value>, title: String) -> Result<Value, RuneGr
         .map_err(|e| RuneGraphError::new(format!("Failed to convert to JSON: {:?}", e)))?;
 
     // Perform operation on JSON
-    let result_json = inlinks_impl_json(&graph_json, &title)
-        .map_err(|e| RuneGraphError::new(e))?;
+    let result_json = inlinks_impl_json(&graph_json, &title).map_err(|e| RuneGraphError::new(e))?;
 
     // Convert back to Rune
     let result_array = JsonValue::Array(result_json);
@@ -456,10 +449,7 @@ mod tests {
         let result = outlinks_impl_json(&graph, "Index").unwrap();
         assert_eq!(result.len(), 2, "Should return 2 notes");
 
-        let mut titles: Vec<&str> = result
-            .iter()
-            .filter_map(|n| n["title"].as_str())
-            .collect();
+        let mut titles: Vec<&str> = result.iter().filter_map(|n| n["title"].as_str()).collect();
         titles.sort();
 
         assert_eq!(titles, vec!["Project A", "Project B"]);

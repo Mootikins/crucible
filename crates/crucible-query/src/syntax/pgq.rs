@@ -349,16 +349,11 @@ fn format_chumsky_errors(errs: &[Simple<char>], input: &str) -> String {
         .map(|e| {
             let span = e.span();
             let line = input[..span.start].lines().count().max(1);
-            let col = span.start
-                - input[..span.start]
-                    .rfind('\n')
-                    .map_or(0, |i| i + 1);
+            let col = span.start - input[..span.start].rfind('\n').map_or(0, |i| i + 1);
 
             let expected: Vec<_> = e
                 .expected()
-                .map(|t| {
-                    t.map_or("end of input".to_string(), |c| format!("'{}'", c))
-                })
+                .map(|t| t.map_or("end of input".to_string(), |c| format!("'{}'", c)))
                 .collect();
 
             let found = e
@@ -565,9 +560,7 @@ mod tests {
     #[test]
     fn test_parse_edge_no_type() {
         let syntax = PgqSyntax;
-        let ir = syntax
-            .parse("MATCH (a {title: 'X'})-[]->(b)")
-            .unwrap();
+        let ir = syntax.parse("MATCH (a {title: 'X'})-[]->(b)").unwrap();
 
         if let PatternElement::Edge(edge) = &ir.pattern.elements[1] {
             assert_eq!(edge.edge_type, None);
@@ -625,9 +618,7 @@ mod tests {
     #[test]
     fn test_parse_lowercase_match() {
         let syntax = PgqSyntax;
-        let ir = syntax
-            .parse("match (a {title: 'X'})-[:link]->(b)")
-            .unwrap();
+        let ir = syntax.parse("match (a {title: 'X'})-[:link]->(b)").unwrap();
 
         assert_eq!(ir.source, QuerySource::ByTitle("X".to_string()));
     }
@@ -635,9 +626,7 @@ mod tests {
     #[test]
     fn test_parse_mixed_case_match() {
         let syntax = PgqSyntax;
-        let ir = syntax
-            .parse("Match (a {title: 'X'})-[:link]->(b)")
-            .unwrap();
+        let ir = syntax.parse("Match (a {title: 'X'})-[:link]->(b)").unwrap();
 
         assert_eq!(ir.source, QuerySource::ByTitle("X".to_string()));
     }

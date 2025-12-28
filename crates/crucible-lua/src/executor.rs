@@ -71,8 +71,7 @@ impl LuaExecutor {
 
         // crucible.json_decode(string) -> value
         let json_decode = lua.create_function(|lua, s: String| {
-            let json: JsonValue =
-                serde_json::from_str(&s).map_err(|e| mlua::Error::external(e))?;
+            let json: JsonValue = serde_json::from_str(&s).map_err(|e| mlua::Error::external(e))?;
             json_to_lua(lua, json)
         })?;
         crucible.set("json_decode", json_decode)?;
@@ -92,10 +91,7 @@ impl LuaExecutor {
         let path = path.as_ref();
         let source = tokio::fs::read_to_string(path).await?;
 
-        let is_fennel = path
-            .extension()
-            .map(|e| e == "fnl")
-            .unwrap_or(false);
+        let is_fennel = path.extension().map(|e| e == "fnl").unwrap_or(false);
 
         self.execute_source(&source, is_fennel, args).await
     }
@@ -118,7 +114,8 @@ impl LuaExecutor {
                     return Err(LuaError::FennelCompile(
                         "Fennel compiler not available. Download fennel.lua from \
                         https://fennel-lang.org/downloads and place in \
-                        crates/crucible-lua/vendor/fennel.lua".into(),
+                        crates/crucible-lua/vendor/fennel.lua"
+                            .into(),
                     ));
                 }
             }
@@ -167,9 +164,7 @@ impl LuaExecutor {
         let handler: Function = globals
             .get("handler")
             .or_else(|_| globals.get("main"))
-            .map_err(|_| {
-                LuaError::InvalidTool("No 'handler' or 'main' function found".into())
-            })?;
+            .map_err(|_| LuaError::InvalidTool("No 'handler' or 'main' function found".into()))?;
 
         // Convert args to Lua
         let lua_args = json_to_lua(&self.lua, args)?;
@@ -294,10 +289,7 @@ mod tests {
         let result = executor.execute_source(source, false, args).await.unwrap();
 
         assert!(result.success);
-        assert_eq!(
-            result.content,
-            Some(serde_json::json!({ "result": 3 }))
-        );
+        assert_eq!(result.content, Some(serde_json::json!({ "result": 3 })));
     }
 
     #[tokio::test]

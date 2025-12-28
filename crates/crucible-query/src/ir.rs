@@ -170,31 +170,37 @@ impl GraphIR {
 
     /// Add an outlinks traversal
     pub fn outlinks(mut self, edge_type: impl Into<String>) -> Self {
-        self.pattern.elements.push(PatternElement::Edge(EdgePattern {
-            direction: EdgeDirection::Out,
-            edge_type: Some(edge_type.into()),
-            ..Default::default()
-        }));
+        self.pattern
+            .elements
+            .push(PatternElement::Edge(EdgePattern {
+                direction: EdgeDirection::Out,
+                edge_type: Some(edge_type.into()),
+                ..Default::default()
+            }));
         self
     }
 
     /// Add an inlinks traversal
     pub fn inlinks(mut self, edge_type: impl Into<String>) -> Self {
-        self.pattern.elements.push(PatternElement::Edge(EdgePattern {
-            direction: EdgeDirection::In,
-            edge_type: Some(edge_type.into()),
-            ..Default::default()
-        }));
+        self.pattern
+            .elements
+            .push(PatternElement::Edge(EdgePattern {
+                direction: EdgeDirection::In,
+                edge_type: Some(edge_type.into()),
+                ..Default::default()
+            }));
         self
     }
 
     /// Add a bidirectional traversal (neighbors)
     pub fn neighbors(mut self, edge_type: impl Into<String>) -> Self {
-        self.pattern.elements.push(PatternElement::Edge(EdgePattern {
-            direction: EdgeDirection::Both,
-            edge_type: Some(edge_type.into()),
-            ..Default::default()
-        }));
+        self.pattern
+            .elements
+            .push(PatternElement::Edge(EdgePattern {
+                direction: EdgeDirection::Both,
+                edge_type: Some(edge_type.into()),
+                ..Default::default()
+            }));
         self
     }
 }
@@ -205,8 +211,7 @@ mod tests {
 
     #[test]
     fn test_graph_ir_builder() {
-        let ir = GraphIR::find_by_title("Index")
-            .outlinks("wikilink");
+        let ir = GraphIR::find_by_title("Index").outlinks("wikilink");
 
         assert_eq!(ir.source, QuerySource::ByTitle("Index".to_string()));
         assert_eq!(ir.pattern.elements.len(), 1);

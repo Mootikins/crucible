@@ -190,4 +190,3 @@ pub struct DocumentSimilarity {
     /// Similarity score (0.0 to 1.0)
     pub similarity_score: f64,
 }
-

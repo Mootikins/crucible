@@ -50,7 +50,12 @@ impl SurrealRenderer {
     }
 
     /// Render a single filter as a SurrealQL condition
-    fn render_filter(&self, filter: &Filter, index: usize, params: &mut HashMap<String, Value>) -> String {
+    fn render_filter(
+        &self,
+        filter: &Filter,
+        index: usize,
+        params: &mut HashMap<String, Value>,
+    ) -> String {
         let param_name = format!("filter_{}", index);
 
         match &filter.op {
