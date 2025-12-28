@@ -392,9 +392,7 @@ mod tests {
     #[tokio::test]
     async fn test_logging_handler() {
         let mut reactor = Reactor::new();
-        reactor
-            .register(Box::new(LoggingHandler::new()))
-            .unwrap();
+        reactor.register(Box::new(LoggingHandler::new())).unwrap();
 
         let event = SessionEvent::Custom {
             name: "test".into(),
@@ -442,9 +440,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_filter_handler_cancel() {
-        let filter = FilterHandler::new("test_filter", |event| {
-            matches!(event, SessionEvent::Custom { name, .. } if name == "blocked")
-        });
+        let filter = FilterHandler::new(
+            "test_filter",
+            |event| matches!(event, SessionEvent::Custom { name, .. } if name == "blocked"),
+        );
 
         let mut reactor = Reactor::new();
         reactor.register(Box::new(filter)).unwrap();
