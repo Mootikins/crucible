@@ -21,11 +21,8 @@ notify = { workspace = true }
 notify-debouncer-full = { workspace = true }
 
 # Configuration
-crucible-config = { workspace = true }
 crucible-core = { workspace = true }
 crucible-parser = { workspace = true }
-crucible-surrealdb = { workspace = true }
-crucible-llm = { workspace = true }
 
 # Time and scheduling
 chrono = { workspace = true, features = ["serde"] }
@@ -43,12 +40,8 @@ regex = { workspace = true }
 # CPU information
 num_cpus = { workspace = true }
 
-# Optional dependencies for specific handlers
-crucible-tools = { workspace = true, optional = true }
-
 [features]
 default = []
-rune = ["dep:crucible-tools"]
 obsidian = []
 
 [dev-dependencies]

@@ -71,6 +71,155 @@ docs: update installation instructions
 - **Testing**: Write unit tests for new functionality
 - **Feature flags**: Use them for optional dependencies
 
+### Naming Conventions
+
+Crucible follows specific naming patterns to keep the codebase consistent and maintainable.
+
+#### Constructor Functions
+
+**Use `new()` for simple constructors:**
+- ≤3 parameters
+- No complex setup or external resources
+- Direct field initialization
+
+```rust
+pub struct MyStruct {
+    field: String,
+}
+
+impl MyStruct {
+    pub fn new(field: String) -> Self {
+        Self { field }
+    }
+}
+```
+
+**Use `new_with_*()` for constructors with optional configuration:**
+- Simple overrides of default behavior
+- Still relatively simple (≤5 parameters)
+
+```rust
+impl MyStruct {
+    pub fn new_with_custom_field(field: String, custom: bool) -> Self {
+        Self { field, custom: custom }
+    }
+}
+```
+
+**Use `create_*()` for factory functions:**
+- Creates external resources (database connections, network clients)
+- Returns trait objects (`Arc<dyn Trait>`)
+- Complex setup or multiple dependencies
+- Part of composition root/wiring
+
+```rust
+// Factory in adapters module
+pub fn create_enriched_note_store(
+    client: SurrealClientHandle,
+) -> Arc<dyn EnrichedNoteStore> {
+    // Complex wiring...
+}
+```
+
+**Guideline:** When in doubt, start with `new()` and only rename to `create_*()` if the function is clearly a factory for external resources.
+
+#### Type Suffixes
+
+**Config vs Options:**
+- `*Config` - System configuration (application settings, backend config)
+  - `EventDrivenEmbeddingConfig`
+  - `StorageConfig`
+  - `ProcessingConfig`
+
+- `*Options` - User-selectable options (command flags, query parameters)
+  - `SearchOptions` (user filters)
+  - `ProcessingOptions` (user preferences)
+
+**Example:**
+```rust
+// System configuration
+#[derive(Clone, Debug)]
+pub struct ChatConfig {
+    pub model: String,
+    pub temperature: f64,
+}
+
+// User options
+#[derive(Clone, Debug)]
+pub struct SearchOptions {
+    pub limit: usize,
+    pub case_sensitive: bool,
+}
+```
+
+#### Handler vs Processor vs Executor
+
+**`*Handler` - Event/message handling:**
+- Reactive operations (responds to events)
+- Stateless or lightweight state
+- Event bus integration, message processing
+
+```rust
+pub struct EventHandler<T> {
+    // Handles events reactively
+}
+
+pub struct MessageHandler {
+    // Processes incoming messages
+}
+```
+
+**`*Processor` - Data transformation:**
+- Pipeline stages
+- Data transformation and enrichment
+- Stateful processing with intermediate results
+
+```rust
+pub struct ParserProcessor {
+    // Transforms raw data into structured format
+}
+
+pub struct EnrichmentProcessor {
+    // Adds metadata and enrichment to notes
+}
+```
+
+**`*Executor` - Action execution:**
+- Command pattern implementation
+- Async action execution
+- Tool/command execution
+
+```rust
+pub struct QueryExecutor {
+    // Executes database queries
+}
+
+pub struct ToolExecutor {
+    // Executes tool calls
+}
+```
+
+**Guideline:** Choose the suffix that best describes *what* the code does, not just *where* it's used.
+
+#### Storage Traits
+
+Crucible has multiple storage-related traits at different abstraction levels. Choose the right one for your use case:
+
+| Trait | Abstraction Level | Use Case |
+|-------|------------------|----------|
+| `KnowledgeRepository` | High (semantic) | Agents, tools, semantic search |
+| `Storage` | Mid (database) | Database queries, schema, stats |
+| `ContentAddressedStorage` | Low (blocks/trees) | Merkle trees, change detection, content addressing |
+
+See [`crucible-core/src/storage/traits.rs`](crates/crucible-core/src/storage/traits.rs), [`crucible-core/src/traits/storage.rs`](crates/crucible-core/src/traits/storage.rs), and [`crucible-core/src/traits/knowledge.rs`](crates/crucible-core/src/traits/knowledge.rs) for detailed documentation.
+
+#### File and Module Naming
+
+- **Module files**: `snake_case.rs` (e.g., `event_handler.rs`, `test_utils.rs`)
+- **Tests**: `*_test.rs` or `tests/` directory
+- **Integration tests**: `tests/` directory with descriptive names
+- **Mock implementations**: `mocks.rs` within `src/` or test modules
+
 ## Testing
 
 ### Test Tiers

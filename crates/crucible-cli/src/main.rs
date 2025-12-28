@@ -328,26 +328,6 @@ async fn main() -> Result<()> {
             commands::skills::execute(config, cmd).await?;
         }
 
-        // Commands::EnhancedChat { // Temporarily disabled
-        //     agent,
-        //     model,
-        //     temperature,
-        //     max_tokens,
-        //     performance_tracking,
-        //     start_message,
-        //     history,
-        // } => commands::enhanced_chat_session::execute(
-        //     config,
-        //     agent,
-        //     model,
-        //     temperature,
-        //     max_tokens,
-        //     performance_tracking,
-        //     start_message,
-        //     history,
-        // ).await?,
-
-        // Commands::Agent(cmd) => commands::agent_management::execute(config, cmd).await?, // Temporarily disabled
         None => {
             // Default to chat when no command is provided
             commands::chat::execute(
