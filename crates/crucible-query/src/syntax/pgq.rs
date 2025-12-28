@@ -111,11 +111,11 @@ fn node_parser() -> impl Parser<char, NodePart, Error = Simple<char>> {
         .labelled("identifier");
 
     // Optional alias (before colon or by itself)
-    let alias = ident.clone().or_not();
+    let alias = ident.or_not();
 
     // Optional label: :Label
     let label = just(':')
-        .ignore_then(ident.clone())
+        .ignore_then(ident)
         .or_not()
         .labelled("node label like :Note");
 
@@ -136,10 +136,9 @@ fn node_parser() -> impl Parser<char, NodePart, Error = Simple<char>> {
 
     // Property: key: 'value'
     let property = ident
-        .clone()
-        .then_ignore(whitespace.clone())
+        .then_ignore(whitespace)
         .then_ignore(just(':'))
-        .then_ignore(whitespace.clone())
+        .then_ignore(whitespace)
         .then(string_literal)
         .labelled("property like title: 'value'");
 
@@ -192,7 +191,7 @@ fn edge_parser() -> impl Parser<char, EdgePart, Error = Simple<char>> {
         .collect::<String>();
 
     // Optional alias
-    let alias = ident.clone().or_not();
+    let alias = ident.or_not();
 
     // Edge type: :type
     let edge_type = just(':')
@@ -218,7 +217,7 @@ fn edge_parser() -> impl Parser<char, EdgePart, Error = Simple<char>> {
     // Outgoing: -[...]->
     let right_arrow = just('-')
         .padded()
-        .ignore_then(edge_inner.clone())
+        .ignore_then(edge_inner)
         .then_ignore(just("->").padded())
         .map(|(alias, edge_type)| EdgePart {
             alias,
@@ -230,7 +229,7 @@ fn edge_parser() -> impl Parser<char, EdgePart, Error = Simple<char>> {
     // Incoming: <-[...]-
     let left_arrow = just("<-")
         .padded()
-        .ignore_then(edge_inner.clone())
+        .ignore_then(edge_inner)
         .then_ignore(just('-').padded())
         .map(|(alias, edge_type)| EdgePart {
             alias,
@@ -242,7 +241,7 @@ fn edge_parser() -> impl Parser<char, EdgePart, Error = Simple<char>> {
     // Bidirectional: <-[...]->
     let bidirectional = just("<-")
         .padded()
-        .ignore_then(edge_inner.clone())
+        .ignore_then(edge_inner)
         .then_ignore(just("->").padded())
         .map(|(alias, edge_type)| EdgePart {
             alias,

@@ -80,7 +80,7 @@ impl SurrealRenderer {
                     params.insert(param_name.clone(), Value::String(format!("{}%", s)));
                     format!("{} LIKE ${}", filter.field, param_name)
                 } else {
-                    format!("true") // Fallback
+                    "true".to_string() // Fallback
                 }
             }
             MatchOp::EndsWith => {
@@ -88,7 +88,7 @@ impl SurrealRenderer {
                     params.insert(param_name.clone(), Value::String(format!("%{}", s)));
                     format!("{} LIKE ${}", filter.field, param_name)
                 } else {
-                    format!("true") // Fallback
+                    "true".to_string() // Fallback
                 }
             }
         }
