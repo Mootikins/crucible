@@ -1,9 +1,37 @@
 //! Handler trait for the event ring buffer system.
 //!
+//! **DEPRECATED**: This module is being superseded by `crucible_core::events::Handler`.
+//! New code should use the unified Handler trait from crucible-core which provides:
+//! - Better error handling with `HandlerResult` enum
+//! - Unified handler registration via `Reactor`
+//! - Support for Rust, Rune, and Lua handlers in the same event loop
+//!
+//! ## Migration
+//!
+//! Instead of:
+//! ```rust,ignore
+//! impl RingHandler<SessionEvent> for MyHandler { ... }
+//! ```
+//!
+//! Use:
+//! ```rust,ignore
+//! use crucible_core::events::{Handler, HandlerResult, SessionEvent};
+//!
+//! impl Handler for MyHandler {
+//!     fn name(&self) -> &str { "my_handler" }
+//!     async fn handle(&self, ctx: &mut HandlerContext, event: SessionEvent)
+//!         -> HandlerResult<SessionEvent> { ... }
+//! }
+//! ```
+//!
+//! ---
+//!
+//! ## Legacy Documentation
+//!
 //! This module defines the `RingHandler<E>` trait that enables topo-sorted event
 //! processing in the Disruptor-style ring buffer architecture.
 //!
-//! ## Design
+//! ### Design
 //!
 //! Ring handlers:
 //! - Receive `Arc<E>` references (cheap clone, no deep copy)
@@ -11,12 +39,12 @@
 //! - Can emit new events without copying the original
 //! - Declare dependencies for topological ordering
 //!
-//! ## Naming
+//! ### Naming
 //!
 //! Named `RingHandler` to distinguish from `event_bus::Handler` which is a
 //! synchronous closure-based handler for the pub/sub EventBus.
 //!
-//! ## Usage
+//! ### Usage
 //!
 //! ```rust,ignore
 //! use crucible_rune::handler::{RingHandler, RingHandlerContext};
