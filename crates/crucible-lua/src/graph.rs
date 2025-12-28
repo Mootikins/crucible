@@ -24,10 +24,16 @@
 //!
 //! -- Find a note by title
 //! local note = graph.find(g, "Index")
+//!
+//! -- Database-backed queries (async)
+//! local note = graph.db_find("Index")
+//! local links = graph.db_outlinks("Index")
 //! ```
 
 use crate::error::LuaError;
+use crucible_core::traits::GraphQueryExecutor;
 use mlua::{Lua, Table, Value};
+use std::sync::Arc;
 
 /// Register the graph module with a Lua state
 pub fn register_graph_module(lua: &Lua) -> Result<(), LuaError> {
@@ -117,6 +123,160 @@ pub fn register_graph_module(lua: &Lua) -> Result<(), LuaError> {
     lua.globals().set("graph", graph)?;
 
     Ok(())
+}
+
+/// Register the graph module with database-backed async queries
+///
+/// This version adds async functions that query the actual database
+/// via the `GraphQueryExecutor` trait.
+///
+/// # Example
+///
+/// ```lua
+/// -- In Lua scripts:
+/// local note = graph.db_find("Index")
+/// local links = graph.db_outlinks("Index")
+/// local backlinks = graph.db_inlinks("Index")
+/// local all = graph.db_neighbors("Index")
+/// local custom = graph.db_query('find("Index") | ->wikilink[]')
+/// ```
+pub fn register_graph_module_with_executor(
+    lua: &Lua,
+    executor: Arc<dyn GraphQueryExecutor>,
+) -> Result<(), LuaError> {
+    // First register the in-memory functions
+    register_graph_module(lua)?;
+
+    // Get the graph table we just created
+    let graph: Table = lua.globals().get("graph")?;
+
+    // Add database-backed async functions with db_ prefix
+
+    // db_find - Find a note by title in the database
+    let exec = executor.clone();
+    let db_find = lua.create_async_function(move |lua, title: String| {
+        let exec = exec.clone();
+        async move {
+            let query = format!(r#"find("{}")"#, escape_quotes(&title));
+            match exec.execute(&query).await {
+                Ok(results) => {
+                    if let Some(first) = results.into_iter().next() {
+                        json_to_lua_value(&lua, &first)
+                    } else {
+                        Ok(Value::Nil)
+                    }
+                }
+                Err(e) => Err(mlua::Error::runtime(format!("Graph query error: {}", e))),
+            }
+        }
+    })?;
+    graph.set("db_find", db_find)?;
+
+    // db_outlinks - Get outlinks from database
+    let exec = executor.clone();
+    let db_outlinks = lua.create_async_function(move |lua, title: String| {
+        let exec = exec.clone();
+        async move {
+            let query = format!(r#"outlinks("{}")"#, escape_quotes(&title));
+            match exec.execute(&query).await {
+                Ok(results) => json_array_to_lua_table(&lua, &results),
+                Err(e) => Err(mlua::Error::runtime(format!("Graph query error: {}", e))),
+            }
+        }
+    })?;
+    graph.set("db_outlinks", db_outlinks)?;
+
+    // db_inlinks - Get inlinks from database
+    let exec = executor.clone();
+    let db_inlinks = lua.create_async_function(move |lua, title: String| {
+        let exec = exec.clone();
+        async move {
+            let query = format!(r#"inlinks("{}")"#, escape_quotes(&title));
+            match exec.execute(&query).await {
+                Ok(results) => json_array_to_lua_table(&lua, &results),
+                Err(e) => Err(mlua::Error::runtime(format!("Graph query error: {}", e))),
+            }
+        }
+    })?;
+    graph.set("db_inlinks", db_inlinks)?;
+
+    // db_neighbors - Get all connected notes from database
+    let exec = executor.clone();
+    let db_neighbors = lua.create_async_function(move |lua, title: String| {
+        let exec = exec.clone();
+        async move {
+            let query = format!(r#"neighbors("{}")"#, escape_quotes(&title));
+            match exec.execute(&query).await {
+                Ok(results) => json_array_to_lua_table(&lua, &results),
+                Err(e) => Err(mlua::Error::runtime(format!("Graph query error: {}", e))),
+            }
+        }
+    })?;
+    graph.set("db_neighbors", db_neighbors)?;
+
+    // db_query - Execute arbitrary graph query
+    let exec = executor.clone();
+    let db_query = lua.create_async_function(move |lua, query: String| {
+        let exec = exec.clone();
+        async move {
+            match exec.execute(&query).await {
+                Ok(results) => json_array_to_lua_table(&lua, &results),
+                Err(e) => Err(mlua::Error::runtime(format!("Graph query error: {}", e))),
+            }
+        }
+    })?;
+    graph.set("db_query", db_query)?;
+
+    Ok(())
+}
+
+/// Escape double quotes in a string for safe embedding in queries
+fn escape_quotes(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// Convert a JSON value to a Lua value
+fn json_to_lua_value(lua: &Lua, value: &serde_json::Value) -> Result<Value, mlua::Error> {
+    match value {
+        serde_json::Value::Null => Ok(Value::Nil),
+        serde_json::Value::Bool(b) => Ok(Value::Boolean(*b)),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Ok(Value::Integer(i))
+            } else if let Some(f) = n.as_f64() {
+                Ok(Value::Number(f))
+            } else {
+                Ok(Value::Nil)
+            }
+        }
+        serde_json::Value::String(s) => lua.create_string(s).map(Value::String),
+        serde_json::Value::Array(arr) => {
+            let table = lua.create_table()?;
+            for (i, v) in arr.iter().enumerate() {
+                table.set(i + 1, json_to_lua_value(lua, v)?)?;
+            }
+            Ok(Value::Table(table))
+        }
+        serde_json::Value::Object(map) => {
+            let table = lua.create_table()?;
+            for (k, v) in map {
+                table.set(k.as_str(), json_to_lua_value(lua, v)?)?;
+            }
+            Ok(Value::Table(table))
+        }
+    }
+}
+
+/// Convert a JSON array to a Lua table
+fn json_array_to_lua_table(
+    lua: &Lua,
+    values: &[serde_json::Value],
+) -> Result<Value, mlua::Error> {
+    let table = lua.create_table()?;
+    for (i, v) in values.iter().enumerate() {
+        table.set(i + 1, json_to_lua_value(lua, v)?)?;
+    }
+    Ok(Value::Table(table))
 }
 
 #[cfg(test)]

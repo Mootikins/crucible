@@ -120,7 +120,7 @@ pub use note_events::{
     WikilinkInfo,
 };
 pub use oq_module::oq_module;
-pub use graph_module::graph_module;
+pub use graph_module::{graph_module, graph_module_with_executor};
 pub use persistence_handler::PersistenceHandler;
 pub use plugin_loader::PluginLoader;
 pub use plugin_types::{HookConfig, PluginManifest, RegisteredHook};
