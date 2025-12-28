@@ -51,7 +51,8 @@ impl FennelCompiler {
         let fennel: mlua::Table = lua.globals().get("fennel").map_err(|_| {
             LuaError::FennelCompile(
                 "Fennel not available. Download fennel.lua from https://fennel-lang.org/downloads \
-                and place in crates/crucible-lua/vendor/fennel.lua".into()
+                and place in crates/crucible-lua/vendor/fennel.lua"
+                    .into(),
             )
         })?;
 
@@ -60,9 +61,9 @@ impl FennelCompiler {
         })?;
 
         // Store in registry for later use
-        let compile_fn_key = lua
-            .create_registry_value(compile_string)
-            .map_err(|e| LuaError::FennelCompile(format!("Failed to cache compile function: {}", e)))?;
+        let compile_fn_key = lua.create_registry_value(compile_string).map_err(|e| {
+            LuaError::FennelCompile(format!("Failed to cache compile function: {}", e))
+        })?;
 
         Ok(Self { compile_fn_key })
     }
@@ -81,9 +82,9 @@ impl FennelCompiler {
     pub fn compile_with_lua(&self, lua: &Lua, source: &str) -> Result<String, LuaError> {
         let compile_fn: Function = lua.registry_value(&self.compile_fn_key)?;
 
-        let result: String = compile_fn.call(source).map_err(|e| {
-            LuaError::FennelCompile(format!("Fennel compilation failed: {}", e))
-        })?;
+        let result: String = compile_fn
+            .call(source)
+            .map_err(|e| LuaError::FennelCompile(format!("Fennel compilation failed: {}", e)))?;
 
         Ok(result)
     }
@@ -107,9 +108,9 @@ pub fn compile_fennel(source: &str) -> Result<String, LuaError> {
     let fennel: mlua::Table = lua.globals().get("fennel")?;
     let compile_string: Function = fennel.get("compileString")?;
 
-    let result: String = compile_string.call(source).map_err(|e| {
-        LuaError::FennelCompile(format!("Fennel compilation failed: {}", e))
-    })?;
+    let result: String = compile_string
+        .call(source)
+        .map_err(|e| LuaError::FennelCompile(format!("Fennel compilation failed: {}", e)))?;
 
     Ok(result)
 }

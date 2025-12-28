@@ -160,10 +160,7 @@ mod tests {
     #[test]
     fn test_error_display_with_query() {
         let err = GraphQueryError::with_query("Syntax error", "outlinks(bad)");
-        assert_eq!(
-            format!("{}", err),
-            "Syntax error (query: outlinks(bad))"
-        );
+        assert_eq!(format!("{}", err), "Syntax error (query: outlinks(bad))");
     }
 
     // =========================================================================
