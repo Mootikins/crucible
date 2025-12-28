@@ -138,8 +138,10 @@ impl DependencyGraph {
             return Err(DependencyError::DuplicateHandler(name));
         }
 
-        self.nodes
-            .insert(name.clone(), GraphNode::with_priority(name, depends_on, priority));
+        self.nodes.insert(
+            name.clone(),
+            GraphNode::with_priority(name, depends_on, priority),
+        );
         self.cached_order = None; // Invalidate cache
 
         Ok(())

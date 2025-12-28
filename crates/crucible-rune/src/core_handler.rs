@@ -70,10 +70,7 @@ pub struct RuneHandlerMeta {
 
 impl RuneHandlerMeta {
     /// Create new handler metadata.
-    pub fn new(
-        script_path: impl Into<PathBuf>,
-        function_name: impl Into<String>,
-    ) -> Self {
+    pub fn new(script_path: impl Into<PathBuf>, function_name: impl Into<String>) -> Self {
         Self {
             script_path: script_path.into(),
             function_name: function_name.into(),
@@ -112,11 +109,7 @@ impl RuneHandlerMeta {
     ///
     /// Format: `rune:<script_path>:<function_name>`
     pub fn handler_name(&self) -> String {
-        format!(
-            "rune:{}:{}",
-            self.script_path.display(),
-            self.function_name
-        )
+        format!("rune:{}:{}", self.script_path.display(), self.function_name)
     }
 }
 
@@ -146,10 +139,7 @@ impl RuneHandler {
     /// Create a new Rune handler from metadata.
     ///
     /// Compiles the script if not already compiled.
-    pub fn new(
-        meta: RuneHandlerMeta,
-        executor: Arc<RuneExecutor>,
-    ) -> Result<Self, RuneError> {
+    pub fn new(meta: RuneHandlerMeta, executor: Arc<RuneExecutor>) -> Result<Self, RuneError> {
         // Read and compile the script
         let source = std::fs::read_to_string(&meta.script_path).map_err(|e| {
             RuneError::Io(format!(
@@ -158,7 +148,8 @@ impl RuneHandler {
             ))
         })?;
 
-        let script_name = meta.script_path
+        let script_name = meta
+            .script_path
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "unknown".to_string());
@@ -250,8 +241,8 @@ impl Handler for RuneHandler {
         let handler_name = self.name.clone();
 
         // Serialize context metadata and event to JSON
-        let ctx_json = serde_json::to_value(ctx.metadata())
-            .unwrap_or(JsonValue::Object(Default::default()));
+        let ctx_json =
+            serde_json::to_value(ctx.metadata()).unwrap_or(JsonValue::Object(Default::default()));
         let event_json = match serde_json::to_value(&event) {
             Ok(j) => j,
             Err(e) => {
@@ -408,7 +399,10 @@ mod tests {
     #[test]
     fn test_rune_handler_meta_name() {
         let meta = RuneHandlerMeta::new("plugins/auth.rn", "check_permissions");
-        assert_eq!(meta.handler_name(), "rune:plugins/auth.rn:check_permissions");
+        assert_eq!(
+            meta.handler_name(),
+            "rune:plugins/auth.rn:check_permissions"
+        );
     }
 
     #[tokio::test]
@@ -416,11 +410,15 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let script_path = temp.path().join("test_handler.rn");
 
-        fs::write(&script_path, r#"
+        fs::write(
+            &script_path,
+            r#"
 pub fn test_handler(ctx, event) {
     event
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let executor = create_test_executor();
         let meta = RuneHandlerMeta::new(&script_path, "test_handler");
@@ -439,11 +437,15 @@ pub fn test_handler(ctx, event) {
         let script_path = temp.path().join("passthrough.rn");
 
         // Handler that just returns the event unchanged
-        fs::write(&script_path, r#"
+        fs::write(
+            &script_path,
+            r#"
 pub fn passthrough(ctx, event) {
     event
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let executor = create_test_executor();
         let meta = RuneHandlerMeta::new(&script_path, "passthrough");
@@ -474,11 +476,15 @@ pub fn passthrough(ctx, event) {
         let script_path = temp.path().join("canceller.rn");
 
         // Handler that cancels events
-        fs::write(&script_path, r#"
+        fs::write(
+            &script_path,
+            r#"
 pub fn canceller(ctx, event) {
     #{ cancel: true }
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let executor = create_test_executor();
         let meta = RuneHandlerMeta::new(&script_path, "canceller");
@@ -500,15 +506,18 @@ pub fn canceller(ctx, event) {
         let temp = TempDir::new().unwrap();
         let script_path = temp.path().join("disabled.rn");
 
-        fs::write(&script_path, r#"
+        fs::write(
+            &script_path,
+            r#"
 pub fn disabled_handler(ctx, event) {
     #{ cancel: true }
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let executor = create_test_executor();
-        let meta = RuneHandlerMeta::new(&script_path, "disabled_handler")
-            .with_enabled(false);
+        let meta = RuneHandlerMeta::new(&script_path, "disabled_handler").with_enabled(false);
         let handler = RuneHandler::new(meta, executor).unwrap();
 
         let mut ctx = HandlerContext::new();
@@ -527,15 +536,18 @@ pub fn disabled_handler(ctx, event) {
         let temp = TempDir::new().unwrap();
         let script_path = temp.path().join("priority.rn");
 
-        fs::write(&script_path, r#"
+        fs::write(
+            &script_path,
+            r#"
 pub fn priority_handler(ctx, event) {
     event
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let executor = create_test_executor();
-        let meta = RuneHandlerMeta::new(&script_path, "priority_handler")
-            .with_priority(10);
+        let meta = RuneHandlerMeta::new(&script_path, "priority_handler").with_priority(10);
         let handler = RuneHandler::new(meta, executor).unwrap();
 
         assert_eq!(handler.priority(), 10);
@@ -546,11 +558,15 @@ pub fn priority_handler(ctx, event) {
         let temp = TempDir::new().unwrap();
         let script_path = temp.path().join("deps.rn");
 
-        fs::write(&script_path, r#"
+        fs::write(
+            &script_path,
+            r#"
 pub fn dependent_handler(ctx, event) {
     event
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let executor = create_test_executor();
         let meta = RuneHandlerMeta::new(&script_path, "dependent_handler")
@@ -568,15 +584,18 @@ pub fn dependent_handler(ctx, event) {
         let temp = TempDir::new().unwrap();
         let script_path = temp.path().join("pattern.rn");
 
-        fs::write(&script_path, r#"
+        fs::write(
+            &script_path,
+            r#"
 pub fn tool_handler(ctx, event) {
     event
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let executor = create_test_executor();
-        let meta = RuneHandlerMeta::new(&script_path, "tool_handler")
-            .with_event_pattern("tool:*");
+        let meta = RuneHandlerMeta::new(&script_path, "tool_handler").with_event_pattern("tool:*");
         let handler = RuneHandler::new(meta, executor).unwrap();
 
         assert_eq!(handler.event_pattern(), "tool:*");
