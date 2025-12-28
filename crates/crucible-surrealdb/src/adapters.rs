@@ -248,3 +248,83 @@ pub fn create_tag_handler(
     let store = Arc::new(EAVGraphStore::new((*client.inner()).clone()));
     TagHandler::new(store, emitter)
 }
+
+// ============================================================================
+// Graph Query Executor
+// ============================================================================
+
+use crucible_core::traits::{GraphQueryError, GraphQueryExecutor, GraphQueryResult};
+
+/// Create a graph query executor backed by SurrealDB.
+///
+/// The executor translates jaq-like query syntax to SurrealQL and executes
+/// against the database.
+///
+/// # Arguments
+///
+/// * `client` - Opaque handle to a SurrealDB client
+///
+/// # Returns
+///
+/// A trait object implementing `GraphQueryExecutor`
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let executor = create_graph_executor(client);
+/// let results = executor.execute(r#"outlinks("Index")"#).await?;
+/// ```
+pub fn create_graph_executor(client: SurrealClientHandle) -> Arc<dyn GraphQueryExecutor> {
+    Arc::new(SurrealGraphExecutor::new(client.inner_arc()))
+}
+
+/// SurrealDB-backed implementation of GraphQueryExecutor.
+///
+/// Uses the `graph_query` module to translate jaq-like syntax to SurrealQL.
+struct SurrealGraphExecutor {
+    client: Arc<SurrealClient>,
+}
+
+impl SurrealGraphExecutor {
+    fn new(client: Arc<SurrealClient>) -> Self {
+        Self { client }
+    }
+}
+
+#[async_trait]
+impl GraphQueryExecutor for SurrealGraphExecutor {
+    async fn execute(&self, query: &str) -> GraphQueryResult<Vec<serde_json::Value>> {
+        use crate::graph_query::GraphQueryTranslator;
+
+        // Translate jaq query to SurrealQL
+        let translator = GraphQueryTranslator::new();
+        let graph_query = translator
+            .translate(query)
+            .map_err(|e| GraphQueryError::with_query(e.to_string(), query))?;
+
+        // Execute against SurrealDB
+        let result = self
+            .client
+            .query(&graph_query.surql, &[serde_json::to_value(&graph_query.params).unwrap_or_default()])
+            .await
+            .map_err(|e| GraphQueryError::with_query(e.to_string(), query))?;
+
+        // Convert records to JSON values
+        let values: Vec<serde_json::Value> = result
+            .records
+            .into_iter()
+            .map(|record| {
+                let mut obj = serde_json::Map::new();
+                if let Some(id) = record.id {
+                    obj.insert("id".to_string(), serde_json::Value::String(id.0));
+                }
+                for (key, value) in record.data {
+                    obj.insert(key, value);
+                }
+                serde_json::Value::Object(obj)
+            })
+            .collect();
+
+        Ok(values)
+    }
+}
