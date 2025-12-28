@@ -193,7 +193,11 @@ pub fn rune_to_json(value: &Value) -> Result<JsonValue, VmError> {
     let type_info = value.type_info();
     let type_name = format!("{}", type_info);
 
-    if type_name.contains("Unit") || type_name.contains("()") || type_name == "unit" {
+    if type_name.contains("Unit")
+        || type_name.contains("()")
+        || type_name == "unit"
+        || type_name == "empty"
+    {
         return Ok(JsonValue::Null);
     }
 

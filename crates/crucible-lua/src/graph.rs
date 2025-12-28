@@ -488,3 +488,151 @@ mod tests {
         assert!(result);
     }
 }
+
+#[cfg(test)]
+mod db_tests {
+    use super::*;
+    use async_trait::async_trait;
+    use crucible_core::traits::{GraphQueryError, GraphQueryExecutor, GraphQueryResult};
+    use serde_json::json;
+
+    /// Mock executor that returns predetermined results
+    struct MockDbExecutor {
+        results: Vec<serde_json::Value>,
+    }
+
+    #[async_trait]
+    impl GraphQueryExecutor for MockDbExecutor {
+        async fn execute(&self, _query: &str) -> GraphQueryResult<Vec<serde_json::Value>> {
+            Ok(self.results.clone())
+        }
+    }
+
+    /// Mock executor that always fails
+    struct FailingExecutor {
+        message: String,
+    }
+
+    #[async_trait]
+    impl GraphQueryExecutor for FailingExecutor {
+        async fn execute(&self, query: &str) -> GraphQueryResult<Vec<serde_json::Value>> {
+            Err(GraphQueryError::with_query(&self.message, query))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_db_find_returns_note() {
+        let lua = Lua::new();
+        let executor: Arc<dyn GraphQueryExecutor> = Arc::new(MockDbExecutor {
+            results: vec![json!({"title": "Index", "path": "Index.md"})],
+        });
+
+        register_graph_module_with_executor(&lua, executor).unwrap();
+
+        let result: Table = lua
+            .load(r#"return graph.db_find("Index")"#)
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert_eq!(result.get::<String>("title").unwrap(), "Index");
+        assert_eq!(result.get::<String>("path").unwrap(), "Index.md");
+    }
+
+    #[tokio::test]
+    async fn test_db_find_returns_nil_when_not_found() {
+        let lua = Lua::new();
+        let executor: Arc<dyn GraphQueryExecutor> = Arc::new(MockDbExecutor { results: vec![] });
+
+        register_graph_module_with_executor(&lua, executor).unwrap();
+
+        let result: Value = lua
+            .load(r#"return graph.db_find("Missing")"#)
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert!(matches!(result, Value::Nil));
+    }
+
+    #[tokio::test]
+    async fn test_db_outlinks_returns_array() {
+        let lua = Lua::new();
+        let executor: Arc<dyn GraphQueryExecutor> = Arc::new(MockDbExecutor {
+            results: vec![
+                json!({"title": "Project A", "path": "a.md"}),
+                json!({"title": "Project B", "path": "b.md"}),
+            ],
+        });
+
+        register_graph_module_with_executor(&lua, executor).unwrap();
+
+        let result: Table = lua
+            .load(r#"return graph.db_outlinks("Index")"#)
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert_eq!(result.len().unwrap(), 2);
+
+        let first: Table = result.get(1).unwrap();
+        assert_eq!(first.get::<String>("title").unwrap(), "Project A");
+    }
+
+    #[tokio::test]
+    async fn test_db_inlinks_returns_backlinks() {
+        let lua = Lua::new();
+        let executor: Arc<dyn GraphQueryExecutor> = Arc::new(MockDbExecutor {
+            results: vec![json!({"title": "Project A", "path": "a.md"})],
+        });
+
+        register_graph_module_with_executor(&lua, executor).unwrap();
+
+        let result: Table = lua
+            .load(r#"return graph.db_inlinks("Index")"#)
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert_eq!(result.len().unwrap(), 1);
+        let first: Table = result.get(1).unwrap();
+        assert_eq!(first.get::<String>("title").unwrap(), "Project A");
+    }
+
+    #[tokio::test]
+    async fn test_db_query_raw() {
+        let lua = Lua::new();
+        let executor: Arc<dyn GraphQueryExecutor> = Arc::new(MockDbExecutor {
+            results: vec![json!({"title": "Found"})],
+        });
+
+        register_graph_module_with_executor(&lua, executor).unwrap();
+
+        let result: Table = lua
+            .load(r#"return graph.db_query('find("Index") | ->wikilink[]')"#)
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert_eq!(result.len().unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_db_error_propagation() {
+        let lua = Lua::new();
+        let executor: Arc<dyn GraphQueryExecutor> = Arc::new(FailingExecutor {
+            message: "Connection failed".to_string(),
+        });
+
+        register_graph_module_with_executor(&lua, executor).unwrap();
+
+        let result = lua
+            .load(r#"return graph.db_find("Index")"#)
+            .eval_async::<Value>()
+            .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("Connection failed"));
+    }
+}
