@@ -29,12 +29,11 @@
 //! ```
 
 use super::dependency::{DependencyError, DependencyGraph};
-use super::handler::{
-    matches_event_pattern, BoxedHandler, HandlerContext, HandlerResult, HandlerTimer,
-    SharedHandler,
-};
 #[cfg(test)]
 use super::handler::Handler;
+use super::handler::{
+    matches_event_pattern, BoxedHandler, HandlerContext, HandlerResult, HandlerTimer, SharedHandler,
+};
 use super::session_event::SessionEvent;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -226,9 +225,9 @@ impl Reactor {
     /// Returns an error if the handler doesn't exist.
     pub fn unregister(&mut self, name: &str) -> ReactorResult<SharedHandler> {
         self.graph.remove(name)?;
-        self.handlers
-            .remove(name)
-            .ok_or_else(|| ReactorError::Registration(DependencyError::HandlerNotFound(name.to_string())))
+        self.handlers.remove(name).ok_or_else(|| {
+            ReactorError::Registration(DependencyError::HandlerNotFound(name.to_string()))
+        })
     }
 
     /// Check if a handler is registered.
@@ -347,7 +346,11 @@ impl Reactor {
                     handlers_run.push(handler_name.clone());
 
                     if self.fail_open {
-                        tracing::error!("Handler {} fatal error (fail-open): {}", handler_name, error);
+                        tracing::error!(
+                            "Handler {} fatal error (fail-open): {}",
+                            handler_name,
+                            error
+                        );
                         // Continue with the current event
                     } else {
                         return Ok(EmitResult::Failed {
@@ -474,9 +477,7 @@ impl EventEmitter for ReactorEventEmitter {
                     ));
                     Ok(outcome)
                 }
-                EmitResult::Failed {
-                    handler, error, ..
-                } => {
+                EmitResult::Failed { handler, error, .. } => {
                     // Return the original event with fatal error
                     Ok(EmitOutcome::with_errors(
                         event,
@@ -610,7 +611,9 @@ mod tests {
     #[tokio::test]
     async fn test_single_handler() {
         let mut reactor = Reactor::new();
-        reactor.register(Box::new(TestHandler::new("test"))).unwrap();
+        reactor
+            .register(Box::new(TestHandler::new("test")))
+            .unwrap();
 
         assert!(!reactor.is_empty());
         assert_eq!(reactor.handler_count(), 1);
@@ -667,10 +670,14 @@ mod tests {
         let mut reactor = Reactor::new();
 
         reactor
-            .register(Box::new(TestHandler::new("tool_handler").with_pattern("tool:*")))
+            .register(Box::new(
+                TestHandler::new("tool_handler").with_pattern("tool:*"),
+            ))
             .unwrap();
         reactor
-            .register(Box::new(TestHandler::new("note_handler").with_pattern("note:*")))
+            .register(Box::new(
+                TestHandler::new("note_handler").with_pattern("note:*"),
+            ))
             .unwrap();
 
         // Emit a tool event
@@ -704,7 +711,11 @@ mod tests {
 
         let result = reactor.emit(event).await.unwrap();
         assert!(result.is_cancelled());
-        if let EmitResult::Cancelled { by_handler, handlers_run } = result {
+        if let EmitResult::Cancelled {
+            by_handler,
+            handlers_run,
+        } = result
+        {
             assert_eq!(by_handler, "canceller");
             // "first" ran before cancellation
             assert!(handlers_run.contains(&"first".to_string()));
@@ -717,7 +728,9 @@ mod tests {
     async fn test_unregister() {
         let mut reactor = Reactor::new();
 
-        reactor.register(Box::new(TestHandler::new("test"))).unwrap();
+        reactor
+            .register(Box::new(TestHandler::new("test")))
+            .unwrap();
         assert!(reactor.has_handler("test"));
 
         reactor.unregister("test").unwrap();
@@ -728,7 +741,9 @@ mod tests {
     async fn test_duplicate_handler_error() {
         let mut reactor = Reactor::new();
 
-        reactor.register(Box::new(TestHandler::new("test"))).unwrap();
+        reactor
+            .register(Box::new(TestHandler::new("test")))
+            .unwrap();
         let result = reactor.register(Box::new(TestHandler::new("test")));
 
         assert!(result.is_err());
@@ -737,7 +752,9 @@ mod tests {
     #[test]
     fn test_reactor_debug() {
         let mut reactor = Reactor::new();
-        reactor.register(Box::new(TestHandler::new("test"))).unwrap();
+        reactor
+            .register(Box::new(TestHandler::new("test")))
+            .unwrap();
 
         let debug = format!("{:?}", reactor);
         assert!(debug.contains("Reactor"));
@@ -751,7 +768,9 @@ mod tests {
     #[tokio::test]
     async fn test_emitter_emit_completed() {
         let mut reactor = Reactor::new();
-        reactor.register(Box::new(TestHandler::new("test"))).unwrap();
+        reactor
+            .register(Box::new(TestHandler::new("test")))
+            .unwrap();
 
         let reactor = Arc::new(RwLock::new(reactor));
         let emitter = ReactorEventEmitter::new(reactor);

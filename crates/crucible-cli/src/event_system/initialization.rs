@@ -89,7 +89,8 @@ pub async fn initialize_event_system(config: &CliConfig) -> Result<EventSystemHa
 
     // Register StorageHandler
     debug!("Registering StorageHandler (priority 100)");
-    let storage_handler = adapters::create_storage_handler(storage_client.clone(), shared_emitter.clone());
+    let storage_handler =
+        adapters::create_storage_handler(storage_client.clone(), shared_emitter.clone());
     reactor
         .register(Box::new(StorageHandlerAdapter::new(storage_handler)))
         .context("Failed to register StorageHandler")?;
@@ -219,17 +220,12 @@ async fn load_rune_handlers(reactor: &mut Reactor, kiln_path: &Path) {
 ///
 /// Uses `crucible_rune::core_handler::RuneHandler` to create a Handler
 /// that can be registered with the Reactor.
-async fn load_single_rune_handler(
-    path: &Path,
-) -> Result<Box<dyn crucible_core::events::Handler>> {
+async fn load_single_rune_handler(path: &Path) -> Result<Box<dyn crucible_core::events::Handler>> {
     use crucible_rune::core_handler::{RuneHandler, RuneHandlerMeta};
     use crucible_rune::RuneExecutor;
 
     // Create executor for this handler
-    let executor = Arc::new(
-        RuneExecutor::new()
-            .with_context(|| "Failed to create Rune executor")?
-    );
+    let executor = Arc::new(RuneExecutor::new().with_context(|| "Failed to create Rune executor")?);
 
     // Create handler metadata
     // Priority 500+ for user scripts (after built-in handlers)

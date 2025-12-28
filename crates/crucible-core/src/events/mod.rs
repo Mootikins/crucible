@@ -116,8 +116,8 @@ pub mod subscriber;
 
 // New unified Handler system
 pub use handler::{
-    BoxedHandler, Handler, HandlerContext, HandlerResult, HandlerTimer, HandlerTraceEntry,
-    SharedHandler, matches_event_pattern,
+    matches_event_pattern, BoxedHandler, Handler, HandlerContext, HandlerResult, HandlerTimer,
+    HandlerTraceEntry, SharedHandler,
 };
 
 // Dependency graph for handler ordering
@@ -129,9 +129,7 @@ pub use reactor::{
 };
 
 // Built-in handlers
-pub use builtin_handlers::{
-    AsyncCallbackHandler, FilterHandler, LoggingHandler, MetricsHandler,
-};
+pub use builtin_handlers::{AsyncCallbackHandler, FilterHandler, LoggingHandler, MetricsHandler};
 
 // Legacy emitter exports
 pub use emitter::{
