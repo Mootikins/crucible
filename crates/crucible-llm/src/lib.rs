@@ -52,7 +52,6 @@ pub mod embeddings;
 pub mod model_discovery;
 pub mod reranking;
 pub mod text_generation;
-pub mod unified;
 
 // Mock implementations for testing (Phase 5)
 #[cfg(any(test, feature = "test-utils"))]
@@ -125,13 +124,6 @@ pub use crucible_core::enrichment::{
     EnrichmentConfig, FastEmbedConfig as NewFastEmbedConfig, MockConfig as NewMockConfig,
     OllamaConfig as NewOllamaConfig, OpenAIConfig as NewOpenAIConfig, PipelineConfig,
     VertexAIConfig,
-};
-
-// Re-export unified provider layer
-pub use unified::{
-    create_chat_provider_unified, create_embedding_provider_unified, create_provider_by_name,
-    create_unified_provider, CachedModels, ChatProviderAdapter, EmbeddingProviderAdapter,
-    ModelCache, UnifiedModelDiscovery, UnifiedProvider,
 };
 
 // Re-export model discovery
