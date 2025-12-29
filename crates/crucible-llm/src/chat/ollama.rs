@@ -247,11 +247,8 @@ impl TextGenerationProvider for OllamaChatProvider {
         let url = format!("{}/api/chat", self.base_url);
 
         // Build Ollama API request - use helper for proper message serialization
-        let messages: Vec<serde_json::Value> = request
-            .messages
-            .iter()
-            .map(Self::message_to_json)
-            .collect();
+        let messages: Vec<serde_json::Value> =
+            request.messages.iter().map(Self::message_to_json).collect();
 
         let mut api_request = serde_json::json!({
             "model": self.default_model,
@@ -557,14 +554,20 @@ mod tests {
     #[test]
     fn test_message_to_json_assistant_with_tool_calls() {
         // Assistant messages with tool_calls must include the calls array
-        let tool_calls = vec![ToolCall::new("call_456", "get_weather", r#"{"city":"NYC"}"#.to_string())];
+        let tool_calls = vec![ToolCall::new(
+            "call_456",
+            "get_weather",
+            r#"{"city":"NYC"}"#.to_string(),
+        )];
         let assistant_msg = LlmMessage::assistant_with_tools("Let me check that", tool_calls);
         let json = OllamaChatProvider::message_to_json(&assistant_msg);
 
         assert_eq!(json["role"], "assistant");
         assert_eq!(json["content"], "Let me check that");
 
-        let calls = json["tool_calls"].as_array().expect("tool_calls should be array");
+        let calls = json["tool_calls"]
+            .as_array()
+            .expect("tool_calls should be array");
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0]["id"], "call_456");
         assert_eq!(calls[0]["type"], "function");

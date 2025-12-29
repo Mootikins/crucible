@@ -530,7 +530,9 @@ impl WorkspaceTools {
 // =============================================================================
 
 use async_trait::async_trait;
-use crucible_core::traits::tools::{ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult};
+use crucible_core::traits::tools::{
+    ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult,
+};
 
 #[async_trait]
 impl ToolExecutor for WorkspaceTools {
@@ -550,32 +552,31 @@ impl ToolExecutor for WorkspaceTools {
         let get_optional_usize = |key: &str| -> Option<usize> {
             params.get(key).and_then(|v| v.as_u64()).map(|n| n as usize)
         };
-        let get_optional_u64 = |key: &str| -> Option<u64> {
-            params.get(key).and_then(|v| v.as_u64())
-        };
-        let get_optional_bool = |key: &str| -> Option<bool> {
-            params.get(key).and_then(|v| v.as_bool())
-        };
+        let get_optional_u64 =
+            |key: &str| -> Option<u64> { params.get(key).and_then(|v| v.as_u64()) };
+        let get_optional_bool =
+            |key: &str| -> Option<bool> { params.get(key).and_then(|v| v.as_bool()) };
 
         // Convert CallToolResult to JSON
-        let convert_result = |result: Result<CallToolResult, rmcp::ErrorData>| -> ToolResult<serde_json::Value> {
-            match result {
-                Ok(call_result) => {
-                    // Extract text content from result
-                    let text: String = call_result
-                        .content
-                        .iter()
-                        .filter_map(|c| match &c.raw {
-                            RawContent::Text(t) => Some(t.text.to_string()),
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    Ok(serde_json::json!({ "result": text }))
+        let convert_result =
+            |result: Result<CallToolResult, rmcp::ErrorData>| -> ToolResult<serde_json::Value> {
+                match result {
+                    Ok(call_result) => {
+                        // Extract text content from result
+                        let text: String = call_result
+                            .content
+                            .iter()
+                            .filter_map(|c| match &c.raw {
+                                RawContent::Text(t) => Some(t.text.to_string()),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        Ok(serde_json::json!({ "result": text }))
+                    }
+                    Err(e) => Err(ToolError::ExecutionFailed(e.message.to_string())),
                 }
-                Err(e) => Err(ToolError::ExecutionFailed(e.message.to_string())),
-            }
-        };
+            };
 
         match name {
             "read_file" => {
@@ -593,7 +594,10 @@ impl ToolExecutor for WorkspaceTools {
                 let new_string = get_str("new_string")
                     .ok_or_else(|| ToolError::InvalidParameters("new_string is required".into()))?;
                 let replace_all = get_optional_bool("replace_all");
-                convert_result(self.edit_file(path, old_string, new_string, replace_all).await)
+                convert_result(
+                    self.edit_file(path, old_string, new_string, replace_all)
+                        .await,
+                )
             }
             "write_file" => {
                 let path = get_str("path")
