@@ -195,10 +195,8 @@ pub fn register_shell_module(lua: &Lua, policy: ShellPolicy) -> Result<(), LuaEr
 
                     if let Ok(env_table) = opts.get::<Table>("env") {
                         let mut env_map = HashMap::new();
-                        for pair in env_table.pairs::<String, String>() {
-                            if let Ok((k, v)) = pair {
-                                env_map.insert(k, v);
-                            }
+                        for (k, v) in env_table.pairs::<String, String>().flatten() {
+                            env_map.insert(k, v);
                         }
                         env = Some(env_map);
                     }
@@ -207,7 +205,7 @@ pub fn register_shell_module(lua: &Lua, policy: ShellPolicy) -> Result<(), LuaEr
                 // Execute command
                 let result = exec_command(&cmd, &args, cwd.as_deref(), env.as_ref(), &policy)
                     .await
-                    .map_err(|e| mlua::Error::external(e))?;
+                    .map_err(mlua::Error::external)?;
 
                 // Build result table
                 let result_table = lua.create_table()?;

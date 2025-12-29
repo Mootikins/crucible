@@ -64,14 +64,14 @@ impl LuaExecutor {
 
         // crucible.json_encode(value) -> string
         let json_encode = lua.create_function(|lua, value: Value| {
-            let json = lua_to_json(lua, value).map_err(|e| mlua::Error::external(e))?;
-            serde_json::to_string(&json).map_err(|e| mlua::Error::external(e))
+            let json = lua_to_json(lua, value).map_err(mlua::Error::external)?;
+            serde_json::to_string(&json).map_err(mlua::Error::external)
         })?;
         crucible.set("json_encode", json_encode)?;
 
         // crucible.json_decode(string) -> value
         let json_decode = lua.create_function(|lua, s: String| {
-            let json: JsonValue = serde_json::from_str(&s).map_err(|e| mlua::Error::external(e))?;
+            let json: JsonValue = serde_json::from_str(&s).map_err(mlua::Error::external)?;
             json_to_lua(lua, json)
         })?;
         crucible.set("json_decode", json_decode)?;
@@ -202,7 +202,7 @@ impl LuaExecutor {
 }
 
 /// Convert a Lua value to JSON
-fn lua_to_json(lua: &Lua, value: Value) -> Result<JsonValue, LuaError> {
+fn lua_to_json(_lua: &Lua, value: Value) -> Result<JsonValue, LuaError> {
     match value {
         Value::Nil => Ok(JsonValue::Null),
         Value::Boolean(b) => Ok(JsonValue::Bool(b)),
@@ -221,7 +221,7 @@ fn lua_to_json(lua: &Lua, value: Value) -> Result<JsonValue, LuaError> {
                 let mut arr = Vec::with_capacity(len);
                 for i in 1..=len {
                     let v: Value = t.get(i)?;
-                    arr.push(lua_to_json(lua, v)?);
+                    arr.push(lua_to_json(_lua, v)?);
                 }
                 Ok(JsonValue::Array(arr))
             } else {
@@ -229,7 +229,7 @@ fn lua_to_json(lua: &Lua, value: Value) -> Result<JsonValue, LuaError> {
                 let mut map = serde_json::Map::new();
                 for pair in t.pairs::<String, Value>() {
                     let (k, v) = pair?;
-                    map.insert(k, lua_to_json(lua, v)?);
+                    map.insert(k, lua_to_json(_lua, v)?);
                 }
                 Ok(JsonValue::Object(map))
             }
