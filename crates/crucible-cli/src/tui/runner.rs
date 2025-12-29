@@ -74,8 +74,6 @@ pub struct RatatuiRunner {
     streaming_rx: Option<StreamingReceiver>,
     /// Streaming parser for incremental markdown parsing
     streaming_parser: Option<StreamingParser>,
-    /// Receiver for agent availability probing results
-    agent_probe_rx: Option<tokio::sync::oneshot::Receiver<Vec<crucible_acp::KnownAgent>>>,
     /// Command history (most recent last)
     history: Vec<String>,
     /// Current position in history (None = not browsing history)
@@ -117,7 +115,6 @@ impl RatatuiRunner {
             streaming_task: None,
             streaming_rx: None,
             streaming_parser: None,
-            agent_probe_rx: None,
             history: Vec::new(),
             history_index: None,
             history_saved_input: String::new(),
@@ -127,11 +124,6 @@ impl RatatuiRunner {
             supports_restart: false, // Set to true when using run_with_factory
             default_selection: None,
         })
-    }
-
-    /// Skip the splash screen (e.g., when agent was pre-specified via CLI)
-    pub fn skip_splash(&mut self) {
-        self.view.dismiss_splash();
     }
 
     /// Set a default agent selection for the first iteration.
@@ -170,28 +162,10 @@ impl RatatuiRunner {
         let mut last_seen_seq = 0u64;
 
         loop {
-            // 1. Start agent probing if splash needs it
-            if self.view.splash_needs_probing() && self.agent_probe_rx.is_none() {
-                let (tx, rx) = tokio::sync::oneshot::channel();
-                self.agent_probe_rx = Some(rx);
-                tokio::spawn(async move {
-                    let agents = crucible_acp::probe_all_agents().await;
-                    let _ = tx.send(agents);
-                });
-            }
-
-            // 2. Check for agent probing results
-            if let Some(rx) = &mut self.agent_probe_rx {
-                if let Ok(agents) = rx.try_recv() {
-                    self.view.update_splash_availability(agents);
-                    self.agent_probe_rx = None;
-                }
-            }
-
-            // 3. Render
+            // 1. Render
             terminal.draw(|f| self.view.render_frame(f))?;
 
-            // 4. Poll events (non-blocking, ~60fps)
+            // 2. Poll events (non-blocking, ~60fps)
             if event::poll(Duration::from_millis(16))? {
                 match event::read()? {
                     Event::Key(key) => {
@@ -209,7 +183,7 @@ impl RatatuiRunner {
                 }
             }
 
-            // 5. Refresh popup items and sync with view
+            // 3. Refresh popup items and sync with view
             if let Some(ref mut popup) = self.popup {
                 if popup_debounce.ready() {
                     let items = self.popup_provider.provide(popup.kind, &popup.query);
@@ -222,10 +196,10 @@ impl RatatuiRunner {
             // Sync popup state to view for rendering
             self.view.set_popup(self.popup.clone());
 
-            // 6. Poll ring buffer for session events
+            // 4. Poll ring buffer for session events
             self.poll_session_events(bridge, &mut last_seen_seq);
 
-            // 7. Poll streaming channel (non-blocking)
+            // 5. Poll streaming channel (non-blocking)
             let mut pending_parse_events = Vec::new();
             let mut streaming_complete = false;
             let mut streaming_error = None;
@@ -350,43 +324,6 @@ impl RatatuiRunner {
                 self.handle_dialog_result(result)?;
             }
             return Ok(false);
-        }
-
-        // Special handling when splash is shown
-        if self.view.is_showing_splash() {
-            match key.code {
-                // Vim-style navigation: k=up, j=down
-                KeyCode::Up | KeyCode::Char('k') => {
-                    self.view.splash_select_prev();
-                    return Ok(false);
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    self.view.splash_select_next();
-                    return Ok(false);
-                }
-                // Quick access by number (1-indexed)
-                KeyCode::Char(c @ '1'..='9') => {
-                    let index = (c as usize) - ('1' as usize);
-                    self.view.splash_select_index(index);
-                    return Ok(false);
-                }
-                // Confirm with Enter, Space, or 'l' (vim-style right/accept)
-                KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('l') => {
-                    if let Some(_agent_name) = self.view.splash_confirm() {
-                        // NOTE: Agent is already created before TUI starts. To support
-                        // splash agent selection, we would need to defer agent creation
-                        // until after selection. For now, use --agent CLI flag instead.
-                        // The splash shows available agents but doesn't switch agents.
-                        self.view.dismiss_splash();
-                    }
-                    return Ok(false);
-                }
-                // Exit with Esc, 'q', or 'h' (vim-style left/back)
-                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') => {
-                    return Ok(true);
-                }
-                _ => return Ok(false),
-            }
         }
 
         // Build a minimal TuiState for key mapping (we'll migrate away from this)
@@ -641,9 +578,9 @@ impl RatatuiRunner {
                             }
                             "new" => {
                                 if self.supports_restart {
-                                    // Request restart with agent picker
+                                    // Request restart with new session
                                     self.restart_requested = true;
-                                    // Clear popup/input state before restart (so splash can render)
+                                    // Clear popup/input state before restart
                                     self.popup = None;
                                     self.view.set_popup(None);
                                     self.view.set_input("");
@@ -653,7 +590,7 @@ impl RatatuiRunner {
                                 } else {
                                     // Can't restart without a factory
                                     self.view.set_status_text(
-                                        "/new requires --lazy-agent-selection or deferred mode",
+                                        "/new requires deferred agent mode",
                                     );
                                 }
                             }
@@ -676,7 +613,6 @@ impl RatatuiRunner {
                 self.view.set_input("");
                 self.view.set_cursor_position(0);
                 self.popup = None;
-                // Sync popup to view immediately (needed for /new to show splash)
                 self.view.set_popup(None);
             }
             InputAction::HistoryPrev => {
@@ -983,16 +919,15 @@ impl RatatuiRunner {
     ///
     /// This method:
     /// 1. Enters the TUI (alternate screen)
-    /// 2. If splash is active, runs picker loop and returns selection
-    /// 3. Calls the provided factory to create the agent (while showing status)
-    /// 4. Runs the main chat loop
-    /// 5. Cleans up and exits TUI
+    /// 2. Calls the provided factory to create the agent
+    /// 3. Runs the main chat loop
+    /// 4. Cleans up and exits TUI
     ///
     /// The factory receives the agent selection and should create the agent.
     /// Status updates are shown in the TUI during creation.
     ///
-    /// Supports `/new` command for restarting with a different agent - the factory
-    /// is called again with the new selection and conversation is cleared.
+    /// Supports `/new` command for restarting - clears conversation and
+    /// restarts with the same agent type.
     pub async fn run_with_factory<F, Fut, A>(
         &mut self,
         bridge: &AgentEventBridge,
@@ -1009,49 +944,50 @@ impl RatatuiRunner {
         // Enter TUI
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        execute!(
-            stdout,
-            EnterAlternateScreen,
-            crossterm::event::EnableMouseCapture
-        )?;
+        execute!(stdout, EnterAlternateScreen)?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
         terminal.clear()?;
+
+        // Get initial selection (use default or discover first available ACP agent)
+        let initial_selection = match self.default_selection.take() {
+            Some(selection) => selection,
+            None => {
+                // No explicit selection - discover first available ACP agent
+                self.view.set_status_text("Discovering agents...");
+                self.render_frame(&mut terminal)?;
+
+                match crucible_acp::discover_agent(None).await {
+                    Ok(agent) => AgentSelection::Acp(agent.name),
+                    Err(_) => {
+                        // No ACP agents available, fall back to internal
+                        tracing::info!("No ACP agents discovered, using internal agent");
+                        AgentSelection::Internal
+                    }
+                }
+            }
+        };
+
+        // Store selection for restarts
+        let current_selection = initial_selection;
 
         // Main session loop - supports restart via /new command
         loop {
             // Reset restart flag at start of each iteration
             self.restart_requested = false;
 
-            // Phase 1: Agent selection
-            // Use default_selection on first iteration (skips picker), show picker on restart
-            let selection = if let Some(default) = self.default_selection.take() {
-                // First iteration with pre-specified agent: skip picker
-                self.view.dismiss_splash(); // Ensure splash is hidden for input
-                default
-            } else {
-                // No default or restart: show picker
-                self.view.show_splash();
-                self.run_picker_phase(&mut terminal).await?
-            };
-
-            // Handle cancellation
-            if matches!(selection, AgentSelection::Cancelled) {
-                break; // Exit the loop and cleanup
-            }
-
-            // Phase 2: Create agent (show status in TUI)
+            // Create agent (show status in TUI)
             self.view.set_status_text("Creating agent...");
             self.render_frame(&mut terminal)?;
 
-            // Extract agent name from selection before consuming it
-            let agent_name = match &selection {
+            // Extract agent name from selection
+            let agent_name = match &current_selection {
                 AgentSelection::Acp(name) => name.clone(),
                 AgentSelection::Internal => "internal".to_string(),
-                AgentSelection::Cancelled => "unknown".to_string(), // shouldn't reach here
+                AgentSelection::Cancelled => "unknown".to_string(),
             };
 
-            let mut agent = create_agent(selection).await?;
+            let mut agent = create_agent(current_selection.clone()).await?;
 
             // Set current agent for /agent command
             self.set_current_agent(&agent_name);
@@ -1061,7 +997,7 @@ impl RatatuiRunner {
             self.view.set_status_text("Ready");
             self.render_frame(&mut terminal)?;
 
-            // Phase 3: Run main loop
+            // Run main loop
             self.main_loop(&mut terminal, bridge, &mut agent).await?;
 
             // Check if restart was requested (via /new command)
@@ -1069,8 +1005,7 @@ impl RatatuiRunner {
                 break; // Normal exit, don't restart
             }
 
-            // Restart requested - loop back to show picker again
-            // Clear conversation BEFORE showing picker (is_showing_splash checks this)
+            // Restart requested - loop back with same agent
             self.view.state_mut().conversation.clear();
             self.view.set_status_text("Restarting session...");
             self.render_frame(&mut terminal)?;
@@ -1078,72 +1013,9 @@ impl RatatuiRunner {
 
         // Cleanup
         disable_raw_mode()?;
-        execute!(
-            terminal.backend_mut(),
-            crossterm::event::DisableMouseCapture,
-            LeaveAlternateScreen,
-            cursor::Show
-        )?;
+        execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show)?;
 
         Ok(())
-    }
-
-    /// Run the picker phase - shows splash and waits for agent selection.
-    async fn run_picker_phase(
-        &mut self,
-        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    ) -> Result<AgentSelection> {
-        use crossterm::event::KeyCode;
-
-        // Start agent probing
-        let (tx, mut rx) = tokio::sync::oneshot::channel();
-        tokio::spawn(async move {
-            let agents = crucible_acp::probe_all_agents().await;
-            let _ = tx.send(agents);
-        });
-
-        loop {
-            // Check for probe results
-            if let Ok(agents) = rx.try_recv() {
-                self.view.update_splash_availability(agents);
-            }
-
-            // Render
-            self.render_frame(terminal)?;
-
-            // Handle input
-            if event::poll(Duration::from_millis(50))? {
-                if let Event::Key(key) = event::read()? {
-                    match key.code {
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            self.view.splash_select_prev();
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            self.view.splash_select_next();
-                        }
-                        KeyCode::Char(c @ '1'..='9') => {
-                            let index = (c as usize) - ('1' as usize);
-                            self.view.splash_select_index(index);
-                        }
-                        KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('l') => {
-                            if let Some(agent_name) = self.view.splash_confirm() {
-                                self.view.dismiss_splash();
-                                let selection = if agent_name == "internal" {
-                                    AgentSelection::Internal
-                                } else {
-                                    AgentSelection::Acp(agent_name)
-                                };
-                                return Ok(selection);
-                            }
-                        }
-                        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') => {
-                            return Ok(AgentSelection::Cancelled);
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
     }
 
     /// Render a single frame (used during status updates).
@@ -1410,107 +1282,6 @@ mod tests {
         let taken = runner.default_selection.take();
         assert!(taken.is_some());
         assert!(runner.default_selection.is_none()); // Now None for restart
-    }
-
-    #[test]
-    fn test_splash_visible_after_restart_with_empty_conversation() {
-        // BUG REPRODUCTION: /new command shows "Restarting session..." but picker doesn't appear
-        // This simulates the state after restart is requested
-        let mut runner =
-            RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
-
-        // Simulate first iteration: consume default_selection
-        runner.with_default_selection(AgentSelection::Acp("opencode".to_string()));
-        let _ = runner.default_selection.take();
-
-        // Simulate restart preparation (what happens at lines 958-961)
-        runner.view.state_mut().conversation.clear();
-        runner.view.show_splash();
-
-        // The splash should be visible
-        assert!(
-            runner.view.is_showing_splash(),
-            "Splash should be visible after restart preparation"
-        );
-
-        // Verify the conditions for splash rendering
-        assert!(
-            runner.view.state().conversation.items().is_empty(),
-            "Conversation should be empty"
-        );
-        assert!(
-            runner.view.state().splash.is_some(),
-            "Splash state should exist"
-        );
-        assert!(
-            runner.view.state().popup.is_none(),
-            "No popup should be active"
-        );
-        assert!(
-            runner.view.state().dialog_stack.is_empty(),
-            "No dialogs should be active"
-        );
-    }
-
-    #[test]
-    fn test_new_command_clears_popup_before_restart() {
-        // BUG: /new command doesn't show picker because popup isn't cleared
-        // When user types "/new", a command popup exists from typing "/".
-        // The /new handler must clear popup BEFORE returning (early return).
-        use crate::tui::state::{PopupKind, PopupState};
-
-        let mut runner =
-            RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
-
-        // Simulate: user typed "/new" which created a command popup
-        runner.view.set_input("/new");
-        runner.view.set_cursor_position(4); // After "/new"
-        runner.popup = Some(PopupState::new(PopupKind::Command));
-        runner.view.set_popup(runner.popup.clone());
-
-        // Verify initial state
-        assert!(
-            runner.view.state().popup.is_some(),
-            "Popup should be set from typing /"
-        );
-        assert_eq!(runner.view.cursor_position(), 4, "Cursor at end of /new");
-
-        // Simulate what /new handler does (lines 636-643):
-        // 1. Set restart_requested
-        // 2. Clear popup (MUST happen before early return)
-        // 3. Clear input AND cursor position
-        // 4. Return Ok(true)
-        runner.restart_requested = true;
-        runner.popup = None;
-        runner.view.set_popup(None);
-        runner.view.set_input("");
-        runner.view.set_cursor_position(0); // Critical: reset cursor!
-
-        // Verify cursor is reset (prevents panic when typing in new session)
-        assert_eq!(
-            runner.view.cursor_position(),
-            0,
-            "Cursor must be reset to 0"
-        );
-
-        // Now simulate restart preparation (lines 963-965 in run_with_factory)
-        runner.view.state_mut().conversation.clear();
-        runner.view.show_splash();
-
-        // Check the rendering condition (same as render_frame)
-        let would_render_splash = runner.view.state().conversation.items().is_empty()
-            && runner.view.state().popup.is_none()
-            && runner.view.state().dialog_stack.is_empty()
-            && runner.view.state().splash.is_some();
-
-        assert!(
-            would_render_splash,
-            "Splash should render after /new clears popup"
-        );
-        assert!(
-            runner.view.state().popup.is_none(),
-            "Popup must be None for splash to render"
-        );
     }
 
     #[test]

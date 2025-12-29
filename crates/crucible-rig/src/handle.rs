@@ -17,8 +17,9 @@ use crucible_core::types::mode::default_internal_modes;
 use futures::stream::BoxStream;
 use futures::StreamExt;
 use rig::agent::Agent;
-use rig::completion::CompletionModel;
-use rig::message::Message;
+use rig::completion::{AssistantContent, CompletionModel};
+use rig::message::{Message, ToolCall as RigToolCall, ToolResult};
+use rig::OneOrMany;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
@@ -120,6 +121,8 @@ where
         use rig::agent::MultiTurnStreamItem;
         use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
 
+        debug!("RigAgentHandle::send_message_stream called: {}", message);
+
         let agent = Arc::clone(&self.agent);
         let history = Arc::clone(&self.chat_history);
         let max_depth = self.max_tool_depth;
@@ -135,7 +138,6 @@ where
             }
 
             // Create streaming request with history
-            // stream_prompt().await returns the stream directly
             let mut stream = agent
                 .stream_prompt(&message)
                 .multi_turn(max_depth)
@@ -146,10 +148,15 @@ where
             let mut tool_calls: Vec<ChatToolCall> = Vec::new();
             let mut item_count = 0u64;
 
+            // Track Rig's native tool calls and results for proper history
+            let mut rig_tool_calls: Vec<RigToolCall> = Vec::new();
+            let mut tool_results: Vec<ToolResult> = Vec::new();
+
             debug!(message_len = message.len(), "Rig stream starting");
 
             while let Some(item) = stream.next().await {
                 item_count += 1;
+
                 match item {
                     Ok(MultiTurnStreamItem::StreamAssistantItem(content)) => {
                         match content {
@@ -163,7 +170,11 @@ where
                             }
                             StreamedAssistantContent::ToolCall(tc) => {
                                 debug!(tool = %tc.function.name, "Rig tool call");
-                                // Accumulate tool call info
+
+                                // Track Rig's tool call for history building
+                                rig_tool_calls.push(tc.clone());
+
+                                // Accumulate tool call info for ChatChunk output
                                 tool_calls.push(ChatToolCall {
                                     name: tc.function.name.clone(),
                                     arguments: Some(tc.function.arguments.clone()),
@@ -203,8 +214,11 @@ where
                             }
                         }
                     }
-                    Ok(MultiTurnStreamItem::StreamUserItem(_)) => {
-                        // Tool results - Rig handles internally
+                    Ok(MultiTurnStreamItem::StreamUserItem(ui)) => {
+                        use rig::streaming::StreamedUserContent;
+                        // Capture tool results for history building
+                        let StreamedUserContent::ToolResult(tr) = ui;
+                        tool_results.push(tr);
                     }
                     Ok(MultiTurnStreamItem::FinalResponse(final_resp)) => {
                         debug!(
@@ -214,10 +228,39 @@ where
                             "Rig stream complete"
                         );
 
-                        // Add assistant response to history
+                        // Build proper history with text AND tool calls
                         {
                             let mut h = history.write().await;
-                            h.push(Message::assistant(final_resp.response()));
+
+                            // Build assistant content with both text and tool calls
+                            let mut assistant_content: Vec<AssistantContent> = Vec::new();
+
+                            // Add text content if non-empty
+                            let response_text_for_history = final_resp.response();
+                            if !response_text_for_history.is_empty() {
+                                assistant_content.push(AssistantContent::text(response_text_for_history));
+                            }
+
+                            // Add all tool calls
+                            for tc in rig_tool_calls.iter() {
+                                assistant_content.push(AssistantContent::ToolCall(tc.clone()));
+                            }
+
+                            // Push assistant message with combined content
+                            if !assistant_content.is_empty() {
+                                let content = if assistant_content.len() == 1 {
+                                    OneOrMany::one(assistant_content.remove(0))
+                                } else {
+                                    // Safe to unwrap: we checked non-empty above
+                                    OneOrMany::many(assistant_content).expect("assistant_content is non-empty")
+                                };
+                                h.push(Message::from(content));
+                            }
+
+                            // Add tool results as user messages
+                            for tr in tool_results.iter() {
+                                h.push(Message::from(tr.clone()));
+                            }
                         }
 
                         // Emit final chunk
@@ -232,7 +275,6 @@ where
                         });
                     }
                     Err(e) => {
-                        // Log full error details for debugging
                         warn!(
                             item_count,
                             error = ?e,
@@ -622,6 +664,119 @@ mod tests {
         // Should have received tool calls and final response
         assert!(got_tool_call, "Expected to receive tool calls");
         assert!(got_final, "Expected to receive final response");
+    }
+
+    // Test multi-turn tool calling to reproduce 400 error
+    //
+    // ROOT CAUSE IDENTIFIED (Rig bug):
+    // - Ollama returns tool calls with an `id` field
+    // - Rig's ToolCall struct doesn't capture `id` (ollama.rs line 717-722)
+    // - Line 679 uses String::new() as placeholder instead of the actual id
+    // - This empty string becomes tool_name in subsequent requests
+    // - Ollama rejects requests with empty tool_name
+    //
+    // Fix needed in rig-core:
+    // 1. Add `id` field to ollama::ToolCall struct
+    // 2. Use tool_call.id instead of String::new() in line 679
+    //
+    // See: https://github.com/0xPlaygrounds/rig/issues/XXXX
+    #[tokio::test]
+    #[ignore = "requires running Ollama with tool-capable model"]
+    async fn test_rig_agent_multi_turn_tool_calls() {
+        use crate::workspace_tools::{BashTool, WorkspaceContext};
+        use rig::agent::MultiTurnStreamItem;
+        use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
+        use tempfile::TempDir;
+        use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+        // Initialize tracing to see request details
+        let _ = tracing_subscriber::registry()
+            .with(tracing_subscriber::fmt::layer().with_target(true))
+            .with(tracing_subscriber::EnvFilter::new("rig=trace"))
+            .try_init();
+
+        let temp = TempDir::new().unwrap();
+        let ctx = WorkspaceContext::new(temp.path());
+
+        // Use OpenAI-compatible client for better tool calling support
+        let client = create_openai_compatible_client();
+
+        // Use a model that tends to make multiple tool calls
+        let agent = client
+            .agent("Qwen3-Coder-30B-A3B-Instruct-UD-IQ4_NL")
+            .preamble(
+                "You are a helpful assistant. You MUST use tools to answer questions. \
+                 Always run commands to verify your answers.",
+            )
+            .tool(BashTool::new(ctx))
+            .build();
+
+        println!("=== Testing multi-turn tool calls ===");
+
+        // This prompt is designed to trigger multiple tool calls
+        let mut stream = agent
+            .stream_prompt(
+                "Run 'pwd' to check the current directory, then run 'ls' to list files. \
+                 Report both results.",
+            )
+            .multi_turn(10) // Allow many turns
+            .await;
+
+        let mut round = 0;
+        let mut item_count = 0;
+        let mut tool_call_count = 0;
+        let mut text_chunks = Vec::new();
+        let mut errors = Vec::new();
+
+        while let Some(item) = stream.next().await {
+            item_count += 1;
+            match item {
+                Ok(MultiTurnStreamItem::StreamAssistantItem(content)) => match content {
+                    StreamedAssistantContent::Text(t) => {
+                        text_chunks.push(t.text.clone());
+                        print!("{}", t.text);
+                    }
+                    StreamedAssistantContent::ToolCall(tc) => {
+                        tool_call_count += 1;
+                        println!("\n[Round {} - Tool call #{}: {}]", round, tool_call_count, tc.function.name);
+                    }
+                    StreamedAssistantContent::Final(_) => {
+                        round += 1;
+                        println!("\n[Round {} complete]", round);
+                    }
+                    _ => {}
+                },
+                Ok(MultiTurnStreamItem::StreamUserItem(_)) => {
+                    println!("[Tool result received]");
+                }
+                Ok(MultiTurnStreamItem::FinalResponse(final_resp)) => {
+                    println!("\n[Final response: {} chars]", final_resp.response().len());
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    println!("\n[ERROR at round {}, item {}: {:?}]", round, item_count, e);
+                    errors.push(format!("{:?}", e));
+                }
+            }
+        }
+
+        println!("\n=== Summary ===");
+        println!("Items: {}, Rounds: {}, Tool calls: {}", item_count, round, tool_call_count);
+        println!("Errors: {:?}", errors);
+
+        // The test should pass without 400 errors
+        assert!(
+            errors.is_empty(),
+            "Expected no errors during multi-turn tool calls. Got: {:?}",
+            errors
+        );
+
+        // Should have made at least 2 tool calls (pwd and ls)
+        assert!(
+            tool_call_count >= 2,
+            "Expected at least 2 tool calls, got {}",
+            tool_call_count
+        );
     }
 
     // Test streaming with tools WITHOUT multi_turn()

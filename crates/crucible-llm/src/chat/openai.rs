@@ -295,6 +295,12 @@ impl TextGenerationProvider for OpenAIChatProvider {
         let api_key = self.api_key.clone();
         let timeout = self.timeout;
 
+        // Log the full request at trace level for debugging
+        tracing::trace!(
+            request = %serde_json::to_string_pretty(&api_request).unwrap_or_default(),
+            "Sending chat completion request"
+        );
+
         Box::pin(stream! {
             let response = client
                 .post(&url)

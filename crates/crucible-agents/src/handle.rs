@@ -112,20 +112,6 @@ impl InternalAgentHandle {
         self
     }
 
-    /// Helper to convert LLM tool calls to chat tool calls
-    fn convert_tool_calls(
-        llm_calls: &[LlmToolCall],
-    ) -> Vec<crucible_core::traits::chat::ChatToolCall> {
-        llm_calls
-            .iter()
-            .map(|tc| crucible_core::traits::chat::ChatToolCall {
-                name: tc.function.name.clone(),
-                arguments: serde_json::from_str(&tc.function.arguments).ok(),
-                id: Some(tc.id.clone()),
-            })
-            .collect()
-    }
-
     /// Execute tool calls and add results to context
     async fn execute_tool_calls(
         context: &Arc<Mutex<Box<dyn ContextManager>>>,
@@ -175,8 +161,40 @@ impl AgentHandle for InternalAgentHandle {
         let token_budget = Arc::clone(&self.token_budget);
 
         Box::pin(async_stream::stream! {
+            // Debug to file since TUI eats stderr
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("/tmp/crucible-debug.log")
+            {
+                use std::io::Write;
+                let _ = writeln!(f, "[DEBUG] send_message_stream called: {}", &message);
+            }
+
             // Add user message to context
             context.lock().unwrap().add_message(LlmMessage::user(&message));
+
+            // Get tool definitions from executor (if available)
+            let tool_definitions: Option<Vec<crucible_core::traits::llm::LlmToolDefinition>> =
+                if let Some(ref tool_executor) = tools {
+                    match tool_executor.list_tools().await {
+                        Ok(defs) => {
+                            let llm_defs: Vec<_> = defs.into_iter().map(Into::into).collect();
+                            tracing::debug!(tool_count = llm_defs.len(), "Loaded tool definitions");
+                            if llm_defs.is_empty() {
+                                None
+                            } else {
+                                Some(llm_defs)
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to list tools: {}", e);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
 
             // Tool execution loop - continue until no more tool calls
             let mut tool_iteration = 0;
@@ -196,7 +214,54 @@ impl AgentHandle for InternalAgentHandle {
 
                 // Build request from context
                 let messages = context.lock().unwrap().get_messages();
-                let request = ChatCompletionRequest::new(model.clone(), messages);
+
+                // Debug: log message sequence being sent
+                let msg_roles: Vec<_> = messages.iter().map(|m| {
+                    let role = format!("{:?}", m.role);
+                    if m.tool_calls.is_some() {
+                        format!("{}(tool_calls)", role)
+                    } else if m.tool_call_id.is_some() {
+                        format!("{}(tool_result)", role)
+                    } else {
+                        role
+                    }
+                }).collect();
+
+                // Log to file
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open("/tmp/crucible-debug.log")
+                {
+                    use std::io::Write;
+                    let _ = writeln!(f, "[DEBUG] iteration {}: {:?}", tool_iteration, msg_roles);
+                }
+
+                // Check for consecutive assistant messages at end
+                let last_two: Vec<_> = messages.iter().rev().take(2).collect();
+                if last_two.len() >= 2 {
+                    use crucible_core::traits::llm::MessageRole;
+                    if matches!(last_two[0].role, MessageRole::Assistant)
+                        && matches!(last_two[1].role, MessageRole::Assistant) {
+                        if let Ok(mut f) = std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open("/tmp/crucible-debug.log")
+                        {
+                            use std::io::Write;
+                            let _ = writeln!(f, "BUG! Consecutive assistant messages: {:?}", msg_roles);
+                        }
+                    }
+                }
+
+                tracing::debug!(
+                    iteration = tool_iteration,
+                    messages = ?msg_roles,
+                    "Sending request to LLM"
+                );
+
+                let mut request = ChatCompletionRequest::new(model.clone(), messages);
+                request.tools = tool_definitions.clone();
 
                 // Stream completion from provider
                 // We need to collect chunks into a vec to avoid borrowing issues
@@ -267,6 +332,15 @@ impl AgentHandle for InternalAgentHandle {
                     }
                 }
 
+                // Debug: log response details
+                tracing::debug!(
+                    iteration = tool_iteration,
+                    finish_reason = ?finish_reason,
+                    tool_call_count = accumulated_tool_calls.len(),
+                    content_len = content.len(),
+                    "Received LLM response"
+                );
+
                 // Add assistant response to context
                 if !accumulated_tool_calls.is_empty() {
                     context.lock().unwrap().add_message(LlmMessage::assistant_with_tools(
@@ -278,7 +352,9 @@ impl AgentHandle for InternalAgentHandle {
                 }
 
                 // Check if we need to execute tools
-                if !accumulated_tool_calls.is_empty() && finish_reason.as_deref() == Some("tool_calls") {
+                // Note: Some APIs use "tool_calls", others use "stop" or other values
+                // We execute tools if we have tool calls, regardless of finish_reason
+                if !accumulated_tool_calls.is_empty() {
                     // Execute tools (only if tool executor available)
                     if let Some(ref tool_executor) = tools {
                         if let Err(e) = Self::execute_tool_calls(&context, tool_executor, &accumulated_tool_calls).await {
@@ -293,17 +369,11 @@ impl AgentHandle for InternalAgentHandle {
                     }
                     // Continue loop to get next response
                 } else {
-                    // No more tool calls, we're done
-                    let chat_tool_calls = if !accumulated_tool_calls.is_empty() {
-                        Some(Self::convert_tool_calls(&accumulated_tool_calls))
-                    } else {
-                        None
-                    };
-
+                    // No tool calls, we're done
                     yield Ok(ChatChunk {
                         delta: String::new(),
                         done: true,
-                        tool_calls: chat_tool_calls,
+                        tool_calls: None,
                     });
                     break;
                 }
@@ -596,175 +666,697 @@ mod tests {
         assert!(handle.context.lock().unwrap().token_estimate() <= 100);
     }
 
-    // Tool call format conversion tests
-
-    #[test]
-    fn test_convert_tool_calls_basic() {
-        use crucible_core::traits::llm::FunctionCall;
-
-        let llm_calls = vec![LlmToolCall {
-            id: "call_123".to_string(),
-            r#type: "function".to_string(),
-            function: FunctionCall {
-                name: "get_weather".to_string(),
-                arguments: r#"{"location": "San Francisco"}"#.to_string(),
-            },
-        }];
-
-        let chat_calls = InternalAgentHandle::convert_tool_calls(&llm_calls);
-
-        assert_eq!(chat_calls.len(), 1);
-        assert_eq!(chat_calls[0].name, "get_weather");
-        assert_eq!(chat_calls[0].id, Some("call_123".to_string()));
-        assert!(chat_calls[0].arguments.is_some());
-
-        let args = chat_calls[0].arguments.as_ref().unwrap();
-        assert_eq!(args["location"], "San Francisco");
+    // Mock provider that captures requests for inspection
+    struct CapturingMockProvider {
+        responses: Vec<Vec<ChatCompletionChunk>>,
+        response_index: std::sync::Arc<std::sync::Mutex<usize>>,
+        captured_requests: std::sync::Arc<std::sync::Mutex<Vec<Vec<LlmMessage>>>>,
     }
 
-    #[test]
-    fn test_convert_tool_calls_multiple() {
-        use crucible_core::traits::llm::FunctionCall;
+    impl CapturingMockProvider {
+        fn new(responses: Vec<Vec<ChatCompletionChunk>>) -> Self {
+            Self {
+                responses,
+                response_index: std::sync::Arc::new(std::sync::Mutex::new(0)),
+                captured_requests: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            }
+        }
 
-        let llm_calls = vec![
-            LlmToolCall {
-                id: "call_1".to_string(),
-                r#type: "function".to_string(),
-                function: FunctionCall {
-                    name: "tool_a".to_string(),
-                    arguments: r#"{"arg": "value1"}"#.to_string(),
+        fn get_captured_requests(&self) -> Vec<Vec<LlmMessage>> {
+            self.captured_requests.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl TextGenerationProvider for CapturingMockProvider {
+        async fn generate_completion(
+            &self,
+            _request: CompletionRequest,
+        ) -> LlmResult<CompletionResponse> {
+            unimplemented!()
+        }
+
+        fn generate_completion_stream<'a>(
+            &'a self,
+            _request: CompletionRequest,
+        ) -> BoxStream<'a, LlmResult<crucible_core::traits::llm::CompletionChunk>> {
+            unimplemented!()
+        }
+
+        async fn generate_chat_completion(
+            &self,
+            _request: ChatCompletionRequest,
+        ) -> LlmResult<ChatCompletionResponse> {
+            unimplemented!()
+        }
+
+        fn generate_chat_completion_stream<'a>(
+            &'a self,
+            request: ChatCompletionRequest,
+        ) -> BoxStream<'a, LlmResult<ChatCompletionChunk>> {
+            // Capture the request
+            self.captured_requests.lock().unwrap().push(request.messages.clone());
+
+            let mut index = self.response_index.lock().unwrap();
+            let current = *index;
+            *index = (*index + 1) % self.responses.len();
+            drop(index);
+
+            let chunks = self.responses.get(current).cloned().unwrap_or_default();
+            Box::pin(stream::iter(chunks.into_iter().map(Ok)))
+        }
+
+        fn provider_name(&self) -> &str {
+            "capturing-mock"
+        }
+
+        fn default_model(&self) -> &str {
+            "mock-model"
+        }
+
+        async fn list_models(&self) -> LlmResult<Vec<TextModelInfo>> {
+            Ok(vec![])
+        }
+
+        async fn health_check(&self) -> LlmResult<bool> {
+            Ok(true)
+        }
+
+        fn capabilities(&self) -> ProviderCapabilities {
+            ProviderCapabilities {
+                text_completion: false,
+                chat_completion: true,
+                streaming: true,
+                function_calling: true,
+                tool_use: true,
+                vision: false,
+                audio: false,
+                max_batch_size: None,
+                input_formats: vec![],
+                output_formats: vec![],
+            }
+        }
+    }
+
+    // Mock tool executor
+    struct MockToolExecutor;
+
+    #[async_trait]
+    impl crucible_core::traits::tools::ToolExecutor for MockToolExecutor {
+        async fn execute_tool(
+            &self,
+            _name: &str,
+            _params: serde_json::Value,
+            _context: &crucible_core::traits::tools::ExecutionContext,
+        ) -> crucible_core::traits::tools::ToolResult<serde_json::Value> {
+            Ok(serde_json::json!({"result": "mock tool result"}))
+        }
+
+        async fn list_tools(
+            &self,
+        ) -> crucible_core::traits::tools::ToolResult<Vec<crucible_core::traits::tools::ToolDefinition>>
+        {
+            Ok(vec![])
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tool_call_flow_no_consecutive_assistant_messages() {
+        use crucible_core::traits::llm::{FunctionCallDelta, ToolCallDelta};
+
+        // Response 1: Assistant makes a tool call
+        let tool_call_response = vec![
+            ChatCompletionChunk {
+                index: 0,
+                delta: ChatMessageDelta {
+                    role: Some(MessageRole::Assistant),
+                    content: Some("Let me check that.".to_string()),
+                    function_call: None,
+                    tool_calls: Some(vec![ToolCallDelta {
+                        index: 0,
+                        id: Some("call_123".to_string()),
+                        function: Some(FunctionCallDelta {
+                            name: Some("glob".to_string()),
+                            arguments: Some(r#"{"pattern": "*"}"#.to_string()),
+                        }),
+                    }]),
                 },
-            },
-            LlmToolCall {
-                id: "call_2".to_string(),
-                r#type: "function".to_string(),
-                function: FunctionCall {
-                    name: "tool_b".to_string(),
-                    arguments: r#"{"arg": "value2"}"#.to_string(),
-                },
+                finish_reason: Some("tool_calls".to_string()),
+                logprobs: None,
             },
         ];
 
-        let chat_calls = InternalAgentHandle::convert_tool_calls(&llm_calls);
-
-        assert_eq!(chat_calls.len(), 2);
-        assert_eq!(chat_calls[0].name, "tool_a");
-        assert_eq!(chat_calls[1].name, "tool_b");
-    }
-
-    #[test]
-    fn test_convert_tool_calls_empty() {
-        let llm_calls: Vec<LlmToolCall> = vec![];
-        let chat_calls = InternalAgentHandle::convert_tool_calls(&llm_calls);
-        assert!(chat_calls.is_empty());
-    }
-
-    #[test]
-    fn test_convert_tool_calls_invalid_json_arguments() {
-        use crucible_core::traits::llm::FunctionCall;
-
-        let llm_calls = vec![LlmToolCall {
-            id: "call_bad".to_string(),
-            r#type: "function".to_string(),
-            function: FunctionCall {
-                name: "bad_tool".to_string(),
-                arguments: "not valid json".to_string(), // Invalid JSON
+        // Response 2: Final response after tool execution
+        let final_response = vec![ChatCompletionChunk {
+            index: 0,
+            delta: ChatMessageDelta {
+                role: Some(MessageRole::Assistant),
+                content: Some("Here are the files.".to_string()),
+                function_call: None,
+                tool_calls: None,
             },
+            finish_reason: Some("stop".to_string()),
+            logprobs: None,
         }];
 
-        let chat_calls = InternalAgentHandle::convert_tool_calls(&llm_calls);
+        let captured_requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let provider = CapturingMockProvider {
+            responses: vec![tool_call_response, final_response],
+            response_index: std::sync::Arc::new(std::sync::Mutex::new(0)),
+            captured_requests: captured_requests.clone(),
+        };
+        let context = Box::new(SlidingWindowContext::new(10000));
+        let prompt_builder = LayeredPromptBuilder::new();
+        let tool_executor: Box<dyn crucible_core::traits::tools::ToolExecutor> =
+            Box::new(MockToolExecutor);
 
-        assert_eq!(chat_calls.len(), 1);
-        assert_eq!(chat_calls[0].name, "bad_tool");
-        assert_eq!(chat_calls[0].id, Some("call_bad".to_string()));
-        // Arguments should be None when JSON parsing fails
-        assert!(chat_calls[0].arguments.is_none());
-    }
+        let mut handle = InternalAgentHandle::new(
+            Box::new(provider),
+            context,
+            Some(tool_executor),
+            prompt_builder,
+            "test-model".to_string(),
+            10000,
+        );
 
-    #[test]
-    fn test_convert_tool_calls_empty_arguments() {
-        use crucible_core::traits::llm::FunctionCall;
+        // Send a message that triggers tool use
+        let mut stream = handle.send_message_stream("What files are here?".to_string());
+        while let Some(result) = stream.next().await {
+            let _ = result.expect("Stream should not error");
+        }
 
-        let llm_calls = vec![LlmToolCall {
-            id: "call_empty".to_string(),
-            r#type: "function".to_string(),
-            function: FunctionCall {
-                name: "no_args_tool".to_string(),
-                arguments: "{}".to_string(),
-            },
-        }];
+        // Check the captured requests
+        let requests = captured_requests.lock().unwrap().clone();
+        assert_eq!(requests.len(), 2, "Should have made 2 API calls");
 
-        let chat_calls = InternalAgentHandle::convert_tool_calls(&llm_calls);
+        // The second request should NOT have consecutive assistant messages at the end
+        let second_request = &requests[1];
 
-        assert_eq!(chat_calls.len(), 1);
-        assert!(chat_calls[0].arguments.is_some());
-        let args = chat_calls[0].arguments.as_ref().unwrap();
-        assert!(args.as_object().unwrap().is_empty());
-    }
+        // Check for consecutive assistant messages
+        for (i, window) in second_request.windows(2).enumerate() {
+            let both_assistant =
+                window[0].role == MessageRole::Assistant && window[1].role == MessageRole::Assistant;
+            assert!(
+                !both_assistant,
+                "Found consecutive assistant messages at positions {} and {} in second request.\nMessages: {:?}",
+                i,
+                i + 1,
+                second_request.iter().map(|m| format!("{:?}: {}", m.role, &m.content[..m.content.len().min(50)])).collect::<Vec<_>>()
+            );
+        }
 
-    #[test]
-    fn test_convert_tool_calls_complex_arguments() {
-        use crucible_core::traits::llm::FunctionCall;
-
-        let llm_calls = vec![LlmToolCall {
-            id: "call_complex".to_string(),
-            r#type: "function".to_string(),
-            function: FunctionCall {
-                name: "complex_tool".to_string(),
-                arguments:
-                    r#"{"nested": {"a": 1, "b": [1, 2, 3]}, "flag": true, "null_val": null}"#
-                        .to_string(),
-            },
-        }];
-
-        let chat_calls = InternalAgentHandle::convert_tool_calls(&llm_calls);
-
-        assert_eq!(chat_calls.len(), 1);
-        let args = chat_calls[0].arguments.as_ref().unwrap();
-
-        assert!(args["nested"]["a"].is_number());
-        assert!(args["nested"]["b"].is_array());
-        assert_eq!(args["flag"], true);
-        assert!(args["null_val"].is_null());
-    }
-
-    #[test]
-    fn test_convert_tool_calls_preserves_id() {
-        use crucible_core::traits::llm::FunctionCall;
-
-        let llm_calls = vec![LlmToolCall {
-            id: "unique-tool-call-id-12345".to_string(),
-            r#type: "function".to_string(),
-            function: FunctionCall {
-                name: "test".to_string(),
-                arguments: "{}".to_string(),
-            },
-        }];
-
-        let chat_calls = InternalAgentHandle::convert_tool_calls(&llm_calls);
-
+        // Verify the message sequence is correct:
+        // System, User, Assistant (with tool_calls), Tool, ...
+        // The last message before second API call should be a Tool message, not Assistant
+        let last_msg = second_request.last().expect("Should have messages");
         assert_eq!(
-            chat_calls[0].id,
-            Some("unique-tool-call-id-12345".to_string())
+            last_msg.role,
+            MessageRole::Tool,
+            "Last message before second API call should be Tool result, got {:?}",
+            last_msg.role
         );
     }
 
-    #[test]
-    fn test_convert_tool_calls_empty_id() {
-        use crucible_core::traits::llm::FunctionCall;
+    #[tokio::test]
+    async fn test_multiple_tool_calls_no_consecutive_assistant_messages() {
+        use crucible_core::traits::llm::{FunctionCallDelta, ToolCallDelta};
 
-        let llm_calls = vec![LlmToolCall {
-            id: "".to_string(),
-            r#type: "function".to_string(),
-            function: FunctionCall {
-                name: "test".to_string(),
-                arguments: "{}".to_string(),
+        // Response 1: Assistant makes TWO tool calls (like the user observed)
+        let tool_call_response = vec![
+            ChatCompletionChunk {
+                index: 0,
+                delta: ChatMessageDelta {
+                    role: Some(MessageRole::Assistant),
+                    content: Some("Let me check that.".to_string()),
+                    function_call: None,
+                    tool_calls: Some(vec![
+                        ToolCallDelta {
+                            index: 0,
+                            id: Some("call_1".to_string()),
+                            function: Some(FunctionCallDelta {
+                                name: Some("glob".to_string()),
+                                arguments: Some(r#"{"pattern": "*.rs"}"#.to_string()),
+                            }),
+                        },
+                        ToolCallDelta {
+                            index: 1,
+                            id: Some("call_2".to_string()),
+                            function: Some(FunctionCallDelta {
+                                name: Some("glob".to_string()),
+                                arguments: Some(r#"{"pattern": "*.md"}"#.to_string()),
+                            }),
+                        },
+                    ]),
+                },
+                finish_reason: Some("tool_calls".to_string()),
+                logprobs: None,
             },
+        ];
+
+        // Response 2: Final response after tool execution
+        let final_response = vec![ChatCompletionChunk {
+            index: 0,
+            delta: ChatMessageDelta {
+                role: Some(MessageRole::Assistant),
+                content: Some("Found Rust and Markdown files.".to_string()),
+                function_call: None,
+                tool_calls: None,
+            },
+            finish_reason: Some("stop".to_string()),
+            logprobs: None,
         }];
 
-        let chat_calls = InternalAgentHandle::convert_tool_calls(&llm_calls);
+        let captured_requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let provider = CapturingMockProvider {
+            responses: vec![tool_call_response, final_response],
+            response_index: std::sync::Arc::new(std::sync::Mutex::new(0)),
+            captured_requests: captured_requests.clone(),
+        };
+        let context = Box::new(SlidingWindowContext::new(10000));
+        let prompt_builder = LayeredPromptBuilder::new();
+        let tool_executor: Box<dyn crucible_core::traits::tools::ToolExecutor> =
+            Box::new(MockToolExecutor);
 
-        // Empty string should still be Some("")
-        assert_eq!(chat_calls[0].id, Some("".to_string()));
+        let mut handle = InternalAgentHandle::new(
+            Box::new(provider),
+            context,
+            Some(tool_executor),
+            prompt_builder,
+            "test-model".to_string(),
+            10000,
+        );
+
+        let mut stream = handle.send_message_stream("What files are here?".to_string());
+        while let Some(result) = stream.next().await {
+            let _ = result.expect("Stream should not error");
+        }
+
+        let requests = captured_requests.lock().unwrap().clone();
+        assert_eq!(requests.len(), 2, "Should have made 2 API calls");
+
+        let second_request = &requests[1];
+
+        // Should have TWO tool messages (one per tool call)
+        let tool_count = second_request
+            .iter()
+            .filter(|m| m.role == MessageRole::Tool)
+            .count();
+        assert_eq!(tool_count, 2, "Should have 2 tool result messages");
+
+        // Check for consecutive assistant messages
+        for (i, window) in second_request.windows(2).enumerate() {
+            let both_assistant =
+                window[0].role == MessageRole::Assistant && window[1].role == MessageRole::Assistant;
+            assert!(
+                !both_assistant,
+                "Found consecutive assistant messages at positions {} and {} in second request.\nMessages: {:?}",
+                i,
+                i + 1,
+                second_request.iter().map(|m| format!("{:?}", m.role)).collect::<Vec<_>>()
+            );
+        }
+
+        // Print the message sequence for debugging
+        eprintln!(
+            "Message sequence: {:?}",
+            second_request
+                .iter()
+                .map(|m| format!("{:?}", m.role))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_incremental_tool_call_streaming() {
+        use crucible_core::traits::llm::{FunctionCallDelta, ToolCallDelta};
+
+        // Simulate real streaming: tool calls come in multiple chunks
+        let tool_call_response = vec![
+            // Chunk 1: Start of response, first tool call ID
+            ChatCompletionChunk {
+                index: 0,
+                delta: ChatMessageDelta {
+                    role: Some(MessageRole::Assistant),
+                    content: None,
+                    function_call: None,
+                    tool_calls: Some(vec![ToolCallDelta {
+                        index: 0,
+                        id: Some("call_abc".to_string()),
+                        function: Some(FunctionCallDelta {
+                            name: Some("glob".to_string()),
+                            arguments: None,
+                        }),
+                    }]),
+                },
+                finish_reason: None,
+                logprobs: None,
+            },
+            // Chunk 2: First tool call arguments (partial)
+            ChatCompletionChunk {
+                index: 0,
+                delta: ChatMessageDelta {
+                    role: None,
+                    content: None,
+                    function_call: None,
+                    tool_calls: Some(vec![ToolCallDelta {
+                        index: 0,
+                        id: None,
+                        function: Some(FunctionCallDelta {
+                            name: None,
+                            arguments: Some(r#"{"pat"#.to_string()),
+                        }),
+                    }]),
+                },
+                finish_reason: None,
+                logprobs: None,
+            },
+            // Chunk 3: First tool call arguments (rest)
+            ChatCompletionChunk {
+                index: 0,
+                delta: ChatMessageDelta {
+                    role: None,
+                    content: None,
+                    function_call: None,
+                    tool_calls: Some(vec![ToolCallDelta {
+                        index: 0,
+                        id: None,
+                        function: Some(FunctionCallDelta {
+                            name: None,
+                            arguments: Some(r#"tern": "*"}"#.to_string()),
+                        }),
+                    }]),
+                },
+                finish_reason: None,
+                logprobs: None,
+            },
+            // Chunk 4: Done with tool_calls finish reason
+            ChatCompletionChunk {
+                index: 0,
+                delta: ChatMessageDelta {
+                    role: None,
+                    content: None,
+                    function_call: None,
+                    tool_calls: None,
+                },
+                finish_reason: Some("tool_calls".to_string()),
+                logprobs: None,
+            },
+        ];
+
+        let final_response = vec![ChatCompletionChunk {
+            index: 0,
+            delta: ChatMessageDelta {
+                role: Some(MessageRole::Assistant),
+                content: Some("Here are the files.".to_string()),
+                function_call: None,
+                tool_calls: None,
+            },
+            finish_reason: Some("stop".to_string()),
+            logprobs: None,
+        }];
+
+        let captured_requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let provider = CapturingMockProvider {
+            responses: vec![tool_call_response, final_response],
+            response_index: std::sync::Arc::new(std::sync::Mutex::new(0)),
+            captured_requests: captured_requests.clone(),
+        };
+        let context = Box::new(SlidingWindowContext::new(10000));
+        let prompt_builder = LayeredPromptBuilder::new();
+        let tool_executor: Box<dyn crucible_core::traits::tools::ToolExecutor> =
+            Box::new(MockToolExecutor);
+
+        let mut handle = InternalAgentHandle::new(
+            Box::new(provider),
+            context,
+            Some(tool_executor),
+            prompt_builder,
+            "test-model".to_string(),
+            10000,
+        );
+
+        let mut stream = handle.send_message_stream("List files".to_string());
+        while let Some(result) = stream.next().await {
+            let _ = result.expect("Stream should not error");
+        }
+
+        let requests = captured_requests.lock().unwrap().clone();
+        assert_eq!(requests.len(), 2, "Should have made 2 API calls");
+
+        let second_request = &requests[1];
+        eprintln!(
+            "Incremental streaming - Message sequence: {:?}",
+            second_request
+                .iter()
+                .map(|m| format!("{:?}", m.role))
+                .collect::<Vec<_>>()
+        );
+
+        // Check no consecutive assistant messages
+        for (i, window) in second_request.windows(2).enumerate() {
+            let both_assistant =
+                window[0].role == MessageRole::Assistant && window[1].role == MessageRole::Assistant;
+            assert!(
+                !both_assistant,
+                "Found consecutive assistant messages at positions {} and {}",
+                i,
+                i + 1
+            );
+        }
+    }
+
+    /// Test that tool calls are executed even when finish_reason is "stop" (not "tool_calls")
+    /// This simulates the behavior of some OpenAI-compatible APIs like vLLM and Qwen
+    #[tokio::test]
+    async fn test_tool_calls_execute_with_finish_reason_stop() {
+        use crucible_core::traits::llm::{FunctionCallDelta, ToolCallDelta};
+
+        // Response has tool calls but finish_reason is "stop" instead of "tool_calls"
+        let tool_call_response = vec![ChatCompletionChunk {
+            index: 0,
+            delta: ChatMessageDelta {
+                role: Some(MessageRole::Assistant),
+                content: Some("Let me check that for you.".to_string()),
+                function_call: None,
+                tool_calls: Some(vec![ToolCallDelta {
+                    index: 0,
+                    id: Some("call_qwen".to_string()),
+                    function: Some(FunctionCallDelta {
+                        name: Some("list_files".to_string()),
+                        arguments: Some(r#"{"path": "."}"#.to_string()),
+                    }),
+                }]),
+            },
+            // Qwen and some other APIs return "stop" instead of "tool_calls"
+            finish_reason: Some("stop".to_string()),
+            logprobs: None,
+        }];
+
+        let final_response = vec![ChatCompletionChunk {
+            index: 0,
+            delta: ChatMessageDelta {
+                role: Some(MessageRole::Assistant),
+                content: Some("Found these files.".to_string()),
+                function_call: None,
+                tool_calls: None,
+            },
+            finish_reason: Some("stop".to_string()),
+            logprobs: None,
+        }];
+
+        let captured_requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let provider = CapturingMockProvider {
+            responses: vec![tool_call_response, final_response],
+            response_index: std::sync::Arc::new(std::sync::Mutex::new(0)),
+            captured_requests: captured_requests.clone(),
+        };
+        let context = Box::new(SlidingWindowContext::new(10000));
+        let prompt_builder = LayeredPromptBuilder::new();
+        let tool_executor: Box<dyn crucible_core::traits::tools::ToolExecutor> =
+            Box::new(MockToolExecutor);
+
+        let mut handle = InternalAgentHandle::new(
+            Box::new(provider),
+            context,
+            Some(tool_executor),
+            prompt_builder,
+            "test-model".to_string(),
+            10000,
+        );
+
+        let mut stream = handle.send_message_stream("List files".to_string());
+        while let Some(result) = stream.next().await {
+            let _ = result.expect("Stream should not error");
+        }
+
+        let requests = captured_requests.lock().unwrap().clone();
+
+        // Should have made 2 API calls - tool calls SHOULD be executed despite finish_reason="stop"
+        assert_eq!(
+            requests.len(), 2,
+            "Should have made 2 API calls (tool execution should happen even with finish_reason='stop')"
+        );
+
+        let second_request = &requests[1];
+        eprintln!(
+            "finish_reason=stop test - Message sequence: {:?}",
+            second_request
+                .iter()
+                .map(|m| format!("{:?}", m.role))
+                .collect::<Vec<_>>()
+        );
+
+        // Verify tool result is present
+        let tool_count = second_request
+            .iter()
+            .filter(|m| m.role == MessageRole::Tool)
+            .count();
+        assert_eq!(tool_count, 1, "Should have 1 tool result message");
+
+        // Check no consecutive assistant messages
+        for (i, window) in second_request.windows(2).enumerate() {
+            let both_assistant =
+                window[0].role == MessageRole::Assistant && window[1].role == MessageRole::Assistant;
+            assert!(
+                !both_assistant,
+                "Found consecutive assistant messages at positions {} and {}",
+                i,
+                i + 1
+            );
+        }
+    }
+
+    /// Test that multiple user turns don't create consecutive assistant messages
+    ///
+    /// This reproduces the bug where:
+    /// 1. User sends first message
+    /// 2. LLM responds with tool call
+    /// 3. Tool executes
+    /// 4. LLM responds with final content
+    /// 5. User sends SECOND message
+    /// 6. BUG: Context might have consecutive assistant messages
+    #[tokio::test]
+    async fn test_multi_turn_no_consecutive_assistant_messages() {
+        use crucible_core::traits::llm::{FunctionCallDelta, ToolCallDelta};
+
+        // Turn 1: Tool call + final response (2 LLM calls)
+        let tool_call_response = vec![ChatCompletionChunk {
+            index: 0,
+            delta: ChatMessageDelta {
+                role: Some(MessageRole::Assistant),
+                content: None,
+                function_call: None,
+                tool_calls: Some(vec![ToolCallDelta {
+                    index: 0,
+                    id: Some("call_1".to_string()),
+                    function: Some(FunctionCallDelta {
+                        name: Some("glob".to_string()),
+                        arguments: Some(r#"{"pattern": "*.rs"}"#.to_string()),
+                    }),
+                }]),
+            },
+            finish_reason: Some("stop".to_string()), // Qwen uses "stop" not "tool_calls"
+            logprobs: None,
+        }];
+
+        let first_final_response = vec![ChatCompletionChunk {
+            index: 0,
+            delta: ChatMessageDelta {
+                role: Some(MessageRole::Assistant),
+                content: Some("Found these files.".to_string()),
+                function_call: None,
+                tool_calls: None,
+            },
+            finish_reason: Some("stop".to_string()),
+            logprobs: None,
+        }];
+
+        // Turn 2: Simple response (1 LLM call)
+        let second_response = vec![ChatCompletionChunk {
+            index: 0,
+            delta: ChatMessageDelta {
+                role: Some(MessageRole::Assistant),
+                content: Some("Sure, I can help with that.".to_string()),
+                function_call: None,
+                tool_calls: None,
+            },
+            finish_reason: Some("stop".to_string()),
+            logprobs: None,
+        }];
+
+        let captured_requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let provider = CapturingMockProvider {
+            responses: vec![tool_call_response, first_final_response, second_response],
+            response_index: std::sync::Arc::new(std::sync::Mutex::new(0)),
+            captured_requests: captured_requests.clone(),
+        };
+        let context = Box::new(SlidingWindowContext::new(10000));
+        let prompt_builder = LayeredPromptBuilder::new();
+        let tool_executor: Box<dyn crucible_core::traits::tools::ToolExecutor> =
+            Box::new(MockToolExecutor);
+
+        let mut handle = InternalAgentHandle::new(
+            Box::new(provider),
+            context,
+            Some(tool_executor),
+            prompt_builder,
+            "test-model".to_string(),
+            10000,
+        );
+
+        // Turn 1: User asks to list files
+        let mut stream = handle.send_message_stream("List files".to_string());
+        while let Some(result) = stream.next().await {
+            let _ = result.expect("Stream should not error in turn 1");
+        }
+
+        // Turn 2: User asks another question
+        let mut stream = handle.send_message_stream("What else can you do?".to_string());
+        while let Some(result) = stream.next().await {
+            let _ = result.expect("Stream should not error in turn 2");
+        }
+
+        let requests = captured_requests.lock().unwrap().clone();
+        eprintln!("Multi-turn test - Total API calls: {}", requests.len());
+
+        // Should have 3 API calls: tool call, post-tool, second user turn
+        assert_eq!(requests.len(), 3, "Should have made 3 API calls");
+
+        // Check THIRD request (second user turn) for consecutive assistant messages
+        let third_request = &requests[2];
+        eprintln!(
+            "Multi-turn test - Third request message sequence: {:?}",
+            third_request
+                .iter()
+                .map(|m| format!("{:?}", m.role))
+                .collect::<Vec<_>>()
+        );
+
+        // Check for consecutive assistant messages anywhere in the request
+        for (i, window) in third_request.windows(2).enumerate() {
+            let both_assistant =
+                window[0].role == MessageRole::Assistant && window[1].role == MessageRole::Assistant;
+            assert!(
+                !both_assistant,
+                "Found consecutive assistant messages at positions {} and {} in third request.\n\
+                 Message sequence: {:?}",
+                i,
+                i + 1,
+                third_request
+                    .iter()
+                    .map(|m| format!("{:?}", m.role))
+                    .collect::<Vec<_>>()
+            );
+        }
+
+        // Verify expected message structure:
+        // System, User1, Assistant(tools), Tool, Assistant, User2
+        let roles: Vec<_> = third_request.iter().map(|m| m.role.clone()).collect();
+        assert_eq!(roles[0], MessageRole::System);
+        assert_eq!(roles[1], MessageRole::User);
+        assert_eq!(roles[2], MessageRole::Assistant); // Has tool_calls
+        assert_eq!(roles[3], MessageRole::Tool);
+        assert_eq!(roles[4], MessageRole::Assistant); // Final response turn 1
+        assert_eq!(roles[5], MessageRole::User); // Second user message
     }
 }
