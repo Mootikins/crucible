@@ -19,7 +19,6 @@ pub mod popup;
 pub mod render;
 pub mod runner;
 pub mod scrollback_runner;
-pub mod splash;
 pub mod state;
 pub mod streaming;
 pub mod streaming_channel;
@@ -32,10 +31,8 @@ pub mod widget;
 
 #[cfg(test)]
 mod conversation_ordering_tests;
-#[cfg(test)]
-mod runner_picker_tests;
 
-pub use agent_picker::{pick_agent, AgentSelection};
+pub use agent_picker::AgentSelection;
 pub use components::{DialogAction, EventResult, FocusTarget, InteractiveWidget, TuiAction};
 pub use content_block::{ContentBlock, ParseEvent};
 pub use dialog::{DialogKind, DialogResult, DialogStack, DialogState, DialogWidget};
@@ -45,7 +42,6 @@ pub use notification::{NotificationLevel, NotificationState};
 pub use popup::{DynamicPopupProvider, PopupProvider, StaticPopupProvider};
 pub use render::render;
 pub use runner::RatatuiRunner;
-pub use splash::{AgentOption, SplashState, SplashWidget};
 pub use state::TuiState;
 pub use streaming::StreamingBuffer;
 pub use streaming_channel::{
