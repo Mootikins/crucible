@@ -302,22 +302,22 @@ pub fn register_oq_module(lua: &Lua) -> Result<(), LuaError> {
 
     // oq.json(table) -> string (compact JSON)
     let json_fn = lua.create_function(|lua, value: Value| {
-        let json = lua_to_json(lua, value).map_err(|e| mlua::Error::external(e))?;
-        serde_json::to_string(&json).map_err(|e| mlua::Error::external(e))
+        let json = lua_to_json(lua, value).map_err(mlua::Error::external)?;
+        serde_json::to_string(&json).map_err(mlua::Error::external)
     })?;
     oq.set("json", json_fn)?;
 
     // oq.json_pretty(table) -> string (pretty-printed JSON)
     let json_pretty_fn = lua.create_function(|lua, value: Value| {
-        let json = lua_to_json(lua, value).map_err(|e| mlua::Error::external(e))?;
-        serde_json::to_string_pretty(&json).map_err(|e| mlua::Error::external(e))
+        let json = lua_to_json(lua, value).map_err(mlua::Error::external)?;
+        serde_json::to_string_pretty(&json).map_err(mlua::Error::external)
     })?;
     oq.set("json_pretty", json_pretty_fn)?;
 
     // oq.toon(table) -> string (TOON format)
     let toon_fn = lua.create_function(|lua, value: Value| {
-        let json = lua_to_json(lua, value).map_err(|e| mlua::Error::external(e))?;
-        oq::json_to_toon(json).map_err(|e| mlua::Error::external(e))
+        let json = lua_to_json(lua, value).map_err(mlua::Error::external)?;
+        oq::json_to_toon(json).map_err(mlua::Error::external)
     })?;
     oq.set("toon", toon_fn)?;
 
@@ -354,7 +354,7 @@ pub fn register_oq_module(lua: &Lua) -> Result<(), LuaError> {
 
     // oq.query(table, filter) -> table/value (jq-style query)
     let query_fn = lua.create_function(|lua, (value, filter_str): (Value, String)| {
-        let json = lua_to_json(lua, value).map_err(|e| mlua::Error::external(e))?;
+        let json = lua_to_json(lua, value).map_err(mlua::Error::external)?;
 
         let filter =
             compile_filter(&filter_str).map_err(|e| mlua::Error::external(e.to_string()))?;
@@ -375,7 +375,7 @@ pub fn register_oq_module(lua: &Lua) -> Result<(), LuaError> {
     // oq.format(table, options?) -> string (smart TOON formatting)
     let format_fn =
         lua.create_function(|lua, (value, options): (Value, Option<mlua::Table>)| {
-            let json = lua_to_json(lua, value).map_err(|e| mlua::Error::external(e))?;
+            let json = lua_to_json(lua, value).map_err(mlua::Error::external)?;
 
             let result = if let Some(opts) = options {
                 // Check for tool type hint
@@ -442,7 +442,7 @@ pub fn json_to_lua(lua: &Lua, value: JsonValue) -> mlua::Result<Value> {
 }
 
 /// Convert Lua value to JSON value
-pub fn lua_to_json(lua: &Lua, value: Value) -> Result<JsonValue, LuaError> {
+pub fn lua_to_json(_lua: &Lua, value: Value) -> Result<JsonValue, LuaError> {
     match value {
         Value::Nil => Ok(JsonValue::Null),
         Value::Boolean(b) => Ok(JsonValue::Bool(b)),
@@ -461,7 +461,7 @@ pub fn lua_to_json(lua: &Lua, value: Value) -> Result<JsonValue, LuaError> {
                 let mut arr = Vec::with_capacity(len);
                 for i in 1..=len {
                     let v: Value = t.get(i)?;
-                    arr.push(lua_to_json(lua, v)?);
+                    arr.push(lua_to_json(_lua, v)?);
                 }
                 Ok(JsonValue::Array(arr))
             } else {
@@ -473,20 +473,12 @@ pub fn lua_to_json(lua: &Lua, value: Value) -> Result<JsonValue, LuaError> {
                         Value::Integer(i) => i.to_string(),
                         _ => continue,
                     };
-                    map.insert(key, lua_to_json(lua, v)?);
+                    map.insert(key, lua_to_json(_lua, v)?);
                 }
                 Ok(JsonValue::Object(map))
             }
         }
-        Value::UserData(ud) => {
-            // Check if it's our null marker
-            if ud.is::<OqNull>() {
-                Ok(JsonValue::Null)
-            } else {
-                Ok(JsonValue::Null)
-            }
-        }
-        // Functions, threads, etc. become null
+        // UserData (including our null marker), functions, threads, etc. become null
         _ => Ok(JsonValue::Null),
     }
 }
