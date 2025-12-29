@@ -344,7 +344,7 @@ fn setup_globals(lua: &Lua) -> Result<(), LuaError> {
 }
 
 /// Convert a Lua value to JSON.
-fn lua_to_json(lua: &Lua, value: Value) -> Result<JsonValue, LuaError> {
+fn lua_to_json(_lua: &Lua, value: Value) -> Result<JsonValue, LuaError> {
     match value {
         Value::Nil => Ok(JsonValue::Null),
         Value::Boolean(b) => Ok(JsonValue::Bool(b)),
@@ -363,7 +363,7 @@ fn lua_to_json(lua: &Lua, value: Value) -> Result<JsonValue, LuaError> {
                 let mut arr = Vec::with_capacity(len);
                 for i in 1..=len {
                     let v: Value = t.get(i)?;
-                    arr.push(lua_to_json(lua, v)?);
+                    arr.push(lua_to_json(_lua, v)?);
                 }
                 Ok(JsonValue::Array(arr))
             } else {
@@ -371,7 +371,7 @@ fn lua_to_json(lua: &Lua, value: Value) -> Result<JsonValue, LuaError> {
                 let mut map = serde_json::Map::new();
                 for pair in t.pairs::<String, Value>() {
                     let (k, v) = pair?;
-                    map.insert(k, lua_to_json(lua, v)?);
+                    map.insert(k, lua_to_json(_lua, v)?);
                 }
                 Ok(JsonValue::Object(map))
             }

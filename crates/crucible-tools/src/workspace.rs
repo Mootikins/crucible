@@ -544,18 +544,28 @@ impl ToolExecutor for WorkspaceTools {
     ) -> ToolResult<serde_json::Value> {
         // Helper to extract string param
         let get_str = |key: &str| -> Option<String> {
-            params.get(key).and_then(|v| v.as_str()).map(String::from)
+            params
+                .get(key)
+                .and_then(serde_json::Value::as_str)
+                .map(String::from)
         };
         let get_optional_str = |key: &str| -> Option<String> {
-            params.get(key).and_then(|v| v.as_str()).map(String::from)
+            params
+                .get(key)
+                .and_then(serde_json::Value::as_str)
+                .map(String::from)
         };
+        #[allow(clippy::cast_possible_truncation)]
         let get_optional_usize = |key: &str| -> Option<usize> {
-            params.get(key).and_then(|v| v.as_u64()).map(|n| n as usize)
+            params
+                .get(key)
+                .and_then(serde_json::Value::as_u64)
+                .map(|n| n as usize)
         };
         let get_optional_u64 =
-            |key: &str| -> Option<u64> { params.get(key).and_then(|v| v.as_u64()) };
+            |key: &str| -> Option<u64> { params.get(key).and_then(serde_json::Value::as_u64) };
         let get_optional_bool =
-            |key: &str| -> Option<bool> { params.get(key).and_then(|v| v.as_bool()) };
+            |key: &str| -> Option<bool> { params.get(key).and_then(serde_json::Value::as_bool) };
 
         // Convert CallToolResult to JSON
         let convert_result =
@@ -567,7 +577,7 @@ impl ToolExecutor for WorkspaceTools {
                             .content
                             .iter()
                             .filter_map(|c| match &c.raw {
-                                RawContent::Text(t) => Some(t.text.to_string()),
+                                RawContent::Text(t) => Some(t.text.clone()),
                                 _ => None,
                             })
                             .collect::<Vec<_>>()
@@ -627,7 +637,7 @@ impl ToolExecutor for WorkspaceTools {
                 let limit = get_optional_usize("limit");
                 convert_result(self.grep(pattern, path, glob, limit).await)
             }
-            _ => Err(ToolError::NotFound(format!("Unknown tool: {}", name))),
+            _ => Err(ToolError::NotFound(format!("Unknown tool: {name}"))),
         }
     }
 
