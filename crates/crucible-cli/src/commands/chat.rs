@@ -69,12 +69,6 @@ pub async fn execute(
 
     // Get default agent from config before moving config
     let default_agent_from_config = config.acp.default_agent.clone();
-    let lazy_agent_selection = config.acp.lazy_agent_selection;
-
-    // Determine if we should use deferred agent creation (picker in TUI)
-    // Deferred: lazy_agent_selection=true AND no --agent AND not --internal AND interactive mode
-    let use_deferred_picker =
-        lazy_agent_selection && agent_name.is_none() && !use_internal && query.is_none();
 
     // Parse env overrides from CLI (KEY=VALUE format) - needed for both paths
     let parsed_env: std::collections::HashMap<String, String> = env_overrides
@@ -106,16 +100,24 @@ pub async fn execute(
     // === INTERACTIVE MODE: Always use factory path for /new restart support ===
     let is_interactive = query.is_none();
     if is_interactive {
-        // Compute preselected agent from CLI args
+        // Compute preselected agent from CLI args and config
+        // Priority: CLI flags > config agent_preference > config default_agent
+        use crucible_config::AgentPreference;
         let preselected_agent = if use_internal {
+            // Explicit CLI flag for internal agent
             Some(AgentSelection::Internal)
         } else if let Some(ref name) = agent_name {
+            // Explicit CLI flag for specific ACP agent
             Some(AgentSelection::Acp(name.clone()))
-        } else if !use_deferred_picker {
-            // Agent specified via config default, not CLI
-            default_agent_from_config.clone().map(AgentSelection::Acp)
         } else {
-            None // Show picker
+            // No CLI flags - use config preference
+            match config.chat.agent_preference {
+                AgentPreference::Crucible => Some(AgentSelection::Internal),
+                AgentPreference::Acp => {
+                    // Use configured default agent or discover
+                    default_agent_from_config.clone().map(AgentSelection::Acp)
+                }
+            }
         };
 
         return run_deferred_chat(
@@ -549,9 +551,9 @@ async fn run_deferred_chat(
                         .with_max_context_tokens(max_context_tokens)
                         .with_env_overrides(parsed_env);
 
-                    // Set working directory if available (for future use with internal agents)
-                    if let Some(wd) = working_dir {
-                        params = params.with_working_dir(wd);
+                    // Set working directory for internal agents (Rig handles tools internally)
+                    if let Some(ref wd) = working_dir {
+                        params = params.with_working_dir(wd.clone());
                     }
 
                     let agent = factories::create_agent(&config, params).await?;

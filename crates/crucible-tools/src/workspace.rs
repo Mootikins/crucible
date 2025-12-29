@@ -18,7 +18,7 @@
 #![allow(clippy::doc_markdown)] // Parameter names in docs don't need backticks
 #![allow(clippy::needless_pass_by_value)] // Tools take owned strings for JSON compat
 
-use rmcp::model::{CallToolResult, Content, Tool};
+use rmcp::model::{CallToolResult, Content, RawContent, Tool};
 use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -522,6 +522,127 @@ impl WorkspaceTools {
         };
 
         Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+}
+
+// =============================================================================
+// ToolExecutor implementation for internal agents
+// =============================================================================
+
+use async_trait::async_trait;
+use crucible_core::traits::tools::{ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult};
+
+#[async_trait]
+impl ToolExecutor for WorkspaceTools {
+    async fn execute_tool(
+        &self,
+        name: &str,
+        params: serde_json::Value,
+        _context: &ExecutionContext,
+    ) -> ToolResult<serde_json::Value> {
+        // Helper to extract string param
+        let get_str = |key: &str| -> Option<String> {
+            params.get(key).and_then(|v| v.as_str()).map(String::from)
+        };
+        let get_optional_str = |key: &str| -> Option<String> {
+            params.get(key).and_then(|v| v.as_str()).map(String::from)
+        };
+        let get_optional_usize = |key: &str| -> Option<usize> {
+            params.get(key).and_then(|v| v.as_u64()).map(|n| n as usize)
+        };
+        let get_optional_u64 = |key: &str| -> Option<u64> {
+            params.get(key).and_then(|v| v.as_u64())
+        };
+        let get_optional_bool = |key: &str| -> Option<bool> {
+            params.get(key).and_then(|v| v.as_bool())
+        };
+
+        // Convert CallToolResult to JSON
+        let convert_result = |result: Result<CallToolResult, rmcp::ErrorData>| -> ToolResult<serde_json::Value> {
+            match result {
+                Ok(call_result) => {
+                    // Extract text content from result
+                    let text: String = call_result
+                        .content
+                        .iter()
+                        .filter_map(|c| match &c.raw {
+                            RawContent::Text(t) => Some(t.text.to_string()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    Ok(serde_json::json!({ "result": text }))
+                }
+                Err(e) => Err(ToolError::ExecutionFailed(e.message.to_string())),
+            }
+        };
+
+        match name {
+            "read_file" => {
+                let path = get_str("path")
+                    .ok_or_else(|| ToolError::InvalidParameters("path is required".into()))?;
+                let offset = get_optional_usize("offset");
+                let limit = get_optional_usize("limit");
+                convert_result(self.read_file(path, offset, limit).await)
+            }
+            "edit_file" => {
+                let path = get_str("path")
+                    .ok_or_else(|| ToolError::InvalidParameters("path is required".into()))?;
+                let old_string = get_str("old_string")
+                    .ok_or_else(|| ToolError::InvalidParameters("old_string is required".into()))?;
+                let new_string = get_str("new_string")
+                    .ok_or_else(|| ToolError::InvalidParameters("new_string is required".into()))?;
+                let replace_all = get_optional_bool("replace_all");
+                convert_result(self.edit_file(path, old_string, new_string, replace_all).await)
+            }
+            "write_file" => {
+                let path = get_str("path")
+                    .ok_or_else(|| ToolError::InvalidParameters("path is required".into()))?;
+                let content = get_str("content")
+                    .ok_or_else(|| ToolError::InvalidParameters("content is required".into()))?;
+                convert_result(self.write_file(path, content).await)
+            }
+            "bash" => {
+                let command = get_str("command")
+                    .ok_or_else(|| ToolError::InvalidParameters("command is required".into()))?;
+                let timeout_ms = get_optional_u64("timeout_ms");
+                convert_result(self.bash(command, timeout_ms).await)
+            }
+            "glob" => {
+                let pattern = get_str("pattern")
+                    .ok_or_else(|| ToolError::InvalidParameters("pattern is required".into()))?;
+                let path = get_optional_str("path");
+                let limit = get_optional_usize("limit");
+                convert_result(self.glob(pattern, path, limit))
+            }
+            "grep" => {
+                let pattern = get_str("pattern")
+                    .ok_or_else(|| ToolError::InvalidParameters("pattern is required".into()))?;
+                let path = get_optional_str("path");
+                let glob = get_optional_str("glob");
+                let limit = get_optional_usize("limit");
+                convert_result(self.grep(pattern, path, glob, limit).await)
+            }
+            _ => Err(ToolError::NotFound(format!("Unknown tool: {}", name))),
+        }
+    }
+
+    async fn list_tools(&self) -> ToolResult<Vec<ToolDefinition>> {
+        // Convert MCP Tool definitions to ToolDefinition
+        let mcp_tools = Self::tool_definitions();
+        let tools = mcp_tools
+            .into_iter()
+            .map(|t| ToolDefinition {
+                name: t.name.to_string(),
+                description: t.description.map(|d| d.to_string()).unwrap_or_default(),
+                category: Some("workspace".to_string()),
+                parameters: Some(serde_json::Value::Object((*t.input_schema).clone())),
+                returns: None,
+                required_permissions: vec![],
+                examples: vec![],
+            })
+            .collect();
+        Ok(tools)
     }
 }
 

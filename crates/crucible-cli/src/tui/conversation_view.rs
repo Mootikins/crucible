@@ -6,7 +6,6 @@ use crate::tui::components::{InputBoxWidget, SessionHistoryWidget, StatusBarWidg
 use crate::tui::conversation::{render_item_to_lines, ConversationState, StatusKind};
 use crate::tui::dialog::{DialogResult, DialogStack, DialogWidget};
 use crate::tui::notification::NotificationState;
-use crate::tui::splash::{SplashState, SplashWidget};
 use crate::tui::state::{PopupItem, PopupState};
 use anyhow::Result;
 use ratatui::{
@@ -94,8 +93,6 @@ pub struct ViewState {
     pub height: u16,
     /// Popup state for slash commands / agents / files
     pub popup: Option<PopupState>,
-    /// Splash screen state (Some when conversation is empty)
-    pub splash: Option<SplashState>,
     /// Dialog stack for modal dialogs
     pub dialog_stack: DialogStack,
     /// Notification state for file watch events
@@ -116,11 +113,6 @@ impl ViewState {
             width,
             height,
             popup: None,
-            splash: Some(SplashState::new(
-                std::env::current_dir()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|_| "~".to_string()),
-            )),
             dialog_stack: DialogStack::new(),
             notifications: NotificationState::new(),
         }
@@ -151,18 +143,6 @@ impl RatatuiView {
 
     /// Render to a ratatui frame
     pub fn render_frame(&self, frame: &mut Frame) {
-        // Show splash if conversation is empty AND no popup is active AND no dialog is active
-        if self.state.conversation.items().is_empty()
-            && self.state.popup.is_none()
-            && self.state.dialog_stack.is_empty()
-        {
-            if let Some(splash) = &self.state.splash {
-                let widget = SplashWidget::new(splash);
-                frame.render_widget(widget, frame.area());
-                return;
-            }
-        }
-
         // Calculate popup height if needed
         let popup_height = self
             .state
@@ -341,82 +321,6 @@ impl RatatuiView {
             .iter()
             .map(|item| render_item_to_lines(item, content_width).len())
             .sum()
-    }
-
-    /// Select next agent in splash screen
-    pub fn splash_select_next(&mut self) {
-        if let Some(splash) = &mut self.state.splash {
-            splash.select_next();
-        }
-    }
-
-    /// Select previous agent in splash screen
-    pub fn splash_select_prev(&mut self) {
-        if let Some(splash) = &mut self.state.splash {
-            splash.select_prev();
-        }
-    }
-
-    /// Select agent by index in splash screen
-    pub fn splash_select_index(&mut self, index: usize) {
-        if let Some(splash) = &mut self.state.splash {
-            splash.select_index(index);
-        }
-    }
-
-    /// Check if current splash selection can be confirmed
-    pub fn splash_can_confirm(&self) -> bool {
-        self.state
-            .splash
-            .as_ref()
-            .map(|s| s.can_confirm())
-            .unwrap_or(false)
-    }
-
-    /// Confirm current splash selection and return selected agent name
-    /// Returns None if agent is unavailable
-    pub fn splash_confirm(&mut self) -> Option<String> {
-        if let Some(splash) = &self.state.splash {
-            if splash.can_confirm() {
-                splash.selected_agent().map(|a| a.name.clone())
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-
-    /// Dismiss the splash screen
-    pub fn dismiss_splash(&mut self) {
-        self.state.splash = None;
-    }
-
-    /// Show/reset the splash screen for agent picker
-    ///
-    /// Used when starting a new session via /new command.
-    pub fn show_splash(&mut self) {
-        let cwd = std::env::current_dir()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|_| "~".to_string());
-        self.state.splash = Some(SplashState::new(cwd));
-    }
-
-    /// Check if splash is currently showing
-    pub fn is_showing_splash(&self) -> bool {
-        self.state.splash.is_some() && self.state.conversation.items().is_empty()
-    }
-
-    /// Check if splash needs availability probing
-    pub fn splash_needs_probing(&self) -> bool {
-        self.state.splash.as_ref().is_some_and(|s| !s.probed)
-    }
-
-    /// Update splash screen agent availability
-    pub fn update_splash_availability(&mut self, agents: Vec<crucible_acp::KnownAgent>) {
-        if let Some(splash) = &mut self.state.splash {
-            splash.update_availability(agents);
-        }
     }
 
     /// Start streaming an assistant message (creates empty message with streaming indicator)
