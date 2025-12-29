@@ -738,7 +738,10 @@ mod tests {
                     }
                     StreamedAssistantContent::ToolCall(tc) => {
                         tool_call_count += 1;
-                        println!("\n[Round {} - Tool call #{}: {}]", round, tool_call_count, tc.function.name);
+                        println!(
+                            "\n[Round {} - Tool call #{}: {}]",
+                            round, tool_call_count, tc.function.name
+                        );
                     }
                     StreamedAssistantContent::Final(_) => {
                         round += 1;
@@ -761,7 +764,10 @@ mod tests {
         }
 
         println!("\n=== Summary ===");
-        println!("Items: {}, Rounds: {}, Tool calls: {}", item_count, round, tool_call_count);
+        println!(
+            "Items: {}, Rounds: {}, Tool calls: {}",
+            item_count, round, tool_call_count
+        );
         println!("Errors: {:?}", errors);
 
         // The test should pass without 400 errors
