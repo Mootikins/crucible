@@ -221,7 +221,10 @@ pub async fn create_internal_agent(
                 } else {
                     format!("{}/v1", endpoint.trim_end_matches('/'))
                 };
-                info!("Using OpenAI-compatible endpoint for remote Ollama: {}", compat_endpoint);
+                info!(
+                    "Using OpenAI-compatible endpoint for remote Ollama: {}",
+                    compat_endpoint
+                );
                 crucible_rig::create_client(&LlmProviderConfig {
                     provider_type: LlmProviderType::OpenAI,
                     endpoint: Some(compat_endpoint),

@@ -589,9 +589,8 @@ impl RatatuiRunner {
                                     return Ok(true); // Exit to trigger restart
                                 } else {
                                     // Can't restart without a factory
-                                    self.view.set_status_text(
-                                        "/new requires deferred agent mode",
-                                    );
+                                    self.view
+                                        .set_status_text("/new requires deferred agent mode");
                                 }
                             }
                             _ => {

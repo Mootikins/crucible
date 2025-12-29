@@ -715,7 +715,10 @@ mod tests {
             request: ChatCompletionRequest,
         ) -> BoxStream<'a, LlmResult<ChatCompletionChunk>> {
             // Capture the request
-            self.captured_requests.lock().unwrap().push(request.messages.clone());
+            self.captured_requests
+                .lock()
+                .unwrap()
+                .push(request.messages.clone());
 
             let mut index = self.response_index.lock().unwrap();
             let current = *index;
@@ -774,8 +777,9 @@ mod tests {
 
         async fn list_tools(
             &self,
-        ) -> crucible_core::traits::tools::ToolResult<Vec<crucible_core::traits::tools::ToolDefinition>>
-        {
+        ) -> crucible_core::traits::tools::ToolResult<
+            Vec<crucible_core::traits::tools::ToolDefinition>,
+        > {
             Ok(vec![])
         }
     }
@@ -785,26 +789,24 @@ mod tests {
         use crucible_core::traits::llm::{FunctionCallDelta, ToolCallDelta};
 
         // Response 1: Assistant makes a tool call
-        let tool_call_response = vec![
-            ChatCompletionChunk {
-                index: 0,
-                delta: ChatMessageDelta {
-                    role: Some(MessageRole::Assistant),
-                    content: Some("Let me check that.".to_string()),
-                    function_call: None,
-                    tool_calls: Some(vec![ToolCallDelta {
-                        index: 0,
-                        id: Some("call_123".to_string()),
-                        function: Some(FunctionCallDelta {
-                            name: Some("glob".to_string()),
-                            arguments: Some(r#"{"pattern": "*"}"#.to_string()),
-                        }),
-                    }]),
-                },
-                finish_reason: Some("tool_calls".to_string()),
-                logprobs: None,
+        let tool_call_response = vec![ChatCompletionChunk {
+            index: 0,
+            delta: ChatMessageDelta {
+                role: Some(MessageRole::Assistant),
+                content: Some("Let me check that.".to_string()),
+                function_call: None,
+                tool_calls: Some(vec![ToolCallDelta {
+                    index: 0,
+                    id: Some("call_123".to_string()),
+                    function: Some(FunctionCallDelta {
+                        name: Some("glob".to_string()),
+                        arguments: Some(r#"{"pattern": "*"}"#.to_string()),
+                    }),
+                }]),
             },
-        ];
+            finish_reason: Some("tool_calls".to_string()),
+            logprobs: None,
+        }];
 
         // Response 2: Final response after tool execution
         let final_response = vec![ChatCompletionChunk {
@@ -854,8 +856,8 @@ mod tests {
 
         // Check for consecutive assistant messages
         for (i, window) in second_request.windows(2).enumerate() {
-            let both_assistant =
-                window[0].role == MessageRole::Assistant && window[1].role == MessageRole::Assistant;
+            let both_assistant = window[0].role == MessageRole::Assistant
+                && window[1].role == MessageRole::Assistant;
             assert!(
                 !both_assistant,
                 "Found consecutive assistant messages at positions {} and {} in second request.\nMessages: {:?}",
@@ -882,36 +884,34 @@ mod tests {
         use crucible_core::traits::llm::{FunctionCallDelta, ToolCallDelta};
 
         // Response 1: Assistant makes TWO tool calls (like the user observed)
-        let tool_call_response = vec![
-            ChatCompletionChunk {
-                index: 0,
-                delta: ChatMessageDelta {
-                    role: Some(MessageRole::Assistant),
-                    content: Some("Let me check that.".to_string()),
-                    function_call: None,
-                    tool_calls: Some(vec![
-                        ToolCallDelta {
-                            index: 0,
-                            id: Some("call_1".to_string()),
-                            function: Some(FunctionCallDelta {
-                                name: Some("glob".to_string()),
-                                arguments: Some(r#"{"pattern": "*.rs"}"#.to_string()),
-                            }),
-                        },
-                        ToolCallDelta {
-                            index: 1,
-                            id: Some("call_2".to_string()),
-                            function: Some(FunctionCallDelta {
-                                name: Some("glob".to_string()),
-                                arguments: Some(r#"{"pattern": "*.md"}"#.to_string()),
-                            }),
-                        },
-                    ]),
-                },
-                finish_reason: Some("tool_calls".to_string()),
-                logprobs: None,
+        let tool_call_response = vec![ChatCompletionChunk {
+            index: 0,
+            delta: ChatMessageDelta {
+                role: Some(MessageRole::Assistant),
+                content: Some("Let me check that.".to_string()),
+                function_call: None,
+                tool_calls: Some(vec![
+                    ToolCallDelta {
+                        index: 0,
+                        id: Some("call_1".to_string()),
+                        function: Some(FunctionCallDelta {
+                            name: Some("glob".to_string()),
+                            arguments: Some(r#"{"pattern": "*.rs"}"#.to_string()),
+                        }),
+                    },
+                    ToolCallDelta {
+                        index: 1,
+                        id: Some("call_2".to_string()),
+                        function: Some(FunctionCallDelta {
+                            name: Some("glob".to_string()),
+                            arguments: Some(r#"{"pattern": "*.md"}"#.to_string()),
+                        }),
+                    },
+                ]),
             },
-        ];
+            finish_reason: Some("tool_calls".to_string()),
+            logprobs: None,
+        }];
 
         // Response 2: Final response after tool execution
         let final_response = vec![ChatCompletionChunk {
@@ -965,8 +965,8 @@ mod tests {
 
         // Check for consecutive assistant messages
         for (i, window) in second_request.windows(2).enumerate() {
-            let both_assistant =
-                window[0].role == MessageRole::Assistant && window[1].role == MessageRole::Assistant;
+            let both_assistant = window[0].role == MessageRole::Assistant
+                && window[1].role == MessageRole::Assistant;
             assert!(
                 !both_assistant,
                 "Found consecutive assistant messages at positions {} and {} in second request.\nMessages: {:?}",
@@ -1114,8 +1114,8 @@ mod tests {
 
         // Check no consecutive assistant messages
         for (i, window) in second_request.windows(2).enumerate() {
-            let both_assistant =
-                window[0].role == MessageRole::Assistant && window[1].role == MessageRole::Assistant;
+            let both_assistant = window[0].role == MessageRole::Assistant
+                && window[1].role == MessageRole::Assistant;
             assert!(
                 !both_assistant,
                 "Found consecutive assistant messages at positions {} and {}",
@@ -1215,8 +1215,8 @@ mod tests {
 
         // Check no consecutive assistant messages
         for (i, window) in second_request.windows(2).enumerate() {
-            let both_assistant =
-                window[0].role == MessageRole::Assistant && window[1].role == MessageRole::Assistant;
+            let both_assistant = window[0].role == MessageRole::Assistant
+                && window[1].role == MessageRole::Assistant;
             assert!(
                 !both_assistant,
                 "Found consecutive assistant messages at positions {} and {}",
@@ -1334,8 +1334,8 @@ mod tests {
 
         // Check for consecutive assistant messages anywhere in the request
         for (i, window) in third_request.windows(2).enumerate() {
-            let both_assistant =
-                window[0].role == MessageRole::Assistant && window[1].role == MessageRole::Assistant;
+            let both_assistant = window[0].role == MessageRole::Assistant
+                && window[1].role == MessageRole::Assistant;
             assert!(
                 !both_assistant,
                 "Found consecutive assistant messages at positions {} and {} in third request.\n\
