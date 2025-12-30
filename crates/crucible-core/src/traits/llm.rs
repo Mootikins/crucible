@@ -21,6 +21,7 @@
 //! - Implementations choose concrete types (Message, ToolCall, etc.)
 //! - Core never depends on concrete implementations
 
+use super::context_ops::ContextMessage;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::stream::BoxStream;
@@ -81,97 +82,6 @@ pub enum MessageRole {
     Function,
     /// Tool result message
     Tool,
-}
-
-/// LLM message in a conversation
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LlmMessage {
-    /// Message role
-    pub role: MessageRole,
-    /// Message content
-    pub content: String,
-    /// Function call (legacy, prefer tool_calls)
-    pub function_call: Option<FunctionCall>,
-    /// Tool calls made by assistant (if any)
-    pub tool_calls: Option<Vec<ToolCall>>,
-    /// Message name (for function results)
-    pub name: Option<String>,
-    /// Tool call ID (for tool result messages)
-    pub tool_call_id: Option<String>,
-}
-
-impl LlmMessage {
-    /// Create a user message
-    pub fn user(content: impl Into<String>) -> Self {
-        Self {
-            role: MessageRole::User,
-            content: content.into(),
-            function_call: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        }
-    }
-
-    /// Create an assistant message
-    pub fn assistant(content: impl Into<String>) -> Self {
-        Self {
-            role: MessageRole::Assistant,
-            content: content.into(),
-            function_call: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        }
-    }
-
-    /// Create a system message
-    pub fn system(content: impl Into<String>) -> Self {
-        Self {
-            role: MessageRole::System,
-            content: content.into(),
-            function_call: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        }
-    }
-
-    /// Create a tool result message
-    pub fn tool(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
-        Self {
-            role: MessageRole::Tool,
-            content: content.into(),
-            function_call: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: Some(tool_call_id.into()),
-        }
-    }
-
-    /// Create a function result message (legacy)
-    pub fn function(name: impl Into<String>, content: impl Into<String>) -> Self {
-        Self {
-            role: MessageRole::Function,
-            content: content.into(),
-            function_call: None,
-            tool_calls: None,
-            name: Some(name.into()),
-            tool_call_id: None,
-        }
-    }
-
-    /// Create an assistant message with tool calls
-    pub fn assistant_with_tools(content: impl Into<String>, tool_calls: Vec<ToolCall>) -> Self {
-        Self {
-            role: MessageRole::Assistant,
-            content: content.into(),
-            function_call: None,
-            tool_calls: Some(tool_calls),
-            name: None,
-            tool_call_id: None,
-        }
-    }
 }
 
 /// Tool call made by the assistant
@@ -284,7 +194,7 @@ pub struct ChatCompletionRequest {
     /// Model to use
     pub model: String,
     /// Conversation messages
-    pub messages: Vec<LlmMessage>,
+    pub messages: Vec<ContextMessage>,
     /// Maximum tokens to generate
     pub max_tokens: Option<u32>,
     /// Temperature for generation (0.0-2.0)
@@ -319,7 +229,7 @@ pub struct ChatCompletionRequest {
 
 impl ChatCompletionRequest {
     /// Create a new chat completion request
-    pub fn new(model: String, messages: Vec<LlmMessage>) -> Self {
+    pub fn new(model: String, messages: Vec<ContextMessage>) -> Self {
         Self {
             model,
             messages,
@@ -416,7 +326,7 @@ pub struct ChatCompletionChoice {
     /// Message index
     pub index: u32,
     /// Chat message
-    pub message: LlmMessage,
+    pub message: ContextMessage,
     /// Finish reason
     pub finish_reason: Option<String>,
     /// Log probabilities
@@ -761,23 +671,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_llm_message_builders() {
-        let user_msg = LlmMessage::user("Hello");
-        assert_eq!(user_msg.role, MessageRole::User);
-        assert_eq!(user_msg.content, "Hello");
-
-        let assistant_msg = LlmMessage::assistant("Hi there");
-        assert_eq!(assistant_msg.role, MessageRole::Assistant);
-
-        let system_msg = LlmMessage::system("You are helpful");
-        assert_eq!(system_msg.role, MessageRole::System);
-
-        let tool_msg = LlmMessage::tool("call_123", "result");
-        assert_eq!(tool_msg.role, MessageRole::Tool);
-        assert_eq!(tool_msg.tool_call_id, Some("call_123".to_string()));
-    }
-
-    #[test]
     fn test_tool_call() {
         let call = ToolCall::new("call_1", "search", r#"{"query": "rust"}"#.to_string());
         assert_eq!(call.id, "call_1");
@@ -787,7 +680,7 @@ mod tests {
     #[test]
     fn test_chat_completion_request_builder() {
         let request =
-            ChatCompletionRequest::new("gpt-4".to_string(), vec![LlmMessage::user("Hello")])
+            ChatCompletionRequest::new("gpt-4".to_string(), vec![ContextMessage::user("Hello")])
                 .with_max_tokens(100)
                 .with_temperature(0.7);
 
