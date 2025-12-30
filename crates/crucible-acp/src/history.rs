@@ -50,9 +50,14 @@ pub struct HistoryMessage {
 /// Role of a message sender in ACP conversation history.
 ///
 /// Uses ACP protocol terminology (`Agent` instead of `Assistant`).
-/// This is distinct from `crucible_core::traits::MessageRole` which uses
-/// LLM API terminology and includes `Function` and `Tool` variants.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// This type is intentionally separate from `crucible_core::traits::MessageRole`
+/// to preserve the semantic distinction of "Agent" in ACP protocol contexts.
+///
+/// Use `From`/`Into` to convert between types when bridging ACP and LLM layers:
+/// - `Agent` ↔ `Assistant` (bidirectional)
+/// - `User` ↔ `User` (identity)
+/// - `System` ↔ `System` (identity)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessageRole {
     /// Message from the user
     User,
@@ -60,6 +65,34 @@ pub enum MessageRole {
     Agent,
     /// System message (e.g., context, instructions)
     System,
+}
+
+/// Convert ACP MessageRole to core LLM MessageRole
+impl From<MessageRole> for crucible_core::traits::MessageRole {
+    fn from(role: MessageRole) -> Self {
+        match role {
+            MessageRole::User => crucible_core::traits::MessageRole::User,
+            MessageRole::Agent => crucible_core::traits::MessageRole::Assistant,
+            MessageRole::System => crucible_core::traits::MessageRole::System,
+        }
+    }
+}
+
+/// Convert core LLM MessageRole to ACP MessageRole
+///
+/// Note: `Function` and `Tool` roles map to `Agent` since they represent
+/// assistant-side operations in the ACP model.
+impl From<crucible_core::traits::MessageRole> for MessageRole {
+    fn from(role: crucible_core::traits::MessageRole) -> Self {
+        match role {
+            crucible_core::traits::MessageRole::User => MessageRole::User,
+            crucible_core::traits::MessageRole::Assistant => MessageRole::Agent,
+            crucible_core::traits::MessageRole::System => MessageRole::System,
+            // Function and Tool are assistant-side operations
+            crucible_core::traits::MessageRole::Function => MessageRole::Agent,
+            crucible_core::traits::MessageRole::Tool => MessageRole::Agent,
+        }
+    }
 }
 
 impl HistoryMessage {
