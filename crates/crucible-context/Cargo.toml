@@ -1,0 +1,19 @@
+[package]
+name = "crucible-context"
+version = "0.1.0"
+edition = "2021"
+description = "Context management for Crucible chat sessions"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/moot/crucible"
+
+[dependencies]
+crucible-core = { path = "../crucible-core" }
+
+async-trait = { workspace = true }
+futures = "0.3"
+tokio = { workspace = true, features = ["sync"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tempfile = { workspace = true }
