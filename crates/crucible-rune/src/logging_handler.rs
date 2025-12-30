@@ -248,6 +248,10 @@ impl LoggingHandler {
             SessionEvent::EmbeddingStored { .. } => "EmbeddingStored",
             SessionEvent::EmbeddingFailed { .. } => "EmbeddingFailed",
             SessionEvent::EmbeddingBatchComplete { .. } => "EmbeddingBatchComplete",
+            // Pre-events
+            SessionEvent::PreToolCall { .. } => "PreToolCall",
+            SessionEvent::PreParse { .. } => "PreParse",
+            SessionEvent::PreLlmCall { .. } => "PreLlmCall",
         }
     }
 
@@ -430,6 +434,16 @@ impl LoggingHandler {
                     entity_id, count, duration_ms
                 )
             }
+            // Pre-events
+            SessionEvent::PreToolCall { name, args } => {
+                format!("tool={}, args_size={}", name, args.to_string().len())
+            }
+            SessionEvent::PreParse { path } => {
+                format!("path={}", path.display())
+            }
+            SessionEvent::PreLlmCall { prompt, model } => {
+                format!("model={}, prompt_len={}", model, prompt.len())
+            }
         };
 
         summary
@@ -531,6 +545,10 @@ impl LoggingHandler {
                 "{}: {} embeddings in {}ms",
                 entity_id, count, duration_ms
             )),
+            // Pre-events
+            SessionEvent::PreToolCall { args, .. } => Some(args.to_string()),
+            SessionEvent::PreParse { path } => Some(path.display().to_string()),
+            SessionEvent::PreLlmCall { prompt, .. } => Some(prompt.clone()),
         };
 
         payload.map(|p| truncate(&p, max_len).to_string())

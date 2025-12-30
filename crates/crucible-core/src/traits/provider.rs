@@ -24,9 +24,9 @@ use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use super::completion_backend::BackendResult;
 use super::llm::{
-    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, LlmResult,
-    ProviderCapabilities,
+    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ProviderCapabilities,
 };
 
 /// Embedding response from a provider
@@ -250,7 +250,7 @@ pub trait Provider: Send + Sync {
     fn capabilities(&self) -> ExtendedCapabilities;
 
     /// Check if the provider is healthy/reachable
-    async fn health_check(&self) -> LlmResult<bool>;
+    async fn health_check(&self) -> BackendResult<bool>;
 }
 
 /// Extension trait for providers that support text embeddings
@@ -260,13 +260,13 @@ pub trait Provider: Send + Sync {
 #[async_trait]
 pub trait CanEmbed: Provider {
     /// Generate embedding for a single text
-    async fn embed(&self, text: &str) -> LlmResult<EmbeddingResponse>;
+    async fn embed(&self, text: &str) -> BackendResult<EmbeddingResponse>;
 
     /// Generate embeddings for multiple texts (batch operation)
     ///
     /// The default implementation calls `embed` for each text sequentially.
     /// Providers should override this for better performance.
-    async fn embed_batch(&self, texts: Vec<String>) -> LlmResult<Vec<EmbeddingResponse>> {
+    async fn embed_batch(&self, texts: Vec<String>) -> BackendResult<Vec<EmbeddingResponse>> {
         let mut results = Vec::with_capacity(texts.len());
         for text in texts {
             results.push(self.embed(&text).await?);
@@ -288,13 +288,13 @@ pub trait CanEmbed: Provider {
 #[async_trait]
 pub trait CanChat: Provider {
     /// Generate a chat completion
-    async fn chat(&self, request: ChatCompletionRequest) -> LlmResult<ChatCompletionResponse>;
+    async fn chat(&self, request: ChatCompletionRequest) -> BackendResult<ChatCompletionResponse>;
 
     /// Generate a streaming chat completion
     fn chat_stream<'a>(
         &'a self,
         request: ChatCompletionRequest,
-    ) -> BoxStream<'a, LlmResult<ChatCompletionChunk>>;
+    ) -> BoxStream<'a, BackendResult<ChatCompletionChunk>>;
 
     /// Get the default chat model name
     fn chat_model(&self) -> &str;
@@ -398,7 +398,7 @@ pub trait CanConstrainGeneration: Provider {
     async fn generate_constrained(
         &self,
         request: ConstrainedRequest,
-    ) -> LlmResult<ConstrainedResponse>;
+    ) -> BackendResult<ConstrainedResponse>;
 }
 
 /// Marker trait for providers that support both embeddings and chat
