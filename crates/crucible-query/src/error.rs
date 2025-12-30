@@ -8,29 +8,46 @@ pub enum ParseError {
     /// No registered syntax could parse the input
     #[error("no matching syntax for query: {input}")]
     NoMatchingSyntax {
+        /// The query that couldn't be parsed
         input: String,
+        /// Names of syntaxes that were tried
         tried: Vec<&'static str>,
     },
 
     /// SQL/PGQ parsing error with detailed location info
     #[error("PGQ parse error:\n{errors}")]
-    Pgq { errors: String },
+    Pgq {
+        /// Formatted error messages with line/column info
+        errors: String,
+    },
 
     /// Cypher parsing error with detailed location info
     #[error("Cypher parse error:\n{errors}")]
-    Cypher { errors: String },
+    Cypher {
+        /// Formatted error messages with line/column info
+        errors: String,
+    },
 
     /// jaq-style parsing error
     #[error("jaq parse error: {message}")]
-    Jaq { message: String },
+    Jaq {
+        /// Error description
+        message: String,
+    },
 
     /// SQL alias parsing error
     #[error("SQL parse error: {message}")]
-    SqlAlias { message: String },
+    SqlAlias {
+        /// Error description
+        message: String,
+    },
 
     /// Invalid query structure
     #[error("invalid query: {message}")]
-    Invalid { message: String },
+    Invalid {
+        /// Error description
+        message: String,
+    },
 }
 
 /// Errors from IR transformation
@@ -38,11 +55,17 @@ pub enum ParseError {
 pub enum TransformError {
     /// Validation failed
     #[error("validation error: {message}")]
-    Validation { message: String },
+    Validation {
+        /// Validation error description
+        message: String,
+    },
 
     /// Filter translation failed
     #[error("unsupported filter pattern: {pattern}")]
-    UnsupportedFilter { pattern: String },
+    UnsupportedFilter {
+        /// The filter pattern that couldn't be translated
+        pattern: String,
+    },
 }
 
 /// Errors from rendering to target
@@ -54,7 +77,10 @@ pub enum RenderError {
 
     /// Missing required field
     #[error("missing required field: {field}")]
-    MissingField { field: String },
+    MissingField {
+        /// Name of the missing field
+        field: String,
+    },
 
     /// Missing source for recursive query
     #[error("recursive query requires explicit source (path or title)")]
@@ -62,7 +88,10 @@ pub enum RenderError {
 
     /// Unsupported filter value type
     #[error("unsupported filter: {message}")]
-    UnsupportedFilter { message: String },
+    UnsupportedFilter {
+        /// Description of why the filter is unsupported
+        message: String,
+    },
 }
 
 /// Pipeline-level errors
