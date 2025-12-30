@@ -216,6 +216,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::traits::FunctionCall;
+
+    // --- context_to_rig_message tests ---
 
     #[test]
     fn test_context_to_rig_message_user() {
@@ -232,10 +235,107 @@ mod tests {
     }
 
     #[test]
+    fn test_context_to_rig_message_assistant_with_tool_calls() {
+        let mut msg = ContextMessage::assistant("Let me check that.");
+        msg.metadata.tool_calls = vec![ToolCall {
+            id: "call_123".to_string(),
+            r#type: "function".to_string(),
+            function: FunctionCall {
+                name: "read_file".to_string(),
+                arguments: r#"{"path": "test.txt"}"#.to_string(),
+            },
+        }];
+
+        let rig_msg = context_to_rig_message(&msg);
+        assert!(rig_msg.is_some());
+    }
+
+    #[test]
+    fn test_context_to_rig_message_assistant_empty_content_with_tool_calls() {
+        // Assistant can have empty text but tool calls
+        let mut msg = ContextMessage::assistant("");
+        msg.metadata.tool_calls = vec![ToolCall {
+            id: "call_456".to_string(),
+            r#type: "function".to_string(),
+            function: FunctionCall {
+                name: "bash".to_string(),
+                arguments: r#"{"command": "ls"}"#.to_string(),
+            },
+        }];
+
+        let rig_msg = context_to_rig_message(&msg);
+        assert!(rig_msg.is_some());
+    }
+
+    #[test]
     fn test_context_to_rig_message_system_skipped() {
         let msg = ContextMessage::system("You are helpful");
         let rig_msg = context_to_rig_message(&msg);
         // System messages are handled via preamble, not converted
         assert!(rig_msg.is_none());
+    }
+
+    #[test]
+    fn test_context_to_rig_message_tool_with_id() {
+        let msg = ContextMessage::tool_result("call_123", "File contents here");
+
+        let rig_msg = context_to_rig_message(&msg);
+        assert!(rig_msg.is_some());
+    }
+
+    #[test]
+    fn test_context_to_rig_message_tool_without_id_skipped() {
+        // Tool result without call ID cannot be converted
+        // Create a Tool message manually without the ID
+        let msg = ContextMessage {
+            role: MessageRole::Tool,
+            content: "File contents here".to_string(),
+            metadata: Default::default(), // no tool_call_id
+        };
+        let rig_msg = context_to_rig_message(&msg);
+        assert!(rig_msg.is_none());
+    }
+
+    #[test]
+    fn test_context_to_rig_message_function_skipped() {
+        // Legacy function role should be skipped
+        let msg = ContextMessage {
+            role: MessageRole::Function,
+            content: "legacy function".to_string(),
+            metadata: Default::default(),
+        };
+        let rig_msg = context_to_rig_message(&msg);
+        assert!(rig_msg.is_none());
+    }
+
+    // --- RigCompletionBackend tests ---
+
+    use rig::client::{CompletionClient, Nothing};
+    use rig::providers::ollama;
+
+    fn test_client() -> ollama::Client {
+        ollama::Client::builder().api_key(Nothing).build().unwrap()
+    }
+
+    #[test]
+    fn test_backend_provider_and_model_name() {
+        let client = test_client();
+        let model = client.completion_model("llama3.2");
+        let backend = RigCompletionBackend::new(model, "llama3.2", "ollama");
+
+        assert_eq!(backend.provider_name(), "ollama");
+        assert_eq!(backend.model_name(), "llama3.2");
+    }
+
+    #[tokio::test]
+    async fn test_backend_health_check() {
+        let client = test_client();
+        let model = client.completion_model("llama3.2");
+        let backend = RigCompletionBackend::new(model, "llama3.2", "ollama");
+
+        // Health check just returns true for now
+        let result = backend.health_check().await;
+        assert!(result.is_ok());
+        assert!(result.unwrap());
     }
 }
