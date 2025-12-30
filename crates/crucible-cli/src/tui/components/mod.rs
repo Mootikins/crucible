@@ -39,6 +39,7 @@
 
 pub mod dialog;
 pub mod input_box;
+pub mod input_state;
 pub mod layer_stack;
 pub mod popup;
 pub mod session_history;
@@ -49,6 +50,7 @@ use ratatui::widgets::Widget;
 
 pub use dialog::DialogWidget;
 pub use input_box::InputBoxWidget;
+pub use input_state::InputState;
 pub use layer_stack::LayerStack;
 pub use popup::PopupWidget;
 pub use session_history::SessionHistoryWidget;
