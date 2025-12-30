@@ -520,4 +520,178 @@ mod fennel_tests {
             }
         }
     }
+
+    #[tokio::test]
+    async fn test_fennel_contracts_basic() {
+        // Test Steel-style contracts in Fennel
+        let executor = LuaExecutor::new().unwrap();
+
+        // Inline contract predicates and wrap function for testing
+        let source = r#"
+;; Inline contract predicates
+(fn string? [x] (= (type x) :string))
+(fn number? [x] (= (type x) :number))
+(fn positive? [x] (and (number? x) (> x 0)))
+(fn table? [x] (= (type x) :table))
+
+(fn and-c [p1 p2]
+  (fn [x] (and (p1 x) (p2 x))))
+
+;; Contract wrapper
+(fn wrap-with-contract [f spec]
+  (fn [...]
+    (let [args [...]]
+      ;; Check pre-conditions
+      (when spec.pre
+        (each [i pred (ipairs spec.pre)]
+          (let [arg (. args i)]
+            (when (not (pred arg))
+              (error (.. "Contract violation: pre-condition #" i " failed for " spec.name))))))
+      ;; Call function
+      (let [result (f ...)]
+        ;; Check post-condition
+        (when spec.post
+          (when (not (spec.post result))
+            (error (.. "Contract violation: post-condition failed for " spec.name))))
+        result))))
+
+;; Test 1: Working contract
+(local add-positive
+  (wrap-with-contract
+    (fn [x y] (+ x y))
+    {:name "add-positive"
+     :pre [positive? positive?]
+     :post positive?}))
+
+;; Test 2: Contract that will fail
+(local will-fail
+  (wrap-with-contract
+    (fn [x] x)
+    {:name "must-be-string"
+     :pre [string?]}))
+
+(fn handler [args]
+  (let [results {}]
+    ;; Test passing contract
+    (tset results :sum (add-positive 5 3))
+
+    ;; Test failing pre-condition
+    (let [(ok err) (pcall will-fail 42)]
+      (tset results :pre_failed (not ok))
+      (tset results :error_has_contract (if (not ok)
+                                            (not= nil (string.find err "Contract"))
+                                            false)))
+
+    results))
+"#;
+
+        let result = executor.execute_source(source, true, json!({})).await;
+
+        if let Ok(res) = result {
+            if res.success {
+                let content = res.content.unwrap();
+                assert_eq!(content["sum"], 8, "Contracted add should work");
+                assert_eq!(
+                    content["pre_failed"], true,
+                    "Pre-condition should fail for wrong type"
+                );
+                assert_eq!(
+                    content["error_has_contract"], true,
+                    "Error should mention Contract"
+                );
+            } else {
+                panic!("Fennel execution failed: {:?}", res.error);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fennel_contracts_preserves() {
+        // Test that preserved fields are checked
+        let executor = LuaExecutor::new().unwrap();
+
+        let source = r#"
+;; Contract with preserves checking
+(fn table? [x] (= (type x) :table))
+
+(fn check-preserves [keys before after blame]
+  (each [_ key (ipairs keys)]
+    (let [bv (. before key)
+          av (. after key)]
+      (when (not= bv av)
+        (error (.. "Contract violation: " blame " changed preserved field '" key "'"))))))
+
+(fn wrap-with-preserves [f spec]
+  (fn [event]
+    ;; Snapshot preserved fields
+    (local before {})
+    (when spec.preserves
+      (each [_ k (ipairs spec.preserves)]
+        (tset before k (. event k))))
+    ;; Call function
+    (let [result (f event)]
+      ;; Check preserves
+      (when spec.preserves
+        (check-preserves spec.preserves before result spec.name))
+      result)))
+
+;; Good handler: preserves timestamp
+(local good-handler
+  (wrap-with-preserves
+    (fn [e]
+      (tset e :processed true)
+      e)
+    {:name "good-handler"
+     :preserves [:timestamp]}))
+
+;; Bad handler: mutates timestamp
+(local bad-handler
+  (wrap-with-preserves
+    (fn [e]
+      (tset e :timestamp 99999)  ;; BAD!
+      e)
+    {:name "bad-handler"
+     :preserves [:timestamp]}))
+
+(fn handler [args]
+  (let [results {}]
+    ;; Good handler should work
+    (let [event {:timestamp 12345 :data "hello"}
+          result (good-handler event)]
+      (tset results :good_preserved (= result.timestamp 12345))
+      (tset results :good_processed result.processed))
+
+    ;; Bad handler should fail
+    (let [event {:timestamp 12345}
+          (ok err) (pcall bad-handler event)]
+      (tset results :bad_failed (not ok))
+      (tset results :error_has_preserved (if (not ok)
+                                             (not= nil (string.find err "preserved"))
+                                             false)))
+    results))
+"#;
+
+        let result = executor.execute_source(source, true, json!({})).await;
+
+        if let Ok(res) = result {
+            if res.success {
+                let content = res.content.unwrap();
+                assert_eq!(
+                    content["good_preserved"], true,
+                    "Good handler should preserve timestamp"
+                );
+                assert_eq!(
+                    content["good_processed"], true,
+                    "Good handler should set processed"
+                );
+                assert_eq!(content["bad_failed"], true, "Bad handler should fail");
+                assert_eq!(
+                    content["error_has_preserved"], true,
+                    "Error should mention preserved"
+                );
+            } else {
+                panic!("Fennel execution failed: {:?}", res.error);
+            }
+        }
+    }
 }
