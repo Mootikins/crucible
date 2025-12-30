@@ -175,7 +175,11 @@ pub fn format_session(
             MessageRole::System => {
                 // System messages are typically not shown in session logs
                 // but include them as blockquotes if present
-                output.push_str(&format!("> **System** ({})\n> {}\n\n", ts.format("%H:%M"), content));
+                output.push_str(&format!(
+                    "> **System** ({})\n> {}\n\n",
+                    ts.format("%H:%M"),
+                    content
+                ));
             }
         }
     }
