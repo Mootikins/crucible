@@ -3211,6 +3211,7 @@ dependencies = [
  "async-trait",
  "crucible-core",
  "oq",
+ "regex",
  "serde",
  "serde_json",
  "serde_yaml",
