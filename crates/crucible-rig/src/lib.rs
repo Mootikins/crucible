@@ -34,6 +34,7 @@
 #![warn(clippy::all)]
 
 pub mod agent;
+pub mod completion;
 pub mod crucible_agent;
 pub mod handle;
 pub mod providers;
@@ -45,6 +46,7 @@ pub mod workspace_tools;
 pub use agent::{
     build_agent, build_agent_from_config, build_agent_with_tools, AgentBuildError, AgentConfig,
 };
+pub use completion::RigCompletionBackend;
 pub use crucible_agent::{CrucibleAgent, CrucibleAgentError, CrucibleAgentResult};
 pub use handle::RigAgentHandle;
 pub use providers::{create_client, RigClient, RigError, RigResult};
