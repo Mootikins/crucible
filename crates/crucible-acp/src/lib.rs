@@ -69,7 +69,7 @@ pub mod mock_agent;
 
 // Public exports - Export traits and types, following Dependency Inversion
 pub use acp_client::{CrucibleClient, WriteInfo};
-pub use chat::{ChatConfig, ChatSession, ConversationState, SessionMetadata};
+pub use chat::{ChatSession, ChatSessionConfig, ConversationState, SessionMetadata};
 pub use client::CrucibleAcpClient; // Legacy, will be removed
 pub use context::{ContextConfig, PromptEnricher};
 pub use discovery::{
@@ -98,4 +98,4 @@ pub use tracing_utils::{create_test_subscriber, init_test_subscriber, CapturedLo
 
 // Error types
 mod error;
-pub use error::{AcpError, Result};
+pub use error::{ClientError, Result};
