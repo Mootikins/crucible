@@ -8,6 +8,7 @@ use crate::tui::streaming::StreamingBuffer;
 use crate::tui::InputAction;
 use crucible_core::events::SessionEvent;
 use crucible_core::traits::chat::cycle_mode_id;
+use crucible_core::traits::MessageRole;
 use crucible_rune::EventRing;
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
@@ -54,18 +55,7 @@ pub(crate) fn find_word_start_forward(s: &str) -> usize {
     chars.peek().map(|(i, _)| *i).unwrap_or(s.len())
 }
 
-/// Role of a message for TUI display purposes.
-///
-/// Simplified variant set for rendering conversation history in the terminal UI.
-/// This is distinct from `crucible_core::traits::MessageRole` which is for
-/// LLM API communication.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MessageRole {
-    User,
-    Assistant,
-    System,
-    Tool,
-}
+// MessageRole imported from crucible_core::traits
 
 /// Type of popup trigger
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
