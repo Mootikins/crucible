@@ -150,7 +150,7 @@ mod context_tests {
 #[cfg(test)]
 mod client_tests {
     use super::super::*;
-    use crucible_acp::{ChatConfig, ContextConfig, HistoryConfig, StreamConfig};
+    use crucible_acp::{ChatSessionConfig, ContextConfig, HistoryConfig, StreamConfig};
 
     #[test]
     fn test_client_creation() {
@@ -204,7 +204,7 @@ mod client_tests {
             env_vars: std::collections::HashMap::new(),
         };
 
-        let config = ChatConfig {
+        let config = ChatSessionConfig {
             history: HistoryConfig {
                 max_messages: 100,
                 max_tokens: 50000,

@@ -16,7 +16,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{AcpError, Result};
+use crate::{ClientError, Result};
 use agent_client_protocol::{ClientRequest, ClientResponse};
 
 /// ACP transport layer configuration.
@@ -91,7 +91,7 @@ impl AcpSession {
     pub async fn send_request(&self, _request: ClientRequest) -> Result<ClientResponse> {
         // TODO: Implement request sending
         // This is a stub - will be implemented in TDD cycles
-        Err(AcpError::Session("Not yet implemented".to_string()))
+        Err(ClientError::Session("Not yet implemented".to_string()))
     }
 
     /// Close the session and cleanup resources

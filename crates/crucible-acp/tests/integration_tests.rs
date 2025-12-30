@@ -7,7 +7,7 @@
 use crucible_acp::client::ClientConfig;
 use crucible_acp::session::{AcpSession, TransportConfig};
 use crucible_acp::{
-    ChatConfig, ChatSession, ContextConfig, CrucibleAcpClient, HistoryConfig, StreamConfig,
+    ChatSessionConfig, ChatSession, ContextConfig, CrucibleAcpClient, HistoryConfig, StreamConfig,
 };
 use std::path::PathBuf;
 
@@ -20,7 +20,7 @@ fn test_path(name: &str) -> PathBuf {
 #[tokio::test]
 async fn test_full_chat_pipeline() {
     // Create a chat session with all features enabled
-    let config = ChatConfig {
+    let config = ChatSessionConfig {
         history: HistoryConfig {
             max_messages: 10,
             max_tokens: 1000,
@@ -87,7 +87,7 @@ async fn test_full_chat_pipeline() {
 /// Integration test: Context enrichment with caching
 #[tokio::test]
 async fn test_context_enrichment_caching() {
-    let config = ChatConfig {
+    let config = ChatSessionConfig {
         context: ContextConfig {
             enabled: true,
             enable_cache: true,
@@ -121,7 +121,7 @@ async fn test_context_enrichment_caching() {
 /// Integration test: History auto-pruning with state tracking
 #[tokio::test]
 async fn test_history_auto_pruning_integration() {
-    let config = ChatConfig {
+    let config = ChatSessionConfig {
         history: HistoryConfig {
             max_messages: 4, // Very small limit
             max_tokens: 10000,
@@ -162,7 +162,7 @@ async fn test_history_auto_pruning_integration() {
 /// Integration test: Error handling doesn't corrupt state
 #[tokio::test]
 async fn test_error_handling_state_integrity() {
-    let mut session = ChatSession::new(ChatConfig::default());
+    let mut session = ChatSession::new(ChatSessionConfig::default());
 
     // Send valid messages
     session.send_message("First valid message").await.unwrap();
@@ -196,7 +196,7 @@ async fn test_error_handling_state_integrity() {
 /// Integration test: Multi-turn conversation with metadata
 #[tokio::test]
 async fn test_multi_turn_with_metadata() {
-    let mut session = ChatSession::new(ChatConfig::default());
+    let mut session = ChatSession::new(ChatSessionConfig::default());
 
     // Set session metadata
     session.set_title("Integration Test Session");
@@ -239,13 +239,13 @@ async fn test_multi_turn_with_metadata() {
 #[tokio::test]
 async fn test_enrichment_toggle() {
     // Session with enrichment enabled
-    let mut session_enriched = ChatSession::new(ChatConfig {
+    let mut session_enriched = ChatSession::new(ChatSessionConfig {
         enrich_prompts: true,
         ..Default::default()
     });
 
     // Session with enrichment disabled
-    let mut session_plain = ChatSession::new(ChatConfig {
+    let mut session_plain = ChatSession::new(ChatSessionConfig {
         enrich_prompts: false,
         ..Default::default()
     });
@@ -265,7 +265,7 @@ async fn test_enrichment_toggle() {
 /// Integration test: Session state accurately tracks conversation
 #[tokio::test]
 async fn test_state_tracking_accuracy() {
-    let mut session = ChatSession::new(ChatConfig::default());
+    let mut session = ChatSession::new(ChatSessionConfig::default());
 
     let start_time = session.state().started_at;
 
@@ -292,7 +292,7 @@ async fn test_state_tracking_accuracy() {
 #[tokio::test]
 async fn test_complete_session_lifecycle() {
     // Create session
-    let mut session = ChatSession::new(ChatConfig::default());
+    let mut session = ChatSession::new(ChatSessionConfig::default());
     let session_id = session.metadata().id.clone();
 
     // Configure session
@@ -322,7 +322,7 @@ async fn test_complete_session_lifecycle() {
 /// Integration test: Token counting consistency
 #[tokio::test]
 async fn test_token_counting_consistency() {
-    let mut session = ChatSession::new(ChatConfig::default());
+    let mut session = ChatSession::new(ChatSessionConfig::default());
 
     // Send messages of different lengths
     session.send_message("Short").await.unwrap();
@@ -346,8 +346,8 @@ async fn test_token_counting_consistency() {
 /// Integration test: Multiple sessions are isolated
 #[tokio::test]
 async fn test_session_isolation() {
-    let mut session1 = ChatSession::new(ChatConfig::default());
-    let mut session2 = ChatSession::new(ChatConfig::default());
+    let mut session1 = ChatSession::new(ChatSessionConfig::default());
+    let mut session2 = ChatSession::new(ChatSessionConfig::default());
 
     session1.set_title("Session 1");
     session2.set_title("Session 2");
@@ -689,25 +689,25 @@ async fn baseline_tool_discovery() {
 /// Baseline test: Error type conversions
 #[tokio::test]
 async fn baseline_error_type_conversions() {
-    use crucible_acp::AcpError;
+    use crucible_acp::ClientError;
     use std::io;
 
     // Test IO error conversion
     let io_error = io::Error::new(io::ErrorKind::NotFound, "file not found");
-    let acp_error: AcpError = io_error.into();
-    assert!(matches!(acp_error, AcpError::Io(_)));
+    let client_error: ClientError = io_error.into();
+    assert!(matches!(client_error, ClientError::Io(_)));
 
     // Test JSON error conversion
     let json_error = serde_json::from_str::<serde_json::Value>("invalid json");
     assert!(json_error.is_err());
-    let acp_error: AcpError = json_error.unwrap_err().into();
-    assert!(matches!(acp_error, AcpError::Serialization(_)));
+    let client_error: ClientError = json_error.unwrap_err().into();
+    assert!(matches!(client_error, ClientError::Serialization(_)));
 
     // Test custom error creation
-    let session_error = AcpError::Session("test error".to_string());
+    let session_error = ClientError::Session("test error".to_string());
     assert_eq!(session_error.to_string(), "Session error: test error");
 
-    let connection_error = AcpError::Connection("connection failed".to_string());
+    let connection_error = ClientError::Connection("connection failed".to_string());
     assert_eq!(
         connection_error.to_string(),
         "Connection error: connection failed"
@@ -733,7 +733,7 @@ async fn baseline_session_state_consistency() {
 #[tokio::test]
 async fn baseline_chat_configuration_comprehensive() {
     // Test with all features enabled
-    let config_full = ChatConfig {
+    let config_full = ChatSessionConfig {
         history: HistoryConfig {
             max_messages: 100,
             max_tokens: 10000,
@@ -761,7 +761,7 @@ async fn baseline_chat_configuration_comprehensive() {
     assert_eq!(session_full.state().turn_count, 0);
 
     // Test with minimal configuration
-    let config_minimal = ChatConfig {
+    let config_minimal = ChatSessionConfig {
         history: HistoryConfig {
             max_messages: 10,
             max_tokens: 1000,
@@ -1429,7 +1429,7 @@ async fn integration_stream_with_enrichment() {
 #[tokio::test]
 async fn integration_chat_with_agent_config() {
     use crucible_acp::client::ClientConfig;
-    use crucible_acp::{ChatConfig, ChatSession, CrucibleAcpClient};
+    use crucible_acp::{ChatSessionConfig, ChatSession, CrucibleAcpClient};
     use std::path::PathBuf;
 
     let client_config = ClientConfig {
@@ -1442,7 +1442,7 @@ async fn integration_chat_with_agent_config() {
     };
 
     let client = CrucibleAcpClient::new(client_config);
-    let mut chat_session = ChatSession::with_agent(ChatConfig::default(), client);
+    let mut chat_session = ChatSession::with_agent(ChatSessionConfig::default(), client);
 
     // Chat session should have agent configured
     // Send a message in mock mode (no agent connected yet)
@@ -1459,7 +1459,7 @@ async fn integration_chat_with_agent_config() {
 #[tokio::test]
 async fn integration_chat_agent_lifecycle() {
     use crucible_acp::client::ClientConfig;
-    use crucible_acp::{ChatConfig, ChatSession, CrucibleAcpClient};
+    use crucible_acp::{ChatSessionConfig, ChatSession, CrucibleAcpClient};
     use std::path::PathBuf;
 
     let client_config = ClientConfig {
@@ -1472,7 +1472,7 @@ async fn integration_chat_agent_lifecycle() {
     };
 
     let client = CrucibleAcpClient::new(client_config);
-    let mut chat_session = ChatSession::with_agent(ChatConfig::default(), client);
+    let mut chat_session = ChatSession::with_agent(ChatSessionConfig::default(), client);
 
     // Test disconnect without connect (should be safe)
     let disconnect_result = chat_session.disconnect().await;
@@ -1492,10 +1492,10 @@ async fn integration_chat_agent_lifecycle() {
 #[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn integration_chat_multi_turn_with_agent() {
-    use crucible_acp::{ChatConfig, ChatSession};
+    use crucible_acp::{ChatSessionConfig, ChatSession};
 
     // Create a chat session without agent (mock mode)
-    let mut chat_session = ChatSession::new(ChatConfig::default());
+    let mut chat_session = ChatSession::new(ChatSessionConfig::default());
 
     // Send multiple messages
     let response1 = chat_session.send_message("First message").await;
@@ -1524,7 +1524,7 @@ async fn integration_chat_multi_turn_with_agent() {
 #[tokio::test]
 async fn integration_chat_agent_config_variants() {
     use crucible_acp::client::ClientConfig;
-    use crucible_acp::{ChatConfig, ChatSession, CrucibleAcpClient};
+    use crucible_acp::{ChatSessionConfig, ChatSession, CrucibleAcpClient};
     use std::path::PathBuf;
 
     // Test various client configurations
@@ -1549,7 +1549,7 @@ async fn integration_chat_agent_config_variants() {
 
     for config in configs {
         let client = CrucibleAcpClient::new(config);
-        let chat_session = ChatSession::with_agent(ChatConfig::default(), client);
+        let chat_session = ChatSession::with_agent(ChatSessionConfig::default(), client);
 
         // Verify session is created successfully
         assert_eq!(chat_session.state().turn_count, 0);

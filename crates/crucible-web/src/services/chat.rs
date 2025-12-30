@@ -4,7 +4,7 @@
 //! suitable for SSE delivery to browsers.
 
 use crate::{ChatEvent, Result, WebError};
-use crucible_acp::{ChatConfig, ChatSession};
+use crucible_acp::{ChatSession, ChatSessionConfig};
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
 
@@ -64,7 +64,7 @@ impl ChatService {
 
         // Create chat session with mock mode for now
         // TODO: Connect to actual ACP agent
-        let chat_config = ChatConfig::default();
+        let chat_config = ChatSessionConfig::default();
         let session = ChatSession::new(chat_config);
 
         *session_guard = Some(session);

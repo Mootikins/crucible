@@ -192,7 +192,7 @@ pub struct ClusteringConfig {
     /// MoC detection configuration
     pub moc_config: Option<MocDetectionConfig>,
     /// Embedding provider configuration
-    pub embedding_config: Option<EmbeddingConfig>,
+    pub embedding_config: Option<ClusteringEmbeddingConfig>,
     /// Performance settings
     pub performance: PerformanceConfig,
 }
@@ -258,9 +258,13 @@ impl Default for MocDetectionConfig {
     }
 }
 
-/// Configuration for embedding generation
+/// Configuration for embedding generation in clustering operations
+///
+/// This is distinct from `crucible_config::components::embedding::EmbeddingConfig`
+/// which defines user-facing configuration. This type is specific to clustering
+/// algorithm embedding requirements.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EmbeddingConfig {
+pub struct ClusteringEmbeddingConfig {
     /// Embedding provider to use
     pub provider: String,
     /// Model name

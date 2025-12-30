@@ -9,7 +9,7 @@ use tracing::{debug, info, warn};
 
 use crate::chat::{AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall};
 use crucible_acp::{
-    channel_callback, AgentInfo, ChatConfig, ChatSession, ContextConfig,
+    channel_callback, AgentInfo, ChatSession, ChatSessionConfig, ContextConfig,
     CrucibleAcpClient as AcpClient, HistoryConfig, InProcessMcpHost, StreamConfig, StreamingChunk,
 };
 use crucible_config::AcpConfig;
@@ -24,7 +24,7 @@ pub struct CrucibleAcpClient {
     session: Option<ChatSession>,
     agent: AgentInfo,
     mode_id: String,
-    config: ChatConfig,
+    config: ChatSessionConfig,
     acp_config: AcpConfig,
     kiln_path: Option<PathBuf>,
     /// Working directory for the agent (where it should operate)
@@ -55,7 +55,7 @@ impl CrucibleAcpClient {
     /// * `read_only` - If true, deny all write operations
     /// * `acp_config` - ACP configuration (includes streaming timeout)
     pub fn with_acp_config(agent: AgentInfo, read_only: bool, acp_config: AcpConfig) -> Self {
-        let config = ChatConfig {
+        let config = ChatSessionConfig {
             history: HistoryConfig::default(),
             context: ContextConfig {
                 enabled: true,
@@ -138,7 +138,7 @@ impl CrucibleAcpClient {
     /// * `agent` - Information about the agent to spawn
     /// * `read_only` - If true, deny all write operations
     /// * `config` - Custom chat configuration
-    pub fn with_config(agent: AgentInfo, read_only: bool, config: ChatConfig) -> Self {
+    pub fn with_config(agent: AgentInfo, read_only: bool, config: ChatSessionConfig) -> Self {
         let mode_id = if read_only {
             "plan".to_string()
         } else {
@@ -429,7 +429,7 @@ impl AgentHandle for CrucibleAcpClient {
 
                 // Create the future that runs the streaming call
                 type FutureOutput =
-                    Result<(String, Vec<crucible_acp::ToolCallInfo>), crucible_acp::AcpError>;
+                    Result<(String, Vec<crucible_acp::ToolCallInfo>), crucible_acp::ClientError>;
                 let fut: Pin<Box<dyn Future<Output = FutureOutput> + '_>> = Box::pin(async move {
                     session.send_message_with_callback(&message, callback).await
                 });
@@ -452,7 +452,7 @@ impl AgentHandle for CrucibleAcpClient {
                 type UnfoldState = Option<(
                     mpsc::UnboundedReceiver<StreamingChunk>,
                     tokio::sync::oneshot::Receiver<
-                        Result<(String, Vec<crucible_acp::ToolCallInfo>), crucible_acp::AcpError>,
+                        Result<(String, Vec<crucible_acp::ToolCallInfo>), crucible_acp::ClientError>,
                     >,
                     Vec<ChatToolCall>,
                     bool, // terminated

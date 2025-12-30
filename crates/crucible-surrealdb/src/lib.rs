@@ -147,11 +147,11 @@ pub mod kiln;
 pub mod clustering;
 pub use clustering::{
     cluster_documents, detect_mocs, AlgorithmFactory, AlgorithmMetadata, AlgorithmParameters,
-    AlgorithmType, ClusteringAlgorithm, ClusteringConfig, ClusteringError, ClusteringMetrics,
-    ClusteringRegistry, ClusteringRequirements, ClusteringResult, DocumentCluster, DocumentInfo,
-    EmbeddingConfig, HeuristicAlgorithmFactory, HeuristicClusteringAlgorithm,
-    KMeansAlgorithmFactory, KMeansClusteringAlgorithm, MocCandidate, MocDetectionConfig,
-    PerformanceConfig, QualityPreference, SimpleClusteringService,
+    AlgorithmType, ClusteringAlgorithm, ClusteringConfig, ClusteringEmbeddingConfig,
+    ClusteringError, ClusteringMetrics, ClusteringRegistry, ClusteringRequirements,
+    ClusteringResult, DocumentCluster, DocumentInfo, HeuristicAlgorithmFactory,
+    HeuristicClusteringAlgorithm, KMeansAlgorithmFactory, KMeansClusteringAlgorithm, MocCandidate,
+    MocDetectionConfig, PerformanceConfig, QualityPreference, SimpleClusteringService,
 };
 
 // Event handlers for database operations

@@ -18,7 +18,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::{AcpError, Result};
+use crate::{ClientError, Result};
 
 /// Configuration for file system access
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -159,7 +159,7 @@ impl FileSystemHandler {
     pub async fn read_file(&self, path: &Path) -> Result<String> {
         // Check if path is allowed
         if !self.is_path_allowed(path) {
-            return Err(AcpError::PermissionDenied(format!(
+            return Err(ClientError::PermissionDenied(format!(
                 "Access denied to path: {}",
                 path.display()
             )));
@@ -167,7 +167,7 @@ impl FileSystemHandler {
 
         // Check if file exists
         if !path.exists() {
-            return Err(AcpError::NotFound(format!(
+            return Err(ClientError::NotFound(format!(
                 "File not found: {}",
                 path.display()
             )));
@@ -175,7 +175,7 @@ impl FileSystemHandler {
 
         // Check if it's a file (not a directory)
         if !path.is_file() {
-            return Err(AcpError::FileSystem(format!(
+            return Err(ClientError::FileSystem(format!(
                 "Path is not a file: {}",
                 path.display()
             )));
@@ -184,7 +184,7 @@ impl FileSystemHandler {
         // Check file size
         let metadata = tokio::fs::metadata(path).await?;
         if metadata.len() > self.config.max_read_size as u64 {
-            return Err(AcpError::FileSystem(format!(
+            return Err(ClientError::FileSystem(format!(
                 "File too large: {} bytes (max: {})",
                 metadata.len(),
                 self.config.max_read_size
@@ -213,14 +213,14 @@ impl FileSystemHandler {
     pub async fn write_file(&self, path: &Path, content: &str) -> Result<()> {
         // Check if write operations are enabled
         if !self.config.allow_write {
-            return Err(AcpError::PermissionDenied(
+            return Err(ClientError::PermissionDenied(
                 "Write operations are disabled".to_string(),
             ));
         }
 
         // Check if path is allowed
         if !self.is_path_allowed(path) {
-            return Err(AcpError::PermissionDenied(format!(
+            return Err(ClientError::PermissionDenied(format!(
                 "Access denied to path: {}",
                 path.display()
             )));
@@ -233,7 +233,7 @@ impl FileSystemHandler {
                 if self.config.allow_create_dirs {
                     tokio::fs::create_dir_all(parent).await?;
                 } else {
-                    return Err(AcpError::FileSystem(format!(
+                    return Err(ClientError::FileSystem(format!(
                         "Parent directory does not exist: {}",
                         parent.display()
                     )));
@@ -266,7 +266,7 @@ impl FileSystemHandler {
     pub async fn list_directory(&self, _path: &Path) -> Result<Vec<PathBuf>> {
         // TODO: Implement directory listing
         // This is a stub - will be implemented in TDD cycles
-        Err(AcpError::FileSystem("Not yet implemented".to_string()))
+        Err(ClientError::FileSystem("Not yet implemented".to_string()))
     }
 }
 
@@ -367,7 +367,7 @@ mod tests {
         assert!(result.is_err());
 
         match result {
-            Err(AcpError::PermissionDenied(_)) => {}
+            Err(ClientError::PermissionDenied(_)) => {}
             _ => panic!("Expected PermissionDenied error"),
         }
     }
@@ -414,7 +414,7 @@ mod tests {
         assert!(result.is_err());
 
         match result {
-            Err(AcpError::NotFound(_)) => {}
+            Err(ClientError::NotFound(_)) => {}
             _ => panic!("Expected NotFound error"),
         }
     }
@@ -462,7 +462,7 @@ mod tests {
         assert!(result.is_err());
 
         match result {
-            Err(AcpError::PermissionDenied(_)) => {}
+            Err(ClientError::PermissionDenied(_)) => {}
             _ => panic!("Expected PermissionDenied error"),
         }
     }
@@ -487,7 +487,7 @@ mod tests {
         assert!(result.is_err());
 
         match result {
-            Err(AcpError::PermissionDenied(_)) => {}
+            Err(ClientError::PermissionDenied(_)) => {}
             _ => panic!("Expected PermissionDenied error"),
         }
     }

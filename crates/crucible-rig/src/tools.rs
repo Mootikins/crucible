@@ -9,9 +9,12 @@ use thiserror::Error;
 #[cfg(feature = "rmcp-full")]
 use rig::agent::AgentBuilder;
 
-/// Errors from tool attachment operations
+/// Errors from MCP tool attachment operations
+///
+/// This is distinct from `crucible_core::traits::tools::ToolError` which defines
+/// abstract errors for the tool executor traits.
 #[derive(Debug, Error)]
-pub enum ToolError {
+pub enum McpToolError {
     /// MCP protocol error
     #[error("MCP protocol error: {0}")]
     Protocol(String),
@@ -25,8 +28,8 @@ pub enum ToolError {
     Transport(String),
 }
 
-/// Result type for tool operations
-pub type ToolResult<T> = Result<T, ToolError>;
+/// Result type for MCP tool operations
+pub type McpToolResult<T> = Result<T, McpToolError>;
 
 /// Attach MCP tools from a crucible-tools server to a Rig agent builder
 ///
@@ -87,7 +90,7 @@ where
 ///
 /// # Errors
 ///
-/// Returns `ToolError` if:
+/// Returns `McpToolError` if:
 /// - Cannot spawn the MCP server process
 /// - Cannot connect via stdio transport
 /// - Tool discovery fails
@@ -103,10 +106,10 @@ where
 #[cfg(feature = "rmcp-full")]
 pub async fn discover_crucible_tools(
     _kiln_path: &str,
-) -> ToolResult<(Vec<rmcp::model::Tool>, rmcp::service::ServerSink)> {
+) -> McpToolResult<(Vec<rmcp::model::Tool>, rmcp::service::ServerSink)> {
     // TODO: This will require spawning the crucible-tools MCP server
     // and connecting via stdio. For now, return an error.
-    Err(ToolError::Discovery(
+    Err(McpMcpToolError::Discovery(
         "Not implemented: requires crucible-tools binary integration".to_string(),
     ))
 }
@@ -135,13 +138,13 @@ mod tests {
     #[test]
     fn test_error_types() {
         // Verify error types are properly constructed
-        let err = ToolError::Protocol("test".to_string());
+        let err = McpToolError::Protocol("test".to_string());
         assert!(err.to_string().contains("MCP protocol error"));
 
-        let err = ToolError::Discovery("not found".to_string());
+        let err = McpToolError::Discovery("not found".to_string());
         assert!(err.to_string().contains("Failed to discover tools"));
 
-        let err = ToolError::Transport("connection refused".to_string());
+        let err = McpToolError::Transport("connection refused".to_string());
         assert!(err.to_string().contains("Transport error"));
     }
 
@@ -153,7 +156,7 @@ mod tests {
             let result = discover_crucible_tools("/tmp/test-kiln").await;
             assert!(result.is_err());
             let err = result.unwrap_err();
-            assert!(matches!(err, ToolError::Discovery(_)));
+            assert!(matches!(err, McpToolError::Discovery(_)));
             assert!(err.to_string().contains("Not implemented"));
         }
     }

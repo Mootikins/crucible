@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::{AcpError, Result};
+use crate::{ClientError, Result};
 
 /// Descriptor for a registered tool
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -63,7 +63,7 @@ impl ToolRegistry {
     /// Returns an error if a tool with the same name is already registered
     pub fn register(&mut self, descriptor: ToolDescriptor) -> Result<()> {
         if self.tools.contains_key(&descriptor.name) {
-            return Err(AcpError::InvalidConfig(format!(
+            return Err(ClientError::InvalidConfig(format!(
                 "Tool already registered: {}",
                 descriptor.name
             )));
@@ -382,7 +382,7 @@ impl ToolExecutor {
             "get_kiln_info" => self.execute_kiln_tool(tool_name, params).await,
 
             // Unknown tool
-            _ => Err(AcpError::NotFound(format!("Unknown tool: {}", tool_name))),
+            _ => Err(ClientError::NotFound(format!("Unknown tool: {}", tool_name))),
         }
     }
 
@@ -392,7 +392,7 @@ impl ToolExecutor {
             .get(name)
             .and_then(|v| v.as_str())
             .map(String::from)
-            .ok_or_else(|| AcpError::InvalidConfig(format!("Missing required parameter: {}", name)))
+            .ok_or_else(|| ClientError::InvalidConfig(format!("Missing required parameter: {}", name)))
     }
 
     /// Resolve a note name or path to a full path
@@ -418,7 +418,7 @@ impl ToolExecutor {
             if full_path.exists() {
                 return Ok(full_path);
             }
-            return Err(AcpError::NotFound(format!(
+            return Err(ClientError::NotFound(format!(
                 "Note not found at path: {}",
                 cleaned
             )));
@@ -451,12 +451,12 @@ impl ToolExecutor {
         while let Some(dir) = stack.pop() {
             let mut entries = fs::read_dir(&dir)
                 .await
-                .map_err(|e| AcpError::FileSystem(format!("Failed to read directory: {}", e)))?;
+                .map_err(|e| ClientError::FileSystem(format!("Failed to read directory: {}", e)))?;
 
             while let Some(entry) = entries
                 .next_entry()
                 .await
-                .map_err(|e| AcpError::FileSystem(format!("Failed to read entry: {}", e)))?
+                .map_err(|e| ClientError::FileSystem(format!("Failed to read entry: {}", e)))?
             {
                 let path = entry.path();
 
@@ -471,7 +471,7 @@ impl ToolExecutor {
             }
         }
 
-        Err(AcpError::NotFound(format!("Note not found: {}", name)))
+        Err(ClientError::NotFound(format!("Note not found: {}", name)))
     }
 
     /// Execute a note tool
@@ -503,7 +503,7 @@ impl ToolExecutor {
                 // Execute the tool by directly writing the file
                 tokio::fs::write(&full_path, &content)
                     .await
-                    .map_err(|e| AcpError::FileSystem(format!("Failed to create note: {}", e)))?;
+                    .map_err(|e| ClientError::FileSystem(format!("Failed to create note: {}", e)))?;
 
                 Ok(serde_json::json!({
                     "path": path,
@@ -520,7 +520,7 @@ impl ToolExecutor {
 
                 let content = tokio::fs::read_to_string(&full_path)
                     .await
-                    .map_err(|e| AcpError::FileSystem(format!("Failed to read note: {}", e)))?;
+                    .map_err(|e| ClientError::FileSystem(format!("Failed to read note: {}", e)))?;
 
                 Ok(serde_json::json!({
                     "path": path,
@@ -529,7 +529,7 @@ impl ToolExecutor {
                     "lines": content.lines().count()
                 }))
             }
-            _ => Err(AcpError::NotFound(format!(
+            _ => Err(ClientError::NotFound(format!(
                 "Note tool not implemented: {}",
                 tool_name
             ))),
@@ -757,7 +757,7 @@ mod tests {
         // Should fail with NotFound error
         assert!(result.is_err(), "Unknown tool should return error");
         let err = result.unwrap_err();
-        assert!(matches!(err, AcpError::NotFound(_)));
+        assert!(matches!(err, ClientError::NotFound(_)));
     }
 
     #[tokio::test]

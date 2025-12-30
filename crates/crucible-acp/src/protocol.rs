@@ -18,7 +18,7 @@
 use agent_client_protocol::{AgentSide, ClientSide, IncomingMessage, OutgoingMessage};
 use serde::{Deserialize, Serialize};
 
-use crate::{AcpError, Result};
+use crate::{ClientError, Result};
 
 /// Protocol version information
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -117,7 +117,7 @@ impl MessageHandler {
     pub fn parse_message(&self, _data: &[u8]) -> Result<IncomingMessage<ClientSide>> {
         // TODO: Implement message parsing using agent-client-protocol's parsing utilities
         // This is a stub - will be implemented in TDD cycles
-        Err(AcpError::Session("Not yet implemented".to_string()))
+        Err(ClientError::Session("Not yet implemented".to_string()))
     }
 
     /// Serialize an outgoing message to the agent
@@ -139,7 +139,7 @@ impl MessageHandler {
     ) -> Result<Vec<u8>> {
         // TODO: Implement message serialization using agent-client-protocol's serialization utilities
         // This is a stub - will be implemented in TDD cycles
-        Err(AcpError::Session("Not yet implemented".to_string()))
+        Err(ClientError::Session("Not yet implemented".to_string()))
     }
 }
 
