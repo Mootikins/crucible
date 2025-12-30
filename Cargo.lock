@@ -2872,6 +2872,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "crucible-context"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "crucible-core",
+ "futures",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "crucible-core"
 version = "0.1.0"
 dependencies = [
