@@ -43,6 +43,17 @@ The crucible-core crate follows **Dependency Inversion** architecture where trai
   - Issue: Two different "Note" concepts
   - Recommendation: Rename database::Note to Document or DatabaseNote
 
+## Resolved Issues
+
+- [x] **Type Name Collisions Clarified**
+  - Location: Multiple crates
+  - Resolution: Added clarifying documentation to semantic collisions:
+    - `ToolProvider` (session events) vs `ToolSource` (tool indexing)
+    - `ModelCapability` (provider-level vs feature-level)
+    - `MessageRole` (canonical LLM API vs domain-specific)
+    - `SessionConfig` (application vs transport vs session layer)
+  - See PR #37
+
 ## Medium Priority Issues
 
 - [ ] **Hash Type Split: BlockHash Location**
