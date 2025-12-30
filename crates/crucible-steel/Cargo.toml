@@ -1,0 +1,24 @@
+[package]
+name = "crucible-steel"
+version = "0.1.0"
+edition = "2021"
+description = "Steel (Scheme) scripting runtime for Crucible with native contracts"
+license = "MIT"
+authors = ["Crucible Contributors"]
+
+[features]
+default = []
+
+[dependencies]
+# Steel - Scheme interpreter in Rust
+steel-core = { git = "https://github.com/mattwparas/steel.git", branch = "master" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tokio = { version = "1", features = ["rt", "sync"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs"] }
+tempfile = "3"
