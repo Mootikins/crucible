@@ -267,6 +267,14 @@ impl SqliteRenderer {
                 .join(", ")
         };
 
+        // For ZeroOrMore (min_depth=0), include source as valid 0-hop match
+        // For min_depth > 0, exclude source since we want actual traversals
+        let exclude_source = if min_depth > 0 {
+            format!("\n  AND t.path != {}", source_path)
+        } else {
+            String::new()
+        };
+
         let sql = format!(
             r#"WITH RECURSIVE traverse(path, depth, visited) AS (
     -- Base case: starting node
@@ -287,8 +295,7 @@ impl SqliteRenderer {
 SELECT DISTINCT {select_fields}
 FROM {notes} {target_alias}
 JOIN traverse t ON {target_alias}.path = t.path
-WHERE t.depth >= {min_depth}
-  AND t.path != {source_path}"#,
+WHERE t.depth >= {min_depth}{exclude_source}"#,
             source_path = source_path,
             next_node = next_node,
             edges = self.edges_table,
@@ -297,6 +304,7 @@ WHERE t.depth >= {min_depth}
             edge_filter = edge_filter,
             depth_check = depth_check,
             min_depth = min_depth,
+            exclude_source = exclude_source,
             target_alias = target_alias,
             select_fields = select_fields,
         );
@@ -778,6 +786,11 @@ mod tests {
 
         assert!(result.sql.contains("WITH RECURSIVE traverse"));
         assert!(result.sql.contains("t.depth >= 0"));
+        // ZeroOrMore includes source as valid 0-hop match
+        assert!(
+            !result.sql.contains("t.path != "),
+            "ZeroOrMore should not exclude source node"
+        );
     }
 
     #[test]
@@ -803,6 +816,11 @@ mod tests {
 
         assert!(result.sql.contains("WITH RECURSIVE traverse"));
         assert!(result.sql.contains("t.depth >= 1"));
+        // OneOrMore excludes source since we want actual traversals
+        assert!(
+            result.sql.contains("t.path != "),
+            "OneOrMore should exclude source node"
+        );
     }
 
     #[test]
