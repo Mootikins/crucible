@@ -138,10 +138,10 @@ impl ReactorError {
 /// Reactor session configuration for event handler execution.
 ///
 /// Contains session identity, folder paths, and context limits for reactor processing.
-/// This is distinct from `crucible_core::types::acp::SessionConfig` which is for
-/// ACP protocol parameters.
+/// This is distinct from `crucible_core::SessionConfig` which is for ACP protocol
+/// parameters and `crucible_acp::TransportConfig` for transport layer settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionConfig {
+pub struct ReactorSessionConfig {
     /// Unique session identifier.
     pub session_id: String,
 
@@ -165,7 +165,7 @@ fn default_max_context_tokens() -> usize {
     100_000
 }
 
-impl Default for SessionConfig {
+impl Default for ReactorSessionConfig {
     fn default() -> Self {
         Self {
             session_id: String::new(),
@@ -177,7 +177,7 @@ impl Default for SessionConfig {
     }
 }
 
-impl SessionConfig {
+impl ReactorSessionConfig {
     /// Create a new session config with the given ID and folder.
     pub fn new(session_id: impl Into<String>, folder: impl Into<PathBuf>) -> Self {
         Self {
@@ -253,7 +253,7 @@ impl SessionConfig {
 #[derive(Debug)]
 pub struct ReactorContext {
     /// Session configuration (immutable reference).
-    config: Arc<SessionConfig>,
+    config: Arc<ReactorSessionConfig>,
 
     /// Events emitted during processing.
     emitted_events: Vec<SessionEvent>,
@@ -279,7 +279,7 @@ pub struct ReactorContext {
 
 impl ReactorContext {
     /// Create a new reactor context with the given session configuration.
-    pub fn new(config: Arc<SessionConfig>) -> Self {
+    pub fn new(config: Arc<ReactorSessionConfig>) -> Self {
         Self {
             config,
             emitted_events: Vec::new(),
@@ -293,7 +293,10 @@ impl ReactorContext {
     }
 
     /// Create a context for a subagent session.
-    pub fn for_subagent(config: Arc<SessionConfig>, parent_session_id: impl Into<String>) -> Self {
+    pub fn for_subagent(
+        config: Arc<ReactorSessionConfig>,
+        parent_session_id: impl Into<String>,
+    ) -> Self {
         Self {
             config,
             emitted_events: Vec::new(),
@@ -311,7 +314,7 @@ impl ReactorContext {
     // ─────────────────────────────────────────────────────────────────────────
 
     /// Get the session configuration.
-    pub fn config(&self) -> &SessionConfig {
+    pub fn config(&self) -> &ReactorSessionConfig {
         &self.config
     }
 
@@ -528,7 +531,7 @@ impl ReactorContext {
 
 impl Default for ReactorContext {
     fn default() -> Self {
-        Self::new(Arc::new(SessionConfig::default()))
+        Self::new(Arc::new(ReactorSessionConfig::default()))
     }
 }
 
@@ -622,9 +625,9 @@ pub fn event_to_session_event(event: crate::event_bus::Event) -> SessionEvent {
     }
 }
 
-/// Convert a SessionConfig to a SessionEventConfig.
-impl From<&SessionConfig> for SessionEventConfig {
-    fn from(config: &SessionConfig) -> Self {
+/// Convert a ReactorSessionConfig to a SessionEventConfig.
+impl From<&ReactorSessionConfig> for SessionEventConfig {
+    fn from(config: &ReactorSessionConfig) -> Self {
         SessionEventConfig {
             session_id: config.session_id.clone(),
             folder: Some(config.folder.clone()),
@@ -721,7 +724,7 @@ pub trait Reactor: Send + Sync {
     /// Called when session starts.
     ///
     /// Use for initialization. Default implementation does nothing.
-    async fn on_session_start(&self, _config: &SessionConfig) -> ReactorResult<()> {
+    async fn on_session_start(&self, _config: &ReactorSessionConfig) -> ReactorResult<()> {
         Ok(())
     }
 
@@ -800,7 +803,7 @@ mod tests {
 
     #[test]
     fn test_session_config_default() {
-        let config = SessionConfig::default();
+        let config = ReactorSessionConfig::default();
         assert!(config.session_id.is_empty());
         assert_eq!(config.max_context_tokens, 100_000);
         assert!(config.system_prompt.is_none());
@@ -809,7 +812,7 @@ mod tests {
     #[test]
     fn test_session_config_builder() {
         let folder = test_path("session");
-        let config = SessionConfig::new("test-session", folder.clone())
+        let config = ReactorSessionConfig::new("test-session", folder.clone())
             .with_max_context_tokens(50_000)
             .with_system_prompt("You are a helpful assistant.")
             .with_custom(json!({"key": "value"}));
@@ -1015,7 +1018,7 @@ mod tests {
 
         // Test default lifecycle methods
         reactor
-            .on_session_start(&SessionConfig::default())
+            .on_session_start(&ReactorSessionConfig::default())
             .await
             .unwrap();
         let summary = reactor.on_before_compact(&[]).await.unwrap();
@@ -1054,7 +1057,7 @@ mod tests {
     #[test]
     fn test_reactor_context_new() {
         let folder = test_path("test");
-        let config = Arc::new(SessionConfig::new("test-session", folder.clone()));
+        let config = Arc::new(ReactorSessionConfig::new("test-session", folder.clone()));
         let ctx = ReactorContext::new(config.clone());
 
         assert_eq!(ctx.session_id(), "test-session");
@@ -1068,7 +1071,7 @@ mod tests {
     #[test]
     fn test_reactor_context_for_subagent() {
         let folder = test_path("sub");
-        let config = Arc::new(SessionConfig::new("sub-session", folder));
+        let config = Arc::new(ReactorSessionConfig::new("sub-session", folder));
         let ctx = ReactorContext::for_subagent(config, "parent-session");
 
         assert_eq!(ctx.session_id(), "sub-session");
@@ -1080,7 +1083,7 @@ mod tests {
     fn test_reactor_context_config_access() {
         let folder = test_path("config_access");
         let config = Arc::new(
-            SessionConfig::new("test", folder)
+            ReactorSessionConfig::new("test", folder)
                 .with_max_context_tokens(50_000)
                 .with_system_prompt("Test prompt"),
         );
@@ -1160,7 +1163,8 @@ mod tests {
     #[test]
     fn test_reactor_context_token_tracking() {
         let folder = test_path("token_tracking");
-        let config = Arc::new(SessionConfig::new("test", folder).with_max_context_tokens(1000));
+        let config =
+            Arc::new(ReactorSessionConfig::new("test", folder).with_max_context_tokens(1000));
         let mut ctx = ReactorContext::new(config);
 
         assert_eq!(ctx.token_count(), 0);
@@ -1186,7 +1190,8 @@ mod tests {
     #[test]
     fn test_reactor_context_compaction_request() {
         let folder = test_path("compaction_request");
-        let config = Arc::new(SessionConfig::new("test", folder).with_max_context_tokens(1000));
+        let config =
+            Arc::new(ReactorSessionConfig::new("test", folder).with_max_context_tokens(1000));
         let mut ctx = ReactorContext::new(config);
 
         assert!(!ctx.compaction_requested());
@@ -1312,7 +1317,7 @@ mod tests {
     fn test_reactor_context_default() {
         let ctx = ReactorContext::default();
 
-        // Should have default SessionConfig
+        // Should have default ReactorSessionConfig
         assert!(ctx.session_id().is_empty());
         assert_eq!(ctx.max_context_tokens(), 100_000);
     }

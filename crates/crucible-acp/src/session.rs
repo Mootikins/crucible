@@ -22,10 +22,10 @@ use agent_client_protocol::{ClientRequest, ClientResponse};
 /// ACP transport layer configuration.
 ///
 /// Settings for the underlying ACP client transport (timeouts, message limits).
-/// This is distinct from `crucible_core::types::acp::SessionConfig` which is for
+/// This is distinct from `crucible_core::SessionConfig` which is for
 /// high-level session parameters (working directory, modes).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionConfig {
+pub struct TransportConfig {
     /// Session timeout in milliseconds
     pub timeout_ms: u64,
 
@@ -36,7 +36,7 @@ pub struct SessionConfig {
     pub debug: bool,
 }
 
-impl Default for SessionConfig {
+impl Default for TransportConfig {
     fn default() -> Self {
         Self {
             timeout_ms: 30000,                  // 30 seconds
@@ -62,7 +62,7 @@ impl AcpSession {
     ///
     /// * `config` - Session configuration
     /// * `session_id` - Unique identifier for this session
-    pub fn new(_config: SessionConfig, session_id: String) -> Self {
+    pub fn new(_config: TransportConfig, session_id: String) -> Self {
         Self { session_id }
     }
 
@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn test_session_creation() {
-        let config = SessionConfig::default();
+        let config = TransportConfig::default();
         let session = AcpSession::new(config, "test-session-id".to_string());
         assert_eq!(session.id(), "test-session-id");
         assert!(session.is_active());
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn test_default_config() {
-        let config = SessionConfig::default();
+        let config = TransportConfig::default();
         assert_eq!(config.timeout_ms, 30000);
         assert_eq!(config.max_message_size, 10 * 1024 * 1024);
         assert!(!config.debug);

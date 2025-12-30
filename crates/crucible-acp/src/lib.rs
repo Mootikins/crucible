@@ -80,7 +80,7 @@ pub use filesystem::FileSystemHandler;
 pub use history::{ConversationHistory, HistoryConfig, HistoryMessage, MessageRole};
 pub use mcp_host::InProcessMcpHost;
 pub use protocol::MessageHandler;
-pub use session::{AcpSession, SessionConfig};
+pub use session::{AcpSession, TransportConfig};
 pub use streaming::{
     channel_callback, humanize_tool_title, StreamConfig, StreamHandler, StreamingCallback,
     StreamingChunk, ToolCallInfo,
