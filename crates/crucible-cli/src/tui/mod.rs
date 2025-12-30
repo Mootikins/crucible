@@ -6,6 +6,7 @@
 //! - Supports mode switching (Plan/Act/AutoApprove)
 //! - Handles cancellation (Ctrl+C)
 
+pub mod action_dispatch;
 pub mod agent_picker;
 pub mod chat_view;
 pub mod components;
@@ -34,9 +35,15 @@ pub mod widget;
 #[cfg(test)]
 mod conversation_ordering_tests;
 
+pub use action_dispatch::{dispatch, DialogEffect, RunnerEffect, ScrollEffect};
 pub use agent_picker::AgentSelection;
 pub use chat_view::ChatView;
-pub use components::{DialogAction, EventResult, FocusTarget, InteractiveWidget, TuiAction};
+pub use components::{DialogAction, FocusTarget, InteractiveWidget};
+// Note: EventResult and TuiAction have two versions:
+// - components::{EventResult, TuiAction} - widget-level events (legacy)
+// - event_result::{EventResult, TuiAction} - unified event system (new)
+// Using the new unified versions as the default export:
+pub use event_result::{EventResult, ScrollAction, TuiAction};
 pub use content_block::{ContentBlock, ParseEvent};
 pub use dialog::{DialogKind, DialogResult, DialogStack, DialogState, DialogWidget};
 pub use input::{map_key_event, InputAction};
