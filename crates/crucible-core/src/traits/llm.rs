@@ -26,7 +26,15 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Message role in a conversation
+/// Message role in LLM API conversations.
+///
+/// This is the canonical message role type for LLM provider communication.
+/// It maps directly to OpenAI/Anthropic API message roles.
+///
+/// Note: Other crates define domain-specific message role types:
+/// - `crucible_acp::MessageRole` - uses `Agent` (ACP protocol terminology)
+/// - `crucible_cli::tui::MessageRole` - for TUI display purposes
+/// - `crucible_rig::session::MessageRole` - simplified for Rig sessions
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum MessageRole {
@@ -498,24 +506,34 @@ pub struct TextModelInfo {
     pub status: ModelStatus,
 }
 
-/// Model capability
+/// Text/chat model feature capabilities.
+///
+/// Describes the **features** a text or chat model supports (function calling,
+/// streaming, JSON mode, etc.). Used by [`TextModelInfo`] for model metadata.
+///
+/// This is distinct from [`crate::traits::provider::ModelCapability`] which describes
+/// the **type** of model (embedding, chat, image, etc.) at the provider level.
+///
+/// # When to Use
+/// - Use this enum when describing what features a chat/text model supports
+/// - Use `provider::ModelCapability` when categorizing models by primary function
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ModelCapability {
-    /// Text completion
+    /// Text completion (non-chat)
     TextCompletion,
-    /// Chat completion
+    /// Chat/conversation completion
     ChatCompletion,
-    /// Function calling
+    /// Function calling support
     FunctionCalling,
-    /// Tool use
+    /// Tool use support (may be distinct from function calling)
     ToolUse,
-    /// Vision/image processing
+    /// Vision/image input processing
     Vision,
-    /// Audio processing
+    /// Audio input processing
     Audio,
-    /// Streaming support
+    /// Streaming response support
     Streaming,
-    /// JSON mode
+    /// JSON mode/structured output
     JsonMode,
 }
 

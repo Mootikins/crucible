@@ -19,7 +19,11 @@ use serde::{Deserialize, Serialize};
 use crate::{AcpError, Result};
 use agent_client_protocol::{ClientRequest, ClientResponse};
 
-/// Configuration for an ACP session
+/// ACP transport layer configuration.
+///
+/// Settings for the underlying ACP client transport (timeouts, message limits).
+/// This is distinct from `crucible_core::types::acp::SessionConfig` which is for
+/// high-level session parameters (working directory, modes).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionConfig {
     /// Session timeout in milliseconds

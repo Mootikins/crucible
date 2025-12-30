@@ -106,10 +106,15 @@ impl From<SessionId> for Uuid {
     }
 }
 
-/// Session configuration
+/// ACP protocol session configuration.
 ///
-/// Configuration for creating a new ACP session, including working directory,
-/// chat mode, and context limits.
+/// High-level configuration for creating a new ACP session, including working
+/// directory, chat mode, and context enrichment settings.
+///
+/// Note: Other crates define different session configurations:
+/// - `crucible_rune::reactor::SessionConfig` - reactor/handler execution config
+/// - `crucible_acp::session::SessionConfig` - transport layer config (timeouts)
+/// - `crucible_cli::chat::SessionConfig` - CLI user interface config
 ///
 /// # Example
 ///

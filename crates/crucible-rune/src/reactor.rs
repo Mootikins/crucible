@@ -67,8 +67,8 @@ use crate::event_bus::EventContext;
 
 // Re-export event types from crucible-core (canonical location)
 pub use crucible_core::events::{
-    EntityType, FileChangeKind, NoteChangeType, Priority, SessionEvent, SessionEventConfig,
-    ToolCall, ToolSource,
+    EntityType, ToolProvider, FileChangeKind, NoteChangeType, Priority, SessionEvent,
+    SessionEventConfig, ToolCall,
 };
 
 /// Result type for reactor operations.
@@ -135,7 +135,11 @@ impl ReactorError {
     }
 }
 
-/// Session configuration passed to reactors.
+/// Reactor session configuration for event handler execution.
+///
+/// Contains session identity, folder paths, and context limits for reactor processing.
+/// This is distinct from `crucible_core::types::acp::SessionConfig` which is for
+/// ACP protocol parameters.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionConfig {
     /// Unique session identifier.
@@ -576,7 +580,7 @@ pub fn event_to_session_event(event: crate::event_bus::Event) -> SessionEvent {
         },
         EventType::ToolDiscovered => SessionEvent::ToolDiscovered {
             name: event.identifier,
-            source: ToolSource::Rune, // Default source
+            source: ToolProvider::Rune, // Default source
             schema: Some(event.payload),
         },
         EventType::NoteParsed => SessionEvent::NoteParsed {
@@ -956,7 +960,7 @@ mod tests {
             },
             SessionEvent::ToolDiscovered {
                 name: "search".into(),
-                source: ToolSource::Mcp {
+                source: ToolProvider::Mcp {
                     server: "crucible".into(),
                 },
                 schema: Some(json!({"type": "object"})),
@@ -1397,7 +1401,7 @@ mod tests {
         .is_tool_event());
         assert!(SessionEvent::ToolDiscovered {
             name: "".into(),
-            source: ToolSource::Rune,
+            source: ToolProvider::Rune,
             schema: None
         }
         .is_tool_event());

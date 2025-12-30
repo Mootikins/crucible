@@ -54,7 +54,11 @@ pub(crate) fn find_word_start_forward(s: &str) -> usize {
     chars.peek().map(|(i, _)| *i).unwrap_or(s.len())
 }
 
-/// Role of a message in the conversation
+/// Role of a message for TUI display purposes.
+///
+/// Simplified variant set for rendering conversation history in the terminal UI.
+/// This is distinct from `crucible_core::traits::MessageRole` which is for
+/// LLM API communication.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MessageRole {
     User,
