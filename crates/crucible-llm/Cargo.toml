@@ -5,7 +5,7 @@ authors.workspace = true
 license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "LLM and AI integration for Crucible - embeddings, chat, completions"
+description = "Embedding providers for Crucible - local (FastEmbed, llama.cpp, Burn) and cloud (Ollama, OpenAI)"
 
 [lib]
 name = "crucible_llm"
