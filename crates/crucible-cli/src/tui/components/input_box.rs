@@ -4,7 +4,7 @@
 //! suitable for command-line style input at the bottom of the TUI.
 
 use crate::tui::{
-    components::{EventResult, InteractiveWidget},
+    components::{InteractiveWidget, WidgetEventResult},
     styles::presets,
 };
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
@@ -102,11 +102,11 @@ impl Widget for InputBoxWidget<'_> {
 }
 
 impl InteractiveWidget for InputBoxWidget<'_> {
-    fn handle_event(&mut self, _event: &Event) -> EventResult {
+    fn handle_event(&mut self, _event: &Event) -> WidgetEventResult {
         // Input box is managed by the runner/view layer
         // This widget is display-only - actual editing happens at a higher level
         // The runner maintains the buffer and cursor state and passes them here
-        EventResult::Ignored
+        WidgetEventResult::Ignored
     }
 
     fn focusable(&self) -> bool {

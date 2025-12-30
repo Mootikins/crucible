@@ -4,7 +4,7 @@
 //! and interactive navigation through messages.
 
 use crate::tui::{
-    components::{EventResult, InteractiveWidget, TuiAction},
+    components::{InteractiveWidget, WidgetAction, WidgetEventResult},
     conversation::{render_item_to_lines, ConversationState},
 };
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
@@ -157,7 +157,7 @@ impl Widget for SessionHistoryWidget<'_> {
 }
 
 impl InteractiveWidget for SessionHistoryWidget<'_> {
-    fn handle_event(&mut self, event: &Event) -> EventResult {
+    fn handle_event(&mut self, event: &Event) -> WidgetEventResult {
         if let Event::Key(KeyEvent {
             code, modifiers, ..
         }) = event
@@ -165,31 +165,31 @@ impl InteractiveWidget for SessionHistoryWidget<'_> {
             match (*code, *modifiers) {
                 // Ctrl+Up/Down - single line scroll
                 (KeyCode::Up, KeyModifiers::CONTROL) => {
-                    return EventResult::Action(TuiAction::Scroll(1));
+                    return WidgetEventResult::Action(WidgetAction::Scroll(1));
                 }
                 (KeyCode::Down, KeyModifiers::CONTROL) => {
-                    return EventResult::Action(TuiAction::Scroll(-1));
+                    return WidgetEventResult::Action(WidgetAction::Scroll(-1));
                 }
                 // Page Up/Down
                 (KeyCode::PageUp, _) => {
                     let page_lines = self.viewport_height.saturating_sub(2) as isize;
-                    return EventResult::Action(TuiAction::Scroll(page_lines));
+                    return WidgetEventResult::Action(WidgetAction::Scroll(page_lines));
                 }
                 (KeyCode::PageDown, _) => {
                     let page_lines = self.viewport_height.saturating_sub(2) as isize;
-                    return EventResult::Action(TuiAction::Scroll(-page_lines));
+                    return WidgetEventResult::Action(WidgetAction::Scroll(-page_lines));
                 }
                 // Home/End - scroll to top/bottom
                 (KeyCode::Home, KeyModifiers::NONE) => {
-                    return EventResult::Action(TuiAction::ScrollTo(usize::MAX));
+                    return WidgetEventResult::Action(WidgetAction::ScrollTo(usize::MAX));
                 }
                 (KeyCode::End, KeyModifiers::NONE) => {
-                    return EventResult::Action(TuiAction::ScrollTo(0));
+                    return WidgetEventResult::Action(WidgetAction::ScrollTo(0));
                 }
                 _ => {}
             }
         }
-        EventResult::Ignored
+        WidgetEventResult::Ignored
     }
 
     fn focusable(&self) -> bool {
@@ -363,7 +363,7 @@ mod tests {
         let event = Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::CONTROL));
         let result = widget.handle_event(&event);
 
-        assert_eq!(result, EventResult::Action(TuiAction::Scroll(1)));
+        assert_eq!(result, WidgetEventResult::Action(WidgetAction::Scroll(1)));
     }
 
     #[test]
@@ -374,7 +374,7 @@ mod tests {
         let event = Event::Key(KeyEvent::new(KeyCode::Down, KeyModifiers::CONTROL));
         let result = widget.handle_event(&event);
 
-        assert_eq!(result, EventResult::Action(TuiAction::Scroll(-1)));
+        assert_eq!(result, WidgetEventResult::Action(WidgetAction::Scroll(-1)));
     }
 
     #[test]
@@ -386,7 +386,7 @@ mod tests {
         let result = widget.handle_event(&event);
 
         // Page size should be viewport_height - 2 = 22
-        assert_eq!(result, EventResult::Action(TuiAction::Scroll(22)));
+        assert_eq!(result, WidgetEventResult::Action(WidgetAction::Scroll(22)));
     }
 
     #[test]
@@ -397,7 +397,7 @@ mod tests {
         let event = Event::Key(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE));
         let result = widget.handle_event(&event);
 
-        assert_eq!(result, EventResult::Action(TuiAction::ScrollTo(usize::MAX)));
+        assert_eq!(result, WidgetEventResult::Action(WidgetAction::ScrollTo(usize::MAX)));
     }
 
     #[test]
@@ -408,7 +408,7 @@ mod tests {
         let event = Event::Key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE));
         let result = widget.handle_event(&event);
 
-        assert_eq!(result, EventResult::Action(TuiAction::ScrollTo(0)));
+        assert_eq!(result, WidgetEventResult::Action(WidgetAction::ScrollTo(0)));
     }
 
     #[test]
@@ -419,7 +419,7 @@ mod tests {
         let event = Event::Key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
         let result = widget.handle_event(&event);
 
-        assert_eq!(result, EventResult::Ignored);
+        assert_eq!(result, WidgetEventResult::Ignored);
     }
 
     // =============================================================================
