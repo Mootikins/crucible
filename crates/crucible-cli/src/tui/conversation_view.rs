@@ -329,7 +329,7 @@ impl RatatuiView {
     }
 
     /// Append content blocks to the streaming assistant message
-    pub fn append_streaming_blocks(&mut self, blocks: Vec<crate::tui::ContentBlock>) {
+    pub fn append_streaming_blocks(&mut self, blocks: Vec<crate::tui::StreamBlock>) {
         self.state.conversation.append_streaming_blocks(blocks);
         // Only auto-scroll if user was at bottom (allows reading while streaming)
         if self.state.at_bottom {

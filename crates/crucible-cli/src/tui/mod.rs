@@ -43,7 +43,7 @@ pub use components::{DialogAction, FocusTarget, InteractiveWidget};
 // - components::{EventResult, TuiAction} - widget-level events (legacy)
 // - event_result::{EventResult, TuiAction} - unified event system (new)
 // Using the new unified versions as the default export:
-pub use content_block::{ContentBlock, ParseEvent};
+pub use content_block::{ParseEvent, StreamBlock};
 pub use dialog::{DialogKind, DialogResult, DialogStack, DialogState, DialogWidget};
 pub use event_result::{EventResult, ScrollAction, TuiAction};
 pub use input::{map_key_event, InputAction};
