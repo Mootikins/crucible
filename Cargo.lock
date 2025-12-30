@@ -2780,6 +2780,7 @@ dependencies = [
  "crucible-acp",
  "crucible-cli",
  "crucible-config",
+ "crucible-context",
  "crucible-core",
  "crucible-daemon",
  "crucible-daemon-client",
