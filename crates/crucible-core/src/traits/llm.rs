@@ -85,7 +85,7 @@ pub enum MessageRole {
 }
 
 /// Tool call made by the assistant
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolCall {
     /// Unique ID for this tool call
     pub id: String,
@@ -110,7 +110,7 @@ impl ToolCall {
 }
 
 /// Function call details
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FunctionCall {
     /// Function name
     pub name: String,
