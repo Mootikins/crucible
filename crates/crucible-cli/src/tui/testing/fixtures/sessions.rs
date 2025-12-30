@@ -2,7 +2,7 @@
 //!
 //! Pre-built conversation histories for testing various scenarios.
 
-use crate::tui::content_block::ContentBlock;
+use crate::tui::content_block::StreamBlock;
 use crate::tui::conversation::{ConversationItem, ToolCallDisplay, ToolStatus};
 
 /// Helper to create a user message
@@ -15,13 +15,13 @@ pub fn user(text: impl Into<String>) -> ConversationItem {
 /// Helper to create an assistant message
 pub fn assistant(text: impl Into<String>) -> ConversationItem {
     ConversationItem::AssistantMessage {
-        blocks: vec![ContentBlock::prose(text.into())],
+        blocks: vec![StreamBlock::prose(text.into())],
         is_streaming: false,
     }
 }
 
 /// Helper to create an assistant message with multiple blocks
-pub fn assistant_blocks(blocks: Vec<ContentBlock>) -> ConversationItem {
+pub fn assistant_blocks(blocks: Vec<StreamBlock>) -> ConversationItem {
     ConversationItem::AssistantMessage {
         blocks,
         is_streaming: false,
@@ -131,12 +131,12 @@ pub fn multiline_messages() -> Vec<ConversationItem> {
     vec![
         user("Show me some code"),
         assistant_blocks(vec![
-            ContentBlock::prose("Here's an example:"),
-            ContentBlock::code(
+            StreamBlock::prose("Here's an example:"),
+            StreamBlock::code(
                 Some("rust".to_string()),
                 "fn main() {\n    println!(\"Hello\");\n}",
             ),
-            ContentBlock::prose("This prints Hello."),
+            StreamBlock::prose("This prints Hello."),
         ]),
     ]
 }
