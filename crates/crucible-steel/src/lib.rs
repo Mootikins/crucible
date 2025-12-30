@@ -4,18 +4,27 @@
 //! - Native contracts with blame tracking (Steel's killer feature)
 //! - Hygienic macros
 //! - Racket-style semantics
+//! - Idiomatic Scheme/Lisp syntax for knowledge graph operations
 //!
 //! Note: Steel's Engine is !Send/!Sync, so execution uses spawn_blocking.
 
 pub mod error;
 pub mod executor;
+pub mod graph;
 pub mod registry;
 pub mod types;
 
 pub use error::SteelError;
 pub use executor::SteelExecutor;
+pub use graph::GraphModule;
 pub use registry::SteelToolRegistry;
 pub use types::{SteelTool, ToolParam};
+
+/// Steel library source code
+pub mod lib_sources {
+    /// Graph traversal library (pure Scheme)
+    pub const GRAPH: &str = include_str!("../lib/graph.scm");
+}
 
 #[cfg(test)]
 mod tests {
@@ -258,5 +267,35 @@ mod tests {
             .unwrap();
 
         assert_eq!(result, json!("Seattle"));
+    }
+}
+
+#[cfg(test)]
+mod builtin_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_steel_filter() {
+        let executor = SteelExecutor::new().unwrap();
+        let r = executor.execute_source("(filter (lambda (x) (> x 2)) '(1 2 3 4))").await;
+        println!("filter result: {:?}", r);
+    }
+
+    #[tokio::test]
+    async fn test_steel_member() {
+        let executor = SteelExecutor::new().unwrap();
+        let r = executor.execute_source("(member 2 '(1 2 3))").await;
+        println!("member result: {:?}", r);
+    }
+    
+    #[tokio::test]
+    async fn test_simple_lib() {
+        let executor = SteelExecutor::new().unwrap();
+        // Try without provide
+        let r = executor.execute_source(r#"
+            (define (note-title note) (hash-ref note 'title))
+            (note-title (hash 'title "Test"))
+        "#).await;
+        println!("simple lib result: {:?}", r);
     }
 }

@@ -36,11 +36,19 @@ impl SteelExecutor {
     }
 
     /// Execute Steel source code and return the result
+    ///
+    /// Previous sources are replayed to preserve definitions from earlier calls.
     pub async fn execute_source(&self, source: &str) -> Result<JsonValue, SteelError> {
         let source = source.to_string();
         let sources = self.sources.clone();
 
-        // Store the source for later function calls
+        // Get accumulated sources first
+        let all_sources: Vec<String> = {
+            let s = sources.lock().await;
+            s.clone()
+        };
+
+        // Store the new source for later calls
         {
             let mut s = sources.lock().await;
             s.push(source.clone());
@@ -49,6 +57,13 @@ impl SteelExecutor {
         // Run on blocking thread since Engine is !Send
         let result = tokio::task::spawn_blocking(move || {
             let mut engine = Engine::new();
+
+            // Replay all previous sources to preserve definitions
+            for prev_source in all_sources {
+                engine
+                    .run(prev_source)
+                    .map_err(|e| SteelError::Execution(e.to_string()))?;
+            }
 
             // run() requires Into<Cow<'static, str>>, so pass owned String
             let results = engine
