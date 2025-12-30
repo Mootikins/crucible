@@ -5,7 +5,7 @@
 #![allow(clippy::field_reassign_with_default)]
 
 use crucible_acp::client::ClientConfig;
-use crucible_acp::session::{AcpSession, SessionConfig};
+use crucible_acp::session::{AcpSession, TransportConfig};
 use crucible_acp::{
     ChatConfig, ChatSession, ContextConfig, CrucibleAcpClient, HistoryConfig, StreamConfig,
 };
@@ -564,7 +564,7 @@ async fn test_agent_lifecycle_cleanup() {
     assert!(client.is_connected());
 
     // Create session
-    let session = AcpSession::new(SessionConfig::default(), "test-session".to_string());
+    let session = AcpSession::new(TransportConfig::default(), "test-session".to_string());
 
     // Disconnect
     let disconnect_result = client.disconnect(&session).await;
@@ -618,12 +618,12 @@ async fn baseline_protocol_message_serialization() {
 #[tokio::test]
 async fn baseline_session_configuration_variants() {
     // Test default configuration
-    let config_default = SessionConfig::default();
+    let config_default = TransportConfig::default();
     let session_default = AcpSession::new(config_default, "session-1".to_string());
     assert_eq!(session_default.id(), "session-1");
 
     // Test with custom timeout
-    let mut config_custom = SessionConfig::default();
+    let mut config_custom = TransportConfig::default();
     config_custom.timeout_ms = 60000; // 60 seconds
     config_custom.debug = true;
     let session_custom = AcpSession::new(config_custom, "session-2".to_string());
@@ -717,7 +717,7 @@ async fn baseline_error_type_conversions() {
 /// Baseline test: Session state consistency
 #[tokio::test]
 async fn baseline_session_state_consistency() {
-    let config = SessionConfig::default();
+    let config = TransportConfig::default();
     let session1 = AcpSession::new(config.clone(), "session-1".to_string());
     let session2 = AcpSession::new(config, "session-2".to_string());
 

@@ -387,7 +387,7 @@ async fn run_deferred_chat(
     // Pre-selected agent for first iteration (skips picker, still allows /new restart)
     preselected_agent: Option<AgentSelection>,
 ) -> Result<()> {
-    use crate::chat::{ChatSession, SessionConfig};
+    use crate::chat::{ChatSession, ChatSessionConfig};
 
     info!("Using deferred agent creation (picker in TUI)");
 
@@ -482,7 +482,7 @@ async fn run_deferred_chat(
     status.success("Ready");
 
     // Create session configuration
-    let mut session_config = SessionConfig::new(initial_mode, !no_context, context_size);
+    let mut session_config = ChatSessionConfig::new(initial_mode, !no_context, context_size);
 
     // Set preselected agent if provided (skips picker first time, allows /new restart)
     if let Some(selection) = preselected_agent {

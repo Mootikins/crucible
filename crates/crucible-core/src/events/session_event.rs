@@ -1113,7 +1113,7 @@ impl Default for ToolCall {
 /// Session configuration for SessionStarted events.
 ///
 /// This is a simplified version of session config for event serialization.
-/// The full configuration is in `crucible-rune::reactor::SessionConfig`.
+/// The full configuration is in `crucible_rune::ReactorSessionConfig`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct SessionEventConfig {
     /// Unique session identifier.

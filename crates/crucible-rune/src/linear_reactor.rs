@@ -25,14 +25,14 @@
 //!     ├── EventRing<SessionEvent>   (in-memory event log)
 //!     ├── HandlerChain<SessionEvent> (topo-sorted handlers)
 //!     ├── EventBus                   (pub/sub for Rune handlers)
-//!     └── SessionConfig              (session settings)
+//!     └── ReactorSessionConfig              (session settings)
 //! ```
 //!
 //! ## Usage
 //!
 //! ```rust,ignore
 //! use crucible_rune::linear_reactor::{LinearReactor, LinearReactorConfig};
-//! use crucible_rune::reactor::{Reactor, SessionConfig, SessionEvent};
+//! use crucible_rune::reactor::{Reactor, ReactorSessionConfig, SessionEvent};
 //! use crucible_rune::event_bus::EventContext;
 //!
 //! // Create configuration
@@ -61,7 +61,7 @@ use crate::event_ring::EventRing;
 use crate::handler::BoxedRingHandler;
 use crate::handler_chain::{ChainResult, HandlerChain};
 use crate::reactor::{
-    Reactor, ReactorContext, ReactorError, ReactorMetadata, ReactorResult, SessionConfig,
+    Reactor, ReactorContext, ReactorError, ReactorMetadata, ReactorResult, ReactorSessionConfig,
     SessionEvent,
 };
 
@@ -136,7 +136,7 @@ pub struct LinearReactor {
     /// Optional EventBus for pub/sub integration.
     event_bus: Arc<RwLock<Option<EventBus>>>,
     /// Session configuration (set on session start).
-    session_config: Arc<RwLock<Option<SessionConfig>>>,
+    session_config: Arc<RwLock<Option<ReactorSessionConfig>>>,
 }
 
 impl LinearReactor {
@@ -561,7 +561,7 @@ impl Reactor for LinearReactor {
         Ok(event)
     }
 
-    async fn on_session_start(&self, config: &SessionConfig) -> ReactorResult<()> {
+    async fn on_session_start(&self, config: &ReactorSessionConfig) -> ReactorResult<()> {
         // Store the session config
         let mut guard = self.session_config.write().await;
         *guard = Some(config.clone());
@@ -829,7 +829,7 @@ mod tests {
     #[tokio::test]
     async fn test_linear_reactor_on_session_start() {
         let reactor = LinearReactor::with_defaults();
-        let config = SessionConfig::new("test-session", test_path("test"));
+        let config = ReactorSessionConfig::new("test-session", test_path("test"));
 
         reactor.on_session_start(&config).await.unwrap();
 
@@ -848,7 +848,7 @@ mod tests {
     #[tokio::test]
     async fn test_linear_reactor_on_session_end() {
         let reactor = LinearReactor::with_defaults();
-        let config = SessionConfig::new("test-session", test_path("test"));
+        let config = ReactorSessionConfig::new("test-session", test_path("test"));
 
         reactor.on_session_start(&config).await.unwrap();
         reactor.on_session_end("user closed").await.unwrap();
@@ -1081,7 +1081,7 @@ mod tests {
         let seq = reactor.ring().push(event);
 
         // Create a ReactorContext
-        let config = Arc::new(SessionConfig::new("test-session", test_path("test")));
+        let config = Arc::new(ReactorSessionConfig::new("test-session", test_path("test")));
         let mut ctx = ReactorContext::new(config);
 
         // Process via on_event
@@ -1116,7 +1116,7 @@ mod tests {
         assert_eq!(seq, 0);
 
         // Create a ReactorContext
-        let config = Arc::new(SessionConfig::new("test-session", test_path("test")));
+        let config = Arc::new(ReactorSessionConfig::new("test-session", test_path("test")));
         let mut ctx = ReactorContext::new(config);
 
         // Process via on_event
@@ -1174,7 +1174,7 @@ mod tests {
         let seq = reactor.ring().push(event);
 
         // Create a ReactorContext
-        let config = Arc::new(SessionConfig::new("test-session", test_path("test")));
+        let config = Arc::new(ReactorSessionConfig::new("test-session", test_path("test")));
         let mut ctx = ReactorContext::new(config);
 
         // Process via on_event
@@ -1199,7 +1199,7 @@ mod tests {
         let seq = reactor.ring().push(event);
 
         // Create a ReactorContext
-        let config = Arc::new(SessionConfig::new("test-session", test_path("test")));
+        let config = Arc::new(ReactorSessionConfig::new("test-session", test_path("test")));
         let mut ctx = ReactorContext::new(config);
 
         assert_eq!(ctx.token_count(), 0);
@@ -1221,7 +1221,7 @@ mod tests {
             .unwrap();
 
         // Create a ReactorContext
-        let config = Arc::new(SessionConfig::new("test-session", test_path("test")));
+        let config = Arc::new(ReactorSessionConfig::new("test-session", test_path("test")));
         let mut ctx = ReactorContext::new(config);
 
         // Try to process non-existent event
@@ -1242,7 +1242,7 @@ mod tests {
         assert_eq!(reactor.event_count(), 0);
 
         // Call on_session_start
-        let config = SessionConfig::new("test-session", test_path("test"))
+        let config = ReactorSessionConfig::new("test-session", test_path("test"))
             .with_system_prompt("You are a helpful assistant.");
         reactor.on_session_start(&config).await.unwrap();
 
@@ -1270,7 +1270,7 @@ mod tests {
         let reactor = LinearReactor::with_defaults();
 
         // Start session first
-        let config = SessionConfig::new("test-session", test_path("test"));
+        let config = ReactorSessionConfig::new("test-session", test_path("test"));
         reactor.on_session_start(&config).await.unwrap();
         assert_eq!(reactor.event_count(), 1);
 
