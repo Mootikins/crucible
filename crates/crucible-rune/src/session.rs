@@ -127,6 +127,10 @@ fn estimate_event_tokens(event: &SessionEvent) -> usize {
         SessionEvent::EmbeddingStored { .. } => 50,
         SessionEvent::EmbeddingFailed { error, .. } => error.len() + 50,
         SessionEvent::EmbeddingBatchComplete { .. } => 50,
+        // Pre-events (interception points)
+        SessionEvent::PreToolCall { name, .. } => name.len() + 50,
+        SessionEvent::PreParse { .. } => 50,
+        SessionEvent::PreLlmCall { prompt, .. } => prompt.len(),
     };
 
     // Rough estimate: ~4 characters per token

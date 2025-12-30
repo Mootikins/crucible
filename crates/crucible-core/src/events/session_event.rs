@@ -83,6 +83,47 @@ pub enum SessionEvent {
     },
 
     // ─────────────────────────────────────────────────────────────────────
+    // Pre-events (interception points for handlers)
+    // ─────────────────────────────────────────────────────────────────────
+    /// Pre-event before tool execution (allows cancellation/modification).
+    ///
+    /// Handlers can intercept this event to:
+    /// - Cancel dangerous tool calls (e.g., `rm`, `sudo`)
+    /// - Modify arguments before execution
+    /// - Log tool usage for auditing
+    PreToolCall {
+        /// Name of the tool about to be called.
+        name: String,
+        /// Arguments that will be passed to the tool.
+        args: JsonValue,
+    },
+
+    /// Pre-event before file parsing (allows cancellation/modification).
+    ///
+    /// Handlers can intercept this event to:
+    /// - Skip parsing certain files
+    /// - Apply preprocessing transformations
+    /// - Record parse requests for metrics
+    PreParse {
+        /// Path to the file about to be parsed.
+        path: PathBuf,
+    },
+
+    /// Pre-event before LLM call (allows cancellation/modification).
+    ///
+    /// Handlers can intercept this event to:
+    /// - Modify prompts before sending
+    /// - Switch models based on content
+    /// - Implement rate limiting
+    /// - Log LLM usage
+    PreLlmCall {
+        /// The prompt text being sent.
+        prompt: String,
+        /// The model being used.
+        model: String,
+    },
+
+    // ─────────────────────────────────────────────────────────────────────
     // Tool events
     // ─────────────────────────────────────────────────────────────────────
     /// Tool was called.
@@ -394,6 +435,9 @@ impl SessionEvent {
             Self::MessageReceived { .. } => "message_received",
             Self::AgentResponded { .. } => "agent_responded",
             Self::AgentThinking { .. } => "agent_thinking",
+            Self::PreToolCall { .. } => "pre_tool_call",
+            Self::PreParse { .. } => "pre_parse",
+            Self::PreLlmCall { .. } => "pre_llm_call",
             Self::ToolCalled { .. } => "tool_called",
             Self::ToolCompleted { .. } => "tool_completed",
             Self::SessionStarted { .. } => "session_started",
@@ -433,6 +477,9 @@ impl SessionEvent {
             Self::MessageReceived { participant_id, .. } => format!("message:{}", participant_id),
             Self::AgentResponded { .. } => "agent:responded".into(),
             Self::AgentThinking { .. } => "agent:thinking".into(),
+            Self::PreToolCall { name, .. } => format!("pre:tool:{}", name),
+            Self::PreParse { path, .. } => format!("pre:parse:{}", path.display()),
+            Self::PreLlmCall { model, .. } => format!("pre:llm:{}", model),
             Self::ToolCalled { name, .. } => name.clone(),
             Self::ToolCompleted { name, .. } => name.clone(),
             Self::SessionStarted { config, .. } => format!("session:{}", config.session_id),
@@ -499,6 +546,17 @@ impl SessionEvent {
         matches!(
             self,
             Self::ToolCalled { .. } | Self::ToolCompleted { .. } | Self::ToolDiscovered { .. }
+        )
+    }
+
+    /// Check if this is a pre-event (interception point).
+    ///
+    /// Pre-events are emitted before the corresponding action occurs,
+    /// allowing handlers to modify or cancel the operation.
+    pub fn is_pre_event(&self) -> bool {
+        matches!(
+            self,
+            Self::PreToolCall { .. } | Self::PreParse { .. } | Self::PreLlmCall { .. }
         )
     }
 
@@ -1962,5 +2020,117 @@ mod tests {
             payload: JsonValue::Null,
         };
         assert_eq!(custom.priority(), Priority::Normal);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Pre-event contract tests
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_pre_tool_call_event_type() {
+        let event = SessionEvent::PreToolCall {
+            name: "search".into(),
+            args: serde_json::json!({"q": "rust"}),
+        };
+        assert_eq!(event.event_type(), "pre_tool_call");
+        assert!(event.is_pre_event());
+        assert!(!event.is_tool_event()); // Pre-events are separate from tool events
+    }
+
+    #[test]
+    fn test_pre_parse_event_type() {
+        let event = SessionEvent::PreParse {
+            path: PathBuf::from("/notes/test.md"),
+        };
+        assert_eq!(event.event_type(), "pre_parse");
+        assert!(event.is_pre_event());
+        assert!(!event.is_note_event()); // Pre-events are separate from note events
+    }
+
+    #[test]
+    fn test_pre_llm_call_event_type() {
+        let event = SessionEvent::PreLlmCall {
+            prompt: "Hello".into(),
+            model: "gpt-4".into(),
+        };
+        assert_eq!(event.event_type(), "pre_llm_call");
+        assert!(event.is_pre_event());
+    }
+
+    #[test]
+    fn test_pre_event_identifiers() {
+        let tool_event = SessionEvent::PreToolCall {
+            name: "bash".into(),
+            args: serde_json::json!({"cmd": "ls"}),
+        };
+        assert_eq!(tool_event.identifier(), "pre:tool:bash");
+
+        let parse_event = SessionEvent::PreParse {
+            path: PathBuf::from("/notes/test.md"),
+        };
+        assert_eq!(parse_event.identifier(), "pre:parse:/notes/test.md");
+
+        let llm_event = SessionEvent::PreLlmCall {
+            prompt: "Hello".into(),
+            model: "gpt-4".into(),
+        };
+        assert_eq!(llm_event.identifier(), "pre:llm:gpt-4");
+    }
+
+    #[test]
+    fn test_pre_event_serialization() {
+        let event = SessionEvent::PreToolCall {
+            name: "bash".into(),
+            args: serde_json::json!({"cmd": "ls"}),
+        };
+
+        let json = serde_json::to_string(&event).unwrap();
+        let restored: SessionEvent = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(event, restored);
+    }
+
+    #[test]
+    fn test_all_pre_events_serialize() {
+        let events = vec![
+            SessionEvent::PreToolCall {
+                name: "search".into(),
+                args: serde_json::json!({"q": "test"}),
+            },
+            SessionEvent::PreParse {
+                path: PathBuf::from("/notes/test.md"),
+            },
+            SessionEvent::PreLlmCall {
+                prompt: "Hello".into(),
+                model: "claude-3".into(),
+            },
+        ];
+
+        for event in events {
+            let json = serde_json::to_string(&event).unwrap();
+            let parsed: SessionEvent = serde_json::from_str(&json).unwrap();
+            assert_eq!(event, parsed);
+        }
+    }
+
+    #[test]
+    fn test_pre_event_priority() {
+        // Pre-events default to Normal priority
+        let pre_tool = SessionEvent::PreToolCall {
+            name: "search".into(),
+            args: JsonValue::Null,
+        };
+        assert_eq!(pre_tool.priority(), Priority::Normal);
+
+        let pre_parse = SessionEvent::PreParse {
+            path: PathBuf::from("/notes/test.md"),
+        };
+        assert_eq!(pre_parse.priority(), Priority::Normal);
+
+        let pre_llm = SessionEvent::PreLlmCall {
+            prompt: "test".into(),
+            model: "gpt-4".into(),
+        };
+        assert_eq!(pre_llm.priority(), Priority::Normal);
     }
 }

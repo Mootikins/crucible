@@ -55,7 +55,7 @@
 
 use async_trait::async_trait;
 use crucible_config::BackendType;
-use crucible_core::traits::llm::LlmResult;
+use crucible_core::traits::{BackendError, BackendResult};
 use crucible_core::traits::provider::{
     CanEmbed, EmbeddingResponse as UnifiedEmbeddingResponse, ExtendedCapabilities,
     Provider as UnifiedProvider,
@@ -516,28 +516,22 @@ impl UnifiedProvider for FastEmbedProvider {
         ExtendedCapabilities::embedding_only(self.model_info.dimensions.unwrap_or(768))
     }
 
-    async fn health_check(&self) -> LlmResult<bool> {
+    async fn health_check(&self) -> BackendResult<bool> {
         // Reuse the legacy health check logic
         match EmbeddingProvider::health_check(self).await {
             Ok(healthy) => Ok(healthy),
-            Err(e) => Err(crucible_core::traits::llm::LlmError::ProviderError {
-                provider: "FastEmbed".to_string(),
-                message: e.to_string(),
-            }),
+            Err(e) => Err(BackendError::Provider(format!("FastEmbed: {}", e))),
         }
     }
 }
 
 #[async_trait]
 impl CanEmbed for FastEmbedProvider {
-    async fn embed(&self, text: &str) -> LlmResult<UnifiedEmbeddingResponse> {
+    async fn embed(&self, text: &str) -> BackendResult<UnifiedEmbeddingResponse> {
         // Delegate to legacy impl and convert response type
-        let response = EmbeddingProvider::embed(self, text).await.map_err(|e| {
-            crucible_core::traits::llm::LlmError::ProviderError {
-                provider: "FastEmbed".to_string(),
-                message: e.to_string(),
-            }
-        })?;
+        let response = EmbeddingProvider::embed(self, text)
+            .await
+            .map_err(|e| BackendError::Provider(format!("FastEmbed: {}", e)))?;
 
         Ok(UnifiedEmbeddingResponse {
             embedding: response.embedding,
@@ -546,14 +540,11 @@ impl CanEmbed for FastEmbedProvider {
         })
     }
 
-    async fn embed_batch(&self, texts: Vec<String>) -> LlmResult<Vec<UnifiedEmbeddingResponse>> {
+    async fn embed_batch(&self, texts: Vec<String>) -> BackendResult<Vec<UnifiedEmbeddingResponse>> {
         // Delegate to legacy impl and convert response type
         let responses = EmbeddingProvider::embed_batch(self, texts)
             .await
-            .map_err(|e| crucible_core::traits::llm::LlmError::ProviderError {
-                provider: "FastEmbed".to_string(),
-                message: e.to_string(),
-            })?;
+            .map_err(|e| BackendError::Provider(format!("FastEmbed: {}", e)))?;
 
         Ok(responses
             .into_iter()
@@ -780,7 +771,7 @@ mod tests {
             );
             let provider = FastEmbedProvider::new(config).unwrap();
 
-            // Test health_check via Provider trait (returns LlmResult<bool>)
+            // Test health_check via Provider trait (returns BackendResult<bool>)
             let health = Provider::health_check(&provider).await;
             assert!(health.is_ok());
             assert!(health.unwrap());

@@ -1,72 +1,30 @@
-//! LLM (Large Language Model) abstraction traits
+//! LLM (Large Language Model) data types
 //!
-//! This module defines the core abstractions for LLM integration following
-//! SOLID principles and dependency inversion.
+//! This module defines the core data types for LLM integration.
 //!
 //! ## Architecture Pattern
 //!
 //! Following SOLID principles (Interface Segregation & Dependency Inversion):
-//! - **crucible-core** defines traits and associated types (this module)
+//! - **crucible-core** defines data types (this module) and traits (`provider.rs`)
 //! - **crucible-llm** implements provider-specific logic (Ollama, OpenAI, etc.)
 //! - **crucible-cli** provides glue code and configuration
 //!
-//! ## Design Principles
+//! ## Types
 //!
-//! **Interface Segregation**: Separate traits for distinct capabilities
-//! - `TextGenerationProvider` - Chat completion with streaming and tool calling
-//! - `CompletionProvider` - Text completion (future)
-//! - `EmbeddingProvider` - Text embeddings (already exists in enrichment)
+//! - **Request/Response**: `ChatCompletionRequest`, `ChatCompletionResponse`, etc.
+//! - **Streaming**: `ChatCompletionChunk`, `ChatMessageDelta`, etc.
+//! - **Tool Calling**: `ToolCall`, `LlmToolDefinition`, `ToolChoice`
+//! - **Model Info**: `TextModelInfo`, `ModelCapability`, `ProviderCapabilities`
 //!
-//! **Dependency Inversion**: Traits use associated types for flexibility
-//! - Implementations choose concrete types (Message, ToolCall, etc.)
-//! - Core never depends on concrete implementations
+//! ## Traits (in `provider.rs`)
+//!
+//! - `CompletionBackend` - Chat completion with streaming and tool calling
+//! - `EmbeddingBackend` - Text embeddings
 
 use super::context_ops::ContextMessage;
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-
-/// Result type for LLM operations
-pub type LlmResult<T> = Result<T, LlmError>;
-
-/// LLM operation errors
-#[derive(Debug, Clone, Serialize, Deserialize, thiserror::Error)]
-pub enum LlmError {
-    #[error("HTTP request failed: {0}")]
-    HttpError(String),
-
-    #[error("Invalid response: {0}")]
-    InvalidResponse(String),
-
-    #[error("Authentication failed: {0}")]
-    AuthenticationError(String),
-
-    #[error("Rate limit exceeded, retry after {retry_after_secs}s")]
-    RateLimitExceeded { retry_after_secs: u64 },
-
-    #[error("Provider error: {provider}: {message}")]
-    ProviderError { provider: String, message: String },
-
-    #[error("Configuration error: {0}")]
-    ConfigError(String),
-
-    #[error("Request timed out after {timeout_secs}s")]
-    Timeout { timeout_secs: u64 },
-
-    #[error("Model not found: {0}")]
-    ModelNotFound(String),
-
-    #[error("Invalid tool call: {0}")]
-    InvalidToolCall(String),
-
-    #[error("Internal error: {0}")]
-    Internal(String),
-
-    #[error("Unsupported operation: {0}")]
-    Unsupported(String),
-}
 
 /// Message role in a conversation
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -599,73 +557,6 @@ pub struct ProviderCapabilities {
     pub output_formats: Vec<String>,
 }
 
-/// Text generation provider trait
-///
-/// This trait defines the interface for text generation providers that can
-/// generate completions and chat completions with streaming support.
-///
-/// ## Design Rationale
-///
-/// - **Streaming-first**: Primary interface is streaming, non-streaming is convenience
-/// - **Tool calling**: Built-in support for tool/function calling
-/// - **Provider-agnostic**: Types work across OpenAI, Ollama, Anthropic, etc.
-/// - **Async**: All operations are async for I/O efficiency
-///
-/// ## Thread Safety
-///
-/// Implementations must be Send + Sync to enable concurrent usage.
-#[async_trait]
-pub trait TextGenerationProvider: Send + Sync {
-    /// Generate a text completion
-    async fn generate_completion(
-        &self,
-        request: CompletionRequest,
-    ) -> LlmResult<CompletionResponse>;
-
-    /// Generate a streaming text completion
-    fn generate_completion_stream<'a>(
-        &'a self,
-        request: CompletionRequest,
-    ) -> BoxStream<'a, LlmResult<CompletionChunk>>;
-
-    /// Generate a chat completion
-    async fn generate_chat_completion(
-        &self,
-        request: ChatCompletionRequest,
-    ) -> LlmResult<ChatCompletionResponse>;
-
-    /// Generate a streaming chat completion
-    fn generate_chat_completion_stream<'a>(
-        &'a self,
-        request: ChatCompletionRequest,
-    ) -> BoxStream<'a, LlmResult<ChatCompletionChunk>>;
-
-    /// Get the provider name
-    fn provider_name(&self) -> &str;
-
-    /// Get the default model name
-    fn default_model(&self) -> &str;
-
-    /// List available models
-    async fn list_models(&self) -> LlmResult<Vec<TextModelInfo>>;
-
-    /// Check if the provider is healthy
-    async fn health_check(&self) -> LlmResult<bool>;
-
-    /// Get provider capabilities
-    fn capabilities(&self) -> ProviderCapabilities;
-}
-
-// Legacy type aliases for backwards compatibility
-// Note: These are type aliases for the request/response types only.
-// For trait bounds, use TextGenerationProvider directly.
-
-/// Simplified request type (legacy compatibility)
-pub type LlmRequest = ChatCompletionRequest;
-
-/// Simplified response type (legacy compatibility)
-pub type LlmResponse = ChatCompletionResponse;
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -696,17 +587,6 @@ mod tests {
 
         assert_eq!(request.max_tokens, Some(50));
         assert_eq!(request.temperature, Some(0.5));
-    }
-
-    #[test]
-    fn test_llm_error_display() {
-        let err = LlmError::Timeout { timeout_secs: 30 };
-        assert!(err.to_string().contains("30"));
-
-        let err2 = LlmError::RateLimitExceeded {
-            retry_after_secs: 60,
-        };
-        assert!(err2.to_string().contains("60"));
     }
 
     #[test]
