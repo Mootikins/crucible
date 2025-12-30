@@ -96,6 +96,7 @@ impl EventToMarkdown for SessionEvent {
             SessionEvent::PreToolCall { .. } => "PreToolCall",
             SessionEvent::PreParse { .. } => "PreParse",
             SessionEvent::PreLlmCall { .. } => "PreLlmCall",
+            SessionEvent::AwaitingInput { .. } => "AwaitingInput",
         }
     }
 
@@ -311,6 +312,13 @@ impl EventToMarkdown for SessionEvent {
                     prompt.clone()
                 };
                 format!("**Model:** {}\n**Prompt:** {}\n", model, truncated)
+            }
+            SessionEvent::AwaitingInput { input_type, context } => {
+                format!(
+                    "**Input Type:** {}\n**Context:** {}\n",
+                    input_type,
+                    context.as_deref().unwrap_or("(none)")
+                )
             }
         };
 
