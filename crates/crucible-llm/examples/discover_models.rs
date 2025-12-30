@@ -59,7 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (idx, model) in models.iter().enumerate() {
         println!("{}. {}", idx + 1, model.name);
         println!("   Path: {}", model.path.display());
-        println!("   Capability: {:?}", model.capability);
+        println!("   Model type: {:?}", model.model_type);
 
         if let Some(arch) = &model.architecture {
             println!("   Architecture: {}", arch);

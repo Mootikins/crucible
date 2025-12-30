@@ -74,4 +74,4 @@ pub use crucible_core::enrichment::{
 };
 
 // Re-export model discovery
-pub use model_discovery::{DiscoveredModel, DiscoveryConfig, ModelCapability, ModelDiscovery};
+pub use model_discovery::{DiscoveredModel, DiscoveredModelType, DiscoveryConfig, ModelDiscovery};
