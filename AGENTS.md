@@ -1,22 +1,3 @@
-<!-- OPENSPEC:START -->
-# OpenSpec Instructions
-
-These instructions are for AI assistants working in this project.
-
-Always open `@/openspec/AGENTS.md` when the request:
-- Mentions planning or proposals (words like proposal, spec, change, plan)
-- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
-- Sounds ambiguous and you need the authoritative spec before coding
-
-Use `@/openspec/AGENTS.md` to learn:
-- How to create and apply change proposals
-- Spec format and conventions
-- Project structure and guidelines
-
-Keep this managed block so 'openspec update' can refresh the instructions.
-
-<!-- OPENSPEC:END -->
-
 # AI Agent Guide for Crucible
 
 > Instructions for AI agents (Claude, Codex, etc.) working on the Crucible codebase
@@ -108,7 +89,7 @@ let response = provider.embed("text").await?;
 
 ### Systems
 
-Crucible is organized into orthogonal systems. See **[openspec/SYSTEMS.md](./openspec/SYSTEMS.md)** for full details.
+Crucible is organized into orthogonal systems. See **[docs/Meta/Systems.md](./docs/Meta/Systems.md)** for full details.
 
 | System | Scope |
 |--------|-------|
@@ -139,11 +120,6 @@ crucible/
 │   ├── tq/                      # TOON Query library
 │   └── ...                      # Other crates
 ├── docs/                        # Documentation kiln (user guides + test fixture)
-├── openspec/                    # Change proposals & specs
-│   ├── SYSTEMS.md               # System boundaries
-│   ├── AGENTS.md                # OpenSpec workflow
-│   ├── changes/                 # Active proposals
-│   └── specs/                   # Current specs
 ├── justfile                     # Development recipes
 ├── AGENTS.md                    # This file (CLAUDE.md symlinks here)
 └── README.md                    # Project overview
@@ -159,13 +135,13 @@ crucible/
 - `LICENSE`, `.gitignore` - project metadata
 
 **Do NOT create in root:**
-- Documentation files (use `docs/` or `openspec/`)
+- Documentation files (use `docs/`)
 - Temporary files (clean up after use)
 - Agent conversation logs (don't commit)
 
 **Where things belong:**
-- **Change proposals**: `openspec/changes/` - see `openspec/AGENTS.md`
-- **Specifications**: `openspec/specs/` - current system capabilities
+- **Feature docs**: `docs/Help/` - user-facing reference
+- **Architecture docs**: `docs/Meta/` - contributor docs
 - **Examples**: `examples/`
 - **Scripts**: `scripts/`
 - **Tests**: `tests/` or `crates/*/tests/`
@@ -335,25 +311,15 @@ Before submitting changes:
 - [ ] Code follows project style guidelines
 - [ ] Tests pass (`cargo nextest run --profile ci`)
 - [ ] Error handling is comprehensive
-- [ ] OpenSpec updated if needed (architectural changes)
+- [ ] Docs updated if needed (architectural changes go in `docs/Meta/`)
 - [ ] No debug code left in
 - [ ] Conventional commit messages
-
-## Using OpenSpec
-
-For architectural changes, new features, or breaking changes, use the OpenSpec workflow:
-
-**See `openspec/AGENTS.md` for complete details.** Quick reference:
-- Create proposal in `openspec/changes/[change-id]/`
-- Write `proposal.md`, `tasks.md`, and spec deltas
-- Validate with `openspec validate [change-id] --strict`
-- Get approval before implementing
 
 ## Key Resources
 
 - **[README.md](./README.md)** - Project overview and quick start
-- **[OpenSpec AGENTS.md](./openspec/AGENTS.md)** - Change proposal workflow
-- **[SYSTEMS.md](./openspec/SYSTEMS.md)** - System boundaries and organization
+- **[docs/Meta/Systems.md](./docs/Meta/Systems.md)** - System boundaries and organization
+- **[docs/Meta/Roadmap.md](./docs/Meta/Roadmap.md)** - Development roadmap
 - **[Documentation](./docs/)** - Reference kiln (user guides + test fixture)
 - **[justfile](./justfile)** - Development recipes
 
