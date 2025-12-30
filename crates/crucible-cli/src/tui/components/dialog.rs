@@ -9,7 +9,7 @@
 //! The dialog widget wraps the existing DialogState and DialogWidget rendering
 //! from tui::dialog with InteractiveWidget support for event handling.
 
-use crate::tui::components::{DialogAction, EventResult, InteractiveWidget, TuiAction};
+use crate::tui::components::{DialogAction, InteractiveWidget, WidgetAction, WidgetEventResult};
 use crate::tui::dialog::{DialogKind, DialogResult, DialogState};
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use ratatui::{
@@ -238,11 +238,11 @@ impl DialogWidget<'_> {
 }
 
 impl InteractiveWidget for DialogWidget<'_> {
-    fn handle_event(&mut self, event: &Event) -> EventResult {
+    fn handle_event(&mut self, event: &Event) -> WidgetEventResult {
         if let Event::Key(key) = event {
             let result = self.state.handle_key(*key);
 
-            // Convert DialogResult to EventResult with TuiAction
+            // Convert DialogResult to WidgetEventResult with WidgetAction
             match result {
                 DialogResult::Confirm(_value) => {
                     // For select dialogs, parse the selected index
@@ -250,19 +250,19 @@ impl InteractiveWidget for DialogWidget<'_> {
                         items: _, selected, ..
                     } = &self.state.kind
                     {
-                        EventResult::Action(TuiAction::CloseDialog(DialogAction::Select(*selected)))
+                        WidgetEventResult::Action(WidgetAction::CloseDialog(DialogAction::Select(*selected)))
                     } else {
-                        EventResult::Action(TuiAction::CloseDialog(DialogAction::Confirm))
+                        WidgetEventResult::Action(WidgetAction::CloseDialog(DialogAction::Confirm))
                     }
                 }
                 DialogResult::Cancel => {
-                    EventResult::Action(TuiAction::CloseDialog(DialogAction::Cancel))
+                    WidgetEventResult::Action(WidgetAction::CloseDialog(DialogAction::Cancel))
                 }
-                DialogResult::Pending => EventResult::Consumed,
+                DialogResult::Pending => WidgetEventResult::Consumed,
             }
         } else {
             // Dialogs consume all events (focus trap)
-            EventResult::Consumed
+            WidgetEventResult::Consumed
         }
     }
 
@@ -293,7 +293,7 @@ mod tests {
         let result = widget.handle_event(&key(KeyCode::Enter));
         assert_eq!(
             result,
-            EventResult::Action(TuiAction::CloseDialog(DialogAction::Confirm))
+            WidgetEventResult::Action(WidgetAction::CloseDialog(DialogAction::Confirm))
         );
     }
 
@@ -305,7 +305,7 @@ mod tests {
         {
             let mut widget = DialogWidget::new(&mut state);
             let result = widget.handle_event(&key(KeyCode::Right));
-            assert_eq!(result, EventResult::Consumed);
+            assert_eq!(result, WidgetEventResult::Consumed);
         }
 
         // Confirm on "No" button
@@ -314,7 +314,7 @@ mod tests {
             let result = widget.handle_event(&key(KeyCode::Enter));
             assert_eq!(
                 result,
-                EventResult::Action(TuiAction::CloseDialog(DialogAction::Cancel))
+                WidgetEventResult::Action(WidgetAction::CloseDialog(DialogAction::Cancel))
             );
         }
     }
@@ -327,7 +327,7 @@ mod tests {
         let result = widget.handle_event(&key(KeyCode::Esc));
         assert_eq!(
             result,
-            EventResult::Action(TuiAction::CloseDialog(DialogAction::Cancel))
+            WidgetEventResult::Action(WidgetAction::CloseDialog(DialogAction::Cancel))
         );
     }
 
@@ -339,7 +339,7 @@ mod tests {
         let result = widget.handle_event(&key(KeyCode::Char('y')));
         assert_eq!(
             result,
-            EventResult::Action(TuiAction::CloseDialog(DialogAction::Confirm))
+            WidgetEventResult::Action(WidgetAction::CloseDialog(DialogAction::Confirm))
         );
     }
 
@@ -351,7 +351,7 @@ mod tests {
         let result = widget.handle_event(&key(KeyCode::Char('n')));
         assert_eq!(
             result,
-            EventResult::Action(TuiAction::CloseDialog(DialogAction::Cancel))
+            WidgetEventResult::Action(WidgetAction::CloseDialog(DialogAction::Cancel))
         );
     }
 
@@ -375,7 +375,7 @@ mod tests {
             let result = widget.handle_event(&key(KeyCode::Enter));
             assert_eq!(
                 result,
-                EventResult::Action(TuiAction::CloseDialog(DialogAction::Select(2)))
+                WidgetEventResult::Action(WidgetAction::CloseDialog(DialogAction::Select(2)))
             );
         }
     }
@@ -396,7 +396,7 @@ mod tests {
             let result = widget.handle_event(&key(KeyCode::Enter));
             assert_eq!(
                 result,
-                EventResult::Action(TuiAction::CloseDialog(DialogAction::Select(1)))
+                WidgetEventResult::Action(WidgetAction::CloseDialog(DialogAction::Select(1)))
             );
         }
     }
@@ -409,7 +409,7 @@ mod tests {
         let result = widget.handle_event(&key(KeyCode::Enter));
         assert_eq!(
             result,
-            EventResult::Action(TuiAction::CloseDialog(DialogAction::Confirm))
+            WidgetEventResult::Action(WidgetAction::CloseDialog(DialogAction::Confirm))
         );
     }
 
@@ -421,7 +421,7 @@ mod tests {
         let result = widget.handle_event(&key(KeyCode::Esc));
         assert_eq!(
             result,
-            EventResult::Action(TuiAction::CloseDialog(DialogAction::Confirm))
+            WidgetEventResult::Action(WidgetAction::CloseDialog(DialogAction::Confirm))
         );
     }
 
@@ -432,7 +432,7 @@ mod tests {
 
         // Unknown keys should still be consumed (focus trap)
         let result = widget.handle_event(&key(KeyCode::F(1)));
-        assert_eq!(result, EventResult::Consumed);
+        assert_eq!(result, WidgetEventResult::Consumed);
     }
 
     #[test]
