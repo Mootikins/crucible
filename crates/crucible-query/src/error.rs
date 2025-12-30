@@ -16,6 +16,10 @@ pub enum ParseError {
     #[error("PGQ parse error:\n{errors}")]
     Pgq { errors: String },
 
+    /// Cypher parsing error with detailed location info
+    #[error("Cypher parse error:\n{errors}")]
+    Cypher { errors: String },
+
     /// jaq-style parsing error
     #[error("jaq parse error: {message}")]
     Jaq { message: String },
@@ -51,6 +55,14 @@ pub enum RenderError {
     /// Missing required field
     #[error("missing required field: {field}")]
     MissingField { field: String },
+
+    /// Missing source for recursive query
+    #[error("recursive query requires explicit source (path or title)")]
+    MissingSource,
+
+    /// Unsupported filter value type
+    #[error("unsupported filter: {message}")]
+    UnsupportedFilter { message: String },
 }
 
 /// Pipeline-level errors
