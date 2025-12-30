@@ -1,4 +1,8 @@
-//! Content block types for structured message rendering
+//! Stream block types for structured message rendering
+//!
+//! [`StreamBlock`] represents parsed content during streaming (prose or code).
+//! This is distinct from [`crate::tui::viewport::ViewportBlock`] (buffered UI blocks)
+//! and [`crucible_core::traits::mcp::ContentBlock`] (MCP protocol content).
 
 /// Events emitted by the streaming parser
 #[derive(Debug, Clone, PartialEq)]
@@ -13,9 +17,16 @@ pub enum ParseEvent {
     CodeBlockEnd,
 }
 
-/// A structured content block within a message
+/// A structured content block within a streaming message.
+///
+/// Represents parsed content (prose or code) during streaming, with `is_complete`
+/// flag to track whether the block is still being received.
+///
+/// This is distinct from:
+/// - [`crate::tui::viewport::ViewportBlock`] - buffered UI blocks with IDs and caching
+/// - [`crucible_core::traits::mcp::ContentBlock`] - MCP protocol content (Text, Image, Resource)
 #[derive(Debug, Clone)]
-pub enum ContentBlock {
+pub enum StreamBlock {
     /// Markdown prose (may be partial during streaming)
     Prose { text: String, is_complete: bool },
     /// Code block with optional language
@@ -26,7 +37,7 @@ pub enum ContentBlock {
     },
 }
 
-impl ContentBlock {
+impl StreamBlock {
     pub fn prose(text: impl Into<String>) -> Self {
         Self::Prose {
             text: text.into(),
@@ -115,7 +126,7 @@ mod tests {
 
     #[test]
     fn test_prose_block_complete() {
-        let block = ContentBlock::prose("Hello world");
+        let block = StreamBlock::prose("Hello world");
         assert!(block.is_complete());
         assert_eq!(block.text(), "Hello world");
         assert_eq!(block.lang(), None);
@@ -123,7 +134,7 @@ mod tests {
 
     #[test]
     fn test_prose_partial() {
-        let mut block = ContentBlock::prose_partial("Hel");
+        let mut block = StreamBlock::prose_partial("Hel");
         assert!(!block.is_complete());
         assert_eq!(block.text(), "Hel");
 
@@ -134,7 +145,7 @@ mod tests {
 
     #[test]
     fn test_prose_append() {
-        let mut block = ContentBlock::prose_partial("Hello");
+        let mut block = StreamBlock::prose_partial("Hello");
         block.append(" world");
         assert_eq!(block.text(), "Hello world");
         assert!(!block.is_complete()); // Still partial
@@ -142,7 +153,7 @@ mod tests {
 
     #[test]
     fn test_code_block_with_lang() {
-        let block = ContentBlock::code(Some("rust".into()), "fn main() {}");
+        let block = StreamBlock::code(Some("rust".into()), "fn main() {}");
         assert!(block.is_complete());
         assert_eq!(block.text(), "fn main() {}");
         assert_eq!(block.lang(), Some("rust"));
@@ -150,7 +161,7 @@ mod tests {
 
     #[test]
     fn test_code_block_no_lang() {
-        let block = ContentBlock::code(None, "plain code");
+        let block = StreamBlock::code(None, "plain code");
         assert!(block.is_complete());
         assert_eq!(block.text(), "plain code");
         assert_eq!(block.lang(), None);
@@ -158,7 +169,7 @@ mod tests {
 
     #[test]
     fn test_code_partial() {
-        let mut block = ContentBlock::code_partial(Some("python".into()), "def ");
+        let mut block = StreamBlock::code_partial(Some("python".into()), "def ");
         assert!(!block.is_complete());
         assert_eq!(block.lang(), Some("python"));
 

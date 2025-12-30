@@ -7,7 +7,7 @@
 //! chronological order - prose is grouped together, tool calls are grouped
 //! separately, breaking conversational flow.
 
-use super::content_block::ContentBlock;
+use super::content_block::StreamBlock;
 use super::conversation::{
     render_item_to_lines, ConversationItem, ConversationState, ConversationWidget, StatusKind,
     ToolCallDisplay, ToolStatus,

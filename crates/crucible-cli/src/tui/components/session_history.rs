@@ -431,7 +431,7 @@ mod tests {
 
     mod snapshot_tests {
         use super::*;
-        use crate::tui::content_block::ContentBlock;
+        use crate::tui::content_block::StreamBlock;
         use insta::assert_snapshot;
 
         const TEST_WIDTH: u16 = 80;
@@ -537,7 +537,7 @@ mod tests {
             let mut state = ConversationState::new();
             state.push_user_message("Explain");
             state.start_assistant_streaming();
-            state.append_streaming_blocks(vec![ContentBlock::prose_partial(
+            state.append_streaming_blocks(vec![StreamBlock::prose_partial(
                 "I'm thinking about your questio",
             )]);
 
@@ -550,8 +550,8 @@ mod tests {
             let mut state = ConversationState::new();
             state.start_assistant_streaming();
             state.append_streaming_blocks(vec![
-                ContentBlock::prose("Here's code:"),
-                ContentBlock::code_partial(Some("rust".into()), "fn main() {\n    // incomplete"),
+                StreamBlock::prose("Here's code:"),
+                StreamBlock::code_partial(Some("rust".into()), "fn main() {\n    // incomplete"),
             ]);
 
             let terminal = render_widget(&state, 0);
