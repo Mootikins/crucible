@@ -11,7 +11,7 @@
 //! - Escape to dismiss
 //! - Character input to filter results
 
-use crate::tui::components::{DialogAction, EventResult, InteractiveWidget, TuiAction};
+use crate::tui::components::{DialogAction, InteractiveWidget, WidgetAction, WidgetEventResult};
 use crate::tui::state::{PopupItemKind, PopupState};
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use ratatui::{
@@ -132,45 +132,45 @@ impl Widget for PopupWidget<'_> {
 }
 
 impl InteractiveWidget for PopupWidget<'_> {
-    fn handle_event(&mut self, event: &Event) -> EventResult {
+    fn handle_event(&mut self, event: &Event) -> WidgetEventResult {
         if let Event::Key(KeyEvent { code, .. }) = event {
             match code {
                 // Navigation
                 KeyCode::Up | KeyCode::Char('k') => {
                     self.state.move_selection(-1);
-                    EventResult::Consumed
+                    WidgetEventResult::Consumed
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
                     self.state.move_selection(1);
-                    EventResult::Consumed
+                    WidgetEventResult::Consumed
                 }
                 KeyCode::PageUp => {
                     self.state.move_selection(-5);
-                    EventResult::Consumed
+                    WidgetEventResult::Consumed
                 }
                 KeyCode::PageDown => {
                     self.state.move_selection(5);
-                    EventResult::Consumed
+                    WidgetEventResult::Consumed
                 }
 
                 // Confirm selection
                 KeyCode::Enter | KeyCode::Tab => {
-                    EventResult::Action(TuiAction::ConfirmPopup(self.state.selected))
+                    WidgetEventResult::Action(WidgetAction::ConfirmPopup(self.state.selected))
                 }
 
                 // Dismiss popup
-                KeyCode::Esc => EventResult::Action(TuiAction::DismissPopup),
+                KeyCode::Esc => WidgetEventResult::Action(WidgetAction::DismissPopup),
 
                 // Character input filters results (handled externally by runner)
                 // We consume printable characters to prevent them from propagating
-                KeyCode::Char(c) if !c.is_control() => EventResult::Consumed,
-                KeyCode::Backspace => EventResult::Consumed,
+                KeyCode::Char(c) if !c.is_control() => WidgetEventResult::Consumed,
+                KeyCode::Backspace => WidgetEventResult::Consumed,
 
                 // Ignore other keys
-                _ => EventResult::Ignored,
+                _ => WidgetEventResult::Ignored,
             }
         } else {
-            EventResult::Ignored
+            WidgetEventResult::Ignored
         }
     }
 
@@ -216,7 +216,7 @@ mod tests {
         {
             let mut widget = PopupWidget::new(&mut state);
             let result = widget.handle_event(&key(KeyCode::Down));
-            assert_eq!(result, EventResult::Consumed);
+            assert_eq!(result, WidgetEventResult::Consumed);
         }
         assert_eq!(state.selected, 1);
 
@@ -224,7 +224,7 @@ mod tests {
         {
             let mut widget = PopupWidget::new(&mut state);
             let result = widget.handle_event(&key(KeyCode::Up));
-            assert_eq!(result, EventResult::Consumed);
+            assert_eq!(result, WidgetEventResult::Consumed);
         }
         assert_eq!(state.selected, 0);
     }
@@ -237,7 +237,7 @@ mod tests {
         {
             let mut widget = PopupWidget::new(&mut state);
             let result = widget.handle_event(&key(KeyCode::Char('j')));
-            assert_eq!(result, EventResult::Consumed);
+            assert_eq!(result, WidgetEventResult::Consumed);
         }
         assert_eq!(state.selected, 1);
 
@@ -245,7 +245,7 @@ mod tests {
         {
             let mut widget = PopupWidget::new(&mut state);
             let result = widget.handle_event(&key(KeyCode::Char('k')));
-            assert_eq!(result, EventResult::Consumed);
+            assert_eq!(result, WidgetEventResult::Consumed);
         }
         assert_eq!(state.selected, 0);
     }
@@ -258,7 +258,7 @@ mod tests {
         {
             let mut widget = PopupWidget::new(&mut state);
             let result = widget.handle_event(&key(KeyCode::PageDown));
-            assert_eq!(result, EventResult::Consumed);
+            assert_eq!(result, WidgetEventResult::Consumed);
         }
         assert_eq!(state.selected, 5);
 
@@ -266,7 +266,7 @@ mod tests {
         {
             let mut widget = PopupWidget::new(&mut state);
             let result = widget.handle_event(&key(KeyCode::PageUp));
-            assert_eq!(result, EventResult::Consumed);
+            assert_eq!(result, WidgetEventResult::Consumed);
         }
         assert_eq!(state.selected, 0);
     }
@@ -279,7 +279,7 @@ mod tests {
         {
             let mut widget = PopupWidget::new(&mut state);
             let result = widget.handle_event(&key(KeyCode::Up));
-            assert_eq!(result, EventResult::Consumed);
+            assert_eq!(result, WidgetEventResult::Consumed);
         }
         assert_eq!(state.selected, 2);
 
@@ -287,7 +287,7 @@ mod tests {
         {
             let mut widget = PopupWidget::new(&mut state);
             let result = widget.handle_event(&key(KeyCode::Down));
-            assert_eq!(result, EventResult::Consumed);
+            assert_eq!(result, WidgetEventResult::Consumed);
         }
         assert_eq!(state.selected, 0);
     }
@@ -299,7 +299,7 @@ mod tests {
         let mut widget = PopupWidget::new(&mut state);
 
         let result = widget.handle_event(&key(KeyCode::Enter));
-        assert_eq!(result, EventResult::Action(TuiAction::ConfirmPopup(2)));
+        assert_eq!(result, WidgetEventResult::Action(WidgetAction::ConfirmPopup(2)));
     }
 
     #[test]
@@ -309,7 +309,7 @@ mod tests {
         let mut widget = PopupWidget::new(&mut state);
 
         let result = widget.handle_event(&key(KeyCode::Tab));
-        assert_eq!(result, EventResult::Action(TuiAction::ConfirmPopup(3)));
+        assert_eq!(result, WidgetEventResult::Action(WidgetAction::ConfirmPopup(3)));
     }
 
     #[test]
@@ -318,7 +318,7 @@ mod tests {
         let mut widget = PopupWidget::new(&mut state);
 
         let result = widget.handle_event(&key(KeyCode::Esc));
-        assert_eq!(result, EventResult::Action(TuiAction::DismissPopup));
+        assert_eq!(result, WidgetEventResult::Action(WidgetAction::DismissPopup));
     }
 
     #[test]
@@ -328,10 +328,10 @@ mod tests {
 
         // Character input should be consumed (filtering handled externally)
         let result = widget.handle_event(&key(KeyCode::Char('a')));
-        assert_eq!(result, EventResult::Consumed);
+        assert_eq!(result, WidgetEventResult::Consumed);
 
         let result = widget.handle_event(&key(KeyCode::Backspace));
-        assert_eq!(result, EventResult::Consumed);
+        assert_eq!(result, WidgetEventResult::Consumed);
     }
 
     #[test]
@@ -341,7 +341,7 @@ mod tests {
 
         // F1 should be ignored
         let result = widget.handle_event(&key(KeyCode::F(1)));
-        assert_eq!(result, EventResult::Ignored);
+        assert_eq!(result, WidgetEventResult::Ignored);
     }
 
     #[test]
