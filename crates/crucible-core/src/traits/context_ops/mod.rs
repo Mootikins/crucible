@@ -17,7 +17,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 /// Metadata associated with a context message
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageMetadata {
     /// Tool call ID (for tool result messages)
     pub tool_call_id: Option<String>,
@@ -34,7 +34,7 @@ pub struct MessageMetadata {
 }
 
 /// A message in the conversation context with rich metadata
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextMessage {
     /// Message role (System, User, Assistant, Tool)
     pub role: MessageRole,
@@ -45,12 +45,16 @@ pub struct ContextMessage {
 }
 
 impl ContextMessage {
-    /// Create a user message
-    pub fn user(content: impl Into<String>) -> Self {
+    // ─────────────────────────────────────────────────────────────────────
+    // Constructors
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Internal helper for creating messages with standard metadata
+    fn with_role(role: MessageRole, content: impl Into<String>) -> Self {
         let content = content.into();
-        let token_estimate = content.len() / 4;
+        let token_estimate = (content.len() + 3) / 4; // ceiling division for ~4 chars/token
         Self {
-            role: MessageRole::User,
+            role,
             content,
             metadata: MessageMetadata {
                 token_estimate,
@@ -58,69 +62,38 @@ impl ContextMessage {
                 ..Default::default()
             },
         }
+    }
+
+    /// Create a user message
+    pub fn user(content: impl Into<String>) -> Self {
+        Self::with_role(MessageRole::User, content)
     }
 
     /// Create an assistant message
     pub fn assistant(content: impl Into<String>) -> Self {
-        let content = content.into();
-        let token_estimate = content.len() / 4;
-        Self {
-            role: MessageRole::Assistant,
-            content,
-            metadata: MessageMetadata {
-                token_estimate,
-                timestamp: Some(chrono::Utc::now().timestamp()),
-                ..Default::default()
-            },
-        }
-    }
-
-    /// Create an assistant message with tool calls
-    pub fn assistant_with_tools(content: impl Into<String>, tool_calls: Vec<ToolCall>) -> Self {
-        let content = content.into();
-        let token_estimate = content.len() / 4;
-        Self {
-            role: MessageRole::Assistant,
-            content,
-            metadata: MessageMetadata {
-                token_estimate,
-                tool_calls,
-                timestamp: Some(chrono::Utc::now().timestamp()),
-                ..Default::default()
-            },
-        }
+        Self::with_role(MessageRole::Assistant, content)
     }
 
     /// Create a system message
     pub fn system(content: impl Into<String>) -> Self {
-        let content = content.into();
-        let token_estimate = content.len() / 4;
-        Self {
-            role: MessageRole::System,
-            content,
-            metadata: MessageMetadata {
-                token_estimate,
-                timestamp: Some(chrono::Utc::now().timestamp()),
-                ..Default::default()
-            },
-        }
+        Self::with_role(MessageRole::System, content)
+    }
+
+    /// Create an assistant message with tool calls
+    pub fn assistant_with_tools(content: impl Into<String>, tool_calls: Vec<ToolCall>) -> Self {
+        Self::assistant(content).with_tool_calls(tool_calls)
     }
 
     /// Create a tool result message
     pub fn tool_result(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
-        let content = content.into();
-        let token_estimate = content.len() / 4;
-        Self {
-            role: MessageRole::Tool,
-            content,
-            metadata: MessageMetadata {
-                tool_call_id: Some(tool_call_id.into()),
-                token_estimate,
-                timestamp: Some(chrono::Utc::now().timestamp()),
-                ..Default::default()
-            },
-        }
+        let mut msg = Self::with_role(MessageRole::Tool, content);
+        msg.metadata.tool_call_id = Some(tool_call_id.into());
+        msg
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Builder methods
+    // ─────────────────────────────────────────────────────────────────────
 
     /// Mark this message as successful or failed
     pub fn with_success(mut self, success: bool) -> Self {
@@ -131,6 +104,12 @@ impl ContextMessage {
     /// Add a tag to this message
     pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
         self.metadata.tags.push(tag.into());
+        self
+    }
+
+    /// Add tool calls to this message (typically used with assistant messages)
+    pub fn with_tool_calls(mut self, tool_calls: Vec<ToolCall>) -> Self {
+        self.metadata.tool_calls = tool_calls;
         self
     }
 }
