@@ -52,7 +52,7 @@ impl ContextMessage {
     /// Internal helper for creating messages with standard metadata
     fn with_role(role: MessageRole, content: impl Into<String>) -> Self {
         let content = content.into();
-        let token_estimate = (content.len() + 3) / 4; // ceiling division for ~4 chars/token
+        let token_estimate = content.len().div_ceil(4); // ~4 chars/token
         Self {
             role,
             content,

@@ -23,7 +23,7 @@ use crate::toon_response::toon_success_smart;
 use crate::CrucibleMcpServer;
 use crucible_config::ConfigResolver;
 use crucible_core::enrichment::EmbeddingProvider;
-use crucible_core::events::{ToolProvider, SessionEvent};
+use crucible_core::events::{SessionEvent, ToolProvider};
 use crucible_core::traits::KnowledgeRepository;
 use crucible_rune::{
     builtin_hooks::{create_test_filter_hook, BuiltinHooksConfig},

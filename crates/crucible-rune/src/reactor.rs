@@ -67,8 +67,8 @@ use crate::event_bus::EventContext;
 
 // Re-export event types from crucible-core (canonical location)
 pub use crucible_core::events::{
-    EntityType, ToolProvider, FileChangeKind, NoteChangeType, Priority, SessionEvent,
-    SessionEventConfig, ToolCall,
+    EntityType, FileChangeKind, NoteChangeType, Priority, SessionEvent, SessionEventConfig,
+    ToolCall, ToolProvider,
 };
 
 /// Result type for reactor operations.

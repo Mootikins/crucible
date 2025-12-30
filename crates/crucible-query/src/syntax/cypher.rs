@@ -267,9 +267,9 @@ fn quantifier_parser<'src>() -> impl Parser<'src, &'src str, Quantifier, Extra<'
 
     // *1..3 (range with both bounds)
     let range_both = just('*')
-        .ignore_then(number.clone())
+        .ignore_then(number)
         .then_ignore(just(".."))
-        .then(number.clone())
+        .then(number)
         .map(|(min, max)| Quantifier::Range {
             min,
             max: Some(max),
@@ -277,7 +277,7 @@ fn quantifier_parser<'src>() -> impl Parser<'src, &'src str, Quantifier, Extra<'
 
     // *..3 (range with max only, min=0)
     let range_max = just("*..")
-        .ignore_then(number.clone())
+        .ignore_then(number)
         .map(|max| Quantifier::Range {
             min: 0,
             max: Some(max),

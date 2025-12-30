@@ -398,7 +398,7 @@ fn session_event_to_event_type(event: &SessionEvent) -> EventType {
 ///
 /// This is used after handler processing to return the result as a SessionEvent.
 fn event_to_session_event(event: Event) -> SessionEvent {
-    use crucible_core::events::{ToolProvider, NoteChangeType};
+    use crucible_core::events::{NoteChangeType, ToolProvider};
 
     match event.event_type {
         EventType::ToolBefore => SessionEvent::ToolCalled {
