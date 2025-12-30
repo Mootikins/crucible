@@ -55,11 +55,11 @@
 
 use async_trait::async_trait;
 use crucible_config::BackendType;
-use crucible_core::traits::{BackendError, BackendResult};
 use crucible_core::traits::provider::{
     CanEmbed, EmbeddingResponse as UnifiedEmbeddingResponse, ExtendedCapabilities,
     Provider as UnifiedProvider,
 };
+use crucible_core::traits::{BackendError, BackendResult};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -540,7 +540,10 @@ impl CanEmbed for FastEmbedProvider {
         })
     }
 
-    async fn embed_batch(&self, texts: Vec<String>) -> BackendResult<Vec<UnifiedEmbeddingResponse>> {
+    async fn embed_batch(
+        &self,
+        texts: Vec<String>,
+    ) -> BackendResult<Vec<UnifiedEmbeddingResponse>> {
         // Delegate to legacy impl and convert response type
         let responses = EmbeddingProvider::embed_batch(self, texts)
             .await

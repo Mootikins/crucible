@@ -352,7 +352,10 @@ mod tests {
         let y = Event::Key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
         let result = view.handle_event(&y);
 
-        assert!(matches!(result, EventResult::Action(TuiAction::DialogConfirm)));
+        assert!(matches!(
+            result,
+            EventResult::Action(TuiAction::DialogConfirm)
+        ));
         assert!(view.dialog.is_none()); // Dialog closed
     }
 
@@ -364,7 +367,10 @@ mod tests {
         let n = Event::Key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
         let result = view.handle_event(&n);
 
-        assert!(matches!(result, EventResult::Action(TuiAction::DialogCancel)));
+        assert!(matches!(
+            result,
+            EventResult::Action(TuiAction::DialogCancel)
+        ));
         assert!(view.dialog.is_none());
     }
 
@@ -374,10 +380,19 @@ mod tests {
         view.dialog = Some(DialogState::select("Choose", vec!["A".into(), "B".into()]));
 
         // Move down and select
-        view.handle_event(&Event::Key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)));
-        let result = view.handle_event(&Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
+        view.handle_event(&Event::Key(KeyEvent::new(
+            KeyCode::Down,
+            KeyModifiers::NONE,
+        )));
+        let result = view.handle_event(&Event::Key(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+        )));
 
-        assert!(matches!(result, EventResult::Action(TuiAction::DialogSelect(1))));
+        assert!(matches!(
+            result,
+            EventResult::Action(TuiAction::DialogSelect(1))
+        ));
     }
 
     // ==========================================================================
@@ -399,8 +414,7 @@ mod tests {
 
     #[test]
     fn test_popup_passes_char_keys_to_input() {
-        let mut view = ChatView::new("plan")
-            .with_popup_provider(mock_provider());
+        let mut view = ChatView::new("plan").with_popup_provider(mock_provider());
         view.popup = Some(PopupState::new(PopupKind::Command, mock_provider()));
 
         let a = Event::Key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
@@ -419,7 +433,10 @@ mod tests {
         let tab = Event::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
         let result = view.handle_event(&tab);
 
-        assert!(matches!(result, EventResult::Action(TuiAction::PopupConfirm(_))));
+        assert!(matches!(
+            result,
+            EventResult::Action(TuiAction::PopupConfirm(_))
+        ));
     }
 
     // ==========================================================================
@@ -500,8 +517,7 @@ mod tests {
 
     #[test]
     fn test_slash_triggers_command_popup() {
-        let mut view = ChatView::new("plan")
-            .with_popup_provider(mock_provider());
+        let mut view = ChatView::new("plan").with_popup_provider(mock_provider());
 
         let slash = Event::Key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
         view.handle_event(&slash);
@@ -512,8 +528,7 @@ mod tests {
 
     #[test]
     fn test_at_triggers_agent_popup() {
-        let mut view = ChatView::new("plan")
-            .with_popup_provider(mock_provider());
+        let mut view = ChatView::new("plan").with_popup_provider(mock_provider());
 
         let at = Event::Key(KeyEvent::new(KeyCode::Char('@'), KeyModifiers::NONE));
         view.handle_event(&at);
@@ -524,30 +539,40 @@ mod tests {
 
     #[test]
     fn test_slash_after_space_triggers_popup() {
-        let mut view = ChatView::new("plan")
-            .with_popup_provider(mock_provider());
+        let mut view = ChatView::new("plan").with_popup_provider(mock_provider());
 
         // Type "run "
         for c in "run ".chars() {
-            view.handle_event(&Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)));
+            view.handle_event(&Event::Key(KeyEvent::new(
+                KeyCode::Char(c),
+                KeyModifiers::NONE,
+            )));
         }
         assert!(view.popup.is_none());
 
         // Type "/" after space
-        view.handle_event(&Event::Key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE)));
+        view.handle_event(&Event::Key(KeyEvent::new(
+            KeyCode::Char('/'),
+            KeyModifiers::NONE,
+        )));
         assert!(view.popup.is_some());
     }
 
     #[test]
     fn test_slash_mid_word_no_popup() {
-        let mut view = ChatView::new("plan")
-            .with_popup_provider(mock_provider());
+        let mut view = ChatView::new("plan").with_popup_provider(mock_provider());
 
         // Type "path" then "/" (no space before)
         for c in "path".chars() {
-            view.handle_event(&Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)));
+            view.handle_event(&Event::Key(KeyEvent::new(
+                KeyCode::Char(c),
+                KeyModifiers::NONE,
+            )));
         }
-        view.handle_event(&Event::Key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE)));
+        view.handle_event(&Event::Key(KeyEvent::new(
+            KeyCode::Char('/'),
+            KeyModifiers::NONE,
+        )));
 
         // Should NOT trigger popup (/ is mid-word)
         assert!(view.popup.is_none());
@@ -555,8 +580,7 @@ mod tests {
 
     #[test]
     fn test_clearing_trigger_closes_popup() {
-        let mut view = ChatView::new("plan")
-            .with_popup_provider(mock_provider());
+        let mut view = ChatView::new("plan").with_popup_provider(mock_provider());
 
         view.input.set_content("/help");
         view.popup = Some(PopupState::new(PopupKind::Command, mock_provider()));
@@ -587,8 +611,14 @@ mod tests {
     fn test_typing_without_popup() {
         let mut view = ChatView::new("plan");
 
-        view.handle_event(&Event::Key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE)));
-        view.handle_event(&Event::Key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE)));
+        view.handle_event(&Event::Key(KeyEvent::new(
+            KeyCode::Char('h'),
+            KeyModifiers::NONE,
+        )));
+        view.handle_event(&Event::Key(KeyEvent::new(
+            KeyCode::Char('i'),
+            KeyModifiers::NONE,
+        )));
 
         assert_eq!(view.input.content(), "hi");
     }
