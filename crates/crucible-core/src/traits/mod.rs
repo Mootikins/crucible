@@ -62,7 +62,6 @@ pub use context::ContextManager;
 pub use context_ops::{
     ContextError, ContextMessage, ContextOps, MessageMetadata, MessagePredicate, Position, Range,
 };
-pub use prompt_builder::{priorities, PromptBuilder};
 pub use knowledge::{KnowledgeRepository, NoteInfo};
 pub use llm::{
     ChatCompletionChoice, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
@@ -73,6 +72,7 @@ pub use llm::{
     TextModelInfo, TokenUsage, ToolCall, ToolCallDelta, ToolChoice,
 };
 pub use parser::MarkdownParser;
+pub use prompt_builder::{priorities, PromptBuilder};
 pub use provider::{
     CanChat, CanConstrainGeneration, CanEmbed, ConstrainedRequest, ConstrainedResponse,
     EmbeddingResponse, ExtendedCapabilities, FullProvider, Provider, ProviderExt, SchemaFormat,
