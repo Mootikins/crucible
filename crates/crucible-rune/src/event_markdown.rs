@@ -92,6 +92,10 @@ impl EventToMarkdown for SessionEvent {
             SessionEvent::EmbeddingStored { .. } => "EmbeddingStored",
             SessionEvent::EmbeddingFailed { .. } => "EmbeddingFailed",
             SessionEvent::EmbeddingBatchComplete { .. } => "EmbeddingBatchComplete",
+            // Pre-events
+            SessionEvent::PreToolCall { .. } => "PreToolCall",
+            SessionEvent::PreParse { .. } => "PreParse",
+            SessionEvent::PreLlmCall { .. } => "PreLlmCall",
         }
     }
 
@@ -287,6 +291,26 @@ impl EventToMarkdown for SessionEvent {
                     "**Entity:** {}\n**Count:** {}\n**Duration:** {}ms\n",
                     entity_id, count, duration_ms
                 )
+            }
+
+            // Pre-events
+            SessionEvent::PreToolCall { name, args } => {
+                format!(
+                    "**Tool:** {}\n**Args:** {}\n",
+                    name,
+                    serde_json::to_string_pretty(args).unwrap_or_default()
+                )
+            }
+            SessionEvent::PreParse { path } => {
+                format!("**Path:** `{}`\n", path.display())
+            }
+            SessionEvent::PreLlmCall { prompt, model } => {
+                let truncated = if prompt.len() > 200 {
+                    format!("{}...", &prompt[..200])
+                } else {
+                    prompt.clone()
+                };
+                format!("**Model:** {}\n**Prompt:** {}\n", model, truncated)
             }
         };
 

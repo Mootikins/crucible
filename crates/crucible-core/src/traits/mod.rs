@@ -66,10 +66,9 @@ pub use knowledge::{KnowledgeRepository, NoteInfo};
 pub use llm::{
     ChatCompletionChoice, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
     ChatMessageDelta, CompletionChoice, CompletionChunk, CompletionRequest, CompletionResponse,
-    FunctionCall, FunctionCallBehavior, FunctionCallDelta, FunctionDefinition, LlmError,
-    LlmRequest, LlmResponse, LlmResult, LlmToolDefinition, LogProbs, MessageRole, ModelCapability,
-    ModelStatus, ProviderCapabilities, ResponseFormat, TextGenerationProvider, TextModelInfo,
-    TokenUsage, ToolCall, ToolCallDelta, ToolChoice,
+    FunctionCall, FunctionCallBehavior, FunctionCallDelta, FunctionDefinition, LlmToolDefinition,
+    LogProbs, MessageRole, ModelCapability, ModelStatus, ProviderCapabilities, ResponseFormat,
+    TextModelInfo, TokenUsage, ToolCall, ToolCallDelta, ToolChoice,
 };
 pub use parser::MarkdownParser;
 pub use prompt_builder::{priorities, PromptBuilder};
