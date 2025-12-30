@@ -23,7 +23,7 @@ This file provides essential information for AI agents to understand and contrib
 | `crucible-core` | Domain logic, traits, parser types | `Provider`, `CanEmbed`, `CanChat`, `ParsedNote` |
 | `crucible-parser` | Markdown parsing implementation | `MarkdownParser` |
 | `crucible-config` | Configuration types and loading | `AppConfig`, `EmbeddingConfig` |
-| `crucible-llm` | LLM providers (embeddings, chat) | `EmbeddingProvider`, `TextGenerationProvider` |
+| `crucible-llm` | LLM providers (embeddings, chat) | `EmbeddingBackend`, `CompletionBackend` |
 | `crucible-surrealdb` | SurrealDB storage with EAV schema | `SurrealStorage`, `EavGraph` |
 | `crucible-cli` | Command-line interface | CLI commands and REPL |
 | `crucible-web` | Browser chat UI (SolidJS + Axum) | HTTP/SSE endpoints |
@@ -42,6 +42,14 @@ Core re-exports these types via `crucible_core::parser::*` for convenience.
 **Hash Types**: `BlockHash` is defined in `crucible-core/src/parser/types/block_hash.rs`.
 Other hash infrastructure is in `crucible-core/src/types/hashing.rs`.
 
+**LLM Types** (unified contracts):
+- `ContextMessage` - canonical message type for all conversation contexts
+- `BackendError` / `BackendResult` - canonical error type for LLM operations
+- `CompletionBackend` - canonical trait for chat/completion providers
+
+**Event Types**:
+- `SessionEvent` includes pre-events (`PreToolCall`, `PreParse`, `PreLlmCall`) for handler interception
+
 **DO NOT duplicate types between crates.** Each type should be defined in exactly one location. Use re-exports for convenience.
 
 **Import patterns:**
@@ -54,6 +62,7 @@ use crucible_core::types::hashing::{FileHash, HashAlgorithm};
 
 // LLM traits - unified provider system
 use crucible_core::traits::provider::{Provider, CanEmbed, CanChat};
+use crucible_core::traits::{CompletionBackend, BackendError, ContextMessage};
 ```
 
 ### LLM Provider System
