@@ -12,7 +12,7 @@ pub type Result<T> = std::result::Result<T, WebError>;
 #[derive(Debug, thiserror::Error)]
 pub enum WebError {
     #[error("ACP error: {0}")]
-    Acp(#[from] crucible_acp::AcpError),
+    Acp(#[from] crucible_acp::ClientError),
 
     #[error("Configuration error: {0}")]
     Config(String),
