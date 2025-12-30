@@ -498,6 +498,7 @@ fn estimate_event_tokens(event: &SessionEvent) -> usize {
         SessionEvent::PreToolCall { name, .. } => name.len() + 50,
         SessionEvent::PreParse { .. } => 50,
         SessionEvent::PreLlmCall { prompt, .. } => prompt.len(),
+        SessionEvent::AwaitingInput { context, .. } => context.as_ref().map_or(20, |c| c.len() + 20),
     };
 
     // Rough estimate: ~4 characters per token
