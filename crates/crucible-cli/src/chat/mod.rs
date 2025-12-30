@@ -47,5 +47,5 @@ pub use handlers::{
     SearchHandler,
 };
 pub use mode_registry::{ModeError, ModeRegistry, ModeResult};
-pub use session::{ChatSession, SessionConfig};
+pub use session::{ChatSession, ChatSessionConfig};
 pub use slash_registry::{SlashCommand, SlashCommandRegistry, SlashCommandRegistryBuilder};

@@ -324,7 +324,7 @@ impl CrucibleAcpClient {
         self.mark_connected();
 
         // Create and return a session
-        use crate::session::SessionConfig;
+        use crate::session::TransportConfig;
         let session_id = format!(
             "session-{}",
             std::time::SystemTime::now()
@@ -333,7 +333,7 @@ impl CrucibleAcpClient {
                 .as_millis()
         );
 
-        Ok(AcpSession::new(SessionConfig::default(), session_id))
+        Ok(AcpSession::new(TransportConfig::default(), session_id))
     }
 
     /// Get the client configuration
@@ -631,9 +631,9 @@ impl CrucibleAcpClient {
         // 4. Mark as connected and create session
         self.mark_connected();
 
-        use crate::session::SessionConfig;
+        use crate::session::TransportConfig;
         Ok(AcpSession::new(
-            SessionConfig::default(),
+            TransportConfig::default(),
             session_response.session_id.to_string(),
         ))
     }
@@ -696,9 +696,9 @@ impl CrucibleAcpClient {
             session_response.session_id
         );
 
-        use crate::session::SessionConfig;
+        use crate::session::TransportConfig;
         Ok(AcpSession::new(
-            SessionConfig::default(),
+            TransportConfig::default(),
             session_response.session_id.to_string(),
         ))
     }
@@ -2600,8 +2600,8 @@ mod tests {
         client.mark_connected();
 
         // Create a session for testing
-        use crate::session::SessionConfig;
-        let session = AcpSession::new(SessionConfig::default(), "test-session-123".to_string());
+        use crate::session::TransportConfig;
+        let session = AcpSession::new(TransportConfig::default(), "test-session-123".to_string());
 
         // Disconnect should clean up
         let result = client.disconnect(&session).await;

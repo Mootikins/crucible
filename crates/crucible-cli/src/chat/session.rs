@@ -38,9 +38,12 @@ pub const DEFAULT_SEARCH_LIMIT: usize = 10;
 /// CLI chat session configuration.
 ///
 /// User interface settings for the chat command (initial mode, splash screen,
-/// context settings). This is distinct from the ACP and reactor session configs.
+/// context settings). This is distinct from:
+/// - `crucible_core::SessionConfig` - ACP protocol session parameters
+/// - `crucible_rune::ReactorSessionConfig` - reactor/handler execution config
+/// - `crucible_acp::TransportConfig` - transport layer settings
 #[derive(Debug, Clone)]
-pub struct SessionConfig {
+pub struct ChatSessionConfig {
     /// Initial chat mode ID (e.g., "plan", "act", "auto")
     pub initial_mode_id: String,
     /// Enable context enrichment for messages
@@ -55,7 +58,7 @@ pub struct SessionConfig {
     pub default_selection: Option<AgentSelection>,
 }
 
-impl Default for SessionConfig {
+impl Default for ChatSessionConfig {
     fn default() -> Self {
         Self {
             initial_mode_id: "plan".to_string(),
@@ -68,7 +71,7 @@ impl Default for SessionConfig {
     }
 }
 
-impl SessionConfig {
+impl ChatSessionConfig {
     /// Create a new session configuration
     pub fn new(
         initial_mode_id: impl Into<String>,
@@ -126,7 +129,7 @@ impl SessionConfig {
 
 /// Interactive chat session orchestrator
 pub struct ChatSession {
-    config: SessionConfig,
+    config: ChatSessionConfig,
     core: Arc<KilnContext>,
     enricher: ContextEnricher,
     command_registry: SlashCommandRegistry,
@@ -137,7 +140,7 @@ pub struct ChatSession {
 impl ChatSession {
     /// Create a new chat session
     pub fn new(
-        config: SessionConfig,
+        config: ChatSessionConfig,
         core: Arc<KilnContext>,
         available_models: Option<Vec<String>>,
     ) -> Self {
@@ -536,10 +539,10 @@ mod tests {
         );
     }
 
-    // SessionConfig tests
+    // ChatSessionConfig tests
     #[test]
     fn test_session_config_new() {
-        let config = SessionConfig::new("plan", true, Some(10));
+        let config = ChatSessionConfig::new("plan", true, Some(10));
         assert_eq!(config.initial_mode_id, "plan");
         assert!(config.context_enabled);
         assert_eq!(config.context_size, Some(10));
@@ -547,7 +550,7 @@ mod tests {
 
     #[test]
     fn test_session_config_default() {
-        let config = SessionConfig::default();
+        let config = ChatSessionConfig::default();
         assert_eq!(config.initial_mode_id, "plan");
         assert!(config.context_enabled);
         assert_eq!(config.context_size, Some(5));
@@ -555,7 +558,7 @@ mod tests {
 
     #[test]
     fn test_session_config_clone() {
-        let config = SessionConfig::new("act", false, None);
+        let config = ChatSessionConfig::new("act", false, None);
         let cloned = config.clone();
         assert_eq!(config.initial_mode_id, cloned.initial_mode_id);
         assert_eq!(config.context_enabled, cloned.context_enabled);
@@ -564,13 +567,13 @@ mod tests {
 
     #[test]
     fn test_session_config_validate_success() {
-        let config = SessionConfig::default();
+        let config = ChatSessionConfig::default();
         assert!(config.validate().is_ok());
     }
 
     #[test]
     fn test_session_config_context_disabled_no_size() {
-        let config = SessionConfig::new("plan", false, None);
+        let config = ChatSessionConfig::new("plan", false, None);
         assert!(!config.context_enabled);
         assert_eq!(config.context_size, None);
         assert!(config.validate().is_ok());
@@ -578,19 +581,19 @@ mod tests {
 
     #[test]
     fn test_session_config_all_modes() {
-        let plan_config = SessionConfig::new("plan", true, Some(5));
+        let plan_config = ChatSessionConfig::new("plan", true, Some(5));
         assert_eq!(plan_config.initial_mode_id, "plan");
 
-        let act_config = SessionConfig::new("act", true, Some(5));
+        let act_config = ChatSessionConfig::new("act", true, Some(5));
         assert_eq!(act_config.initial_mode_id, "act");
 
-        let auto_config = SessionConfig::new("auto", true, Some(5));
+        let auto_config = ChatSessionConfig::new("auto", true, Some(5));
         assert_eq!(auto_config.initial_mode_id, "auto");
     }
 
     #[test]
     fn test_session_config_validate_zero_context_size() {
-        let config = SessionConfig::new("plan", true, Some(0));
+        let config = ChatSessionConfig::new("plan", true, Some(0));
         let result = config.validate();
         assert!(result.is_err());
         assert!(result
@@ -601,7 +604,7 @@ mod tests {
 
     #[test]
     fn test_session_config_validate_too_large_context_size() {
-        let config = SessionConfig::new("plan", true, Some(1001));
+        let config = ChatSessionConfig::new("plan", true, Some(1001));
         let result = config.validate();
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("must be <= 1000"));
@@ -609,25 +612,25 @@ mod tests {
 
     #[test]
     fn test_session_config_validate_max_context_size() {
-        let config = SessionConfig::new("plan", true, Some(1000));
+        let config = ChatSessionConfig::new("plan", true, Some(1000));
         assert!(config.validate().is_ok());
     }
 
     #[test]
     fn test_session_config_validate_min_context_size() {
-        let config = SessionConfig::new("plan", true, Some(1));
+        let config = ChatSessionConfig::new("plan", true, Some(1));
         assert!(config.validate().is_ok());
     }
 
     #[test]
     fn test_session_config_default_selection_initially_none() {
-        let config = SessionConfig::default();
+        let config = ChatSessionConfig::default();
         assert!(config.default_selection.is_none());
     }
 
     #[test]
     fn test_session_config_with_default_selection_acp() {
-        let config = SessionConfig::new("plan", true, Some(5))
+        let config = ChatSessionConfig::new("plan", true, Some(5))
             .with_default_selection(AgentSelection::Acp("opencode".to_string()));
 
         assert!(config.default_selection.is_some());
@@ -639,7 +642,7 @@ mod tests {
 
     #[test]
     fn test_session_config_with_default_selection_internal() {
-        let config = SessionConfig::new("plan", true, Some(5))
+        let config = ChatSessionConfig::new("plan", true, Some(5))
             .with_default_selection(AgentSelection::Internal);
 
         assert!(matches!(
@@ -651,7 +654,7 @@ mod tests {
     #[test]
     fn test_session_config_builder_chain() {
         // Verify all builder methods can be chained
-        let config = SessionConfig::new("act", true, Some(10))
+        let config = ChatSessionConfig::new("act", true, Some(10))
             .with_skip_splash(true)
             .with_agent_name("test-agent")
             .with_default_selection(AgentSelection::Internal);

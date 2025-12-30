@@ -128,7 +128,7 @@ pub use plugin_loader::PluginLoader;
 pub use plugin_types::{HookConfig, PluginManifest, RegisteredHook};
 pub use reactor::{
     BoxedReactor, Reactor, ReactorContext, ReactorError, ReactorMetadata, ReactorResult,
-    SessionConfig, SessionEvent, ToolCall,
+    ReactorSessionConfig, SessionEvent, ToolCall,
 };
 pub use regex_module::regex_module;
 pub use registry::RuneToolRegistry;
