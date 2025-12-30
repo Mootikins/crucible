@@ -338,6 +338,13 @@ WHERE t.depth >= {min_depth}
         EdgeDirection::Out
     }
 
+    /// Escape SQL LIKE metacharacters (%, _) in a pattern
+    fn escape_like_pattern(s: &str) -> String {
+        s.replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_")
+    }
+
     fn render_filter(
         &self,
         filter: &Filter,
@@ -365,8 +372,9 @@ WHERE t.depth >= {min_depth}
             }
             MatchOp::Contains => {
                 if let Value::String(s) = &filter.value {
-                    params.insert(param_name.clone(), Value::String(format!("%{}%", s)));
-                    Ok(format!("{} LIKE :{}", filter.field, param_name))
+                    let escaped = Self::escape_like_pattern(s);
+                    params.insert(param_name.clone(), Value::String(format!("%{}%", escaped)));
+                    Ok(format!("{} LIKE :{} ESCAPE '\\\\'", filter.field, param_name))
                 } else {
                     Err(RenderError::UnsupportedFilter {
                         message: format!("CONTAINS requires string value, got {:?}", filter.value),
@@ -375,8 +383,9 @@ WHERE t.depth >= {min_depth}
             }
             MatchOp::StartsWith => {
                 if let Value::String(s) = &filter.value {
-                    params.insert(param_name.clone(), Value::String(format!("{}%", s)));
-                    Ok(format!("{} LIKE :{}", filter.field, param_name))
+                    let escaped = Self::escape_like_pattern(s);
+                    params.insert(param_name.clone(), Value::String(format!("{}%", escaped)));
+                    Ok(format!("{} LIKE :{} ESCAPE '\\\\'", filter.field, param_name))
                 } else {
                     Err(RenderError::UnsupportedFilter {
                         message: format!(
@@ -388,8 +397,9 @@ WHERE t.depth >= {min_depth}
             }
             MatchOp::EndsWith => {
                 if let Value::String(s) = &filter.value {
-                    params.insert(param_name.clone(), Value::String(format!("%{}", s)));
-                    Ok(format!("{} LIKE :{}", filter.field, param_name))
+                    let escaped = Self::escape_like_pattern(s);
+                    params.insert(param_name.clone(), Value::String(format!("%{}", escaped)));
+                    Ok(format!("{} LIKE :{} ESCAPE '\\\\'", filter.field, param_name))
                 } else {
                     Err(RenderError::UnsupportedFilter {
                         message: format!("ENDS WITH requires string value, got {:?}", filter.value),
