@@ -123,6 +123,26 @@ pub enum SessionEvent {
         model: String,
     },
 
+    /// System is awaiting human input (HIL gate / idle prompt).
+    ///
+    /// Fired when the system pauses and needs human interaction to proceed.
+    /// Use cases include:
+    /// - **Idle prompt**: Assistant finished, waiting for next user message
+    /// - **HIL gate**: Agent needs approval before a sensitive operation
+    /// - **Multi-agent**: User must select which agent path to follow
+    ///
+    /// Handlers can intercept this event to:
+    /// - Show UI indicators (spinners, prompts)
+    /// - Trigger notifications (desktop, mobile)
+    /// - Implement timeouts or auto-responses
+    /// - Log wait times for metrics
+    AwaitingInput {
+        /// What kind of input is needed.
+        input_type: InputType,
+        /// Optional context (e.g., which agent is waiting, what for).
+        context: Option<String>,
+    },
+
     // ─────────────────────────────────────────────────────────────────────
     // Tool events
     // ─────────────────────────────────────────────────────────────────────
@@ -438,6 +458,7 @@ impl SessionEvent {
             Self::PreToolCall { .. } => "pre_tool_call",
             Self::PreParse { .. } => "pre_parse",
             Self::PreLlmCall { .. } => "pre_llm_call",
+            Self::AwaitingInput { .. } => "awaiting_input",
             Self::ToolCalled { .. } => "tool_called",
             Self::ToolCompleted { .. } => "tool_completed",
             Self::SessionStarted { .. } => "session_started",
@@ -480,6 +501,7 @@ impl SessionEvent {
             Self::PreToolCall { name, .. } => format!("pre:tool:{}", name),
             Self::PreParse { path, .. } => format!("pre:parse:{}", path.display()),
             Self::PreLlmCall { model, .. } => format!("pre:llm:{}", model),
+            Self::AwaitingInput { input_type, .. } => format!("await:{}", input_type),
             Self::ToolCalled { name, .. } => name.clone(),
             Self::ToolCompleted { name, .. } => name.clone(),
             Self::SessionStarted { config, .. } => format!("session:{}", config.session_id),
@@ -758,6 +780,44 @@ impl std::fmt::Display for FileChangeKind {
         match self {
             Self::Created => write!(f, "created"),
             Self::Modified => write!(f, "modified"),
+        }
+    }
+}
+
+/// Types of input the system can await from a human.
+///
+/// Used with `SessionEvent::AwaitingInput` to indicate what kind of
+/// human interaction is needed before the system can proceed.
+///
+/// # Example
+///
+/// ```ignore
+/// use crucible_core::events::{SessionEvent, InputType};
+///
+/// let event = SessionEvent::AwaitingInput {
+///     input_type: InputType::Approval,
+///     context: Some("Agent wants to delete files".into()),
+/// };
+/// ```
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+#[derive(Default)]
+pub enum InputType {
+    /// Waiting for the next user message (idle prompt).
+    #[default]
+    Message,
+    /// Waiting for user approval to proceed (HIL gate).
+    Approval,
+    /// Waiting for user to select from options.
+    Selection,
+}
+
+impl std::fmt::Display for InputType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Message => write!(f, "message"),
+            Self::Approval => write!(f, "approval"),
+            Self::Selection => write!(f, "selection"),
         }
     }
 }
@@ -2132,5 +2192,85 @@ mod tests {
             model: "gpt-4".into(),
         };
         assert_eq!(pre_llm.priority(), Priority::Normal);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // AwaitingInput / InputType contract tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_input_type_default() {
+        assert_eq!(InputType::default(), InputType::Message);
+    }
+
+    #[test]
+    fn test_input_type_display() {
+        assert_eq!(format!("{}", InputType::Message), "message");
+        assert_eq!(format!("{}", InputType::Approval), "approval");
+        assert_eq!(format!("{}", InputType::Selection), "selection");
+    }
+
+    #[test]
+    fn test_input_type_serialization() {
+        let message: InputType = serde_json::from_str("\"message\"").unwrap();
+        assert_eq!(message, InputType::Message);
+
+        let approval: InputType = serde_json::from_str("\"approval\"").unwrap();
+        assert_eq!(approval, InputType::Approval);
+
+        let selection: InputType = serde_json::from_str("\"selection\"").unwrap();
+        assert_eq!(selection, InputType::Selection);
+    }
+
+    #[test]
+    fn test_awaiting_input_event_type() {
+        let event = SessionEvent::AwaitingInput {
+            input_type: InputType::Message,
+            context: None,
+        };
+        assert_eq!(event.event_type(), "awaiting_input");
+    }
+
+    #[test]
+    fn test_awaiting_input_identifier() {
+        let message_event = SessionEvent::AwaitingInput {
+            input_type: InputType::Message,
+            context: None,
+        };
+        assert_eq!(message_event.identifier(), "await:message");
+
+        let approval_event = SessionEvent::AwaitingInput {
+            input_type: InputType::Approval,
+            context: Some("delete files".into()),
+        };
+        assert_eq!(approval_event.identifier(), "await:approval");
+    }
+
+    #[test]
+    fn test_awaiting_input_serialization() {
+        let event = SessionEvent::AwaitingInput {
+            input_type: InputType::Approval,
+            context: Some("Agent wants to delete files".into()),
+        };
+
+        let json = serde_json::to_string(&event).unwrap();
+        let restored: SessionEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, restored);
+
+        // Verify JSON structure
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["type"], "awaiting_input");
+        assert_eq!(parsed["input_type"], "approval");
+        assert_eq!(parsed["context"], "Agent wants to delete files");
+    }
+
+    #[test]
+    fn test_awaiting_input_not_pre_event() {
+        // AwaitingInput is NOT a pre-event (it's a state change, not an interception point)
+        let event = SessionEvent::AwaitingInput {
+            input_type: InputType::Message,
+            context: None,
+        };
+        assert!(!event.is_pre_event());
     }
 }
