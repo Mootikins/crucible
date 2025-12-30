@@ -119,7 +119,7 @@ pub struct BackendCompletionResponse {
 }
 
 /// Errors from the completion backend
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum BackendError {
     #[error("HTTP request failed: {0}")]
     Http(String),
