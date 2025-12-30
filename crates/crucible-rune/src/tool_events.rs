@@ -33,6 +33,9 @@ use serde_json::{json, Value as JsonValue};
 use std::time::Instant;
 use tracing::{debug, warn};
 
+// Re-export ContentBlock from core (canonical MCP type)
+pub use crucible_core::traits::mcp::ContentBlock;
+
 /// Source of a tool (for metadata)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -287,35 +290,6 @@ impl ToolEventEmitter {
     }
 }
 
-/// Content block types (matching MCP specification)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum ContentBlock {
-    /// Text content
-    #[serde(rename = "text")]
-    Text { text: String },
-    /// Image content (base64 encoded)
-    #[serde(rename = "image")]
-    Image { data: String, mime_type: String },
-    /// Resource reference
-    #[serde(rename = "resource")]
-    Resource { uri: String, text: Option<String> },
-}
-
-impl ContentBlock {
-    /// Create a text content block
-    pub fn text(text: impl Into<String>) -> Self {
-        Self::Text { text: text.into() }
-    }
-
-    /// Get text content if this is a text block
-    pub fn as_text(&self) -> Option<&str> {
-        match self {
-            Self::Text { text } => Some(text),
-            _ => None,
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {

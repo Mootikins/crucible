@@ -8,7 +8,7 @@
 //!
 //! - Automatic discovery of GGUF files in user-configured directories
 //! - Metadata extraction from GGUF file headers
-//! - Model capability classification (embedding vs text generation)
+//! - Model type classification (embedding vs text generation)
 //! - TTL-based caching to minimize filesystem scans
 //! - Support for common model directory structures
 //!
@@ -31,7 +31,7 @@
 //!     let models = discovery.discover_models().await?;
 //!
 //!     for model in models {
-//!         println!("Found: {} ({:?})", model.name, model.capability);
+//!         println!("Found: {} ({:?})", model.name, model.model_type);
 //!     }
 //!
 //!     Ok(())
@@ -47,14 +47,19 @@ use std::time::{Duration, SystemTime};
 use tokio::sync::RwLock;
 use walkdir::WalkDir;
 
-/// Model capability types
+/// Type of a discovered GGUF model file.
+///
+/// Used during model discovery to classify GGUF files by their primary function.
+/// This is distinct from `crucible_core::traits::provider::DiscoveredModelType` (provider-level
+/// capability flags like embedding/chat/vision) and `crucible_core::traits::llm::DiscoveredModelType`
+/// (text model features like streaming/function-calling).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
-pub enum ModelCapability {
+pub enum DiscoveredModelType {
     /// Embedding model (produces vector representations)
     Embedding,
     /// Text generation model (produces text completions)
     TextGeneration,
-    /// Multi-modal or unknown capability
+    /// Multi-modal or unknown type
     #[default]
     Unknown,
 }
@@ -66,8 +71,8 @@ pub struct DiscoveredModel {
     pub name: String,
     /// Full path to the GGUF file
     pub path: PathBuf,
-    /// Model capability
-    pub capability: ModelCapability,
+    /// Model type (embedding, text generation, etc.)
+    pub model_type: DiscoveredModelType,
     /// Embedding dimensions (if applicable)
     pub dimensions: Option<usize>,
     /// Model architecture (e.g., "llama", "bert", "nomic-bert")
@@ -279,7 +284,7 @@ impl ModelDiscovery {
         Ok(DiscoveredModel {
             name,
             path: path.to_path_buf(),
-            capability: metadata.capability,
+            model_type: metadata.model_type,
             dimensions: metadata.dimensions,
             architecture: metadata.architecture,
             parameter_count: metadata.parameter_count,
@@ -307,7 +312,7 @@ impl ModelDiscovery {
         }
 
         // Determine capability based on architecture
-        metadata.capability = self.classify_capability(&metadata.architecture);
+        metadata.model_type = self.classify_model_type(&metadata.architecture);
 
         // Extract embedding dimensions
         if let Some(gguf::GGUFMetadataValue::Uint32(d)) = metadata_map
@@ -333,8 +338,8 @@ impl ModelDiscovery {
         Ok(metadata)
     }
 
-    /// Classify model capability based on architecture
-    fn classify_capability(&self, architecture: &Option<String>) -> ModelCapability {
+    /// Classify model type based on architecture
+    fn classify_model_type(&self, architecture: &Option<String>) -> DiscoveredModelType {
         match architecture.as_deref() {
             Some(arch) => {
                 let arch_lower = arch.to_lowercase();
@@ -342,17 +347,17 @@ impl ModelDiscovery {
                     || arch_lower.contains("embed")
                     || arch_lower.contains("nomic")
                 {
-                    ModelCapability::Embedding
+                    DiscoveredModelType::Embedding
                 } else if arch_lower.contains("llama")
                     || arch_lower.contains("gpt")
                     || arch_lower.contains("mistral")
                 {
-                    ModelCapability::TextGeneration
+                    DiscoveredModelType::TextGeneration
                 } else {
-                    ModelCapability::Unknown
+                    DiscoveredModelType::Unknown
                 }
             }
-            None => ModelCapability::Unknown,
+            None => DiscoveredModelType::Unknown,
         }
     }
 
@@ -426,24 +431,24 @@ impl ModelDiscovery {
     /// Get models filtered by capability
     pub async fn get_models_by_capability(
         &self,
-        capability: ModelCapability,
+        capability: DiscoveredModelType,
     ) -> Result<Vec<DiscoveredModel>> {
         let all_models = self.discover_models().await?;
         Ok(all_models
             .into_iter()
-            .filter(|m| m.capability == capability)
+            .filter(|m| m.model_type == capability)
             .collect())
     }
 
     /// Get embedding models only
     pub async fn get_embedding_models(&self) -> Result<Vec<DiscoveredModel>> {
-        self.get_models_by_capability(ModelCapability::Embedding)
+        self.get_models_by_capability(DiscoveredModelType::Embedding)
             .await
     }
 
     /// Get text generation models only
     pub async fn get_text_generation_models(&self) -> Result<Vec<DiscoveredModel>> {
-        self.get_models_by_capability(ModelCapability::TextGeneration)
+        self.get_models_by_capability(DiscoveredModelType::TextGeneration)
             .await
     }
 }
@@ -451,7 +456,7 @@ impl ModelDiscovery {
 /// Internal struct for collecting metadata during parsing
 #[derive(Debug, Default)]
 struct ModelMetadata {
-    capability: ModelCapability,
+    model_type: DiscoveredModelType,
     dimensions: Option<usize>,
     architecture: Option<String>,
     parameter_count: Option<u64>,
@@ -472,27 +477,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_model_capability_classification() {
+    async fn test_model_type_classification() {
         let discovery = ModelDiscovery::new(DiscoveryConfig::default());
 
         assert_eq!(
-            discovery.classify_capability(&Some("bert".to_string())),
-            ModelCapability::Embedding
+            discovery.classify_model_type(&Some("bert".to_string())),
+            DiscoveredModelType::Embedding
         );
 
         assert_eq!(
-            discovery.classify_capability(&Some("llama".to_string())),
-            ModelCapability::TextGeneration
+            discovery.classify_model_type(&Some("llama".to_string())),
+            DiscoveredModelType::TextGeneration
         );
 
         assert_eq!(
-            discovery.classify_capability(&Some("nomic-bert".to_string())),
-            ModelCapability::Embedding
+            discovery.classify_model_type(&Some("nomic-bert".to_string())),
+            DiscoveredModelType::Embedding
         );
 
         assert_eq!(
-            discovery.classify_capability(&None),
-            ModelCapability::Unknown
+            discovery.classify_model_type(&None),
+            DiscoveredModelType::Unknown
         );
     }
 
@@ -570,13 +575,13 @@ mod tests {
     }
 
     #[test]
-    fn test_model_capability_enum() {
-        assert_eq!(ModelCapability::default(), ModelCapability::Unknown);
+    fn test_discovered_model_type_enum() {
+        assert_eq!(DiscoveredModelType::default(), DiscoveredModelType::Unknown);
 
         // Test serialization roundtrip
-        let cap = ModelCapability::Embedding;
+        let cap = DiscoveredModelType::Embedding;
         let json = serde_json::to_string(&cap).unwrap();
-        let deserialized: ModelCapability = serde_json::from_str(&json).unwrap();
+        let deserialized: DiscoveredModelType = serde_json::from_str(&json).unwrap();
         assert_eq!(cap, deserialized);
     }
 
@@ -585,7 +590,7 @@ mod tests {
         let model = DiscoveredModel {
             name: "test-model".to_string(),
             path: PathBuf::from("/path/to/model.gguf"),
-            capability: ModelCapability::Embedding,
+            model_type: DiscoveredModelType::Embedding,
             dimensions: Some(768),
             architecture: Some("bert".to_string()),
             parameter_count: Some(110_000_000),
@@ -597,7 +602,7 @@ mod tests {
         let deserialized: DiscoveredModel = serde_json::from_str(&json).unwrap();
 
         assert_eq!(model.name, deserialized.name);
-        assert_eq!(model.capability, deserialized.capability);
+        assert_eq!(model.model_type, deserialized.model_type);
         assert_eq!(model.dimensions, deserialized.dimensions);
     }
 }
