@@ -11,6 +11,7 @@ members = [
     "crates/crucible-config",
     "crates/crucible-acp",
     "crates/crucible-agents",
+    "crates/crucible-context",
     "crates/crucible-llm",
     "crates/crucible-tools",
     "crates/crucible-watch",
