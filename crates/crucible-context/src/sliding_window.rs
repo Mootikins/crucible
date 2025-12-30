@@ -83,7 +83,12 @@ impl ContextOps for SlidingWindowContext {
 
     fn take(&self, range: Range) -> Vec<ContextMessage> {
         let r = self.resolve_range(&range);
-        self.messages.iter().skip(r.start).take(r.len()).cloned().collect()
+        self.messages
+            .iter()
+            .skip(r.start)
+            .take(r.len())
+            .cloned()
+            .collect()
     }
 
     fn find(&self, predicate: MessagePredicate) -> Vec<(usize, &ContextMessage)> {
@@ -253,11 +258,14 @@ mod tests {
     fn test_drop_range() {
         let mut context = SlidingWindowContext::new(1000);
 
-        context.inject(Position::End, vec![
-            ContextMessage::user("MSG1"),
-            ContextMessage::assistant("MSG2"),
-            ContextMessage::user("MSG3"),
-        ]);
+        context.inject(
+            Position::End,
+            vec![
+                ContextMessage::user("MSG1"),
+                ContextMessage::assistant("MSG2"),
+                ContextMessage::user("MSG3"),
+            ],
+        );
 
         // Drop first message
         context.drop_range(Range::First(1));
@@ -270,11 +278,14 @@ mod tests {
     fn test_inject_before_last_user() {
         let mut context = SlidingWindowContext::new(1000);
 
-        context.inject(Position::End, vec![
-            ContextMessage::user("First question"),
-            ContextMessage::assistant("First answer"),
-            ContextMessage::user("Second question"),
-        ]);
+        context.inject(
+            Position::End,
+            vec![
+                ContextMessage::user("First question"),
+                ContextMessage::assistant("First answer"),
+                ContextMessage::user("Second question"),
+            ],
+        );
 
         // Inject context before the last user message
         context.inject(
@@ -292,11 +303,14 @@ mod tests {
     fn test_take() {
         let mut context = SlidingWindowContext::new(1000);
 
-        context.inject(Position::End, vec![
-            ContextMessage::user("MSG1"),
-            ContextMessage::assistant("MSG2"),
-            ContextMessage::user("MSG3"),
-        ]);
+        context.inject(
+            Position::End,
+            vec![
+                ContextMessage::user("MSG1"),
+                ContextMessage::assistant("MSG2"),
+                ContextMessage::user("MSG3"),
+            ],
+        );
 
         let last_two = context.take(Range::Last(2));
         assert_eq!(last_two.len(), 2);
@@ -311,11 +325,14 @@ mod tests {
     fn test_replace() {
         let mut context = SlidingWindowContext::new(1000);
 
-        context.inject(Position::End, vec![
-            ContextMessage::user("MSG1"),
-            ContextMessage::assistant("MSG2"),
-            ContextMessage::user("MSG3"),
-        ]);
+        context.inject(
+            Position::End,
+            vec![
+                ContextMessage::user("MSG1"),
+                ContextMessage::assistant("MSG2"),
+                ContextMessage::user("MSG3"),
+            ],
+        );
 
         // Replace middle message
         context.replace(
