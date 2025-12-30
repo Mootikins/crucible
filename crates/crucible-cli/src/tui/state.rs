@@ -81,7 +81,7 @@ pub enum PopupItemKind {
 }
 
 /// Popup entry displayed in the inline picker
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PopupItem {
     pub kind: PopupItemKind,
     pub title: String,
