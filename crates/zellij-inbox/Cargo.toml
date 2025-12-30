@@ -12,6 +12,10 @@ crate-type = ["cdylib", "rlib"]
 name = "zellij-inbox"
 path = "src/main.rs"
 
+[[bin]]
+name = "zellij-inbox-plugin"
+path = "src/bin/plugin.rs"
+
 [dependencies]
 regex = "1"
 serde = { version = "1", features = ["derive"] }
