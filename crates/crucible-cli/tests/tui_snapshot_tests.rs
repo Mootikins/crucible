@@ -650,7 +650,7 @@ fn send_message_shows_thinking_status() {
 // =============================================================================
 // Tests for incremental parsing with ContentBlock rendering
 
-use crucible_cli::tui::content_block::ContentBlock;
+use crucible_cli::tui::content_block::StreamBlock;
 
 #[test]
 fn streaming_partial_prose() {
@@ -658,7 +658,7 @@ fn streaming_partial_prose() {
     let mut conv = ConversationState::new();
     conv.push_user_message("Explain this");
     conv.start_assistant_streaming();
-    conv.append_streaming_blocks(vec![ContentBlock::prose_partial("Hello, I'm here to hel")]);
+    conv.append_streaming_blocks(vec![StreamBlock::prose_partial("Hello, I'm here to hel")]);
 
     render_conversation_view(&mut terminal, &conv, "", "act", Some(23), "Generating");
     assert_snapshot!("conv_streaming_partial_prose", terminal.backend());
@@ -671,8 +671,8 @@ fn streaming_code_block() {
     conv.push_user_message("Show me code");
     conv.start_assistant_streaming();
     conv.append_streaming_blocks(vec![
-        ContentBlock::prose("Here's the code:"),
-        ContentBlock::code_partial(Some("rust".into()), "fn main() {\n    println!(\"Hel"),
+        StreamBlock::prose("Here's the code:"),
+        StreamBlock::code_partial(Some("rust".into()), "fn main() {\n    println!(\"Hel"),
     ]);
 
     render_conversation_view(&mut terminal, &conv, "", "act", Some(45), "Generating");
@@ -686,9 +686,9 @@ fn streaming_complete_blocks() {
     conv.push_user_message("Explain");
     conv.start_assistant_streaming();
     conv.append_streaming_blocks(vec![
-        ContentBlock::prose("First paragraph complete."),
-        ContentBlock::code(Some("rust".into()), "fn example() {}"),
-        ContentBlock::prose_partial("Now continuin"),
+        StreamBlock::prose("First paragraph complete."),
+        StreamBlock::code(Some("rust".into()), "fn example() {}"),
+        StreamBlock::prose_partial("Now continuin"),
     ]);
 
     render_conversation_view(&mut terminal, &conv, "", "act", Some(80), "Generating");
@@ -709,7 +709,7 @@ fn conversation_multiturn_with_tools() {
     conv.push_user_message("Read my note");
     conv.start_assistant_streaming();
     // Simulate prose that might have leading newline (common from LLM responses)
-    conv.append_streaming_blocks(vec![ContentBlock::prose(
+    conv.append_streaming_blocks(vec![StreamBlock::prose(
         "\n▷ read({\"filePath\":\"docs/Note1.md\"})",
     )]);
     conv.complete_streaming();
@@ -729,7 +729,7 @@ fn prose_with_leading_newline_should_not_orphan_prefix() {
     conv.push_user_message("Test");
     conv.start_assistant_streaming();
     // Content starts with newline - prefix should NOT be on empty line
-    conv.append_streaming_blocks(vec![ContentBlock::prose("\nThis is the actual content.")]);
+    conv.append_streaming_blocks(vec![StreamBlock::prose("\nThis is the actual content.")]);
 
     render_conversation_view(&mut terminal, &conv, "", "plan", None, "Ready");
 

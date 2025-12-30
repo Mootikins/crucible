@@ -25,7 +25,7 @@ use crate::tui::conversation::StatusKind;
 use crate::tui::conversation_view::{ConversationView, RatatuiView};
 use crate::tui::state::{find_word_start_backward, find_word_start_forward};
 use crate::tui::{
-    map_key_event, ContentBlock, DynamicPopupProvider, InputAction, ParseEvent, PopupProvider,
+    map_key_event, DynamicPopupProvider, InputAction, ParseEvent, PopupProvider, StreamBlock,
     StreamingParser, TuiState,
 };
 use anyhow::Result;
@@ -896,7 +896,7 @@ impl RatatuiRunner {
                 ParseEvent::CodeBlockStart { lang } => {
                     // Start a new partial code block
                     self.view
-                        .append_streaming_blocks(vec![ContentBlock::code_partial(lang, "")]);
+                        .append_streaming_blocks(vec![StreamBlock::code_partial(lang, "")]);
                 }
                 ParseEvent::CodeBlockContent(content) => {
                     // Append to the existing code block in the view

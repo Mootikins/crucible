@@ -5,7 +5,7 @@
 //! with full viewport control.
 
 use crate::tui::{
-    content_block::ContentBlock,
+    content_block::StreamBlock,
     markdown::MarkdownRenderer,
     styles::{indicators, presets},
 };
@@ -37,7 +37,7 @@ pub enum ConversationItem {
     UserMessage { content: String },
     /// Assistant text response
     AssistantMessage {
-        blocks: Vec<ContentBlock>,
+        blocks: Vec<StreamBlock>,
         /// True if still streaming
         is_streaming: bool,
     },
@@ -143,7 +143,7 @@ impl ConversationState {
         }
 
         // For non-streaming messages, create a single prose block
-        let blocks = vec![ContentBlock::prose(content.into())];
+        let blocks = vec![StreamBlock::prose(content.into())];
         self.items.push(ConversationItem::AssistantMessage {
             blocks,
             is_streaming: false,
@@ -174,7 +174,7 @@ impl ConversationState {
     }
 
     /// Append blocks to the most recent streaming assistant message
-    pub fn append_streaming_blocks(&mut self, new_blocks: Vec<ContentBlock>) {
+    pub fn append_streaming_blocks(&mut self, new_blocks: Vec<StreamBlock>) {
         for item in self.items.iter_mut().rev() {
             if let ConversationItem::AssistantMessage {
                 blocks,
@@ -259,7 +259,7 @@ impl ConversationState {
                         }
                     }
                     // Create new prose block
-                    blocks.push(ContentBlock::prose_partial(text));
+                    blocks.push(StreamBlock::prose_partial(text));
                     return;
                 }
             }
@@ -392,7 +392,7 @@ fn render_user_message(content: &str, _width: usize) -> Vec<Line<'static>> {
 
 /// Render assistant message blocks with streaming indicators
 fn render_assistant_blocks(
-    blocks: &[ContentBlock],
+    blocks: &[StreamBlock],
     is_streaming: bool,
     width: usize,
 ) -> Vec<Line<'static>> {
@@ -409,7 +409,7 @@ fn render_assistant_blocks(
 
     for (idx, block) in blocks.iter().enumerate() {
         match block {
-            ContentBlock::Prose { text, is_complete } => {
+            StreamBlock::Prose { text, is_complete } => {
                 // Render prose as markdown with word-aware wrapping
                 let markdown_lines = render_markdown_text(text, width);
 
@@ -432,7 +432,7 @@ fn render_assistant_blocks(
                     ]));
                 }
             }
-            ContentBlock::Code {
+            StreamBlock::Code {
                 lang,
                 content,
                 is_complete,
@@ -510,7 +510,7 @@ fn render_code_block(lang: Option<&str>, content: &str) -> Vec<Line<'static>> {
 /// Legacy function for backward compatibility (now wraps block rendering)
 fn render_assistant_message(content: &str) -> Vec<Line<'static>> {
     // Convert string to single prose block and render with default width
-    let blocks = vec![ContentBlock::prose(content)];
+    let blocks = vec![StreamBlock::prose(content)];
     render_assistant_blocks(&blocks, false, 80) // Default 80 column width for tests
 }
 
@@ -1125,7 +1125,7 @@ mod tests {
         );
 
         // Assistant messages should have " ● " prefix (3 chars: space + ● + space)
-        let blocks = vec![crate::tui::ContentBlock::prose("World")];
+        let blocks = vec![crate::tui::StreamBlock::prose("World")];
         let assistant_lines = render_assistant_blocks(&blocks, false, 80);
         // Skip the blank line
         let assistant_content_line = &assistant_lines[1];
@@ -1148,7 +1148,7 @@ mod tests {
         // Multi-line assistant messages should have:
         // - First line: " ● " prefix
         // - Continuation lines: "   " (3 spaces) indent
-        let blocks = vec![crate::tui::ContentBlock::prose(
+        let blocks = vec![crate::tui::StreamBlock::prose(
             "Line one\nLine two\nLine three",
         )];
         let lines = render_assistant_blocks(&blocks, false, 80);

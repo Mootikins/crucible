@@ -1,6 +1,6 @@
 //! Incremental markdown parser for streaming LLM responses
 
-use super::content_block::{ContentBlock, ParseEvent};
+use super::content_block::{ParseEvent, StreamBlock};
 
 /// Parser state machine for incremental markdown parsing
 #[derive(Debug, Default)]
@@ -11,7 +11,7 @@ pub struct StreamingParser {
     /// Content accumulated so far (for code blocks)
     content_buffer: String,
     /// Accumulated content blocks
-    blocks: Vec<ContentBlock>,
+    blocks: Vec<StreamBlock>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -44,7 +44,7 @@ impl StreamingParser {
     }
 
     /// Get current blocks (for rendering)
-    pub fn blocks(&self) -> &[ContentBlock] {
+    pub fn blocks(&self) -> &[StreamBlock] {
         &self.blocks
     }
 
@@ -197,11 +197,11 @@ impl StreamingParser {
         for event in events {
             match event {
                 ParseEvent::Text(text) => {
-                    self.blocks.push(ContentBlock::prose(text.clone()));
+                    self.blocks.push(StreamBlock::prose(text.clone()));
                 }
                 ParseEvent::CodeBlockStart { lang } => {
                     self.blocks
-                        .push(ContentBlock::code_partial(lang.clone(), ""));
+                        .push(StreamBlock::code_partial(lang.clone(), ""));
                 }
                 ParseEvent::CodeBlockContent(content) => {
                     if let Some(block) = self.blocks.last_mut() {
