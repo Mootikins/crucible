@@ -47,12 +47,16 @@ pub struct HistoryMessage {
     pub token_count: usize,
 }
 
-/// Role of a message sender
+/// Role of a message sender in ACP conversation history.
+///
+/// Uses ACP protocol terminology (`Agent` instead of `Assistant`).
+/// This is distinct from `crucible_core::traits::MessageRole` which uses
+/// LLM API terminology and includes `Function` and `Tool` variants.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MessageRole {
     /// Message from the user
     User,
-    /// Message from the agent
+    /// Message from the agent (ACP terminology for assistant)
     Agent,
     /// System message (e.g., context, instructions)
     System,
