@@ -4,10 +4,13 @@
 //! for composable query parsing. Follows the SyntaxExtension pattern
 //! from crucible-parser.
 
+pub mod common;
+mod cypher;
 mod jaq;
 mod pgq;
 mod sql_sugar;
 
+pub use cypher::CypherSyntax;
 pub use jaq::JaqSyntax;
 pub use pgq::PgqSyntax;
 pub use sql_sugar::SqlSugarSyntax;
