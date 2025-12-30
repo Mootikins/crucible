@@ -167,10 +167,15 @@ pub fn format_session(
             MessageRole::Assistant => {
                 output.push_str(&format_agent_response(content, *ts));
             }
-            MessageRole::Tool => {
+            MessageRole::Tool | MessageRole::Function => {
                 if let Some((name, args, result)) = tool_info {
                     output.push_str(&format_tool_call(name, args, result, *ts));
                 }
+            }
+            MessageRole::System => {
+                // System messages are typically not shown in session logs
+                // but include them as blockquotes if present
+                output.push_str(&format!("> **System** ({})\n> {}\n\n", ts.format("%H:%M"), content));
             }
         }
     }

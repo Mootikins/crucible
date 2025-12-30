@@ -26,16 +26,19 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Message role in LLM API conversations.
+/// Message role in LLM API conversations (canonical type).
 ///
 /// This is the canonical message role type for LLM provider communication.
 /// It maps directly to OpenAI/Anthropic API message roles.
 ///
-/// Note: Other crates define domain-specific message role types:
-/// - `crucible_acp::MessageRole` - uses `Agent` (ACP protocol terminology)
-/// - `crucible_cli::tui::MessageRole` - for TUI display purposes
-/// - `crucible_rig::session::MessageRole` - simplified for Rig sessions
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Use this type for:
+/// - LLM provider communication
+/// - Session persistence (Rig sessions, TUI state)
+/// - Any code that needs standard assistant/user/system roles
+///
+/// Note: `crucible_acp::MessageRole` uses `Agent` instead of `Assistant`
+/// for ACP protocol terminology - convert using `From`/`Into` when bridging.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum MessageRole {
     /// System message (sets behavior)

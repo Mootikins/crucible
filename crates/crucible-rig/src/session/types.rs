@@ -9,6 +9,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+// Re-export MessageRole from core for use by session module
+pub use crucible_core::traits::MessageRole;
+
 /// Full session state (serialized to JSON)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SessionState {
@@ -51,22 +54,6 @@ pub struct SessionMessage {
     /// Tool result (for tool response messages)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_result: Option<serde_json::Value>,
-}
-
-/// Message role in Rig session state.
-///
-/// Simplified variant set for Rig's session management (no System or Function).
-/// This is distinct from `crucible_core::traits::MessageRole` which includes
-/// all LLM API message roles.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum MessageRole {
-    /// User message
-    User,
-    /// Assistant message
-    Assistant,
-    /// Tool call/response
-    Tool,
 }
 
 /// A task in the session
