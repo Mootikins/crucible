@@ -21,7 +21,7 @@ use std::collections::VecDeque;
 use std::time::Instant;
 
 // =========================================================================
-// Phase 1: ContentBlock - height calculation with word wrap
+// Phase 1: ViewportBlock - height calculation with word wrap
 // =========================================================================
 
 /// Type of content block in the viewport
@@ -50,9 +50,13 @@ pub enum ToolStatus {
     Failed,
 }
 
-/// A content block in the viewport buffer
+/// A content block in the viewport buffer.
+///
+/// This is distinct from:
+/// - [`crate::tui::content_block::StreamBlock`] - parsed streaming content (prose/code)
+/// - [`crucible_core::traits::mcp::ViewportBlock`] - MCP protocol content (Text, Image, Resource)
 #[derive(Debug, Clone)]
-pub struct ContentBlock {
+pub struct ViewportBlock {
     /// Unique identifier for this block
     pub id: u64,
     /// Content of this block
@@ -63,7 +67,7 @@ pub struct ContentBlock {
     pub timestamp: Instant,
 }
 
-impl ContentBlock {
+impl ViewportBlock {
     /// Create a new content block
     pub fn new(id: u64, content: ContentKind) -> Self {
         Self {
@@ -219,7 +223,7 @@ pub struct LayoutZones {
 
 /// Viewport state manages the content buffer and dimensions
 pub struct ViewportState {
-    content_buffer: VecDeque<ContentBlock>,
+    content_buffer: VecDeque<ViewportBlock>,
     next_id: u64,
     width: u16,
     height: u16,
@@ -265,7 +269,7 @@ impl ViewportState {
     pub fn push_user_message(&mut self, text: impl Into<String>) {
         let id = self.next_id;
         self.next_id += 1;
-        let block = ContentBlock::new(id, ContentKind::UserMessage(text.into()));
+        let block = ViewportBlock::new(id, ContentKind::UserMessage(text.into()));
         self.content_buffer.push_back(block);
     }
 
@@ -273,7 +277,7 @@ impl ViewportState {
     pub fn push_assistant_message(&mut self, text: impl Into<String>, complete: bool) {
         let id = self.next_id;
         self.next_id += 1;
-        let block = ContentBlock::new(
+        let block = ViewportBlock::new(
             id,
             ContentKind::AssistantMessage {
                 content: text.into(),
@@ -287,12 +291,12 @@ impl ViewportState {
     pub fn push_system_message(&mut self, text: impl Into<String>) {
         let id = self.next_id;
         self.next_id += 1;
-        let block = ContentBlock::new(id, ContentKind::System(text.into()));
+        let block = ViewportBlock::new(id, ContentKind::System(text.into()));
         self.content_buffer.push_back(block);
     }
 
     /// Get an iterator over content blocks
-    pub fn content_blocks(&self) -> impl Iterator<Item = &ContentBlock> {
+    pub fn content_blocks(&self) -> impl Iterator<Item = &ViewportBlock> {
         self.content_buffer.iter()
     }
 
@@ -319,7 +323,7 @@ impl ViewportState {
     /// - Always keeps at least 1 message in buffer (newest), even if it exceeds zone
     /// - Blocks are removed and returned as complete units (never split)
     /// - Returns empty vec if no overflow needed
-    pub fn maybe_overflow_to_scrollback(&mut self) -> Vec<ContentBlock> {
+    pub fn maybe_overflow_to_scrollback(&mut self) -> Vec<ViewportBlock> {
         let mut overflow = Vec::new();
 
         // Empty buffer check
@@ -452,7 +456,7 @@ impl ViewportState {
     ///
     /// Updates dimensions, invalidates height caches, recalculates content zone,
     /// and returns any blocks that overflow to scrollback.
-    pub fn handle_resize(&mut self, width: u16, height: u16) -> Vec<ContentBlock> {
+    pub fn handle_resize(&mut self, width: u16, height: u16) -> Vec<ViewportBlock> {
         // Update dimensions
         self.width = width;
         self.height = height;
@@ -535,7 +539,7 @@ mod tests {
     //! Tests are organized by phase, written before implementation.
 
     // =========================================================================
-    // Phase 1: ContentBlock - height calculation with word wrap
+    // Phase 1: ViewportBlock - height calculation with word wrap
     // =========================================================================
     mod content_block_tests {
         use super::super::*;
@@ -544,7 +548,7 @@ mod tests {
         fn height_single_line_short_message() {
             // "You: Hello" = 10 chars, fits on one line at width 80
             // Expected: height = 1
-            let mut block = ContentBlock::new(1, ContentKind::UserMessage("Hello".to_string()));
+            let mut block = ViewportBlock::new(1, ContentKind::UserMessage("Hello".to_string()));
             let height = block.height(80);
             assert_eq!(height, 1);
         }
@@ -554,7 +558,7 @@ mod tests {
             // "You: This is a longer message that will wrap" = 46 chars
             // At width 20: ceil(46/20) = 3 lines
             // Expected: height = 3
-            let mut block = ContentBlock::new(
+            let mut block = ViewportBlock::new(
                 1,
                 ContentKind::UserMessage("This is a longer message that will wrap".to_string()),
             );
@@ -566,7 +570,7 @@ mod tests {
         fn height_is_cached_after_first_call() {
             // First call calculates, second uses cache
             // Verify cached_height is Some after first call
-            let mut block = ContentBlock::new(1, ContentKind::UserMessage("Hello".to_string()));
+            let mut block = ViewportBlock::new(1, ContentKind::UserMessage("Hello".to_string()));
             assert!(block.cached_height.is_none());
 
             let height1 = block.height(80);
@@ -581,7 +585,7 @@ mod tests {
         #[test]
         fn invalidate_clears_cached_height() {
             // After invalidate_height(), cached_height should be None
-            let mut block = ContentBlock::new(1, ContentKind::UserMessage("Hello".to_string()));
+            let mut block = ViewportBlock::new(1, ContentKind::UserMessage("Hello".to_string()));
             block.height(80);
             assert!(block.cached_height.is_some());
 
@@ -592,14 +596,14 @@ mod tests {
         #[test]
         fn format_user_message_has_prefix() {
             // UserMessage("Hello") -> "You: Hello"
-            let block = ContentBlock::new(1, ContentKind::UserMessage("Hello".to_string()));
+            let block = ViewportBlock::new(1, ContentKind::UserMessage("Hello".to_string()));
             assert_eq!(block.format_for_viewport(), "You: Hello");
         }
 
         #[test]
         fn format_assistant_message_has_prefix() {
             // AssistantMessage { content: "Hi", complete: true } -> "Assistant: Hi"
-            let block = ContentBlock::new(
+            let block = ViewportBlock::new(
                 1,
                 ContentKind::AssistantMessage {
                     content: "Hi".to_string(),
@@ -612,7 +616,7 @@ mod tests {
         #[test]
         fn format_system_message_has_prefix() {
             // System("Indexing...") -> "* Indexing..."
-            let block = ContentBlock::new(1, ContentKind::System("Indexing...".to_string()));
+            let block = ViewportBlock::new(1, ContentKind::System("Indexing...".to_string()));
             assert_eq!(block.format_for_viewport(), "* Indexing...");
         }
 
@@ -620,7 +624,7 @@ mod tests {
         fn multiline_content_height_counts_all_lines() {
             // Message with embedded newlines
             // "Line1\nLine2\nLine3" should count as 3+ lines
-            let mut block = ContentBlock::new(
+            let mut block = ViewportBlock::new(
                 1,
                 ContentKind::UserMessage("Line1\nLine2\nLine3".to_string()),
             );
@@ -1078,14 +1082,14 @@ mod tests {
         #[test]
         fn format_for_scrollback_includes_prefix() {
             // UserMessage("Hello") -> "You: Hello"
-            let block = ContentBlock::new(1, ContentKind::UserMessage("Hello".to_string()));
+            let block = ViewportBlock::new(1, ContentKind::UserMessage("Hello".to_string()));
             assert_eq!(block.format_for_scrollback(), "You: Hello");
         }
 
         #[test]
         fn scrollback_format_no_ansi_codes() {
             // Plain text for terminal-native wrapping - no ANSI escape sequences
-            let block = ContentBlock::new(
+            let block = ViewportBlock::new(
                 1,
                 ContentKind::AssistantMessage {
                     content: "Test message".to_string(),
