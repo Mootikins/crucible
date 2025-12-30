@@ -90,12 +90,11 @@ fn context_to_rig_message(msg: &ContextMessage) -> Option<Message> {
         }
         MessageRole::Tool => {
             // Tool result messages - in Rig these are User messages with ToolResult content
-            if let Some(ref tool_call_id) = msg.metadata.tool_call_id {
-                Some(Message::tool_result(tool_call_id.clone(), &msg.content))
-            } else {
-                // Can't create tool result without ID, skip
-                None
-            }
+            // Can't create tool result without ID, so skip if missing
+            msg.metadata
+                .tool_call_id
+                .as_ref()
+                .map(|tool_call_id| Message::tool_result(tool_call_id.clone(), &msg.content))
         }
         MessageRole::System => {
             // System messages are handled via preamble, not chat history

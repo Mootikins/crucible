@@ -28,6 +28,7 @@ crucible-llm = { path = "../crucible-llm" }
 crucible-pipeline = { path = "../crucible-pipeline" }
 crucible-tools = { path = "../crucible-tools" }
 crucible-acp = { path = "../crucible-acp" }
+crucible-context = { path = "../crucible-context" }
 crucible-rig = { path = "../crucible-rig" }
 crucible-enrichment = { path = "../crucible-enrichment" }
 crucible-merkle = { path = "../crucible-merkle" }
