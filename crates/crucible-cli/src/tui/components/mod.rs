@@ -42,6 +42,7 @@ pub mod input_box;
 pub mod input_state;
 pub mod layer_stack;
 pub mod popup;
+pub mod popup_state;
 pub mod session_history;
 pub mod status_bar;
 
@@ -53,6 +54,7 @@ pub use input_box::InputBoxWidget;
 pub use input_state::InputState;
 pub use layer_stack::LayerStack;
 pub use popup::PopupWidget;
+pub use popup_state::{MockPopupProvider, PopupItemProvider, PopupState};
 pub use session_history::SessionHistoryWidget;
 pub use status_bar::StatusBarWidget;
 
