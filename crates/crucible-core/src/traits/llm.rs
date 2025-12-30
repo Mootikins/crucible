@@ -14,7 +14,7 @@
 //! - **Request/Response**: `ChatCompletionRequest`, `ChatCompletionResponse`, etc.
 //! - **Streaming**: `ChatCompletionChunk`, `ChatMessageDelta`, etc.
 //! - **Tool Calling**: `ToolCall`, `LlmToolDefinition`, `ToolChoice`
-//! - **Model Info**: `TextModelInfo`, `ModelCapability`, `ProviderCapabilities`
+//! - **Model Info**: `TextModelInfo`, `ModelFeature`, `ProviderCapabilities`
 //!
 //! ## Traits (in `provider.rs`)
 //!
@@ -493,8 +493,8 @@ pub struct TextModelInfo {
     pub name: String,
     /// Model owner/creator
     pub owner: Option<String>,
-    /// Model capabilities
-    pub capabilities: Vec<ModelCapability>,
+    /// Model feature capabilities
+    pub capabilities: Vec<ModelFeature>,
     /// Maximum context length
     pub max_context_length: Option<u32>,
     /// Maximum output tokens
@@ -521,7 +521,7 @@ pub struct TextModelInfo {
 /// - Use this enum when describing what features a chat/text model supports
 /// - Use `provider::ModelCapability` when categorizing models by primary function
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum ModelCapability {
+pub enum ModelFeature {
     /// Text completion (non-chat)
     TextCompletion,
     /// Chat/conversation completion
