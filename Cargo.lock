@@ -3210,12 +3210,15 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "crucible-core",
+ "oq",
  "serde",
  "serde_json",
+ "serde_yaml",
  "steel-core",
  "tempfile",
  "thiserror 2.0.17",
  "tokio",
+ "toml 0.9.10+spec-1.1.0",
  "tracing",
 ]
 
