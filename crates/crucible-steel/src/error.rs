@@ -24,4 +24,7 @@ pub enum SteelError {
 
     #[error("Task join error: {0}")]
     TaskJoin(String),
+
+    #[error("Policy violation: {0}")]
+    PolicyViolation(String),
 }
