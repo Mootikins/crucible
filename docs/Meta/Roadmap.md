@@ -53,6 +53,7 @@ A knowledge management system where:
 - [x] ACP Integration - Working (enables Cursor, external agents)
 - [x] Chat CLI - Primary interface
 - [x] Embeddings - Semantic search working
+- [x] Query System - Context enrichment for agents (see [[Help/Query/Query System]])
 - [x] TUI E2E Testing - expectrl-based test harness for PTY testing (see [[Help/TUI/E2E Testing]])
 
 ---
@@ -81,13 +82,14 @@ A knowledge management system where:
 
 ### High Priority
 
-- [ ] **Workflow Markup** - DAG workflows in markdown prose (`@agent`, `#channel`, `->` data flow)
+- [ ] **Markdown Handlers** - Event handlers defined in pure markdown, inject context into agents (see [[Help/Extending/Markdown Handlers]])
+- [ ] **Workflow Markup** - DAG workflows in markdown prose (`@agent`, `->` data flow, `> [!gate]` approvals) (see [[Help/Workflows/Workflow Syntax]])
 - [ ] **Workflow Sessions** - Log execution as markdown, resume interrupted work
 
 ### Medium Priority
 
 - [ ] **Session learning** - Codify successful sessions into reusable workflows
-- [ ] **RL case generation** - Learn from failures
+- [ ] **Parallel execution** - `(parallel)` suffix or `&` prefix for concurrent steps (deferred)
 
 ---
 
@@ -106,7 +108,6 @@ A knowledge management system where:
 ### Note Features
 
 - [ ] **Note Types** - Templates and typed notes (book, meeting, movie)
-- [ ] **Query System** - Advanced search and filtering
 
 ---
 
@@ -153,5 +154,7 @@ A knowledge management system where:
 - [[Dev Kiln Architecture]] - System architecture
 - [[TUI User Stories]] - Chat interface requirements
 - [[Plugin User Stories]] - Extension system requirements
-- `openspec/SYSTEMS.md` - System boundaries
-- `openspec/changes/` - Active proposals
+- [[Meta/Systems]] - System boundaries
+- [[Help/Workflows/Workflow Syntax]] - Workflow syntax reference
+- [[Help/Extending/Markdown Handlers]] - Handler syntax reference
+- [[Help/Query/Query System]] - Query system reference
