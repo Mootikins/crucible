@@ -244,7 +244,10 @@ mod tests {
     #[test]
     fn test_dispatch_dialog_select() {
         let effect = dispatch(TuiAction::DialogSelect(2));
-        assert_eq!(effect, RunnerEffect::DialogResult(DialogEffect::Selected(2)));
+        assert_eq!(
+            effect,
+            RunnerEffect::DialogResult(DialogEffect::Selected(2))
+        );
     }
 
     #[test]

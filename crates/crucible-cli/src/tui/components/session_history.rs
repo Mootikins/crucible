@@ -397,7 +397,10 @@ mod tests {
         let event = Event::Key(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE));
         let result = widget.handle_event(&event);
 
-        assert_eq!(result, WidgetEventResult::Action(WidgetAction::ScrollTo(usize::MAX)));
+        assert_eq!(
+            result,
+            WidgetEventResult::Action(WidgetAction::ScrollTo(usize::MAX))
+        );
     }
 
     #[test]

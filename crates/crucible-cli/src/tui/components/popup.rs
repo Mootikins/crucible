@@ -299,7 +299,10 @@ mod tests {
         let mut widget = PopupWidget::new(&mut state);
 
         let result = widget.handle_event(&key(KeyCode::Enter));
-        assert_eq!(result, WidgetEventResult::Action(WidgetAction::ConfirmPopup(2)));
+        assert_eq!(
+            result,
+            WidgetEventResult::Action(WidgetAction::ConfirmPopup(2))
+        );
     }
 
     #[test]
@@ -309,7 +312,10 @@ mod tests {
         let mut widget = PopupWidget::new(&mut state);
 
         let result = widget.handle_event(&key(KeyCode::Tab));
-        assert_eq!(result, WidgetEventResult::Action(WidgetAction::ConfirmPopup(3)));
+        assert_eq!(
+            result,
+            WidgetEventResult::Action(WidgetAction::ConfirmPopup(3))
+        );
     }
 
     #[test]
@@ -318,7 +324,10 @@ mod tests {
         let mut widget = PopupWidget::new(&mut state);
 
         let result = widget.handle_event(&key(KeyCode::Esc));
-        assert_eq!(result, WidgetEventResult::Action(WidgetAction::DismissPopup));
+        assert_eq!(
+            result,
+            WidgetEventResult::Action(WidgetAction::DismissPopup)
+        );
     }
 
     #[test]
