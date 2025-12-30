@@ -40,7 +40,9 @@ pub enum ContractType {
     /// List of elements
     List { element: Option<Box<ContractType>> },
     /// Hash/object
-    Hash { fields: Option<Vec<(String, ContractType)>> },
+    Hash {
+        fields: Option<Vec<(String, ContractType)>>,
+    },
     /// Union: or/c
     Union { types: Vec<ContractType> },
     /// Any value
@@ -219,23 +221,33 @@ pub struct ContractSignature {
 /// Extract contract signatures from Steel source
 ///
 /// Parses `define/contract` forms to extract contract specifications.
+///
+/// # Limitations
+///
+/// The regex pattern uses `[^)]+` for capturing contracts, which will not
+/// correctly handle nested parentheses in composite predicates like
+/// `(->/c (or/c string? number?) number?)`. For now, only simple predicates
+/// are supported (e.g., `string?`, `number?`, `list?`).
 pub fn extract_contracts(source: &str) -> Vec<ContractSignature> {
     let mut signatures = Vec::new();
 
     // Pattern for define/contract with ->/c
     // (define/contract (func-name params...) (->/c contracts...) body)
-    let contract_pattern = Regex::new(
-        r"(?s)\(define/contract\s*\((\S+)([^)]*)\)\s*\(->/c([^)]+)\)",
-    ).unwrap();
+    // NOTE: [^)]+ won't handle nested parens - see doc comment above
+    let contract_pattern =
+        Regex::new(r"(?s)\(define/contract\s*\((\S+)([^)]*)\)\s*\(->/c([^)]+)\)").unwrap();
 
     for cap in contract_pattern.captures_iter(source) {
-        let name = cap.get(1).map(|m| m.as_str().to_string()).unwrap_or_default();
+        let name = cap
+            .get(1)
+            .map(|m| m.as_str().to_string())
+            .unwrap_or_default();
         let contracts_str = cap.get(3).map(|m| m.as_str()).unwrap_or("");
 
         // Parse individual contracts
         let contracts: Vec<ContractType> = contracts_str
             .split_whitespace()
-            .map(|pred| ContractType::from_predicate(pred))
+            .map(ContractType::from_predicate)
             .collect();
 
         // Last contract is the return type, others are inputs
@@ -260,10 +272,7 @@ pub fn extract_contracts(source: &str) -> Vec<ContractSignature> {
 }
 
 /// Convert a contract signature to tool parameters
-pub fn contract_to_params(
-    sig: &ContractSignature,
-    param_names: &[String],
-) -> Vec<ToolParam> {
+pub fn contract_to_params(sig: &ContractSignature, param_names: &[String]) -> Vec<ToolParam> {
     sig.input_contracts
         .iter()
         .enumerate()
@@ -279,10 +288,13 @@ pub fn contract_to_params(
                 ContractType::Hash { .. } => "object".to_string(),
                 ContractType::Any => "any".to_string(),
                 ContractType::Optional { inner } => {
-                    format!("{}?", match inner.as_ref() {
-                        ContractType::Primitive { predicate } => predicate.clone(),
-                        _ => "any".to_string(),
-                    })
+                    format!(
+                        "{}?",
+                        match inner.as_ref() {
+                            ContractType::Primitive { predicate } => predicate.clone(),
+                            _ => "any".to_string(),
+                        }
+                    )
                 }
                 ContractType::Union { .. } => "any".to_string(),
                 ContractType::Custom { predicate } => predicate.clone(),
@@ -341,9 +353,7 @@ mod tests {
     #[test]
     fn test_predicate_custom() {
         let ct = ContractType::from_predicate("my-validator?");
-        assert!(
-            matches!(ct, ContractType::Custom { predicate } if predicate == "my-validator?")
-        );
+        assert!(matches!(ct, ContractType::Custom { predicate } if predicate == "my-validator?"));
     }
 
     // =========================================================================
