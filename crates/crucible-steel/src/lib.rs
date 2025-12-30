@@ -11,6 +11,7 @@
 pub mod error;
 pub mod executor;
 pub mod graph;
+pub mod json_query;
 pub mod registry;
 pub mod shell;
 pub mod types;
@@ -18,6 +19,7 @@ pub mod types;
 pub use error::SteelError;
 pub use executor::SteelExecutor;
 pub use graph::GraphModule;
+pub use json_query::{Format as OqFormat, OqModule};
 pub use registry::SteelToolRegistry;
 pub use shell::{ShellModule, ShellPolicy};
 pub use types::{SteelTool, ToolParam};
@@ -39,10 +41,7 @@ mod tests {
     async fn test_execute_simple_expression() {
         let executor = SteelExecutor::new().unwrap();
 
-        let result = executor
-            .execute_source("(+ 1 2 3)")
-            .await
-            .unwrap();
+        let result = executor.execute_source("(+ 1 2 3)").await.unwrap();
 
         assert_eq!(result, json!(6));
     }
@@ -90,7 +89,11 @@ mod tests {
 
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("contract"), "Error should mention contract: {}", err);
+        assert!(
+            err.to_string().contains("contract"),
+            "Error should mention contract: {}",
+            err
+        );
     }
 
     /// Test basic arithmetic contract
@@ -173,10 +176,7 @@ mod tests {
         registry.discover_from(dir.path()).await.unwrap();
 
         // Execute tool with a simple number
-        let result = registry
-            .execute("handler", json!(7))
-            .await
-            .unwrap();
+        let result = registry.execute("handler", json!(7)).await.unwrap();
 
         if !result.success {
             panic!("Tool execution failed: {:?}", result.error);
@@ -208,10 +208,7 @@ mod tests {
         registry.discover_from(dir.path()).await.unwrap();
 
         // Valid call
-        let result = registry
-            .execute("handler", json!(5))
-            .await
-            .unwrap();
+        let result = registry.execute("handler", json!(5)).await.unwrap();
 
         if !result.success {
             panic!("Tool execution failed: {:?}", result.error);
@@ -258,13 +255,16 @@ mod tests {
         executor.execute_source(source).await.unwrap();
 
         let result = executor
-            .call_function("get-city", vec![json!({
-                "name": "Bob",
-                "address": {
-                    "city": "Seattle",
-                    "zip": "98101"
-                }
-            })])
+            .call_function(
+                "get-city",
+                vec![json!({
+                    "name": "Bob",
+                    "address": {
+                        "city": "Seattle",
+                        "zip": "98101"
+                    }
+                })],
+            )
             .await
             .unwrap();
 
@@ -279,7 +279,9 @@ mod builtin_tests {
     #[tokio::test]
     async fn test_steel_filter() {
         let executor = SteelExecutor::new().unwrap();
-        let r = executor.execute_source("(filter (lambda (x) (> x 2)) '(1 2 3 4))").await;
+        let r = executor
+            .execute_source("(filter (lambda (x) (> x 2)) '(1 2 3 4))")
+            .await;
         println!("filter result: {:?}", r);
     }
 
@@ -289,15 +291,19 @@ mod builtin_tests {
         let r = executor.execute_source("(member 2 '(1 2 3))").await;
         println!("member result: {:?}", r);
     }
-    
+
     #[tokio::test]
     async fn test_simple_lib() {
         let executor = SteelExecutor::new().unwrap();
         // Try without provide
-        let r = executor.execute_source(r#"
+        let r = executor
+            .execute_source(
+                r#"
             (define (note-title note) (hash-ref note 'title))
             (note-title (hash 'title "Test"))
-        "#).await;
+        "#,
+            )
+            .await;
         println!("simple lib result: {:?}", r);
     }
 }
