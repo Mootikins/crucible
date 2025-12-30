@@ -3,7 +3,7 @@
 //! Defines abstractions for managing conversation context with support
 //! for sliding window, token budgeting, and future stack operations.
 
-use crate::traits::llm::LlmMessage;
+use crate::traits::context_ops::ContextMessage;
 
 /// Manages conversation context/history for LLM interactions
 ///
@@ -21,10 +21,10 @@ pub trait ContextManager: Send + Sync {
     fn get_system_prompt(&self) -> Option<&str>;
 
     /// Add a message to the context
-    fn add_message(&mut self, msg: LlmMessage);
+    fn add_message(&mut self, msg: ContextMessage);
 
     /// Get all messages (including system prompt as first message if set)
-    fn get_messages(&self) -> Vec<LlmMessage>;
+    fn get_messages(&self) -> Vec<ContextMessage>;
 
     /// Trim context to fit within token budget
     /// Keeps system prompt, removes oldest messages first
@@ -49,12 +49,12 @@ pub trait ContextManager: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::traits::llm::{LlmMessage, MessageRole};
+    use crate::traits::llm::MessageRole;
 
     /// Mock implementation for testing
     struct MockContextManager {
         system_prompt: Option<String>,
-        messages: Vec<LlmMessage>,
+        messages: Vec<ContextMessage>,
     }
 
     impl MockContextManager {
@@ -80,16 +80,16 @@ mod tests {
             self.system_prompt.as_deref()
         }
 
-        fn add_message(&mut self, msg: LlmMessage) {
+        fn add_message(&mut self, msg: ContextMessage) {
             self.messages.push(msg);
         }
 
-        fn get_messages(&self) -> Vec<LlmMessage> {
+        fn get_messages(&self) -> Vec<ContextMessage> {
             let mut all_messages = Vec::new();
 
             // Include system prompt as first message if set
             if let Some(prompt) = &self.system_prompt {
-                all_messages.push(LlmMessage::system(prompt.clone()));
+                all_messages.push(ContextMessage::system(prompt.clone()));
             }
 
             all_messages.extend(self.messages.clone());
@@ -173,8 +173,8 @@ mod tests {
     fn test_add_messages() {
         let mut ctx = MockContextManager::new();
 
-        ctx.add_message(LlmMessage::user("Hello"));
-        ctx.add_message(LlmMessage::assistant("Hi there"));
+        ctx.add_message(ContextMessage::user("Hello"));
+        ctx.add_message(ContextMessage::assistant("Hi there"));
 
         assert_eq!(ctx.message_count(), 2);
 
@@ -188,8 +188,8 @@ mod tests {
     fn test_clear() {
         let mut ctx = MockContextManager::new();
         ctx.set_system_prompt("System".to_string());
-        ctx.add_message(LlmMessage::user("Hello"));
-        ctx.add_message(LlmMessage::assistant("Hi"));
+        ctx.add_message(ContextMessage::user("Hello"));
+        ctx.add_message(ContextMessage::assistant("Hi"));
 
         ctx.clear();
 
@@ -213,7 +213,7 @@ mod tests {
         assert_eq!(ctx.token_estimate(), 1);
 
         // Add message
-        ctx.add_message(LlmMessage::user("12345678".to_string())); // ~2 tokens
+        ctx.add_message(ContextMessage::user("12345678".to_string())); // ~2 tokens
         assert_eq!(ctx.token_estimate(), 3);
     }
 
@@ -223,10 +223,10 @@ mod tests {
         ctx.set_system_prompt("SYSPROMPT".to_string()); // 9 chars = 3 tokens
 
         // Add several messages
-        ctx.add_message(LlmMessage::user("MSG1".to_string())); // 4 chars = 1 token
-        ctx.add_message(LlmMessage::assistant("MSG2".to_string())); // 4 chars = 1 token
-        ctx.add_message(LlmMessage::user("MSG3".to_string())); // 4 chars = 1 token
-        ctx.add_message(LlmMessage::assistant("MSG4".to_string())); // 4 chars = 1 token
+        ctx.add_message(ContextMessage::user("MSG1".to_string())); // 4 chars = 1 token
+        ctx.add_message(ContextMessage::assistant("MSG2".to_string())); // 4 chars = 1 token
+        ctx.add_message(ContextMessage::user("MSG3".to_string())); // 4 chars = 1 token
+        ctx.add_message(ContextMessage::assistant("MSG4".to_string())); // 4 chars = 1 token
 
         assert_eq!(ctx.message_count(), 4);
 
@@ -249,7 +249,7 @@ mod tests {
         let mut ctx = MockContextManager::new();
 
         ctx.set_system_prompt("System prompt".to_string());
-        ctx.add_message(LlmMessage::user("User message".to_string()));
+        ctx.add_message(ContextMessage::user("User message".to_string()));
 
         let messages = ctx.get_messages();
 
@@ -268,10 +268,10 @@ mod tests {
         ctx.set_system_prompt("System".to_string());
         assert_eq!(ctx.message_count(), 0);
 
-        ctx.add_message(LlmMessage::user("Hello".to_string()));
+        ctx.add_message(ContextMessage::user("Hello".to_string()));
         assert_eq!(ctx.message_count(), 1);
 
-        ctx.add_message(LlmMessage::assistant("Hi".to_string()));
+        ctx.add_message(ContextMessage::assistant("Hi".to_string()));
         assert_eq!(ctx.message_count(), 2);
     }
 }
