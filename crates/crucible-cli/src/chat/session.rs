@@ -35,7 +35,10 @@ pub const MAX_CONTEXT_SIZE: usize = 1000;
 /// Default number of search results to display
 pub const DEFAULT_SEARCH_LIMIT: usize = 10;
 
-/// Session configuration
+/// CLI chat session configuration.
+///
+/// User interface settings for the chat command (initial mode, splash screen,
+/// context settings). This is distinct from the ACP and reactor session configs.
 #[derive(Debug, Clone)]
 pub struct SessionConfig {
     /// Initial chat mode ID (e.g., "plan", "act", "auto")
