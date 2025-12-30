@@ -374,7 +374,10 @@ WHERE t.depth >= {min_depth}
                 if let Value::String(s) = &filter.value {
                     let escaped = Self::escape_like_pattern(s);
                     params.insert(param_name.clone(), Value::String(format!("%{}%", escaped)));
-                    Ok(format!("{} LIKE :{} ESCAPE '\\\\'", filter.field, param_name))
+                    Ok(format!(
+                        "{} LIKE :{} ESCAPE '\\\\'",
+                        filter.field, param_name
+                    ))
                 } else {
                     Err(RenderError::UnsupportedFilter {
                         message: format!("CONTAINS requires string value, got {:?}", filter.value),
@@ -385,7 +388,10 @@ WHERE t.depth >= {min_depth}
                 if let Value::String(s) = &filter.value {
                     let escaped = Self::escape_like_pattern(s);
                     params.insert(param_name.clone(), Value::String(format!("{}%", escaped)));
-                    Ok(format!("{} LIKE :{} ESCAPE '\\\\'", filter.field, param_name))
+                    Ok(format!(
+                        "{} LIKE :{} ESCAPE '\\\\'",
+                        filter.field, param_name
+                    ))
                 } else {
                     Err(RenderError::UnsupportedFilter {
                         message: format!(
@@ -399,7 +405,10 @@ WHERE t.depth >= {min_depth}
                 if let Value::String(s) = &filter.value {
                     let escaped = Self::escape_like_pattern(s);
                     params.insert(param_name.clone(), Value::String(format!("%{}", escaped)));
-                    Ok(format!("{} LIKE :{} ESCAPE '\\\\'", filter.field, param_name))
+                    Ok(format!(
+                        "{} LIKE :{} ESCAPE '\\\\'",
+                        filter.field, param_name
+                    ))
                 } else {
                     Err(RenderError::UnsupportedFilter {
                         message: format!("ENDS WITH requires string value, got {:?}", filter.value),
