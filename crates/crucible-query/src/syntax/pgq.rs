@@ -12,8 +12,8 @@ use crate::ir::{
     PropertyMatch, QuerySource,
 };
 use crate::syntax::QuerySyntax;
-use chumsky::prelude::*;
 use chumsky::extra;
+use chumsky::prelude::*;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::Value;
@@ -88,7 +88,8 @@ fn graph_pattern_parser<'src>() -> impl Parser<'src, &'src str, Vec<PatternPart>
 }
 
 /// Parser for edge followed by node
-fn edge_then_node_parser<'src>() -> impl Parser<'src, &'src str, (EdgePart, NodePart), Extra<'src>> {
+fn edge_then_node_parser<'src>() -> impl Parser<'src, &'src str, (EdgePart, NodePart), Extra<'src>>
+{
     edge_parser().then(node_parser())
 }
 
@@ -125,11 +126,21 @@ fn node_parser<'src>() -> impl Parser<'src, &'src str, NodePart, Extra<'src>> {
 
     // String literal: 'value' or "value"
     let single_quoted = just('\'')
-        .ignore_then(none_of("'").repeated().to_slice().map(|s: &str| s.to_string()))
+        .ignore_then(
+            none_of("'")
+                .repeated()
+                .to_slice()
+                .map(|s: &str| s.to_string()),
+        )
         .then_ignore(just('\''));
 
     let double_quoted = just('"')
-        .ignore_then(none_of("\"").repeated().to_slice().map(|s: &str| s.to_string()))
+        .ignore_then(
+            none_of("\"")
+                .repeated()
+                .to_slice()
+                .map(|s: &str| s.to_string()),
+        )
         .then_ignore(just('"'));
 
     let string_literal = single_quoted

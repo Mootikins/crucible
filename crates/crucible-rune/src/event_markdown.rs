@@ -313,7 +313,10 @@ impl EventToMarkdown for SessionEvent {
                 };
                 format!("**Model:** {}\n**Prompt:** {}\n", model, truncated)
             }
-            SessionEvent::AwaitingInput { input_type, context } => {
+            SessionEvent::AwaitingInput {
+                input_type,
+                context,
+            } => {
                 format!(
                     "**Input Type:** {}\n**Context:** {}\n",
                     input_type,
