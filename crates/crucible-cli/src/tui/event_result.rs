@@ -214,11 +214,23 @@ mod tests {
         assert!(matches!(up, TuiAction::Scroll(ScrollAction::Up(3))));
         assert!(matches!(down, TuiAction::Scroll(ScrollAction::Down(5))));
         assert!(matches!(page_up, TuiAction::Scroll(ScrollAction::PageUp)));
-        assert!(matches!(page_down, TuiAction::Scroll(ScrollAction::PageDown)));
-        assert!(matches!(half_up, TuiAction::Scroll(ScrollAction::HalfPageUp)));
-        assert!(matches!(half_down, TuiAction::Scroll(ScrollAction::HalfPageDown)));
+        assert!(matches!(
+            page_down,
+            TuiAction::Scroll(ScrollAction::PageDown)
+        ));
+        assert!(matches!(
+            half_up,
+            TuiAction::Scroll(ScrollAction::HalfPageUp)
+        ));
+        assert!(matches!(
+            half_down,
+            TuiAction::Scroll(ScrollAction::HalfPageDown)
+        ));
         assert!(matches!(to_top, TuiAction::Scroll(ScrollAction::ToTop)));
-        assert!(matches!(to_bottom, TuiAction::Scroll(ScrollAction::ToBottom)));
+        assert!(matches!(
+            to_bottom,
+            TuiAction::Scroll(ScrollAction::ToBottom)
+        ));
     }
 
     #[test]
