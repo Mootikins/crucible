@@ -16,6 +16,7 @@ pub mod conversation_view;
 pub mod dialog;
 pub mod event_result;
 pub mod input;
+pub mod interaction;
 pub mod keymap;
 pub mod markdown;
 pub mod notification;
