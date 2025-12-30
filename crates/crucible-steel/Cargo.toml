@@ -17,7 +17,12 @@ crucible-core = { path = "../crucible-core" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
+toml = "0.9"
 thiserror = "2"
+
+# TOON query for multi-format support
+oq = { workspace = true }
 tracing = "0.1"
 tokio = { version = "1", features = ["rt", "sync"] }
 async-trait = "0.1"
