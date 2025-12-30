@@ -10,7 +10,6 @@ members = [
     "crates/crucible-surrealdb",
     "crates/crucible-config",
     "crates/crucible-acp",
-    "crates/crucible-agents",
     "crates/crucible-context",
     "crates/crucible-llm",
     "crates/crucible-tools",
@@ -168,7 +167,6 @@ crossterm = "0.29"
 crucible-core = { path = "crates/crucible-core" }
 crucible-config = { path = "crates/crucible-config" }
 crucible-acp = { path = "crates/crucible-acp" }
-crucible-agents = { path = "crates/crucible-agents" }
 # crucible-rune-macros = { path = "crates/crucible-rune-macros" }
 crucible-tools = { path = "crates/crucible-tools" }
 crucible-llm = { path = "crates/crucible-llm" }
