@@ -13,9 +13,13 @@ use crate::ir::{
 };
 use crate::syntax::QuerySyntax;
 use chumsky::prelude::*;
+use chumsky::extra;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::Value;
+
+/// Extra type for our parsers - uses Rich errors for better messages
+type Extra<'src> = extra::Err<Rich<'src, char>>;
 
 /// Fast prefix check for MATCH or FROM GRAPH
 static MATCH_PREFIX_RE: Lazy<Regex> =
@@ -36,6 +40,7 @@ impl QuerySyntax for PgqSyntax {
     fn parse(&self, input: &str) -> Result<GraphIR, ParseError> {
         match_query_parser()
             .parse(input)
+            .into_result()
             .map_err(|errs| ParseError::Pgq {
                 errors: format_chumsky_errors(&errs, input),
             })
@@ -51,28 +56,27 @@ impl QuerySyntax for PgqSyntax {
 // ============================================================================
 
 /// Main parser for MATCH queries
-fn match_query_parser() -> impl Parser<char, GraphIR, Error = Simple<char>> {
-    let whitespace = filter(|c: &char| c.is_whitespace()).repeated();
-
+fn match_query_parser<'src>() -> impl Parser<'src, &'src str, GraphIR, Extra<'src>> {
     // MATCH keyword (case insensitive)
-    let match_kw = text::keyword("MATCH")
-        .or(text::keyword("match"))
-        .or(text::keyword("Match"))
-        .padded();
+    let match_kw = choice((
+        text::keyword::<&str, _, Extra<'src>>("MATCH"),
+        text::keyword::<&str, _, Extra<'src>>("match"),
+        text::keyword::<&str, _, Extra<'src>>("Match"),
+    ))
+    .padded();
 
-    // Full MATCH pattern
+    // Full MATCH pattern (.parse() consumes all input in 0.12)
     match_kw
         .ignore_then(graph_pattern_parser())
         .map(build_graph_ir)
-        .then_ignore(whitespace)
-        .then_ignore(end())
+        .padded()
 }
 
 /// Parser for graph pattern: (node)-[edge]->(node)
-fn graph_pattern_parser() -> impl Parser<char, Vec<PatternPart>, Error = Simple<char>> {
+fn graph_pattern_parser<'src>() -> impl Parser<'src, &'src str, Vec<PatternPart>, Extra<'src>> {
     // A pattern is: node (edge node)*
     node_parser()
-        .then(edge_then_node_parser().repeated())
+        .then(edge_then_node_parser().repeated().collect::<Vec<_>>())
         .map(|(first, rest)| {
             let mut parts = vec![PatternPart::Node(first)];
             for (edge, node) in rest {
@@ -84,7 +88,7 @@ fn graph_pattern_parser() -> impl Parser<char, Vec<PatternPart>, Error = Simple<
 }
 
 /// Parser for edge followed by node
-fn edge_then_node_parser() -> impl Parser<char, (EdgePart, NodePart), Error = Simple<char>> {
+fn edge_then_node_parser<'src>() -> impl Parser<'src, &'src str, (EdgePart, NodePart), Extra<'src>> {
     edge_parser().then(node_parser())
 }
 
@@ -100,35 +104,33 @@ struct NodePart {
 }
 
 /// Parser for node: (alias:Label {prop: 'value'})
-fn node_parser() -> impl Parser<char, NodePart, Error = Simple<char>> {
-    let whitespace = filter(|c: &char| c.is_whitespace()).repeated();
-
-    // Identifier: alphanumeric + underscore, starting with letter/underscore
-    let ident = filter(|c: &char| c.is_alphanumeric() || *c == '_')
+fn node_parser<'src>() -> impl Parser<'src, &'src str, NodePart, Extra<'src>> {
+    // Identifier: alphanumeric + underscore
+    let ident = any()
+        .filter(|c: &char| c.is_alphanumeric() || *c == '_')
         .repeated()
         .at_least(1)
-        .collect::<String>()
+        .to_slice()
+        .map(|s: &str| s.to_string())
         .labelled("identifier");
 
     // Optional alias (before colon or by itself)
-    let alias = ident.or_not();
+    let alias = ident.clone().or_not();
 
     // Optional label: :Label
     let label = just(':')
-        .ignore_then(ident)
+        .ignore_then(ident.clone())
         .or_not()
         .labelled("node label like :Note");
 
     // String literal: 'value' or "value"
     let single_quoted = just('\'')
-        .ignore_then(filter(|c| *c != '\'').repeated())
-        .then_ignore(just('\''))
-        .collect::<String>();
+        .ignore_then(none_of("'").repeated().to_slice().map(|s: &str| s.to_string()))
+        .then_ignore(just('\''));
 
     let double_quoted = just('"')
-        .ignore_then(filter(|c| *c != '"').repeated())
-        .then_ignore(just('"'))
-        .collect::<String>();
+        .ignore_then(none_of("\"").repeated().to_slice().map(|s: &str| s.to_string()))
+        .then_ignore(just('"'));
 
     let string_literal = single_quoted
         .or(double_quoted)
@@ -136,9 +138,10 @@ fn node_parser() -> impl Parser<char, NodePart, Error = Simple<char>> {
 
     // Property: key: 'value'
     let property = ident
-        .then_ignore(whitespace)
+        .clone()
+        .padded()
         .then_ignore(just(':'))
-        .then_ignore(whitespace)
+        .padded()
         .then(string_literal)
         .labelled("property like title: 'value'");
 
@@ -183,15 +186,17 @@ struct EdgePart {
 }
 
 /// Parser for edge: -[:type]-> or <-[:type]- or -[:type]- or <-[:type]->
-fn edge_parser() -> impl Parser<char, EdgePart, Error = Simple<char>> {
+fn edge_parser<'src>() -> impl Parser<'src, &'src str, EdgePart, Extra<'src>> {
     // Identifier for edge type
-    let ident = filter(|c: &char| c.is_alphanumeric() || *c == '_')
+    let ident = any()
+        .filter(|c: &char| c.is_alphanumeric() || *c == '_')
         .repeated()
         .at_least(1)
-        .collect::<String>();
+        .to_slice()
+        .map(|s: &str| s.to_string());
 
     // Optional alias
-    let alias = ident.or_not();
+    let alias = ident.clone().or_not();
 
     // Edge type: :type
     let edge_type = just(':')
@@ -217,7 +222,7 @@ fn edge_parser() -> impl Parser<char, EdgePart, Error = Simple<char>> {
     // Outgoing: -[...]->
     let right_arrow = just('-')
         .padded()
-        .ignore_then(edge_inner)
+        .ignore_then(edge_inner.clone())
         .then_ignore(just("->").padded())
         .map(|(alias, edge_type)| EdgePart {
             alias,
@@ -229,7 +234,7 @@ fn edge_parser() -> impl Parser<char, EdgePart, Error = Simple<char>> {
     // Incoming: <-[...]-
     let left_arrow = just("<-")
         .padded()
-        .ignore_then(edge_inner)
+        .ignore_then(edge_inner.clone())
         .then_ignore(just('-').padded())
         .map(|(alias, edge_type)| EdgePart {
             alias,
@@ -241,7 +246,7 @@ fn edge_parser() -> impl Parser<char, EdgePart, Error = Simple<char>> {
     // Bidirectional: <-[...]->
     let bidirectional = just("<-")
         .padded()
-        .ignore_then(edge_inner)
+        .ignore_then(edge_inner.clone())
         .then_ignore(just("->").padded())
         .map(|(alias, edge_type)| EdgePart {
             alias,
@@ -251,7 +256,6 @@ fn edge_parser() -> impl Parser<char, EdgePart, Error = Simple<char>> {
         .labelled("bidirectional edge like <-[:wikilink]->");
 
     // Undirected: -[...]- (but NOT -[]->)
-    // Use rewind to try this pattern without consuming on failure
     let undirected = just('-')
         .padded()
         .ignore_then(edge_inner)
@@ -264,12 +268,7 @@ fn edge_parser() -> impl Parser<char, EdgePart, Error = Simple<char>> {
         .labelled("undirected edge like -[:wikilink]-");
 
     // Try specific patterns first (longer match), then fallback
-    // bidirectional and right_arrow both start with different prefixes now
-    // left_arrow starts with "<-"
-    // right_arrow starts with "-" and ends with "->"
-    // undirected starts with "-" and ends with just "-"
-    // We need to try right_arrow before undirected since right_arrow is more specific
-    bidirectional.or(left_arrow).or(right_arrow).or(undirected)
+    choice((bidirectional, left_arrow, right_arrow, undirected))
 }
 
 // ============================================================================
@@ -344,31 +343,26 @@ fn build_graph_ir(parts: Vec<PatternPart>) -> GraphIR {
 // ============================================================================
 
 /// Format chumsky errors for LLM consumption
-fn format_chumsky_errors(errs: &[Simple<char>], input: &str) -> String {
+fn format_chumsky_errors(errs: &[Rich<'_, char>], input: &str) -> String {
     errs.iter()
         .map(|e| {
             let span = e.span();
-            let line = input[..span.start].lines().count().max(1);
-            let col = span.start - input[..span.start].rfind('\n').map_or(0, |i| i + 1);
-
-            let expected: Vec<_> = e
-                .expected()
-                .map(|t| t.map_or("end of input".to_string(), |c| format!("'{}'", c)))
-                .collect();
+            let start = span.start;
+            let line = input[..start].lines().count().max(1);
+            let col = start - input[..start].rfind('\n').map_or(0, |i| i + 1);
 
             let found = e
                 .found()
                 .map_or("end of input".to_string(), |c| format!("'{}'", c));
 
+            // Rich errors have a reason() method instead of expected()
+            let reason = format!("{}", e.reason());
+
             format!(
-                "Line {}, column {}: Expected {} but found {}",
+                "Line {}, column {}: {} (found {})",
                 line,
                 col + 1,
-                if expected.is_empty() {
-                    "something else".to_string()
-                } else {
-                    expected.join(" or ")
-                },
+                reason,
                 found
             )
         })
