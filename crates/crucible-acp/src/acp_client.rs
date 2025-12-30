@@ -46,7 +46,7 @@ use agent_client_protocol::{
     WaitForTerminalExitResponse, WriteTextFileRequest, WriteTextFileResponse,
 };
 
-use crate::{AcpError as CrucibleAcpError, Result};
+use crate::{ClientError, Result};
 
 /// Information about a file write operation for diff display
 #[derive(Debug, Clone)]
@@ -355,18 +355,18 @@ pub async fn spawn_agent(
 
     let mut child = command
         .spawn()
-        .map_err(|e| CrucibleAcpError::Connection(format!("Failed to spawn agent: {}", e)))?;
+        .map_err(|e| ClientError::Connection(format!("Failed to spawn agent: {}", e)))?;
 
     // Get stdin/stdout handles and wrap with compat for futures::io traits
     let stdin = child
         .stdin
         .take()
-        .ok_or_else(|| CrucibleAcpError::Connection("Failed to capture agent stdin".to_string()))?
+        .ok_or_else(|| ClientError::Connection("Failed to capture agent stdin".to_string()))?
         .compat_write();
     let stdout = child
         .stdout
         .take()
-        .ok_or_else(|| CrucibleAcpError::Connection("Failed to capture agent stdout".to_string()))?
+        .ok_or_else(|| ClientError::Connection("Failed to capture agent stdout".to_string()))?
         .compat();
 
     tracing::info!("Agent process spawned, creating connection...");

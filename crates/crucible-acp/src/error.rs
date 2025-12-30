@@ -3,11 +3,15 @@
 use thiserror::Error;
 
 /// Result type alias for ACP operations
-pub type Result<T> = std::result::Result<T, AcpError>;
+pub type Result<T> = std::result::Result<T, ClientError>;
 
-/// Errors that can occur during ACP operations
+/// Errors that can occur during ACP client operations
+///
+/// This is distinct from `crucible_core::traits::acp::AcpError` which defines
+/// abstract errors for the ACP traits. This type wraps concrete implementation
+/// errors from the ACP client.
 #[derive(Debug, Error)]
-pub enum AcpError {
+pub enum ClientError {
     /// Protocol-level errors from agent-client-protocol
     #[error("Protocol error: {0}")]
     Protocol(#[from] agent_client_protocol::Error),

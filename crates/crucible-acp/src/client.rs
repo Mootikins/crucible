@@ -31,7 +31,7 @@ static REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 
 use crate::session::AcpSession;
 use crate::streaming::{humanize_tool_title, StreamingCallback, StreamingChunk};
-use crate::{AcpError, Result};
+use crate::{ClientError, Result};
 use agent_client_protocol::{
     AvailableCommand, ContentBlock, RequestPermissionOutcome, RequestPermissionRequest,
     RequestPermissionResponse, SessionNotification, SessionUpdate, ToolCallContent, ToolCallStatus,
@@ -417,17 +417,17 @@ impl CrucibleAcpClient {
         // Spawn the process
         let mut child = cmd
             .spawn()
-            .map_err(|e| AcpError::Connection(format!("Failed to spawn agent: {}", e)))?;
+            .map_err(|e| ClientError::Connection(format!("Failed to spawn agent: {}", e)))?;
 
         // Capture stdin and stdout for communication
         let stdin = child
             .stdin
             .take()
-            .ok_or_else(|| AcpError::Connection("Failed to capture agent stdin".to_string()))?;
+            .ok_or_else(|| ClientError::Connection("Failed to capture agent stdin".to_string()))?;
         let stdout = child
             .stdout
             .take()
-            .ok_or_else(|| AcpError::Connection("Failed to capture agent stdout".to_string()))?;
+            .ok_or_else(|| ClientError::Connection("Failed to capture agent stdout".to_string()))?;
 
         // Store stdio handles and process in the client
         self.agent_stdin = Some(stdin);
@@ -526,7 +526,7 @@ impl CrucibleAcpClient {
 
         // Extract the result field from JSON-RPC response
         let result = response.get("result").ok_or_else(|| {
-            AcpError::Session("Missing result field in initialize response".to_string())
+            ClientError::Session("Missing result field in initialize response".to_string())
         })?;
 
         // Parse the result as InitializeResponse
@@ -564,7 +564,7 @@ impl CrucibleAcpClient {
 
         // Extract the result field from JSON-RPC response
         let result = response.get("result").ok_or_else(|| {
-            AcpError::Session("Missing result field in new session response".to_string())
+            ClientError::Session("Missing result field in new session response".to_string())
         })?;
 
         // Parse the result as NewSessionResponse
@@ -720,22 +720,22 @@ impl CrucibleAcpClient {
         // Try boxed writer first (for in-process transports), then fall back to agent_stdin
         if let Some(ref mut writer) = self.boxed_writer {
             writer.write_all(line.as_bytes()).await.map_err(|e| {
-                AcpError::Connection(format!("Failed to write to transport: {}", e))
+                ClientError::Connection(format!("Failed to write to transport: {}", e))
             })?;
             writer
                 .flush()
                 .await
-                .map_err(|e| AcpError::Connection(format!("Failed to flush transport: {}", e)))?;
+                .map_err(|e| ClientError::Connection(format!("Failed to flush transport: {}", e)))?;
         } else if let Some(ref mut stdin) = self.agent_stdin {
             stdin.write_all(line.as_bytes()).await.map_err(|e| {
-                AcpError::Connection(format!("Failed to write to agent stdin: {}", e))
+                ClientError::Connection(format!("Failed to write to agent stdin: {}", e))
             })?;
             stdin
                 .flush()
                 .await
-                .map_err(|e| AcpError::Connection(format!("Failed to flush agent stdin: {}", e)))?;
+                .map_err(|e| ClientError::Connection(format!("Failed to flush agent stdin: {}", e)))?;
         } else {
-            return Err(AcpError::Connection(
+            return Err(ClientError::Connection(
                 "No writer available (agent stdin or transport)".to_string(),
             ));
         }
@@ -770,24 +770,24 @@ impl CrucibleAcpClient {
         let read_result = if let Some(ref mut reader) = self.boxed_reader {
             match tokio::time::timeout(duration, reader.read_line(&mut line)).await {
                 Ok(result) => result,
-                Err(_) => return Err(AcpError::Timeout("Read operation timed out".to_string())),
+                Err(_) => return Err(ClientError::Timeout("Read operation timed out".to_string())),
             }
         } else if let Some(ref mut stdout) = self.agent_stdout {
             match tokio::time::timeout(duration, stdout.read_line(&mut line)).await {
                 Ok(result) => result,
-                Err(_) => return Err(AcpError::Timeout("Read operation timed out".to_string())),
+                Err(_) => return Err(ClientError::Timeout("Read operation timed out".to_string())),
             }
         } else {
-            return Err(AcpError::Connection(
+            return Err(ClientError::Connection(
                 "No reader available (agent stdout or transport)".to_string(),
             ));
         };
 
         // Handle read result
         match read_result {
-            Ok(0) => Err(AcpError::Connection("Agent closed connection".to_string())),
+            Ok(0) => Err(ClientError::Connection("Agent closed connection".to_string())),
             Ok(_bytes_read) => Ok(line.trim_end().to_string()),
-            Err(e) => Err(AcpError::Connection(format!(
+            Err(e) => Err(ClientError::Connection(format!(
                 "Failed to read from agent: {}",
                 e
             ))),
@@ -838,7 +838,7 @@ impl CrucibleAcpClient {
             }
             // Handle any new variants that may be added in future versions
             _ => {
-                return Err(AcpError::Session(format!(
+                return Err(ClientError::Session(format!(
                     "Unsupported ClientRequest variant: {:?}",
                     std::any::type_name::<agent_client_protocol::ClientRequest>()
                 )))
@@ -863,7 +863,7 @@ impl CrucibleAcpClient {
         let response_line = self.read_response_line().await?;
 
         // Parse JSON response
-        let response: serde_json::Value = serde_json::from_str(&response_line)?; // Auto-converts to AcpError::Serialization
+        let response: serde_json::Value = serde_json::from_str(&response_line)?; // Auto-converts to ClientError::Serialization
 
         Ok(response)
     }
@@ -943,7 +943,7 @@ impl CrucibleAcpClient {
                     let error_code = error.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
 
                     tracing::error!("Agent returned error: {} (code: {})", error_msg, error_code);
-                    return Err(AcpError::Session(format!(
+                    return Err(ClientError::Session(format!(
                         "Agent error during streaming: {} (code: {}, accumulated {} chars)",
                         error_msg,
                         error_code,
@@ -971,7 +971,7 @@ impl CrucibleAcpClient {
         match tokio::time::timeout(overall_timeout, streaming_future).await {
             Ok(Ok((state, response))) => Ok((state.formatted_output(), state.tool_calls, response)),
             Ok(Err(e)) => Err(e),
-            Err(_) => Err(AcpError::Timeout(format!(
+            Err(_) => Err(ClientError::Timeout(format!(
                 "Streaming operation timed out after {}s",
                 overall_timeout.as_secs()
             ))),
@@ -1039,7 +1039,7 @@ impl CrucibleAcpClient {
                         .unwrap_or("Unknown error");
                     let error_code = error.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
 
-                    return Err(AcpError::Session(format!(
+                    return Err(ClientError::Session(format!(
                         "Agent error during streaming: {} (code: {})",
                         error_msg, error_code
                     )));
@@ -1062,7 +1062,7 @@ impl CrucibleAcpClient {
         match tokio::time::timeout(overall_timeout, streaming_future).await {
             Ok(Ok((state, response))) => Ok((state.formatted_output(), state.tool_calls, response)),
             Ok(Err(e)) => Err(e),
-            Err(_) => Err(AcpError::Timeout(format!(
+            Err(_) => Err(ClientError::Timeout(format!(
                 "Streaming operation timed out after {}s",
                 overall_timeout.as_secs()
             ))),
@@ -1119,7 +1119,7 @@ impl CrucibleAcpClient {
 
             if id_matches {
                 let result = response.get("result").ok_or_else(|| {
-                    AcpError::Session("Missing result in prompt response".to_string())
+                    ClientError::Session("Missing result in prompt response".to_string())
                 })?;
                 let prompt_response = serde_json::from_value(result.clone())?;
                 return Ok(Some(prompt_response));
@@ -1128,7 +1128,7 @@ impl CrucibleAcpClient {
             return Ok(None);
         }
 
-        Err(AcpError::Session(
+        Err(ClientError::Session(
             "Received message without id or method".to_string(),
         ))
     }
@@ -1319,7 +1319,7 @@ impl CrucibleAcpClient {
 
             if id_matches {
                 let result = response.get("result").ok_or_else(|| {
-                    AcpError::Session("Missing result in prompt response".to_string())
+                    ClientError::Session("Missing result in prompt response".to_string())
                 })?;
                 let prompt_response = serde_json::from_value(result.clone())?;
                 return Ok(Some(prompt_response));
@@ -1334,7 +1334,7 @@ impl CrucibleAcpClient {
             return Ok(None);
         }
 
-        Err(AcpError::Session(
+        Err(ClientError::Session(
             "Received message without id or method".to_string(),
         ))
     }
@@ -2319,7 +2319,7 @@ mod tests {
 
         let err = result.unwrap_err();
         match err {
-            AcpError::Connection(_) => {} // Expected
+            ClientError::Connection(_) => {} // Expected
             _ => panic!("Should be Connection error"),
         }
     }
@@ -2343,8 +2343,8 @@ mod tests {
 
         let err = result.unwrap_err();
         match err {
-            AcpError::Timeout(_) => {}    // Expected
-            AcpError::Connection(_) => {} // Also acceptable
+            ClientError::Timeout(_) => {}    // Expected
+            ClientError::Connection(_) => {} // Also acceptable
             _ => panic!("Should be Timeout or Connection error"),
         }
     }

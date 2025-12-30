@@ -21,7 +21,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
-use crate::{AcpError, Result};
+use crate::{ClientError, Result};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_tools::CrucibleMcpServer;
@@ -70,11 +70,11 @@ impl InProcessMcpHost {
         // Bind to localhost with random port - we need to get the actual address
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
-            .map_err(|e| AcpError::Connection(format!("Failed to bind SSE server: {}", e)))?;
+            .map_err(|e| ClientError::Connection(format!("Failed to bind SSE server: {}", e)))?;
 
         let actual_addr = listener
             .local_addr()
-            .map_err(|e| AcpError::Connection(format!("Failed to get local address: {}", e)))?;
+            .map_err(|e| ClientError::Connection(format!("Failed to get local address: {}", e)))?;
 
         info!("MCP SSE server bound to {}", actual_addr);
 
@@ -176,7 +176,7 @@ impl Drop for InProcessMcpHost {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::AcpError;
+    use crate::ClientError;
     use tempfile::TempDir;
 
     // Mock implementations for testing
@@ -299,10 +299,10 @@ mod tests {
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
     }
 
-    fn is_permission_denied(err: &AcpError) -> bool {
+    fn is_permission_denied(err: &ClientError) -> bool {
         matches!(
             err,
-            AcpError::Connection(message) if message.contains("Operation not permitted")
+            ClientError::Connection(message) if message.contains("Operation not permitted")
         )
     }
 }

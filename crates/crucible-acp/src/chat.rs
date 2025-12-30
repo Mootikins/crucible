@@ -12,7 +12,7 @@
 use crate::session::AcpSession;
 use crate::streaming::{StreamingCallback, StreamingChunk};
 use crate::{
-    discover_crucible_tools, AcpError, ContextConfig, ConversationHistory, CrucibleAcpClient,
+    discover_crucible_tools, ClientError, ContextConfig, ConversationHistory, CrucibleAcpClient,
     HistoryConfig, HistoryMessage, PromptEnricher, Result, StreamConfig, ToolCallInfo,
     ToolExecutor, ToolRegistry,
 };
@@ -23,9 +23,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Maximum allowed message length (50K characters)
 const MAX_MESSAGE_LENGTH: usize = 50_000;
 
-/// Configuration for chat sessions
+/// Configuration for chat session orchestration
+///
+/// This is distinct from `crucible_config::components::chat::ChatConfig` which
+/// defines user-facing configuration loaded from TOML files. This type controls
+/// runtime behavior of chat sessions (history, context enrichment, streaming).
 #[derive(Debug, Clone)]
-pub struct ChatConfig {
+pub struct ChatSessionConfig {
     /// Configuration for conversation history
     pub history: HistoryConfig,
 
@@ -42,7 +46,7 @@ pub struct ChatConfig {
     pub enrich_prompts: bool,
 }
 
-impl Default for ChatConfig {
+impl Default for ChatSessionConfig {
     fn default() -> Self {
         Self {
             history: HistoryConfig::default(),
@@ -162,21 +166,21 @@ fn generate_session_id() -> String {
 ///
 /// # Errors
 ///
-/// Returns `AcpError::Validation` if:
+/// Returns `ClientError::Validation` if:
 /// - Message is empty or whitespace-only
 /// - Message exceeds maximum length
 /// - Message contains null bytes
 fn validate_message(message: &str) -> Result<()> {
     // Check for empty or whitespace-only messages
     if message.trim().is_empty() {
-        return Err(AcpError::Validation(
+        return Err(ClientError::Validation(
             "Message cannot be empty or whitespace-only".to_string(),
         ));
     }
 
     // Check maximum length
     if message.len() > MAX_MESSAGE_LENGTH {
-        return Err(AcpError::Validation(format!(
+        return Err(ClientError::Validation(format!(
             "Message exceeds maximum length of {} characters",
             MAX_MESSAGE_LENGTH
         )));
@@ -184,7 +188,7 @@ fn validate_message(message: &str) -> Result<()> {
 
     // Check for null bytes
     if message.contains('\0') {
-        return Err(AcpError::Validation(
+        return Err(ClientError::Validation(
             "Message cannot contain null bytes".to_string(),
         ));
     }
@@ -194,7 +198,7 @@ fn validate_message(message: &str) -> Result<()> {
 
 /// Manages an interactive chat session
 pub struct ChatSession {
-    config: ChatConfig,
+    config: ChatSessionConfig,
     history: ConversationHistory,
     enricher: PromptEnricher,
     state: ConversationState,
@@ -211,7 +215,7 @@ impl ChatSession {
     /// # Arguments
     ///
     /// * `config` - Configuration for the chat session
-    pub fn new(config: ChatConfig) -> Self {
+    pub fn new(config: ChatSessionConfig) -> Self {
         let history = ConversationHistory::new(config.history.clone());
         let enricher = PromptEnricher::new(config.context.clone());
         let state = ConversationState::new();
@@ -243,7 +247,7 @@ impl ChatSession {
     /// # Returns
     ///
     /// A new chat session ready to connect to an agent
-    pub fn with_agent(config: ChatConfig, agent_client: CrucibleAcpClient) -> Self {
+    pub fn with_agent(config: ChatSessionConfig, agent_client: CrucibleAcpClient) -> Self {
         let history = ConversationHistory::new(config.history.clone());
         let enricher = PromptEnricher::new(config.context.clone());
         let state = ConversationState::new();
@@ -311,7 +315,7 @@ impl ChatSession {
             self.agent_session = Some(session);
             Ok(())
         } else {
-            Err(AcpError::Connection(
+            Err(ClientError::Connection(
                 "No agent client configured".to_string(),
             ))
         }
@@ -336,7 +340,7 @@ impl ChatSession {
             self.agent_session = Some(session);
             Ok(())
         } else {
-            Err(AcpError::Connection(
+            Err(ClientError::Connection(
                 "No agent client configured".to_string(),
             ))
         }
@@ -565,7 +569,7 @@ impl ChatSession {
     }
 
     /// Get the configuration
-    pub fn config(&self) -> &ChatConfig {
+    pub fn config(&self) -> &ChatSessionConfig {
         &self.config
     }
 
@@ -626,7 +630,7 @@ mod tests {
 
     #[test]
     fn test_chat_session_creation() {
-        let config = ChatConfig::default();
+        let config = ChatSessionConfig::default();
         let session = ChatSession::new(config);
 
         assert_eq!(session.history().message_count(), 0);
@@ -636,7 +640,7 @@ mod tests {
 
     #[test]
     fn test_custom_chat_config() {
-        let config = ChatConfig {
+        let config = ChatSessionConfig {
             auto_prune: false,
             enrich_prompts: false,
             ..Default::default()
@@ -649,7 +653,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_send_message() {
-        let mut session = ChatSession::new(ChatConfig::default());
+        let mut session = ChatSession::new(ChatSessionConfig::default());
 
         let response = session.send_message("Hello, agent!").await;
 
@@ -671,7 +675,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_context_enrichment_in_chat() {
-        let config = ChatConfig {
+        let config = ChatSessionConfig {
             enrich_prompts: true,
             ..Default::default()
         };
@@ -686,7 +690,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_auto_prune() {
-        let config = ChatConfig {
+        let config = ChatSessionConfig {
             history: HistoryConfig {
                 max_messages: 4, // Very small limit for testing
                 max_tokens: 10000,
@@ -714,7 +718,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_no_auto_prune() {
-        let config = ChatConfig {
+        let config = ChatSessionConfig {
             history: HistoryConfig {
                 max_messages: 2,
                 max_tokens: 10000,
@@ -740,7 +744,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_clear_history() {
-        let mut session = ChatSession::new(ChatConfig::default());
+        let mut session = ChatSession::new(ChatSessionConfig::default());
 
         session.send_message("First message").await.unwrap();
         session.send_message("Second message").await.unwrap();
@@ -753,7 +757,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_enrichment_disabled() {
-        let config = ChatConfig {
+        let config = ChatSessionConfig {
             enrich_prompts: false,
             ..Default::default()
         };
@@ -767,7 +771,7 @@ mod tests {
 
     #[test]
     fn test_set_enrichment_enabled() {
-        let config = ChatConfig {
+        let config = ChatSessionConfig {
             enrich_prompts: true,
             ..Default::default()
         };
@@ -795,7 +799,7 @@ mod tests {
 
     #[test]
     fn test_conversation_state_initialization() {
-        let session = ChatSession::new(ChatConfig::default());
+        let session = ChatSession::new(ChatSessionConfig::default());
         let state = session.state();
 
         assert_eq!(state.turn_count, 0, "Should start with zero turns");
@@ -810,7 +814,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_turn_counting() {
-        let mut session = ChatSession::new(ChatConfig::default());
+        let mut session = ChatSession::new(ChatSessionConfig::default());
 
         // Initial state
         assert_eq!(session.state().turn_count, 0);
@@ -842,7 +846,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_token_tracking() {
-        let mut session = ChatSession::new(ChatConfig::default());
+        let mut session = ChatSession::new(ChatSessionConfig::default());
 
         // Initial tokens
         assert_eq!(session.state().total_tokens_used, 0);
@@ -867,7 +871,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_timestamp_tracking() {
-        let mut session = ChatSession::new(ChatConfig::default());
+        let mut session = ChatSession::new(ChatSessionConfig::default());
 
         // Initially no last message
         assert!(session.state().last_message_at.is_none());
@@ -897,7 +901,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_prune_count_tracking() {
-        let config = ChatConfig {
+        let config = ChatSessionConfig {
             history: HistoryConfig {
                 max_messages: 4, // Very small to trigger pruning
                 max_tokens: 10000,
@@ -923,7 +927,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_conversation_duration() {
-        let mut session = ChatSession::new(ChatConfig::default());
+        let mut session = ChatSession::new(ChatSessionConfig::default());
 
         // Duration should be very small initially
         let initial_duration = session.state().duration_secs();
@@ -945,7 +949,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_avg_tokens_per_turn() {
-        let mut session = ChatSession::new(ChatConfig::default());
+        let mut session = ChatSession::new(ChatSessionConfig::default());
 
         // No turns yet
         assert_eq!(session.state().avg_tokens_per_turn(), 0.0);
@@ -961,7 +965,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_empty_message_handling() {
-        let mut session = ChatSession::new(ChatConfig::default());
+        let mut session = ChatSession::new(ChatSessionConfig::default());
 
         // Empty string should be rejected
         let result = session.send_message("").await;
@@ -981,7 +985,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_long_message_handling() {
-        let mut session = ChatSession::new(ChatConfig::default());
+        let mut session = ChatSession::new(ChatSessionConfig::default());
 
         // Create a very long message (100k characters)
         let long_message = "x".repeat(100_000);
@@ -999,7 +1003,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_state_rollback_on_error() {
-        let mut session = ChatSession::new(ChatConfig::default());
+        let mut session = ChatSession::new(ChatSessionConfig::default());
 
         // Send a valid message
         session.send_message("Valid message").await.unwrap();
@@ -1029,7 +1033,7 @@ mod tests {
         // For now, since our mock enricher doesn't fail, this is a placeholder
         // In a real implementation with dependency injection, we'd inject a
         // failing enricher and verify the fallback behavior
-        let session = ChatSession::new(ChatConfig::default());
+        let session = ChatSession::new(ChatSessionConfig::default());
 
         // Verify the session was created successfully
         assert_eq!(session.state().turn_count, 0);
@@ -1037,7 +1041,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_message_validation() {
-        let mut session = ChatSession::new(ChatConfig::default());
+        let mut session = ChatSession::new(ChatSessionConfig::default());
 
         // Null bytes should be rejected
         let result = session.send_message("Hello\0World").await;
@@ -1051,7 +1055,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_history_consistency_after_errors() {
-        let mut session = ChatSession::new(ChatConfig::default());
+        let mut session = ChatSession::new(ChatSessionConfig::default());
 
         // Send valid message
         session.send_message("Message 1").await.unwrap();
@@ -1070,7 +1074,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_recovery_after_errors() {
-        let mut session = ChatSession::new(ChatConfig::default());
+        let mut session = ChatSession::new(ChatSessionConfig::default());
 
         // Multiple error attempts
         let _ = session.send_message("").await;
@@ -1088,8 +1092,8 @@ mod tests {
 
     #[test]
     fn test_session_id_generation() {
-        let session1 = ChatSession::new(ChatConfig::default());
-        let session2 = ChatSession::new(ChatConfig::default());
+        let session1 = ChatSession::new(ChatSessionConfig::default());
+        let session2 = ChatSession::new(ChatSessionConfig::default());
 
         // Each session should have a unique ID
         assert!(
@@ -1115,7 +1119,7 @@ mod tests {
 
     #[test]
     fn test_metadata_initialization() {
-        let session = ChatSession::new(ChatConfig::default());
+        let session = ChatSession::new(ChatSessionConfig::default());
         let metadata = session.metadata();
 
         assert!(metadata.title.is_none(), "Title should initially be None");
@@ -1130,7 +1134,7 @@ mod tests {
 
     #[test]
     fn test_set_title() {
-        let mut session = ChatSession::new(ChatConfig::default());
+        let mut session = ChatSession::new(ChatSessionConfig::default());
 
         let initial_updated = session.metadata().updated_at;
 
@@ -1153,7 +1157,7 @@ mod tests {
 
     #[test]
     fn test_tag_management() {
-        let mut session = ChatSession::new(ChatConfig::default());
+        let mut session = ChatSession::new(ChatSessionConfig::default());
 
         // Add tags
         session.add_tag("project-alpha");
@@ -1187,7 +1191,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_metadata_updates_on_activity() {
-        let mut session = ChatSession::new(ChatConfig::default());
+        let mut session = ChatSession::new(ChatSessionConfig::default());
 
         let initial_updated = session.metadata().updated_at;
 
@@ -1206,7 +1210,7 @@ mod tests {
 
     #[test]
     fn test_session_has_complete_metadata() {
-        let mut session = ChatSession::new(ChatConfig::default());
+        let mut session = ChatSession::new(ChatSessionConfig::default());
 
         // Set up session metadata
         session.set_title("Test Session");
@@ -1225,7 +1229,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_metadata_timestamp_updates() {
-        let mut session = ChatSession::new(ChatConfig::default());
+        let mut session = ChatSession::new(ChatSessionConfig::default());
 
         let created = session.metadata().created_at;
         let initial_updated = session.metadata().updated_at;

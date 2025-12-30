@@ -19,7 +19,7 @@
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::{AcpError, Result};
+use crate::{ClientError, Result};
 use agent_client_protocol::ClientRequest;
 
 /// Configuration for the mock agent
@@ -96,7 +96,7 @@ impl MockAgent {
 
         // Simulate errors if configured
         if self.config.simulate_errors {
-            return Err(AcpError::Session("Simulated error".to_string()));
+            return Err(ClientError::Session("Simulated error".to_string()));
         }
 
         // TODO: Implement proper response construction based on request type

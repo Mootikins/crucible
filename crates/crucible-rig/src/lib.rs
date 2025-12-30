@@ -57,7 +57,7 @@ pub use session::{
 
 // Re-export tool utilities when rmcp-full feature is enabled
 #[cfg(feature = "rmcp-full")]
-pub use tools::{attach_mcp_tools, discover_crucible_tools, ToolError, ToolResult};
+pub use tools::{attach_mcp_tools, discover_crucible_tools, McpToolError, McpToolResult};
 
 // Re-export workspace tools (always available)
 pub use workspace_tools::{
