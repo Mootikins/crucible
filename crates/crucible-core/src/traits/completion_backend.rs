@@ -233,4 +233,61 @@ mod tests {
         let done_chunk = BackendCompletionChunk::finished(None);
         assert!(done_chunk.done);
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // BackendError contract tests
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_http_error() {
+        let err = BackendError::Http("connection refused".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("HTTP"));
+        assert!(msg.contains("connection refused"));
+    }
+
+    #[test]
+    fn test_rate_limit_error() {
+        let err = BackendError::RateLimit { retry_after_secs: 30 };
+        let msg = err.to_string();
+        assert!(msg.contains("30"));
+        assert!(msg.contains("retry"));
+    }
+
+    #[test]
+    fn test_model_not_found_error() {
+        let err = BackendError::ModelNotFound("gpt-5".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("gpt-5"));
+    }
+
+    #[test]
+    fn test_timeout_error() {
+        let err = BackendError::Timeout { timeout_secs: 60 };
+        let msg = err.to_string();
+        assert!(msg.contains("60"));
+        assert!(msg.contains("Timeout"));
+    }
+
+    #[test]
+    fn test_error_is_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<BackendError>();
+    }
+
+    #[test]
+    fn test_error_is_clone() {
+        let err = BackendError::Internal("test".into());
+        let cloned = err.clone();
+        assert_eq!(err.to_string(), cloned.to_string());
+    }
+
+    #[test]
+    fn test_backend_result_type() {
+        let ok: BackendResult<i32> = Ok(42);
+        assert_eq!(ok.unwrap(), 42);
+
+        let err: BackendResult<i32> = Err(BackendError::Internal("test".into()));
+        assert!(err.is_err());
+    }
 }
