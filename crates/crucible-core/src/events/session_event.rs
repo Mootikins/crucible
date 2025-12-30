@@ -426,7 +426,7 @@ pub enum SessionEvent {
         /// Name of the discovered tool.
         name: String,
         /// Source of the tool.
-        source: ToolSource,
+        source: ToolProvider,
         /// Optional JSON schema for the tool's arguments.
         schema: Option<JsonValue>,
     },
@@ -1037,13 +1037,19 @@ impl std::fmt::Display for NoteChangeType {
     }
 }
 
-/// Source of a discovered tool.
+/// Provider of a discovered tool in session events.
+///
+/// Identifies which system provided a tool (Rune script, Lua script, MCP server,
+/// or built-in). This is distinct from `crucible_core::types::ToolSource` which
+/// is used for tool indexing and metadata categorization.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
-pub enum ToolSource {
-    /// Built-in Rune tool.
+pub enum ToolProvider {
+    /// Tool from a Rune script.
     Rune,
+    /// Tool from a Lua/Fennel script.
+    Lua,
     /// Tool from an MCP server.
     Mcp {
         /// Name of the MCP server.
@@ -1054,10 +1060,11 @@ pub enum ToolSource {
     Builtin,
 }
 
-impl std::fmt::Display for ToolSource {
+impl std::fmt::Display for ToolProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Rune => write!(f, "rune"),
+            Self::Lua => write!(f, "lua"),
             Self::Mcp { server } => write!(f, "mcp:{}", server),
             Self::Builtin => write!(f, "builtin"),
         }
@@ -1762,7 +1769,7 @@ mod tests {
             },
             SessionEvent::ToolDiscovered {
                 name: "search".into(),
-                source: ToolSource::Mcp {
+                source: ToolProvider::Mcp {
                     server: "crucible".into(),
                 },
                 schema: Some(serde_json::json!({"type": "object"})),
@@ -1827,19 +1834,20 @@ mod tests {
     }
 
     #[test]
-    fn test_tool_source() {
-        assert_eq!(ToolSource::default(), ToolSource::Builtin);
-        assert_eq!(format!("{}", ToolSource::Rune), "rune");
+    fn test_tool_provider() {
+        assert_eq!(ToolProvider::default(), ToolProvider::Builtin);
+        assert_eq!(format!("{}", ToolProvider::Rune), "rune");
+        assert_eq!(format!("{}", ToolProvider::Lua), "lua");
         assert_eq!(
             format!(
                 "{}",
-                ToolSource::Mcp {
+                ToolProvider::Mcp {
                     server: "test".into()
                 }
             ),
             "mcp:test"
         );
-        assert_eq!(format!("{}", ToolSource::Builtin), "builtin");
+        assert_eq!(format!("{}", ToolProvider::Builtin), "builtin");
     }
 
     #[test]
