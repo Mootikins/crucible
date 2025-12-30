@@ -445,7 +445,10 @@ impl LoggingHandler {
             SessionEvent::PreLlmCall { prompt, model } => {
                 format!("model={}, prompt_len={}", model, prompt.len())
             }
-            SessionEvent::AwaitingInput { input_type, context } => {
+            SessionEvent::AwaitingInput {
+                input_type,
+                context,
+            } => {
                 format!(
                     "type={}, context={}",
                     input_type,

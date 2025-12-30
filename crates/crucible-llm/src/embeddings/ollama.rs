@@ -4,11 +4,11 @@
 
 use async_trait::async_trait;
 use crucible_config::BackendType;
-use crucible_core::traits::{BackendError, BackendResult};
 use crucible_core::traits::provider::{
     CanEmbed, EmbeddingResponse as UnifiedEmbeddingResponse, ExtendedCapabilities,
     Provider as UnifiedProvider,
 };
+use crucible_core::traits::{BackendError, BackendResult};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -561,7 +561,10 @@ impl CanEmbed for OllamaProvider {
         })
     }
 
-    async fn embed_batch(&self, texts: Vec<String>) -> BackendResult<Vec<UnifiedEmbeddingResponse>> {
+    async fn embed_batch(
+        &self,
+        texts: Vec<String>,
+    ) -> BackendResult<Vec<UnifiedEmbeddingResponse>> {
         // Delegate to legacy impl and convert response type
         let responses = EmbeddingProvider::embed_batch(self, texts)
             .await

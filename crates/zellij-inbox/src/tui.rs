@@ -137,7 +137,8 @@ pub fn render_tui_full(inbox: &Inbox, selected: usize, opts: RenderOptions) -> S
         }
         output.push('\n');
     } else {
-        let overflow = render_items_with_height(&mut output, inbox, selected, width, content_height, &opts);
+        let overflow =
+            render_items_with_height(&mut output, inbox, selected, width, content_height, &opts);
         if overflow {
             if opts.colors {
                 output.push_str(ansi::DIM);
@@ -249,7 +250,11 @@ fn render_items_with_height(
         }
 
         // Item text
-        let prefix_len = if is_selected { 6 } else { 4 + opts.checkbox_style.indicator(false).len() + 1 };
+        let prefix_len = if is_selected {
+            6
+        } else {
+            4 + opts.checkbox_style.indicator(false).len() + 1
+        };
         let max_text_len = width.saturating_sub(prefix_len);
         let text: String = item.text.chars().take(max_text_len).collect();
         output.push_str(&text);
@@ -327,20 +332,27 @@ mod tests {
         let output = render_tui(&inbox, 0, 50);
         let lines: Vec<&str> = output.lines().collect();
         let auth_line = lines.iter().find(|l| l.contains("Auth question")).unwrap();
-        assert!(auth_line.contains('▶'), "First item should have selection marker");
+        assert!(
+            auth_line.contains('▶'),
+            "First item should have selection marker"
+        );
 
         // Second item selected
         let output = render_tui(&inbox, 1, 50);
         let lines: Vec<&str> = output.lines().collect();
         let review_line = lines.iter().find(|l| l.contains("Review PR")).unwrap();
-        assert!(review_line.contains('▶'), "Second item should have selection marker");
+        assert!(
+            review_line.contains('▶'),
+            "Second item should have selection marker"
+        );
     }
 
     #[test]
     fn render_respects_width() {
         let inbox = Inbox {
             items: vec![InboxItem {
-                text: "This is a very long text that should be truncated when width is small".to_string(),
+                text: "This is a very long text that should be truncated when width is small"
+                    .to_string(),
                 pane_id: 1,
                 project: "test".to_string(),
                 status: Status::Waiting,

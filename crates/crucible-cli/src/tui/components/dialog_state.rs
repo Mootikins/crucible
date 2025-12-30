@@ -278,8 +278,10 @@ mod tests {
 
     #[test]
     fn test_select_dialog_navigation() {
-        let mut dialog =
-            DialogState::select("Choose", vec!["Option A".into(), "Option B".into(), "Option C".into()]);
+        let mut dialog = DialogState::select(
+            "Choose",
+            vec!["Option A".into(), "Option B".into(), "Option C".into()],
+        );
 
         assert_eq!(dialog.selected_index(), 0);
 

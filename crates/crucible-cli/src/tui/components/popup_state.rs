@@ -425,10 +425,7 @@ mod tests {
         let tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
         let result = state.handle_key(&tab);
 
-        assert!(matches!(
-            result,
-            EventResult::Action(TuiAction::PopupClose)
-        ));
+        assert!(matches!(result, EventResult::Action(TuiAction::PopupClose)));
     }
 
     // ==========================================================================
@@ -443,10 +440,7 @@ mod tests {
         let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
         let result = state.handle_key(&esc);
 
-        assert!(matches!(
-            result,
-            EventResult::Action(TuiAction::PopupClose)
-        ));
+        assert!(matches!(result, EventResult::Action(TuiAction::PopupClose)));
     }
 
     // ==========================================================================

@@ -250,7 +250,9 @@ impl InteractiveWidget for DialogWidget<'_> {
                         items: _, selected, ..
                     } = &self.state.kind
                     {
-                        WidgetEventResult::Action(WidgetAction::CloseDialog(DialogAction::Select(*selected)))
+                        WidgetEventResult::Action(WidgetAction::CloseDialog(DialogAction::Select(
+                            *selected,
+                        )))
                     } else {
                         WidgetEventResult::Action(WidgetAction::CloseDialog(DialogAction::Confirm))
                     }

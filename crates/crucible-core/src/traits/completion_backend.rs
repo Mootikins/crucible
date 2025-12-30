@@ -248,7 +248,9 @@ mod tests {
 
     #[test]
     fn test_rate_limit_error() {
-        let err = BackendError::RateLimit { retry_after_secs: 30 };
+        let err = BackendError::RateLimit {
+            retry_after_secs: 30,
+        };
         let msg = err.to_string();
         assert!(msg.contains("30"));
         assert!(msg.contains("retry"));
