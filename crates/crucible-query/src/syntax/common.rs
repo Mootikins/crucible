@@ -80,28 +80,35 @@ pub fn ident<'src>() -> impl Parser<'src, &'src str, String, Extra<'src>> + Clon
         .labelled("identifier")
 }
 
-/// Parser for single-quoted string literals: 'value'
+/// Parser for escape sequences: \', \", \\, \t, \n, \r, \f
+fn escape_char<'src>() -> impl Parser<'src, &'src str, char, Extra<'src>> + Clone {
+    just('\\').ignore_then(choice((
+        just('\'').to('\''),
+        just('"').to('"'),
+        just('\\').to('\\'),
+        just('t').to('\t'),
+        just('n').to('\n'),
+        just('r').to('\r'),
+        just('f').to('\x0C'),
+    )))
+}
+
+/// Parser for single-quoted string literals with escape support: 'value'
 pub fn single_quoted_string<'src>() -> impl Parser<'src, &'src str, String, Extra<'src>> + Clone {
+    let string_char = escape_char().or(none_of("\\'"));
+
     just('\'')
-        .ignore_then(
-            none_of("'")
-                .repeated()
-                .to_slice()
-                .map(|s: &str| s.to_string()),
-        )
+        .ignore_then(string_char.repeated().collect::<String>())
         .then_ignore(just('\''))
         .labelled("single-quoted string")
 }
 
-/// Parser for double-quoted string literals: "value"
+/// Parser for double-quoted string literals with escape support: "value"
 pub fn double_quoted_string<'src>() -> impl Parser<'src, &'src str, String, Extra<'src>> + Clone {
+    let string_char = escape_char().or(none_of("\\\""));
+
     just('"')
-        .ignore_then(
-            none_of("\"")
-                .repeated()
-                .to_slice()
-                .map(|s: &str| s.to_string()),
-        )
+        .ignore_then(string_char.repeated().collect::<String>())
         .then_ignore(just('"'))
         .labelled("double-quoted string")
 }
@@ -367,6 +374,30 @@ mod tests {
     fn test_string_double_quoted() {
         let result = string_literal().parse("\"hello\"").into_result();
         assert_eq!(result.unwrap(), "hello");
+    }
+
+    #[test]
+    fn test_string_escaped_quote() {
+        let result = string_literal().parse(r"'it\'s'").into_result();
+        assert_eq!(result.unwrap(), "it's");
+    }
+
+    #[test]
+    fn test_string_escaped_backslash() {
+        let result = string_literal().parse(r"'path\\to\\file'").into_result();
+        assert_eq!(result.unwrap(), r"path\to\file");
+    }
+
+    #[test]
+    fn test_string_escaped_newline() {
+        let result = string_literal().parse(r"'line1\nline2'").into_result();
+        assert_eq!(result.unwrap(), "line1\nline2");
+    }
+
+    #[test]
+    fn test_string_escaped_tab() {
+        let result = string_literal().parse(r"'col1\tcol2'").into_result();
+        assert_eq!(result.unwrap(), "col1\tcol2");
     }
 
     #[test]
