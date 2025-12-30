@@ -81,17 +81,32 @@ impl KeymapLayer {
         match self {
             KeymapLayer::Arrows | KeymapLayer::ArrowsCustom(_) => vec![
                 (key(KeyCode::Up, KeyModifiers::NONE), Operation::ScrollUp),
-                (key(KeyCode::Down, KeyModifiers::NONE), Operation::ScrollDown),
+                (
+                    key(KeyCode::Down, KeyModifiers::NONE),
+                    Operation::ScrollDown,
+                ),
                 (key(KeyCode::Enter, KeyModifiers::NONE), Operation::Submit),
                 (key(KeyCode::Esc, KeyModifiers::NONE), Operation::Cancel),
             ],
             KeymapLayer::Emacs => vec![
-                (key(KeyCode::Char('p'), KeyModifiers::CONTROL), Operation::ScrollUp),
-                (key(KeyCode::Char('n'), KeyModifiers::CONTROL), Operation::ScrollDown),
+                (
+                    key(KeyCode::Char('p'), KeyModifiers::CONTROL),
+                    Operation::ScrollUp,
+                ),
+                (
+                    key(KeyCode::Char('n'), KeyModifiers::CONTROL),
+                    Operation::ScrollDown,
+                ),
             ],
             KeymapLayer::Vim | KeymapLayer::VimCustom(_) => vec![
-                (key(KeyCode::Char('k'), KeyModifiers::NONE), Operation::ScrollUp),
-                (key(KeyCode::Char('j'), KeyModifiers::NONE), Operation::ScrollDown),
+                (
+                    key(KeyCode::Char('k'), KeyModifiers::NONE),
+                    Operation::ScrollUp,
+                ),
+                (
+                    key(KeyCode::Char('j'), KeyModifiers::NONE),
+                    Operation::ScrollDown,
+                ),
             ],
         }
     }
@@ -160,9 +175,7 @@ mod tests {
 
     #[test]
     fn keymap_from_arrows_layer_has_arrow_bindings() {
-        let keymap = Keymap::builder()
-            .layer(KeymapLayer::Arrows)
-            .build();
+        let keymap = Keymap::builder().layer(KeymapLayer::Arrows).build();
 
         let up = key(KeyCode::Up, KeyModifiers::NONE);
         let down = key(KeyCode::Down, KeyModifiers::NONE);
@@ -173,9 +186,7 @@ mod tests {
 
     #[test]
     fn emacs_layer_has_ctrl_bindings() {
-        let keymap = Keymap::builder()
-            .layer(KeymapLayer::Emacs)
-            .build();
+        let keymap = Keymap::builder().layer(KeymapLayer::Emacs).build();
 
         let ctrl_p = key(KeyCode::Char('p'), KeyModifiers::CONTROL);
         let ctrl_n = key(KeyCode::Char('n'), KeyModifiers::CONTROL);
@@ -200,9 +211,7 @@ mod tests {
 
     #[test]
     fn vim_layer_has_hjkl_bindings() {
-        let keymap = Keymap::builder()
-            .layer(KeymapLayer::Vim)
-            .build();
+        let keymap = Keymap::builder().layer(KeymapLayer::Vim).build();
 
         let j = key(KeyCode::Char('j'), KeyModifiers::NONE);
         let k = key(KeyCode::Char('k'), KeyModifiers::NONE);
@@ -224,9 +233,7 @@ mod tests {
 
     #[test]
     fn unbound_key_returns_none() {
-        let keymap = Keymap::builder()
-            .layer(KeymapLayer::Arrows)
-            .build();
+        let keymap = Keymap::builder().layer(KeymapLayer::Arrows).build();
 
         let q = key(KeyCode::Char('q'), KeyModifiers::NONE);
         assert_eq!(keymap.resolve(&q), None);
@@ -235,9 +242,7 @@ mod tests {
     #[test]
     fn arrows_config_can_customize_scroll_amount() {
         let config = ArrowsConfig { scroll_lines: 5 };
-        let keymap = Keymap::builder()
-            .layer(config)
-            .build();
+        let keymap = Keymap::builder().layer(config).build();
 
         let up = key(KeyCode::Up, KeyModifiers::NONE);
         assert_eq!(keymap.resolve(&up), Some(Operation::ScrollUp));
@@ -246,9 +251,7 @@ mod tests {
     #[test]
     fn vim_config_allows_custom_leader() {
         let config = VimConfig { leader: ',' };
-        let keymap = Keymap::builder()
-            .layer(config)
-            .build();
+        let keymap = Keymap::builder().layer(config).build();
 
         let j = key(KeyCode::Char('j'), KeyModifiers::NONE);
         assert_eq!(keymap.resolve(&j), Some(Operation::ScrollDown));
@@ -268,9 +271,7 @@ mod tests {
 
     #[test]
     fn submit_and_cancel_operations() {
-        let keymap = Keymap::builder()
-            .layer(KeymapLayer::Arrows)
-            .build();
+        let keymap = Keymap::builder().layer(KeymapLayer::Arrows).build();
 
         let enter = key(KeyCode::Enter, KeyModifiers::NONE);
         let esc = key(KeyCode::Esc, KeyModifiers::NONE);
