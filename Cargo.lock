@@ -3208,6 +3208,8 @@ dependencies = [
 name = "crucible-steel"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "crucible-core",
  "serde",
  "serde_json",
  "steel-core",
