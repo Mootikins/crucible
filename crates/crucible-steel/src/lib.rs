@@ -28,6 +28,9 @@ pub use types::{SteelTool, ToolParam};
 
 /// Steel library source code
 pub mod lib_sources {
+    /// Crucible prelude with common utilities
+    pub const PRELUDE: &str = include_str!("../lib/prelude.scm");
+
     /// Graph traversal library (pure Scheme)
     pub const GRAPH: &str = include_str!("../lib/graph.scm");
 }
@@ -307,5 +310,143 @@ mod builtin_tests {
             )
             .await;
         println!("simple lib result: {:?}", r);
+    }
+}
+
+#[cfg(test)]
+mod prelude_tests {
+    use super::*;
+    use serde_json::json;
+
+    // Include prelude
+    const PRELUDE: &str = lib_sources::PRELUDE;
+
+    #[tokio::test]
+    async fn test_prelude_identity() {
+        let executor = SteelExecutor::new().unwrap();
+        executor.execute_source(PRELUDE).await.unwrap();
+
+        let result = executor.execute_source("(identity 42)").await.unwrap();
+        assert_eq!(result, json!(42));
+    }
+
+    #[tokio::test]
+    async fn test_prelude_take() {
+        let executor = SteelExecutor::new().unwrap();
+        executor.execute_source(PRELUDE).await.unwrap();
+
+        let result = executor
+            .execute_source("(take 2 '(1 2 3 4 5))")
+            .await
+            .unwrap();
+        assert_eq!(result, json!([1, 2]));
+    }
+
+    #[tokio::test]
+    async fn test_prelude_drop() {
+        let executor = SteelExecutor::new().unwrap();
+        executor.execute_source(PRELUDE).await.unwrap();
+
+        let result = executor
+            .execute_source("(drop 2 '(1 2 3 4 5))")
+            .await
+            .unwrap();
+        assert_eq!(result, json!([3, 4, 5]));
+    }
+
+    #[tokio::test]
+    async fn test_prelude_hash_get() {
+        let executor = SteelExecutor::new().unwrap();
+        executor.execute_source(PRELUDE).await.unwrap();
+
+        let result = executor
+            .execute_source("(hash-get (hash 'a 1 'b 2) 'a 0)")
+            .await
+            .unwrap();
+        assert_eq!(result, json!(1));
+    }
+
+    #[tokio::test]
+    async fn test_prelude_hash_get_default() {
+        let executor = SteelExecutor::new().unwrap();
+        executor.execute_source(PRELUDE).await.unwrap();
+
+        let result = executor
+            .execute_source("(hash-get (hash 'a 1) 'missing 999)")
+            .await
+            .unwrap();
+        assert_eq!(result, json!(999));
+    }
+
+    #[tokio::test]
+    async fn test_prelude_make_note() {
+        let executor = SteelExecutor::new().unwrap();
+        executor.execute_source(PRELUDE).await.unwrap();
+
+        let result = executor
+            .execute_source(r#"(hash-ref (make-note "Test" "test.md") 'title)"#)
+            .await
+            .unwrap();
+        assert_eq!(result, json!("Test"));
+    }
+
+    #[tokio::test]
+    async fn test_prelude_ok_result() {
+        let executor = SteelExecutor::new().unwrap();
+        executor.execute_source(PRELUDE).await.unwrap();
+
+        let result = executor
+            .execute_source("(ok? (ok 42))")
+            .await
+            .unwrap();
+        assert_eq!(result, json!(true));
+    }
+
+    #[tokio::test]
+    async fn test_prelude_err_result() {
+        let executor = SteelExecutor::new().unwrap();
+        executor.execute_source(PRELUDE).await.unwrap();
+
+        let result = executor
+            .execute_source(r#"(err? (err "something failed"))"#)
+            .await
+            .unwrap();
+        assert_eq!(result, json!(true));
+    }
+
+    #[tokio::test]
+    async fn test_prelude_find() {
+        let executor = SteelExecutor::new().unwrap();
+        executor.execute_source(PRELUDE).await.unwrap();
+
+        let result = executor
+            .execute_source("(find (lambda (x) (> x 5)) '(1 3 7 2 8))")
+            .await
+            .unwrap();
+        assert_eq!(result, json!(7));
+    }
+
+    #[tokio::test]
+    async fn test_prelude_any() {
+        let executor = SteelExecutor::new().unwrap();
+        executor.execute_source(PRELUDE).await.unwrap();
+
+        let result = executor
+            .execute_source("(any? (lambda (x) (> x 5)) '(1 3 7))")
+            .await
+            .unwrap();
+        assert_eq!(result, json!(true));
+    }
+
+    #[tokio::test]
+    async fn test_prelude_all() {
+        let executor = SteelExecutor::new().unwrap();
+        executor.execute_source(PRELUDE).await.unwrap();
+
+        let result = executor
+            .execute_source("(all? (lambda (x) (> x 0)) '(1 2 3))")
+            .await
+            .unwrap();
+        assert_eq!(result, json!(true));
     }
 }
