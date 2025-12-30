@@ -38,6 +38,7 @@
 //! ```
 
 pub mod dialog;
+pub mod dialog_state;
 pub mod input_box;
 pub mod input_state;
 pub mod layer_stack;
@@ -50,6 +51,7 @@ use crossterm::event::Event;
 use ratatui::widgets::Widget;
 
 pub use dialog::DialogWidget;
+pub use dialog_state::{DialogResult, DialogState};
 pub use input_box::InputBoxWidget;
 pub use input_state::InputState;
 pub use layer_stack::LayerStack;
