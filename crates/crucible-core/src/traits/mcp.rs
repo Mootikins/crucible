@@ -27,6 +27,9 @@ use serde_json::Value as JsonValue;
 // =============================================================================
 
 /// Content block types (matching MCP specification)
+///
+/// This is the canonical content block type for MCP tool results and messages.
+/// Used by tool implementations and event handlers across the system.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ContentBlock {
@@ -36,6 +39,37 @@ pub enum ContentBlock {
     Image { data: String, mime_type: String },
     /// Resource reference
     Resource { uri: String, text: Option<String> },
+}
+
+impl ContentBlock {
+    /// Create a text content block
+    pub fn text(text: impl Into<String>) -> Self {
+        Self::Text { text: text.into() }
+    }
+
+    /// Create an image content block
+    pub fn image(data: impl Into<String>, mime_type: impl Into<String>) -> Self {
+        Self::Image {
+            data: data.into(),
+            mime_type: mime_type.into(),
+        }
+    }
+
+    /// Create a resource content block
+    pub fn resource(uri: impl Into<String>, text: Option<String>) -> Self {
+        Self::Resource {
+            uri: uri.into(),
+            text,
+        }
+    }
+
+    /// Get text content if this is a text block
+    pub fn as_text(&self) -> Option<&str> {
+        match self {
+            Self::Text { text } => Some(text),
+            _ => None,
+        }
+    }
 }
 
 /// Result of a tool call
