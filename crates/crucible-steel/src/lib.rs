@@ -12,12 +12,14 @@ pub mod error;
 pub mod executor;
 pub mod graph;
 pub mod registry;
+pub mod shell;
 pub mod types;
 
 pub use error::SteelError;
 pub use executor::SteelExecutor;
 pub use graph::GraphModule;
 pub use registry::SteelToolRegistry;
+pub use shell::{ShellModule, ShellPolicy};
 pub use types::{SteelTool, ToolParam};
 
 /// Steel library source code
