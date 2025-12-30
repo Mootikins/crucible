@@ -6,9 +6,9 @@
 
 use crate::error::SteelError;
 use serde_json::Value as JsonValue;
+use std::sync::Arc;
 use steel::steel_vm::engine::Engine;
 use steel::SteelVal;
-use std::sync::Arc;
 use tokio::sync::Mutex;
 
 /// Steel script executor
@@ -101,10 +101,7 @@ impl SteelExecutor {
         };
 
         // Convert args to Steel code representation
-        let arg_exprs: Vec<String> = args
-            .into_iter()
-            .map(json_to_steel_code)
-            .collect();
+        let arg_exprs: Vec<String> = args.into_iter().map(json_to_steel_code).collect();
 
         // Build the function call as code: (func-name arg1 arg2 ...)
         let call_code = format!("({} {})", name, arg_exprs.join(" "));
@@ -121,16 +118,14 @@ impl SteelExecutor {
             }
 
             // Execute the function call
-            let results = engine
-                .run(call_code)
-                .map_err(|e| {
-                    let err_str = e.to_string();
-                    if err_str.contains("contract") || err_str.contains("Contract") {
-                        SteelError::Contract(err_str)
-                    } else {
-                        SteelError::Execution(err_str)
-                    }
-                })?;
+            let results = engine.run(call_code).map_err(|e| {
+                let err_str = e.to_string();
+                if err_str.contains("contract") || err_str.contains("Contract") {
+                    SteelError::Contract(err_str)
+                } else {
+                    SteelError::Execution(err_str)
+                }
+            })?;
 
             // Return the result
             if let Some(val) = results.last() {
@@ -194,11 +189,9 @@ fn steel_to_json(val: &SteelVal) -> Result<JsonValue, SteelError> {
         SteelVal::Void => Ok(JsonValue::Null),
         SteelVal::BoolV(b) => Ok(JsonValue::Bool(*b)),
         SteelVal::IntV(i) => Ok(JsonValue::Number((*i).into())),
-        SteelVal::NumV(f) => {
-            serde_json::Number::from_f64(*f)
-                .map(JsonValue::Number)
-                .ok_or_else(|| SteelError::Conversion(format!("Invalid float: {}", f)))
-        }
+        SteelVal::NumV(f) => serde_json::Number::from_f64(*f)
+            .map(JsonValue::Number)
+            .ok_or_else(|| SteelError::Conversion(format!("Invalid float: {}", f))),
         SteelVal::StringV(s) => Ok(JsonValue::String(s.to_string())),
         SteelVal::ListV(list) => {
             let arr: Result<Vec<JsonValue>, _> = list.iter().map(steel_to_json).collect();
@@ -226,4 +219,3 @@ fn steel_to_json(val: &SteelVal) -> Result<JsonValue, SteelError> {
         other => Ok(JsonValue::String(format!("{:?}", other))),
     }
 }
-

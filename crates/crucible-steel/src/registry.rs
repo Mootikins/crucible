@@ -137,7 +137,10 @@ impl SteelToolRegistry {
 }
 
 /// Parse @tool and @param annotations from Steel source comments
-fn parse_tool_annotations(source: &str, source_path: &str) -> Result<Option<SteelTool>, SteelError> {
+fn parse_tool_annotations(
+    source: &str,
+    source_path: &str,
+) -> Result<Option<SteelTool>, SteelError> {
     let mut description = String::new();
     let mut params = Vec::new();
     let mut is_tool = false;
