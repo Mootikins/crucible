@@ -13,6 +13,7 @@ pub mod executor;
 pub mod graph;
 pub mod json_query;
 pub mod registry;
+pub mod schema;
 pub mod shell;
 pub mod types;
 
@@ -21,6 +22,7 @@ pub use executor::SteelExecutor;
 pub use graph::GraphModule;
 pub use json_query::{Format as OqFormat, OqModule};
 pub use registry::SteelToolRegistry;
+pub use schema::{ContractSignature, ContractType};
 pub use shell::{ShellModule, ShellPolicy};
 pub use types::{SteelTool, ToolParam};
 
