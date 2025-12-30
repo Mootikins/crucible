@@ -722,18 +722,16 @@ impl CrucibleAcpClient {
             writer.write_all(line.as_bytes()).await.map_err(|e| {
                 ClientError::Connection(format!("Failed to write to transport: {}", e))
             })?;
-            writer
-                .flush()
-                .await
-                .map_err(|e| ClientError::Connection(format!("Failed to flush transport: {}", e)))?;
+            writer.flush().await.map_err(|e| {
+                ClientError::Connection(format!("Failed to flush transport: {}", e))
+            })?;
         } else if let Some(ref mut stdin) = self.agent_stdin {
             stdin.write_all(line.as_bytes()).await.map_err(|e| {
                 ClientError::Connection(format!("Failed to write to agent stdin: {}", e))
             })?;
-            stdin
-                .flush()
-                .await
-                .map_err(|e| ClientError::Connection(format!("Failed to flush agent stdin: {}", e)))?;
+            stdin.flush().await.map_err(|e| {
+                ClientError::Connection(format!("Failed to flush agent stdin: {}", e))
+            })?;
         } else {
             return Err(ClientError::Connection(
                 "No writer available (agent stdin or transport)".to_string(),
@@ -785,7 +783,9 @@ impl CrucibleAcpClient {
 
         // Handle read result
         match read_result {
-            Ok(0) => Err(ClientError::Connection("Agent closed connection".to_string())),
+            Ok(0) => Err(ClientError::Connection(
+                "Agent closed connection".to_string(),
+            )),
             Ok(_bytes_read) => Ok(line.trim_end().to_string()),
             Err(e) => Err(ClientError::Connection(format!(
                 "Failed to read from agent: {}",
