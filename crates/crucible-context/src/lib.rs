@@ -22,6 +22,6 @@ pub use sliding_window::SlidingWindowContext;
 
 // Re-export core traits for convenience
 pub use crucible_core::traits::{
-    ContextError, ContextMessage, ContextOps, MessageMetadata, Position, PromptBuilder, Range,
-    priorities,
+    priorities, ContextError, ContextMessage, ContextOps, MessageMetadata, Position, PromptBuilder,
+    Range,
 };

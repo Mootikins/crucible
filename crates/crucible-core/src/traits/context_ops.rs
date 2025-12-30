@@ -261,7 +261,9 @@ mod tests {
 
     #[test]
     fn test_context_message_with_tag() {
-        let msg = ContextMessage::user("test").with_tag("important").with_success(true);
+        let msg = ContextMessage::user("test")
+            .with_tag("important")
+            .with_success(true);
         assert_eq!(msg.metadata.tags, vec!["important"]);
         assert_eq!(msg.metadata.success, Some(true));
     }
