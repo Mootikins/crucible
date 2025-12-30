@@ -2,57 +2,13 @@
 //!
 //! Keymaps are built from layers (Arrows, Emacs, Vim) using a builder pattern.
 //! Layers compose with configurable conflict resolution.
+//!
+//! Uses crossterm types directly - Operation enum is the abstraction layer.
 
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::HashMap;
 
-/// Key code (cross-platform)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum KeyCode {
-    Char(char),
-    Enter,
-    Escape,
-    Tab,
-    Backspace,
-    Up,
-    Down,
-    Left,
-    Right,
-    PageUp,
-    PageDown,
-    Home,
-    End,
-}
-
-/// Keyboard modifiers
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct Modifiers {
-    pub ctrl: bool,
-    pub alt: bool,
-    pub shift: bool,
-}
-
-impl Modifiers {
-    pub const NONE: Self = Self {
-        ctrl: false,
-        alt: false,
-        shift: false,
-    };
-}
-
-/// A key press event
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct KeyEvent {
-    pub code: KeyCode,
-    pub modifiers: Modifiers,
-}
-
-impl KeyEvent {
-    pub fn new(code: KeyCode, modifiers: Modifiers) -> Self {
-        Self { code, modifiers }
-    }
-}
-
-/// What a key binding does
+/// What a key binding does - the semantic abstraction layer
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operation {
     ScrollUp,
@@ -115,22 +71,27 @@ impl From<VimConfig> for KeymapLayer {
     }
 }
 
+/// Helper to create KeyEvent with modifiers
+fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+    KeyEvent::new(code, modifiers)
+}
+
 impl KeymapLayer {
     fn bindings(&self) -> Vec<(KeyEvent, Operation)> {
         match self {
             KeymapLayer::Arrows | KeymapLayer::ArrowsCustom(_) => vec![
-                (KeyEvent::new(KeyCode::Up, Modifiers::NONE), Operation::ScrollUp),
-                (KeyEvent::new(KeyCode::Down, Modifiers::NONE), Operation::ScrollDown),
-                (KeyEvent::new(KeyCode::Enter, Modifiers::NONE), Operation::Submit),
-                (KeyEvent::new(KeyCode::Escape, Modifiers::NONE), Operation::Cancel),
+                (key(KeyCode::Up, KeyModifiers::NONE), Operation::ScrollUp),
+                (key(KeyCode::Down, KeyModifiers::NONE), Operation::ScrollDown),
+                (key(KeyCode::Enter, KeyModifiers::NONE), Operation::Submit),
+                (key(KeyCode::Esc, KeyModifiers::NONE), Operation::Cancel),
             ],
             KeymapLayer::Emacs => vec![
-                (KeyEvent::new(KeyCode::Char('p'), Modifiers { ctrl: true, ..Modifiers::NONE }), Operation::ScrollUp),
-                (KeyEvent::new(KeyCode::Char('n'), Modifiers { ctrl: true, ..Modifiers::NONE }), Operation::ScrollDown),
+                (key(KeyCode::Char('p'), KeyModifiers::CONTROL), Operation::ScrollUp),
+                (key(KeyCode::Char('n'), KeyModifiers::CONTROL), Operation::ScrollDown),
             ],
             KeymapLayer::Vim | KeymapLayer::VimCustom(_) => vec![
-                (KeyEvent::new(KeyCode::Char('k'), Modifiers::NONE), Operation::ScrollUp),
-                (KeyEvent::new(KeyCode::Char('j'), Modifiers::NONE), Operation::ScrollDown),
+                (key(KeyCode::Char('k'), KeyModifiers::NONE), Operation::ScrollUp),
+                (key(KeyCode::Char('j'), KeyModifiers::NONE), Operation::ScrollDown),
             ],
         }
     }
@@ -203,9 +164,8 @@ mod tests {
             .layer(KeymapLayer::Arrows)
             .build();
 
-        // Arrow keys should produce scroll operations
-        let up = KeyEvent::new(KeyCode::Up, Modifiers::NONE);
-        let down = KeyEvent::new(KeyCode::Down, Modifiers::NONE);
+        let up = key(KeyCode::Up, KeyModifiers::NONE);
+        let down = key(KeyCode::Down, KeyModifiers::NONE);
 
         assert_eq!(keymap.resolve(&up), Some(Operation::ScrollUp));
         assert_eq!(keymap.resolve(&down), Some(Operation::ScrollDown));
@@ -217,9 +177,8 @@ mod tests {
             .layer(KeymapLayer::Emacs)
             .build();
 
-        // Ctrl+P/N should scroll (emacs style)
-        let ctrl_p = KeyEvent::new(KeyCode::Char('p'), Modifiers { ctrl: true, ..Modifiers::NONE });
-        let ctrl_n = KeyEvent::new(KeyCode::Char('n'), Modifiers { ctrl: true, ..Modifiers::NONE });
+        let ctrl_p = key(KeyCode::Char('p'), KeyModifiers::CONTROL);
+        let ctrl_n = key(KeyCode::Char('n'), KeyModifiers::CONTROL);
 
         assert_eq!(keymap.resolve(&ctrl_p), Some(Operation::ScrollUp));
         assert_eq!(keymap.resolve(&ctrl_n), Some(Operation::ScrollDown));
@@ -227,15 +186,13 @@ mod tests {
 
     #[test]
     fn layers_compose_with_last_wins() {
-        // Both layers define scroll behavior - last layer wins
         let keymap = Keymap::builder()
             .layer(KeymapLayer::Arrows)
             .layer(KeymapLayer::Emacs)
             .build();
 
-        // Should have both arrow keys and ctrl bindings
-        let up = KeyEvent::new(KeyCode::Up, Modifiers::NONE);
-        let ctrl_p = KeyEvent::new(KeyCode::Char('p'), Modifiers { ctrl: true, ..Modifiers::NONE });
+        let up = key(KeyCode::Up, KeyModifiers::NONE);
+        let ctrl_p = key(KeyCode::Char('p'), KeyModifiers::CONTROL);
 
         assert_eq!(keymap.resolve(&up), Some(Operation::ScrollUp));
         assert_eq!(keymap.resolve(&ctrl_p), Some(Operation::ScrollUp));
@@ -247,9 +204,8 @@ mod tests {
             .layer(KeymapLayer::Vim)
             .build();
 
-        // j/k should scroll (vim style)
-        let j = KeyEvent::new(KeyCode::Char('j'), Modifiers::NONE);
-        let k = KeyEvent::new(KeyCode::Char('k'), Modifiers::NONE);
+        let j = key(KeyCode::Char('j'), KeyModifiers::NONE);
+        let k = key(KeyCode::Char('k'), KeyModifiers::NONE);
 
         assert_eq!(keymap.resolve(&j), Some(Operation::ScrollDown));
         assert_eq!(keymap.resolve(&k), Some(Operation::ScrollUp));
@@ -257,15 +213,13 @@ mod tests {
 
     #[test]
     fn conflict_last_wins_overrides_earlier_binding() {
-        // First layer binds 'j' to ScrollDown
-        // Second layer could override it - test that last layer wins
         let keymap = Keymap::builder()
-            .layer(KeymapLayer::Vim)      // j = ScrollDown
-            .layer(KeymapLayer::Arrows)   // no conflict on 'j'
+            .layer(KeymapLayer::Vim)
+            .layer(KeymapLayer::Arrows)
             .build();
 
-        let j = KeyEvent::new(KeyCode::Char('j'), Modifiers::NONE);
-        assert_eq!(keymap.resolve(&j), Some(Operation::ScrollDown)); // vim binding survives
+        let j = key(KeyCode::Char('j'), KeyModifiers::NONE);
+        assert_eq!(keymap.resolve(&j), Some(Operation::ScrollDown));
     }
 
     #[test]
@@ -274,20 +228,18 @@ mod tests {
             .layer(KeymapLayer::Arrows)
             .build();
 
-        let q = KeyEvent::new(KeyCode::Char('q'), Modifiers::NONE);
+        let q = key(KeyCode::Char('q'), KeyModifiers::NONE);
         assert_eq!(keymap.resolve(&q), None);
     }
 
     #[test]
     fn arrows_config_can_customize_scroll_amount() {
-        // Custom config should be usable via Into<KeymapLayer>
         let config = ArrowsConfig { scroll_lines: 5 };
         let keymap = Keymap::builder()
-            .layer(config)  // Into<KeymapLayer>
+            .layer(config)
             .build();
 
-        // Should still resolve arrow keys
-        let up = KeyEvent::new(KeyCode::Up, Modifiers::NONE);
+        let up = key(KeyCode::Up, KeyModifiers::NONE);
         assert_eq!(keymap.resolve(&up), Some(Operation::ScrollUp));
     }
 
@@ -298,21 +250,19 @@ mod tests {
             .layer(config)
             .build();
 
-        // j/k should still work
-        let j = KeyEvent::new(KeyCode::Char('j'), Modifiers::NONE);
+        let j = key(KeyCode::Char('j'), KeyModifiers::NONE);
         assert_eq!(keymap.resolve(&j), Some(Operation::ScrollDown));
     }
 
     #[test]
     fn first_wins_conflict_strategy() {
-        // Define same key in both layers, first should win
         let keymap = Keymap::builder()
-            .layer(KeymapLayer::Vim)      // j = ScrollDown
-            .layer(KeymapLayer::Arrows)   // no j binding
+            .layer(KeymapLayer::Vim)
+            .layer(KeymapLayer::Arrows)
             .conflict(ConflictStrategy::FirstWins)
             .build();
 
-        let j = KeyEvent::new(KeyCode::Char('j'), Modifiers::NONE);
+        let j = key(KeyCode::Char('j'), KeyModifiers::NONE);
         assert_eq!(keymap.resolve(&j), Some(Operation::ScrollDown));
     }
 
@@ -322,8 +272,8 @@ mod tests {
             .layer(KeymapLayer::Arrows)
             .build();
 
-        let enter = KeyEvent::new(KeyCode::Enter, Modifiers::NONE);
-        let esc = KeyEvent::new(KeyCode::Escape, Modifiers::NONE);
+        let enter = key(KeyCode::Enter, KeyModifiers::NONE);
+        let esc = key(KeyCode::Esc, KeyModifiers::NONE);
 
         assert_eq!(keymap.resolve(&enter), Some(Operation::Submit));
         assert_eq!(keymap.resolve(&esc), Some(Operation::Cancel));
