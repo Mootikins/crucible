@@ -68,6 +68,7 @@ impl Default for QueryPipelineBuilder {
 }
 
 impl QueryPipelineBuilder {
+    /// Create a new empty pipeline builder
     pub fn new() -> Self {
         Self {
             syntax_registry: None,

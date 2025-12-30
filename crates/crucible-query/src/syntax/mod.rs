@@ -105,6 +105,7 @@ impl Default for QuerySyntaxRegistryBuilder {
 }
 
 impl QuerySyntaxRegistryBuilder {
+    /// Create a new empty builder
     pub fn new() -> Self {
         Self {
             syntaxes: Vec::new(),

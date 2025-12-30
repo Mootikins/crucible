@@ -17,37 +17,51 @@ pub type Extra<'src> = extra::Err<Rich<'src, char>>;
 /// Parsed node from pattern (before IR conversion)
 #[derive(Debug, Clone)]
 pub struct NodePart {
+    /// Optional alias for the node (e.g., `a` in `(a:Note)`)
     pub alias: Option<String>,
+    /// Optional label (e.g., `Note` in `(a:Note)`)
     pub label: Option<String>,
-    pub properties: Vec<(String, String)>, // key, value pairs
+    /// Property key-value pairs from `{key: 'value'}` syntax
+    pub properties: Vec<(String, String)>,
 }
 
 /// Parsed edge from pattern (before IR conversion)
 #[derive(Debug, Clone)]
 pub struct EdgePart {
+    /// Optional alias for the edge (e.g., `e` in `[e:wikilink]`)
     pub alias: Option<String>,
+    /// Optional edge type (e.g., `wikilink` in `[:wikilink]`)
     pub edge_type: Option<String>,
+    /// Direction of the edge (Out, In, Both, Undirected)
     pub direction: EdgeDirection,
+    /// Optional path quantifier (e.g., `*`, `+`, `*1..3`)
     pub quantifier: Option<ParsedQuantifier>,
 }
 
 /// Quantifier parsed from syntax (before IR conversion)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParsedQuantifier {
-    /// Zero or more: *
+    /// Zero or more: `*`
     ZeroOrMore,
-    /// One or more: +
+    /// One or more: `+`
     OneOrMore,
-    /// Exact count: *3 or {3}
+    /// Exact count: `*3` or `{3}`
     Exactly(usize),
-    /// Range: *1..3 or {1,3}
-    Range { min: usize, max: Option<usize> },
+    /// Range: `*1..3` or `{1,3}`
+    Range {
+        /// Minimum path length
+        min: usize,
+        /// Maximum path length (None = unbounded)
+        max: Option<usize>,
+    },
 }
 
 /// A part of the pattern (node or edge)
 #[derive(Debug, Clone)]
 pub enum PatternPart {
+    /// A node in the pattern
     Node(NodePart),
+    /// An edge connecting nodes
     Edge(EdgePart),
 }
 
