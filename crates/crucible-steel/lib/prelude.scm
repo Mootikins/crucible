@@ -168,11 +168,12 @@
     [(null? (cdr lst)) (car lst)]
     [else (string-append (car lst) sep (string-join (cdr lst) sep))]))
 
-;; Repeat a string n times
+;; Repeat a string n times (tail-recursive)
 (define (string-repeat s n)
-  (if (<= n 0)
-      ""
-      (string-append s (string-repeat s (- n 1)))))
+  (let loop ([n n] [acc ""])
+    (if (<= n 0)
+        acc
+        (loop (- n 1) (string-append acc s)))))
 
 ;;; ============================================================================
 ;;; Knowledge Graph Helpers
@@ -241,20 +242,11 @@
       default))
 
 ;;; ============================================================================
-;;; Pipeline/Threading Macros
+;;; Pipeline/Threading
 ;;; ============================================================================
 
-;; Thread-first macro (insert value as first arg)
-;; Usage: (-> x (f a) (g b)) => (g (f x a) b)
-;; Note: Implemented as function for now since Steel macro support varies
-(define (pipe-first value . fns)
-  (if (null? fns)
-      value
-      (apply pipe-first
-             ((car fns) value)
-             (cdr fns))))
-
-;; Apply a series of transformations
+;; Thread value through a series of single-argument functions
+;; Usage: (pipeline 5 inc double) => (double (inc 5))
 (define (pipeline value . fns)
   (if (null? fns)
       value
@@ -279,7 +271,8 @@
   x)
 
 ;; Time an expression (returns pair of result and time)
-;; Note: Steel may not have time functions, this is a stub
+;; TODO: Implement timing when Steel's time functions are available
+;; For now, this is a stub that just returns the result
 (define (timed thunk)
   (let ([result (thunk)])
     result))

@@ -395,10 +395,7 @@ mod prelude_tests {
         let executor = SteelExecutor::new().unwrap();
         executor.execute_source(PRELUDE).await.unwrap();
 
-        let result = executor
-            .execute_source("(ok? (ok 42))")
-            .await
-            .unwrap();
+        let result = executor.execute_source("(ok? (ok 42))").await.unwrap();
         assert_eq!(result, json!(true));
     }
 
