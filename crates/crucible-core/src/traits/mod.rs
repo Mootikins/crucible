@@ -67,7 +67,7 @@ pub use llm::{
     ChatCompletionChoice, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
     ChatMessageDelta, CompletionChoice, CompletionChunk, CompletionRequest, CompletionResponse,
     FunctionCall, FunctionCallBehavior, FunctionCallDelta, FunctionDefinition, LlmToolDefinition,
-    LogProbs, MessageRole, ModelCapability, ModelStatus, ProviderCapabilities, ResponseFormat,
+    LogProbs, MessageRole, ModelFeature, ModelStatus, ProviderCapabilities, ResponseFormat,
     TextModelInfo, TokenUsage, ToolCall, ToolCallDelta, ToolChoice,
 };
 pub use parser::MarkdownParser;
