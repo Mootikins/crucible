@@ -211,7 +211,7 @@ pub use events::{
     SubscriptionInfo,
     SubscriptionResult,
     ToolCall,
-    ToolSource,
+    ToolProvider,
 };
 
 #[derive(Debug, thiserror::Error)]
