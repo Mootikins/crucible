@@ -46,7 +46,7 @@
 //! let result = stack.route_event(&event);
 //! ```
 
-use super::{EventResult, FocusTarget, InteractiveWidget};
+use super::{FocusTarget, InteractiveWidget, WidgetEventResult};
 use crossterm::event::Event;
 
 /// Event routing coordinator for layered UI
@@ -101,7 +101,7 @@ impl<'a> LayerStack<'a> {
     ///
     /// This ensures modals block all interaction and popups only
     /// handle events when explicitly focused.
-    pub fn route_event(&mut self, event: &Event) -> EventResult {
+    pub fn route_event(&mut self, event: &Event) -> WidgetEventResult {
         // Modal captures all events when present
         if let Some(modal) = self.modal.as_mut() {
             return modal.handle_event(event);
@@ -115,7 +115,7 @@ impl<'a> LayerStack<'a> {
         }
 
         // Base layer is not handled here (caller's responsibility)
-        EventResult::Ignored
+        WidgetEventResult::Ignored
     }
 
     /// Check if any layer is active that can receive focus
@@ -165,16 +165,16 @@ mod tests {
     }
 
     impl InteractiveWidget for TestPopup {
-        fn handle_event(&mut self, event: &Event) -> EventResult {
+        fn handle_event(&mut self, event: &Event) -> WidgetEventResult {
             if let Event::Key(KeyEvent {
                 code: KeyCode::Char('p'),
                 ..
             }) = event
             {
                 self.handled = true;
-                EventResult::Consumed
+                WidgetEventResult::Consumed
             } else {
-                EventResult::Ignored
+                WidgetEventResult::Ignored
             }
         }
 
@@ -202,10 +202,10 @@ mod tests {
     }
 
     impl InteractiveWidget for TestModal {
-        fn handle_event(&mut self, _event: &Event) -> EventResult {
+        fn handle_event(&mut self, _event: &Event) -> WidgetEventResult {
             // Modal captures ALL events
             self.handled = true;
-            EventResult::Consumed
+            WidgetEventResult::Consumed
         }
 
         fn focusable(&self) -> bool {
@@ -260,7 +260,7 @@ mod tests {
         let result = stack.route_event(&event);
 
         // Modal should capture the event, popup should not receive it
-        assert_eq!(result, EventResult::Consumed);
+        assert_eq!(result, WidgetEventResult::Consumed);
         assert!(modal.handled);
         assert!(!popup.handled); // Popup never saw the event
     }
@@ -274,7 +274,7 @@ mod tests {
         let event = Event::Key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE));
         let result = stack.route_event(&event);
 
-        assert_eq!(result, EventResult::Consumed);
+        assert_eq!(result, WidgetEventResult::Consumed);
         assert!(popup.handled);
     }
 
@@ -288,7 +288,7 @@ mod tests {
         let result = stack.route_event(&event);
 
         // Popup should not handle event when not focused
-        assert_eq!(result, EventResult::Ignored);
+        assert_eq!(result, WidgetEventResult::Ignored);
         assert!(!popup.handled);
     }
 
@@ -301,7 +301,7 @@ mod tests {
         let result = stack.route_event(&event);
 
         // Should return Ignored since no layers handle it
-        assert_eq!(result, EventResult::Ignored);
+        assert_eq!(result, WidgetEventResult::Ignored);
     }
 
     #[test]
@@ -339,7 +339,7 @@ mod tests {
         let result = stack.route_event(&event);
 
         // Modal captures event, popup never sees it
-        assert_eq!(result, EventResult::Consumed);
+        assert_eq!(result, WidgetEventResult::Consumed);
         assert!(modal.handled);
         assert!(!popup.handled);
     }
@@ -356,7 +356,7 @@ mod tests {
         let event = Event::Key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE));
         let result = stack.route_event(&event);
 
-        assert_eq!(result, EventResult::Consumed);
+        assert_eq!(result, WidgetEventResult::Consumed);
         assert!(modal.handled);
         assert!(!popup.handled);
     }

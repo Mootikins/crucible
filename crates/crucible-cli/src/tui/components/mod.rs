@@ -60,23 +60,26 @@ pub use popup_state::{MockPopupProvider, PopupItemProvider, PopupState};
 pub use session_history::SessionHistoryWidget;
 pub use status_bar::StatusBarWidget;
 
-/// Result of handling an input event
+/// Result of handling an input event (widget-level)
+///
+/// Note: For the unified event system, see `crate::tui::event_result::EventResult`.
+/// This type is used by the `InteractiveWidget` trait for widget-internal events.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EventResult {
+pub enum WidgetEventResult {
     /// Event was consumed, stop propagation to other widgets
     Consumed,
     /// Event was not handled, continue propagation
     Ignored,
     /// Event produced an action for the runner to handle
-    Action(TuiAction),
+    Action(WidgetAction),
 }
 
-/// Actions that widgets can request from the runner
+/// Actions that widgets can request from the runner (widget-level)
 ///
-/// These represent high-level actions that require runner coordination,
-/// as opposed to internal widget state changes.
+/// Note: For the unified action system, see `crate::tui::event_result::TuiAction`.
+/// This type is used by the `InteractiveWidget` trait for widget-internal actions.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TuiAction {
+pub enum WidgetAction {
     /// Scroll the conversation by the given number of lines (positive = down)
     Scroll(isize),
     /// Scroll to absolute position (0 = top, usize::MAX = bottom)
@@ -133,16 +136,16 @@ pub enum DialogAction {
 pub trait InteractiveWidget: Widget {
     /// Handle an input event
     ///
-    /// Returns an `EventResult` indicating how the event was processed:
+    /// Returns a `WidgetEventResult` indicating how the event was processed:
     /// - `Consumed` if the widget handled the event
     /// - `Ignored` if the event should propagate to other widgets
-    /// - `Action(TuiAction)` if the widget needs the runner to do something
+    /// - `Action(WidgetAction)` if the widget needs the runner to do something
     ///
     /// # Default
     ///
-    /// Returns `EventResult::Ignored` (event not handled).
-    fn handle_event(&mut self, _event: &Event) -> EventResult {
-        EventResult::Ignored
+    /// Returns `WidgetEventResult::Ignored` (event not handled).
+    fn handle_event(&mut self, _event: &Event) -> WidgetEventResult {
+        WidgetEventResult::Ignored
     }
 
     /// Whether this widget can receive focus
@@ -163,17 +166,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn event_result_equality() {
-        assert_eq!(EventResult::Consumed, EventResult::Consumed);
-        assert_eq!(EventResult::Ignored, EventResult::Ignored);
-        assert_ne!(EventResult::Consumed, EventResult::Ignored);
+    fn widget_event_result_equality() {
+        assert_eq!(WidgetEventResult::Consumed, WidgetEventResult::Consumed);
+        assert_eq!(WidgetEventResult::Ignored, WidgetEventResult::Ignored);
+        assert_ne!(WidgetEventResult::Consumed, WidgetEventResult::Ignored);
     }
 
     #[test]
-    fn tui_action_scroll() {
-        let action = TuiAction::Scroll(5);
-        assert_eq!(action, TuiAction::Scroll(5));
-        assert_ne!(action, TuiAction::Scroll(-5));
+    fn widget_action_scroll() {
+        let action = WidgetAction::Scroll(5);
+        assert_eq!(action, WidgetAction::Scroll(5));
+        assert_ne!(action, WidgetAction::Scroll(-5));
     }
 
     #[test]

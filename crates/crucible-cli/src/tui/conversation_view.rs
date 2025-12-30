@@ -388,7 +388,7 @@ impl RatatuiView {
     fn route_event_via_layer_stack(
         &mut self,
         event: &crossterm::event::Event,
-    ) -> crate::tui::components::EventResult {
+    ) -> crate::tui::components::WidgetEventResult {
         use crate::tui::components::{FocusTarget, LayerStack};
 
         // Determine current focus based on active layers
@@ -418,7 +418,7 @@ impl RatatuiView {
         // Route the event through the stack
         stack.route_event(event)
 
-        // In practice, the runner would then handle the EventResult:
+        // In practice, the runner would then handle the WidgetEventResult:
         // - Consumed: event was handled, stop propagation
         // - Ignored: continue to base layer handlers
         // - Action(action): process the requested action
