@@ -281,7 +281,7 @@ impl SqliteRenderer {
         t.visited || ',' || {next_node}
     FROM traverse t
     JOIN {edges} e ON {direction_condition}{edge_filter}
-    WHERE instr(t.visited, {next_node}) = 0  -- cycle prevention
+    WHERE instr(',' || t.visited || ',', ',' || {next_node} || ',') = 0  -- cycle prevention
         {depth_check}
 )
 SELECT DISTINCT {select_fields}

@@ -21,9 +21,10 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::Value;
 
-/// Fast prefix check for Cypher keywords
+/// Fast prefix check for Cypher MATCH keyword
+/// Note: CREATE/DELETE/MERGE are not yet supported
 static CYPHER_PREFIX_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?i)^\s*(MATCH|CREATE|DELETE|MERGE)").unwrap());
+    Lazy::new(|| Regex::new(r"(?i)^\s*MATCH\b").unwrap());
 
 /// Cypher query syntax parser
 pub struct CypherSyntax;
