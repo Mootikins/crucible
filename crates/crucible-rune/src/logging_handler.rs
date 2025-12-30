@@ -252,6 +252,7 @@ impl LoggingHandler {
             SessionEvent::PreToolCall { .. } => "PreToolCall",
             SessionEvent::PreParse { .. } => "PreParse",
             SessionEvent::PreLlmCall { .. } => "PreLlmCall",
+            SessionEvent::AwaitingInput { .. } => "AwaitingInput",
         }
     }
 
@@ -444,6 +445,13 @@ impl LoggingHandler {
             SessionEvent::PreLlmCall { prompt, model } => {
                 format!("model={}, prompt_len={}", model, prompt.len())
             }
+            SessionEvent::AwaitingInput { input_type, context } => {
+                format!(
+                    "type={}, context={}",
+                    input_type,
+                    context.as_deref().unwrap_or("(none)")
+                )
+            }
         };
 
         summary
@@ -549,6 +557,7 @@ impl LoggingHandler {
             SessionEvent::PreToolCall { args, .. } => Some(args.to_string()),
             SessionEvent::PreParse { path } => Some(path.display().to_string()),
             SessionEvent::PreLlmCall { prompt, .. } => Some(prompt.clone()),
+            SessionEvent::AwaitingInput { context, .. } => context.clone(),
         };
 
         payload.map(|p| truncate(&p, max_len).to_string())
