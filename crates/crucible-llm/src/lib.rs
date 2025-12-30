@@ -5,11 +5,11 @@
 //! ## Features
 //!
 //! - **Embeddings**: Text embeddings for semantic search
-//! - **Multi-provider**: Support for Ollama, OpenAI, and more
+//! - **Multi-provider**: Support for Ollama, OpenAI, FastEmbed, and more
 //! - **Type-safe**: Compile-time safety with trait-based design
 //! - **Async**: Built on tokio for high performance
 //!
-//! ## Architecture (SOLID Phase 5)
+//! ## Architecture
 //!
 //! - Concrete provider types (OllamaProvider, OpenAIProvider) are PRIVATE
 //! - Public API provides factory functions that return trait objects
@@ -20,7 +20,6 @@
 //! - [`embeddings`]: Text embedding generation and management
 //! - [`model_discovery`]: Local GGUF model discovery and cataloging
 //! - [`reranking`]: Note reranking for improved search relevance
-//! - [`text_generation`]: Text generation and completion
 //!
 //! ## Example
 //!
@@ -46,22 +45,11 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
-pub mod chat;
 pub mod embeddings;
 pub mod model_discovery;
 pub mod reranking;
-pub mod text_generation;
-
-// Mock implementations for testing (Phase 5)
-#[cfg(any(test, feature = "test-utils"))]
-pub mod text_generation_mock;
-
-// Mock constrained generation provider for testing grammar constraints
-#[cfg(any(test, feature = "test-utils"))]
-pub mod constrained_mock;
 
 // Re-export commonly used types at crate root
-// SOLID Phase 5: Re-export factory functions and traits, NOT concrete types
 pub use embeddings::{
     create_provider,       // Factory function
     CoreProviderAdapter,   // Adapter for core trait
@@ -69,50 +57,13 @@ pub use embeddings::{
     EmbeddingError,        // Error type
     EmbeddingProvider,     // Trait (abstraction)
     EmbeddingProviderType, // Enum for provider selection
-    // REMOVED: OllamaProvider, OpenAIProvider - use create_provider() instead
-    EmbeddingResponse, // Response type (data)
-    EmbeddingResult,   // Result type alias
+    EmbeddingResponse,     // Response type (data)
+    EmbeddingResult,       // Result type alias
 };
 
 #[cfg(feature = "fastembed")]
 pub use reranking::FastEmbedReranker;
 pub use reranking::{RerankResult, Reranker, RerankerModelInfo};
-
-pub use text_generation::{
-    create_text_provider,  // Factory function
-    from_app_config,       // Create provider from app config
-    from_chat_config,      // Create provider from chat config
-    from_config,           // Create provider from config (new named provider system)
-    from_config_by_name,   // Create provider by name from config
-    from_effective_config, // Create provider from effective config
-    from_provider_config,  // Create provider from named provider config
-    ChatCompletionChunk,
-    ChatCompletionRequest,
-    ChatCompletionResponse,
-    CompletionChunk,
-    CompletionRequest,
-    CompletionResponse,
-    LlmMessage,
-    OllamaConfig,
-    OpenAIConfig,
-    TextGenerationProvider, // Trait (abstraction)
-    TextProviderConfig,
-    TokenUsage,
-    // REMOVED: OllamaTextProvider, OpenAITextProvider - use create_text_provider() instead
-};
-
-// Re-export chat providers and factory functions
-pub use chat::{
-    create_chat_provider, create_from_app_config, OllamaChatProvider, OpenAIChatProvider,
-};
-
-// Re-export mock implementations for testing
-#[cfg(any(test, feature = "test-utils"))]
-pub use text_generation_mock::MockTextProvider;
-
-// Re-export constrained generation mock for testing
-#[cfg(any(test, feature = "test-utils"))]
-pub use constrained_mock::MockConstrainedProvider;
 
 // Re-export core enrichment config types for convenience
 pub use crucible_core::enrichment::{
