@@ -34,6 +34,8 @@ pub struct InboxPlugin {
     inbox_path: Option<PathBuf>,
     /// Track visibility for toggle detection
     visible: bool,
+    /// Checkbox display style
+    checkbox_style: tui::CheckboxStyle,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -81,6 +83,11 @@ impl ZellijPlugin for InboxPlugin {
             self.load_inbox();
         }
         // Otherwise, we'll get session name from SessionUpdate event
+
+        // Read checkbox style from config (default: brackets)
+        if let Some(style) = config.get("checkbox_style") {
+            self.checkbox_style = style.parse().unwrap_or_default();
+        }
     }
 
     fn update(&mut self, event: Event) -> bool {
@@ -147,6 +154,8 @@ impl ZellijPlugin for InboxPlugin {
         let opts = tui::RenderOptions {
             width: cols,
             height: rows,
+            checkbox_style: self.checkbox_style,
+            colors: true,
         };
         let output = tui::render_tui_full(&self.inbox, self.selected, opts);
         print!("{}", output);
