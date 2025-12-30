@@ -207,4 +207,56 @@ mod tests {
         }
         assert_eq!(result.content, json!(6));
     }
+
+    // =========================================================================
+    // JSON Object → Hashmap Tests
+    // =========================================================================
+
+    /// Test that JSON objects are converted to Steel hashmaps that can be queried with hash-ref
+    #[tokio::test]
+    async fn test_json_object_to_hashmap() {
+        let executor = SteelExecutor::new().unwrap();
+
+        // Define a function that extracts a field from a hashmap
+        let source = r#"
+            (define (get-name obj)
+              (hash-ref obj 'name))
+        "#;
+
+        executor.execute_source(source).await.unwrap();
+
+        // Pass a JSON object - should be usable as a hashmap
+        let result = executor
+            .call_function("get-name", vec![json!({"name": "Alice", "age": 30})])
+            .await
+            .unwrap();
+
+        assert_eq!(result, json!("Alice"));
+    }
+
+    /// Test nested JSON objects
+    #[tokio::test]
+    async fn test_nested_json_object() {
+        let executor = SteelExecutor::new().unwrap();
+
+        let source = r#"
+            (define (get-city person)
+              (hash-ref (hash-ref person 'address) 'city))
+        "#;
+
+        executor.execute_source(source).await.unwrap();
+
+        let result = executor
+            .call_function("get-city", vec![json!({
+                "name": "Bob",
+                "address": {
+                    "city": "Seattle",
+                    "zip": "98101"
+                }
+            })])
+            .await
+            .unwrap();
+
+        assert_eq!(result, json!("Seattle"));
+    }
 }
