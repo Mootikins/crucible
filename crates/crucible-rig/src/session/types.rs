@@ -53,7 +53,11 @@ pub struct SessionMessage {
     pub tool_result: Option<serde_json::Value>,
 }
 
-/// Message role
+/// Message role in Rig session state.
+///
+/// Simplified variant set for Rig's session management (no System or Function).
+/// This is distinct from `crucible_core::traits::MessageRole` which includes
+/// all LLM API message roles.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum MessageRole {
