@@ -44,7 +44,7 @@ pub fn prevent_deletes(ctx, event) {
 }
 ```
 
-Payload: `{ arguments: {...}, source: "just|rune|upstream|kiln" }`
+Payload: `{ arguments: {...}, source: "rune|lua|mcp:<server>|builtin" }`
 
 ### tool:after
 
@@ -59,7 +59,7 @@ pub fn filter_test_output(ctx, event) {
 }
 ```
 
-Payload: `{ result: {...}, duration_ms: 1234, source: "..." }`
+Payload: `{ result: {...}, duration_ms: 1234, source: "rune|lua|mcp:<server>|builtin" }`
 
 ### tool:error
 
@@ -74,7 +74,7 @@ pub fn retry_failed_fetch(ctx, event) {
 }
 ```
 
-Payload: `{ error: "message", arguments: {...}, source: "..." }`
+Payload: `{ error: "message", arguments: {...}, source: "rune|lua|mcp:<server>|builtin" }`
 
 ## Note Events
 
@@ -131,7 +131,7 @@ event.identifier     // Tool name, note path, etc.
 event.payload        // Event-specific data
 event.timestamp_ms   // Unix timestamp
 event.cancelled      // Set to true to cancel (tool:before only)
-event.source         // "just", "rune", "kiln", "upstream"
+event.source         // "rune", "lua", "mcp:<server>", "builtin"
 ```
 
 ## See Also
