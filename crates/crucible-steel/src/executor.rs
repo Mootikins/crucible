@@ -69,6 +69,8 @@ impl SteelExecutor {
     }
 
     /// Call a previously defined function with JSON arguments
+    ///
+    /// JSON objects are converted to Steel hashmaps using `(hash ...)` syntax.
     pub async fn call_function(
         &self,
         name: &str,
@@ -83,27 +85,29 @@ impl SteelExecutor {
             s.clone()
         };
 
+        // Convert args to Steel code representation
+        let arg_exprs: Vec<String> = args
+            .into_iter()
+            .map(json_to_steel_code)
+            .collect();
+
+        // Build the function call as code: (func-name arg1 arg2 ...)
+        let call_code = format!("({} {})", name, arg_exprs.join(" "));
+
         // Run on blocking thread
         let result = tokio::task::spawn_blocking(move || {
             let mut engine = Engine::new();
 
             // Replay all sources to define the functions
-            // Clone each source to satisfy 'static lifetime requirement
             for source in all_sources {
                 engine
                     .run(source)
                     .map_err(|e| SteelError::Execution(e.to_string()))?;
             }
 
-            // Convert args to SteelVal
-            let steel_args: Vec<SteelVal> = args
-                .into_iter()
-                .map(json_to_steel)
-                .collect::<Result<Vec<_>, _>>()?;
-
-            // Call the function
-            let result = engine
-                .call_function_by_name_with_args(&name, steel_args)
+            // Execute the function call
+            let results = engine
+                .run(call_code)
                 .map_err(|e| {
                     let err_str = e.to_string();
                     if err_str.contains("contract") || err_str.contains("Contract") {
@@ -113,13 +117,60 @@ impl SteelExecutor {
                     }
                 })?;
 
-            steel_to_json(&result)
+            // Return the result
+            if let Some(val) = results.last() {
+                steel_to_json(val)
+            } else {
+                Ok(JsonValue::Null)
+            }
         })
         .await
         .map_err(|e| SteelError::TaskJoin(e.to_string()))??;
 
         Ok(result)
     }
+}
+
+/// Convert JSON value to Steel code string
+///
+/// This generates Steel source code that, when evaluated, produces the equivalent value.
+/// Objects become `(hash ...)` expressions, arrays become `(list ...)`, etc.
+fn json_to_steel_code(val: JsonValue) -> String {
+    match val {
+        JsonValue::Null => "#f".to_string(), // void isn't directly expressible, use #f
+        JsonValue::Bool(b) => if b { "#t" } else { "#f" }.to_string(),
+        JsonValue::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                i.to_string()
+            } else if let Some(f) = n.as_f64() {
+                format!("{}", f)
+            } else {
+                "0".to_string()
+            }
+        }
+        JsonValue::String(s) => format!("\"{}\"", escape_steel_string(&s)),
+        JsonValue::Array(arr) => {
+            let elements: Vec<String> = arr.into_iter().map(json_to_steel_code).collect();
+            format!("(list {})", elements.join(" "))
+        }
+        JsonValue::Object(obj) => {
+            // Convert to (hash 'key1 val1 'key2 val2 ...)
+            let pairs: Vec<String> = obj
+                .into_iter()
+                .map(|(k, v)| format!("'{} {}", k, json_to_steel_code(v)))
+                .collect();
+            format!("(hash {})", pairs.join(" "))
+        }
+    }
+}
+
+/// Escape special characters in a Steel string
+fn escape_steel_string(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
 }
 
 /// Convert SteelVal to JSON
@@ -161,36 +212,3 @@ fn steel_to_json(val: &SteelVal) -> Result<JsonValue, SteelError> {
     }
 }
 
-/// Convert JSON to SteelVal
-fn json_to_steel(val: JsonValue) -> Result<SteelVal, SteelError> {
-    match val {
-        JsonValue::Null => Ok(SteelVal::Void),
-        JsonValue::Bool(b) => Ok(SteelVal::BoolV(b)),
-        JsonValue::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Ok(SteelVal::IntV(i as isize))
-            } else if let Some(f) = n.as_f64() {
-                Ok(SteelVal::NumV(f))
-            } else {
-                Err(SteelError::Conversion(format!("Invalid number: {}", n)))
-            }
-        }
-        JsonValue::String(s) => Ok(SteelVal::StringV(s.into())),
-        JsonValue::Array(arr) => {
-            let list: Result<Vec<SteelVal>, _> = arr.into_iter().map(json_to_steel).collect();
-            Ok(SteelVal::ListV(list?.into()))
-        }
-        JsonValue::Object(obj) => {
-            // Build a list of key-value pairs for Steel
-            // Steel hashmaps are typically constructed from lists of pairs
-            let mut pairs = Vec::new();
-            for (k, v) in obj {
-                pairs.push(SteelVal::ListV(
-                    vec![SteelVal::SymbolV(k.into()), json_to_steel(v)?].into(),
-                ));
-            }
-            // Return as a list of pairs - Steel can convert this to a hash
-            Ok(SteelVal::ListV(pairs.into()))
-        }
-    }
-}
