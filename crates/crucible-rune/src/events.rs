@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
+// Re-export ContentBlock from core (canonical MCP type)
+pub use crucible_core::traits::mcp::ContentBlock;
+
 /// Trait for events that can be processed by Rune scripts
 ///
 /// Each event type defines:
@@ -146,20 +149,6 @@ pub struct ToolResultEvent {
     pub duration_ms: u64,
 }
 
-/// Content block types matching MCP specification
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum ContentBlock {
-    /// Text content
-    #[serde(rename = "text")]
-    Text { text: String },
-    /// Image content (base64 encoded)
-    #[serde(rename = "image")]
-    Image { data: String, mime_type: String },
-    /// Resource reference
-    #[serde(rename = "resource")]
-    Resource { uri: String, text: Option<String> },
-}
 
 impl ToolResultEvent {
     /// Get all text content concatenated with newlines

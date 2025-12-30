@@ -3,11 +3,14 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Wikilink reference [[target|alias]]
+/// Wikilink reference [[target|alias]] (parser output)
 ///
-/// Represents a link to another note in the kiln.
+/// Ephemeral type representing a wikilink extracted from parsing a markdown note.
 /// Supports both simple [[target]] and aliased [[target|alias]] forms,
 /// as well as embeds ![[target]].
+///
+/// Note: This is distinct from `crucible_surrealdb::schema_types::Wikilink`
+/// which is the persistent storage representation with database record IDs.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Wikilink {
     /// Target note name (without .md extension)
@@ -101,9 +104,14 @@ impl Wikilink {
     }
 }
 
-/// Tag reference #tag or #nested/tag
+/// Tag reference #tag or #nested/tag (parser output)
 ///
-/// Represents a tag in the note. Supports nested tags with forward slashes.
+/// Ephemeral type representing a tag extracted from parsing a markdown note.
+/// Contains the tag name, path components, and source offset.
+///
+/// Note: This is distinct from storage-layer tag types:
+/// - `crucible_surrealdb::schema_types::Tag` - persistent record with metadata (color, usage_count)
+/// - `crucible_surrealdb::eav_graph::types::Tag` - EAV graph representation
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Tag {
     /// Full tag name (without #)
