@@ -382,7 +382,10 @@ impl ToolExecutor {
             "get_kiln_info" => self.execute_kiln_tool(tool_name, params).await,
 
             // Unknown tool
-            _ => Err(ClientError::NotFound(format!("Unknown tool: {}", tool_name))),
+            _ => Err(ClientError::NotFound(format!(
+                "Unknown tool: {}",
+                tool_name
+            ))),
         }
     }
 
@@ -392,7 +395,9 @@ impl ToolExecutor {
             .get(name)
             .and_then(|v| v.as_str())
             .map(String::from)
-            .ok_or_else(|| ClientError::InvalidConfig(format!("Missing required parameter: {}", name)))
+            .ok_or_else(|| {
+                ClientError::InvalidConfig(format!("Missing required parameter: {}", name))
+            })
     }
 
     /// Resolve a note name or path to a full path
@@ -501,9 +506,9 @@ impl ToolExecutor {
                 };
 
                 // Execute the tool by directly writing the file
-                tokio::fs::write(&full_path, &content)
-                    .await
-                    .map_err(|e| ClientError::FileSystem(format!("Failed to create note: {}", e)))?;
+                tokio::fs::write(&full_path, &content).await.map_err(|e| {
+                    ClientError::FileSystem(format!("Failed to create note: {}", e))
+                })?;
 
                 Ok(serde_json::json!({
                     "path": path,
