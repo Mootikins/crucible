@@ -10,10 +10,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
 
-fn is_permission_denied(err: &crucible_acp::AcpError) -> bool {
+fn is_permission_denied(err: &crucible_acp::ClientError) -> bool {
     matches!(
         err,
-        crucible_acp::AcpError::Connection(message) if message.contains("Operation not permitted")
+        crucible_acp::ClientError::Connection(message) if message.contains("Operation not permitted")
     )
 }
 
