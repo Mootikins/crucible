@@ -35,7 +35,7 @@
 //!
 //! ```rust,ignore
 //! use crucible_rune::session::{Session, SessionBuilder};
-//! use crucible_rune::reactor::SessionConfig;
+//! use crucible_rune::reactor::ReactorSessionConfig;
 //!
 //! // Build a session
 //! let session = SessionBuilder::new("my-session")
@@ -68,7 +68,7 @@ use crate::event_markdown::EventToMarkdown;
 use crate::event_ring::EventRing;
 use crate::linear_reactor::LinearReactor;
 use crate::reactor::{
-    Reactor, ReactorContext, ReactorError, ReactorResult, SessionConfig, SessionEvent,
+    Reactor, ReactorContext, ReactorError, ReactorResult, ReactorSessionConfig, SessionEvent,
 };
 
 /// Default ring buffer capacity.
@@ -335,7 +335,7 @@ impl std::fmt::Debug for SessionHandle {
 /// Sessions are typically created via `SessionBuilder`.
 pub struct Session {
     /// Session configuration.
-    config: Arc<SessionConfig>,
+    config: Arc<ReactorSessionConfig>,
     /// Event ring buffer.
     ring: Arc<EventRing<SessionEvent>>,
     /// The reactor for processing events.
@@ -357,7 +357,7 @@ pub struct Session {
 impl Session {
     /// Create a new session with the given configuration and reactor.
     fn new(
-        config: SessionConfig,
+        config: ReactorSessionConfig,
         reactor: Arc<dyn Reactor>,
         ring_capacity: usize,
         channel_capacity: usize,
@@ -486,7 +486,7 @@ impl Session {
     }
 
     /// Get the session configuration.
-    pub fn config(&self) -> &SessionConfig {
+    pub fn config(&self) -> &ReactorSessionConfig {
         &self.config
     }
 
@@ -1161,7 +1161,7 @@ impl SessionBuilder {
             .unwrap_or_else(|| PathBuf::from("Sessions").join(&self.session_id));
 
         // Create session config
-        let config = SessionConfig {
+        let config = ReactorSessionConfig {
             session_id: self.session_id,
             folder,
             max_context_tokens: self.max_context_tokens,
@@ -1914,7 +1914,7 @@ mod tests {
 
             async fn on_session_start(
                 &self,
-                _config: &SessionConfig,
+                _config: &ReactorSessionConfig,
             ) -> crate::reactor::ReactorResult<()> {
                 self.start_called.fetch_add(1, Ordering::SeqCst);
                 Ok(())
