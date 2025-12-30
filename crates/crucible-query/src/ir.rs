@@ -54,13 +54,16 @@ pub enum QuerySource {
 /// Graph traversal pattern
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GraphPattern {
+    /// Sequence of nodes and edges in the pattern
     pub elements: Vec<PatternElement>,
 }
 
 /// Element in a graph pattern
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PatternElement {
+    /// A node in the pattern
     Node(NodePattern),
+    /// An edge connecting nodes
     Edge(EdgePattern),
 }
 
@@ -78,8 +81,11 @@ pub struct NodePattern {
 /// Property match constraint
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PropertyMatch {
+    /// Property name
     pub key: String,
+    /// Comparison operator
     pub op: MatchOp,
+    /// Value to match against
     pub value: serde_json::Value,
 }
 
@@ -135,7 +141,12 @@ pub enum Quantifier {
     /// Exact count: {n}
     Exactly(usize),
     /// Range: {min, max}
-    Range { min: usize, max: Option<usize> },
+    Range {
+        /// Minimum path length
+        min: usize,
+        /// Maximum path length (None = unbounded)
+        max: Option<usize>,
+    },
 }
 
 /// Projection for what to return
@@ -150,8 +161,11 @@ pub struct Projection {
 /// Post-traversal filter
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Filter {
+    /// Field path to filter on
     pub field: String,
+    /// Comparison operator
     pub op: MatchOp,
+    /// Value to compare against
     pub value: serde_json::Value,
 }
 
