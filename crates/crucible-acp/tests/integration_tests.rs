@@ -7,7 +7,7 @@
 use crucible_acp::client::ClientConfig;
 use crucible_acp::session::{AcpSession, TransportConfig};
 use crucible_acp::{
-    ChatSessionConfig, ChatSession, ContextConfig, CrucibleAcpClient, HistoryConfig, StreamConfig,
+    ChatSession, ChatSessionConfig, ContextConfig, CrucibleAcpClient, HistoryConfig, StreamConfig,
 };
 use std::path::PathBuf;
 
@@ -1429,7 +1429,7 @@ async fn integration_stream_with_enrichment() {
 #[tokio::test]
 async fn integration_chat_with_agent_config() {
     use crucible_acp::client::ClientConfig;
-    use crucible_acp::{ChatSessionConfig, ChatSession, CrucibleAcpClient};
+    use crucible_acp::{ChatSession, ChatSessionConfig, CrucibleAcpClient};
     use std::path::PathBuf;
 
     let client_config = ClientConfig {
@@ -1459,7 +1459,7 @@ async fn integration_chat_with_agent_config() {
 #[tokio::test]
 async fn integration_chat_agent_lifecycle() {
     use crucible_acp::client::ClientConfig;
-    use crucible_acp::{ChatSessionConfig, ChatSession, CrucibleAcpClient};
+    use crucible_acp::{ChatSession, ChatSessionConfig, CrucibleAcpClient};
     use std::path::PathBuf;
 
     let client_config = ClientConfig {
@@ -1492,7 +1492,7 @@ async fn integration_chat_agent_lifecycle() {
 #[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn integration_chat_multi_turn_with_agent() {
-    use crucible_acp::{ChatSessionConfig, ChatSession};
+    use crucible_acp::{ChatSession, ChatSessionConfig};
 
     // Create a chat session without agent (mock mode)
     let mut chat_session = ChatSession::new(ChatSessionConfig::default());
@@ -1524,7 +1524,7 @@ async fn integration_chat_multi_turn_with_agent() {
 #[tokio::test]
 async fn integration_chat_agent_config_variants() {
     use crucible_acp::client::ClientConfig;
-    use crucible_acp::{ChatSessionConfig, ChatSession, CrucibleAcpClient};
+    use crucible_acp::{ChatSession, ChatSessionConfig, CrucibleAcpClient};
     use std::path::PathBuf;
 
     // Test various client configurations

@@ -452,7 +452,10 @@ impl AgentHandle for CrucibleAcpClient {
                 type UnfoldState = Option<(
                     mpsc::UnboundedReceiver<StreamingChunk>,
                     tokio::sync::oneshot::Receiver<
-                        Result<(String, Vec<crucible_acp::ToolCallInfo>), crucible_acp::ClientError>,
+                        Result<
+                            (String, Vec<crucible_acp::ToolCallInfo>),
+                            crucible_acp::ClientError,
+                        >,
                     >,
                     Vec<ChatToolCall>,
                     bool, // terminated
