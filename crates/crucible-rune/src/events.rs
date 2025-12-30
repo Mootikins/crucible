@@ -149,7 +149,6 @@ pub struct ToolResultEvent {
     pub duration_ms: u64,
 }
 
-
 impl ToolResultEvent {
     /// Get all text content concatenated with newlines
     pub fn text_content(&self) -> String {
