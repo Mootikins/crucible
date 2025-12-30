@@ -290,7 +290,6 @@ impl ToolEventEmitter {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
