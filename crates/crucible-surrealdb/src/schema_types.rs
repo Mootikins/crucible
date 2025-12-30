@@ -181,7 +181,13 @@ impl Note {
 // Tags Table
 // ============================================================================
 
-/// A tag with metadata and hierarchy
+/// A tag with metadata and hierarchy (persistent storage record)
+///
+/// Rich database record representing a tag in the knowledge graph.
+/// Contains metadata like color, usage count, and parent relationships.
+///
+/// Note: This is distinct from `crucible_core::parser::Tag` which is
+/// the ephemeral parse-time representation with just name and offset.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Tag {
     /// Record ID (format: "tags:rust" or "tags:project-crucible")
@@ -254,7 +260,15 @@ impl Tag {
 // Graph Relations (Edges)
 // ============================================================================
 
-/// Wikilink edge: note -> note
+/// Wikilink edge connecting two notes in the knowledge graph (persistent storage record)
+///
+/// A resolved wikilink edge stored in SurrealDB, representing a link from one note
+/// to another. Contains database record IDs for both source and target notes,
+/// plus metadata like link text and position.
+///
+/// Note: This is distinct from `crucible_core::parser::Wikilink` which is the
+/// ephemeral parse-time representation extracted from markdown (with target name
+/// string, not resolved record IDs).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Wikilink {
     /// Source note
