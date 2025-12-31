@@ -25,8 +25,8 @@ use crate::tui::conversation::StatusKind;
 use crate::tui::conversation_view::{ConversationView, RatatuiView};
 use crate::tui::state::{find_word_start_backward, find_word_start_forward};
 use crate::tui::{
-    map_key_event, DynamicPopupProvider, InputAction, ParseEvent, PopupProvider, StreamBlock,
-    StreamingParser, TuiState,
+    map_key_event, DialogKind, DialogState, DynamicPopupProvider, InputAction, ParseEvent,
+    PopupProvider, StreamBlock, StreamingParser, TuiState,
 };
 use anyhow::Result;
 use crossterm::{
@@ -38,6 +38,7 @@ use crossterm::{
     },
 };
 use crucible_core::events::{FileChangeKind, SessionEvent};
+use crucible_core::interaction::{AskRequest, InteractionRequest, PermRequest, ShowRequest};
 use crucible_core::traits::chat::AgentHandle;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
@@ -820,6 +821,13 @@ impl RatatuiRunner {
                         self.view.complete_tool(name, summary);
                     }
                 }
+                // Handle interaction requests
+                SessionEvent::InteractionRequested {
+                    request_id,
+                    request,
+                } => {
+                    self.handle_interaction_request(request_id, request);
+                }
                 _ => {}
             }
         }
@@ -1043,6 +1051,45 @@ impl RatatuiRunner {
             }
             _ => {}
         }
+    }
+
+    /// Handle an interaction request by showing appropriate dialog.
+    ///
+    /// Converts `InteractionRequest` to `DialogState` and stores the request_id
+    /// for later response correlation.
+    fn handle_interaction_request(&mut self, request_id: &str, request: &InteractionRequest) {
+        let dialog = match request {
+            InteractionRequest::Ask(ask) => {
+                if let Some(choices) = &ask.choices {
+                    DialogState::select(&ask.question, choices.clone())
+                } else {
+                    // Free-text input - show as info with prompt
+                    DialogState::info(&ask.question, "(Type your response in the input box)")
+                }
+            }
+            InteractionRequest::Permission(perm) => {
+                let pattern = perm.pattern_at(perm.tokens().len());
+                DialogState::confirm(
+                    "Permission Required",
+                    format!("Allow: {}?", pattern),
+                )
+            }
+            InteractionRequest::Edit(edit) => {
+                // Show content as info - full editing would need dedicated widget
+                let hint = edit.hint.as_deref().unwrap_or("Review the content");
+                DialogState::info(hint, &edit.content)
+            }
+            InteractionRequest::Show(show) => {
+                let title = show.title.as_deref().unwrap_or("Information");
+                DialogState::info(title, &show.content)
+            }
+        };
+
+        // Store the request_id for response correlation
+        // TODO: Add pending_interaction_id field to runner
+        debug!("Interaction request {}: showing dialog", request_id);
+
+        self.view.push_dialog(dialog);
     }
 }
 

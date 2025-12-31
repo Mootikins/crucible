@@ -470,6 +470,9 @@ fn estimate_event_tokens(event: &SessionEvent) -> usize {
         SessionEvent::AwaitingInput { context, .. } => {
             context.as_ref().map_or(20, |c| c.len() + 20)
         }
+        // Interaction events
+        SessionEvent::InteractionRequested { .. } => 100, // Request metadata
+        SessionEvent::InteractionCompleted { .. } => 50,  // Response metadata
     };
 
     // Rough estimate: ~4 characters per token

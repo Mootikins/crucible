@@ -253,6 +253,9 @@ impl LoggingHandler {
             SessionEvent::PreParse { .. } => "PreParse",
             SessionEvent::PreLlmCall { .. } => "PreLlmCall",
             SessionEvent::AwaitingInput { .. } => "AwaitingInput",
+            // Interaction events
+            SessionEvent::InteractionRequested { .. } => "InteractionRequested",
+            SessionEvent::InteractionCompleted { .. } => "InteractionCompleted",
         }
     }
 
@@ -455,6 +458,16 @@ impl LoggingHandler {
                     context.as_deref().unwrap_or("(none)")
                 )
             }
+            // Interaction events
+            SessionEvent::InteractionRequested {
+                request_id,
+                request,
+            } => {
+                format!("id={}, kind={}", request_id, request.kind())
+            }
+            SessionEvent::InteractionCompleted { request_id, .. } => {
+                format!("id={}", request_id)
+            }
         };
 
         summary
@@ -561,6 +574,9 @@ impl LoggingHandler {
             SessionEvent::PreParse { path } => Some(path.display().to_string()),
             SessionEvent::PreLlmCall { prompt, .. } => Some(prompt.clone()),
             SessionEvent::AwaitingInput { context, .. } => context.clone(),
+            // Interaction events - no detailed payload needed
+            SessionEvent::InteractionRequested { .. } => None,
+            SessionEvent::InteractionCompleted { .. } => None,
         };
 
         payload.map(|p| truncate(&p, max_len).to_string())
