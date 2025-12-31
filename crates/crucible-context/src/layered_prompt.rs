@@ -96,6 +96,34 @@ impl LayeredPromptBuilder {
         self
     }
 
+    /// Load project rules from first matching file (Zed-compatible)
+    ///
+    /// Checks in order: .rules, .cursorrules, AGENTS.md, CLAUDE.md, .github/copilot-instructions.md
+    /// Loads first match only (deduplication via first-match-wins)
+    pub fn with_project_rules(mut self, dir: &Path) -> Self {
+        let candidates = [
+            ".rules",
+            ".cursorrules",
+            "AGENTS.md",
+            "CLAUDE.md",
+            ".github/copilot-instructions.md",
+        ];
+
+        for candidate in candidates {
+            let path = dir.join(candidate);
+            if let Ok(content) = fs::read_to_string(&path) {
+                if !content.trim().is_empty() {
+                    self.layers.insert(
+                        "project_rules".to_string(),
+                        PromptLayer::new(content, priorities::PROJECT),
+                    );
+                    break; // First match wins
+                }
+            }
+        }
+        self
+    }
+
     /// Add agent card system prompt
     pub fn with_agent_card(mut self, system_prompt: impl Into<String>) -> Self {
         self.layers.insert(
@@ -262,5 +290,85 @@ mod tests {
         builder.add_layer(200, "b", "b".repeat(400));
 
         assert_eq!(builder.estimated_tokens(), 200);
+    }
+
+    #[test]
+    fn test_rules_file_first_match_wins() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create both .rules and AGENTS.md
+        let rules = temp_dir.path().join(".rules");
+        let agents = temp_dir.path().join("AGENTS.md");
+
+        std::fs::write(&rules, "Rules content").unwrap();
+        std::fs::write(&agents, "Agents content").unwrap();
+
+        let builder = LayeredPromptBuilder::new().with_project_rules(temp_dir.path());
+
+        // .rules should win
+        let layer = builder.get_layer("project_rules").unwrap();
+        assert!(layer.contains("Rules content"));
+        assert!(!layer.contains("Agents content"));
+    }
+
+    #[test]
+    fn test_rules_file_fallback_to_agents_md() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create only AGENTS.md (no .rules or .cursorrules)
+        let agents = temp_dir.path().join("AGENTS.md");
+        std::fs::write(&agents, "Agents content").unwrap();
+
+        let builder = LayeredPromptBuilder::new().with_project_rules(temp_dir.path());
+
+        // AGENTS.md should be loaded
+        let layer = builder.get_layer("project_rules").unwrap();
+        assert!(layer.contains("Agents content"));
+    }
+
+    #[test]
+    fn test_rules_file_skips_empty_files() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create empty .rules and non-empty AGENTS.md
+        let rules = temp_dir.path().join(".rules");
+        let agents = temp_dir.path().join("AGENTS.md");
+
+        std::fs::write(&rules, "   \n  ").unwrap(); // Whitespace only
+        std::fs::write(&agents, "Agents content").unwrap();
+
+        let builder = LayeredPromptBuilder::new().with_project_rules(temp_dir.path());
+
+        // Should skip empty .rules and use AGENTS.md
+        let layer = builder.get_layer("project_rules").unwrap();
+        assert!(layer.contains("Agents content"));
+    }
+
+    #[test]
+    fn test_rules_file_copilot_instructions() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create .github/copilot-instructions.md
+        let github_dir = temp_dir.path().join(".github");
+        std::fs::create_dir(&github_dir).unwrap();
+        let copilot = github_dir.join("copilot-instructions.md");
+        std::fs::write(&copilot, "Copilot instructions").unwrap();
+
+        let builder = LayeredPromptBuilder::new().with_project_rules(temp_dir.path());
+
+        // Should load copilot-instructions.md
+        let layer = builder.get_layer("project_rules").unwrap();
+        assert!(layer.contains("Copilot instructions"));
+    }
+
+    #[test]
+    fn test_rules_file_no_match() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // No rules files exist
+        let builder = LayeredPromptBuilder::new().with_project_rules(temp_dir.path());
+
+        // No project_rules layer should exist
+        assert!(!builder.has_layer("project_rules"));
     }
 }
