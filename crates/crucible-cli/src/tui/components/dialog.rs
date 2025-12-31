@@ -10,7 +10,7 @@
 //! from tui::dialog with InteractiveWidget support for event handling.
 
 use crate::tui::components::{DialogAction, InteractiveWidget, WidgetAction, WidgetEventResult};
-use crate::tui::dialog::{DialogKind, DialogResult, DialogState};
+use crate::tui::dialog::{DialogResult, DialogState};
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use ratatui::{
     buffer::Buffer,
@@ -67,59 +67,64 @@ impl Widget for DialogWidget<'_> {
         }
 
         // Calculate dialog size based on content
-        let dialog_area = match &self.state.kind {
-            DialogKind::Confirm { .. } => Self::centered_rect(50, 30, area),
-            DialogKind::Select { items, .. } => {
+        let dialog_area = match self.state {
+            DialogState::Confirm { .. } => Self::centered_rect(50, 30, area),
+            DialogState::Select { items, .. } => {
                 let height = (items.len() + 4).min(20) as u16;
                 let height_percent = (height * 100 / area.height).clamp(30, 80);
                 Self::centered_rect(50, height_percent, area)
             }
-            DialogKind::Info { .. } => Self::centered_rect(60, 40, area),
+            DialogState::Info { .. } => Self::centered_rect(60, 40, area),
         };
 
         // Clear dialog area
         Clear.render(dialog_area, buf);
 
         // Render based on dialog type
-        match &self.state.kind {
-            DialogKind::Confirm {
-                title,
-                message,
-                confirm_label,
-                cancel_label,
+        match self.state {
+            DialogState::Confirm {
+                ref title,
+                ref message,
+                ref confirm_label,
+                ref cancel_label,
+                focused_button,
             } => {
-                self.render_confirm(
+                Self::render_confirm_static(
                     dialog_area,
                     buf,
                     title,
                     message,
                     confirm_label,
                     cancel_label,
+                    *focused_button,
                 );
             }
-            DialogKind::Select {
-                title,
-                items,
+            DialogState::Select {
+                ref title,
+                ref items,
                 selected,
             } => {
-                self.render_select(dialog_area, buf, title, items, *selected);
+                Self::render_select_static(dialog_area, buf, title, items, *selected);
             }
-            DialogKind::Info { title, content } => {
-                self.render_info(dialog_area, buf, title, content);
+            DialogState::Info {
+                ref title,
+                ref content,
+            } => {
+                Self::render_info_static(dialog_area, buf, title, content);
             }
         }
     }
 }
 
 impl DialogWidget<'_> {
-    fn render_confirm(
-        &self,
+    fn render_confirm_static(
         area: Rect,
         buf: &mut Buffer,
         title: &str,
         message: &str,
         confirm_label: &str,
         cancel_label: &str,
+        focused_button: usize,
     ) {
         let block = Block::default()
             .title(format!(" {} ", title))
@@ -147,7 +152,7 @@ impl DialogWidget<'_> {
         let start_x = inner.x + (inner.width.saturating_sub(total_width)) / 2;
 
         // Confirm button
-        let confirm_style = if self.state.focus_index == 0 {
+        let confirm_style = if focused_button == 0 {
             Style::default()
                 .fg(Color::Black)
                 .bg(Color::Green)
@@ -159,7 +164,7 @@ impl DialogWidget<'_> {
         buf.set_string(start_x, button_y, &confirm_btn, confirm_style);
 
         // Cancel button
-        let cancel_style = if self.state.focus_index == 1 {
+        let cancel_style = if focused_button == 1 {
             Style::default()
                 .fg(Color::Black)
                 .bg(Color::Red)
@@ -176,8 +181,7 @@ impl DialogWidget<'_> {
         );
     }
 
-    fn render_select(
-        &self,
+    fn render_select_static(
         area: Rect,
         buf: &mut Buffer,
         title: &str,
@@ -211,7 +215,7 @@ impl DialogWidget<'_> {
         }
     }
 
-    fn render_info(&self, area: Rect, buf: &mut Buffer, title: &str, content: &str) {
+    fn render_info_static(area: Rect, buf: &mut Buffer, title: &str, content: &str) {
         let block = Block::default()
             .title(format!(" {} ", title))
             .borders(Borders::ALL)
@@ -246,10 +250,7 @@ impl InteractiveWidget for DialogWidget<'_> {
             match result {
                 DialogResult::Confirm(_value) => {
                     // For select dialogs, parse the selected index
-                    if let DialogKind::Select {
-                        items: _, selected, ..
-                    } = &self.state.kind
-                    {
+                    if let DialogState::Select { selected, .. } = self.state {
                         WidgetEventResult::Action(WidgetAction::CloseDialog(DialogAction::Select(
                             *selected,
                         )))
@@ -471,8 +472,8 @@ mod tests {
 
     #[test]
     fn test_confirm_dialog_renders_button_focus() {
+        // Confirm dialog starts with focused_button = 0 (Yes focused)
         let mut state = DialogState::confirm("Test", "Message");
-        state.focus_index = 0; // Focus on "Yes"
 
         let widget = DialogWidget::new(&mut state);
         let area = Rect::new(0, 0, 60, 15);
@@ -514,7 +515,8 @@ mod tests {
     #[test]
     fn test_select_dialog_renders_selection_highlight() {
         let mut state = DialogState::select("Pick", vec!["First".into(), "Second".into()]);
-        if let DialogKind::Select { selected, .. } = &mut state.kind {
+        // Navigate down to select second item
+        if let DialogState::Select { selected, .. } = &mut state {
             *selected = 1;
         }
 

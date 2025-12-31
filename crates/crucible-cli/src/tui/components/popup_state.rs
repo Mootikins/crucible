@@ -218,14 +218,7 @@ mod tests {
 
     /// Helper to create a command PopupItem for testing
     fn make_command(name: &str, description: &str) -> PopupItem {
-        PopupItem {
-            kind: PopupItemKind::Command,
-            title: format!("/{}", name),
-            subtitle: description.to_string(),
-            token: format!("/{} ", name),
-            score: 100,
-            available: true,
-        }
+        PopupItem::cmd(name).desc(description).with_score(100)
     }
     use super::*;
 
@@ -411,7 +404,7 @@ mod tests {
         let result = state.handle_key(&tab);
 
         if let EventResult::Action(TuiAction::PopupConfirm(item)) = result {
-            assert!(item.title.contains("second"));
+            assert!(item.title().contains("second"));
         } else {
             panic!("Expected PopupConfirm action");
         }

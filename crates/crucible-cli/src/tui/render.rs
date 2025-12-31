@@ -148,13 +148,7 @@ fn render_popup(frame: &mut Frame, area: Rect, state: &TuiState) {
                     .add_modifier(Modifier::BOLD),
             ));
 
-            let kind_label = match item.kind {
-                crate::tui::state::PopupItemKind::Command => "[cmd]",
-                crate::tui::state::PopupItemKind::Agent => "[agent]",
-                crate::tui::state::PopupItemKind::File => "[file]",
-                crate::tui::state::PopupItemKind::Note => "[note]",
-                crate::tui::state::PopupItemKind::Skill => "[skill]",
-            };
+            let kind_label = format!("[{}]", item.kind_label());
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
                 kind_label,
@@ -162,7 +156,7 @@ fn render_popup(frame: &mut Frame, area: Rect, state: &TuiState) {
             ));
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
-                &item.title,
+                item.title(),
                 if idx == popup.selected {
                     Style::default()
                         .fg(Color::White)
@@ -171,10 +165,11 @@ fn render_popup(frame: &mut Frame, area: Rect, state: &TuiState) {
                     Style::default().fg(Color::White)
                 },
             ));
-            if !item.subtitle.is_empty() {
+            let subtitle = item.subtitle();
+            if !subtitle.is_empty() {
                 spans.push(Span::raw(" "));
                 spans.push(Span::styled(
-                    &item.subtitle,
+                    subtitle.to_string(),
                     Style::default().fg(Color::DarkGray),
                 ));
             }
