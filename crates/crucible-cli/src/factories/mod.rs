@@ -19,6 +19,6 @@ pub use merkle::create_surrealdb_merkle_store;
 pub use pipeline::create_pipeline;
 pub use storage::{
     create_content_addressed_storage, create_daemon_storage, create_surrealdb_enriched_note_store,
-    create_surrealdb_storage, initialize_surrealdb_schema,
+    create_surrealdb_storage, get_storage, initialize_surrealdb_schema, StorageHandle,
 };
 pub use watch::create_file_watcher;
