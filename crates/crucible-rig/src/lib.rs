@@ -44,7 +44,8 @@ pub mod workspace_tools;
 
 // Re-export key types
 pub use agent::{
-    build_agent, build_agent_from_config, build_agent_with_tools, AgentBuildError, AgentConfig,
+    build_agent, build_agent_from_config, build_agent_with_model_size, build_agent_with_tools,
+    AgentBuildError, AgentConfig,
 };
 pub use completion::RigCompletionBackend;
 pub use crucible_agent::{CrucibleAgent, CrucibleAgentError, CrucibleAgentResult};

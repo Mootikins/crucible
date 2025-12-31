@@ -165,7 +165,9 @@ pub async fn create_internal_agent(
     _params: AgentInitParams,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>> {
     use crucible_config::LlmProvider;
-    use crucible_rig::{build_agent_with_tools, RigAgentHandle};
+    use crucible_context::{LayeredPromptBuilder, PromptBuilder};
+    use crucible_core::prompts::{base_prompt_for_size, ModelSize};
+    use crucible_rig::{build_agent_with_model_size, RigAgentHandle};
 
     // Get model name from config
     let model = config
@@ -178,27 +180,35 @@ pub async fn create_internal_agent(
             LlmProvider::Anthropic => "claude-3-5-sonnet-20241022".to_string(),
         });
 
-    // Build agent config with explicit tool-calling instructions
-    // Small models need clear guidance to use native tool format instead of XML
-    let system_prompt = r#"You are a helpful assistant.
+    // Detect model size and get appropriate prompt
+    let model_size = ModelSize::from_model_name(&model);
+    info!("Detected model size: {:?} for {}", model_size, model);
 
-## Tool Usage
+    // Build layered system prompt
+    let mut prompt_builder = LayeredPromptBuilder::new();
 
-You have access to tools that are provided via the API. When you need to use a tool:
-1. The tools are defined in the API request - use them by their function names
-2. Do NOT output XML tags like <function>, <tool_call>, or <parameter>
-3. Simply call tools using the native function calling format"#;
+    // Replace the default base prompt with size-appropriate one
+    prompt_builder.remove_layer("base");
+    prompt_builder.add_layer(
+        crucible_context::priorities::BASE,
+        "base",
+        base_prompt_for_size(model_size).to_string(),
+    );
 
-    let agent_config = crucible_rig::AgentConfig::new(&model, system_prompt);
-
-    use crucible_config::{LlmProviderConfig, LlmProviderType};
-
-    // Get workspace root - prefer explicit working_dir, then cwd, NOT kiln_path
-    // kiln_path is where knowledge is stored, workspace is where agent operates
+    // Get workspace root for project rules loading
     let workspace_root = _params
         .working_dir
         .clone()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| config.kiln_path.clone()));
+
+    // Add project rules if workspace has them (AGENTS.md, CLAUDE.md, .rules, etc.)
+    prompt_builder = prompt_builder.with_project_rules(&workspace_root);
+
+    let system_prompt = prompt_builder.build();
+
+    let agent_config = crucible_rig::AgentConfig::new(&model, &system_prompt);
+
+    use crucible_config::{LlmProviderConfig, LlmProviderType};
 
     // Create Rig client based on provider
     let client = match config.chat.provider {
@@ -268,26 +278,47 @@ You have access to tools that are provided via the API. When you need to use a t
     };
 
     info!(
-        "Building Rig agent with workspace tools for: {}",
+        "Building Rig agent with {:?} tools for: {}",
+        model_size,
         workspace_root.display()
     );
 
-    // Build Rig agent with tools based on client type
+    // Build Rig agent with size-appropriate tools based on client type
     match client {
         crucible_rig::RigClient::Ollama(ollama_client) => {
-            let agent = build_agent_with_tools(&agent_config, &ollama_client, workspace_root)?;
+            let agent = build_agent_with_model_size(
+                &agent_config,
+                &ollama_client,
+                &workspace_root,
+                model_size,
+            )?;
             Ok(Box::new(RigAgentHandle::new(agent)))
         }
         crucible_rig::RigClient::OpenAI(openai_client) => {
-            let agent = build_agent_with_tools(&agent_config, &openai_client, workspace_root)?;
+            let agent = build_agent_with_model_size(
+                &agent_config,
+                &openai_client,
+                &workspace_root,
+                model_size,
+            )?;
             Ok(Box::new(RigAgentHandle::new(agent)))
         }
         crucible_rig::RigClient::OpenAICompat(compat_client) => {
-            let agent = build_agent_with_tools(&agent_config, &compat_client, workspace_root)?;
+            let agent = build_agent_with_model_size(
+                &agent_config,
+                &compat_client,
+                &workspace_root,
+                model_size,
+            )?;
             Ok(Box::new(RigAgentHandle::new(agent)))
         }
         crucible_rig::RigClient::Anthropic(anthropic_client) => {
-            let agent = build_agent_with_tools(&agent_config, &anthropic_client, workspace_root)?;
+            let agent = build_agent_with_model_size(
+                &agent_config,
+                &anthropic_client,
+                &workspace_root,
+                model_size,
+            )?;
             Ok(Box::new(RigAgentHandle::new(agent)))
         }
     }
