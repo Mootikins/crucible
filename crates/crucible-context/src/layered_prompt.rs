@@ -5,7 +5,7 @@
 use crucible_core::traits::{priorities, PromptBuilder};
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// A layer in the prompt hierarchy
 #[derive(Debug, Clone)]
@@ -26,6 +26,19 @@ impl PromptLayer {
 
     fn estimated_tokens(&self) -> usize {
         self.content.len() / 4
+    }
+}
+
+/// Find the git root directory by walking up from the given path
+fn find_git_root(start: &Path) -> Option<PathBuf> {
+    let mut current = start.to_path_buf();
+    loop {
+        if current.join(".git").exists() {
+            return Some(current);
+        }
+        if !current.pop() {
+            return None;
+        }
     }
 }
 
@@ -96,32 +109,85 @@ impl LayeredPromptBuilder {
         self
     }
 
-    /// Load project rules from first matching file (Zed-compatible)
+    /// Load project rules hierarchically from git root to workspace
     ///
-    /// Checks in order: .rules, .cursorrules, AGENTS.md, CLAUDE.md, .github/copilot-instructions.md
-    /// Loads first match only (deduplication via first-match-wins)
-    pub fn with_project_rules(mut self, dir: &Path) -> Self {
-        let candidates = [
-            ".rules",
-            ".cursorrules",
-            "AGENTS.md",
-            "CLAUDE.md",
-            ".github/copilot-instructions.md",
-        ];
+    /// For each file in `rules_files`, searches from git root down to `workspace_dir`.
+    /// Files closer to workspace have higher priority (override files from parent dirs).
+    ///
+    /// Example: If AGENTS.md exists at both `/repo/` and `/repo/src/module/`:
+    /// - `/repo/AGENTS.md` loads first (lower priority)
+    /// - `/repo/src/module/AGENTS.md` loads second (higher priority, overrides)
+    pub fn with_project_rules_hierarchical(
+        mut self,
+        workspace_dir: &Path,
+        rules_files: &[String],
+    ) -> Self {
+        // Find git root
+        let git_root = find_git_root(workspace_dir);
+        let root = git_root.as_deref().unwrap_or(workspace_dir);
 
-        for candidate in candidates {
-            let path = dir.join(candidate);
-            if let Ok(content) = fs::read_to_string(&path) {
-                if !content.trim().is_empty() {
-                    self.layers.insert(
-                        "project_rules".to_string(),
-                        PromptLayer::new(content, priorities::PROJECT),
-                    );
-                    break; // First match wins
+        // Build path from git root to workspace
+        let mut dirs_to_check = Vec::new();
+        let mut current = workspace_dir.to_path_buf();
+
+        // Collect directories from workspace up to root
+        loop {
+            dirs_to_check.push(current.clone());
+            if current == root {
+                break;
+            }
+            if !current.pop() {
+                break;
+            }
+        }
+
+        // Reverse so we go from root -> workspace (lowest -> highest priority)
+        dirs_to_check.reverse();
+
+        // Base priority for project rules, increment for each file found
+        let mut priority_offset = 0;
+
+        for dir in &dirs_to_check {
+            for rules_file in rules_files {
+                let path = dir.join(rules_file);
+                if let Ok(content) = fs::read_to_string(&path) {
+                    if !content.trim().is_empty() {
+                        // Create unique layer name based on path
+                        let layer_name = format!(
+                            "project_rules_{}",
+                            path.strip_prefix(root)
+                                .unwrap_or(&path)
+                                .display()
+                                .to_string()
+                                .replace(['/', '\\'], "_")
+                        );
+
+                        self.layers.insert(
+                            layer_name,
+                            PromptLayer::new(content, priorities::PROJECT + priority_offset),
+                        );
+                        priority_offset += 1;
+                    }
                 }
             }
         }
         self
+    }
+
+    /// Load project rules from workspace directory with hierarchical loading
+    ///
+    /// Searches from git root down to `dir`, loading all matching rules files.
+    /// Files closer to the workspace have higher priority.
+    ///
+    /// Default rules files checked: AGENTS.md, .rules, .github/copilot-instructions.md
+    pub fn with_project_rules(self, dir: &Path) -> Self {
+        // Default rules files for backward compatibility
+        let defaults = [
+            "AGENTS.md".to_string(),
+            ".rules".to_string(),
+            ".github/copilot-instructions.md".to_string(),
+        ];
+        self.with_project_rules_hierarchical(dir, &defaults)
     }
 
     /// Add agent card system prompt
@@ -293,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rules_file_first_match_wins() {
+    fn test_rules_file_loads_all_matching_files() {
         let temp_dir = TempDir::new().unwrap();
 
         // Create both .rules and AGENTS.md
@@ -305,14 +371,14 @@ mod tests {
 
         let builder = LayeredPromptBuilder::new().with_project_rules(temp_dir.path());
 
-        // .rules should win
-        let layer = builder.get_layer("project_rules").unwrap();
-        assert!(layer.contains("Rules content"));
-        assert!(!layer.contains("Agents content"));
+        // Both files should be loaded as separate layers
+        let result = builder.build();
+        assert!(result.contains("Rules content"));
+        assert!(result.contains("Agents content"));
     }
 
     #[test]
-    fn test_rules_file_fallback_to_agents_md() {
+    fn test_rules_file_loads_agents_md() {
         let temp_dir = TempDir::new().unwrap();
 
         // Create only AGENTS.md (no .rules or .cursorrules)
@@ -322,8 +388,8 @@ mod tests {
         let builder = LayeredPromptBuilder::new().with_project_rules(temp_dir.path());
 
         // AGENTS.md should be loaded
-        let layer = builder.get_layer("project_rules").unwrap();
-        assert!(layer.contains("Agents content"));
+        let result = builder.build();
+        assert!(result.contains("Agents content"));
     }
 
     #[test]
@@ -340,8 +406,11 @@ mod tests {
         let builder = LayeredPromptBuilder::new().with_project_rules(temp_dir.path());
 
         // Should skip empty .rules and use AGENTS.md
-        let layer = builder.get_layer("project_rules").unwrap();
-        assert!(layer.contains("Agents content"));
+        let result = builder.build();
+        assert!(result.contains("Agents content"));
+        // Empty .rules should not create a layer
+        let layer_names: Vec<_> = builder.layer_names();
+        assert!(!layer_names.iter().any(|n| n.contains(".rules")));
     }
 
     #[test]
@@ -357,8 +426,8 @@ mod tests {
         let builder = LayeredPromptBuilder::new().with_project_rules(temp_dir.path());
 
         // Should load copilot-instructions.md
-        let layer = builder.get_layer("project_rules").unwrap();
-        assert!(layer.contains("Copilot instructions"));
+        let result = builder.build();
+        assert!(result.contains("Copilot instructions"));
     }
 
     #[test]
@@ -368,7 +437,100 @@ mod tests {
         // No rules files exist
         let builder = LayeredPromptBuilder::new().with_project_rules(temp_dir.path());
 
-        // No project_rules layer should exist
-        assert!(!builder.has_layer("project_rules"));
+        // No project_rules layers should exist
+        let layer_names = builder.layer_names();
+        assert!(!layer_names.iter().any(|n| n.starts_with("project_rules")));
+    }
+
+    #[test]
+    fn test_hierarchical_loading_from_git_root() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a fake git repo structure
+        let git_root = temp_dir.path();
+        std::fs::create_dir(git_root.join(".git")).unwrap();
+
+        // Create nested workspace directory
+        let workspace = git_root.join("src").join("module");
+        std::fs::create_dir_all(&workspace).unwrap();
+
+        // Create AGENTS.md at root and workspace
+        std::fs::write(git_root.join("AGENTS.md"), "Root rules").unwrap();
+        std::fs::write(workspace.join("AGENTS.md"), "Module rules").unwrap();
+
+        let builder = LayeredPromptBuilder::new().with_project_rules(&workspace);
+
+        // Both should be loaded
+        let result = builder.build();
+        assert!(result.contains("Root rules"));
+        assert!(result.contains("Module rules"));
+
+        // Module rules should come after root rules (higher priority)
+        let root_pos = result.find("Root rules").unwrap();
+        let module_pos = result.find("Module rules").unwrap();
+        assert!(
+            root_pos < module_pos,
+            "Root rules should appear before module rules"
+        );
+    }
+
+    #[test]
+    fn test_hierarchical_loading_intermediate_dirs() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a fake git repo structure
+        let git_root = temp_dir.path();
+        std::fs::create_dir(git_root.join(".git")).unwrap();
+
+        // Create nested workspace directory
+        let intermediate = git_root.join("src");
+        let workspace = intermediate.join("module");
+        std::fs::create_dir_all(&workspace).unwrap();
+
+        // Create AGENTS.md at root, intermediate, and workspace
+        std::fs::write(git_root.join("AGENTS.md"), "Root rules").unwrap();
+        std::fs::write(intermediate.join("AGENTS.md"), "Intermediate rules").unwrap();
+        std::fs::write(workspace.join("AGENTS.md"), "Module rules").unwrap();
+
+        let builder = LayeredPromptBuilder::new().with_project_rules(&workspace);
+
+        // All three should be loaded in order
+        let result = builder.build();
+        assert!(result.contains("Root rules"));
+        assert!(result.contains("Intermediate rules"));
+        assert!(result.contains("Module rules"));
+
+        // Priority order: root < intermediate < module
+        let root_pos = result.find("Root rules").unwrap();
+        let inter_pos = result.find("Intermediate rules").unwrap();
+        let module_pos = result.find("Module rules").unwrap();
+        assert!(root_pos < inter_pos, "Root should come before intermediate");
+        assert!(
+            inter_pos < module_pos,
+            "Intermediate should come before module"
+        );
+    }
+
+    #[test]
+    fn test_hierarchical_with_custom_rules_files() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a fake git repo structure
+        let git_root = temp_dir.path();
+        std::fs::create_dir(git_root.join(".git")).unwrap();
+
+        let workspace = git_root.join("subdir");
+        std::fs::create_dir(&workspace).unwrap();
+
+        // Create custom rules files
+        std::fs::write(git_root.join("CUSTOM.md"), "Custom root").unwrap();
+        std::fs::write(workspace.join("CUSTOM.md"), "Custom workspace").unwrap();
+
+        let builder = LayeredPromptBuilder::new()
+            .with_project_rules_hierarchical(&workspace, &["CUSTOM.md".to_string()]);
+
+        let result = builder.build();
+        assert!(result.contains("Custom root"));
+        assert!(result.contains("Custom workspace"));
     }
 }
