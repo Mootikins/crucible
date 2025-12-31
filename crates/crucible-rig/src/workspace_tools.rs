@@ -62,6 +62,33 @@ impl WorkspaceContext {
             Box::new(GrepTool::new(self.clone())),
         ]
     }
+
+    /// Get read-only tools for small models
+    ///
+    /// Returns only: read_file, glob, grep
+    /// Excludes write operations to reduce confusion for smaller models
+    pub fn read_only_tools(&self) -> Vec<Box<dyn rig::tool::ToolDyn>> {
+        vec![
+            Box::new(ReadFileTool::new(self.clone())),
+            Box::new(GlobTool::new(self.clone())),
+            Box::new(GrepTool::new(self.clone())),
+        ]
+    }
+
+    /// Get tools based on model size
+    ///
+    /// Small models get read-only tools only (read_file, glob, grep)
+    /// Medium and large models get all tools
+    pub fn tools_for_size(
+        &self,
+        size: crucible_core::prompts::ModelSize,
+    ) -> Vec<Box<dyn rig::tool::ToolDyn>> {
+        if size.is_read_only() {
+            self.read_only_tools()
+        } else {
+            self.all_tools()
+        }
+    }
 }
 
 // =============================================================================
@@ -699,5 +726,34 @@ mod tests {
         let tools = ctx.all_tools();
 
         assert_eq!(tools.len(), 6);
+    }
+
+    #[test]
+    fn test_workspace_context_read_only_tools() {
+        let temp = TempDir::new().unwrap();
+        let ctx = WorkspaceContext::new(temp.path());
+        let tools = ctx.read_only_tools();
+
+        assert_eq!(tools.len(), 3);
+    }
+
+    #[test]
+    fn test_workspace_context_tools_for_size() {
+        use crucible_core::prompts::ModelSize;
+
+        let temp = TempDir::new().unwrap();
+        let ctx = WorkspaceContext::new(temp.path());
+
+        // Small models get read-only tools (3)
+        let small_tools = ctx.tools_for_size(ModelSize::Small);
+        assert_eq!(small_tools.len(), 3);
+
+        // Medium models get all tools (6)
+        let medium_tools = ctx.tools_for_size(ModelSize::Medium);
+        assert_eq!(medium_tools.len(), 6);
+
+        // Large models get all tools (6)
+        let large_tools = ctx.tools_for_size(ModelSize::Large);
+        assert_eq!(large_tools.len(), 6);
     }
 }
