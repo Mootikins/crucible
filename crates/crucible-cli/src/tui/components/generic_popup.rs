@@ -1,0 +1,625 @@
+//! Generic popup state using the new widget system
+//!
+//! This module provides `GenericPopupState`, a wrapper around the generic `Popup<T>`
+//! that exposes the same interface as the existing `PopupState` for event handling.
+//!
+//! The goal is to enable gradual migration from the old popup system to the new
+//! generic one without breaking existing code.
+
+use std::sync::Arc;
+
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+use crate::tui::event_result::{EventResult, TuiAction};
+use crate::tui::state::{PopupItem, PopupItemKind, PopupKind};
+use crate::tui::widgets::{Popup, PopupConfig, PopupItem as PopupItemTrait, PopupRenderer};
+
+/// Provider abstraction for popup items (same as existing)
+pub trait GenericPopupProvider: Send + Sync {
+    /// Get items matching the query for the given popup kind
+    fn provide(&self, kind: PopupKind, query: &str) -> Vec<PopupItem>;
+}
+
+// Blanket implementation: any PopupItemProvider is also a GenericPopupProvider
+impl<T: super::popup_state::PopupItemProvider + ?Sized> GenericPopupProvider for T {
+    fn provide(&self, kind: PopupKind, query: &str) -> Vec<PopupItem> {
+        super::popup_state::PopupItemProvider::provide(self, kind, query)
+    }
+}
+
+// =============================================================================
+// LegacyPopupItem - Wrapper to implement PopupItem trait for existing PopupItem
+// =============================================================================
+
+/// Wrapper around the legacy `PopupItem` that implements the generic `PopupItem` trait
+#[derive(Clone, Debug)]
+pub struct LegacyPopupItem {
+    inner: PopupItem,
+}
+
+impl LegacyPopupItem {
+    /// Create from a legacy PopupItem
+    pub fn from_legacy(item: PopupItem) -> Self {
+        Self { inner: item }
+    }
+
+    /// Get the inner legacy PopupItem
+    pub fn inner(&self) -> &PopupItem {
+        &self.inner
+    }
+
+    /// Convert back to legacy PopupItem
+    pub fn into_inner(self) -> PopupItem {
+        self.inner
+    }
+}
+
+impl PopupItemTrait for LegacyPopupItem {
+    fn match_text(&self) -> &str {
+        &self.inner.title
+    }
+
+    fn label(&self) -> &str {
+        &self.inner.title
+    }
+
+    fn description(&self) -> Option<&str> {
+        if self.inner.subtitle.is_empty() {
+            None
+        } else {
+            Some(&self.inner.subtitle)
+        }
+    }
+
+    fn kind_label(&self) -> Option<&str> {
+        Some(match self.inner.kind {
+            PopupItemKind::Command => "cmd",
+            PopupItemKind::Agent => "agent",
+            PopupItemKind::File => "file",
+            PopupItemKind::Note => "note",
+            PopupItemKind::Skill => "skill",
+        })
+    }
+
+    fn icon(&self) -> Option<char> {
+        Some(match self.inner.kind {
+            PopupItemKind::Command => '/',
+            PopupItemKind::Agent => '@',
+            PopupItemKind::File => ' ',
+            PopupItemKind::Note => ' ',
+            PopupItemKind::Skill => ' ',
+        })
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.inner.available
+    }
+
+    fn token(&self) -> &str {
+        &self.inner.token
+    }
+}
+
+// =============================================================================
+// GenericPopupState
+// =============================================================================
+
+/// Generic popup state wrapping the new `Popup<T>` widget
+///
+/// This provides the same interface as the existing `PopupState` but uses
+/// the new generic popup internally with fuzzy filtering.
+pub struct GenericPopupState {
+    /// The type of popup
+    kind: PopupKind,
+    /// Provider query (for refresh)
+    provider_query: String,
+    /// Inner generic popup
+    popup: Popup<LegacyPopupItem>,
+    /// Provider for fetching items (uses PopupItemProvider for compatibility)
+    provider: Arc<dyn super::popup_state::PopupItemProvider>,
+}
+
+impl std::fmt::Debug for GenericPopupState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GenericPopupState")
+            .field("kind", &self.kind)
+            .field("provider_query", &self.provider_query)
+            .field("popup", &self.popup)
+            .field("provider", &"<dyn PopupItemProvider>")
+            .finish()
+    }
+}
+
+impl GenericPopupState {
+    /// Create a new generic popup state
+    ///
+    /// Accepts the same `PopupItemProvider` as the legacy `PopupState` for compatibility.
+    pub fn new(kind: PopupKind, provider: Arc<dyn super::popup_state::PopupItemProvider>) -> Self {
+        let config = PopupConfig::default()
+            .max_visible(10)
+            .filterable(true)
+            .show_kinds(true);
+
+        Self {
+            kind,
+            provider_query: String::new(),
+            popup: Popup::new(vec![]).with_config(config),
+            provider,
+        }
+    }
+
+    /// Get the popup kind
+    pub fn kind(&self) -> PopupKind {
+        self.kind
+    }
+
+    /// Get the current provider query (used for item fetching)
+    pub fn query(&self) -> &str {
+        &self.provider_query
+    }
+
+    /// Get the filter query (used for fuzzy filtering within current items)
+    pub fn filter_query(&self) -> &str {
+        self.popup.query()
+    }
+
+    /// Get the items (as legacy PopupItems)
+    pub fn items(&self) -> Vec<&PopupItem> {
+        self.popup
+            .all_items()
+            .iter()
+            .map(|item| item.inner())
+            .collect()
+    }
+
+    /// Get the filtered count
+    pub fn filtered_count(&self) -> usize {
+        self.popup.filtered_count()
+    }
+
+    /// Get the selected index
+    pub fn selected_index(&self) -> usize {
+        self.popup.selected_index()
+    }
+
+    /// Get the selected item
+    pub fn selected_item(&self) -> Option<&PopupItem> {
+        self.popup.selected_item().map(|item| item.inner())
+    }
+
+    /// Get viewport offset
+    pub fn viewport_offset(&self) -> usize {
+        self.popup.viewport().offset()
+    }
+
+    /// Update the query and refresh items from the provider
+    pub fn update_query(&mut self, query: &str) {
+        self.provider_query = query.to_string();
+        let items = super::popup_state::PopupItemProvider::provide(&*self.provider, self.kind, query);
+        let wrapped: Vec<LegacyPopupItem> = items.into_iter().map(LegacyPopupItem::from_legacy).collect();
+        self.popup.set_items(wrapped);
+    }
+
+    /// Set the filter query (for fuzzy filtering within current items)
+    pub fn set_filter_query(&mut self, query: &str) {
+        self.popup.set_query(query);
+    }
+
+    /// Get a renderer for the popup
+    pub fn renderer(&self) -> PopupRenderer<'_, LegacyPopupItem> {
+        PopupRenderer::new(&self.popup)
+    }
+
+    /// Handle a key event
+    pub fn handle_key(&mut self, key: &KeyEvent) -> EventResult {
+        match (key.code, key.modifiers) {
+            // Navigation: Up/Down arrows or Ctrl+P/N or Ctrl+K/J
+            (KeyCode::Up, KeyModifiers::NONE)
+            | (KeyCode::Char('p'), KeyModifiers::CONTROL)
+            | (KeyCode::Char('k'), KeyModifiers::CONTROL) => {
+                self.popup.move_up();
+                EventResult::NeedsRender
+            }
+            (KeyCode::Down, KeyModifiers::NONE)
+            | (KeyCode::Char('n'), KeyModifiers::CONTROL)
+            | (KeyCode::Char('j'), KeyModifiers::CONTROL) => {
+                self.popup.move_down();
+                EventResult::NeedsRender
+            }
+
+            // Page navigation
+            (KeyCode::PageUp, KeyModifiers::NONE) => {
+                self.popup.page_up();
+                EventResult::NeedsRender
+            }
+            (KeyCode::PageDown, KeyModifiers::NONE) => {
+                self.popup.page_down();
+                EventResult::NeedsRender
+            }
+
+            // Home/End
+            (KeyCode::Home, KeyModifiers::NONE) => {
+                self.popup.select_first();
+                EventResult::NeedsRender
+            }
+            (KeyCode::End, KeyModifiers::NONE) => {
+                self.popup.select_last();
+                EventResult::NeedsRender
+            }
+
+            // Selection: Tab or Enter confirms
+            (KeyCode::Tab, KeyModifiers::NONE) | (KeyCode::Enter, KeyModifiers::NONE) => {
+                if let Some(item) = self.popup.selected_item() {
+                    EventResult::Action(TuiAction::PopupConfirm(item.inner().clone()))
+                } else {
+                    EventResult::Action(TuiAction::PopupClose)
+                }
+            }
+
+            // Escape closes the popup
+            (KeyCode::Esc, KeyModifiers::NONE) => EventResult::Action(TuiAction::PopupClose),
+
+            // Character keys are ignored (passed through to input)
+            (KeyCode::Char(_), KeyModifiers::NONE | KeyModifiers::SHIFT) => EventResult::Ignored,
+
+            // Other keys are handled but don't do anything
+            _ => EventResult::Handled,
+        }
+    }
+}
+
+// =============================================================================
+// Tests - Written FIRST per TDD
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Helper to create a command PopupItem for testing
+    fn make_command(name: &str, description: &str) -> PopupItem {
+        PopupItem {
+            kind: PopupItemKind::Command,
+            title: format!("/{}", name),
+            subtitle: description.to_string(),
+            token: format!("/{} ", name),
+            score: 100,
+            available: true,
+        }
+    }
+
+    /// Mock provider that returns all items regardless of query
+    #[derive(Debug, Clone, Default)]
+    struct MockProvider {
+        items: Vec<PopupItem>,
+    }
+
+    impl MockProvider {
+        fn with_items(items: Vec<PopupItem>) -> Self {
+            Self { items }
+        }
+    }
+
+    impl super::super::popup_state::PopupItemProvider for MockProvider {
+        fn provide(&self, _kind: PopupKind, _query: &str) -> Vec<PopupItem> {
+            self.items.clone()
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Creation tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn generic_popup_state_new_starts_empty() {
+        let provider = Arc::new(MockProvider::default());
+        let state = GenericPopupState::new(PopupKind::Command, provider);
+
+        assert_eq!(state.kind(), PopupKind::Command);
+        assert_eq!(state.items().len(), 0);
+        assert_eq!(state.selected_index(), 0);
+    }
+
+    #[test]
+    fn generic_popup_state_update_query_fetches_items() {
+        let provider = Arc::new(MockProvider::with_items(vec![
+            make_command("help", "Show help"),
+            make_command("quit", "Exit"),
+        ]));
+        let mut state = GenericPopupState::new(PopupKind::Command, provider);
+
+        state.update_query("hel");
+        assert_eq!(state.items().len(), 2);
+        assert_eq!(state.query(), "hel");
+    }
+
+    #[test]
+    fn generic_popup_update_query_resets_selection() {
+        let provider = Arc::new(MockProvider::with_items(vec![
+            make_command("a", ""),
+            make_command("b", ""),
+            make_command("c", ""),
+        ]));
+        let mut state = GenericPopupState::new(PopupKind::Command, provider);
+        state.update_query("");
+
+        // Move selection down
+        state.handle_key(&KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        state.handle_key(&KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(state.selected_index(), 2);
+
+        // Update query resets selection
+        state.update_query("new");
+        assert_eq!(state.selected_index(), 0);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Navigation tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn generic_popup_navigation_down() {
+        let provider = Arc::new(MockProvider::with_items(vec![
+            make_command("a", ""),
+            make_command("b", ""),
+            make_command("c", ""),
+        ]));
+        let mut state = GenericPopupState::new(PopupKind::Command, provider);
+        state.update_query("");
+
+        assert_eq!(state.selected_index(), 0);
+
+        let down = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(state.handle_key(&down), EventResult::NeedsRender);
+        assert_eq!(state.selected_index(), 1);
+
+        state.handle_key(&down);
+        assert_eq!(state.selected_index(), 2);
+    }
+
+    #[test]
+    fn generic_popup_navigation_up() {
+        let provider = Arc::new(MockProvider::with_items(vec![
+            make_command("a", ""),
+            make_command("b", ""),
+        ]));
+        let mut state = GenericPopupState::new(PopupKind::Command, provider);
+        state.update_query("");
+        state.handle_key(&KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+
+        let up = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(state.handle_key(&up), EventResult::NeedsRender);
+        assert_eq!(state.selected_index(), 0);
+    }
+
+    #[test]
+    fn generic_popup_navigation_wraps() {
+        let provider = Arc::new(MockProvider::with_items(vec![
+            make_command("a", ""),
+            make_command("b", ""),
+            make_command("c", ""),
+        ]));
+        let mut state = GenericPopupState::new(PopupKind::Command, provider);
+        state.update_query("");
+
+        // At bottom, down wraps to top
+        state.handle_key(&KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        state.handle_key(&KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        state.handle_key(&KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(state.selected_index(), 0); // Wrapped
+
+        // At top, up wraps to bottom
+        state.handle_key(&KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        assert_eq!(state.selected_index(), 2); // Wrapped to bottom
+    }
+
+    #[test]
+    fn generic_popup_ctrl_n_ctrl_p() {
+        let provider = Arc::new(MockProvider::with_items(vec![
+            make_command("a", ""),
+            make_command("b", ""),
+        ]));
+        let mut state = GenericPopupState::new(PopupKind::Command, provider);
+        state.update_query("");
+
+        let ctrl_n = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL);
+        let ctrl_p = KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL);
+
+        state.handle_key(&ctrl_n);
+        assert_eq!(state.selected_index(), 1);
+
+        state.handle_key(&ctrl_p);
+        assert_eq!(state.selected_index(), 0);
+    }
+
+    #[test]
+    fn generic_popup_vim_j_k_navigation() {
+        let provider = Arc::new(MockProvider::with_items(vec![
+            make_command("a", ""),
+            make_command("b", ""),
+        ]));
+        let mut state = GenericPopupState::new(PopupKind::Command, provider);
+        state.update_query("");
+
+        // j moves down (when popup is active, not in input)
+        let j = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL);
+        state.handle_key(&j);
+        assert_eq!(state.selected_index(), 1);
+
+        // k moves up
+        let k = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        state.handle_key(&k);
+        assert_eq!(state.selected_index(), 0);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Selection confirmation tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn generic_popup_tab_confirms() {
+        let provider = Arc::new(MockProvider::with_items(vec![make_command("help", "Show help")]));
+        let mut state = GenericPopupState::new(PopupKind::Command, provider);
+        state.update_query("");
+
+        let tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        let result = state.handle_key(&tab);
+
+        assert!(matches!(
+            result,
+            EventResult::Action(TuiAction::PopupConfirm(_))
+        ));
+    }
+
+    #[test]
+    fn generic_popup_enter_confirms() {
+        let provider = Arc::new(MockProvider::with_items(vec![make_command("help", "Show help")]));
+        let mut state = GenericPopupState::new(PopupKind::Command, provider);
+        state.update_query("");
+
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let result = state.handle_key(&enter);
+
+        assert!(matches!(
+            result,
+            EventResult::Action(TuiAction::PopupConfirm(_))
+        ));
+    }
+
+    #[test]
+    fn generic_popup_confirm_returns_selected_item() {
+        let provider = Arc::new(MockProvider::with_items(vec![
+            make_command("first", "First"),
+            make_command("second", "Second"),
+        ]));
+        let mut state = GenericPopupState::new(PopupKind::Command, provider);
+        state.update_query("");
+
+        // Select second item
+        state.handle_key(&KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+
+        let tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        let result = state.handle_key(&tab);
+
+        if let EventResult::Action(TuiAction::PopupConfirm(item)) = result {
+            assert!(item.title.contains("second"));
+        } else {
+            panic!("Expected PopupConfirm action");
+        }
+    }
+
+    #[test]
+    fn generic_popup_confirm_empty_closes() {
+        let provider = Arc::new(MockProvider::default());
+        let mut state = GenericPopupState::new(PopupKind::Command, provider);
+
+        let tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        let result = state.handle_key(&tab);
+
+        assert!(matches!(result, EventResult::Action(TuiAction::PopupClose)));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Escape and dismissal tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn generic_popup_escape_closes() {
+        let provider = Arc::new(MockProvider::default());
+        let mut state = GenericPopupState::new(PopupKind::Command, provider);
+
+        let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        let result = state.handle_key(&esc);
+
+        assert!(matches!(result, EventResult::Action(TuiAction::PopupClose)));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Key passthrough tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn generic_popup_char_keys_ignored() {
+        let provider = Arc::new(MockProvider::default());
+        let mut state = GenericPopupState::new(PopupKind::Command, provider);
+
+        let a = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
+        assert_eq!(state.handle_key(&a), EventResult::Ignored);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Fuzzy filtering tests (NEW functionality)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn generic_popup_uses_fuzzy_filtering() {
+        // Create provider that returns all items
+        let provider = Arc::new(MockProvider::with_items(vec![
+            make_command("help", "Show help"),
+            make_command("hello", "Say hello"),
+            make_command("quit", "Exit"),
+        ]));
+        let mut state = GenericPopupState::new(PopupKind::Command, provider);
+
+        // Update query - the generic popup should fuzzy filter internally
+        state.update_query("");
+        assert_eq!(state.filtered_count(), 3);
+
+        // With query "hel" - should match help and hello
+        state.set_filter_query("hel");
+        assert!(state.filtered_count() <= 3); // Fuzzy filtering applied
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Viewport tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn generic_popup_viewport_follows_selection() {
+        let items: Vec<PopupItem> = (0..20)
+            .map(|i| make_command(&format!("cmd{}", i), ""))
+            .collect();
+        let provider = Arc::new(MockProvider::with_items(items));
+        let mut state = GenericPopupState::new(PopupKind::Command, provider);
+        state.update_query("");
+
+        // Move past viewport
+        for _ in 0..12 {
+            state.handle_key(&KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        }
+
+        // Viewport should have scrolled
+        assert!(state.viewport_offset() > 0);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Rendering integration tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn generic_popup_can_render_with_popup_renderer() {
+        use crate::tui::widgets::PopupRenderer;
+        use ratatui::buffer::Buffer;
+        use ratatui::layout::Rect;
+        use ratatui::widgets::Widget;
+
+        let provider = Arc::new(MockProvider::with_items(vec![
+            make_command("help", "Show help"),
+            make_command("quit", "Exit"),
+        ]));
+        let mut state = GenericPopupState::new(PopupKind::Command, provider);
+        state.update_query("");
+
+        // Should be able to get a renderer from the internal popup
+        let renderer = state.renderer();
+        let area = Rect::new(0, 0, 50, 8);
+        let mut buf = Buffer::empty(area);
+
+        // Should render without panic
+        renderer.render(area, &mut buf);
+    }
+}

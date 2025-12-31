@@ -2,7 +2,7 @@
 //!
 //! Provides a trait for rendering conversation history with full ratatui control.
 
-use crate::tui::components::{InputBoxWidget, SessionHistoryWidget, StatusBarWidget};
+use crate::tui::components::{GenericPopupState, InputBoxWidget, SessionHistoryWidget, StatusBarWidget};
 use crate::tui::conversation::{render_item_to_lines, ConversationState, StatusKind};
 use crate::tui::dialog::{DialogResult, DialogStack, DialogWidget};
 use crate::tui::notification::NotificationState;
@@ -91,8 +91,10 @@ pub struct ViewState {
     pub at_bottom: bool,
     pub width: u16,
     pub height: u16,
-    /// Popup state for slash commands / agents / files
+    /// Popup state for slash commands / agents / files (legacy)
     pub popup: Option<PopupState>,
+    /// Generic popup state using new popup system
+    pub generic_popup: Option<GenericPopupState>,
     /// Dialog stack for modal dialogs
     pub dialog_stack: DialogStack,
     /// Notification state for file watch events
@@ -113,6 +115,7 @@ impl ViewState {
             width,
             height,
             popup: None,
+            generic_popup: None,
             dialog_stack: DialogStack::new(),
             notifications: NotificationState::new(),
         }
@@ -308,6 +311,26 @@ impl RatatuiView {
     /// Get mutable popup state reference
     pub fn popup_mut(&mut self) -> Option<&mut PopupState> {
         self.state.popup.as_mut()
+    }
+
+    /// Set generic popup state
+    pub fn set_generic_popup(&mut self, popup: Option<GenericPopupState>) {
+        self.state.generic_popup = popup;
+    }
+
+    /// Get generic popup state reference
+    pub fn generic_popup(&self) -> Option<&GenericPopupState> {
+        self.state.generic_popup.as_ref()
+    }
+
+    /// Get mutable generic popup state reference
+    pub fn generic_popup_mut(&mut self) -> Option<&mut GenericPopupState> {
+        self.state.generic_popup.as_mut()
+    }
+
+    /// Check if any popup (legacy or generic) is active
+    pub fn has_popup(&self) -> bool {
+        self.state.popup.is_some() || self.state.generic_popup.is_some()
     }
 
     /// Calculate total content height for scroll bounds
@@ -1042,6 +1065,119 @@ mod tests {
                     line
                 );
             }
+        }
+    }
+
+    // =============================================================================
+    // Generic Popup Integration Tests
+    // =============================================================================
+
+    mod generic_popup_tests {
+        use super::*;
+        use crate::tui::components::{GenericPopupState, PopupItemProvider};
+        use crate::tui::state::PopupKind;
+        use std::sync::Arc;
+
+        /// Mock provider for tests
+        struct MockProvider;
+
+        impl PopupItemProvider for MockProvider {
+            fn provide(&self, _kind: PopupKind, _query: &str) -> Vec<PopupItem> {
+                vec![
+                    PopupItem {
+                        kind: PopupItemKind::Command,
+                        title: "/help".to_string(),
+                        subtitle: "Show help".to_string(),
+                        token: "/help ".to_string(),
+                        score: 100,
+                        available: true,
+                    },
+                    PopupItem {
+                        kind: PopupItemKind::Command,
+                        title: "/clear".to_string(),
+                        subtitle: "Clear history".to_string(),
+                        token: "/clear ".to_string(),
+                        score: 90,
+                        available: true,
+                    },
+                ]
+            }
+        }
+
+        fn mock_provider() -> Arc<dyn PopupItemProvider> {
+            Arc::new(MockProvider)
+        }
+
+        #[test]
+        fn test_view_state_has_generic_popup_field() {
+            let state = ViewState::new("plan", 80, 24);
+            // ViewState should have a generic_popup field that's None by default
+            assert!(state.generic_popup.is_none());
+        }
+
+        #[test]
+        fn test_ratatui_view_set_generic_popup() {
+            let mut view = RatatuiView::new("plan", 80, 24);
+
+            // Create a generic popup
+            let popup = GenericPopupState::new(PopupKind::Command, mock_provider());
+
+            // Set it on the view
+            view.set_generic_popup(Some(popup));
+
+            // Should be set
+            assert!(view.generic_popup().is_some());
+        }
+
+        #[test]
+        fn test_ratatui_view_generic_popup_mutable_access() {
+            let mut view = RatatuiView::new("plan", 80, 24);
+
+            let popup = GenericPopupState::new(PopupKind::Command, mock_provider());
+            view.set_generic_popup(Some(popup));
+
+            // Should be able to get mutable access
+            let popup_mut = view.generic_popup_mut().unwrap();
+            popup_mut.set_filter_query("hel");
+
+            // Filter query should be updated
+            assert_eq!(view.generic_popup().unwrap().filter_query(), "hel");
+        }
+
+        #[test]
+        fn test_ratatui_view_has_popup_checks_both() {
+            let mut view = RatatuiView::new("plan", 80, 24);
+
+            // Neither popup set
+            assert!(!view.has_popup());
+
+            // Set legacy popup
+            let legacy_popup = PopupState::new(PopupKind::Command);
+            view.set_popup(Some(legacy_popup));
+            assert!(view.has_popup());
+
+            // Clear legacy, set generic
+            view.set_popup(None);
+            let generic_popup = GenericPopupState::new(PopupKind::Command, mock_provider());
+            view.set_generic_popup(Some(generic_popup));
+            assert!(view.has_popup());
+
+            // Clear both
+            view.set_generic_popup(None);
+            assert!(!view.has_popup());
+        }
+
+        #[test]
+        fn test_ratatui_view_clear_generic_popup() {
+            let mut view = RatatuiView::new("plan", 80, 24);
+
+            let popup = GenericPopupState::new(PopupKind::Command, mock_provider());
+            view.set_generic_popup(Some(popup));
+            assert!(view.generic_popup().is_some());
+
+            // Clear it
+            view.set_generic_popup(None);
+            assert!(view.generic_popup().is_none());
         }
     }
 }
