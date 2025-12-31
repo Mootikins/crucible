@@ -5,6 +5,7 @@
 pub mod acp;
 pub mod chat;
 pub mod cli;
+pub mod context;
 pub mod discovery;
 pub mod embedding;
 pub mod gateway;
@@ -20,6 +21,7 @@ pub mod providers;
 pub use acp::*;
 pub use chat::*;
 pub use cli::*;
+pub use context::*;
 pub use discovery::*;
 pub use embedding::*;
 pub use gateway::*;
