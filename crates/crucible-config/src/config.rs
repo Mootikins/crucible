@@ -1922,6 +1922,7 @@ allowed_tools = ["search_*"]
                 temperature: Some(0.8),
                 max_tokens: Some(4096),
                 timeout_secs: Some(60),
+                size_aware_prompts: true,
             }),
             ..Config::default()
         };

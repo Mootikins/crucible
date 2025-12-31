@@ -50,6 +50,15 @@ pub struct ChatConfig {
     pub max_tokens: Option<u32>,
     /// API timeout in seconds
     pub timeout_secs: Option<u64>,
+    /// Enable size-aware prompts and tool filtering for small models
+    ///
+    /// When enabled (default), small models (<4B params) get:
+    /// - Explicit tool usage guidance to prevent loops
+    /// - Read-only tools only (read_file, glob, grep)
+    ///
+    /// When disabled, all models get standard prompts and all tools.
+    #[serde(default = "default_true")]
+    pub size_aware_prompts: bool,
 }
 
 fn default_true() -> bool {
@@ -67,6 +76,7 @@ impl Default for ChatConfig {
             temperature: None,
             max_tokens: None,
             timeout_secs: None,
+            size_aware_prompts: true,
         }
     }
 }
@@ -101,5 +111,43 @@ impl ChatConfig {
     /// Get timeout in seconds, using default if not specified
     pub fn timeout_secs(&self) -> u64 {
         self.timeout_secs.unwrap_or(120)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_size_aware_prompts_default_enabled() {
+        let config = ChatConfig::default();
+        assert!(config.size_aware_prompts);
+    }
+
+    #[test]
+    fn test_size_aware_prompts_deserialize_disabled() {
+        let toml = r#"
+            size_aware_prompts = false
+        "#;
+        let config: ChatConfig = toml::from_str(toml).unwrap();
+        assert!(!config.size_aware_prompts);
+    }
+
+    #[test]
+    fn test_size_aware_prompts_deserialize_enabled() {
+        let toml = r#"
+            size_aware_prompts = true
+        "#;
+        let config: ChatConfig = toml::from_str(toml).unwrap();
+        assert!(config.size_aware_prompts);
+    }
+
+    #[test]
+    fn test_size_aware_prompts_missing_defaults_to_true() {
+        let toml = r#"
+            model = "test-model"
+        "#;
+        let config: ChatConfig = toml::from_str(toml).unwrap();
+        assert!(config.size_aware_prompts);
     }
 }
