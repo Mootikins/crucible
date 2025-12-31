@@ -186,7 +186,8 @@ pub async fn execute(
 
     let (storage_result, agent_result) = tokio::join!(
         async {
-            let client = factories::create_surrealdb_storage(&config_for_storage).await?;
+            let handle = factories::get_storage(&config_for_storage).await?;
+            let client = handle.as_embedded().clone();
             factories::initialize_surrealdb_schema(&client).await?;
             Ok::<_, anyhow::Error>(client)
         },
@@ -393,7 +394,8 @@ async fn run_deferred_chat(
 
     // Initialize storage only (agent created later by factory)
     status.update("Initializing storage...");
-    let storage_client = factories::create_surrealdb_storage(&config).await?;
+    let storage_handle = factories::get_storage(&config).await?;
+    let storage_client = storage_handle.as_embedded().clone();
     factories::initialize_surrealdb_schema(&storage_client).await?;
 
     // Background processing (same as non-deferred path)
