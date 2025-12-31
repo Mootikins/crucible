@@ -37,6 +37,7 @@ pub mod agent;
 pub mod completion;
 pub mod crucible_agent;
 pub mod handle;
+pub mod kiln_tools;
 pub mod providers;
 pub mod session;
 pub mod tools;
@@ -44,8 +45,8 @@ pub mod workspace_tools;
 
 // Re-export key types
 pub use agent::{
-    build_agent, build_agent_from_config, build_agent_with_model_size, build_agent_with_tools,
-    AgentBuildError, AgentConfig,
+    build_agent, build_agent_from_config, build_agent_with_kiln_tools, build_agent_with_model_size,
+    build_agent_with_tools, AgentBuildError, AgentConfig,
 };
 pub use completion::RigCompletionBackend;
 pub use crucible_agent::{CrucibleAgent, CrucibleAgentError, CrucibleAgentResult};
@@ -64,4 +65,9 @@ pub use tools::{attach_mcp_tools, discover_crucible_tools, McpToolError, McpTool
 pub use workspace_tools::{
     BashTool, EditFileTool, GlobTool, GrepTool, ReadFileTool, WorkspaceContext, WorkspaceToolError,
     WriteFileTool,
+};
+
+// Re-export kiln tools (for knowledge base access)
+pub use kiln_tools::{
+    KilnContext, KilnToolError, ListNotesTool, ReadNoteTool, SemanticSearchTool,
 };
