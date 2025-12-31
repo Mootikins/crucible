@@ -3,6 +3,7 @@
 //! This module provides utilities for building Rig agents from Crucible's
 //! AgentCard configuration.
 
+use crate::kiln_tools::{KilnContext, ListNotesTool, ReadNoteTool, SemanticSearchTool};
 use crate::workspace_tools::{
     BashTool, EditFileTool, GlobTool, GrepTool, ReadFileTool, WorkspaceContext, WriteFileTool,
 };
@@ -229,11 +230,102 @@ where
     Ok(agent)
 }
 
+/// Build a Rig agent with size-appropriate tools plus optional kiln tools.
+///
+/// This creates an agent with:
+/// - Workspace tools selected based on model size
+/// - Kiln tools (semantic_search, read_note, list_notes) if context provided
+///
+/// # Arguments
+///
+/// * `config` - Agent configuration (model, system prompt, etc.)
+/// * `client` - A Rig client implementing CompletionClient
+/// * `workspace_root` - Root directory for workspace operations
+/// * `model_size` - Model size category for tool selection
+/// * `kiln_ctx` - Optional kiln context for knowledge base tools
+pub fn build_agent_with_kiln_tools<C>(
+    config: &AgentConfig,
+    client: &C,
+    workspace_root: impl AsRef<Path>,
+    model_size: crucible_core::prompts::ModelSize,
+    kiln_ctx: Option<KilnContext>,
+) -> AgentBuildResult<Agent<C::CompletionModel>>
+where
+    C: CompletionClient,
+    C::CompletionModel: CompletionModel<Client = C>,
+{
+    let ctx = WorkspaceContext::new(workspace_root.as_ref());
+
+    let mut builder: AgentBuilder<C::CompletionModel> = client.agent(&config.model);
+
+    // Set preamble (system prompt)
+    builder = builder.preamble(&config.system_prompt);
+
+    // Set temperature if specified
+    if let Some(temp) = config.temperature {
+        builder = builder.temperature(temp);
+    }
+
+    // Add tools based on model size and kiln context
+    match (model_size.is_read_only(), kiln_ctx) {
+        // Small model, no kiln: read-only workspace tools
+        (true, None) => {
+            let agent = builder
+                .tool(ReadFileTool::new(ctx.clone()))
+                .tool(GlobTool::new(ctx.clone()))
+                .tool(GrepTool::new(ctx))
+                .build();
+            Ok(agent)
+        }
+        // Small model, with kiln: read-only workspace + kiln tools
+        (true, Some(kiln)) => {
+            let agent = builder
+                .tool(ReadFileTool::new(ctx.clone()))
+                .tool(GlobTool::new(ctx.clone()))
+                .tool(GrepTool::new(ctx))
+                .tool(SemanticSearchTool::new(kiln.clone()))
+                .tool(ReadNoteTool::new(kiln.clone()))
+                .tool(ListNotesTool::new(kiln))
+                .build();
+            Ok(agent)
+        }
+        // Medium/Large model, no kiln: all workspace tools
+        (false, None) => {
+            let agent = builder
+                .tool(ReadFileTool::new(ctx.clone()))
+                .tool(EditFileTool::new(ctx.clone()))
+                .tool(WriteFileTool::new(ctx.clone()))
+                .tool(BashTool::new(ctx.clone()))
+                .tool(GlobTool::new(ctx.clone()))
+                .tool(GrepTool::new(ctx))
+                .build();
+            Ok(agent)
+        }
+        // Medium/Large model, with kiln: all workspace + kiln tools
+        (false, Some(kiln)) => {
+            let agent = builder
+                .tool(ReadFileTool::new(ctx.clone()))
+                .tool(EditFileTool::new(ctx.clone()))
+                .tool(WriteFileTool::new(ctx.clone()))
+                .tool(BashTool::new(ctx.clone()))
+                .tool(GlobTool::new(ctx.clone()))
+                .tool(GrepTool::new(ctx))
+                .tool(SemanticSearchTool::new(kiln.clone()))
+                .tool(ReadNoteTool::new(kiln.clone()))
+                .tool(ListNotesTool::new(kiln))
+                .build();
+            Ok(agent)
+        }
+    }
+}
+
 /// Build a Rig agent with size-appropriate tools.
 ///
 /// This creates an agent with tools selected based on model size:
 /// - Small models (< 4B): read-only tools (read_file, glob, grep)
 /// - Medium/Large models: all tools including write operations
+///
+/// For agents with kiln/knowledge base access, use `build_agent_with_kiln_tools` instead.
 ///
 /// # Arguments
 ///

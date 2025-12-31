@@ -42,6 +42,9 @@ pub struct AgentInitParams {
     /// Working directory for the agent (where it should operate)
     /// Distinct from kiln_path which is where knowledge is stored.
     pub working_dir: Option<std::path::PathBuf>,
+    /// Optional kiln context for knowledge base access
+    /// When provided, agent will have semantic_search, read_note, list_notes tools
+    pub kiln_context: Option<crucible_rig::KilnContext>,
 }
 
 impl AgentInitParams {
@@ -54,7 +57,19 @@ impl AgentInitParams {
             max_context_tokens: None,
             env_overrides: std::collections::HashMap::new(),
             working_dir: None,
+            kiln_context: None,
         }
+    }
+
+    /// Set kiln context for knowledge base access
+    ///
+    /// When provided, the internal agent will have access to kiln tools:
+    /// - semantic_search: Search notes using embeddings
+    /// - read_note: Read note content from the kiln
+    /// - list_notes: List notes in a directory
+    pub fn with_kiln_context(mut self, ctx: crucible_rig::KilnContext) -> Self {
+        self.kiln_context = Some(ctx);
+        self
     }
 
     /// Set the working directory for the agent
@@ -162,12 +177,12 @@ impl InitializedAgent {
 /// Create an internal agent using the Rig framework
 pub async fn create_internal_agent(
     config: &CliAppConfig,
-    _params: AgentInitParams,
+    params: AgentInitParams,
 ) -> Result<Box<dyn AgentHandle + Send + Sync>> {
     use crucible_config::LlmProvider;
     use crucible_context::{LayeredPromptBuilder, PromptBuilder};
     use crucible_core::prompts::{base_prompt_for_size, ModelSize};
-    use crucible_rig::{build_agent_with_model_size, RigAgentHandle};
+    use crucible_rig::{build_agent_with_kiln_tools, RigAgentHandle};
 
     // Get model name from config
     let model = config
@@ -202,7 +217,7 @@ pub async fn create_internal_agent(
     );
 
     // Get workspace root for project rules loading
-    let workspace_root = _params
+    let workspace_root = params
         .working_dir
         .clone()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| config.kiln_path.clone()));
@@ -295,47 +310,54 @@ pub async fn create_internal_agent(
         })?,
     };
 
+    let has_kiln = params.kiln_context.is_some();
     info!(
-        "Building Rig agent with {:?} tools for: {}",
+        "Building Rig agent with {:?} tools{} for: {}",
         model_size,
+        if has_kiln { " + kiln tools" } else { "" },
         workspace_root.display()
     );
 
-    // Build Rig agent with size-appropriate tools based on client type
+    // Build Rig agent with size-appropriate tools (and kiln tools if context provided)
+    let kiln_ctx = params.kiln_context;
     match client {
         crucible_rig::RigClient::Ollama(ollama_client) => {
-            let agent = build_agent_with_model_size(
+            let agent = build_agent_with_kiln_tools(
                 &agent_config,
                 &ollama_client,
                 &workspace_root,
                 model_size,
+                kiln_ctx,
             )?;
             Ok(Box::new(RigAgentHandle::new(agent)))
         }
         crucible_rig::RigClient::OpenAI(openai_client) => {
-            let agent = build_agent_with_model_size(
+            let agent = build_agent_with_kiln_tools(
                 &agent_config,
                 &openai_client,
                 &workspace_root,
                 model_size,
+                kiln_ctx,
             )?;
             Ok(Box::new(RigAgentHandle::new(agent)))
         }
         crucible_rig::RigClient::OpenAICompat(compat_client) => {
-            let agent = build_agent_with_model_size(
+            let agent = build_agent_with_kiln_tools(
                 &agent_config,
                 &compat_client,
                 &workspace_root,
                 model_size,
+                kiln_ctx,
             )?;
             Ok(Box::new(RigAgentHandle::new(agent)))
         }
         crucible_rig::RigClient::Anthropic(anthropic_client) => {
-            let agent = build_agent_with_model_size(
+            let agent = build_agent_with_kiln_tools(
                 &agent_config,
                 &anthropic_client,
                 &workspace_root,
                 model_size,
+                kiln_ctx,
             )?;
             Ok(Box::new(RigAgentHandle::new(agent)))
         }
