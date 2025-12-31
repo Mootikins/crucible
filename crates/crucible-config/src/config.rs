@@ -645,6 +645,10 @@ pub struct CliAppConfig {
     /// Processing configuration
     #[serde(default)]
     pub processing: ProcessingConfig,
+
+    /// Context configuration (rules files, etc.)
+    #[serde(default)]
+    pub context: Option<ContextConfig>,
 }
 
 fn default_kiln_path() -> std::path::PathBuf {
@@ -664,6 +668,7 @@ impl Default for CliAppConfig {
             cli: CliConfig::default(),
             logging: None,
             processing: ProcessingConfig::default(),
+            context: None,
         }
     }
 }
