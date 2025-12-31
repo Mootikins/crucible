@@ -180,9 +180,15 @@ pub async fn create_internal_agent(
             LlmProvider::Anthropic => "claude-3-5-sonnet-20241022".to_string(),
         });
 
-    // Detect model size and get appropriate prompt
-    let model_size = ModelSize::from_model_name(&model);
-    info!("Detected model size: {:?} for {}", model_size, model);
+    // Detect model size (or use Medium if size-aware prompts disabled)
+    let model_size = if config.chat.size_aware_prompts {
+        let detected = ModelSize::from_model_name(&model);
+        info!("Detected model size: {:?} for {}", detected, model);
+        detected
+    } else {
+        debug!("Size-aware prompts disabled, using standard prompts and all tools");
+        ModelSize::Medium
+    };
 
     // Build layered system prompt
     let mut prompt_builder = LayeredPromptBuilder::new();
