@@ -144,6 +144,34 @@ pub enum SessionEvent {
     },
 
     // ─────────────────────────────────────────────────────────────────────
+    // Interaction events
+    // ─────────────────────────────────────────────────────────────────────
+    /// Agent/tool requests structured user interaction.
+    ///
+    /// This event carries an [`InteractionRequest`] that describes what kind of
+    /// input is needed (question, permission, edit, show). The UI should render
+    /// an appropriate widget and send back an [`InteractionResponse`].
+    ///
+    /// [`InteractionRequest`]: crate::interaction::InteractionRequest
+    /// [`InteractionResponse`]: crate::interaction::InteractionResponse
+    InteractionRequested {
+        /// Unique ID for correlating request with response.
+        request_id: String,
+        /// The interaction request details.
+        request: crate::interaction::InteractionRequest,
+    },
+
+    /// User responded to an interaction request.
+    ///
+    /// Sent after the UI collects user input for an [`InteractionRequested`] event.
+    InteractionCompleted {
+        /// The request ID this response corresponds to.
+        request_id: String,
+        /// The user's response.
+        response: crate::interaction::InteractionResponse,
+    },
+
+    // ─────────────────────────────────────────────────────────────────────
     // Tool events
     // ─────────────────────────────────────────────────────────────────────
     /// Tool was called.
@@ -459,6 +487,8 @@ impl SessionEvent {
             Self::PreParse { .. } => "pre_parse",
             Self::PreLlmCall { .. } => "pre_llm_call",
             Self::AwaitingInput { .. } => "awaiting_input",
+            Self::InteractionRequested { .. } => "interaction_requested",
+            Self::InteractionCompleted { .. } => "interaction_completed",
             Self::ToolCalled { .. } => "tool_called",
             Self::ToolCompleted { .. } => "tool_completed",
             Self::SessionStarted { .. } => "session_started",
@@ -502,6 +532,12 @@ impl SessionEvent {
             Self::PreParse { path, .. } => format!("pre:parse:{}", path.display()),
             Self::PreLlmCall { model, .. } => format!("pre:llm:{}", model),
             Self::AwaitingInput { input_type, .. } => format!("await:{}", input_type),
+            Self::InteractionRequested { request_id, request } => {
+                format!("interaction:{}:{}", request.kind(), request_id)
+            }
+            Self::InteractionCompleted { request_id, .. } => {
+                format!("interaction:completed:{}", request_id)
+            }
             Self::ToolCalled { name, .. } => name.clone(),
             Self::ToolCompleted { name, .. } => name.clone(),
             Self::SessionStarted { config, .. } => format!("session:{}", config.session_id),
@@ -579,6 +615,16 @@ impl SessionEvent {
         matches!(
             self,
             Self::PreToolCall { .. } | Self::PreParse { .. } | Self::PreLlmCall { .. }
+        )
+    }
+
+    /// Check if this is an interaction event.
+    ///
+    /// Interaction events represent structured user input requests and responses.
+    pub fn is_interaction_event(&self) -> bool {
+        matches!(
+            self,
+            Self::InteractionRequested { .. } | Self::InteractionCompleted { .. }
         )
     }
 

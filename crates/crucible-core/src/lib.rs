@@ -7,6 +7,7 @@ pub mod database;
 pub mod enrichment;
 pub mod events;
 pub mod hashing;
+pub mod interaction;
 pub mod merkle;
 pub mod note;
 pub mod parser;
@@ -178,6 +179,12 @@ pub use parser::{
     // Note: MarkdownParser trait is exported from traits:: module above
 };
 pub use properties::{AttributeValue, PropertyMap};
+
+// Re-export interaction protocol types
+pub use interaction::{
+    ArtifactFormat, AskRequest, AskResponse, EditRequest, EditResponse, InteractionRequest,
+    InteractionResponse, PermAction, PermRequest, PermResponse, PermissionScope, ShowRequest,
+};
 
 // Re-export event system types
 pub use events::{
