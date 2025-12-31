@@ -97,6 +97,9 @@ impl EventToMarkdown for SessionEvent {
             SessionEvent::PreParse { .. } => "PreParse",
             SessionEvent::PreLlmCall { .. } => "PreLlmCall",
             SessionEvent::AwaitingInput { .. } => "AwaitingInput",
+            // Interaction events
+            SessionEvent::InteractionRequested { .. } => "InteractionRequested",
+            SessionEvent::InteractionCompleted { .. } => "InteractionCompleted",
         }
     }
 
@@ -321,6 +324,33 @@ impl EventToMarkdown for SessionEvent {
                     "**Input Type:** {}\n**Context:** {}\n",
                     input_type,
                     context.as_deref().unwrap_or("(none)")
+                )
+            }
+
+            // Interaction events
+            SessionEvent::InteractionRequested {
+                request_id,
+                request,
+            } => {
+                format!(
+                    "**Request ID:** {}\n**Kind:** {}\n",
+                    request_id,
+                    request.kind()
+                )
+            }
+            SessionEvent::InteractionCompleted {
+                request_id,
+                response,
+            } => {
+                let response_summary = match response {
+                    crucible_core::InteractionResponse::Ask(_) => "Ask response",
+                    crucible_core::InteractionResponse::Edit(_) => "Edit response",
+                    crucible_core::InteractionResponse::Permission(_) => "Permission response",
+                    crucible_core::InteractionResponse::Cancelled => "Cancelled",
+                };
+                format!(
+                    "**Request ID:** {}\n**Response:** {}\n",
+                    request_id, response_summary
                 )
             }
         };
