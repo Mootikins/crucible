@@ -229,6 +229,76 @@ where
     Ok(agent)
 }
 
+/// Build a Rig agent with size-appropriate tools.
+///
+/// This creates an agent with tools selected based on model size:
+/// - Small models (< 4B): read-only tools (read_file, glob, grep)
+/// - Medium/Large models: all tools including write operations
+///
+/// # Arguments
+///
+/// * `config` - Agent configuration (model, system prompt, etc.)
+/// * `client` - A Rig client implementing CompletionClient
+/// * `workspace_root` - Root directory for workspace operations
+/// * `model_size` - Model size category for tool selection
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use crucible_rig::agent::{build_agent_with_model_size, AgentConfig};
+/// use crucible_core::prompts::ModelSize;
+/// use rig::providers::ollama;
+///
+/// let config = AgentConfig::new("granite-3b", "You are a helpful assistant.");
+/// let client = ollama::Client::new();
+/// let agent = build_agent_with_model_size(&config, &client, "/path/to/project", ModelSize::Small)?;
+/// ```
+pub fn build_agent_with_model_size<C>(
+    config: &AgentConfig,
+    client: &C,
+    workspace_root: impl AsRef<Path>,
+    model_size: crucible_core::prompts::ModelSize,
+) -> AgentBuildResult<Agent<C::CompletionModel>>
+where
+    C: CompletionClient,
+    C::CompletionModel: CompletionModel<Client = C>,
+{
+    let ctx = WorkspaceContext::new(workspace_root.as_ref());
+
+    let mut builder: AgentBuilder<C::CompletionModel> = client.agent(&config.model);
+
+    // Set preamble (system prompt)
+    builder = builder.preamble(&config.system_prompt);
+
+    // Set temperature if specified
+    if let Some(temp) = config.temperature {
+        builder = builder.temperature(temp);
+    }
+
+    // Add tools based on model size
+    // Note: Rig's AgentBuilder requires static tool types, so we conditionally add them
+    if model_size.is_read_only() {
+        // Small models: read-only tools only
+        let agent = builder
+            .tool(ReadFileTool::new(ctx.clone()))
+            .tool(GlobTool::new(ctx.clone()))
+            .tool(GrepTool::new(ctx))
+            .build();
+        Ok(agent)
+    } else {
+        // Medium/Large models: all tools
+        let agent = builder
+            .tool(ReadFileTool::new(ctx.clone()))
+            .tool(EditFileTool::new(ctx.clone()))
+            .tool(WriteFileTool::new(ctx.clone()))
+            .tool(BashTool::new(ctx.clone()))
+            .tool(GlobTool::new(ctx.clone()))
+            .tool(GrepTool::new(ctx))
+            .build();
+        Ok(agent)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
