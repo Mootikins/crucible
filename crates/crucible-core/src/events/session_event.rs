@@ -532,7 +532,10 @@ impl SessionEvent {
             Self::PreParse { path, .. } => format!("pre:parse:{}", path.display()),
             Self::PreLlmCall { model, .. } => format!("pre:llm:{}", model),
             Self::AwaitingInput { input_type, .. } => format!("await:{}", input_type),
-            Self::InteractionRequested { request_id, request } => {
+            Self::InteractionRequested {
+                request_id,
+                request,
+            } => {
                 format!("interaction:{}:{}", request.kind(), request_id)
             }
             Self::InteractionCompleted { request_id, .. } => {

@@ -15,4 +15,6 @@ pub use client::DaemonClient;
 pub use storage::DaemonStorageClient;
 
 // Legacy re-exports for backwards compatibility
-pub use crucible_daemon::{is_daemon_running as is_legacy_daemon_running, socket_path as legacy_socket_path};
+pub use crucible_daemon::{
+    is_daemon_running as is_legacy_daemon_running, socket_path as legacy_socket_path,
+};
