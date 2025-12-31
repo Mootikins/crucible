@@ -63,7 +63,9 @@ pub async fn execute(
     // Initialize storage using factory pattern
     output::info("Initializing storage...");
     let storage_handle = factories::get_storage(&config).await?;
-    let storage_client = storage_handle.as_embedded().clone();
+    let storage_client = storage_handle
+        .get_embedded_for_operation(&config, "file processing")
+        .await?;
     factories::initialize_surrealdb_schema(&storage_client).await?;
     output::success("Storage initialized");
 
