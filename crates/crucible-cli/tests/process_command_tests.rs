@@ -63,6 +63,8 @@ fn create_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfig {
         logging: None,
         processing: ProcessingConfig::default(),
         providers: ProvidersConfig::default(),
+        context: None,
+        storage: None,
     }
 }
 

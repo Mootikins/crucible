@@ -328,6 +328,13 @@ async fn main() -> Result<()> {
             commands::skills::execute(config, cmd).await?;
         }
 
+        Some(Commands::DbServer {
+            socket,
+            idle_timeout,
+        }) => {
+            commands::db_server::execute(config, socket, idle_timeout).await?;
+        }
+
         None => {
             // Default to chat when no command is provided
             commands::chat::execute(
