@@ -233,3 +233,100 @@ async fn test_new_connection_fails_after_shutdown() {
         "New connection should fail after server shutdown"
     );
 }
+
+/// Test multiple clients querying the same kiln concurrently
+///
+/// This tests the multi-session capability where multiple CLI instances
+/// can share the same daemon and query the same kiln.
+#[tokio::test]
+async fn test_multiple_clients_query_same_kiln() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    let socket_path = server.socket_path.clone();
+
+    // Create a temp kiln directory with a valid structure
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    // Open the kiln first via one client
+    let setup_client = DaemonClient::connect_to(&socket_path)
+        .await
+        .expect("Failed to connect for setup");
+
+    setup_client
+        .kiln_open(kiln_dir.path())
+        .await
+        .expect("Failed to open kiln");
+
+    // Spawn 3 concurrent clients that all query the same kiln
+    let mut handles = vec![];
+    for i in 0..3 {
+        let socket = socket_path.clone();
+        let kiln_path = kiln_dir.path().to_path_buf();
+        let handle = tokio::spawn(async move {
+            let client = DaemonClient::connect_to(&socket)
+                .await
+                .unwrap_or_else(|_| panic!("Client {} failed to connect", i));
+
+            // Each client queries the kiln
+            // Note: This will return an empty result since we haven't indexed anything,
+            // but it verifies the query RPC works across multiple sessions
+            let result = client
+                .query(&kiln_path, "SELECT * FROM notes LIMIT 1")
+                .await;
+
+            // Query should succeed (even if empty results)
+            assert!(
+                result.is_ok(),
+                "Client {} query failed: {:?}",
+                i,
+                result.err()
+            );
+        });
+        handles.push(handle);
+    }
+
+    // Wait for all clients to complete
+    for (i, handle) in handles.into_iter().enumerate() {
+        handle
+            .await
+            .unwrap_or_else(|e| panic!("Client {} task panicked: {:?}", i, e));
+    }
+
+    // Verify kiln appears in list
+    let list = setup_client.kiln_list().await.expect("kiln_list failed");
+    assert!(!list.is_empty(), "Kiln should be in list after opening");
+
+    server.shutdown().await;
+}
+
+/// Test StorageClient via DaemonStorageClient with multiple sessions
+///
+/// This tests the full StorageClient trait implementation through the daemon,
+/// simulating how the CLI's get_storage(daemon mode) works.
+#[tokio::test]
+async fn test_daemon_storage_client_multi_session() {
+    use crucible_core::traits::StorageClient;
+    use crucible_daemon_client::DaemonStorageClient;
+    use std::sync::Arc;
+
+    let server = TestServer::start().await.expect("Failed to start server");
+    let socket_path = server.socket_path.clone();
+
+    // Create a temp kiln directory
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    // Create two DaemonStorageClient instances pointing to the same kiln
+    let client1 = Arc::new(DaemonClient::connect_to(&socket_path).await.expect("client1"));
+    let client2 = Arc::new(DaemonClient::connect_to(&socket_path).await.expect("client2"));
+
+    let storage1 = DaemonStorageClient::new(client1, kiln_dir.path().to_path_buf());
+    let storage2 = DaemonStorageClient::new(client2, kiln_dir.path().to_path_buf());
+
+    // Both should be able to query
+    let result1 = storage1.query_raw("SELECT count() FROM notes").await;
+    let result2 = storage2.query_raw("SELECT count() FROM notes").await;
+
+    assert!(result1.is_ok(), "Storage1 query failed: {:?}", result1.err());
+    assert!(result2.is_ok(), "Storage2 query failed: {:?}", result2.err());
+
+    server.shutdown().await;
+}
