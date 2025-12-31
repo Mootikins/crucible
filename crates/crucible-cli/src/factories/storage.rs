@@ -242,6 +242,31 @@ impl StorageHandle {
     pub fn is_daemon(&self) -> bool {
         matches!(self, StorageHandle::Daemon(_))
     }
+
+    /// Get embedded handle, creating fallback if in daemon mode
+    ///
+    /// For operations that require full SurrealClientHandle (schema init,
+    /// pipeline creation, etc.), this creates a temporary embedded connection
+    /// when running in daemon mode. Logs a warning about the fallback.
+    ///
+    /// This enables graceful degradation: daemon mode works for multi-session
+    /// queries, but heavy operations transparently use embedded.
+    pub async fn get_embedded_for_operation(
+        &self,
+        config: &crate::config::CliConfig,
+        operation: &str,
+    ) -> Result<adapters::SurrealClientHandle> {
+        match self {
+            StorageHandle::Embedded(h) => Ok(h.clone()),
+            StorageHandle::Daemon(_) => {
+                tracing::warn!(
+                    "Operation '{}' requires embedded storage; creating fallback connection",
+                    operation
+                );
+                create_surrealdb_storage(config).await
+            }
+        }
+    }
 }
 
 /// Get storage based on configuration mode
