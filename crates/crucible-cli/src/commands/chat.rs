@@ -173,31 +173,34 @@ pub async fn execute(
         None
     };
 
-    // PARALLEL INITIALIZATION: Run storage init and agent creation concurrently
-    let init_msg = if use_internal {
-        "Initializing storage and LLM provider..."
+    // Initialize storage first (needed for kiln tools in internal agents)
+    status.update("Initializing storage...");
+    let storage_handle = factories::get_storage(&config).await?;
+    let storage_client = storage_handle
+        .get_embedded_for_operation(&config, "chat initialization")
+        .await?;
+    factories::initialize_surrealdb_schema(&storage_client).await?;
+
+    // For internal agents, create kiln context for knowledge tools
+    let initialized_agent = if use_internal {
+        status.update("Initializing LLM provider with kiln tools...");
+
+        // Create kiln context for knowledge base access
+        let embedding_provider = factories::get_or_create_embedding_provider(&config).await?;
+        let knowledge_repo = storage_client.as_knowledge_repository();
+        let kiln_ctx = crucible_rig::KilnContext::new(
+            &config.kiln_path,
+            knowledge_repo,
+            embedding_provider,
+        );
+
+        let agent_params = agent_params.with_kiln_context(kiln_ctx);
+        factories::create_agent(&config, agent_params).await?
     } else {
-        "Initializing storage and discovering agent..."
+        // ACP agents don't need kiln tools directly (they use MCP)
+        status.update("Discovering agent...");
+        factories::create_agent(&config, agent_params).await?
     };
-    status.update(init_msg);
-
-    let config_for_storage = config.clone();
-    let config_for_agent = config.clone();
-
-    let (storage_result, agent_result) = tokio::join!(
-        async {
-            let handle = factories::get_storage(&config_for_storage).await?;
-            let client = handle
-                .get_embedded_for_operation(&config_for_storage, "chat initialization")
-                .await?;
-            factories::initialize_surrealdb_schema(&client).await?;
-            Ok::<_, anyhow::Error>(client)
-        },
-        factories::create_agent(&config_for_agent, agent_params)
-    );
-
-    let storage_client = storage_result?;
-    let initialized_agent = agent_result?;
 
     // Quick sync check + background processing (unless --no-process or --no-context)
     let bg_progress: Option<BackgroundProgress> = if !no_process && !no_context {
