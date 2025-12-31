@@ -221,9 +221,65 @@ profile = "development"  # Active profile
 # Production-specific settings
 ```
 
+## Storage Modes
+
+Crucible supports two storage modes that control how the CLI connects to SurrealDB:
+
+### Embedded Mode (Default)
+
+```toml
+[storage]
+mode = "embedded"
+```
+
+The CLI connects directly to SurrealDB in-process. This is simple and fast for single-session use:
+
+- **Pros**: Fast startup, no extra processes, simple setup
+- **Cons**: File locked to one session, cannot run multiple cru commands simultaneously
+
+Use embedded mode when:
+- Running a single CLI session at a time
+- Using scripts that call cru commands sequentially
+- Maximum simplicity is desired
+
+### Daemon Mode
+
+```toml
+[storage]
+mode = "daemon"
+idle_timeout_secs = 300  # Optional, default 5 minutes
+```
+
+The CLI connects through a shared daemon process that manages the database. The daemon is automatically started when needed and shuts down after `idle_timeout_secs` of inactivity with no connections.
+
+- **Pros**: Multiple concurrent CLI sessions, shared connection pooling, better for workflows
+- **Cons**: Slightly slower initial connection (may need to start daemon), extra process
+
+Use daemon mode when:
+- Running multiple cru commands in parallel (e.g., in separate terminals)
+- Using editor integrations that query while you work
+- Running background processing while using the TUI
+
+### Socket Location
+
+The daemon socket is created at:
+- `$XDG_RUNTIME_DIR/crucible-db.sock` (if XDG_RUNTIME_DIR is set)
+- `/tmp/crucible-db.sock` (fallback)
+
+### Daemon Management
+
+The daemon is managed automatically. For manual control:
+
+```bash
+# The daemon starts automatically when needed
+# To force shutdown, kill the db-server process
+pkill -f "cru db-server"
+```
+
 ## Tips
 
 1. **Secure API keys**: Use `{env:VAR}` syntax so secrets never appear in config files
 2. **Use file references** for shared configs: `gateway = "{file:mcps.toml}"`
 3. **Test your config**: Run `cru config show` to see effective configuration
 4. **Validate**: Run `cru config validate` to check for errors
+5. **Use daemon mode** if you frequently run multiple cru commands at once
