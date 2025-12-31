@@ -1,8 +1,9 @@
 //! Core configuration types and structures.
 
 use crate::components::{
-    AcpConfig, ChatConfig, CliConfig, DiscoveryPathsConfig, EmbeddingConfig, EmbeddingProviderType,
-    GatewayConfig, HooksConfig, LlmConfig, LlmProvider, LlmProviderType, ProvidersConfig,
+    AcpConfig, ChatConfig, CliConfig, ContextConfig, DiscoveryPathsConfig, EmbeddingConfig,
+    EmbeddingProviderType, GatewayConfig, HooksConfig, LlmConfig, LlmProvider, LlmProviderType,
+    ProvidersConfig,
 };
 use crate::includes::IncludeConfig;
 use crate::{EnrichmentConfig, ProfileConfig};
@@ -179,6 +180,10 @@ pub struct Config {
     #[serde(default)]
     pub hooks: Option<HooksConfig>,
 
+    /// Context configuration (project rules, etc.)
+    #[serde(default)]
+    pub context: Option<ContextConfig>,
+
     /// Custom configuration values.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub custom: HashMap<String, serde_json::Value>,
@@ -202,6 +207,7 @@ impl Default for Config {
             discovery: None,
             gateway: None,
             hooks: None,
+            context: None,
             custom: HashMap::new(),
         }
     }
@@ -379,6 +385,11 @@ impl Config {
     /// Get the effective hooks configuration.
     pub fn hooks_config(&self) -> Option<&HooksConfig> {
         self.hooks.as_ref()
+    }
+
+    /// Get the effective context configuration.
+    pub fn context_config(&self) -> Option<&ContextConfig> {
+        self.context.as_ref()
     }
 
     /// Get the effective LLM configuration.
