@@ -662,10 +662,7 @@ mod tests {
             idle_timeout,
         }) = cli.command
         {
-            assert_eq!(
-                socket,
-                Some(std::path::PathBuf::from("/tmp/test.sock"))
-            );
+            assert_eq!(socket, Some(std::path::PathBuf::from("/tmp/test.sock")));
             assert_eq!(idle_timeout, 600);
         } else {
             panic!("Expected DbServer command");

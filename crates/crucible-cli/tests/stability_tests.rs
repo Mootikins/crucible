@@ -29,8 +29,8 @@ use std::time::{Duration, Instant};
 #[test]
 #[ignore = "stability test - run explicitly"]
 fn stability_harness_iterations() {
-    use crucible_cli::tui::testing::Harness;
     use crossterm::event::KeyCode;
+    use crucible_cli::tui::testing::Harness;
 
     let iterations: usize = std::env::var("STABILITY_ITERATIONS")
         .ok()
@@ -178,9 +178,9 @@ fn stability_with_streaming() {
 #[test]
 #[ignore = "popup stress test"]
 fn stability_popup_fuzzy() {
+    use crossterm::event::KeyCode;
     use crucible_cli::tui::state::{PopupItem, PopupKind};
     use crucible_cli::tui::testing::Harness;
-    use crossterm::event::KeyCode;
 
     let iterations: usize = std::env::var("STABILITY_ITERATIONS")
         .ok()
@@ -191,13 +191,9 @@ fn stability_popup_fuzzy() {
 
     // Create many popup items to stress fuzzy matching
     let items: Vec<PopupItem> = (0..100)
-        .map(|i| PopupItem {
-            kind: crucible_cli::tui::state::PopupItemKind::Command,
-            title: format!("command-{:03}", i),
-            subtitle: format!("Description for command {}", i),
-            token: format!("cmd{:03}", i),
-            score: 0,
-            available: true,
+        .map(|i| {
+            PopupItem::cmd(format!("command-{:03}", i))
+                .desc(format!("Description for command {}", i))
         })
         .collect();
 
@@ -265,15 +261,18 @@ fn get_memory_kb() -> Option<usize> {
 #[test]
 #[ignore = "memory leak detection"]
 fn stability_memory_leaks() {
-    use crucible_cli::tui::testing::Harness;
     use crossterm::event::KeyCode;
+    use crucible_cli::tui::testing::Harness;
 
     let iterations: usize = std::env::var("STABILITY_ITERATIONS")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(5000);
 
-    println!("Running {} iterations for memory leak detection...", iterations);
+    println!(
+        "Running {} iterations for memory leak detection...",
+        iterations
+    );
 
     let initial_mem = get_memory_kb();
     let mut peak_mem = initial_mem;
@@ -315,12 +314,19 @@ fn stability_memory_leaks() {
         println!("Initial: {} KB", initial);
         println!("Final:   {} KB", final_m);
         println!("Peak:    {} KB", peak_mem.unwrap_or(0));
-        println!("Growth:  {} KB ({:.2} bytes/iter)", growth, growth_per_iter * 1024.0);
+        println!(
+            "Growth:  {} KB ({:.2} bytes/iter)",
+            growth,
+            growth_per_iter * 1024.0
+        );
 
         // Warn if growth is excessive (> 1 byte per iteration average)
         if growth_per_iter > 1.0 {
             println!("\n⚠️  WARNING: Potential memory leak detected!");
-            println!("    Growth rate: {:.2} KB/1000 iterations", growth_per_iter * 1000.0);
+            println!(
+                "    Growth rate: {:.2} KB/1000 iterations",
+                growth_per_iter * 1000.0
+            );
         } else {
             println!("\n✓ Memory usage appears stable");
         }
@@ -339,8 +345,8 @@ fn stability_memory_leaks() {
 #[test]
 #[ignore = "soak test - runs for hours"]
 fn stability_soak_test() {
-    use crucible_cli::tui::testing::Harness;
     use crossterm::event::KeyCode;
+    use crucible_cli::tui::testing::Harness;
 
     let duration_hours: f64 = std::env::var("STABILITY_DURATION_HOURS")
         .ok()
@@ -415,11 +421,17 @@ fn stability_soak_test() {
     println!("Duration:   {:?}", elapsed);
     println!("Iterations: {}", iterations);
     println!("Errors:     {}", errors);
-    println!("Rate:       {:.0} iter/sec", iterations as f64 / elapsed.as_secs_f64());
+    println!(
+        "Rate:       {:.0} iter/sec",
+        iterations as f64 / elapsed.as_secs_f64()
+    );
 
     if let (Some(init), Some(fin)) = (initial_mem, final_mem) {
         let growth = fin as i64 - init as i64;
-        println!("Memory:     {} KB -> {} KB (growth: {} KB)", init, fin, growth);
+        println!(
+            "Memory:     {} KB -> {} KB (growth: {} KB)",
+            init, fin, growth
+        );
     }
 
     assert_eq!(errors, 0, "Soak test encountered {} errors", errors);
@@ -437,8 +449,8 @@ fn stability_piped_input() {
     use std::process::{Command, Stdio};
 
     // Find binary
-    let binary = std::env::var("CRUCIBLE_BIN")
-        .unwrap_or_else(|_| "./target/release/cru".to_string());
+    let binary =
+        std::env::var("CRUCIBLE_BIN").unwrap_or_else(|_| "./target/release/cru".to_string());
 
     if !std::path::Path::new(&binary).exists() {
         println!("Binary not found at {}, trying debug...", binary);
@@ -488,8 +500,7 @@ fn stability_multiline_pipe() {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    let binary = std::env::var("CRUCIBLE_BIN")
-        .unwrap_or_else(|_| "./target/debug/cru".to_string());
+    let binary = std::env::var("CRUCIBLE_BIN").unwrap_or_else(|_| "./target/debug/cru".to_string());
 
     if !std::path::Path::new(&binary).exists() {
         println!("Skipping: binary not found");

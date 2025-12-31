@@ -113,7 +113,8 @@ impl ModelTestConfig {
 /// Contract: Model produces non-empty response within timeout
 async fn test_basic_response_contract(config: &ModelTestConfig) -> Result<(), String> {
     let client = config.create_client();
-    let agent_config = AgentConfig::new(&config.model_id, "You are a helpful assistant. Be concise.");
+    let agent_config =
+        AgentConfig::new(&config.model_id, "You are a helpful assistant. Be concise.");
     let temp_dir = TempDir::new().map_err(|e| e.to_string())?;
 
     let agent = build_agent_with_tools(&agent_config, &client, temp_dir.path())
@@ -340,7 +341,10 @@ async fn contract_streaming_order() {
 /// Contract: Model maintains context across multiple turns
 async fn test_multi_turn_context_contract(config: &ModelTestConfig) -> Result<(), String> {
     let client = config.create_client();
-    let agent_config = AgentConfig::new(&config.model_id, "You are a helpful assistant. Remember what the user tells you.");
+    let agent_config = AgentConfig::new(
+        &config.model_id,
+        "You are a helpful assistant. Remember what the user tells you.",
+    );
     let temp_dir = TempDir::new().map_err(|e| e.to_string())?;
 
     let agent = build_agent_with_tools(&agent_config, &client, temp_dir.path())
@@ -388,7 +392,10 @@ async fn test_multi_turn_context_contract(config: &ModelTestConfig) -> Result<()
 #[ignore = "requires LLM endpoint"]
 async fn contract_multi_turn_context() {
     let config = ModelTestConfig::from_env();
-    println!("Testing multi-turn context contract with {}", config.model_id);
+    println!(
+        "Testing multi-turn context contract with {}",
+        config.model_id
+    );
 
     match test_multi_turn_context_contract(&config).await {
         Ok(()) => println!("✓ Multi-turn context contract passed"),
@@ -406,7 +413,10 @@ async fn run_contract_suite(config: &ModelTestConfig) -> (usize, usize, Vec<Stri
     let mut failed = 0;
     let mut failures = Vec::new();
 
-    println!("\n=== Contract Suite: {} ({}) ===\n", config.name, config.model_id);
+    println!(
+        "\n=== Contract Suite: {} ({}) ===\n",
+        config.name, config.model_id
+    );
 
     // Basic response
     print!("  Basic response... ");

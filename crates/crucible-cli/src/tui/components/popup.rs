@@ -12,7 +12,7 @@
 //! - Character input to filter results
 
 use crate::tui::components::{DialogAction, InteractiveWidget, WidgetAction, WidgetEventResult};
-use crate::tui::state::{PopupItemKind, PopupState};
+use crate::tui::state::PopupState;
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use ratatui::{
     buffer::Buffer,
@@ -73,13 +73,7 @@ impl Widget for PopupWidget<'_> {
                 ));
 
                 // Kind label
-                let kind_label = match item.kind {
-                    PopupItemKind::Command => "[cmd]",
-                    PopupItemKind::Agent => "[agent]",
-                    PopupItemKind::File => "[file]",
-                    PopupItemKind::Note => "[note]",
-                    PopupItemKind::Skill => "[skill]",
-                };
+                let kind_label = format!("[{}]", item.kind_label());
                 spans.push(Span::raw(" "));
                 spans.push(Span::styled(
                     kind_label,
@@ -89,7 +83,7 @@ impl Widget for PopupWidget<'_> {
                 // Title (with selection highlight)
                 spans.push(Span::raw(" "));
                 spans.push(Span::styled(
-                    &item.title,
+                    item.title(),
                     if absolute_idx == self.state.selected {
                         Style::default()
                             .fg(Color::White)
@@ -100,10 +94,11 @@ impl Widget for PopupWidget<'_> {
                 ));
 
                 // Subtitle (optional)
-                if !item.subtitle.is_empty() {
+                let subtitle = item.subtitle();
+                if !subtitle.is_empty() {
                     spans.push(Span::raw(" "));
                     spans.push(Span::styled(
-                        &item.subtitle,
+                        subtitle.to_string(),
                         Style::default().fg(Color::DarkGray),
                     ));
                 }
@@ -194,13 +189,10 @@ mod tests {
     fn make_popup_state(num_items: usize) -> PopupState {
         let mut state = PopupState::new(PopupKind::Command);
         state.items = (0..num_items)
-            .map(|i| PopupItem {
-                kind: PopupItemKind::Command,
-                title: format!("/cmd{}", i),
-                subtitle: format!("Command {}", i),
-                token: format!("/cmd{} ", i),
-                score: 1,
-                available: true,
+            .map(|i| {
+                PopupItem::cmd(format!("cmd{}", i))
+                    .desc(format!("Command {}", i))
+                    .with_score(1)
             })
             .collect();
         state
@@ -368,22 +360,12 @@ mod tests {
     fn test_popup_widget_renders_items() {
         let mut state = PopupState::new(PopupKind::Command);
         state.items = vec![
-            PopupItem {
-                kind: PopupItemKind::Command,
-                title: "/search".into(),
-                subtitle: "Search the vault".into(),
-                token: "/search ".into(),
-                score: 10,
-                available: true,
-            },
-            PopupItem {
-                kind: PopupItemKind::Agent,
-                title: "@dev".into(),
-                subtitle: "Developer agent".into(),
-                token: "@dev".into(),
-                score: 8,
-                available: true,
-            },
+            PopupItem::cmd("search")
+                .desc("Search the vault")
+                .with_score(10),
+            PopupItem::agent("dev")
+                .desc("Developer agent")
+                .with_score(8),
         ];
         state.selected = 0;
 
@@ -404,22 +386,8 @@ mod tests {
     fn test_popup_widget_renders_selection_highlight() {
         let mut state = PopupState::new(PopupKind::Command);
         state.items = vec![
-            PopupItem {
-                kind: PopupItemKind::Command,
-                title: "/cmd1".into(),
-                subtitle: String::new(),
-                token: "/cmd1 ".into(),
-                score: 1,
-                available: true,
-            },
-            PopupItem {
-                kind: PopupItemKind::Command,
-                title: "/cmd2".into(),
-                subtitle: String::new(),
-                token: "/cmd2 ".into(),
-                score: 1,
-                available: true,
-            },
+            PopupItem::cmd("cmd1").with_score(1),
+            PopupItem::cmd("cmd2").with_score(1),
         ];
         state.selected = 1;
 
@@ -437,14 +405,7 @@ mod tests {
     fn test_popup_widget_renders_scroll_indicators() {
         let mut state = PopupState::new(PopupKind::Command);
         state.items = (0..25)
-            .map(|i| PopupItem {
-                kind: PopupItemKind::Command,
-                title: format!("/cmd{}", i),
-                subtitle: String::new(),
-                token: format!("/cmd{} ", i),
-                score: 1,
-                available: true,
-            })
+            .map(|i| PopupItem::cmd(format!("cmd{}", i)).with_score(1))
             .collect();
         state.selected = 15;
 
@@ -485,38 +446,12 @@ mod tests {
     fn test_popup_widget_different_item_kinds() {
         let mut state = PopupState::new(PopupKind::AgentOrFile);
         state.items = vec![
-            PopupItem {
-                kind: PopupItemKind::Agent,
-                title: "@dev".into(),
-                subtitle: "Developer".into(),
-                token: "@dev".into(),
-                score: 10,
-                available: true,
-            },
-            PopupItem {
-                kind: PopupItemKind::File,
-                title: "src/main.rs".into(),
-                subtitle: "workspace".into(),
-                token: "src/main.rs".into(),
-                score: 8,
-                available: true,
-            },
-            PopupItem {
-                kind: PopupItemKind::Note,
-                title: "note:project/foo.md".into(),
-                subtitle: "note".into(),
-                token: "note:project/foo.md".into(),
-                score: 6,
-                available: true,
-            },
-            PopupItem {
-                kind: PopupItemKind::Skill,
-                title: "skill:code-review".into(),
-                subtitle: "Review code (user)".into(),
-                token: "skill:code-review ".into(),
-                score: 5,
-                available: true,
-            },
+            PopupItem::agent("dev").desc("Developer").with_score(10),
+            PopupItem::file("src/main.rs").with_score(8),
+            PopupItem::note("project/foo.md").with_score(6),
+            PopupItem::skill("code-review")
+                .desc("Review code (user)")
+                .with_score(5),
         ];
 
         let widget = PopupWidget::new(&mut state);

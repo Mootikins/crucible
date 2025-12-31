@@ -357,22 +357,8 @@ mod tests {
 
     fn mock_provider() -> Arc<dyn PopupItemProvider> {
         Arc::new(MockPopupProvider::with_items(vec![
-            PopupItem {
-                kind: PopupItemKind::Command,
-                title: "/help".into(),
-                subtitle: "Show help".into(),
-                token: "/help ".into(),
-                score: 100,
-                available: true,
-            },
-            PopupItem {
-                kind: PopupItemKind::Command,
-                title: "/exit".into(),
-                subtitle: "Exit".into(),
-                token: "/exit ".into(),
-                score: 100,
-                available: true,
-            },
+            PopupItem::cmd("help").desc("Show help").with_score(100),
+            PopupItem::cmd("exit").desc("Exit").with_score(100),
         ]))
     }
 

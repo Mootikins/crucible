@@ -47,7 +47,7 @@ pub use components::{DialogAction, FocusTarget, InteractiveWidget};
 // - event_result::{EventResult, TuiAction} - unified event system (new)
 // Using the new unified versions as the default export:
 pub use content_block::{ParseEvent, StreamBlock};
-pub use dialog::{DialogKind, DialogResult, DialogStack, DialogState, DialogWidget};
+pub use dialog::{DialogResult, DialogStack, DialogState, DialogWidget};
 pub use event_result::{EventResult, ScrollAction, TuiAction};
 pub use input::{map_key_event, InputAction};
 pub use markdown::MarkdownRenderer;

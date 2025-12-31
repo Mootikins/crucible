@@ -315,8 +315,16 @@ async fn test_daemon_storage_client_multi_session() {
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     // Create two DaemonStorageClient instances pointing to the same kiln
-    let client1 = Arc::new(DaemonClient::connect_to(&socket_path).await.expect("client1"));
-    let client2 = Arc::new(DaemonClient::connect_to(&socket_path).await.expect("client2"));
+    let client1 = Arc::new(
+        DaemonClient::connect_to(&socket_path)
+            .await
+            .expect("client1"),
+    );
+    let client2 = Arc::new(
+        DaemonClient::connect_to(&socket_path)
+            .await
+            .expect("client2"),
+    );
 
     let storage1 = DaemonStorageClient::new(client1, kiln_dir.path().to_path_buf());
     let storage2 = DaemonStorageClient::new(client2, kiln_dir.path().to_path_buf());
@@ -325,8 +333,16 @@ async fn test_daemon_storage_client_multi_session() {
     let result1 = storage1.query_raw("SELECT count() FROM notes").await;
     let result2 = storage2.query_raw("SELECT count() FROM notes").await;
 
-    assert!(result1.is_ok(), "Storage1 query failed: {:?}", result1.err());
-    assert!(result2.is_ok(), "Storage2 query failed: {:?}", result2.err());
+    assert!(
+        result1.is_ok(),
+        "Storage1 query failed: {:?}",
+        result1.err()
+    );
+    assert!(
+        result2.is_ok(),
+        "Storage2 query failed: {:?}",
+        result2.err()
+    );
 
     server.shutdown().await;
 }

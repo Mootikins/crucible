@@ -1,4 +1,4 @@
-use crate::tui::state::{PopupItem, PopupItemKind, PopupKind};
+use crate::tui::state::{PopupItem, PopupKind};
 use crucible_core::traits::chat::CommandDescriptor;
 use nucleo::pattern::{CaseMatching, Normalization};
 use nucleo::{Config, Matcher, Nucleo, Utf32String};
@@ -38,8 +38,7 @@ impl PopupProvider for StaticPopupProvider {
         match kind {
             PopupKind::Command => {
                 for cmd in &self.commands {
-                    let title = format!("/{}", cmd.name);
-                    let subtitle = cmd
+                    let description = cmd
                         .input_hint
                         .as_ref()
                         .map(|h| format!("{} — {}", cmd.description, h))
@@ -47,32 +46,28 @@ impl PopupProvider for StaticPopupProvider {
                     let match_col = Utf32String::from(cmd.name.as_str());
                     let score = pattern.score(std::slice::from_ref(&match_col), &mut matcher);
                     if let Some(score) = score {
-                        out.push(PopupItem {
-                            kind: PopupItemKind::Command,
-                            title,
-                            subtitle,
-                            token: format!("/{} ", cmd.name),
-                            score: score.min(i32::MAX as u32) as i32,
-                            available: true,
-                        });
+                        let mut item = PopupItem::cmd(&cmd.name)
+                            .desc(&description)
+                            .with_score(score.min(i32::MAX as u32) as i32);
+                        if let Some(hint) = &cmd.input_hint {
+                            item = item.hint(hint);
+                        }
+                        out.push(item);
                     }
                 }
 
                 // Also show skills in command popup
                 for (name, description, scope) in &self.skills {
-                    let title = format!("skill:{}", name);
-                    let subtitle = format!("{} ({})", description, scope);
+                    let full_desc = format!("{} ({})", description, scope);
                     let match_col = Utf32String::from(name.as_str());
                     let score = pattern.score(std::slice::from_ref(&match_col), &mut matcher);
                     if let Some(score) = score {
-                        out.push(PopupItem {
-                            kind: PopupItemKind::Skill,
-                            title,
-                            subtitle,
-                            token: format!("skill:{} ", name),
-                            score: score.min(i32::MAX as u32) as i32,
-                            available: true,
-                        });
+                        out.push(
+                            PopupItem::skill(name)
+                                .desc(&full_desc)
+                                .with_scope(scope)
+                                .with_score(score.min(i32::MAX as u32) as i32),
+                        );
                     }
                 }
             }
@@ -81,72 +76,130 @@ impl PopupProvider for StaticPopupProvider {
                     let match_col = Utf32String::from(id.as_str());
                     let score = pattern.score(std::slice::from_ref(&match_col), &mut matcher);
                     if let Some(score) = score {
-                        out.push(PopupItem {
-                            kind: PopupItemKind::Agent,
-                            title: format!("@{}", id),
-                            subtitle: desc.clone(),
-                            token: format!("@{}", id),
-                            score: score.min(i32::MAX as u32) as i32,
-                            available: true,
-                        });
+                        out.push(
+                            PopupItem::agent(id)
+                                .desc(desc)
+                                .with_score(score.min(i32::MAX as u32) as i32),
+                        );
                     }
                 }
                 for file in &self.files {
                     let match_col = Utf32String::from(file.as_str());
                     let score = pattern.score(std::slice::from_ref(&match_col), &mut matcher);
                     if let Some(score) = score {
-                        out.push(PopupItem {
-                            kind: PopupItemKind::File,
-                            title: file.clone(),
-                            subtitle: String::from("workspace"),
-                            token: file.clone(),
-                            score: score.min(i32::MAX as u32) as i32,
-                            available: true,
-                        });
+                        out.push(
+                            PopupItem::file(file).with_score(score.min(i32::MAX as u32) as i32),
+                        );
                     }
                 }
                 for note in &self.notes {
                     let match_col = Utf32String::from(note.as_str());
                     let score = pattern.score(std::slice::from_ref(&match_col), &mut matcher);
                     if let Some(score) = score {
-                        out.push(PopupItem {
-                            kind: PopupItemKind::Note,
-                            title: note.clone(),
-                            subtitle: String::from("note"),
-                            token: note.clone(),
-                            score: score.min(i32::MAX as u32) as i32,
-                            available: true,
-                        });
+                        out.push(
+                            PopupItem::note(note).with_score(score.min(i32::MAX as u32) as i32),
+                        );
                     }
                 }
             }
         }
         // Keep top N by score
-        out.sort_by(|a, b| b.score.cmp(&a.score));
+        out.sort_by(|a, b| b.score().cmp(&a.score()));
         out.truncate(20);
         out
     }
 }
 
+/// Internal candidate enum for fuzzy matching (not exported)
+///
+/// Each variant carries only the fields relevant to that type.
 #[derive(Debug, Clone)]
-struct PopupCandidate {
-    kind: PopupItemKind,
-    title: String,
-    subtitle: String,
-    token: String,
-    available: bool,
-    match_col: Utf32String,
+enum PopupCandidate {
+    Command {
+        name: String,
+        description: String,
+        available: bool,
+        match_col: Utf32String,
+    },
+    Agent {
+        name: String,
+        description: String,
+        available: bool,
+        match_col: Utf32String,
+    },
+    File {
+        path: String,
+        available: bool,
+        match_col: Utf32String,
+    },
+    Note {
+        path: String,
+        available: bool,
+        match_col: Utf32String,
+    },
+    Skill {
+        name: String,
+        description: String,
+        scope: String,
+        available: bool,
+        match_col: Utf32String,
+    },
 }
 
 impl PopupCandidate {
     fn to_item(&self, score: u32) -> PopupItem {
-        PopupItem {
-            kind: self.kind.clone(),
-            title: self.title.clone(),
-            subtitle: self.subtitle.clone(),
-            token: self.token.clone(),
-            score: score.min(i32::MAX as u32) as i32,
-            available: self.available,
+        let score = score.min(i32::MAX as u32) as i32;
+        match self {
+            PopupCandidate::Command {
+                name,
+                description,
+                available,
+                ..
+            } => PopupItem::cmd(name)
+                .desc(description)
+                .with_score(score)
+                .with_available(*available),
+            PopupCandidate::Agent {
+                name,
+                description,
+                available,
+                ..
+            } => PopupItem::agent(name)
+                .desc(description)
+                .with_score(score)
+                .with_available(*available),
+            PopupCandidate::File {
+                path, available, ..
+            } => PopupItem::file(path)
+                .with_score(score)
+                .with_available(*available),
+            PopupCandidate::Note {
+                path, available, ..
+            } => PopupItem::note(path)
+                .with_score(score)
+                .with_available(*available),
+            PopupCandidate::Skill {
+                name,
+                description,
+                scope,
+                available,
+                ..
+            } => PopupItem::skill(name)
+                .desc(description)
+                .with_scope(scope)
+                .with_score(score)
+                .with_available(*available),
+        }
+    }
+
+    /// Get the match column for fuzzy matching
+    fn match_col(&self) -> &Utf32String {
+        match self {
+            PopupCandidate::Command { match_col, .. }
+            | PopupCandidate::Agent { match_col, .. }
+            | PopupCandidate::File { match_col, .. }
+            | PopupCandidate::Note { match_col, .. }
+            | PopupCandidate::Skill { match_col, .. } => match_col,
         }
     }
 }
@@ -302,73 +355,58 @@ impl PopupMatcherCache {
         match kind {
             CacheKind::Command => {
                 for cmd in data.commands {
-                    let name = cmd.name;
-                    let description = cmd.description;
-                    let input_hint = cmd.input_hint;
-                    let title = format!("/{}", name);
-                    let subtitle = input_hint
+                    let description = cmd
+                        .input_hint
                         .as_ref()
-                        .map(|h| format!("{} — {}", description, h))
-                        .unwrap_or_else(|| description.clone());
-                    let cand = PopupCandidate {
-                        kind: PopupItemKind::Command,
-                        match_col: Utf32String::from(name.as_str()),
-                        title,
-                        subtitle,
-                        token: format!("/{} ", name),
+                        .map(|h| format!("{} — {}", cmd.description, h))
+                        .unwrap_or_else(|| cmd.description.clone());
+                    let cand = PopupCandidate::Command {
+                        match_col: Utf32String::from(cmd.name.as_str()),
+                        name: cmd.name,
+                        description,
                         available: true,
                     };
-                    injector.push(cand, |c, cols| cols[0] = c.match_col.clone());
+                    injector.push(cand, |c, cols| cols[0] = c.match_col().clone());
                 }
 
                 // Include skills in command cache
                 for (name, description, scope) in data.skills {
-                    let title = format!("skill:{}", name);
-                    let subtitle = format!("{} ({})", description, scope);
-                    let cand = PopupCandidate {
-                        kind: PopupItemKind::Skill,
+                    let full_desc = format!("{} ({})", description, scope);
+                    let cand = PopupCandidate::Skill {
                         match_col: Utf32String::from(name.as_str()),
-                        title,
-                        subtitle,
-                        token: format!("skill:{} ", name),
+                        name,
+                        description: full_desc,
+                        scope,
                         available: true,
                     };
-                    injector.push(cand, |c, cols| cols[0] = c.match_col.clone());
+                    injector.push(cand, |c, cols| cols[0] = c.match_col().clone());
                 }
             }
             CacheKind::AgentOrFile => {
                 for (id, desc) in data.agents {
-                    let cand = PopupCandidate {
-                        kind: PopupItemKind::Agent,
+                    let cand = PopupCandidate::Agent {
                         match_col: Utf32String::from(id.as_str()),
-                        title: format!("@{}", id),
-                        subtitle: desc,
-                        token: format!("@{}", id),
+                        name: id,
+                        description: desc,
                         available: true,
                     };
-                    injector.push(cand, |c, cols| cols[0] = c.match_col.clone());
+                    injector.push(cand, |c, cols| cols[0] = c.match_col().clone());
                 }
                 for file in data.files {
-                    let cand = PopupCandidate {
-                        kind: PopupItemKind::File,
+                    let cand = PopupCandidate::File {
                         match_col: Utf32String::from(file.as_str()),
-                        title: file.clone(),
-                        subtitle: String::from("workspace"),
-                        token: file,
+                        path: file,
                         available: true,
                     };
-                    injector.push(cand, |c, cols| cols[0] = c.match_col.clone());
+                    injector.push(cand, |c, cols| cols[0] = c.match_col().clone());
                 }
                 for note in data.notes {
-                    let cand = PopupCandidate {
-                        kind: PopupItemKind::Note,
+                    let cand = PopupCandidate::Note {
                         match_col: Utf32String::from(note.as_str()),
-                        title: note.clone(),
-                        subtitle: String::from("note"),
-                        token: note,
+                        path: note,
                         available: true,
                     };
-                    injector.push(cand, |c, cols| cols[0] = c.match_col.clone());
+                    injector.push(cand, |c, cols| cols[0] = c.match_col().clone());
                 }
             }
         }
@@ -399,7 +437,7 @@ impl PopupMatcherCache {
                 .unwrap_or(0);
             out.push(item.data.to_item(score));
         }
-        out.sort_by(|a, b| b.score.cmp(&a.score));
+        out.sort_by(|a, b| b.score().cmp(&a.score()));
         out.truncate(20);
         out
     }
@@ -440,7 +478,6 @@ impl PopupProvider for DynamicPopupProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::state::{PopupItemKind, PopupKind};
 
     #[test]
     fn test_provider_commands_match_and_sort() {
@@ -462,8 +499,8 @@ mod tests {
 
         let items = provider.provide(PopupKind::Command, "ex");
         assert_eq!(items.len(), 1);
-        assert_eq!(items[0].title, "/exit");
-        assert_eq!(items[0].kind, PopupItemKind::Command);
+        assert_eq!(items[0].title(), "/exit");
+        assert!(items[0].is_command());
     }
 
     #[test]
@@ -478,7 +515,7 @@ mod tests {
 
         let items = provider.provide(PopupKind::Command, "srch");
         assert_eq!(items.len(), 1);
-        assert_eq!(items[0].title, "/search");
+        assert_eq!(items[0].title(), "/search");
     }
 
     #[test]
@@ -490,15 +527,15 @@ mod tests {
 
         let items = provider.provide(PopupKind::AgentOrFile, "dev");
         assert_eq!(items.len(), 1);
-        assert_eq!(items[0].kind, PopupItemKind::Agent);
+        assert!(items[0].is_agent());
 
         let files = provider.provide(PopupKind::AgentOrFile, "main");
         assert_eq!(files.len(), 1);
-        assert_eq!(files[0].kind, PopupItemKind::File);
+        assert!(files[0].is_file());
 
         let notes = provider.provide(PopupKind::AgentOrFile, "foo");
         assert_eq!(notes.len(), 1);
-        assert_eq!(notes[0].kind, PopupItemKind::Note);
+        assert!(notes[0].is_note());
     }
 
     #[test]
@@ -508,8 +545,8 @@ mod tests {
 
         let items = provider.provide(PopupKind::AgentOrFile, "srs");
         assert_eq!(items.len(), 1);
-        assert_eq!(items[0].kind, PopupItemKind::File);
-        assert_eq!(items[0].title, "src/main.rs");
+        assert!(items[0].is_file());
+        assert_eq!(items[0].title(), "src/main.rs");
     }
 
     #[test]
@@ -525,7 +562,7 @@ mod tests {
 #[cfg(test)]
 mod skill_popup_tests {
     use super::{PopupProvider, StaticPopupProvider};
-    use crate::tui::state::{PopupItemKind, PopupKind};
+    use crate::tui::state::PopupKind;
 
     #[test]
     fn test_skills_appear_in_command_popup() {
@@ -547,21 +584,21 @@ mod skill_popup_tests {
 
         // Should find the git-commit skill
         assert!(
-            items.iter().any(|item| {
-                item.kind == PopupItemKind::Skill && item.title == "skill:git-commit"
-            }),
+            items
+                .iter()
+                .any(|item| { item.is_skill() && item.title() == "skill:git-commit" }),
             "git-commit skill should appear in results"
         );
 
         // Verify token format
         let git_skill = items
             .iter()
-            .find(|item| item.kind == PopupItemKind::Skill && item.title == "skill:git-commit")
+            .find(|item| item.is_skill() && item.title() == "skill:git-commit")
             .expect("git-commit skill should exist");
 
-        assert_eq!(git_skill.token, "skill:git-commit ");
-        assert!(git_skill.subtitle.contains("Create git commits"));
-        assert!(git_skill.subtitle.contains("(user)"));
+        assert_eq!(git_skill.token(), "skill:git-commit ");
+        assert!(git_skill.subtitle().contains("Create git commits"));
+        assert!(git_skill.subtitle().contains("(user)"));
     }
 
     #[test]
@@ -573,9 +610,9 @@ mod skill_popup_tests {
 
         // Fuzzy match should find code-review
         assert!(
-            items.iter().any(|item| {
-                item.kind == PopupItemKind::Skill && item.title == "skill:code-review"
-            }),
+            items
+                .iter()
+                .any(|item| { item.is_skill() && item.title() == "skill:code-review" }),
             "Should fuzzy match code-review with 'crvw'"
         );
     }
