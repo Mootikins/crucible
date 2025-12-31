@@ -5,12 +5,14 @@
 //!
 //! ## Available Factories
 //!
+//! - `get_storage` - Unified factory that returns embedded or daemon storage based on config
 //! - `create_surrealdb_storage` - SurrealDB-backed persistent storage (legacy, direct connection)
 //! - `create_daemon_storage` - Daemon-backed storage (preferred, auto-starts daemon)
 //! - `create_content_addressed_storage` - In-memory content-addressed storage (for testing/demos)
 
 use crate::config::CliConfig;
 use anyhow::Result;
+use crucible_config::StorageMode;
 use crucible_core::enrichment::EnrichedNoteStore;
 use crucible_core::hashing::Blake3Hasher;
 use crucible_core::storage::{
@@ -18,12 +20,13 @@ use crucible_core::storage::{
     StorageBackendType, StorageResult,
 };
 use crucible_core::traits::StorageClient;
-use crucible_daemon_client::{DaemonClient, DaemonStorageClient};
+use crucible_daemon_client::{lifecycle, DaemonClient, DaemonStorageClient};
 use crucible_surrealdb::{adapters, SurrealDbConfig};
 use once_cell::sync::Lazy;
 use std::collections::{hash_map::Entry, HashMap};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use tracing::{debug, info};
 
 /// Create SurrealDB storage from CLI configuration
 ///
@@ -167,4 +170,153 @@ pub async fn create_daemon_storage(kiln_path: &Path) -> Result<Arc<DaemonStorage
         client,
         kiln_path.to_path_buf(),
     )))
+}
+
+// =============================================================================
+// Unified Storage Factory (storage.mode aware)
+// =============================================================================
+
+/// Handle for either embedded or daemon-backed storage
+///
+/// This enum allows the CLI to use storage abstractly without caring
+/// whether it's a direct SurrealDB connection or daemon-backed.
+#[derive(Clone)]
+pub enum StorageHandle {
+    /// Direct in-process SurrealDB (single session)
+    Embedded(adapters::SurrealClientHandle),
+    /// Daemon-backed storage (multi-session via Unix socket)
+    Daemon(Arc<DaemonStorageClient>),
+}
+
+impl StorageHandle {
+    /// Execute a raw query and return JSON
+    ///
+    /// This provides a unified query interface regardless of storage mode.
+    pub async fn query_raw(&self, sql: &str) -> Result<serde_json::Value> {
+        match self {
+            StorageHandle::Embedded(h) => {
+                let inner = h.inner();
+                let result = inner.query(sql, &[]).await?;
+                Ok(serde_json::json!({
+                    "records": result.records,
+                    "total_count": result.total_count,
+                    "execution_time_ms": result.execution_time_ms,
+                    "has_more": result.has_more
+                }))
+            }
+            StorageHandle::Daemon(c) => c.query_raw(sql).await,
+        }
+    }
+
+    /// Get as embedded handle (panics if daemon mode)
+    ///
+    /// Use for operations that need full SurrealClientHandle capabilities
+    /// (e.g., NoteStore, MerkleStore, etc.). This should be called only
+    /// when you know you're in embedded mode.
+    pub fn as_embedded(&self) -> &adapters::SurrealClientHandle {
+        match self {
+            StorageHandle::Embedded(h) => h,
+            StorageHandle::Daemon(_) => panic!(
+                "Operation requires embedded mode. \
+                 Configure storage.mode = \"embedded\" or use daemon RPC methods."
+            ),
+        }
+    }
+
+    /// Try to get as embedded handle (returns None if daemon mode)
+    ///
+    /// Use this for graceful fallback instead of panic.
+    pub fn try_embedded(&self) -> Option<&adapters::SurrealClientHandle> {
+        match self {
+            StorageHandle::Embedded(h) => Some(h),
+            StorageHandle::Daemon(_) => None,
+        }
+    }
+
+    /// Check if running in embedded mode
+    pub fn is_embedded(&self) -> bool {
+        matches!(self, StorageHandle::Embedded(_))
+    }
+
+    /// Check if running in daemon mode
+    pub fn is_daemon(&self) -> bool {
+        matches!(self, StorageHandle::Daemon(_))
+    }
+}
+
+/// Get storage based on configuration mode
+///
+/// This is the preferred entry point for CLI commands that need storage access.
+/// It automatically selects between embedded and daemon mode based on the
+/// `storage.mode` configuration.
+///
+/// # Storage Modes
+///
+/// - **Embedded** (default): Direct in-process SurrealDB. Fast, simple, but
+///   single-session only (file locked).
+///
+/// - **Daemon**: Uses the db-server subprocess via Unix socket. Slower initial
+///   connection (may fork daemon), but supports multiple concurrent sessions.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// # use anyhow::Result;
+/// # async fn example() -> Result<()> {
+/// use crucible_cli::config::CliConfig;
+/// use crucible_cli::factories;
+///
+/// let config = CliConfig::load(None, None, None)?;
+/// let storage = factories::get_storage(&config).await?;
+///
+/// // Use for queries
+/// let result = storage.query_raw("SELECT * FROM notes LIMIT 10").await?;
+///
+/// // For operations requiring full access (embedded only)
+/// if let Some(embedded) = storage.try_embedded() {
+///     // Use embedded-specific features
+/// }
+/// # Ok(())
+/// # }
+/// ```
+pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
+    let storage_config = config
+        .storage
+        .clone()
+        .unwrap_or_default();
+
+    match storage_config.mode {
+        StorageMode::Embedded => {
+            debug!("Using embedded storage mode");
+            let client = create_surrealdb_storage(config).await?;
+            Ok(StorageHandle::Embedded(client))
+        }
+        StorageMode::Daemon => {
+            info!("Using daemon storage mode");
+            let socket = lifecycle::default_socket_path();
+
+            // Ensure daemon is running (fork if needed)
+            lifecycle::ensure_daemon(&socket, storage_config.idle_timeout_secs).await?;
+
+            // Connect to daemon
+            let client = DaemonClient::connect_to(&socket).await?;
+            let kiln_path = config.kiln_path.clone();
+
+            Ok(StorageHandle::Daemon(Arc::new(DaemonStorageClient::new(
+                Arc::new(client),
+                kiln_path,
+            ))))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_storage_handle_is_embedded() {
+        // We can't easily create a real handle in tests, but we can test the pattern
+        // This is more of a compile-time check that the types work
+    }
 }
