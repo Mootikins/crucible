@@ -33,6 +33,7 @@ pub mod styles;
 pub mod testing;
 pub mod viewport;
 pub mod widget;
+pub mod widgets;
 
 #[cfg(test)]
 mod conversation_ordering_tests;
