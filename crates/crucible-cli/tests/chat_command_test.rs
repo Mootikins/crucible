@@ -44,6 +44,8 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
         logging: None,
         processing: ProcessingConfig::default(),
         providers: ProvidersConfig::default(),
+        context: None,
+        storage: None,
     };
 
     // This should NOT panic with "lock hold by current process" error
@@ -128,6 +130,8 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
         logging: None,
         processing: ProcessingConfig::default(),
         providers: ProvidersConfig::default(),
+        context: None,
+        storage: None,
     };
 
     // Try to execute with a query - should fail at agent discovery,
