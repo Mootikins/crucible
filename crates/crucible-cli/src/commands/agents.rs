@@ -353,6 +353,8 @@ mod tests {
             logging: None,
             processing: ProcessingConfig::default(),
             providers: ProvidersConfig::default(),
+            context: None,
+            storage: None,
         }
     }
 
