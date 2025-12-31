@@ -2,7 +2,9 @@
 //!
 //! Provides a trait for rendering conversation history with full ratatui control.
 
-use crate::tui::components::{GenericPopupState, InputBoxWidget, SessionHistoryWidget, StatusBarWidget};
+use crate::tui::components::{
+    GenericPopupState, InputBoxWidget, SessionHistoryWidget, StatusBarWidget,
+};
 use crate::tui::conversation::{render_item_to_lines, ConversationState, StatusKind};
 use crate::tui::dialog::{DialogResult, DialogStack, DialogWidget};
 use crate::tui::notification::NotificationState;
@@ -247,13 +249,7 @@ impl RatatuiView {
                         .add_modifier(Modifier::BOLD),
                 ));
 
-                let kind_label = match item.kind {
-                    crate::tui::state::PopupItemKind::Command => "[cmd]",
-                    crate::tui::state::PopupItemKind::Agent => "[agent]",
-                    crate::tui::state::PopupItemKind::File => "[file]",
-                    crate::tui::state::PopupItemKind::Note => "[note]",
-                    crate::tui::state::PopupItemKind::Skill => "[skill]",
-                };
+                let kind_label = format!("[{}]", item.kind_label());
                 spans.push(Span::raw(" "));
                 spans.push(Span::styled(
                     kind_label,
@@ -261,7 +257,7 @@ impl RatatuiView {
                 ));
                 spans.push(Span::raw(" "));
                 spans.push(Span::styled(
-                    &item.title,
+                    item.title(),
                     if idx == popup.selected {
                         Style::default()
                             .fg(Color::White)
@@ -270,10 +266,11 @@ impl RatatuiView {
                         Style::default().fg(Color::White)
                     },
                 ));
-                if !item.subtitle.is_empty() {
+                let subtitle = item.subtitle();
+                if !subtitle.is_empty() {
                     spans.push(Span::raw(" "));
                     spans.push(Span::styled(
-                        &item.subtitle,
+                        subtitle.to_string(),
                         Style::default().fg(Color::DarkGray),
                     ));
                 }
@@ -633,14 +630,7 @@ mod tests {
         let popup = PopupState {
             kind: PopupKind::Command,
             query: String::new(),
-            items: vec![PopupItem {
-                kind: PopupItemKind::Command,
-                title: "/help".to_string(),
-                subtitle: "Show help".to_string(),
-                token: "/help ".to_string(),
-                score: 0,
-                available: true,
-            }],
+            items: vec![PopupItem::cmd("help").desc("Show help")],
             selected: 0,
             viewport_offset: 0,
             last_update: Instant::now(),
@@ -682,14 +672,7 @@ mod tests {
         let popup = PopupState {
             kind: PopupKind::Command,
             query: String::new(),
-            items: vec![PopupItem {
-                kind: PopupItemKind::Skill,
-                title: "skill:git-commit".to_string(),
-                subtitle: "Create commits (personal)".to_string(),
-                token: "skill:git-commit ".to_string(),
-                score: 0,
-                available: true,
-            }],
+            items: vec![PopupItem::skill("git-commit").desc("Create commits (personal)")],
             selected: 0,
             viewport_offset: 0,
             last_update: Instant::now(),
@@ -905,14 +888,7 @@ mod tests {
 
         // Create popup with 10 items, viewport_offset=3, selected=5
         let items = (0..10)
-            .map(|i| PopupItem {
-                kind: PopupItemKind::Command,
-                title: format!("Item {}", i),
-                subtitle: format!("Subtitle {}", i),
-                token: format!("token{}", i),
-                score: 0,
-                available: true,
-            })
+            .map(|i| PopupItem::cmd(format!("Item {}", i)).desc(format!("Subtitle {}", i)))
             .collect();
 
         let popup = PopupState {
@@ -994,14 +970,7 @@ mod tests {
 
         // Create popup with 10 items, viewport_offset=3, selected=5
         let items = (0..10)
-            .map(|i| PopupItem {
-                kind: PopupItemKind::Command,
-                title: format!("Item {}", i),
-                subtitle: format!("Subtitle {}", i),
-                token: format!("token{}", i),
-                score: 0,
-                available: true,
-            })
+            .map(|i| PopupItem::cmd(format!("Item {}", i)).desc(format!("Subtitle {}", i)))
             .collect();
 
         let popup = PopupState {
@@ -1084,22 +1053,8 @@ mod tests {
         impl PopupItemProvider for MockProvider {
             fn provide(&self, _kind: PopupKind, _query: &str) -> Vec<PopupItem> {
                 vec![
-                    PopupItem {
-                        kind: PopupItemKind::Command,
-                        title: "/help".to_string(),
-                        subtitle: "Show help".to_string(),
-                        token: "/help ".to_string(),
-                        score: 100,
-                        available: true,
-                    },
-                    PopupItem {
-                        kind: PopupItemKind::Command,
-                        title: "/clear".to_string(),
-                        subtitle: "Clear history".to_string(),
-                        token: "/clear ".to_string(),
-                        score: 90,
-                        available: true,
-                    },
+                    PopupItem::cmd("help").desc("Show help").with_score(100),
+                    PopupItem::cmd("clear").desc("Clear history").with_score(90),
                 ]
             }
         }

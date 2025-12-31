@@ -66,11 +66,7 @@ impl ConnectionTracker {
 /// Runs a Unix socket server that accepts JSON-RPC connections for
 /// SurrealDB queries. Automatically shuts down after idle_timeout
 /// seconds with no active connections.
-pub async fn execute(
-    _config: CliConfig,
-    socket: Option<PathBuf>,
-    idle_timeout: u64,
-) -> Result<()> {
+pub async fn execute(_config: CliConfig, socket: Option<PathBuf>, idle_timeout: u64) -> Result<()> {
     let socket_path = socket.unwrap_or_else(default_socket_path);
     let idle_duration = Duration::from_secs(idle_timeout);
 
