@@ -1376,4 +1376,111 @@ mod tests {
         let pos = runner.view.cursor_position();
         input.insert(pos, 'a'); // PANIC: assertion failed: self.is_char_boundary(idx)
     }
+
+    // =========================================================================
+    // Generic Popup Integration Tests
+    // =========================================================================
+
+    mod generic_popup_tests {
+        use super::*;
+        use crate::tui::components::{GenericPopupState, PopupItemProvider};
+        use crate::tui::state::{PopupItem, PopupItemKind, PopupKind};
+        use std::sync::Arc;
+
+        /// Mock provider for tests
+        struct MockProvider;
+
+        impl PopupItemProvider for MockProvider {
+            fn provide(&self, _kind: PopupKind, _query: &str) -> Vec<PopupItem> {
+                vec![
+                    PopupItem {
+                        kind: PopupItemKind::Command,
+                        title: "/help".to_string(),
+                        subtitle: "Show help".to_string(),
+                        token: "/help ".to_string(),
+                        score: 100,
+                        available: true,
+                    },
+                    PopupItem {
+                        kind: PopupItemKind::Command,
+                        title: "/clear".to_string(),
+                        subtitle: "Clear history".to_string(),
+                        token: "/clear ".to_string(),
+                        score: 90,
+                        available: true,
+                    },
+                ]
+            }
+        }
+
+        fn mock_provider() -> Arc<dyn PopupItemProvider> {
+            Arc::new(MockProvider)
+        }
+
+        #[test]
+        fn test_runner_can_set_generic_popup_on_view() {
+            let mut runner = RatatuiRunner::new(
+                "plan",
+                test_popup_provider(),
+                test_command_registry(),
+            )
+            .unwrap();
+
+            // Initially no popup
+            assert!(!runner.view.has_popup());
+
+            // Set a generic popup via the view
+            let popup = GenericPopupState::new(PopupKind::Command, mock_provider());
+            runner.view.set_generic_popup(Some(popup));
+
+            // Should now have a popup
+            assert!(runner.view.has_popup());
+            assert!(runner.view.generic_popup().is_some());
+        }
+
+        #[test]
+        fn test_runner_generic_popup_navigation() {
+            let mut runner = RatatuiRunner::new(
+                "plan",
+                test_popup_provider(),
+                test_command_registry(),
+            )
+            .unwrap();
+
+            // Set a generic popup and populate items
+            let mut popup = GenericPopupState::new(PopupKind::Command, mock_provider());
+            popup.update_query(""); // Fetch items from provider
+            runner.view.set_generic_popup(Some(popup));
+
+            // Navigate through the popup
+            let popup = runner.view.generic_popup_mut().unwrap();
+            assert_eq!(popup.selected_index(), 0);
+            assert_eq!(popup.filtered_count(), 2); // Verify items are loaded
+
+            // Trigger navigation via key event
+            use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+            let down_key = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+            popup.handle_key(&down_key);
+            assert_eq!(popup.selected_index(), 1);
+        }
+
+        #[test]
+        fn test_runner_clears_generic_popup() {
+            let mut runner = RatatuiRunner::new(
+                "plan",
+                test_popup_provider(),
+                test_command_registry(),
+            )
+            .unwrap();
+
+            // Set popup
+            let popup = GenericPopupState::new(PopupKind::Command, mock_provider());
+            runner.view.set_generic_popup(Some(popup));
+            assert!(runner.view.has_popup());
+
+            // Clear it
+            runner.view.set_generic_popup(None);
+            assert!(!runner.view.has_popup());
+        }
+    }
 }
