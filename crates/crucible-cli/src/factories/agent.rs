@@ -201,8 +201,20 @@ pub async fn create_internal_agent(
         .clone()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| config.kiln_path.clone()));
 
-    // Add project rules if workspace has them (AGENTS.md, CLAUDE.md, .rules, etc.)
-    prompt_builder = prompt_builder.with_project_rules(&workspace_root);
+    // Add project rules if workspace has them (AGENTS.md, .rules, etc.)
+    // Use configured rules_files or defaults
+    let rules_files = config
+        .context
+        .as_ref()
+        .map(|c| c.rules_files.clone())
+        .unwrap_or_else(|| {
+            vec![
+                "AGENTS.md".to_string(),
+                ".rules".to_string(),
+                ".github/copilot-instructions.md".to_string(),
+            ]
+        });
+    prompt_builder = prompt_builder.with_project_rules_hierarchical(&workspace_root, &rules_files);
 
     let system_prompt = prompt_builder.build();
 
