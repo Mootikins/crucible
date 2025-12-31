@@ -1,12 +1,12 @@
 # System Prompt Template Design
 
 **Date**: 2024-12-30
-**Status**: Draft
+**Status**: Implemented
 **Goal**: Size-aware system prompts that optimize small model reliability
 
 ## Problem
 
-Small models (< 8B) hit tool loops when prompted to output JSON or perform tasks they could handle directly. The current hardcoded system prompt in `create_internal_agent()` only explains HOW to use tools, not WHEN.
+Small models (< 4B) hit tool loops when prompted to output JSON or perform tasks they could handle directly. The current hardcoded system prompt in `create_internal_agent()` only explains HOW to use tools, not WHEN.
 
 **Evidence**: granite-micro-3b and granite-tiny-7b hit `MaxDepthError` on JSON output prompts, cycling through tool calls instead of responding directly.
 
