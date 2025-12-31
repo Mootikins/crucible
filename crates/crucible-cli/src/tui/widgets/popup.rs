@@ -11,7 +11,7 @@
 //! ## Example
 //!
 //! ```ignore
-//! use crucible_cli::tui::widgets::{Popup, PopupItem, PopupConfig};
+//! use crucible_cli::tui::widgets::{Popup, PopupItem, PopupConfig, PopupRenderer};
 //!
 //! #[derive(Clone)]
 //! struct Command {
@@ -32,10 +32,21 @@
 //!
 //! let popup = Popup::new(commands)
 //!     .with_config(PopupConfig::default().filterable(true));
+//!
+//! // Render the popup
+//! let renderer = PopupRenderer::new(&popup);
+//! frame.render_widget(renderer, area);
 //! ```
 
 use nucleo::pattern::{CaseMatching, Normalization};
 use nucleo::{Config as NucleoConfig, Matcher, Utf32String};
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Paragraph, Widget, Wrap},
+};
 use std::marker::PhantomData;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -712,6 +723,195 @@ impl<T: PopupItem> Popup<T> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PopupRenderer (ratatui Widget)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Style configuration for popup rendering
+#[derive(Debug, Clone)]
+pub struct PopupStyle {
+    /// Border style
+    pub border: Style,
+    /// Selection marker style (e.g., ">")
+    pub marker: Style,
+    /// Kind label style (e.g., "[cmd]")
+    pub kind: Style,
+    /// Normal item label style
+    pub label: Style,
+    /// Selected item label style
+    pub label_selected: Style,
+    /// Disabled item label style
+    pub label_disabled: Style,
+    /// Description style
+    pub description: Style,
+    /// Multi-select checkbox style
+    pub checkbox: Style,
+    /// Scroll indicator style
+    pub scroll_indicator: Style,
+}
+
+impl Default for PopupStyle {
+    fn default() -> Self {
+        Self {
+            border: Style::default().fg(Color::DarkGray),
+            marker: Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+            kind: Style::default().fg(Color::Magenta),
+            label: Style::default().fg(Color::White),
+            label_selected: Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD | Modifier::REVERSED),
+            label_disabled: Style::default().fg(Color::DarkGray),
+            description: Style::default().fg(Color::DarkGray),
+            checkbox: Style::default().fg(Color::Cyan),
+            scroll_indicator: Style::default().fg(Color::DarkGray),
+        }
+    }
+}
+
+/// Ratatui widget for rendering a [`Popup`]
+///
+/// This widget renders the popup's visible items with selection highlighting,
+/// kind labels, icons, and scroll indicators.
+///
+/// # Example
+///
+/// ```ignore
+/// use crucible_cli::tui::widgets::{Popup, PopupRenderer};
+///
+/// let popup = Popup::new(items);
+/// let renderer = PopupRenderer::new(&popup);
+/// frame.render_widget(renderer, area);
+/// ```
+pub struct PopupRenderer<'a, T: PopupItem> {
+    popup: &'a Popup<T>,
+    style: PopupStyle,
+}
+
+impl<'a, T: PopupItem> PopupRenderer<'a, T> {
+    /// Create a new renderer for the given popup
+    pub fn new(popup: &'a Popup<T>) -> Self {
+        Self {
+            popup,
+            style: PopupStyle::default(),
+        }
+    }
+
+    /// Set custom styling
+    pub fn style(mut self, style: PopupStyle) -> Self {
+        self.style = style;
+        self
+    }
+
+    /// Build the title string for the popup
+    fn build_title(&self) -> String {
+        let config = self.popup.config();
+        let base_title = config.title.as_deref().unwrap_or("Select");
+
+        let total = self.popup.filtered_count();
+        if total > config.max_visible {
+            let selected = self.popup.selected_index() + 1;
+            format!("{} ({}/{})", base_title, selected, total)
+        } else {
+            base_title.to_string()
+        }
+    }
+
+    /// Build a line for a single item
+    fn build_item_line(
+        &self,
+        item: &T,
+        is_selected: bool,
+        is_multi_selected: bool,
+    ) -> Line<'static> {
+        let config = self.popup.config();
+        let mut spans = Vec::new();
+
+        // Selection marker
+        let marker = if is_selected { ">" } else { " " };
+        spans.push(Span::styled(marker.to_string(), self.style.marker));
+
+        // Multi-select checkbox (if enabled)
+        if config.multi_select {
+            let checkbox = if is_multi_selected { " [x]" } else { " [ ]" };
+            spans.push(Span::styled(checkbox.to_string(), self.style.checkbox));
+        }
+
+        // Kind label (if enabled and present)
+        if config.show_kinds {
+            if let Some(kind) = item.kind_label() {
+                spans.push(Span::raw(" "));
+                spans.push(Span::styled(format!("[{}]", kind), self.style.kind));
+            }
+        }
+
+        // Icon (if present)
+        if let Some(icon) = item.icon() {
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(icon.to_string(), self.style.label));
+        }
+
+        // Label
+        spans.push(Span::raw(" "));
+        let label_style = if !item.is_enabled() {
+            self.style.label_disabled
+        } else if is_selected {
+            self.style.label_selected
+        } else {
+            self.style.label
+        };
+        spans.push(Span::styled(item.label().to_string(), label_style));
+
+        // Description (if present)
+        if let Some(desc) = item.description() {
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(desc.to_string(), self.style.description));
+        }
+
+        Line::from(spans)
+    }
+}
+
+impl<T: PopupItem> Widget for PopupRenderer<'_, T> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        if area.width < 3 || area.height < 3 {
+            return; // Too small to render anything meaningful
+        }
+
+        // Build lines for visible items
+        let visible = self.popup.visible_items();
+        let lines: Vec<Line> = visible
+            .iter()
+            .map(|(_, item, is_selected, is_multi)| {
+                self.build_item_line(item, *is_selected, *is_multi)
+            })
+            .collect();
+
+        // Build title with optional scroll position
+        let title = self.build_title();
+
+        // Add scroll indicators to title if needed
+        let scroll_hint = match (self.popup.has_items_above(), self.popup.has_items_below()) {
+            (true, true) => " ↑↓",
+            (true, false) => " ↑",
+            (false, true) => " ↓",
+            (false, false) => "",
+        };
+
+        let full_title = format!("{}{}", title, scroll_hint);
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(self.style.border)
+            .title(full_title);
+
+        let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
+
+        paragraph.render(area, buf);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1014,5 +1214,145 @@ mod tests {
         let mut matcher = FuzzyMatcher::new();
         let score = matcher.score("xyz", "help");
         assert!(score.is_none());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PopupRenderer
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn renderer_renders_items() {
+        let popup = Popup::new(test_items());
+        let renderer = PopupRenderer::new(&popup);
+
+        let area = Rect::new(0, 0, 50, 8);
+        let mut buf = Buffer::empty(area);
+        renderer.render(area, &mut buf);
+
+        // Verify the widget renders without panic
+        let content = buf.content();
+        let has_marker = content.iter().any(|cell| cell.symbol() == ">");
+        assert!(has_marker, "Selected item should have '>' marker");
+    }
+
+    #[test]
+    fn renderer_shows_selection_marker() {
+        let mut popup = Popup::new(test_items());
+        popup.move_down(); // Select second item
+
+        let renderer = PopupRenderer::new(&popup);
+        let area = Rect::new(0, 0, 50, 8);
+        let mut buf = Buffer::empty(area);
+        renderer.render(area, &mut buf);
+
+        // Should still have a marker
+        let content = buf.content();
+        let has_marker = content.iter().any(|cell| cell.symbol() == ">");
+        assert!(has_marker);
+    }
+
+    #[test]
+    fn renderer_handles_empty_popup() {
+        let popup: Popup<TestItem> = Popup::new(vec![]);
+        let renderer = PopupRenderer::new(&popup);
+
+        let area = Rect::new(0, 0, 50, 8);
+        let mut buf = Buffer::empty(area);
+
+        // Should not panic
+        renderer.render(area, &mut buf);
+    }
+
+    #[test]
+    fn renderer_handles_tiny_area() {
+        let popup = Popup::new(test_items());
+        let renderer = PopupRenderer::new(&popup);
+
+        // Too small - should return early without panic
+        let area = Rect::new(0, 0, 2, 2);
+        let mut buf = Buffer::empty(area);
+        renderer.render(area, &mut buf);
+    }
+
+    #[test]
+    fn renderer_shows_scroll_indicators() {
+        let items: Vec<TestItem> = (0..20)
+            .map(|i| TestItem::new(&format!("item{}", i), ""))
+            .collect();
+
+        let mut popup = Popup::new(items).with_config(PopupConfig::default().max_visible(5));
+        popup.move_down();
+        popup.move_down();
+        popup.move_down();
+        popup.move_down();
+        popup.move_down(); // Move past first viewport
+
+        let renderer = PopupRenderer::new(&popup);
+        let area = Rect::new(0, 0, 50, 8);
+        let mut buf = Buffer::empty(area);
+        renderer.render(area, &mut buf);
+
+        // Verify it renders (scroll indicator is in title)
+        let content = buf.content();
+        let text: String = content.iter().map(|c| c.symbol()).collect();
+        // Should contain scroll indicator (↑ or ↓)
+        assert!(
+            text.contains('↑') || text.contains('↓') || text.contains('/'),
+            "Should show scroll position: {}",
+            text
+        );
+    }
+
+    #[test]
+    fn renderer_title_shows_position() {
+        let items: Vec<TestItem> = (0..20)
+            .map(|i| TestItem::new(&format!("item{}", i), ""))
+            .collect();
+
+        let popup = Popup::new(items).with_config(PopupConfig::default().max_visible(5));
+
+        let renderer = PopupRenderer::new(&popup);
+        let title = renderer.build_title();
+
+        // Should show position when items exceed max_visible
+        assert!(title.contains("1/20"), "Title should show position: {}", title);
+    }
+
+    #[test]
+    fn renderer_with_custom_style() {
+        let popup = Popup::new(test_items());
+
+        let custom_style = PopupStyle {
+            marker: Style::default().fg(Color::Red),
+            ..Default::default()
+        };
+
+        let renderer = PopupRenderer::new(&popup).style(custom_style);
+        let area = Rect::new(0, 0, 50, 8);
+        let mut buf = Buffer::empty(area);
+
+        // Should render with custom style without panic
+        renderer.render(area, &mut buf);
+    }
+
+    #[test]
+    fn renderer_multi_select_shows_checkboxes() {
+        let mut popup =
+            Popup::new(test_items()).with_config(PopupConfig::default().multi_select(true));
+        popup.toggle_current(); // Select first item
+
+        let renderer = PopupRenderer::new(&popup);
+        let area = Rect::new(0, 0, 60, 8);
+        let mut buf = Buffer::empty(area);
+        renderer.render(area, &mut buf);
+
+        // Should show checkbox
+        let content = buf.content();
+        let text: String = content.iter().map(|c| c.symbol()).collect();
+        assert!(
+            text.contains("[x]") || text.contains("[ ]"),
+            "Should show checkboxes: {}",
+            text
+        );
     }
 }
