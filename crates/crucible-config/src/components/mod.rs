@@ -11,6 +11,7 @@ pub mod embedding;
 pub mod gateway;
 pub mod hooks;
 pub mod llm;
+pub mod storage;
 
 // New unified provider configuration
 pub mod backend;
@@ -27,6 +28,7 @@ pub use embedding::*;
 pub use gateway::*;
 pub use hooks::*;
 pub use llm::*;
+pub use storage::*;
 
 // Re-export unified provider types
 pub use backend::BackendType;

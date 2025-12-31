@@ -3,7 +3,7 @@
 use crate::components::{
     AcpConfig, ChatConfig, CliConfig, ContextConfig, DiscoveryPathsConfig, EmbeddingConfig,
     EmbeddingProviderType, GatewayConfig, HooksConfig, LlmConfig, LlmProvider, LlmProviderType,
-    ProvidersConfig,
+    ProvidersConfig, StorageConfig,
 };
 use crate::includes::IncludeConfig;
 use crate::{EnrichmentConfig, ProfileConfig};
@@ -649,6 +649,10 @@ pub struct CliAppConfig {
     /// Context configuration (rules files, etc.)
     #[serde(default)]
     pub context: Option<ContextConfig>,
+
+    /// Storage configuration (embedded vs daemon mode)
+    #[serde(default)]
+    pub storage: Option<StorageConfig>,
 }
 
 fn default_kiln_path() -> std::path::PathBuf {
@@ -669,6 +673,7 @@ impl Default for CliAppConfig {
             logging: None,
             processing: ProcessingConfig::default(),
             context: None,
+            storage: None,
         }
     }
 }
