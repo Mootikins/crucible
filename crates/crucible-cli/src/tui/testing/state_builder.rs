@@ -4,7 +4,7 @@
 //! for snapshot tests with insta.
 
 use crate::tui::render::render;
-use crate::tui::state::{PopupItem, PopupItemKind, PopupKind, PopupState, TuiState};
+use crate::tui::state::{PopupItem, PopupKind, PopupState, TuiState};
 use crate::tui::streaming::StreamingBuffer;
 use ratatui::{backend::TestBackend, Terminal};
 use std::time::Instant;
@@ -140,56 +140,7 @@ impl TestStateBuilder {
     }
 }
 
-// Convenience constructors for PopupItem
-impl PopupItem {
-    /// Create a command popup item
-    pub fn command(name: &str, desc: &str) -> Self {
-        Self {
-            kind: PopupItemKind::Command,
-            title: format!("/{}", name),
-            subtitle: desc.to_string(),
-            token: format!("/{} ", name),
-            score: 0,
-            available: true,
-        }
-    }
-
-    /// Create an agent popup item
-    pub fn agent(id: &str, desc: &str) -> Self {
-        Self {
-            kind: PopupItemKind::Agent,
-            title: format!("@{}", id),
-            subtitle: desc.to_string(),
-            token: format!("@{}", id),
-            score: 0,
-            available: true,
-        }
-    }
-
-    /// Create a file popup item
-    pub fn file(path: &str, subtitle: &str) -> Self {
-        Self {
-            kind: PopupItemKind::File,
-            title: path.to_string(),
-            subtitle: subtitle.to_string(),
-            token: path.to_string(),
-            score: 0,
-            available: true,
-        }
-    }
-
-    /// Create a note popup item
-    pub fn note(path: &str, subtitle: &str) -> Self {
-        Self {
-            kind: PopupItemKind::Note,
-            title: path.to_string(),
-            subtitle: subtitle.to_string(),
-            token: path.to_string(),
-            score: 0,
-            available: true,
-        }
-    }
-}
+// PopupItem constructors moved to state.rs - use PopupItem::cmd(), ::agent(), etc.
 
 #[cfg(test)]
 mod tests {
@@ -216,8 +167,8 @@ mod tests {
             .with_popup_items(
                 PopupKind::Command,
                 vec![
-                    PopupItem::command("help", "Show help"),
-                    PopupItem::command("exit", "Exit"),
+                    PopupItem::cmd("help").desc("Show help"),
+                    PopupItem::cmd("exit").desc("Exit"),
                 ],
             )
             .with_popup_selected(1)
@@ -239,21 +190,21 @@ mod tests {
 
     #[test]
     fn test_popup_item_constructors() {
-        let cmd = PopupItem::command("search", "Search files");
-        assert_eq!(cmd.title, "/search");
-        assert_eq!(cmd.kind, PopupItemKind::Command);
+        let cmd = PopupItem::cmd("search").desc("Search files");
+        assert_eq!(cmd.title(), "/search");
+        assert!(cmd.is_command());
 
-        let agent = PopupItem::agent("dev-helper", "Developer assistant");
-        assert_eq!(agent.title, "@dev-helper");
-        assert_eq!(agent.kind, PopupItemKind::Agent);
+        let agent = PopupItem::agent("dev-helper").desc("Developer assistant");
+        assert_eq!(agent.title(), "@dev-helper");
+        assert!(agent.is_agent());
 
-        let file = PopupItem::file("src/main.rs", "workspace");
-        assert_eq!(file.title, "src/main.rs");
-        assert_eq!(file.kind, PopupItemKind::File);
+        let file = PopupItem::file("src/main.rs");
+        assert_eq!(file.title(), "src/main.rs");
+        assert!(file.is_file());
 
-        let note = PopupItem::note("note:project/todo.md", "note");
-        assert_eq!(note.title, "note:project/todo.md");
-        assert_eq!(note.kind, PopupItemKind::Note);
+        let note = PopupItem::note("project/todo.md");
+        assert_eq!(note.title(), "note:project/todo.md");
+        assert!(note.is_note());
     }
 
     #[test]

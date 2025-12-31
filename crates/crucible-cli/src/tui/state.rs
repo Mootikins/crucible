@@ -64,8 +64,289 @@ pub enum PopupKind {
     AgentOrFile,
 }
 
-/// Type of popup item
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Popup entry displayed in the inline picker
+///
+/// Each variant contains only the data relevant to that item type.
+/// Use the accessor methods (`title()`, `token()`, etc.) for uniform access.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PopupItem {
+    /// Slash command: `/name`
+    Command {
+        name: String,
+        description: String,
+        /// Argument hint shown as faded text (e.g., "<query>" for /search)
+        argument_hint: Option<String>,
+        score: i32,
+        available: bool,
+    },
+    /// Agent mention: `@id`
+    Agent {
+        id: String,
+        description: String,
+        score: i32,
+        available: bool,
+    },
+    /// Workspace file reference
+    File {
+        path: String,
+        score: i32,
+        available: bool,
+    },
+    /// Note reference: `note:path`
+    Note {
+        path: String,
+        score: i32,
+        available: bool,
+    },
+    /// Skill invocation: `skill:name`
+    Skill {
+        name: String,
+        description: String,
+        scope: String,
+        score: i32,
+        available: bool,
+    },
+}
+
+impl PopupItem {
+    // =========================================================================
+    // Constructors - create items with sensible defaults
+    // =========================================================================
+
+    /// Create a new command popup item: `/name`
+    pub fn cmd(name: impl Into<String>) -> Self {
+        PopupItem::Command {
+            name: name.into(),
+            description: String::new(),
+            argument_hint: None,
+            score: 0,
+            available: true,
+        }
+    }
+
+    /// Create a new agent popup item: `@id`
+    pub fn agent(id: impl Into<String>) -> Self {
+        PopupItem::Agent {
+            id: id.into(),
+            description: String::new(),
+            score: 0,
+            available: true,
+        }
+    }
+
+    /// Create a new file popup item
+    pub fn file(path: impl Into<String>) -> Self {
+        PopupItem::File {
+            path: path.into(),
+            score: 0,
+            available: true,
+        }
+    }
+
+    /// Create a new note popup item
+    pub fn note(path: impl Into<String>) -> Self {
+        PopupItem::Note {
+            path: path.into(),
+            score: 0,
+            available: true,
+        }
+    }
+
+    /// Create a new skill popup item
+    pub fn skill(name: impl Into<String>) -> Self {
+        PopupItem::Skill {
+            name: name.into(),
+            description: String::new(),
+            scope: String::new(),
+            score: 0,
+            available: true,
+        }
+    }
+
+    // =========================================================================
+    // Builder methods - chain after constructor
+    // =========================================================================
+
+    /// Builder: set description (for Command, Agent, Skill)
+    pub fn desc(mut self, description: impl Into<String>) -> Self {
+        let d = description.into();
+        match &mut self {
+            PopupItem::Command { description, .. } => *description = d,
+            PopupItem::Agent { description, .. } => *description = d,
+            PopupItem::Skill { description, .. } => *description = d,
+            PopupItem::File { .. } | PopupItem::Note { .. } => {}
+        }
+        self
+    }
+
+    /// Builder: set argument hint (Command only)
+    pub fn hint(mut self, hint: impl Into<String>) -> Self {
+        if let PopupItem::Command { argument_hint, .. } = &mut self {
+            *argument_hint = Some(hint.into());
+        }
+        self
+    }
+
+    /// Builder: set scope (Skill only)
+    pub fn with_scope(mut self, s: impl Into<String>) -> Self {
+        if let PopupItem::Skill { scope, .. } = &mut self {
+            *scope = s.into();
+        }
+        self
+    }
+
+    /// Builder: set score
+    pub fn with_score(mut self, s: i32) -> Self {
+        match &mut self {
+            PopupItem::Command { score, .. } => *score = s,
+            PopupItem::Agent { score, .. } => *score = s,
+            PopupItem::File { score, .. } => *score = s,
+            PopupItem::Note { score, .. } => *score = s,
+            PopupItem::Skill { score, .. } => *score = s,
+        }
+        self
+    }
+
+    /// Builder: set availability
+    pub fn with_available(mut self, a: bool) -> Self {
+        match &mut self {
+            PopupItem::Command { available, .. } => *available = a,
+            PopupItem::Agent { available, .. } => *available = a,
+            PopupItem::File { available, .. } => *available = a,
+            PopupItem::Note { available, .. } => *available = a,
+            PopupItem::Skill { available, .. } => *available = a,
+        }
+        self
+    }
+
+    // =========================================================================
+    // Accessors - uniform interface across variants
+    // =========================================================================
+
+    /// Display title (e.g., "/search", "@agent", "src/main.rs")
+    pub fn title(&self) -> String {
+        match self {
+            PopupItem::Command { name, .. } => format!("/{}", name),
+            PopupItem::Agent { id, .. } => format!("@{}", id),
+            PopupItem::File { path, .. } => path.clone(),
+            PopupItem::Note { path, .. } => format!("note:{}", path),
+            PopupItem::Skill { name, .. } => format!("skill:{}", name),
+        }
+    }
+
+    /// Subtitle/description text
+    pub fn subtitle(&self) -> &str {
+        match self {
+            PopupItem::Command { description, .. } => description,
+            PopupItem::Agent { description, .. } => description,
+            PopupItem::File { .. } => "workspace",
+            PopupItem::Note { .. } => "note",
+            PopupItem::Skill {
+                description,
+                scope: _,
+                ..
+            } => {
+                // For skills, we want "description (scope)" but we can't allocate here
+                // Return just description; caller can format with scope if needed
+                description
+            }
+        }
+    }
+
+    /// Token to insert when selected
+    pub fn token(&self) -> String {
+        match self {
+            PopupItem::Command { name, .. } => format!("/{} ", name),
+            PopupItem::Agent { id, .. } => format!("@{}", id),
+            PopupItem::File { path, .. } => path.clone(),
+            PopupItem::Note { path, .. } => path.clone(),
+            PopupItem::Skill { name, .. } => format!("skill:{} ", name),
+        }
+    }
+
+    /// Kind label for display (e.g., "cmd", "agent")
+    pub fn kind_label(&self) -> &'static str {
+        match self {
+            PopupItem::Command { .. } => "cmd",
+            PopupItem::Agent { .. } => "agent",
+            PopupItem::File { .. } => "file",
+            PopupItem::Note { .. } => "note",
+            PopupItem::Skill { .. } => "skill",
+        }
+    }
+
+    /// Score for sorting/filtering
+    pub fn score(&self) -> i32 {
+        match self {
+            PopupItem::Command { score, .. } => *score,
+            PopupItem::Agent { score, .. } => *score,
+            PopupItem::File { score, .. } => *score,
+            PopupItem::Note { score, .. } => *score,
+            PopupItem::Skill { score, .. } => *score,
+        }
+    }
+
+    /// Whether item is available/enabled
+    pub fn is_available(&self) -> bool {
+        match self {
+            PopupItem::Command { available, .. } => *available,
+            PopupItem::Agent { available, .. } => *available,
+            PopupItem::File { available, .. } => *available,
+            PopupItem::Note { available, .. } => *available,
+            PopupItem::Skill { available, .. } => *available,
+        }
+    }
+
+    /// Argument hint (Command only)
+    pub fn argument_hint(&self) -> Option<&str> {
+        match self {
+            PopupItem::Command { argument_hint, .. } => argument_hint.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// Skill scope (Skill only)
+    pub fn scope(&self) -> Option<&str> {
+        match self {
+            PopupItem::Skill { scope, .. } => Some(scope),
+            _ => None,
+        }
+    }
+
+    // =========================================================================
+    // Compatibility - for code that still uses old field access patterns
+    // =========================================================================
+
+    /// Check if this is a Command variant
+    pub fn is_command(&self) -> bool {
+        matches!(self, PopupItem::Command { .. })
+    }
+
+    /// Check if this is an Agent variant
+    pub fn is_agent(&self) -> bool {
+        matches!(self, PopupItem::Agent { .. })
+    }
+
+    /// Check if this is a File variant
+    pub fn is_file(&self) -> bool {
+        matches!(self, PopupItem::File { .. })
+    }
+
+    /// Check if this is a Note variant
+    pub fn is_note(&self) -> bool {
+        matches!(self, PopupItem::Note { .. })
+    }
+
+    /// Check if this is a Skill variant
+    pub fn is_skill(&self) -> bool {
+        matches!(self, PopupItem::Skill { .. })
+    }
+}
+
+/// Legacy type alias for code that still references PopupItemKind
+///
+/// Use pattern matching on PopupItem variants instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PopupItemKind {
     Command,
     Agent,
@@ -74,15 +355,19 @@ pub enum PopupItemKind {
     Skill,
 }
 
-/// Popup entry displayed in the inline picker
-#[derive(Debug, Clone, PartialEq)]
-pub struct PopupItem {
-    pub kind: PopupItemKind,
-    pub title: String,
-    pub subtitle: String,
-    pub token: String,
-    pub score: i32,
-    pub available: bool,
+impl PopupItem {
+    /// Get the kind as an enum (for compatibility with old code)
+    ///
+    /// Prefer pattern matching on PopupItem directly.
+    pub fn kind(&self) -> PopupItemKind {
+        match self {
+            PopupItem::Command { .. } => PopupItemKind::Command,
+            PopupItem::Agent { .. } => PopupItemKind::Agent,
+            PopupItem::File { .. } => PopupItemKind::File,
+            PopupItem::Note { .. } => PopupItemKind::Note,
+            PopupItem::Skill { .. } => PopupItemKind::Skill,
+        }
+    }
 }
 
 /// Popup state for inline triggers (/ or @)
@@ -811,22 +1096,8 @@ mod tests {
         let mut state = TuiState::new("plan");
         let mut popup = PopupState::new(PopupKind::Command);
         popup.items = vec![
-            PopupItem {
-                kind: PopupItemKind::Command,
-                title: "/a".into(),
-                subtitle: String::new(),
-                token: "/a ".into(),
-                score: 1,
-                available: true,
-            },
-            PopupItem {
-                kind: PopupItemKind::Command,
-                title: "/b".into(),
-                subtitle: String::new(),
-                token: "/b ".into(),
-                score: 1,
-                available: true,
-            },
+            PopupItem::cmd("a").with_score(1),
+            PopupItem::cmd("b").with_score(1),
         ];
         state.popup = Some(popup);
         state.execute_action(InputAction::MovePopupSelection(-1));
@@ -852,21 +1123,19 @@ mod tests {
         assert_eq!(popup.viewport_offset, 0);
     }
 
+    /// Helper to create 10 test popup items
+    fn make_ten_items() -> Vec<PopupItem> {
+        (0..10)
+            .map(|i| PopupItem::cmd(i.to_string()).with_score(1))
+            .collect()
+    }
+
     #[test]
     fn test_popup_viewport_follows_selection_down() {
         // With 10 items and 5 visible, selecting item 6 should shift offset to 2
         // (so items 2-6 are visible, with 6 selected)
         let mut popup = PopupState::new(PopupKind::Command);
-        popup.items = (0..10)
-            .map(|i| PopupItem {
-                kind: PopupItemKind::Command,
-                title: format!("Item {}", i),
-                subtitle: String::new(),
-                token: format!("/{} ", i),
-                score: 1,
-                available: true,
-            })
-            .collect();
+        popup.items = make_ten_items();
 
         // Select item 6 (index 6)
         popup.selected = 6;
@@ -881,16 +1150,7 @@ mod tests {
     fn test_popup_viewport_follows_selection_up() {
         // With offset at 3, selecting item 0 should shift offset to 0
         let mut popup = PopupState::new(PopupKind::Command);
-        popup.items = (0..10)
-            .map(|i| PopupItem {
-                kind: PopupItemKind::Command,
-                title: format!("Item {}", i),
-                subtitle: String::new(),
-                token: format!("/{} ", i),
-                score: 1,
-                available: true,
-            })
-            .collect();
+        popup.items = make_ten_items();
 
         popup.viewport_offset = 3;
         popup.selected = 0;
@@ -904,16 +1164,7 @@ mod tests {
     fn test_popup_viewport_stable_within_window() {
         // Selecting item 2 when offset is 0 should keep offset at 0
         let mut popup = PopupState::new(PopupKind::Command);
-        popup.items = (0..10)
-            .map(|i| PopupItem {
-                kind: PopupItemKind::Command,
-                title: format!("Item {}", i),
-                subtitle: String::new(),
-                token: format!("/{} ", i),
-                score: 1,
-                available: true,
-            })
-            .collect();
+        popup.items = make_ten_items();
 
         popup.viewport_offset = 0;
         popup.selected = 2;
@@ -927,16 +1178,7 @@ mod tests {
     fn test_popup_viewport_wrap_to_end() {
         // Wrapping selection from 0 to last item should jump viewport
         let mut popup = PopupState::new(PopupKind::Command);
-        popup.items = (0..10)
-            .map(|i| PopupItem {
-                kind: PopupItemKind::Command,
-                title: format!("Item {}", i),
-                subtitle: String::new(),
-                token: format!("/{} ", i),
-                score: 1,
-                available: true,
-            })
-            .collect();
+        popup.items = make_ten_items();
 
         popup.viewport_offset = 0;
         popup.selected = 9; // Last item (wrapped from 0)
@@ -951,16 +1193,7 @@ mod tests {
     fn test_popup_viewport_wrap_to_start() {
         // Wrapping selection from last to 0 should reset viewport to 0
         let mut popup = PopupState::new(PopupKind::Command);
-        popup.items = (0..10)
-            .map(|i| PopupItem {
-                kind: PopupItemKind::Command,
-                title: format!("Item {}", i),
-                subtitle: String::new(),
-                token: format!("/{} ", i),
-                score: 1,
-                available: true,
-            })
-            .collect();
+        popup.items = make_ten_items();
 
         popup.viewport_offset = 5;
         popup.selected = 0; // Wrapped from 9 back to 0

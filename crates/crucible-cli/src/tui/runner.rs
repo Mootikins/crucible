@@ -25,8 +25,8 @@ use crate::tui::conversation::StatusKind;
 use crate::tui::conversation_view::{ConversationView, RatatuiView};
 use crate::tui::state::{find_word_start_backward, find_word_start_forward};
 use crate::tui::{
-    map_key_event, DialogKind, DialogState, DynamicPopupProvider, InputAction, ParseEvent,
-    PopupProvider, StreamBlock, StreamingParser, TuiState,
+    map_key_event, DialogState, DynamicPopupProvider, InputAction, ParseEvent, PopupProvider,
+    StreamBlock, StreamingParser, TuiState,
 };
 use anyhow::Result;
 use crossterm::{
@@ -504,7 +504,7 @@ impl RatatuiRunner {
                 if let Some(ref popup) = self.popup {
                     if !popup.items.is_empty() {
                         let idx = popup.selected.min(popup.items.len() - 1);
-                        let token = popup.items[idx].token.clone();
+                        let token = popup.items[idx].token();
                         self.view.set_input(&token);
                         self.view.set_cursor_position(token.len());
                     }
@@ -1069,10 +1069,7 @@ impl RatatuiRunner {
             }
             InteractionRequest::Permission(perm) => {
                 let pattern = perm.pattern_at(perm.tokens().len());
-                DialogState::confirm(
-                    "Permission Required",
-                    format!("Allow: {}?", pattern),
-                )
+                DialogState::confirm("Permission Required", format!("Allow: {}?", pattern))
             }
             InteractionRequest::Edit(edit) => {
                 // Show content as info - full editing would need dedicated widget
@@ -1393,22 +1390,8 @@ mod tests {
         impl PopupItemProvider for MockProvider {
             fn provide(&self, _kind: PopupKind, _query: &str) -> Vec<PopupItem> {
                 vec![
-                    PopupItem {
-                        kind: PopupItemKind::Command,
-                        title: "/help".to_string(),
-                        subtitle: "Show help".to_string(),
-                        token: "/help ".to_string(),
-                        score: 100,
-                        available: true,
-                    },
-                    PopupItem {
-                        kind: PopupItemKind::Command,
-                        title: "/clear".to_string(),
-                        subtitle: "Clear history".to_string(),
-                        token: "/clear ".to_string(),
-                        score: 90,
-                        available: true,
-                    },
+                    PopupItem::cmd("help").desc("Show help").with_score(100),
+                    PopupItem::cmd("clear").desc("Clear history").with_score(90),
                 ]
             }
         }
@@ -1419,12 +1402,8 @@ mod tests {
 
         #[test]
         fn test_runner_can_set_generic_popup_on_view() {
-            let mut runner = RatatuiRunner::new(
-                "plan",
-                test_popup_provider(),
-                test_command_registry(),
-            )
-            .unwrap();
+            let mut runner =
+                RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
             // Initially no popup
             assert!(!runner.view.has_popup());
@@ -1440,12 +1419,8 @@ mod tests {
 
         #[test]
         fn test_runner_generic_popup_navigation() {
-            let mut runner = RatatuiRunner::new(
-                "plan",
-                test_popup_provider(),
-                test_command_registry(),
-            )
-            .unwrap();
+            let mut runner =
+                RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
             // Set a generic popup and populate items
             let mut popup = GenericPopupState::new(PopupKind::Command, mock_provider());
@@ -1466,12 +1441,8 @@ mod tests {
 
         #[test]
         fn test_runner_clears_generic_popup() {
-            let mut runner = RatatuiRunner::new(
-                "plan",
-                test_popup_provider(),
-                test_command_registry(),
-            )
-            .unwrap();
+            let mut runner =
+                RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
             // Set popup
             let popup = GenericPopupState::new(PopupKind::Command, mock_provider());

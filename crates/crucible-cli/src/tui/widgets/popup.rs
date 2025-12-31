@@ -173,11 +173,12 @@ impl FuzzyMatcher {
             .iter()
             .enumerate()
             .filter_map(|(index, item)| {
-                self.score(query, item.match_text()).map(|score| ScoredItem {
-                    index,
-                    score,
-                    _phantom: PhantomData,
-                })
+                self.score(query, item.match_text())
+                    .map(|score| ScoredItem {
+                        index,
+                        score,
+                        _phantom: PhantomData,
+                    })
             })
             .collect();
 
@@ -1177,8 +1178,7 @@ mod tests {
             TestItem::new("enabled2", ""),
         ];
 
-        let mut popup =
-            Popup::new(items).with_config(PopupConfig::default().multi_select(true));
+        let mut popup = Popup::new(items).with_config(PopupConfig::default().multi_select(true));
 
         popup.select_all();
         assert_eq!(popup.selected_items().len(), 2);
@@ -1315,7 +1315,11 @@ mod tests {
         let title = renderer.build_title();
 
         // Should show position when items exceed max_visible
-        assert!(title.contains("1/20"), "Title should show position: {}", title);
+        assert!(
+            title.contains("1/20"),
+            "Title should show position: {}",
+            title
+        );
     }
 
     #[test]

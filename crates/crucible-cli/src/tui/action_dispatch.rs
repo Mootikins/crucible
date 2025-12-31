@@ -206,14 +206,7 @@ mod tests {
 
     #[test]
     fn test_dispatch_popup_confirm() {
-        let item = PopupItem {
-            kind: PopupItemKind::Command,
-            title: "/help".into(),
-            subtitle: "Show help".into(),
-            token: "/help ".into(),
-            score: 100,
-            available: true,
-        };
+        let item = PopupItem::cmd("help").desc("Show help").with_score(100);
 
         let effect = dispatch(TuiAction::PopupConfirm(item.clone()));
         assert_eq!(effect, RunnerEffect::ApplyPopupSelection(item));

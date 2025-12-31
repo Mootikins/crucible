@@ -29,90 +29,83 @@ pub enum DialogResult {
     Pending,
 }
 
-/// Dialog variants
+/// Dialog state - each variant contains all state it needs
+///
+/// This is a proper enum-with-data pattern: no separate discriminant field,
+/// and each variant carries only the fields relevant to that dialog type.
 #[derive(Debug, Clone)]
-pub enum DialogKind {
-    /// Yes/No confirmation
+pub enum DialogState {
+    /// Yes/No confirmation dialog
     Confirm {
         title: String,
         message: String,
         confirm_label: String,
         cancel_label: String,
+        /// 0 = confirm button focused, 1 = cancel button focused
+        focused_button: usize,
     },
-    /// Select from list
+    /// Select from list dialog
     Select {
         title: String,
         items: Vec<String>,
+        /// Currently selected item index
         selected: usize,
     },
-    /// Information display
+    /// Information display dialog
     Info { title: String, content: String },
-}
-
-/// Dialog state with focus tracking
-#[derive(Debug, Clone)]
-pub struct DialogState {
-    pub kind: DialogKind,
-    /// For Confirm: 0 = confirm, 1 = cancel
-    /// For Select: index of selected item
-    pub focus_index: usize,
 }
 
 impl DialogState {
     /// Create a confirmation dialog
     pub fn confirm(title: impl Into<String>, message: impl Into<String>) -> Self {
-        Self {
-            kind: DialogKind::Confirm {
-                title: title.into(),
-                message: message.into(),
-                confirm_label: "Yes".into(),
-                cancel_label: "No".into(),
-            },
-            focus_index: 0,
+        DialogState::Confirm {
+            title: title.into(),
+            message: message.into(),
+            confirm_label: "Yes".into(),
+            cancel_label: "No".into(),
+            focused_button: 0,
         }
     }
 
     /// Create a selection dialog
     pub fn select(title: impl Into<String>, items: Vec<String>) -> Self {
-        Self {
-            kind: DialogKind::Select {
-                title: title.into(),
-                items,
-                selected: 0,
-            },
-            focus_index: 0,
+        DialogState::Select {
+            title: title.into(),
+            items,
+            selected: 0,
         }
     }
 
     /// Create an info dialog
     pub fn info(title: impl Into<String>, content: impl Into<String>) -> Self {
-        Self {
-            kind: DialogKind::Info {
-                title: title.into(),
-                content: content.into(),
-            },
-            focus_index: 0,
+        DialogState::Info {
+            title: title.into(),
+            content: content.into(),
         }
     }
 
     /// Handle key input, returning result
     pub fn handle_key(&mut self, key: KeyEvent) -> DialogResult {
-        match &mut self.kind {
-            DialogKind::Confirm { confirm_label, .. } => match key.code {
+        match self {
+            DialogState::Confirm {
+                confirm_label,
+                focused_button,
+                ..
+            } => match key.code {
                 KeyCode::Left | KeyCode::Char('h') => {
-                    self.focus_index = 0;
+                    *focused_button = 0;
                     DialogResult::Pending
                 }
                 KeyCode::Right | KeyCode::Char('l') => {
-                    self.focus_index = 1;
+                    *focused_button = 1;
                     DialogResult::Pending
                 }
                 KeyCode::Tab => {
-                    self.focus_index = (self.focus_index + 1) % 2;
+                    *focused_button = (*focused_button + 1) % 2;
                     DialogResult::Pending
                 }
                 KeyCode::Enter | KeyCode::Char(' ') => {
-                    if self.focus_index == 0 {
+                    if *focused_button == 0 {
                         DialogResult::Confirm(confirm_label.clone())
                     } else {
                         DialogResult::Cancel
@@ -123,17 +116,15 @@ impl DialogState {
                 KeyCode::Char('n') => DialogResult::Cancel,
                 _ => DialogResult::Pending,
             },
-            DialogKind::Select {
+            DialogState::Select {
                 items, selected, ..
             } => match key.code {
                 KeyCode::Up | KeyCode::Char('k') => {
                     *selected = selected.saturating_sub(1);
-                    self.focus_index = *selected;
                     DialogResult::Pending
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
                     *selected = (*selected + 1).min(items.len().saturating_sub(1));
-                    self.focus_index = *selected;
                     DialogResult::Pending
                 }
                 KeyCode::Enter | KeyCode::Char(' ') => {
@@ -146,7 +137,7 @@ impl DialogState {
                 KeyCode::Esc | KeyCode::Char('q') => DialogResult::Cancel,
                 _ => DialogResult::Pending,
             },
-            DialogKind::Info { .. } => match key.code {
+            DialogState::Info { .. } => match key.code {
                 KeyCode::Enter | KeyCode::Esc | KeyCode::Char(' ') | KeyCode::Char('q') => {
                     DialogResult::Confirm("ok".into())
                 }
@@ -205,26 +196,27 @@ impl Widget for DialogWidget<'_> {
         }
 
         // Calculate dialog size based on content
-        let dialog_area = match &self.state.kind {
-            DialogKind::Confirm { .. } => Self::centered_rect(50, 30, area),
-            DialogKind::Select { items, .. } => {
+        let dialog_area = match self.state {
+            DialogState::Confirm { .. } => Self::centered_rect(50, 30, area),
+            DialogState::Select { items, .. } => {
                 let height = (items.len() + 4).min(20) as u16;
                 let height_percent = (height * 100 / area.height).clamp(30, 80);
                 Self::centered_rect(50, height_percent, area)
             }
-            DialogKind::Info { .. } => Self::centered_rect(60, 40, area),
+            DialogState::Info { .. } => Self::centered_rect(60, 40, area),
         };
 
         // Clear dialog area
         Clear.render(dialog_area, buf);
 
         // Render based on dialog type
-        match &self.state.kind {
-            DialogKind::Confirm {
+        match self.state {
+            DialogState::Confirm {
                 title,
                 message,
                 confirm_label,
                 cancel_label,
+                focused_button,
             } => {
                 self.render_confirm(
                     dialog_area,
@@ -233,16 +225,17 @@ impl Widget for DialogWidget<'_> {
                     message,
                     confirm_label,
                     cancel_label,
+                    *focused_button,
                 );
             }
-            DialogKind::Select {
+            DialogState::Select {
                 title,
                 items,
                 selected,
             } => {
                 self.render_select(dialog_area, buf, title, items, *selected);
             }
-            DialogKind::Info { title, content } => {
+            DialogState::Info { title, content } => {
                 self.render_info(dialog_area, buf, title, content);
             }
         }
@@ -258,6 +251,7 @@ impl DialogWidget<'_> {
         message: &str,
         confirm_label: &str,
         cancel_label: &str,
+        focused_button: usize,
     ) {
         let block = Block::default()
             .title(format!(" {} ", title))
@@ -285,7 +279,7 @@ impl DialogWidget<'_> {
         let start_x = inner.x + (inner.width.saturating_sub(total_width)) / 2;
 
         // Confirm button
-        let confirm_style = if self.state.focus_index == 0 {
+        let confirm_style = if focused_button == 0 {
             Style::default()
                 .fg(Color::Black)
                 .bg(Color::Green)
@@ -297,7 +291,7 @@ impl DialogWidget<'_> {
         buf.set_string(start_x, button_y, &confirm_btn, confirm_style);
 
         // Cancel button
-        let cancel_style = if self.state.focus_index == 1 {
+        let cancel_style = if focused_button == 1 {
             Style::default()
                 .fg(Color::Black)
                 .bg(Color::Red)

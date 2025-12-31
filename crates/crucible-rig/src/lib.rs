@@ -68,6 +68,4 @@ pub use workspace_tools::{
 };
 
 // Re-export kiln tools (for knowledge base access)
-pub use kiln_tools::{
-    KilnContext, KilnToolError, ListNotesTool, ReadNoteTool, SemanticSearchTool,
-};
+pub use kiln_tools::{KilnContext, KilnToolError, ListNotesTool, ReadNoteTool, SemanticSearchTool};

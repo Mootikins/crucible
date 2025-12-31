@@ -305,10 +305,7 @@ impl StorageHandle {
 /// # }
 /// ```
 pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
-    let storage_config = config
-        .storage
-        .clone()
-        .unwrap_or_default();
+    let storage_config = config.storage.clone().unwrap_or_default();
 
     match storage_config.mode {
         StorageMode::Embedded => {

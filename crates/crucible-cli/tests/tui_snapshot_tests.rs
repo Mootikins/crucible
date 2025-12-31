@@ -32,9 +32,9 @@ fn popup_visible_with_commands() {
         .with_popup_items(
             PopupKind::Command,
             vec![
-                PopupItem::command("help", "Show help information"),
-                PopupItem::command("exit", "Exit the chat"),
-                PopupItem::command("clear", "Clear the screen"),
+                PopupItem::cmd("help").desc("Show help information"),
+                PopupItem::cmd("exit").desc("Exit the chat"),
+                PopupItem::cmd("clear").desc("Clear the screen"),
             ],
         )
         .build();
@@ -51,9 +51,9 @@ fn popup_visible_with_agents_and_files() {
         .with_popup_items(
             PopupKind::AgentOrFile,
             vec![
-                PopupItem::agent("dev-helper", "Developer assistant"),
-                PopupItem::agent("test-runner", "Test automation"),
-                PopupItem::file("src/main.rs", "workspace"),
+                PopupItem::agent("dev-helper").desc("Developer assistant"),
+                PopupItem::agent("test-runner").desc("Test automation"),
+                PopupItem::file("src/main.rs"),
             ],
         )
         .build();
@@ -74,8 +74,8 @@ fn popup_first_item_selected_by_default() {
         .with_popup_items(
             PopupKind::Command,
             vec![
-                PopupItem::command("help", "Show help"),
-                PopupItem::command("exit", "Exit"),
+                PopupItem::cmd("help").desc("Show help"),
+                PopupItem::cmd("exit").desc("Exit"),
             ],
         )
         .build();
@@ -92,9 +92,9 @@ fn popup_second_item_selected() {
         .with_popup_items(
             PopupKind::Command,
             vec![
-                PopupItem::command("help", "Show help"),
-                PopupItem::command("exit", "Exit"),
-                PopupItem::command("clear", "Clear screen"),
+                PopupItem::cmd("help").desc("Show help"),
+                PopupItem::cmd("exit").desc("Exit"),
+                PopupItem::cmd("clear").desc("Clear screen"),
             ],
         )
         .with_popup_selected(1)
@@ -112,9 +112,9 @@ fn popup_last_item_selected() {
         .with_popup_items(
             PopupKind::AgentOrFile,
             vec![
-                PopupItem::agent("agent1", "First agent"),
-                PopupItem::agent("agent2", "Second agent"),
-                PopupItem::file("README.md", "workspace"),
+                PopupItem::agent("agent1").desc("First agent"),
+                PopupItem::agent("agent2").desc("Second agent"),
+                PopupItem::file("README.md"),
             ],
         )
         .with_popup_selected(2)
@@ -136,9 +136,9 @@ fn popup_shows_mixed_type_labels() {
         .with_popup_items(
             PopupKind::AgentOrFile,
             vec![
-                PopupItem::agent("helper", "AI Helper"),
-                PopupItem::file("README.md", "workspace"),
-                PopupItem::note("note:project/todo.md", "note"),
+                PopupItem::agent("helper").desc("AI Helper"),
+                PopupItem::file("README.md"),
+                PopupItem::note("project/todo.md"),
             ],
         )
         .build();
@@ -156,8 +156,8 @@ fn popup_command_type_labels() {
         .with_popup_items(
             PopupKind::Command,
             vec![
-                PopupItem::command("search", "Search files"),
-                PopupItem::command("stats", "Show statistics"),
+                PopupItem::cmd("search").desc("Search files"),
+                PopupItem::cmd("stats").desc("Show statistics"),
             ],
         )
         .build();
@@ -174,7 +174,7 @@ fn popup_command_type_labels() {
 fn popup_truncates_to_max_five_items() {
     let mut terminal = test_terminal();
     let items: Vec<_> = (0..10)
-        .map(|i| PopupItem::command(&format!("cmd{i}"), &format!("Command {i}")))
+        .map(|i| PopupItem::cmd(format!("cmd{i}")).desc(format!("Command {i}")))
         .collect();
 
     let state = TestStateBuilder::new("plan")
@@ -192,7 +192,10 @@ fn popup_single_item() {
     let mut terminal = test_terminal();
     let state = TestStateBuilder::new("plan")
         .with_input("/exit")
-        .with_popup_items(PopupKind::Command, vec![PopupItem::command("exit", "Exit")])
+        .with_popup_items(
+            PopupKind::Command,
+            vec![PopupItem::cmd("exit").desc("Exit")],
+        )
         .build();
 
     terminal.draw(|f| render(f, &state)).unwrap();
@@ -305,8 +308,8 @@ fn popup_with_streaming() {
         .with_popup_items(
             PopupKind::Command,
             vec![
-                PopupItem::command("help", "Show help"),
-                PopupItem::command("exit", "Exit"),
+                PopupItem::cmd("help").desc("Show help"),
+                PopupItem::cmd("exit").desc("Exit"),
             ],
         )
         .with_streaming("Processing your request...")
@@ -771,10 +774,12 @@ fn dialog_confirm() {
 
 #[test]
 fn dialog_confirm_focused_cancel() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
     let mut terminal = test_terminal();
     let mut dialog = DialogState::confirm("Delete File", "This action cannot be undone.");
-    // Move focus to cancel button
-    dialog.focus_index = 1;
+    // Move focus to cancel button by pressing Right
+    dialog.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
 
     terminal
         .draw(|f| {
@@ -810,17 +815,15 @@ fn dialog_select() {
 
 #[test]
 fn dialog_select_second_item() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
     let mut terminal = test_terminal();
-    let dialog = DialogState::select(
+    let mut dialog = DialogState::select(
         "Choose Mode",
         vec!["plan".into(), "act".into(), "auto".into()],
     );
-    // Select second item
-    let mut dialog = dialog;
-    if let crucible_cli::tui::dialog::DialogKind::Select { selected, .. } = &mut dialog.kind {
-        *selected = 1;
-        dialog.focus_index = 1;
-    }
+    // Select second item by pressing Down
+    dialog.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
 
     terminal
         .draw(|f| {

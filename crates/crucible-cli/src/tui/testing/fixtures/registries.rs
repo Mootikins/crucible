@@ -2,45 +2,21 @@
 //!
 //! Pre-built command and agent lists for testing popup behavior.
 
-use crate::tui::state::{PopupItem, PopupItemKind};
+use crate::tui::state::PopupItem;
 
 /// Helper to create a command item
 pub fn command(name: impl Into<String>, description: impl Into<String>) -> PopupItem {
-    let name = name.into();
-    PopupItem {
-        kind: PopupItemKind::Command,
-        title: name.clone(),
-        subtitle: description.into(),
-        token: format!("/{name}"),
-        score: 0,
-        available: true,
-    }
+    PopupItem::cmd(&name.into()).desc(description)
 }
 
 /// Helper to create an agent item
 pub fn agent(name: impl Into<String>, description: impl Into<String>) -> PopupItem {
-    let name = name.into();
-    PopupItem {
-        kind: PopupItemKind::Agent,
-        title: name.clone(),
-        subtitle: description.into(),
-        token: format!("@{name}"),
-        score: 0,
-        available: true,
-    }
+    PopupItem::agent(&name.into()).desc(description)
 }
 
 /// Helper to create a note item
 pub fn note(name: impl Into<String>) -> PopupItem {
-    let name = name.into();
-    PopupItem {
-        kind: PopupItemKind::Note,
-        title: name.clone(),
-        subtitle: String::new(),
-        token: format!("@{name}"),
-        score: 0,
-        available: true,
-    }
+    PopupItem::note(&name.into())
 }
 
 /// Standard slash commands
@@ -96,7 +72,7 @@ mod tests {
     #[test]
     fn commands_have_subtitles() {
         for cmd in standard_commands() {
-            assert!(!cmd.subtitle.is_empty());
+            assert!(!cmd.subtitle().is_empty());
         }
     }
 
@@ -108,7 +84,7 @@ mod tests {
     #[test]
     fn command_tokens_have_slash() {
         for cmd in minimal_commands() {
-            assert!(cmd.token.starts_with('/'));
+            assert!(cmd.token().starts_with('/'));
         }
     }
 }

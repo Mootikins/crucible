@@ -188,11 +188,8 @@ pub async fn execute(
         // Create kiln context for knowledge base access
         let embedding_provider = factories::get_or_create_embedding_provider(&config).await?;
         let knowledge_repo = storage_client.as_knowledge_repository();
-        let kiln_ctx = crucible_rig::KilnContext::new(
-            &config.kiln_path,
-            knowledge_repo,
-            embedding_provider,
-        );
+        let kiln_ctx =
+            crucible_rig::KilnContext::new(&config.kiln_path, knowledge_repo, embedding_provider);
 
         let agent_params = agent_params.with_kiln_context(kiln_ctx);
         factories::create_agent(&config, agent_params).await?

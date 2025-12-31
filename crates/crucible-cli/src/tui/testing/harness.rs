@@ -170,7 +170,7 @@ impl Harness {
                 }
                 KeyCode::Enter => {
                     if let Some(item) = popup.items.get(popup.selected) {
-                        let token = item.token.clone();
+                        let token = item.token();
                         self.state.popup = None;
                         self.view.set_popup(None);
                         self.state.input_buffer = token;
