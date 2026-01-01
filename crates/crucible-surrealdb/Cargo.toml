@@ -29,7 +29,7 @@ tracing = { workspace = true }
 surrealdb = { version = "2", features = ["kv-mem", "kv-rocksdb"] }
 chrono = { workspace = true }
 uuid = { workspace = true }
-comfy-table = "7.2"
+comfy-table = "7"
 urlencoding = "2.1"
 regex = "1.11"
 

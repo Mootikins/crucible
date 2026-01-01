@@ -24,6 +24,7 @@ members = [
     "crates/crucible-query",
     "crates/crucible-steel",
     "crates/zellij-inbox",
+    "crates/crucible-lance",
 ]
 default-members = ["crates/crucible-cli"]
 
@@ -138,7 +139,7 @@ test-case = "3.3"
 
 # Database
 surrealdb = { version = "2", features = ["kv-mem"] }
-comfy-table = "7.2"
+comfy-table = "7"
 
 # Procedural macro dependencies
 proc-macro2 = "1.0"
