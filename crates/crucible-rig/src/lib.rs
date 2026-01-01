@@ -42,6 +42,7 @@ pub mod providers;
 pub mod session;
 pub mod tools;
 pub mod workspace_tools;
+pub mod xml_tool_parser;
 
 // Re-export key types
 pub use agent::{

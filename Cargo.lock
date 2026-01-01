@@ -3949,6 +3949,8 @@ dependencies = [
  "crucible-core",
  "crucible-tools",
  "futures",
+ "once_cell",
+ "regex",
  "rig-core",
  "rmcp",
  "serde",

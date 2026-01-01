@@ -176,11 +176,7 @@ pub fn warning(message: &str) {
 /// // Prints: ⚠ SQL queries requires full storage mode
 /// ```
 pub fn storage_warning(feature: &str) {
-    eprintln!(
-        "{} {} requires full storage mode",
-        "⚠".yellow(),
-        feature
-    );
+    eprintln!("{} {} requires full storage mode", "⚠".yellow(), feature);
 }
 
 #[cfg(test)]

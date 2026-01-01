@@ -24,7 +24,9 @@ use rig::message::{Message, ToolCall as RigToolCall, ToolResult};
 use rig::OneOrMany;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
+
+use crate::xml_tool_parser;
 
 /// Rig-based agent handle implementing `AgentHandle` trait.
 ///
@@ -155,6 +157,14 @@ where
             let mut rig_tool_calls: Vec<RigToolCall> = Vec::new();
             let mut tool_results: Vec<ToolResult> = Vec::new();
 
+            // Track buffered text for XML tool call detection
+            // We buffer text when we detect potential XML to avoid emitting partial fragments
+            let mut is_buffering_xml = false;
+            // Track how much of accumulated_text we've already emitted
+            let mut emitted_text_len = 0usize;
+            // Track if we just parsed a tool call and should suppress trailing </function>
+            let mut suppress_trailing_function_close = false;
+
             debug!(message_len = message.len(), "Rig stream starting");
 
             while let Some(item) = stream.next().await {
@@ -164,13 +174,113 @@ where
                     Ok(MultiTurnStreamItem::StreamAssistantItem(content)) => {
                         match content {
                             StreamedAssistantContent::Text(text) => {
+                                // Debug: log every text chunk we receive
+                                debug!(chunk = %text.text.escape_debug(), "Received text chunk");
+
                                 accumulated_text.push_str(&text.text);
-                                yield Ok(ChatChunk {
-                                    delta: text.text,
-                                    done: false,
-                                    tool_calls: None,
-                                    tool_results: None,
-                                });
+
+                                // Check for XML-style tool calls in text output
+                                // (fallback for models that don't use native function calling)
+                                let might_have_xml = xml_tool_parser::might_contain_tool_calls(&accumulated_text);
+
+                                if might_have_xml && !is_buffering_xml {
+                                    // Start buffering - don't emit partial XML
+                                    is_buffering_xml = true;
+                                    debug!(
+                                        acc_len = accumulated_text.len(),
+                                        "Detected potential XML tool call, buffering"
+                                    );
+                                }
+
+                                if is_buffering_xml {
+                                    // Try to parse complete tool calls
+                                    let parse_result = xml_tool_parser::parse_tool_calls(&accumulated_text);
+
+                                    if !parse_result.tool_calls.is_empty() {
+                                        info!(
+                                            count = parse_result.tool_calls.len(),
+                                            "Parsed XML tool calls from text output"
+                                        );
+
+                                        // Emit each parsed tool call
+                                        for parsed_tc in &parse_result.tool_calls {
+                                            let args_json: serde_json::Value = serde_json::to_value(&parsed_tc.arguments)
+                                                .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+                                            let chat_tc = ChatToolCall {
+                                                name: parsed_tc.name.clone(),
+                                                arguments: Some(args_json),
+                                                id: Some(format!("xml-{}", uuid::Uuid::new_v4())),
+                                            };
+
+                                            // Track for history
+                                            tool_calls.push(chat_tc.clone());
+
+                                            yield Ok(ChatChunk {
+                                                delta: String::new(),
+                                                done: false,
+                                                tool_calls: Some(vec![chat_tc]),
+                                                tool_results: None,
+                                            });
+                                        }
+
+                                        // Update accumulated text to cleaned version
+                                        accumulated_text = parse_result.cleaned_text.clone();
+                                        emitted_text_len = 0; // Reset since we replaced accumulated_text
+
+                                        // Emit cleaned text if any remains
+                                        if !parse_result.cleaned_text.is_empty() {
+                                            yield Ok(ChatChunk {
+                                                delta: parse_result.cleaned_text.clone(),
+                                                done: false,
+                                                tool_calls: None,
+                                                tool_results: None,
+                                            });
+                                            emitted_text_len = parse_result.cleaned_text.len();
+                                        }
+
+                                        // Stop buffering - we successfully parsed
+                                        is_buffering_xml = false;
+                                        // Set flag to suppress trailing </function> if it comes next
+                                        suppress_trailing_function_close = true;
+                                    }
+                                    // If no complete tool calls yet, keep buffering (don't emit)
+                                } else {
+                                    // Check if we should suppress trailing XML closing tags
+                                    let mut text_to_emit = text.text.clone();
+                                    if suppress_trailing_function_close {
+                                        // Remove trailing </function> and whitespace
+                                        let trimmed = text_to_emit.trim();
+                                        if trimmed == "</function>" || trimmed.is_empty() {
+                                            // Suppress entirely
+                                            debug!("Suppressing trailing </function> after tool call");
+                                            suppress_trailing_function_close = false;
+                                            emitted_text_len = accumulated_text.len();
+                                            // Don't yield anything, continue to next chunk
+                                        } else {
+                                            // Has content beyond </function>, emit it (strip </function> if present)
+                                            text_to_emit = text_to_emit.replace("</function>", "");
+                                            suppress_trailing_function_close = false;
+                                            if !text_to_emit.trim().is_empty() {
+                                                yield Ok(ChatChunk {
+                                                    delta: text_to_emit,
+                                                    done: false,
+                                                    tool_calls: None,
+                                                    tool_results: None,
+                                                });
+                                            }
+                                            emitted_text_len = accumulated_text.len();
+                                        }
+                                    } else {
+                                        // Normal emit
+                                        yield Ok(ChatChunk {
+                                            delta: text.text,
+                                            done: false,
+                                            tool_calls: None,
+                                            tool_results: None,
+                                        });
+                                        emitted_text_len = accumulated_text.len();
+                                    }
+                                }
                             }
                             StreamedAssistantContent::ToolCall(tc) => {
                                 debug!(tool = %tc.function.name, "Rig tool call");
@@ -265,6 +375,25 @@ where
                     }
                     Ok(MultiTurnStreamItem::FinalResponse(final_resp)) => {
                         got_final_response = true;
+
+                        // If we were buffering XML but never got a complete tool call,
+                        // emit the buffered text as-is (it wasn't a valid tool call)
+                        if is_buffering_xml && emitted_text_len < accumulated_text.len() {
+                            let remaining = &accumulated_text[emitted_text_len..];
+                            if !remaining.is_empty() {
+                                debug!(
+                                    remaining_len = remaining.len(),
+                                    "Emitting buffered XML that didn't parse as tool call"
+                                );
+                                yield Ok(ChatChunk {
+                                    delta: remaining.to_string(),
+                                    done: false,
+                                    tool_calls: None,
+                                    tool_results: None,
+                                });
+                            }
+                        }
+
                         debug!(
                             item_count,
                             response_len = final_resp.response().len(),

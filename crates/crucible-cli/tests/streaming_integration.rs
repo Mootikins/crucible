@@ -19,21 +19,25 @@ async fn test_streaming_integration_happy_path() {
             delta: "The ".to_string(),
             done: false,
             tool_calls: None,
+            tool_results: None,
         }),
         Ok(ChatChunk {
             delta: "answer ".to_string(),
             done: false,
             tool_calls: None,
+            tool_results: None,
         }),
         Ok(ChatChunk {
             delta: "is 42".to_string(),
             done: false,
             tool_calls: None,
+            tool_results: None,
         }),
         Ok(ChatChunk {
             delta: "".to_string(),
             done: true,
             tool_calls: None,
+            tool_results: None,
         }),
     ];
 
@@ -67,21 +71,25 @@ async fn test_streaming_handles_empty_deltas() {
             delta: "Hello".to_string(),
             done: false,
             tool_calls: None,
+            tool_results: None,
         }),
         Ok(ChatChunk {
             delta: "".to_string(),
             done: false,
             tool_calls: None,
+            tool_results: None,
         }),
         Ok(ChatChunk {
             delta: " world".to_string(),
             done: false,
             tool_calls: None,
+            tool_results: None,
         }),
         Ok(ChatChunk {
             delta: "".to_string(),
             done: true,
             tool_calls: None,
+            tool_results: None,
         }),
     ];
 

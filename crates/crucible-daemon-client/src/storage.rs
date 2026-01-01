@@ -56,7 +56,10 @@ fn parse_note_info(record: &Value) -> Option<NoteInfo> {
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| path.to_string());
 
-    let title = record.get("title").and_then(|v| v.as_str()).map(String::from);
+    let title = record
+        .get("title")
+        .and_then(|v| v.as_str())
+        .map(String::from);
 
     let tags: Vec<String> = record
         .get("tags")
@@ -97,10 +100,7 @@ fn parse_note_from_record(record: &Value) -> Option<ParsedNote> {
     let path_str = record.get("path")?.as_str()?;
     let path = std::path::PathBuf::from(path_str);
 
-    let content_str = record
-        .get("content")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let content_str = record.get("content").and_then(|v| v.as_str()).unwrap_or("");
 
     let tags: Vec<Tag> = record
         .get("tags")
