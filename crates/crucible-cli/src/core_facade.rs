@@ -9,16 +9,18 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::config::CliConfig;
+use crate::factories::StorageHandle;
 
 /// Runtime context for interacting with a Kiln
 ///
 /// Provides access to:
-/// - Storage (SurrealDB via opaque handle)
+/// - Storage (SurrealDB via opaque handle or daemon RPC)
 /// - Semantic search capabilities
 /// - Configuration
 #[derive(Clone)]
 pub struct KilnContext {
-    storage: SurrealClientHandle,
+    /// Storage backend - either embedded SurrealDB or daemon client
+    storage_handle: StorageHandle,
     config: Arc<CliConfig>,
 }
 
@@ -42,7 +44,7 @@ impl KilnContext {
         crucible_surrealdb::kiln_integration::initialize_kiln_schema(storage.inner()).await?;
 
         Ok(Self {
-            storage,
+            storage_handle: StorageHandle::Embedded(storage),
             config: Arc::new(config),
         })
     }
@@ -53,14 +55,32 @@ impl KilnContext {
     /// Useful when the storage client is already initialized elsewhere (e.g., for pipeline processing).
     pub fn from_storage(storage: SurrealClientHandle, config: CliConfig) -> Self {
         Self {
-            storage,
+            storage_handle: StorageHandle::Embedded(storage),
             config: Arc::new(config),
         }
     }
 
-    /// Get a reference to the storage client handle
-    pub fn storage(&self) -> &SurrealClientHandle {
-        &self.storage
+    /// Create a facade from a StorageHandle (supports both embedded and daemon)
+    ///
+    /// This is the preferred constructor for daemon mode where we don't have
+    /// direct access to the embedded SurrealDB client.
+    pub fn from_storage_handle(storage_handle: StorageHandle, config: CliConfig) -> Self {
+        Self {
+            storage_handle,
+            config: Arc::new(config),
+        }
+    }
+
+    /// Get a reference to the storage handle
+    pub fn storage_handle(&self) -> &StorageHandle {
+        &self.storage_handle
+    }
+
+    /// Get a reference to the embedded storage client handle (if available)
+    ///
+    /// Returns None if running in daemon or lightweight mode.
+    pub fn storage(&self) -> Option<&SurrealClientHandle> {
+        self.storage_handle.try_embedded()
     }
 
     /// Get a reference to the configuration
@@ -93,40 +113,46 @@ impl KilnContext {
         query: &str,
         limit: usize,
     ) -> Result<Vec<SemanticSearchResult>> {
+        use crucible_core::traits::KnowledgeRepository;
+
         // Get embedding config from composite config and convert to provider config
         let embedding_config = self.config.embedding.to_provider_config();
 
         // Create embedding provider using factory function
         let provider = crucible_llm::embeddings::create_provider(embedding_config).await?;
 
-        // Perform search using kiln_integration
-        let results = crucible_surrealdb::kiln_integration::semantic_search(
-            self.storage.inner(),
-            query,
-            limit,
-            provider,
-        )
-        .await?;
+        // Generate embedding for query
+        let query_response = provider.embed(query).await?;
+        let query_embedding = query_response.embedding;
 
-        // Convert to facade result type
-        // Note: kiln_integration returns (doc_id, similarity) tuples
-        // We extract title from doc_id and leave snippet empty for now
+        // Use KnowledgeRepository trait for search (works with both embedded and daemon)
+        let knowledge_repo = self
+            .storage_handle
+            .as_knowledge_repository()
+            .ok_or_else(|| anyhow!("Semantic search not supported in lightweight mode"))?;
+
+        let results = knowledge_repo.search_vectors(query_embedding).await?;
+
+        // Convert to facade result type, respecting limit
         Ok(results
             .into_iter()
-            .map(|(doc_id, similarity)| {
+            .take(limit)
+            .map(|result| {
                 // Extract a title from the doc_id
-                let title = doc_id
+                let title = result
+                    .document_id
+                    .0
                     .split('/')
                     .next_back()
-                    .unwrap_or(&doc_id)
+                    .unwrap_or(&result.document_id.0)
                     .trim_end_matches(".md")
                     .to_string();
 
                 SemanticSearchResult {
-                    doc_id,
+                    doc_id: result.document_id.0,
                     title,
-                    snippet: String::new(), // TODO: Extract snippet from document content
-                    similarity: similarity as f32,
+                    snippet: result.snippet.unwrap_or_default(),
+                    similarity: result.score as f32,
                 }
             })
             .collect())
@@ -147,42 +173,53 @@ impl KilnContext {
         limit: usize,
         rerank_limit: usize,
     ) -> Result<Vec<SemanticSearchResult>> {
-        // Get embedding config from composite config and convert to provider config
-        let embedding_config = self.config.embedding.to_provider_config();
+        // Reranking requires embedded mode (direct SurrealDB access)
+        // In daemon mode, fall back to basic semantic search
+        if let Some(storage) = self.storage_handle.try_embedded() {
+            // Get embedding config from composite config and convert to provider config
+            let embedding_config = self.config.embedding.to_provider_config();
 
-        // Create embedding provider using factory function
-        let provider = crucible_llm::embeddings::create_provider(embedding_config).await?;
+            // Create embedding provider using factory function
+            let provider = crucible_llm::embeddings::create_provider(embedding_config).await?;
 
-        // Perform search with reranking
-        let results = crucible_surrealdb::kiln_integration::semantic_search_with_reranking(
-            self.storage.inner(),
-            query,
-            rerank_limit, // initial_limit (candidates to retrieve)
-            None,         // reranker (None for now, TODO: add reranker support)
-            limit,        // final_limit (results to return)
-            provider,     // embedding_provider
-        )
-        .await?;
+            // Perform search with reranking
+            let results = crucible_surrealdb::kiln_integration::semantic_search_with_reranking(
+                storage.inner(),
+                query,
+                rerank_limit, // initial_limit (candidates to retrieve)
+                None,         // reranker (None for now, TODO: add reranker support)
+                limit,        // final_limit (results to return)
+                provider,     // embedding_provider
+            )
+            .await?;
 
-        // Convert to facade result type
-        Ok(results
-            .into_iter()
-            .map(|(doc_id, similarity)| {
-                let title = doc_id
-                    .split('/')
-                    .next_back()
-                    .unwrap_or(&doc_id)
-                    .trim_end_matches(".md")
-                    .to_string();
+            // Convert to facade result type
+            Ok(results
+                .into_iter()
+                .map(|(doc_id, similarity)| {
+                    let title = doc_id
+                        .split('/')
+                        .next_back()
+                        .unwrap_or(&doc_id)
+                        .trim_end_matches(".md")
+                        .to_string();
 
-                SemanticSearchResult {
-                    doc_id,
-                    title,
-                    snippet: String::new(), // TODO: Extract snippet from document content
-                    similarity: similarity as f32,
-                }
-            })
-            .collect())
+                    SemanticSearchResult {
+                        doc_id,
+                        title,
+                        snippet: String::new(), // TODO: Extract snippet from document content
+                        similarity: similarity as f32,
+                    }
+                })
+                .collect())
+        } else {
+            // In daemon mode, fall back to basic semantic search
+            // Reranking is not supported via RPC yet
+            tracing::debug!(
+                "Reranking not available in daemon mode, using basic semantic search"
+            );
+            self.semantic_search(query, limit).await
+        }
     }
 }
 
