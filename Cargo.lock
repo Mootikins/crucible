@@ -3617,6 +3617,7 @@ dependencies = [
  "crucible-daemon",
  "crucible-daemon-client",
  "crucible-enrichment",
+ "crucible-lance",
  "crucible-llm",
  "crucible-merkle",
  "crucible-parser",
