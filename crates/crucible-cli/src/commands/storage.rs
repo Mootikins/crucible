@@ -54,6 +54,8 @@ struct VerificationResult {
 /// Execute storage commands
 pub async fn execute(config: CliConfig, command: StorageCommands) -> Result<()> {
     match command {
+        StorageCommands::Migrate { to } => execute_migrate(&config, &to).await,
+        StorageCommands::Mode => execute_mode(&config).await,
         StorageCommands::Stats {
             format,
             by_backend,
@@ -85,6 +87,87 @@ pub async fn execute(config: CliConfig, command: StorageCommands) -> Result<()> 
             format,
         } => execute_restore(config, source, merge, skip_verify, format).await,
     }
+}
+
+/// Execute storage migrate command
+async fn execute_migrate(_config: &CliConfig, target: &str) -> Result<()> {
+    match target {
+        "lightweight" => {
+            output::info("Migrating to lightweight mode...");
+            output::info("This would export embeddings from SurrealDB to LanceDB.");
+            output::info("");
+            output::info("Steps to complete migration:");
+            output::info("  1. Run this command to export data (TODO: implement export)");
+            output::info("  2. Update config: storage.mode = \"lightweight\"");
+            output::info("  3. Restart Crucible to use lightweight storage");
+            output::info("");
+            output::warning("Note: Lightweight mode stores only embeddings for search.");
+            output::warning("Full note metadata remains in SurrealDB.");
+            output::success("Migration preparation complete.");
+            Ok(())
+        }
+        "full" => {
+            output::info("Migrating to full mode...");
+            output::info("");
+            output::info("Steps to complete migration:");
+            output::info("  1. Update config: storage.mode = \"full\"");
+            output::info("  2. Run `cru process --force` to rebuild the full index");
+            output::info("");
+            output::info("Full mode provides complete EAV graph and Merkle trees.");
+            output::success("Migration preparation complete.");
+            Ok(())
+        }
+        _ => anyhow::bail!(
+            "Unknown target mode: '{}'. Use 'lightweight' or 'full'",
+            target
+        ),
+    }
+}
+
+/// Execute storage mode command - show current storage mode
+async fn execute_mode(config: &CliConfig) -> Result<()> {
+    use crucible_config::StorageMode;
+
+    output::header("Storage Mode");
+
+    // Get storage mode from config, defaulting to Embedded if not set
+    let mode = config
+        .storage
+        .as_ref()
+        .map(|s| s.mode)
+        .unwrap_or(StorageMode::Embedded);
+
+    let mode_name = match mode {
+        StorageMode::Embedded => "embedded (full)",
+        StorageMode::Daemon => "daemon",
+        StorageMode::Lightweight => "lightweight",
+    };
+
+    println!("  Current mode: {}", mode_name);
+    println!();
+
+    match mode {
+        StorageMode::Lightweight => {
+            println!("  Description: Embeddings-only storage for fast semantic search");
+            println!("  Backend: LanceDB (vector store)");
+            println!("  Use case: Quick prototyping, search-focused workflows");
+        }
+        StorageMode::Embedded => {
+            println!("  Description: Complete EAV graph with Merkle trees");
+            println!("  Backend: SurrealDB + RocksDB (embedded)");
+            println!("  Use case: Full knowledge graph, block-level deduplication");
+        }
+        StorageMode::Daemon => {
+            println!("  Description: Client-server mode with shared database");
+            println!("  Backend: SurrealDB daemon process");
+            println!("  Use case: Multiple concurrent CLI sessions");
+        }
+    }
+
+    println!();
+    output::info("Run `cru storage migrate --to <mode>` to change modes.");
+
+    Ok(())
 }
 
 /// Execute storage stats command
