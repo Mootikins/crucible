@@ -200,7 +200,10 @@ mod snapshots {
             output_lines: vec![],
         }));
 
-        assert_snapshot!("tool_calls_argument_formatting", render_conversation(&state));
+        assert_snapshot!(
+            "tool_calls_argument_formatting",
+            render_conversation(&state)
+        );
     }
 }
 
@@ -552,7 +555,10 @@ mod event_based_tests {
         );
 
         // Complete the tool
-        h.event(events::tool_completed_event("glob", "Found 25 markdown files"));
+        h.event(events::tool_completed_event(
+            "glob",
+            "Found 25 markdown files",
+        ));
 
         // Render after completion
         let complete_output = h.render();
@@ -588,7 +594,10 @@ mod event_based_tests {
             output.contains("✗") || output.contains("×"),
             "Error tool should show error indicator"
         );
-        assert!(output.contains("File not found"), "Should show error message");
+        assert!(
+            output.contains("File not found"),
+            "Should show error message"
+        );
 
         assert_snapshot!("tool_error_via_events", output);
     }
