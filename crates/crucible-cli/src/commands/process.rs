@@ -20,6 +20,7 @@ use walkdir::WalkDir;
 use crate::config::CliConfig;
 use crate::event_system::initialize_event_system;
 use crate::{factories, output};
+use crucible_daemon_client::{lifecycle, DaemonClient};
 use crucible_watch::traits::{DebounceConfig, HandlerConfig, WatchConfig};
 use crucible_watch::{EventFilter, WatchMode};
 
@@ -44,8 +45,35 @@ pub async fn execute(
 ) -> Result<()> {
     info!("Starting process command");
 
-    // Note: DB lock detection is now handled in factories::get_storage()
-    // with proper detection of orphan daemon processes
+    // Process command needs direct database access, so we must stop any running daemon
+    let socket = lifecycle::default_socket_path();
+    let stopped_daemon = if lifecycle::is_daemon_running(&socket) {
+        info!("Stopping daemon for direct database access");
+        output::info("Stopping daemon for direct database access...");
+        if let Ok(client) = DaemonClient::connect().await {
+            let _ = client.shutdown().await;
+        }
+
+        // Wait for daemon to fully exit and release the lock
+        let db_path = config.database_path();
+        for _ in 0..20 {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            if !lifecycle::is_daemon_running(&socket) && !lifecycle::is_db_locked(&db_path) {
+                info!("Daemon stopped and released database lock");
+                break;
+            }
+        }
+        true
+    } else {
+        false
+    };
+
+    // Force embedded mode for process command since we need direct DB access
+    let mut config = config;
+    config.storage = Some(crucible_config::StorageConfig {
+        mode: crucible_config::StorageMode::Embedded,
+        ..config.storage.clone().unwrap_or_default()
+    });
 
     // Determine target path
     let target_path = path.as_deref().unwrap_or(config.kiln_path.as_path());
@@ -250,6 +278,15 @@ pub async fn execute(
         // Graceful shutdown
         event_handle.shutdown().await?;
         println!("✅ Watch mode stopped");
+    }
+
+    // Restart daemon if we stopped it
+    if stopped_daemon && !watch {
+        let storage_config = config.storage.clone().unwrap_or_default();
+        output::info("Restarting daemon...");
+        if let Err(e) = lifecycle::ensure_daemon(&socket, storage_config.idle_timeout_secs).await {
+            warn!("Failed to restart daemon: {}", e);
+        }
     }
 
     Ok(())
