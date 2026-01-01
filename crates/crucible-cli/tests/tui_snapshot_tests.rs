@@ -419,7 +419,7 @@ fn conversation_tool_running() {
     let mut conv = ConversationState::new();
     conv.push_user_message("Find auth files");
     conv.push_assistant_message("Let me search for authentication-related files.");
-    conv.push_tool_running("grep \"auth\" --type rs");
+    conv.push_tool_running("grep", serde_json::json!({"pattern": "auth", "type": "rs"}));
 
     render_conversation_view(&mut terminal, &conv, "", "act", None, "Tool running");
     assert_snapshot!("conv_tool_running", terminal.backend());
@@ -430,12 +430,12 @@ fn conversation_tool_with_output() {
     let mut terminal = test_terminal();
     let mut conv = ConversationState::new();
     conv.push_user_message("Find auth files");
-    conv.push_tool_running("glob **/*auth*.rs");
+    conv.push_tool_running("glob", serde_json::json!({"pattern": "**/*auth*.rs"}));
     conv.update_tool_output(
-        "glob **/*auth*.rs",
+        "glob",
         "src/auth/mod.rs\nsrc/auth/jwt.rs\nsrc/auth/session.rs",
     );
-    conv.complete_tool("glob **/*auth*.rs", Some("3 files".to_string()));
+    conv.complete_tool("glob", Some("3 files".to_string()));
 
     render_conversation_view(&mut terminal, &conv, "", "plan", None, "Ready");
     assert_snapshot!("conv_tool_complete", terminal.backend());
@@ -445,8 +445,8 @@ fn conversation_tool_with_output() {
 fn conversation_tool_error() {
     let mut terminal = test_terminal();
     let mut conv = ConversationState::new();
-    conv.push_tool_running("read /nonexistent");
-    conv.error_tool("read /nonexistent", "file not found");
+    conv.push_tool_running("read", serde_json::json!({"path": "/nonexistent"}));
+    conv.error_tool("read", "file not found");
 
     render_conversation_view(&mut terminal, &conv, "", "plan", None, "Ready");
     assert_snapshot!("conv_tool_error", terminal.backend());
@@ -460,13 +460,13 @@ fn conversation_multiple_tools() {
     conv.push_assistant_message("I'll search for relevant files.");
 
     // First tool - complete
-    conv.push_tool_running("grep pattern");
-    conv.complete_tool("grep pattern", Some("12 matches".to_string()));
+    conv.push_tool_running("grep", serde_json::json!({"pattern": "pattern"}));
+    conv.complete_tool("grep", Some("12 matches".to_string()));
 
     // Second tool - running
-    conv.push_tool_running("read src/main.rs");
+    conv.push_tool_running("read", serde_json::json!({"path": "src/main.rs"}));
     conv.update_tool_output(
-        "read src/main.rs",
+        "read",
         "fn main() {\n    println!(\"Hello\");\n}",
     );
 
@@ -485,12 +485,12 @@ fn conversation_full_exchange() {
     // Assistant response with tool use
     conv.push_assistant_message("Let me search for authentication-related files.");
 
-    conv.push_tool_running("grep auth");
-    conv.complete_tool("grep auth", Some("found in 3 files".to_string()));
+    conv.push_tool_running("grep", serde_json::json!({"pattern": "auth"}));
+    conv.complete_tool("grep", Some("found in 3 files".to_string()));
 
-    conv.push_tool_running("glob **/*auth*.rs");
-    conv.update_tool_output("glob **/*auth*.rs", "src/auth/mod.rs\nsrc/auth/jwt.rs");
-    conv.complete_tool("glob **/*auth*.rs", Some("2 files".to_string()));
+    conv.push_tool_running("glob", serde_json::json!({"pattern": "**/*auth*.rs"}));
+    conv.update_tool_output("glob", "src/auth/mod.rs\nsrc/auth/jwt.rs");
+    conv.complete_tool("glob", Some("2 files".to_string()));
 
     // Final response
     conv.push_assistant_message(

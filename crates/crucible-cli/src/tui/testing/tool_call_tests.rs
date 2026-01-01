@@ -124,6 +124,84 @@ mod snapshots {
         }
         assert_snapshot!("tool_calls_batched", render_conversation(&state));
     }
+
+    /// Test tool call argument formatting with various argument types
+    #[test]
+    fn tool_call_argument_formatting() {
+        let mut state = ConversationState::new();
+
+        // Tool with no arguments (empty object)
+        state.push(ConversationItem::ToolCall(ToolCallDisplay {
+            name: "ls".to_string(),
+            args: serde_json::json!({}),
+            status: ToolStatus::Complete {
+                summary: Some("15 files".to_string()),
+            },
+            output_lines: vec![],
+        }));
+
+        // Tool with single string argument
+        state.push(ConversationItem::ToolCall(ToolCallDisplay {
+            name: "grep".to_string(),
+            args: serde_json::json!({"pattern": "TODO"}),
+            status: ToolStatus::Complete {
+                summary: Some("5 matches".to_string()),
+            },
+            output_lines: vec![],
+        }));
+
+        // Tool with multiple arguments
+        state.push(ConversationItem::ToolCall(ToolCallDisplay {
+            name: "read".to_string(),
+            args: serde_json::json!({"path": "/src/main.rs", "limit": 100}),
+            status: ToolStatus::Complete {
+                summary: Some("100 lines".to_string()),
+            },
+            output_lines: vec![],
+        }));
+
+        // Tool with long string that gets truncated
+        state.push(ConversationItem::ToolCall(ToolCallDisplay {
+            name: "search".to_string(),
+            args: serde_json::json!({"query": "This is a very long search query that should definitely be truncated when displayed to avoid cluttering the interface"}),
+            status: ToolStatus::Complete {
+                summary: Some("3 results".to_string()),
+            },
+            output_lines: vec![],
+        }));
+
+        // Tool with boolean argument
+        state.push(ConversationItem::ToolCall(ToolCallDisplay {
+            name: "build".to_string(),
+            args: serde_json::json!({"release": true, "verbose": false}),
+            status: ToolStatus::Complete {
+                summary: Some("success".to_string()),
+            },
+            output_lines: vec![],
+        }));
+
+        // Tool with array argument (shows count)
+        state.push(ConversationItem::ToolCall(ToolCallDisplay {
+            name: "batch".to_string(),
+            args: serde_json::json!({"files": ["a.rs", "b.rs", "c.rs"]}),
+            status: ToolStatus::Complete {
+                summary: Some("3 files processed".to_string()),
+            },
+            output_lines: vec![],
+        }));
+
+        // Tool with nested object argument (shows {...})
+        state.push(ConversationItem::ToolCall(ToolCallDisplay {
+            name: "config".to_string(),
+            args: serde_json::json!({"options": {"nested": true}}),
+            status: ToolStatus::Complete {
+                summary: Some("configured".to_string()),
+            },
+            output_lines: vec![],
+        }));
+
+        assert_snapshot!("tool_calls_argument_formatting", render_conversation(&state));
+    }
 }
 
 // =============================================================================
@@ -138,6 +216,7 @@ mod unit_tests {
     fn running_tool_shows_spinner() {
         let tool = ConversationItem::ToolCall(ToolCallDisplay {
             name: "grep".to_string(),
+            args: serde_json::json!({"pattern": "test"}),
             status: ToolStatus::Running,
             output_lines: vec![],
         });
@@ -169,6 +248,7 @@ mod unit_tests {
     fn complete_tool_shows_green_dot() {
         let tool = ConversationItem::ToolCall(ToolCallDisplay {
             name: "glob".to_string(),
+            args: serde_json::json!({"pattern": "**/*.rs"}),
             status: ToolStatus::Complete {
                 summary: Some("5 files".to_string()),
             },
@@ -200,6 +280,7 @@ mod unit_tests {
     fn error_tool_shows_x_mark() {
         let tool = ConversationItem::ToolCall(ToolCallDisplay {
             name: "read".to_string(),
+            args: serde_json::json!({"path": "/missing"}),
             status: ToolStatus::Error {
                 message: "not found".to_string(),
             },
@@ -231,6 +312,7 @@ mod unit_tests {
         // Running tool should show output
         let running_tool = ConversationItem::ToolCall(ToolCallDisplay {
             name: "grep".to_string(),
+            args: serde_json::json!({"pattern": "TODO"}),
             status: ToolStatus::Running,
             output_lines: vec!["match 1".to_string(), "match 2".to_string()],
         });
@@ -245,6 +327,7 @@ mod unit_tests {
         // Complete tool should NOT show output (shrinks)
         let complete_tool = ConversationItem::ToolCall(ToolCallDisplay {
             name: "grep".to_string(),
+            args: serde_json::json!({"pattern": "TODO"}),
             status: ToolStatus::Complete {
                 summary: Some("2 matches".to_string()),
             },
@@ -266,6 +349,7 @@ mod unit_tests {
     fn tool_output_max_3_lines() {
         let tool = ConversationItem::ToolCall(ToolCallDisplay {
             name: "grep".to_string(),
+            args: serde_json::json!({"pattern": "x"}),
             status: ToolStatus::Running,
             output_lines: vec![
                 "line 1".to_string(),
@@ -305,6 +389,7 @@ mod unit_tests {
     fn tool_output_lines_are_indented() {
         let tool = ConversationItem::ToolCall(ToolCallDisplay {
             name: "grep".to_string(),
+            args: serde_json::json!({}),
             status: ToolStatus::Running,
             output_lines: vec!["match 1".to_string()],
         });
@@ -339,6 +424,7 @@ mod unit_tests {
     fn tool_call_renders_without_leading_blank() {
         let tool = ConversationItem::ToolCall(ToolCallDisplay {
             name: "test".to_string(),
+            args: serde_json::json!({}),
             status: ToolStatus::Running,
             output_lines: vec![],
         });
@@ -405,6 +491,109 @@ mod harness_tests {
 // Regression Tests
 // =============================================================================
 
+mod event_based_tests {
+    use super::*;
+    use crate::tui::testing::fixtures::events;
+
+    /// Snapshot test: Multi-tool conversation via streaming events
+    ///
+    /// Tests that tool call and completion events are properly rendered,
+    /// including tool arguments, completion summaries, and error states.
+    #[test]
+    fn multi_tool_sequence_via_events() {
+        let mut h = Harness::new(80, 24);
+
+        // Add user message first
+        h.view
+            .state_mut()
+            .conversation
+            .push_user_message("Find all Rust files and read main.rs");
+
+        // Inject the multi-tool sequence
+        h.events(events::multi_tool_sequence());
+
+        // Should have 3 tools tracked
+        assert_eq!(
+            h.state.pending_tools.len(),
+            3,
+            "Should track 3 tool calls in state"
+        );
+
+        // All should be completed
+        assert!(
+            h.state.pending_tools.iter().all(|t| t.completed),
+            "All tools should be marked completed"
+        );
+
+        // Render and snapshot
+        assert_snapshot!("multi_tool_via_events", h.render());
+    }
+
+    /// Test single tool lifecycle via events
+    #[test]
+    fn single_tool_lifecycle() {
+        let mut h = Harness::new(80, 24);
+
+        // Tool starts running
+        h.event(events::tool_call_with_args(
+            "glob",
+            serde_json::json!({"pattern": "**/*.md"}),
+        ));
+
+        // Render while running
+        let running_output = h.render();
+        assert!(
+            running_output.contains("◐"),
+            "Running tool should show spinner"
+        );
+        assert!(
+            running_output.contains("glob(pattern="),
+            "Should show tool name with args"
+        );
+
+        // Complete the tool
+        h.event(events::tool_completed_event("glob", "Found 25 markdown files"));
+
+        // Render after completion
+        let complete_output = h.render();
+        assert!(
+            complete_output.contains("●"),
+            "Completed tool should show green dot"
+        );
+        assert!(
+            complete_output.contains("Found 25 markdown files"),
+            "Should show result summary"
+        );
+        assert!(
+            !complete_output.contains("◐"),
+            "Should not show spinner after completion"
+        );
+
+        assert_snapshot!("single_tool_lifecycle", complete_output);
+    }
+
+    /// Test tool error via events
+    #[test]
+    fn tool_error_via_events() {
+        let mut h = Harness::new(80, 24);
+
+        h.event(events::tool_call_with_args(
+            "read_file",
+            serde_json::json!({"path": "/nonexistent.txt"}),
+        ));
+        h.event(events::tool_error_event("read_file", "File not found"));
+
+        let output = h.render();
+        assert!(
+            output.contains("✗") || output.contains("×"),
+            "Error tool should show error indicator"
+        );
+        assert!(output.contains("File not found"), "Should show error message");
+
+        assert_snapshot!("tool_error_via_events", output);
+    }
+}
+
 mod regression_tests {
     use super::*;
     use crate::tui::conversation_view::ConversationView;
@@ -417,6 +606,7 @@ mod regression_tests {
     fn tool_call_with_empty_name_not_rendered() {
         let tool = ConversationItem::ToolCall(ToolCallDisplay {
             name: "".to_string(),
+            args: serde_json::json!({}),
             status: ToolStatus::Running,
             output_lines: vec![],
         });
@@ -451,7 +641,8 @@ mod regression_tests {
             .push_user_message("what folder are you in?");
 
         // Tool starts running
-        h.view.push_tool_running("crucible_get_kiln_info");
+        h.view
+            .push_tool_running("crucible_get_kiln_info", serde_json::json!({}));
 
         // Render and check - should have exactly one tool running
         let output = h.render();
