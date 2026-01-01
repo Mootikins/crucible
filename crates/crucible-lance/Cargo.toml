@@ -7,10 +7,11 @@ description = "LanceDB integration for Crucible lightweight storage mode"
 [dependencies]
 crucible-core = { path = "../crucible-core" }
 lancedb = { version = "0.22.3", default-features = false }
-arrow-array = "55"
-arrow-schema = "55"
+arrow-array = "56"
+arrow-schema = "56"
 anyhow = "1.0"
 async-trait = "0.1"
+futures = "0.3"
 tokio = { version = "1", features = ["fs"] }
 tracing = "0.1"
 serde = { version = "1.0", features = ["derive"] }
