@@ -291,6 +291,24 @@ impl StorageHandle {
         }
     }
 
+    /// Get a KnowledgeRepository trait object for this storage
+    ///
+    /// Works for both embedded and daemon modes, allowing chat and other
+    /// features to access knowledge base without requiring embedded access.
+    ///
+    /// Returns None for lightweight mode (no SurrealDB).
+    pub fn as_knowledge_repository(
+        &self,
+    ) -> Option<Arc<dyn crucible_core::traits::KnowledgeRepository>> {
+        match self {
+            StorageHandle::Embedded(h) => Some(h.as_knowledge_repository()),
+            StorageHandle::Daemon(c) => {
+                Some(Arc::clone(c) as Arc<dyn crucible_core::traits::KnowledgeRepository>)
+            }
+            StorageHandle::Lightweight(_) => None,
+        }
+    }
+
     /// Get embedded handle, creating fallback if in daemon mode
     ///
     /// For operations that require full SurrealClientHandle (schema init,

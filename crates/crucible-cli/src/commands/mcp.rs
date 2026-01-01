@@ -114,7 +114,10 @@ pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
         Arc::new(CoreProviderAdapter::new(llm_provider)) as Arc<dyn EmbeddingProvider>;
 
     // Create knowledge repository from storage
-    let knowledge_repo = core.storage().as_knowledge_repository();
+    let knowledge_repo = core
+        .storage_handle()
+        .as_knowledge_repository()
+        .ok_or_else(|| anyhow::anyhow!("MCP server requires SurrealDB storage"))?;
 
     // Determine Just directory
     let just_dir = args
