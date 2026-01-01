@@ -112,6 +112,58 @@ pub async fn ensure_daemon(socket: &Path, idle_timeout: u64) -> Result<()> {
     )
 }
 
+/// Check if a database lock file is held by another process
+///
+/// This uses flock to try to acquire an exclusive lock. If it fails,
+/// another process has the lock. This is more reliable than socket-based
+/// detection since it directly checks what we care about.
+#[cfg(unix)]
+pub fn is_db_locked(db_path: &Path) -> bool {
+    use std::fs::OpenOptions;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let lock_path = db_path.join("LOCK");
+
+    if !lock_path.exists() {
+        return false;
+    }
+
+    // Try to open and lock the file
+    match OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(&lock_path)
+    {
+        Ok(file) => {
+            use std::os::unix::io::AsRawFd;
+            let fd = file.as_raw_fd();
+
+            // Try non-blocking exclusive lock
+            let result = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+
+            if result == 0 {
+                // We got the lock, release it immediately
+                unsafe { libc::flock(fd, libc::LOCK_UN) };
+                false // DB is NOT locked by another process
+            } else {
+                // Failed to get lock - someone else has it
+                debug!("Database lock held by another process: {:?}", lock_path);
+                true
+            }
+        }
+        Err(e) => {
+            debug!("Failed to check lock file {:?}: {}", lock_path, e);
+            false // Can't determine, assume not locked
+        }
+    }
+}
+
+#[cfg(not(unix))]
+pub fn is_db_locked(_db_path: &Path) -> bool {
+    // On non-Unix, we can't easily check file locks
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -146,6 +198,53 @@ mod tests {
 
         // Should return false because it's not a real socket
         assert!(!is_daemon_running(&socket));
+    }
+
+    #[test]
+    fn test_is_db_locked_false_when_no_lock_file() {
+        let tmp = TempDir::new().unwrap();
+        let db_path = tmp.path().join("nonexistent.db");
+        assert!(!is_db_locked(&db_path));
+    }
+
+    #[test]
+    fn test_is_db_locked_false_when_lock_exists_but_not_held() {
+        let tmp = TempDir::new().unwrap();
+        let db_path = tmp.path();
+
+        // Create a LOCK file (simulating RocksDB)
+        std::fs::write(db_path.join("LOCK"), "").unwrap();
+
+        // Lock file exists but not held by flock
+        assert!(!is_db_locked(db_path));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_is_db_locked_true_when_lock_held() {
+        use std::fs::OpenOptions;
+        use std::os::unix::io::AsRawFd;
+
+        let tmp = TempDir::new().unwrap();
+        let db_path = tmp.path();
+        let lock_path = db_path.join("LOCK");
+
+        // Create and hold the lock
+        std::fs::write(&lock_path, "").unwrap();
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .unwrap();
+
+        let fd = file.as_raw_fd();
+        unsafe { libc::flock(fd, libc::LOCK_EX) };
+
+        // Should detect that lock is held
+        assert!(is_db_locked(db_path), "Should detect held lock");
+
+        // Release lock
+        unsafe { libc::flock(fd, libc::LOCK_UN) };
     }
 
     // Note: We don't test fork_daemon or ensure_daemon here because they require

@@ -2965,6 +2965,7 @@ dependencies = [
  "async-trait",
  "crucible-core",
  "crucible-daemon",
+ "libc",
  "serde",
  "serde_json",
  "tempfile",
