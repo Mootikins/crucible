@@ -333,6 +333,7 @@ impl RatatuiRunner {
         temp_state.cursor_position = self.view.cursor_position();
         temp_state.ctrl_c_count = self.ctrl_c_count;
         temp_state.last_ctrl_c = self.last_ctrl_c;
+        temp_state.popup = self.popup.clone(); // Needed for Up/Down to navigate popup
         let action = map_key_event(key, &temp_state);
 
         match action {
