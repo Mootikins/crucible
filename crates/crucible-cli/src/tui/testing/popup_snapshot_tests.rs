@@ -5,9 +5,7 @@
 
 use super::fixtures::registries;
 use super::Harness;
-use crate::tui::action_dispatch::{
-    popup_item_to_effect, PopupEffect, PopupHook, PopupHooks,
-};
+use crate::tui::action_dispatch::{popup_item_to_effect, PopupEffect, PopupHook, PopupHooks};
 use crate::tui::state::{PopupItem, PopupKind};
 use crossterm::event::KeyCode;
 use insta::assert_snapshot;
@@ -538,8 +536,7 @@ mod popup_with_context_tests {
 
     #[test]
     fn popup_over_conversation() {
-        let mut h = Harness::new(80, 24)
-            .with_session(sessions::basic_exchange());
+        let mut h = Harness::new(80, 24).with_session(sessions::basic_exchange());
 
         h.key(KeyCode::Char('/'));
         // Manually add items since slash just triggers popup, doesn't populate
@@ -551,12 +548,10 @@ mod popup_with_context_tests {
 
     #[test]
     fn popup_does_not_affect_conversation_state() {
-        let h1 = Harness::new(80, 24)
-            .with_session(sessions::basic_exchange());
+        let h1 = Harness::new(80, 24).with_session(sessions::basic_exchange());
         let initial_len = h1.conversation_len();
 
-        let mut h2 = Harness::new(80, 24)
-            .with_session(sessions::basic_exchange());
+        let mut h2 = Harness::new(80, 24).with_session(sessions::basic_exchange());
         h2.key(KeyCode::Char('/'));
         h2.keys("test");
         h2.key(KeyCode::Esc);

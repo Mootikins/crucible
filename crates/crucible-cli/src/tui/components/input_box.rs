@@ -67,11 +67,19 @@ impl<'a> InputBoxWidget<'a> {
 
 impl Widget for InputBoxWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        // Input box with accent background when focused, dim when not
-        let style = if self.focused {
-            presets::input_box()
+        // Determine style and prompt based on prefix
+        let trimmed = self.buffer.trim_start();
+        let (style, display_prompt, content) = if !self.focused {
+            (presets::dim(), self.prompt, self.buffer)
+        } else if let Some(rest) = trimmed.strip_prefix('!') {
+            // Shell passthrough: red tint, show "!" as prompt
+            (presets::input_shell(), " ! ", rest)
+        } else if let Some(rest) = trimmed.strip_prefix(':') {
+            // REPL command: green tint, show ":" as prompt
+            (presets::input_repl(), " : ", rest)
         } else {
-            presets::dim()
+            // Default style and prompt
+            (presets::input_box(), self.prompt, self.buffer)
         };
 
         // Fill background
@@ -80,12 +88,15 @@ impl Widget for InputBoxWidget<'_> {
         // Render content with cursor, centered vertically
         // Add space at end if cursor is at the end (shows cursor position)
         let content_with_cursor = if self.cursor_position >= self.buffer.len() {
-            format!("{} ", self.buffer)
+            format!("{} ", content)
         } else {
-            self.buffer.to_string()
+            content.to_string()
         };
 
-        let line = Line::from(vec![Span::raw(self.prompt), Span::raw(content_with_cursor)]);
+        let line = Line::from(vec![
+            Span::raw(display_prompt),
+            Span::raw(content_with_cursor),
+        ]);
 
         // Center vertically in the area
         let middle_row = area.y + area.height / 2;
@@ -264,6 +275,27 @@ mod tests {
                 })
                 .unwrap();
             assert_snapshot!("input_box_custom_prompt", terminal.backend());
+        }
+
+        #[test]
+        fn shell_passthrough_prefix() {
+            // ! prefix should use red-tinted style
+            let terminal = render_widget("!ls -la", 7, true);
+            assert_snapshot!("input_box_shell_prefix", terminal.backend());
+        }
+
+        #[test]
+        fn repl_command_prefix() {
+            // : prefix should use green-tinted style
+            let terminal = render_widget(":quit", 5, true);
+            assert_snapshot!("input_box_repl_prefix", terminal.backend());
+        }
+
+        #[test]
+        fn slash_command_no_special_style() {
+            // / prefix should use default style (not special)
+            let terminal = render_widget("/search test", 12, true);
+            assert_snapshot!("input_box_slash_prefix", terminal.backend());
         }
     }
 }

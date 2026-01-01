@@ -6,32 +6,32 @@ use crate::tui::state::PopupItem;
 
 /// Helper to create a command item
 pub fn command(name: impl Into<String>, description: impl Into<String>) -> PopupItem {
-    PopupItem::cmd(&name.into()).desc(description)
+    PopupItem::cmd(name.into()).desc(description)
 }
 
 /// Helper to create an agent item
 pub fn agent(name: impl Into<String>, description: impl Into<String>) -> PopupItem {
-    PopupItem::agent(&name.into()).desc(description)
+    PopupItem::agent(name.into()).desc(description)
 }
 
 /// Helper to create a note item
 pub fn note(name: impl Into<String>) -> PopupItem {
-    PopupItem::note(&name.into())
+    PopupItem::note(name.into())
 }
 
 /// Helper to create a file item
 pub fn file(path: impl Into<String>) -> PopupItem {
-    PopupItem::file(&path.into())
+    PopupItem::file(path.into())
 }
 
 /// Helper to create a skill item
 pub fn skill(name: impl Into<String>, description: impl Into<String>) -> PopupItem {
-    PopupItem::skill(&name.into()).desc(description)
+    PopupItem::skill(name.into()).desc(description)
 }
 
 /// Helper to create a REPL command item
 pub fn repl(name: impl Into<String>, description: impl Into<String>) -> PopupItem {
-    PopupItem::repl(&name.into()).desc(description)
+    PopupItem::repl(name.into()).desc(description)
 }
 
 /// Standard slash commands

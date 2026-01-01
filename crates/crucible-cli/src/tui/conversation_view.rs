@@ -122,6 +122,20 @@ impl ViewState {
             notifications: NotificationState::new(),
         }
     }
+
+    /// Returns the display offset for cursor positioning.
+    ///
+    /// When the input starts with `:` or `!`, the prefix is shown as the prompt
+    /// and stripped from the content display. This returns 1 in that case so
+    /// the cursor position can be adjusted.
+    pub fn input_display_offset(&self) -> usize {
+        let trimmed = self.input_buffer.trim_start();
+        if trimmed.starts_with(':') || trimmed.starts_with('!') {
+            1
+        } else {
+            0
+        }
+    }
 }
 
 // =============================================================================
@@ -220,8 +234,11 @@ impl RatatuiView {
             frame.render_widget(widget, frame.area());
             // Hide cursor when dialog is active
         } else {
-            // Position cursor in input box (accounting for border and "› " prefix)
-            let cursor_x = input_area.x + 1 + 2 + self.state.cursor_position as u16;
+            // Position cursor in input box (accounting for border and prompt)
+            // When prefix (: or !) is shown as prompt, adjust cursor position
+            let offset = self.state.input_display_offset();
+            let display_cursor = self.state.cursor_position.saturating_sub(offset);
+            let cursor_x = input_area.x + 1 + 2 + display_cursor as u16;
             let cursor_y = input_area.y + 1;
             frame.set_cursor_position((cursor_x, cursor_y));
         }

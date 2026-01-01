@@ -705,7 +705,11 @@ impl TuiState {
 
     /// Add a context attachment, avoiding duplicates by path
     pub fn add_context(&mut self, attachment: ContextAttachment) {
-        if !self.pending_context.iter().any(|c| c.path == attachment.path) {
+        if !self
+            .pending_context
+            .iter()
+            .any(|c| c.path == attachment.path)
+        {
             self.pending_context.push(attachment);
         }
     }
