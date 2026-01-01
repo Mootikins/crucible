@@ -4,7 +4,7 @@
 //! without a real terminal.
 
 use crate::tui::conversation::{ConversationItem, ConversationState};
-use crate::tui::conversation_view::RatatuiView;
+use crate::tui::conversation_view::{ConversationView, RatatuiView};
 use crate::tui::state::{PopupItem, PopupKind, PopupState, TuiState};
 use crate::tui::streaming_channel::StreamingEvent;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -272,17 +272,49 @@ impl Harness {
                 self.state.status_error = Some(message);
             }
             StreamingEvent::ToolCall { name, args, .. } => {
-                // Just track in state for now
+                // Track in state
                 self.state
                     .pending_tools
                     .push(crate::tui::state::ToolCallInfo {
-                        name,
-                        args,
+                        name: name.clone(),
+                        args: args.clone(),
                         call_id: None,
                         completed: false,
                         result: None,
                         error: None,
                     });
+                // Also push to view for rendering
+                self.view.push_tool_running(&name, args);
+            }
+            StreamingEvent::ToolCompleted {
+                name,
+                result,
+                error,
+            } => {
+                // Mark matching tool as completed in state
+                if let Some(tool) = self
+                    .state
+                    .pending_tools
+                    .iter_mut()
+                    .find(|t| t.name == name && !t.completed)
+                {
+                    tool.completed = true;
+                    tool.result = Some(result.clone());
+                    tool.error = error.clone();
+                }
+                // Update view with completion
+                if let Some(err) = &error {
+                    self.view.error_tool(&name, err);
+                } else {
+                    let summary = if result.len() > 50 {
+                        Some(format!("{}...", &result[..47]))
+                    } else if !result.is_empty() {
+                        Some(result)
+                    } else {
+                        None
+                    };
+                    self.view.complete_tool(&name, summary);
+                }
             }
         }
     }

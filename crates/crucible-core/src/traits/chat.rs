@@ -75,7 +75,22 @@ pub enum ChatError {
 pub struct ChatChunk {
     pub delta: String,
     pub done: bool,
+    /// Tool calls initiated by the agent
     pub tool_calls: Option<Vec<ChatToolCall>>,
+    /// Tool results (completions) from executed tools
+    #[serde(default)]
+    pub tool_results: Option<Vec<ChatToolResult>>,
+}
+
+/// Result from a completed tool execution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatToolResult {
+    /// Tool name that completed
+    pub name: String,
+    /// Result content (may be truncated for display)
+    pub result: String,
+    /// Error message if tool failed
+    pub error: Option<String>,
 }
 
 /// Runtime handle to an active agent
@@ -307,6 +322,7 @@ mod tests {
                         delta,
                         done: i == total - 1,
                         tool_calls: None,
+                        tool_results: None,
                     })
                 },
             )))

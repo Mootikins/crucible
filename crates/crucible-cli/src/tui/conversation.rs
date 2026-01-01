@@ -75,6 +75,8 @@ pub enum StatusKind {
 #[derive(Debug, Clone)]
 pub struct ToolCallDisplay {
     pub name: String,
+    /// Tool arguments as JSON value
+    pub args: serde_json::Value,
     pub status: ToolStatus,
     /// Last N lines of output (truncated)
     pub output_lines: Vec<String>,
@@ -282,16 +284,34 @@ impl ConversationState {
             .retain(|item| !matches!(item, ConversationItem::Status(_)));
     }
 
-    pub fn push_tool_running(&mut self, name: impl Into<String>) {
+    pub fn push_tool_running(&mut self, name: impl Into<String>, args: serde_json::Value) {
         // Complete any streaming assistant message first, so that subsequent
         // prose creates a new message (preserves chronological order)
         self.complete_streaming();
 
+        // Save and remove any existing status (it must remain last)
+        let status = self.take_status();
+
         self.items.push(ConversationItem::ToolCall(ToolCallDisplay {
             name: name.into(),
+            args,
             status: ToolStatus::Running,
             output_lines: Vec::new(),
         }));
+
+        // Re-add status at end (if there was one)
+        if let Some(s) = status {
+            self.items.push(s);
+        }
+    }
+
+    /// Remove and return the status item (if any)
+    fn take_status(&mut self) -> Option<ConversationItem> {
+        let pos = self
+            .items
+            .iter()
+            .position(|item| matches!(item, ConversationItem::Status(_)));
+        pos.map(|idx| self.items.remove(idx))
     }
 
     pub fn update_tool_output(&mut self, name: &str, output: &str) {
@@ -560,6 +580,39 @@ fn render_status(status: &StatusKind) -> Vec<Line<'static>> {
     ]
 }
 
+/// Format tool arguments for display (compact single-line format)
+fn format_tool_args(args: &serde_json::Value) -> String {
+    match args {
+        serde_json::Value::Object(map) if map.is_empty() => String::new(),
+        serde_json::Value::Object(map) => {
+            let parts: Vec<String> = map
+                .iter()
+                .map(|(k, v)| {
+                    let v_str = match v {
+                        serde_json::Value::String(s) => {
+                            // Truncate long strings
+                            if s.len() > 40 {
+                                format!("\"{}...\"", &s[..37])
+                            } else {
+                                format!("\"{}\"", s)
+                            }
+                        }
+                        serde_json::Value::Null => "null".to_string(),
+                        serde_json::Value::Bool(b) => b.to_string(),
+                        serde_json::Value::Number(n) => n.to_string(),
+                        serde_json::Value::Array(arr) => format!("[{} items]", arr.len()),
+                        serde_json::Value::Object(_) => "{...}".to_string(),
+                    };
+                    format!("{}={}", k, v_str)
+                })
+                .collect();
+            format!("({})", parts.join(", "))
+        }
+        serde_json::Value::Null => String::new(),
+        _ => format!("({})", args),
+    }
+}
+
 /// Render a tool call without leading blank line.
 /// Spacing between items is handled by ConversationWidget::render_to_lines.
 fn render_tool_call(tool: &ToolCallDisplay) -> Vec<Line<'static>> {
@@ -580,6 +633,9 @@ fn render_tool_call(tool: &ToolCallDisplay) -> Vec<Line<'static>> {
         ToolStatus::Error { .. } => (indicators::TOOL_ERROR, presets::tool_error()),
     };
 
+    // Format tool name with arguments
+    let args_str = format_tool_args(&tool.args);
+
     let status_suffix = match &tool.status {
         ToolStatus::Running => String::new(),
         ToolStatus::Complete { summary } => summary
@@ -591,7 +647,7 @@ fn render_tool_call(tool: &ToolCallDisplay) -> Vec<Line<'static>> {
 
     // Use " X " prefix format to align with user/assistant message prefixes
     lines.push(Line::from(vec![Span::styled(
-        format!(" {} {}{}", indicator, tool.name, status_suffix),
+        format!(" {} {}{}{}", indicator, tool.name, args_str, status_suffix),
         style,
     )]));
 
@@ -929,7 +985,7 @@ mod tests {
     fn test_tool_lifecycle() {
         let mut state = ConversationState::new();
 
-        state.push_tool_running("grep");
+        state.push_tool_running("grep", serde_json::json!({"pattern": "test"}));
         state.update_tool_output("grep", "line1\nline2\nline3");
         state.complete_tool("grep", Some("3 matches".to_string()));
 
@@ -959,6 +1015,7 @@ mod tests {
     fn test_render_tool_running() {
         let tool = ToolCallDisplay {
             name: "grep".to_string(),
+            args: serde_json::json!({"pattern": "test"}),
             status: ToolStatus::Running,
             output_lines: vec!["output line".to_string()],
         };
@@ -1311,5 +1368,36 @@ mod tests {
             !content.contains("Message 29"),
             "Expected message 29 to be scrolled out of view with scroll_offset=10"
         );
+    }
+
+    /// Regression test: Status should always appear after tool calls, not before them.
+    /// Bug: When status is set and then tool calls are pushed, status ends up
+    /// in the middle of the conversation instead of at the end.
+    #[test]
+    fn test_status_always_last_after_tool_calls() {
+        let mut state = ConversationState::new();
+
+        // Set status first
+        state.set_status(StatusKind::Generating {
+            token_count: 50,
+            prev_token_count: 0,
+            spinner_frame: 0,
+        });
+
+        // Push tool calls after - status should still be last
+        state.push_tool_running("glob", serde_json::json!({"pattern": "*.rs"}));
+        state.push_tool_running("read", serde_json::json!({"path": "main.rs"}));
+
+        // Verify status is the last item
+        let items = state.items();
+        let last_item = items.last().expect("Should have items");
+        assert!(
+            matches!(last_item, ConversationItem::Status(_)),
+            "Status should be the last item, but got: {:?}",
+            last_item
+        );
+
+        // Verify we still have exactly 3 items (2 tools + 1 status)
+        assert_eq!(items.len(), 3, "Should have 2 tools + 1 status");
     }
 }

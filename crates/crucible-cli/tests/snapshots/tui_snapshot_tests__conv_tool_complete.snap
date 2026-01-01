@@ -21,7 +21,7 @@ expression: terminal.backend()
 "                                                                                "
 " > Find auth files                                                              "
 "                                                                                "
-" ● glob **/*auth*.rs → 3 files                                                  "
+" ● glob(pattern="**/*auth*.rs") → 3 files                                       "
 "                                                                                "
 " >                                                                              "
 "                                                                                "

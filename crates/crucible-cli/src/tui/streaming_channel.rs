@@ -39,6 +39,12 @@ pub enum StreamingEvent {
         name: String,
         args: serde_json::Value,
     },
+    /// Tool execution completed
+    ToolCompleted {
+        name: String,
+        result: String,
+        error: Option<String>,
+    },
     /// Streaming complete
     Done { full_response: String },
     /// Error during streaming
@@ -111,6 +117,17 @@ impl StreamingTask {
                                     id: tc.id,
                                     name: tc.name,
                                     args: tc.arguments.unwrap_or(serde_json::Value::Null),
+                                });
+                            }
+                        }
+
+                        // Forward tool results (completions) to the TUI
+                        if let Some(tool_results) = chunk.tool_results {
+                            for tr in tool_results {
+                                let _ = tx.send(StreamingEvent::ToolCompleted {
+                                    name: tr.name,
+                                    result: tr.result,
+                                    error: tr.error,
                                 });
                             }
                         }
@@ -234,16 +251,19 @@ mod tests {
                 delta: "Hello ".to_string(),
                 done: false,
                 tool_calls: None,
+                tool_results: None,
             }),
             Ok(ChatChunk {
                 delta: "world".to_string(),
                 done: false,
                 tool_calls: None,
+                tool_results: None,
             }),
             Ok(ChatChunk {
                 delta: "".to_string(),
                 done: true,
                 tool_calls: None,
+                tool_results: None,
             }),
         ];
         let stream = stream::iter(chunks);
@@ -277,6 +297,7 @@ mod tests {
                 delta: "Start".to_string(),
                 done: false,
                 tool_calls: None,
+                tool_results: None,
             }),
             Err(ChatError::Connection("Connection lost".to_string())),
         ];
@@ -311,16 +332,19 @@ mod tests {
                 delta: "Let me read that file.".to_string(),
                 done: false,
                 tool_calls: None,
+                tool_results: None,
             }),
             Ok(ChatChunk {
                 delta: "".to_string(),
                 done: false,
                 tool_calls: Some(vec![tool_call]),
+                tool_results: None,
             }),
             Ok(ChatChunk {
                 delta: "".to_string(),
                 done: true,
                 tool_calls: None,
+                tool_results: None,
             }),
         ];
         let stream = stream::iter(chunks);
