@@ -64,6 +64,30 @@ pub enum PopupKind {
     AgentOrFile,
 }
 
+// =============================================================================
+// Context Attachments (pending file/note context for messages)
+// =============================================================================
+
+/// Kind of context attachment
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContextKind {
+    /// External file from workspace
+    File,
+    /// Note from the kiln
+    Note,
+}
+
+/// A context attachment pending inclusion in the next message
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextAttachment {
+    /// What type of context this is
+    pub kind: ContextKind,
+    /// Path to the file or note
+    pub path: String,
+    /// Display name (usually basename) for rendering chips
+    pub display_name: String,
+}
+
 /// Popup entry displayed in the inline picker
 ///
 /// Each variant contains only the data relevant to that item type.
@@ -586,6 +610,8 @@ pub struct TuiState {
     pub popup: Option<PopupState>,
     // Notification state for file watch events
     pub notifications: NotificationState,
+    /// Context attachments pending for the next message (files, notes)
+    pub pending_context: Vec<ContextAttachment>,
     #[allow(clippy::type_complexity)] // Complex callback type, not worth a type alias
     output_fn: Option<Box<dyn Fn(&str) + Send + Sync>>,
 }
@@ -608,6 +634,7 @@ impl TuiState {
             status_error: None,
             popup: None,
             notifications: NotificationState::new(),
+            pending_context: Vec::new(),
             output_fn: None,
         }
     }
@@ -632,7 +659,31 @@ impl TuiState {
             status_error: None,
             popup: None,
             notifications: NotificationState::new(),
+            pending_context: Vec::new(),
             output_fn: Some(Box::new(output_fn)),
+        }
+    }
+
+    // =========================================================================
+    // Context Attachment Methods
+    // =========================================================================
+
+    /// Add a context attachment, avoiding duplicates by path
+    pub fn add_context(&mut self, attachment: ContextAttachment) {
+        if !self.pending_context.iter().any(|c| c.path == attachment.path) {
+            self.pending_context.push(attachment);
+        }
+    }
+
+    /// Clear and return all pending context attachments
+    pub fn clear_pending_context(&mut self) -> Vec<ContextAttachment> {
+        std::mem::take(&mut self.pending_context)
+    }
+
+    /// Remove a context attachment by index
+    pub fn remove_context(&mut self, index: usize) {
+        if index < self.pending_context.len() {
+            self.pending_context.remove(index);
         }
     }
 
@@ -1300,5 +1351,130 @@ mod tests {
         s.cursor_position = 4; // At end
         s.execute_action(InputAction::TransposeChars);
         assert_eq!(s.input_buffer, "abdc"); // Swaps last two
+    }
+
+    // =========================================================================
+    // Context Attachment Tests
+    // =========================================================================
+
+    #[test]
+    fn test_pending_context_initially_empty() {
+        let state = TuiState::new("plan");
+        assert!(state.pending_context.is_empty());
+    }
+
+    #[test]
+    fn test_add_context_file() {
+        let mut state = TuiState::new("plan");
+        state.add_context(ContextAttachment {
+            kind: ContextKind::File,
+            path: "/test/file.rs".into(),
+            display_name: "file.rs".into(),
+        });
+        assert_eq!(state.pending_context.len(), 1);
+        assert_eq!(state.pending_context[0].kind, ContextKind::File);
+        assert_eq!(state.pending_context[0].path, "/test/file.rs");
+    }
+
+    #[test]
+    fn test_add_context_note() {
+        let mut state = TuiState::new("plan");
+        state.add_context(ContextAttachment {
+            kind: ContextKind::Note,
+            path: "Project/README".into(),
+            display_name: "README".into(),
+        });
+        assert_eq!(state.pending_context.len(), 1);
+        assert_eq!(state.pending_context[0].kind, ContextKind::Note);
+    }
+
+    #[test]
+    fn test_add_context_deduplicates_by_path() {
+        let mut state = TuiState::new("plan");
+        state.add_context(ContextAttachment {
+            kind: ContextKind::File,
+            path: "/test/file.rs".into(),
+            display_name: "file.rs".into(),
+        });
+        // Adding same path again should not duplicate
+        state.add_context(ContextAttachment {
+            kind: ContextKind::File,
+            path: "/test/file.rs".into(),
+            display_name: "file.rs (copy)".into(),
+        });
+        assert_eq!(state.pending_context.len(), 1);
+    }
+
+    #[test]
+    fn test_add_multiple_contexts() {
+        let mut state = TuiState::new("plan");
+        state.add_context(ContextAttachment {
+            kind: ContextKind::File,
+            path: "/test/file1.rs".into(),
+            display_name: "file1.rs".into(),
+        });
+        state.add_context(ContextAttachment {
+            kind: ContextKind::File,
+            path: "/test/file2.rs".into(),
+            display_name: "file2.rs".into(),
+        });
+        state.add_context(ContextAttachment {
+            kind: ContextKind::Note,
+            path: "README".into(),
+            display_name: "README".into(),
+        });
+        assert_eq!(state.pending_context.len(), 3);
+    }
+
+    #[test]
+    fn test_clear_pending_context() {
+        let mut state = TuiState::new("plan");
+        state.add_context(ContextAttachment {
+            kind: ContextKind::File,
+            path: "/test/file.rs".into(),
+            display_name: "file.rs".into(),
+        });
+        state.add_context(ContextAttachment {
+            kind: ContextKind::Note,
+            path: "README".into(),
+            display_name: "README".into(),
+        });
+
+        let cleared = state.clear_pending_context();
+        assert_eq!(cleared.len(), 2);
+        assert!(state.pending_context.is_empty());
+    }
+
+    #[test]
+    fn test_remove_context_by_index() {
+        let mut state = TuiState::new("plan");
+        state.add_context(ContextAttachment {
+            kind: ContextKind::File,
+            path: "/test/file1.rs".into(),
+            display_name: "file1.rs".into(),
+        });
+        state.add_context(ContextAttachment {
+            kind: ContextKind::File,
+            path: "/test/file2.rs".into(),
+            display_name: "file2.rs".into(),
+        });
+
+        state.remove_context(0);
+        assert_eq!(state.pending_context.len(), 1);
+        assert_eq!(state.pending_context[0].path, "/test/file2.rs");
+    }
+
+    #[test]
+    fn test_remove_context_invalid_index() {
+        let mut state = TuiState::new("plan");
+        state.add_context(ContextAttachment {
+            kind: ContextKind::File,
+            path: "/test/file.rs".into(),
+            display_name: "file.rs".into(),
+        });
+
+        // Should not panic with invalid index
+        state.remove_context(100);
+        assert_eq!(state.pending_context.len(), 1);
     }
 }
