@@ -2,17 +2,21 @@
 
 > Instructions for AI agents (Claude, Codex, etc.) working on the Crucible codebase
 
-This file provides essential information for AI agents to understand and contribute to the Crucible knowledge management system effectively.
+This file provides essential information for AI agents to understand and contribute to the Crucible project effectively.
 
 ## Project Overview
 
-**Crucible** is a plaintext-first knowledge management system that combines wikilink-based knowledge graphs with AI agent integration. It promotes **linked thinking** through semantic search, block-level embeddings, and the Model Context Protocol (MCP).
+**Crucible** is a local-first AI assistant where every conversation becomes a searchable note. It combines:
+- **Agent chat** with session persistence as markdown
+- **Knowledge graph** from wikilinks with semantic search
+- **Multi-language plugins** (Rune, Steel/Scheme, Lua/Fennel)
+- **MCP server** for external agent integration
 
 **Core Principles:**
-- Markdown files are source of truth (works with any editor)
-- Wikilinks `[[Note Name]]` define the knowledge graph
-- Block-level granularity for precise semantic search
-- Unified LLM provider system with capability-based traits
+- Plaintext first — markdown files are source of truth
+- Sessions as notes — conversations saved to your kiln
+- Polyglot extensibility — write plugins in your preferred language
+- Capability-based LLM providers — swap backends freely
 
 ## Architecture
 
@@ -21,16 +25,18 @@ This file provides essential information for AI agents to understand and contrib
 | Crate | Purpose | Key Traits/Types |
 |-------|---------|------------------|
 | `crucible-core` | Domain logic, traits, parser types | `Provider`, `CanEmbed`, `CanChat`, `ParsedNote` |
-| `crucible-parser` | Markdown parsing implementation | `MarkdownParser` |
-| `crucible-config` | Configuration types and loading | `AppConfig`, `EmbeddingConfig` |
-| `crucible-llm` | LLM providers (embeddings, chat) | `EmbeddingBackend`, `CompletionBackend` |
-| `crucible-surrealdb` | SurrealDB storage with EAV schema | `SurrealStorage`, `EavGraph` |
-| `crucible-cli` | Command-line interface | CLI commands and REPL |
+| `crucible-cli` | Terminal UI, REPL, commands | `TuiRunner`, `ChatSession` |
 | `crucible-web` | Browser chat UI (SolidJS + Axum) | HTTP/SSE endpoints |
 | `crucible-tools` | MCP server and tools | Tool implementations |
-| `crucible-rune` | Rune scripting integration | Script execution |
+| `crucible-surrealdb` | SurrealDB storage with EAV schema | `SurrealStorage`, `EavGraph` |
+| `crucible-rune` | Rune scripting runtime | `RuneExecutor`, `RuneToolRegistry` |
+| `crucible-steel` | Steel (Scheme) with contracts | `SteelExecutor`, contract validation |
+| `crucible-lua` | Lua/Luau with Fennel support | `LuaExecutor`, `FennelCompiler` |
+| `crucible-llm` | Embedding backends | `EmbeddingBackend` (FastEmbed, Burn, LlamaCpp) |
+| `crucible-rig` | LLM chat via Rig | Ollama, OpenAI, Anthropic adapters |
+| `crucible-parser` | Markdown parsing implementation | `MarkdownParser` |
+| `crucible-config` | Configuration types and loading | `AppConfig`, provider configs |
 | `crucible-watch` | File system watching | Change detection |
-| `crucible-agents` | Agent orchestration | Agent runtime |
 | `crucible-acp` | Agent Context Protocol | Protocol types |
 | `tq` | TOON Query language | Query parsing/execution |
 
@@ -102,14 +108,14 @@ Crucible is organized into orthogonal systems. See **[docs/Meta/Systems.md](./do
 
 | System | Scope |
 |--------|-------|
+| **chat** | TUI/Web interfaces, session persistence |
+| **agents** | Agent cards, LLM providers, tools |
 | **parser** | Markdown → structured data |
 | **storage** | SurrealDB, EAV graph, Merkle trees |
-| **agents** | Agent cards, LLM providers, tools |
+| **scripting** | Rune, Steel, Lua/Fennel runtimes |
 | **workflows** | Definitions + sessions |
-| **plugins** | Extension points, scripting |
-| **apis** | HTTP, WebSocket, events |
+| **apis** | HTTP, WebSocket, MCP, events |
 | **cli** | Commands, REPL, configuration |
-| **desktop** | Tauri GUI (future) |
 
 ## Project Structure
 
@@ -117,14 +123,17 @@ Crucible is organized into orthogonal systems. See **[docs/Meta/Systems.md](./do
 crucible/
 ├── crates/                      # Rust workspace crates
 │   ├── crucible-core/           # Core business logic and traits
-│   ├── crucible-cli/            # CLI application
-│   ├── crucible-llm/            # LLM providers (embeddings, chat)
+│   ├── crucible-cli/            # Terminal UI, REPL, commands
 │   ├── crucible-web/            # Browser-based chat UI
-│   ├── crucible-surrealdb/      # Database layer
-│   ├── crucible-parser/         # Markdown parsing
 │   ├── crucible-tools/          # MCP server and tools
+│   ├── crucible-surrealdb/      # Database layer
+│   ├── crucible-rune/           # Rune scripting runtime
+│   ├── crucible-steel/          # Steel (Scheme) with contracts
+│   ├── crucible-lua/            # Lua/Luau with Fennel
+│   ├── crucible-llm/            # Embedding backends
+│   ├── crucible-rig/            # LLM chat via Rig
+│   ├── crucible-parser/         # Markdown parsing
 │   ├── crucible-config/         # Configuration types
-│   ├── crucible-rune/           # Rune scripting
 │   ├── crucible-watch/          # File watching
 │   ├── tq/                      # TOON Query library
 │   └── ...                      # Other crates
