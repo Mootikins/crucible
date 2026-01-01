@@ -67,8 +67,8 @@ impl<'a> SessionHistoryWidget<'a> {
         for (i, item) in items.iter().enumerate() {
             // Add blank line before tool calls, but skip between consecutive tools
             if matches!(item, ConversationItem::ToolCall(_)) {
-                let prev_was_tool = i > 0
-                    && matches!(items.get(i - 1), Some(ConversationItem::ToolCall(_)));
+                let prev_was_tool =
+                    i > 0 && matches!(items.get(i - 1), Some(ConversationItem::ToolCall(_)));
 
                 if !prev_was_tool {
                     all_lines.push(Line::from(""));
