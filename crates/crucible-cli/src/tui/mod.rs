@@ -22,6 +22,7 @@ pub mod markdown;
 pub mod notification;
 pub mod popup;
 pub mod render;
+pub mod repl_commands;
 pub mod runner;
 pub mod scrollback_runner;
 pub mod state;

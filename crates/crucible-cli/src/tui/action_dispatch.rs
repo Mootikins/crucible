@@ -22,6 +22,8 @@ pub enum PopupEffect {
     AddFileContext { path: String },
     /// Add note to pending context
     AddNoteContext { path: String },
+    /// Execute a REPL command immediately
+    ExecuteReplCommand { name: String },
 }
 
 /// Convert a PopupItem to its default effect
@@ -39,6 +41,9 @@ pub fn popup_item_to_effect(item: &PopupItem) -> PopupEffect {
         PopupItem::Note { path, .. } => PopupEffect::AddNoteContext { path: path.clone() },
         PopupItem::Skill { name, .. } => PopupEffect::InsertToken {
             token: format!("/{} ", name),
+        },
+        PopupItem::ReplCommand { name, .. } => PopupEffect::ExecuteReplCommand {
+            name: name.clone(),
         },
     }
 }
@@ -282,6 +287,18 @@ mod tests {
             effect,
             PopupEffect::InsertToken {
                 token: "/commit ".into()
+            }
+        );
+    }
+
+    #[test]
+    fn test_popup_effect_repl_command() {
+        let item = PopupItem::repl("quit").desc("Exit the application");
+        let effect = popup_item_to_effect(&item);
+        assert_eq!(
+            effect,
+            PopupEffect::ExecuteReplCommand {
+                name: "quit".into()
             }
         );
     }
