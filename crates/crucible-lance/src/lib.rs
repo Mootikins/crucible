@@ -4,5 +4,7 @@
 
 pub mod embedding_cache;
 pub mod store;
+pub mod vector_search;
 
 pub use store::LanceStore;
+pub use vector_search::VectorSearchResult;
