@@ -11,12 +11,14 @@ pub enum StorageMode {
     Embedded,
     /// Daemon-backed SurrealDB (multi-session via Unix socket)
     Daemon,
+    /// Lightweight mode without SurrealDB (LanceDB + ripgrep)
+    Lightweight,
 }
 
 /// Storage configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageConfig {
-    /// Storage mode: "embedded" (default) or "daemon"
+    /// Storage mode: "embedded" (default), "daemon", or "lightweight"
     #[serde(default)]
     pub mode: StorageMode,
 
@@ -77,5 +79,12 @@ mod tests {
         let toml = r#"idle_timeout_secs = 600"#;
         let config: StorageConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.mode, StorageMode::Embedded);
+    }
+
+    #[test]
+    fn test_storage_mode_lightweight_deserialize() {
+        let toml = r#"mode = "lightweight""#;
+        let config: StorageConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.mode, StorageMode::Lightweight);
     }
 }
