@@ -258,7 +258,8 @@ impl RatatuiView {
             .take(Self::MAX_POPUP_ITEMS)
             .map(|(idx, item)| {
                 let mut spans = Vec::new();
-                let marker = if idx == popup.selected { ">" } else { " " };
+                // Fixed-width marker: always 2 chars for consistent alignment
+                let marker = if idx == popup.selected { "> " } else { "  " };
                 spans.push(Span::styled(
                     marker,
                     Style::default()
@@ -266,13 +267,7 @@ impl RatatuiView {
                         .add_modifier(Modifier::BOLD),
                 ));
 
-                let kind_label = format!("[{}]", item.kind_label());
-                spans.push(Span::raw(" "));
-                spans.push(Span::styled(
-                    kind_label,
-                    Style::default().fg(Color::Magenta),
-                ));
-                spans.push(Span::raw(" "));
+                // Kind labels removed - trigger char already indicates type
                 spans.push(Span::styled(
                     item.title(),
                     if idx == popup.selected {
@@ -668,20 +663,21 @@ mod tests {
             })
             .collect();
 
-        // The popup should contain "/help" and "[cmd]"
+        // The popup should contain "/help" (kind labels removed for cleaner UI)
         assert!(
             content.contains("/help"),
             "Popup should render '/help' command. Buffer content: {}",
             content
         );
+        // Kind labels are no longer shown - trigger char indicates type
         assert!(
-            content.contains("[cmd]"),
-            "Popup should render '[cmd]' label. Buffer content: {}",
+            !content.contains("[cmd]"),
+            "Popup should NOT render '[cmd]' label (removed). Buffer content: {}",
             content
         );
     }
 
-    /// Test that skill items render with [skill] label
+    /// Test that skill items render (kind labels removed)
     #[test]
     fn test_ratatui_view_renders_skill_popup() {
         let mut view = RatatuiView::new("plan", 80, 24);
@@ -708,9 +704,10 @@ mod tests {
             })
             .collect();
 
+        // Kind labels are no longer shown - trigger char indicates type
         assert!(
-            content.contains("[skill]"),
-            "Popup should render '[skill]' label. Buffer: {}",
+            !content.contains("[skill]"),
+            "Popup should NOT render '[skill]' label (removed). Buffer: {}",
             content
         );
         assert!(

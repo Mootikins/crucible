@@ -16,11 +16,11 @@ expression: h.render()
                                                                                 
                                                                                 
 ┌Select────────────────────────────────────────────────────────────────────────┐
-│[cmd] /search Search notes semantically                                       │
-│> [cmd] /new Start new session                                                │
-│[cmd] /clear Clear conversation context                                       │
-│[cmd] /help Show available commands                                           │
-│[cmd] /mode Switch session mode                                               │
+│/search Search notes semantically                                             │
+│> /new Start new session                                                      │
+│/clear Clear conversation context                                             │
+│/help Show available commands                                                 │
+│/mode Switch session mode                                                     │
 └──────────────────────────────────────────────────────────────────────────────┘
                                                                                 
  >                                                                              
