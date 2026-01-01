@@ -114,13 +114,13 @@ pub async fn ensure_daemon(socket: &Path, idle_timeout: u64) -> Result<()> {
 
 /// Check if a database lock file is held by another process
 ///
-/// This uses flock to try to acquire an exclusive lock. If it fails,
-/// another process has the lock. This is more reliable than socket-based
-/// detection since it directly checks what we care about.
+/// RocksDB uses fcntl (POSIX) locks, not flock (BSD) locks. This function
+/// uses F_GETLK to check if another process holds the lock without actually
+/// acquiring it.
 #[cfg(unix)]
 pub fn is_db_locked(db_path: &Path) -> bool {
     use std::fs::OpenOptions;
-    use std::os::unix::fs::OpenOptionsExt;
+    use std::os::unix::io::AsRawFd;
 
     let lock_path = db_path.join("LOCK");
 
@@ -128,26 +128,37 @@ pub fn is_db_locked(db_path: &Path) -> bool {
         return false;
     }
 
-    // Try to open and lock the file
-    match OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NONBLOCK)
-        .open(&lock_path)
-    {
+    // Try to open the lock file
+    match OpenOptions::new().read(true).write(true).open(&lock_path) {
         Ok(file) => {
-            use std::os::unix::io::AsRawFd;
             let fd = file.as_raw_fd();
 
-            // Try non-blocking exclusive lock
-            let result = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+            // Use F_GETLK to check if file is locked without acquiring
+            // This is the same mechanism RocksDB uses
+            let mut lock = libc::flock {
+                l_type: libc::F_WRLCK as i16, // Check for write lock
+                l_whence: libc::SEEK_SET as i16,
+                l_start: 0,
+                l_len: 0, // Entire file
+                l_pid: 0,
+            };
 
-            if result == 0 {
-                // We got the lock, release it immediately
-                unsafe { libc::flock(fd, libc::LOCK_UN) };
-                false // DB is NOT locked by another process
+            let result = unsafe { libc::fcntl(fd, libc::F_GETLK, &mut lock) };
+
+            if result == -1 {
+                debug!("fcntl F_GETLK failed: {}", std::io::Error::last_os_error());
+                return false;
+            }
+
+            if lock.l_type == libc::F_UNLCK as i16 {
+                // No lock held
+                false
             } else {
-                // Failed to get lock - someone else has it
-                debug!("Database lock held by another process: {:?}", lock_path);
+                // Lock is held by another process
+                debug!(
+                    "Database lock held by process {}: {:?}",
+                    lock.l_pid, lock_path
+                );
                 true
             }
         }
@@ -215,36 +226,67 @@ mod tests {
         // Create a LOCK file (simulating RocksDB)
         std::fs::write(db_path.join("LOCK"), "").unwrap();
 
-        // Lock file exists but not held by flock
+        // Lock file exists but not held by fcntl
         assert!(!is_db_locked(db_path));
     }
 
+    /// Test lock detection using a child process
+    ///
+    /// fcntl (POSIX) locks are per-process, not per-fd, so we need a separate
+    /// process to hold the lock for detection to work.
     #[cfg(unix)]
     #[test]
-    fn test_is_db_locked_true_when_lock_held() {
-        use std::fs::OpenOptions;
-        use std::os::unix::io::AsRawFd;
+    fn test_is_db_locked_true_when_lock_held_by_another_process() {
+        use std::io::{BufRead, BufReader, Write};
+        use std::process::{Command, Stdio};
 
         let tmp = TempDir::new().unwrap();
         let db_path = tmp.path();
         let lock_path = db_path.join("LOCK");
 
-        // Create and hold the lock
+        // Create LOCK file
         std::fs::write(&lock_path, "").unwrap();
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&lock_path)
-            .unwrap();
 
-        let fd = file.as_raw_fd();
-        unsafe { libc::flock(fd, libc::LOCK_EX) };
+        // Spawn child process that holds the lock
+        let mut child = Command::new("python3")
+            .arg("-c")
+            .arg(format!(
+                r#"
+import fcntl
+import sys
 
-        // Should detect that lock is held
-        assert!(is_db_locked(db_path), "Should detect held lock");
+fd = open("{}", "r+")
+lock = fcntl.flock(fd.fileno(), fcntl.LOCK_EX)  # This actually uses flock, not fcntl
+# But we need fcntl lock, so use lockf instead
+fcntl.lockf(fd.fileno(), fcntl.LOCK_EX)
+print("LOCKED", flush=True)
+sys.stdin.readline()  # Wait for signal to release
+"#,
+                lock_path.display()
+            ))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("Failed to spawn child process");
 
-        // Release lock
-        unsafe { libc::flock(fd, libc::LOCK_UN) };
+        // Wait for child to acquire lock
+        let stdout = child.stdout.take().unwrap();
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        assert!(line.contains("LOCKED"), "Child should acquire lock");
+
+        // Now check if we detect the lock
+        assert!(
+            is_db_locked(db_path),
+            "Should detect lock held by another process"
+        );
+
+        // Signal child to release and exit
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(b"\n");
+        }
+        let _ = child.wait();
     }
 
     // Note: We don't test fork_daemon or ensure_daemon here because they require
