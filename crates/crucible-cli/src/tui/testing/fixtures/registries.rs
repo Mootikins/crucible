@@ -19,6 +19,16 @@ pub fn note(name: impl Into<String>) -> PopupItem {
     PopupItem::note(&name.into())
 }
 
+/// Helper to create a file item
+pub fn file(path: impl Into<String>) -> PopupItem {
+    PopupItem::file(&path.into())
+}
+
+/// Helper to create a skill item
+pub fn skill(name: impl Into<String>, description: impl Into<String>) -> PopupItem {
+    PopupItem::skill(&name.into()).desc(description)
+}
+
 /// Standard slash commands
 pub fn standard_commands() -> Vec<PopupItem> {
     vec![
@@ -60,6 +70,43 @@ pub fn many_commands() -> Vec<PopupItem> {
         .collect()
 }
 
+/// Test files for @ popup
+pub fn test_files() -> Vec<PopupItem> {
+    vec![
+        file("src/main.rs"),
+        file("src/lib.rs"),
+        file("Cargo.toml"),
+        file("README.md"),
+    ]
+}
+
+/// Test notes for @ popup
+pub fn test_notes() -> Vec<PopupItem> {
+    vec![
+        note("Projects/Crucible"),
+        note("Ideas/Backlog"),
+        note("Meta/Roadmap"),
+    ]
+}
+
+/// Test skills (like commands but invoked differently)
+pub fn test_skills() -> Vec<PopupItem> {
+    vec![
+        skill("commit", "Create git commit"),
+        skill("prime", "Load project context"),
+        skill("ultra-think", "Deep analysis mode"),
+    ]
+}
+
+/// Mixed items for AgentOrFile popup testing
+pub fn mixed_agent_file_items() -> Vec<PopupItem> {
+    let mut items = vec![];
+    items.extend(test_agents());
+    items.extend(test_files());
+    items.extend(test_notes());
+    items
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,5 +133,50 @@ mod tests {
         for cmd in minimal_commands() {
             assert!(cmd.token().starts_with('/'));
         }
+    }
+
+    #[test]
+    fn agent_tokens_have_at() {
+        for agent in test_agents() {
+            assert!(agent.token().starts_with('@'));
+        }
+    }
+
+    #[test]
+    fn file_tokens_are_paths() {
+        // File tokens are just the path (no prefix)
+        for f in test_files() {
+            assert!(!f.token().is_empty());
+            // Should be a file path
+            assert!(f.token().contains('.') || f.token().contains('/'));
+        }
+    }
+
+    #[test]
+    fn note_tokens_are_paths() {
+        // Note tokens are just the path (no prefix)
+        for n in test_notes() {
+            assert!(!n.token().is_empty());
+        }
+    }
+
+    #[test]
+    fn skill_tokens_have_skill_prefix() {
+        // Skills use "skill:" prefix
+        for s in test_skills() {
+            assert!(
+                s.token().starts_with("skill:"),
+                "Skill token should start with 'skill:', got: {}",
+                s.token()
+            );
+        }
+    }
+
+    #[test]
+    fn mixed_items_contains_all_types() {
+        let items = mixed_agent_file_items();
+        assert!(items.iter().any(|i| matches!(i, PopupItem::Agent { .. })));
+        assert!(items.iter().any(|i| matches!(i, PopupItem::File { .. })));
+        assert!(items.iter().any(|i| matches!(i, PopupItem::Note { .. })));
     }
 }
