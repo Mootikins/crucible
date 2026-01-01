@@ -23,6 +23,6 @@ expression: terminal.backend()
 "                                                                                "
 " ● Let me read that for you.                                                    "
 "                                                                                "
-" ● read → success                                                               "
+" ● read(path="note.md") → success                                               "
 "                                                                                "
 " ● I've read the note.                                                          "
