@@ -77,7 +77,7 @@ where
             chat_history: Arc::new(RwLock::new(Vec::new())),
             mode_state,
             current_mode_id,
-            max_tool_depth: 10,
+            max_tool_depth: 50, // High limit for complex agentic workflows
         }
     }
 
@@ -149,6 +149,7 @@ where
             let mut accumulated_text = String::new();
             let mut tool_calls: Vec<ChatToolCall> = Vec::new();
             let mut item_count = 0u64;
+            let mut got_final_response = false;
 
             // Track Rig's native tool calls and results for proper history
             let mut rig_tool_calls: Vec<RigToolCall> = Vec::new();
@@ -263,6 +264,7 @@ where
                         tool_results.push(tr);
                     }
                     Ok(MultiTurnStreamItem::FinalResponse(final_resp)) => {
+                        got_final_response = true;
                         debug!(
                             item_count,
                             response_len = final_resp.response().len(),
@@ -332,6 +334,29 @@ where
                         // Ignore unknown variants for forward compatibility
                     }
                 }
+            }
+
+            // Safety net: If stream ended without FinalResponse (e.g., network timeout,
+            // unexpected termination), ensure we still emit a done chunk so TUI doesn't
+            // get stuck in "Generating..." state.
+            if !got_final_response && item_count > 0 {
+                warn!(
+                    item_count,
+                    accumulated_len = accumulated_text.len(),
+                    tool_count = tool_calls.len(),
+                    "Rig stream ended without FinalResponse - emitting done chunk"
+                );
+
+                yield Ok(ChatChunk {
+                    delta: String::new(),
+                    done: true,
+                    tool_calls: if tool_calls.is_empty() {
+                        None
+                    } else {
+                        Some(tool_calls)
+                    },
+                    tool_results: None,
+                });
             }
         })
     }
