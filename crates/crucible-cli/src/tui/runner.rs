@@ -367,6 +367,52 @@ impl RatatuiRunner {
                 // Reset Ctrl+C tracking
                 self.ctrl_c_count = 0;
 
+                // Handle shell passthrough (!) - execute immediately, don't send to agent
+                if msg.starts_with('!') {
+                    let cmd = msg.strip_prefix('!').unwrap_or("").trim();
+                    if !cmd.is_empty() {
+                        // Add to history
+                        if self.history.last() != Some(&msg) {
+                            self.history.push(msg.clone());
+                        }
+                        self.history_index = None;
+                        self.history_saved_input.clear();
+
+                        // Clear input
+                        self.view.set_input("");
+                        self.view.set_cursor_position(0);
+                        self.popup = None;
+
+                        // Execute shell command
+                        self.execute_shell_command(cmd)?;
+                    }
+                    return Ok(false);
+                }
+
+                // Handle REPL commands (:) - execute immediately, don't send to agent
+                if msg.starts_with(':') {
+                    let cmd = msg.strip_prefix(':').unwrap_or("").trim();
+                    // Take the first word as the command name
+                    let cmd_name = cmd.split_whitespace().next().unwrap_or("").to_lowercase();
+                    if !cmd_name.is_empty() {
+                        // Add to history
+                        if self.history.last() != Some(&msg) {
+                            self.history.push(msg.clone());
+                        }
+                        self.history_index = None;
+                        self.history_saved_input.clear();
+
+                        // Clear input
+                        self.view.set_input("");
+                        self.view.set_cursor_position(0);
+                        self.popup = None;
+
+                        // Execute REPL command
+                        return self.execute_repl_command(&cmd_name);
+                    }
+                    return Ok(false);
+                }
+
                 // Add to history (avoid duplicates for repeated commands)
                 if self.history.last() != Some(&msg) {
                     self.history.push(msg.clone());
@@ -501,10 +547,24 @@ impl RatatuiRunner {
                 }
             }
             InputAction::ConfirmPopup => {
+                use crate::tui::state::PopupItem;
+
                 if let Some(ref popup) = self.popup {
                     if !popup.items.is_empty() {
                         let idx = popup.selected.min(popup.items.len() - 1);
-                        let token = popup.items[idx].token();
+                        let item = &popup.items[idx];
+
+                        // Handle REPL commands specially - execute immediately
+                        if let PopupItem::ReplCommand { name, .. } = item {
+                            let name = name.clone();
+                            self.popup = None;
+                            self.view.set_input("");
+                            self.view.set_cursor_position(0);
+                            return self.execute_repl_command(&name);
+                        }
+
+                        // For other items, insert the token
+                        let token = item.token();
                         self.view.set_input(&token);
                         self.view.set_cursor_position(token.len());
                     }
@@ -859,6 +919,15 @@ impl RatatuiRunner {
             if let Some(ref mut popup) = self.popup {
                 popup.query = query;
             }
+        } else if trimmed.starts_with(':') {
+            // REPL commands (vim-style system commands)
+            let query = trimmed.strip_prefix(':').unwrap_or("").to_string();
+            if self.popup.as_ref().map(|p| p.kind) != Some(PopupKind::ReplCommand) {
+                self.popup = Some(PopupState::new(PopupKind::ReplCommand));
+            }
+            if let Some(ref mut popup) = self.popup {
+                popup.query = query;
+            }
         } else {
             self.popup = None;
         }
@@ -867,6 +936,100 @@ impl RatatuiRunner {
     /// Get the view state for testing.
     pub fn view(&self) -> &RatatuiView {
         &self.view
+    }
+
+    /// Execute a REPL command (vim-style system commands)
+    fn execute_repl_command(&mut self, name: &str) -> Result<bool> {
+        use crate::tui::repl_commands::lookup;
+
+        debug!(cmd = %name, "Executing REPL command");
+
+        // Look up command (handles aliases)
+        let Some(cmd) = lookup(name) else {
+            self.view.set_status_text(&format!("Unknown command: {}", name));
+            return Ok(false);
+        };
+
+        match cmd.name {
+            "quit" => {
+                // Exit the application
+                return Ok(true);
+            }
+            "help" => {
+                let help_text = "Keys: Shift+Tab=mode, Ctrl+C=cancel, ↑↓=scroll | Prefixes: /=commands, :=repl, @=context, !=shell";
+                self.view.set_status_text(help_text);
+            }
+            "mode" => {
+                // Cycle mode (same as Shift+Tab)
+                let new_mode = crucible_core::traits::chat::cycle_mode_id(self.view.mode_id());
+                self.view.set_mode_id(new_mode);
+                self.view.set_status_text(&format!("Mode: {}", self.view.mode_id()));
+            }
+            "agent" => {
+                // TODO: Open agent picker popup
+                self.view.set_status_text("Agent switching not yet implemented");
+            }
+            "models" => {
+                // TODO: Open models list popup
+                self.view.set_status_text("Model listing not yet implemented");
+            }
+            "config" => {
+                // Show current config summary
+                self.view.set_status_text(&format!("Mode: {}", self.view.mode_id()));
+            }
+            _ => {
+                self.view.set_status_text(&format!("Unknown command: {}", name));
+            }
+        }
+
+        Ok(false)
+    }
+
+    /// Execute a shell command via bash (respects user's aliases/functions)
+    fn execute_shell_command(&mut self, cmd: &str) -> Result<()> {
+        use std::process::Command;
+
+        debug!(cmd = %cmd, "Executing shell command");
+
+        // Temporarily exit alternate screen so user can see shell output
+        execute!(
+            std::io::stdout(),
+            crossterm::terminal::LeaveAlternateScreen,
+            crossterm::cursor::Show
+        )?;
+        crossterm::terminal::disable_raw_mode()?;
+
+        // Use bash -ic to get interactive shell with user's aliases/functions
+        let status = Command::new("bash")
+            .args(["-ic", cmd])
+            .status();
+
+        // Re-enter TUI mode
+        crossterm::terminal::enable_raw_mode()?;
+        execute!(
+            std::io::stdout(),
+            crossterm::terminal::EnterAlternateScreen,
+            crossterm::cursor::Hide
+        )?;
+
+        match status {
+            Ok(exit_status) => {
+                if exit_status.success() {
+                    self.view.set_status_text(&format!("!{} [ok]", cmd));
+                } else {
+                    let code = exit_status.code().unwrap_or(-1);
+                    self.view.set_status_text(&format!("!{} [exit {}]", cmd, code));
+                }
+            }
+            Err(e) => {
+                self.view
+                    .state_mut()
+                    .notifications
+                    .push_error(format!("Failed to execute '{}': {}", cmd, e));
+            }
+        }
+
+        Ok(())
     }
 
     /// Handle dialog result

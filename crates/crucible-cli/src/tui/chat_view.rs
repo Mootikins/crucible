@@ -285,6 +285,15 @@ impl<'a> ChatView<'a> {
                     return;
                 }
             }
+            PopupKind::ReplCommand => {
+                if let Some(pos) = content.rfind(':') {
+                    (':', &content[pos + 1..])
+                } else {
+                    // No trigger found, close popup
+                    self.popup = None;
+                    return;
+                }
+            }
         };
 
         // Verify trigger is at start or after whitespace
