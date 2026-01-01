@@ -310,6 +310,29 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
     match storage_config.mode {
         StorageMode::Embedded => {
             debug!("Using embedded storage mode");
+
+            // Check if database is locked by another process (orphan daemon scenario)
+            let db_path = config.database_path();
+            if lifecycle::is_db_locked(&db_path) {
+                let socket = lifecycle::default_socket_path();
+                if lifecycle::is_daemon_running(&socket) {
+                    // Daemon is running and reachable - suggest using daemon mode
+                    anyhow::bail!(
+                        "Database is locked by running daemon.\n\
+                         Either:\n\
+                         - Set storage.mode = \"daemon\" in config to use the daemon\n\
+                         - Stop the daemon: cru daemon stop"
+                    );
+                } else {
+                    // Daemon process exists but socket is gone (orphan)
+                    anyhow::bail!(
+                        "Database is locked by an orphan daemon process (socket missing).\n\
+                         Find and kill it: pgrep -a cru | grep db-server\n\
+                         Then retry your command."
+                    );
+                }
+            }
+
             let client = create_surrealdb_storage(config).await?;
             Ok(StorageHandle::Embedded(client))
         }
