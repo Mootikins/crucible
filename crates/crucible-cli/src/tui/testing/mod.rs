@@ -48,6 +48,8 @@ pub mod fixtures;
 mod harness;
 #[cfg(test)]
 mod harness_tests;
+#[cfg(test)]
+mod popup_snapshot_tests;
 mod state_builder;
 #[cfg(test)]
 mod tool_call_tests;
