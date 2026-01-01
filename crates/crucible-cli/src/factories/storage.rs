@@ -230,6 +230,7 @@ impl StorageHandle {
             }
             StorageHandle::Daemon(c) => c.query_raw(sql).await,
             StorageHandle::Lightweight(_) => {
+                crate::output::storage_warning("SQL queries");
                 anyhow::bail!(
                     "SQL queries not supported in lightweight mode.\n\
                      Configure storage.mode = \"embedded\" or \"daemon\" for full query support."
@@ -324,6 +325,7 @@ impl StorageHandle {
                 create_surrealdb_storage(config).await
             }
             StorageHandle::Lightweight(_) => {
+                crate::output::storage_warning(operation);
                 anyhow::bail!(
                     "Operation '{}' requires SurrealDB.\n\
                      Configure storage.mode = \"embedded\" or \"daemon\".",
