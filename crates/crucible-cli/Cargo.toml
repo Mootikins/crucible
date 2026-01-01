@@ -36,6 +36,7 @@ crucible-watch = { path = "../crucible-watch" }
 crucible-daemon = { path = "../crucible-daemon" }
 crucible-daemon-client = { path = "../crucible-daemon-client" }
 crucible-skills = { path = "../crucible-skills" }
+crucible-lance = { path = "../crucible-lance" }
 
 # CLI framework
 clap = { workspace = true, features = ["derive", "env", "string"] }
