@@ -354,5 +354,9 @@ async fn main() -> Result<()> {
         }
     }
 
+    // Graceful shutdown: close all cached storage connections
+    // This ensures RocksDB flushes WAL/SST files properly
+    factories::shutdown_storage();
+
     Ok(())
 }

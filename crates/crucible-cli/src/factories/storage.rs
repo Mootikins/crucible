@@ -332,6 +332,31 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
     }
 }
 
+// =============================================================================
+// Storage Cleanup (Graceful Shutdown)
+// =============================================================================
+
+/// Clear all cached storage connections
+///
+/// This should be called before the process exits to ensure RocksDB
+/// flushes its WAL and SST files properly. Without this, the database
+/// may be left in a corrupted state.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// // In main.rs, after all commands complete:
+/// factories::shutdown_storage();
+/// ```
+pub fn shutdown_storage() {
+    let mut cache = SURREAL_CLIENT_CACHE.lock().unwrap();
+    let count = cache.len();
+    cache.clear();
+    if count > 0 {
+        debug!("Closed {} cached storage connection(s)", count);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
