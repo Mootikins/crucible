@@ -48,10 +48,7 @@ pub fn tool_call_event(name: impl Into<String>) -> StreamingEvent {
 }
 
 /// Tool call event with arguments
-pub fn tool_call_with_args(
-    name: impl Into<String>,
-    args: serde_json::Value,
-) -> StreamingEvent {
+pub fn tool_call_with_args(name: impl Into<String>, args: serde_json::Value) -> StreamingEvent {
     StreamingEvent::ToolCall {
         id: Some("test-id".to_string()),
         name: name.into(),

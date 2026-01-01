@@ -465,10 +465,7 @@ fn conversation_multiple_tools() {
 
     // Second tool - running
     conv.push_tool_running("read", serde_json::json!({"path": "src/main.rs"}));
-    conv.update_tool_output(
-        "read",
-        "fn main() {\n    println!(\"Hello\");\n}",
-    );
+    conv.update_tool_output("read", "fn main() {\n    println!(\"Hello\");\n}");
 
     render_conversation_view(&mut terminal, &conv, "", "act", None, "Tool running");
     assert_snapshot!("conv_multiple_tools", terminal.backend());

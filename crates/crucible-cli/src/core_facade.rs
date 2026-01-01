@@ -215,9 +215,7 @@ impl KilnContext {
         } else {
             // In daemon mode, fall back to basic semantic search
             // Reranking is not supported via RPC yet
-            tracing::debug!(
-                "Reranking not available in daemon mode, using basic semantic search"
-            );
+            tracing::debug!("Reranking not available in daemon mode, using basic semantic search");
             self.semantic_search(query, limit).await
         }
     }
