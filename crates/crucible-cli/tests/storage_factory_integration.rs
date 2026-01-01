@@ -74,9 +74,10 @@ fn create_daemon_config(kiln_path: PathBuf) -> CliConfig {
     };
 
     // Configure for daemon mode
-    let mut storage_config = crucible_config::StorageConfig::default();
-    storage_config.mode = StorageMode::Daemon;
-    config.storage = Some(storage_config);
+    config.storage = Some(crucible_config::StorageConfig {
+        mode: StorageMode::Daemon,
+        ..Default::default()
+    });
 
     config
 }
@@ -167,11 +168,11 @@ async fn test_get_storage_fails_when_no_daemon() {
         ..Default::default()
     };
 
-    let mut storage_config = crucible_config::StorageConfig::default();
-    storage_config.mode = StorageMode::Daemon;
     // Short timeout so test doesn't hang
-    storage_config.idle_timeout_secs = 1;
-    config.storage = Some(storage_config);
+    config.storage = Some(crucible_config::StorageConfig {
+        mode: StorageMode::Daemon,
+        idle_timeout_secs: 1,
+    });
 
     // This should either:
     // 1. Fork a daemon and connect (if binary available)
