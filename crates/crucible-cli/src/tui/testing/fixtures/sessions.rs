@@ -212,6 +212,20 @@ pub fn interleaved_prose_and_tools() -> Vec<ConversationItem> {
     ]
 }
 
+/// Multiple tool calls in a single agent turn (batched, no prose between)
+/// This is common when an LLM decides to call multiple tools at once
+pub fn batched_tool_calls() -> Vec<ConversationItem> {
+    vec![
+        user("Find all Rust files and their sizes"),
+        assistant("I'll search for Rust files and check their sizes."),
+        // These three tools are called in a single agent turn (batch)
+        tool_complete_with_summary("glob", "src/**/*.rs - 24 files"),
+        tool_complete_with_summary("glob", "tests/**/*.rs - 12 files"),
+        tool_complete_with_summary("glob", "examples/**/*.rs - 5 files"),
+        assistant("Found 41 total Rust files across src, tests, and examples."),
+    ]
+}
+
 /// Mixed success and error tool calls
 pub fn mixed_tool_results() -> Vec<ConversationItem> {
     vec![
