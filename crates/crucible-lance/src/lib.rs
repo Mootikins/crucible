@@ -2,6 +2,7 @@
 //!
 //! Provides embedding cache and vector search backed by LanceDB.
 
+pub mod embedding_cache;
 pub mod store;
 
 pub use store::LanceStore;
