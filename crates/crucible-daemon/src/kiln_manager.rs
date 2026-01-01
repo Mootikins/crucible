@@ -54,6 +54,10 @@ impl KilnManager {
 
         let client = adapters::create_surreal_client(config).await?;
 
+        // Initialize schema on first open (idempotent)
+        crucible_surrealdb::kiln_integration::initialize_kiln_schema(client.inner()).await?;
+        info!("Schema initialized for kiln at {:?}", db_path);
+
         let mut conns = self.connections.write().await;
         conns.insert(
             canonical,

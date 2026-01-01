@@ -64,6 +64,27 @@ pub async fn create_surrealdb_storage(config: &CliConfig) -> Result<adapters::Su
         return Ok(cached);
     }
 
+    // Check if database is locked before attempting to open it
+    // This provides a clear error instead of "Resource temporarily unavailable"
+    let db_path = config.database_path();
+    if lifecycle::is_db_locked(&db_path) {
+        let socket = lifecycle::default_socket_path();
+        if lifecycle::is_daemon_running(&socket) {
+            anyhow::bail!(
+                "Database is locked by running daemon.\n\
+                 Either:\n\
+                 - Set storage.mode = \"daemon\" in config to use the daemon\n\
+                 - Stop the daemon: cru daemon stop"
+            );
+        } else {
+            anyhow::bail!(
+                "Database is locked by an orphan daemon process (socket missing).\n\
+                 Find and kill it: pgrep -a cru | grep db-server\n\
+                 Then retry your command."
+            );
+        }
+    }
+
     let client = adapters::create_surreal_client(db_config.clone())
         .await
         .map_err(|e| anyhow::anyhow!("Failed to create SurrealDB storage: {}", e))?;
@@ -249,8 +270,8 @@ impl StorageHandle {
     /// pipeline creation, etc.), this creates a temporary embedded connection
     /// when running in daemon mode. Logs a warning about the fallback.
     ///
-    /// This enables graceful degradation: daemon mode works for multi-session
-    /// queries, but heavy operations transparently use embedded.
+    /// If the daemon has the database locked, this will fail with a clear
+    /// error explaining that the operation requires stopping the daemon.
     pub async fn get_embedded_for_operation(
         &self,
         config: &crate::config::CliConfig,
@@ -259,6 +280,17 @@ impl StorageHandle {
         match self {
             StorageHandle::Embedded(h) => Ok(h.clone()),
             StorageHandle::Daemon(_) => {
+                // Check if daemon has the lock - if so, we can't create embedded connection
+                let db_path = config.database_path();
+                if lifecycle::is_db_locked(&db_path) {
+                    anyhow::bail!(
+                        "Operation '{}' requires direct database access, but daemon has the lock.\n\
+                         Stop the daemon first: cru daemon stop\n\
+                         Then retry your command.",
+                        operation
+                    );
+                }
+
                 tracing::warn!(
                     "Operation '{}' requires embedded storage; creating fallback connection",
                     operation
@@ -311,26 +343,19 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
         StorageMode::Embedded => {
             debug!("Using embedded storage mode");
 
-            // Check if database is locked by another process (orphan daemon scenario)
+            // Check if daemon is running and has the DB locked
+            // If so, auto-connect to daemon instead of failing
             let db_path = config.database_path();
-            if lifecycle::is_db_locked(&db_path) {
-                let socket = lifecycle::default_socket_path();
-                if lifecycle::is_daemon_running(&socket) {
-                    // Daemon is running and reachable - suggest using daemon mode
-                    anyhow::bail!(
-                        "Database is locked by running daemon.\n\
-                         Either:\n\
-                         - Set storage.mode = \"daemon\" in config to use the daemon\n\
-                         - Stop the daemon: cru daemon stop"
-                    );
-                } else {
-                    // Daemon process exists but socket is gone (orphan)
-                    anyhow::bail!(
-                        "Database is locked by an orphan daemon process (socket missing).\n\
-                         Find and kill it: pgrep -a cru | grep db-server\n\
-                         Then retry your command."
-                    );
-                }
+            let socket = lifecycle::default_socket_path();
+
+            if lifecycle::is_db_locked(&db_path) && lifecycle::is_daemon_running(&socket) {
+                info!("Database locked by daemon, auto-connecting to daemon");
+                let client = DaemonClient::connect_to(&socket).await?;
+                let kiln_path = config.kiln_path.clone();
+                return Ok(StorageHandle::Daemon(Arc::new(DaemonStorageClient::new(
+                    Arc::new(client),
+                    kiln_path,
+                ))));
             }
 
             let client = create_surrealdb_storage(config).await?;
@@ -388,5 +413,89 @@ mod tests {
     fn test_storage_handle_is_embedded() {
         // We can't easily create a real handle in tests, but we can test the pattern
         // This is more of a compile-time check that the types work
+    }
+
+    /// Test that create_surrealdb_storage fails with clear error when DB is locked
+    ///
+    /// This prevents the confusing "Resource temporarily unavailable" error
+    /// when daemon mode tries to fallback to embedded but daemon holds the lock.
+    ///
+    /// fcntl (POSIX) locks are per-process, so we need a child process to hold
+    /// the lock for detection to work.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_create_surrealdb_storage_fails_when_db_locked() {
+        use std::io::{BufRead, BufReader, Write};
+        use std::process::{Command, Stdio};
+        use tempfile::TempDir;
+
+        // Create temp kiln with database directory
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_path_buf();
+        let db_dir = kiln_path.join(".crucible").join("kiln.db");
+        std::fs::create_dir_all(&db_dir).unwrap();
+
+        let lock_path = db_dir.join("LOCK");
+        std::fs::write(&lock_path, "").unwrap();
+
+        // Spawn child process that holds the lock
+        let mut child = Command::new("python3")
+            .arg("-c")
+            .arg(format!(
+                r#"
+import fcntl
+import sys
+
+fd = open("{}", "r+")
+fcntl.lockf(fd.fileno(), fcntl.LOCK_EX)
+print("LOCKED", flush=True)
+sys.stdin.readline()  # Wait for signal to release
+"#,
+                lock_path.display()
+            ))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("Failed to spawn child process");
+
+        // Wait for child to acquire lock
+        let stdout = child.stdout.take().unwrap();
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        assert!(line.contains("LOCKED"), "Child should acquire lock");
+
+        // Create config pointing to locked database
+        let config = crate::config::CliConfig {
+            kiln_path,
+            ..Default::default()
+        };
+
+        // Verify the database is detected as locked
+        let db_path = config.database_path();
+        assert!(
+            lifecycle::is_db_locked(&db_path),
+            "Test setup failed: DB should be detected as locked"
+        );
+
+        // Try to create embedded storage - should fail with clear error
+        let result = create_surrealdb_storage(&config).await;
+
+        let err = match result {
+            Ok(_) => panic!("Should fail when DB is locked"),
+            Err(e) => e.to_string(),
+        };
+        // After fix: should mention daemon/locked, not "Resource temporarily unavailable"
+        assert!(
+            err.contains("locked") || err.contains("daemon"),
+            "Error should mention lock/daemon, got: {}",
+            err
+        );
+
+        // Signal child to release and exit
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(b"\n");
+        }
+        let _ = child.wait();
     }
 }
