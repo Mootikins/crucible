@@ -272,8 +272,8 @@ pub async fn execute(
     status.update("Initializing embedding provider...");
     let embedding_provider = factories::get_or_create_embedding_provider(core.config()).await?;
 
-    // Get knowledge repository from storage
-    let knowledge_repo = core.storage().as_knowledge_repository();
+    // Get knowledge repository from storage (one-shot mode always has embedded client)
+    let knowledge_repo = storage_client.as_knowledge_repository();
 
     // Handle agent type specific setup and session execution
     match initialized_agent {
@@ -390,19 +390,24 @@ async fn run_deferred_chat(
     // Initialize storage only (agent created later by factory)
     status.update("Initializing storage...");
     let storage_handle = factories::get_storage(&config).await?;
-    let storage_client = storage_handle
-        .get_embedded_for_operation(&config, "deferred chat initialization")
-        .await?;
-    factories::initialize_surrealdb_schema(&storage_client).await?;
 
-    // Background processing (same as non-deferred path)
-    let _bg_progress: Option<BackgroundProgress> = if !no_process && !no_context {
+    // Background processing only in embedded mode
+    // Daemon mode: the db-server already handles schema init and file watching should
+    // be a separate daemon responsibility
+    let _bg_progress: Option<BackgroundProgress> = if storage_handle.is_embedded()
+        && !no_process
+        && !no_context
+    {
+        // Only embedded mode can do schema init and background processing
+        let storage_client = storage_handle.as_embedded();
+        factories::initialize_surrealdb_schema(storage_client).await?;
+
         use crate::sync::quick_sync_check;
 
         status.update("Checking for file changes...");
 
         let kiln_path = &config.kiln_path;
-        let sync_status = quick_sync_check(&storage_client, kiln_path).await?;
+        let sync_status = quick_sync_check(storage_client, kiln_path).await?;
 
         if sync_status.needs_processing() {
             let pending = sync_status.pending_count();
@@ -460,13 +465,16 @@ async fn run_deferred_chat(
             None
         }
     } else {
+        if storage_handle.is_daemon() {
+            info!("Running in daemon mode - schema init and background processing handled by db-server");
+        }
         None
     };
 
-    // Initialize core facade
+    // Initialize core facade (works with both embedded and daemon modes)
     status.update("Initializing core...");
-    let core = Arc::new(KilnContext::from_storage(
-        storage_client.clone(),
+    let core = Arc::new(KilnContext::from_storage_handle(
+        storage_handle.clone(),
         config.clone(),
     ));
 
@@ -474,8 +482,10 @@ async fn run_deferred_chat(
     status.update("Initializing embedding provider...");
     let embedding_provider = factories::get_or_create_embedding_provider(core.config()).await?;
 
-    // Get knowledge repository from storage
-    let knowledge_repo = core.storage().as_knowledge_repository();
+    // Get knowledge repository from storage handle (works with both modes)
+    let knowledge_repo = storage_handle
+        .as_knowledge_repository()
+        .ok_or_else(|| anyhow::anyhow!("Knowledge repository not available in lightweight mode"))?;
 
     // Status is complete - TUI will take over
     status.success("Ready");
