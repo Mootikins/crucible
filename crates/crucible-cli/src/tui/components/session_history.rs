@@ -5,7 +5,7 @@
 
 use crate::tui::{
     components::{InteractiveWidget, WidgetAction, WidgetEventResult},
-    conversation::{render_item_to_lines, ConversationState},
+    conversation::{render_item_to_lines, ConversationItem, ConversationState},
 };
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -56,11 +56,25 @@ impl<'a> SessionHistoryWidget<'a> {
         self
     }
 
-    /// Render conversation items to lines
+    /// Render conversation items to lines with context-aware spacing.
+    ///
+    /// Tool calls no longer include their own leading blank line, so we add spacing
+    /// here - but skip it between consecutive tool calls to group them visually.
     fn render_to_lines(&self, width: usize) -> Vec<Line<'static>> {
         let mut all_lines = Vec::new();
+        let items = self.state.items();
 
-        for item in self.state.items() {
+        for (i, item) in items.iter().enumerate() {
+            // Add blank line before tool calls, but skip between consecutive tools
+            if matches!(item, ConversationItem::ToolCall(_)) {
+                let prev_was_tool = i > 0
+                    && matches!(items.get(i - 1), Some(ConversationItem::ToolCall(_)));
+
+                if !prev_was_tool {
+                    all_lines.push(Line::from(""));
+                }
+            }
+
             all_lines.extend(render_item_to_lines(item, width));
         }
 
