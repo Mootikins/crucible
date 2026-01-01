@@ -146,6 +146,7 @@ mod tests {
                         delta,
                         done: i == len - 1,
                         tool_calls: None,
+                        tool_results: None,
                     })
                 },
             )))
@@ -369,6 +370,7 @@ mod tests {
                         } else {
                             None
                         },
+                        tool_results: None,
                     })
                 },
             )))

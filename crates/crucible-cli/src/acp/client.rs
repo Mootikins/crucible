@@ -479,11 +479,13 @@ impl AgentHandle for CrucibleAcpClient {
                                         delta: text,
                                         done: false,
                                         tool_calls: None,
+                                        tool_results: None,
                                     },
                                     StreamingChunk::Thinking(text) => ChatChunk {
                                         delta: format!("💭 {}", text), // Show thinking with emoji
                                         done: false,
                                         tool_calls: None,
+                                        tool_results: None,
                                     },
                                     StreamingChunk::ToolStart { name, id } => {
                                         tool_calls.push(ChatToolCall {
@@ -499,12 +501,14 @@ impl AgentHandle for CrucibleAcpClient {
                                                 arguments: None,
                                                 id: None,
                                             }]),
+                                            tool_results: None,
                                         }
                                     }
                                     StreamingChunk::ToolEnd { id: _ } => ChatChunk {
                                         delta: String::new(),
                                         done: false,
                                         tool_calls: None,
+                                        tool_results: None,
                                     },
                                 };
                                 Some((Ok(chat_chunk), Some((rx, result_rx, tool_calls, false))))
@@ -543,6 +547,7 @@ impl AgentHandle for CrucibleAcpClient {
                                                 } else {
                                                     Some(final_tool_calls)
                                                 },
+                                                tool_results: None,
                                             }),
                                             None, // Terminate stream after this
                                         ))
