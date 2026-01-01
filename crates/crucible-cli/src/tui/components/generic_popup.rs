@@ -142,13 +142,12 @@ impl GenericPopupState {
     ///
     /// Accepts the same `PopupItemProvider` as the legacy `PopupState` for compatibility.
     pub fn new(kind: PopupKind, provider: Arc<dyn super::popup_state::PopupItemProvider>) -> Self {
-        // Phase 1: Remove labels for command popup - trigger char already disambiguates
-        let show_kinds = !matches!(kind, PopupKind::Command);
-
+        // Kind labels are redundant - the trigger char already indicates type
+        // (/ = command, @ = agent, : = repl, etc.)
         let config = PopupConfig::default()
             .max_visible(10)
             .filterable(true)
-            .show_kinds(show_kinds);
+            .show_kinds(false);
 
         Self {
             kind,
@@ -692,8 +691,8 @@ mod tests {
     }
 
     #[test]
-    fn generic_popup_mention_still_shows_kinds_for_now() {
-        // Phase 2 will remove kinds for @ popup too, but for now they're shown
+    fn generic_popup_mention_renders_without_kind_labels() {
+        // Kind labels are redundant - trigger char already disambiguates
         use ratatui::buffer::Buffer;
         use ratatui::layout::Rect;
         use ratatui::widgets::Widget;
@@ -718,10 +717,16 @@ mod tests {
             }
         }
 
-        // Currently @ popup shows [agent] label - Phase 2 will remove this
+        // Kind labels are no longer shown - the @ trigger char is sufficient
         assert!(
-            content.contains("[agent]"),
-            "Mention popup currently shows [agent] label (Phase 2 will change this). Content: {}",
+            !content.contains("[agent]"),
+            "Mention popup should not show [agent] label. Content: {}",
+            content
+        );
+        // But should still show the agent name
+        assert!(
+            content.contains("opencode"),
+            "Mention popup should show agent name. Content: {}",
             content
         );
     }

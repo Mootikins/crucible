@@ -18,9 +18,9 @@ expression: h.render()
                                                                                 
                                                                                 
 ┌Select────────────────────────────────────────────────────────────────────────┐
-│> [skill] skill:commit Create git commit                                      │
-│[skill] skill:prime Load project context                                      │
-│[skill] skill:ultra-think Deep analysis mode                                  │
+│> skill:commit Create git commit                                              │
+│skill:prime Load project context                                              │
+│skill:ultra-think Deep analysis mode                                          │
 └──────────────────────────────────────────────────────────────────────────────┘
                                                                                 
  >                                                                              

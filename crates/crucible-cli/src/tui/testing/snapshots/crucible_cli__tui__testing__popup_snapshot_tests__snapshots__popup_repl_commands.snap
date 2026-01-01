@@ -16,11 +16,11 @@ expression: h.render()
                                                                                 
                                                                                 
 ┌Select────────────────────────────────────────────────────────────────────────┐
-│> [repl] :quit Exit the application                                           │
-│[repl] :help Show keybindings and commands                                    │
-│[repl] :mode Cycle session mode                                               │
-│[repl] :agent Switch agent backend                                            │
-│[repl] :models List available models                                          │
+│> :quit Exit the application                                                  │
+│:help Show keybindings and commands                                           │
+│:mode Cycle session mode                                                      │
+│:agent Switch agent backend                                                   │
+│:models List available models                                                 │
 └──────────────────────────────────────────────────────────────────────────────┘
                                                                                 
  >                                                                              
