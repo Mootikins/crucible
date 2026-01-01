@@ -1,0 +1,28 @@
+---
+source: crates/crucible-cli/src/tui/testing/tool_call_tests.rs
+expression: complete_output
+---
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ ● glob(pattern="**/*.md") → Found 25 markdown files                            
+                                                                                
+                                                                                
+ >                                                                              
+                                                                                
+▸ Plan │ Ready

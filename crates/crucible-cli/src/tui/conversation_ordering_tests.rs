@@ -125,7 +125,7 @@ fn test_tool_calls_interleaved_in_response() {
     state.append_or_create_prose("Let me search for that.\n");
 
     // Then calls a tool (currently this creates a SEPARATE item!)
-    state.push_tool_running("grep");
+    state.push_tool_running("grep", serde_json::json!({"pattern": "test"}));
 
     // Tool completes
     state.complete_tool("grep", Some("5 matches".into()));
@@ -164,7 +164,7 @@ fn test_interleaved_conversation_snapshot() {
     // Simulate streaming with tool call in the middle
     state.start_assistant_streaming();
     state.append_or_create_prose("I'll search for TODO comments.\n");
-    state.push_tool_running("grep");
+    state.push_tool_running("grep", serde_json::json!({"pattern": "TODO"}));
     state.complete_tool("grep", Some("Found 3 files".into()));
     state.append_or_create_prose("Found 3 files with TODO:\n- main.rs\n- lib.rs\n- test.rs\n");
     state.complete_streaming();
@@ -230,17 +230,17 @@ fn test_multiple_tools_preserve_order() {
     state.append_or_create_prose("Running checks:\n");
 
     // First tool
-    state.push_tool_running("cargo check");
+    state.push_tool_running("cargo check", serde_json::json!({}));
     state.complete_tool("cargo check", Some("OK".into()));
     state.append_or_create_prose("Check passed.\n");
 
     // Second tool
-    state.push_tool_running("cargo test");
+    state.push_tool_running("cargo test", serde_json::json!({}));
     state.complete_tool("cargo test", Some("3 tests".into()));
     state.append_or_create_prose("Tests passed.\n");
 
     // Third tool
-    state.push_tool_running("cargo clippy");
+    state.push_tool_running("cargo clippy", serde_json::json!({}));
     state.complete_tool("cargo clippy", Some("0 warnings".into()));
     state.append_or_create_prose("No warnings.\n");
 
@@ -280,13 +280,13 @@ fn test_conversation_with_tools_insta_snapshot() {
     state.start_assistant_streaming();
     state.append_or_create_prose("I'll explore the project structure.\n");
 
-    state.push_tool_running("ls");
+    state.push_tool_running("ls", serde_json::json!({"path": "."}));
     state.complete_tool("ls", Some("15 files".into()));
 
     state.append_or_create_prose("Found 15 files. Let me check the main module.\n");
 
-    state.push_tool_running("cat main.rs");
-    state.complete_tool("cat main.rs", Some("200 lines".into()));
+    state.push_tool_running("cat", serde_json::json!({"path": "main.rs"}));
+    state.complete_tool("cat", Some("200 lines".into()));
 
     state.append_or_create_prose("The main module handles initialization.\n");
     state.complete_streaming();
@@ -308,7 +308,7 @@ fn test_fixed_interleaved_order() {
     state.push_user_message("Question");
     state.start_assistant_streaming();
     state.append_or_create_prose("Before tool.\n");
-    state.push_tool_running("tool1");
+    state.push_tool_running("tool1", serde_json::json!({}));
     state.complete_tool("tool1", None);
     state.append_or_create_prose("After tool.\n");
     state.complete_streaming();
@@ -363,12 +363,12 @@ fn test_multiple_tool_calls_with_same_name_are_separate() {
 
     // First grep call
     state.append_or_create_prose("Searching for foo...\n");
-    state.push_tool_running("grep");
+    state.push_tool_running("grep", serde_json::json!({"pattern": "foo"}));
     state.complete_tool("grep", Some("found foo".into()));
 
     // Second grep call (legitimately separate)
     state.append_or_create_prose("Now searching for bar...\n");
-    state.push_tool_running("grep");
+    state.push_tool_running("grep", serde_json::json!({"pattern": "bar"}));
     state.complete_tool("grep", Some("found bar".into()));
 
     state.complete_streaming();

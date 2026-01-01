@@ -252,12 +252,42 @@ impl RatatuiRunner {
                             streaming_error = Some(message);
                         }
                         StreamingEvent::ToolCall { id: _, name, args } => {
-                            // Display tool call in the TUI
-                            self.view.push_tool_running(&name);
+                            // Display tool call in the TUI with arguments
+                            self.view.push_tool_running(&name, args.clone());
                             self.view.set_status_text(&format!("Running: {}", name));
 
                             // Push to event ring for session tracking
                             bridge.ring.push(SessionEvent::ToolCalled { name, args });
+                        }
+                        StreamingEvent::ToolCompleted {
+                            name,
+                            result,
+                            error,
+                        } => {
+                            // Update tool display with completion status
+                            if let Some(err) = &error {
+                                self.view.error_tool(&name, err);
+                            } else {
+                                // Truncate result for summary (max 50 chars)
+                                let summary = if result.len() > 50 {
+                                    Some(format!("{}...", &result[..47]))
+                                } else if !result.is_empty() {
+                                    Some(result.clone())
+                                } else {
+                                    None
+                                };
+                                self.view.complete_tool(&name, summary);
+                            }
+
+                            // Clear status (tool is done)
+                            self.view.clear_status();
+
+                            // Push to event ring for session tracking
+                            bridge.ring.push(SessionEvent::ToolCompleted {
+                                name,
+                                result,
+                                error,
+                            });
                         }
                     }
                 }

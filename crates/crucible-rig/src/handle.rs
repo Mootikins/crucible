@@ -11,7 +11,9 @@
 //! - **Tool bridging**: Crucible tools are bridged to Rig's tool system
 
 use async_trait::async_trait;
-use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall};
+use crucible_core::traits::chat::{
+    AgentHandle, ChatChunk, ChatError, ChatResult, ChatToolCall, ChatToolResult,
+};
 use crucible_core::types::acp::schema::SessionModeState;
 use crucible_core::types::mode::default_internal_modes;
 use futures::stream::BoxStream;
@@ -166,6 +168,7 @@ where
                                     delta: text.text,
                                     done: false,
                                     tool_calls: None,
+                                    tool_results: None,
                                 });
                             }
                             StreamedAssistantContent::ToolCall(tc) => {
@@ -174,18 +177,24 @@ where
                                 // Track Rig's tool call for history building
                                 rig_tool_calls.push(tc.clone());
 
-                                // Accumulate tool call info for ChatChunk output
+                                // Accumulate tool call info for history
                                 tool_calls.push(ChatToolCall {
                                     name: tc.function.name.clone(),
                                     arguments: Some(tc.function.arguments.clone()),
                                     id: tc.call_id.clone(),
                                 });
 
-                                // Emit tool call as delta for visibility
+                                // Emit tool call immediately via tool_calls field
+                                // (not as text delta - TUI handles tool display separately)
                                 yield Ok(ChatChunk {
-                                    delta: format!("\n[Tool: {}]\n", tc.function.name),
+                                    delta: String::new(),
                                     done: false,
-                                    tool_calls: None,
+                                    tool_calls: Some(vec![ChatToolCall {
+                                        name: tc.function.name.clone(),
+                                        arguments: Some(tc.function.arguments.clone()),
+                                        id: tc.call_id.clone(),
+                                    }]),
+                                    tool_results: None,
                                 });
                             }
                             StreamedAssistantContent::Reasoning(r) => {
@@ -196,6 +205,7 @@ where
                                         delta: format!("<thinking>{}</thinking>", reasoning_text),
                                         done: false,
                                         tool_calls: None,
+                                        tool_results: None,
                                     });
                                 }
                             }
@@ -204,6 +214,7 @@ where
                                     delta: reasoning,
                                     done: false,
                                     tool_calls: None,
+                                    tool_results: None,
                                 });
                             }
                             StreamedAssistantContent::ToolCallDelta { .. } => {
@@ -216,8 +227,39 @@ where
                     }
                     Ok(MultiTurnStreamItem::StreamUserItem(ui)) => {
                         use rig::streaming::StreamedUserContent;
-                        // Capture tool results for history building
+                        use rig::message::ToolResultContent;
+                        // Capture tool results for history building and emit to TUI
                         let StreamedUserContent::ToolResult(tr) = ui;
+
+                        // Extract text from OneOrMany<ToolResultContent>
+                        let result_text: String = tr.content.iter()
+                            .filter_map(|c| match c {
+                                ToolResultContent::Text(t) => Some(t.text.clone()),
+                                ToolResultContent::Image(_) => None, // Skip images for display
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+
+                        debug!(
+                            tool_name = %tr.id,
+                            call_id = ?tr.call_id,
+                            result_len = result_text.len(),
+                            "Tool result received"
+                        );
+
+                        // Emit tool result to TUI
+                        // Use tr.id as the tool name (call_id is the correlation id)
+                        yield Ok(ChatChunk {
+                            delta: String::new(),
+                            done: false,
+                            tool_calls: None,
+                            tool_results: Some(vec![ChatToolResult {
+                                name: tr.id.clone(),
+                                result: result_text,
+                                error: None, // Rig doesn't distinguish error results
+                            }]),
+                        });
+
                         tool_results.push(tr);
                     }
                     Ok(MultiTurnStreamItem::FinalResponse(final_resp)) => {
@@ -272,6 +314,7 @@ where
                             } else {
                                 Some(tool_calls.clone())
                             },
+                            tool_results: None,
                         });
                     }
                     Err(e) => {

@@ -24,5 +24,5 @@ expression: terminal.backend()
 "                                                                                "
 " > Search the codebase                                                          "
 "                                                                                "
-" ● grep → 2 matches                                                             "
-" ✗ read → file not found                                                        "
+" ● grep(pattern="search") → 2 matches                                           "
+" ✗ read(path="missing.txt") → file not found                                    "

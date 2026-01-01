@@ -36,8 +36,8 @@ pub trait ConversationView {
     /// Clear the status indicator
     fn clear_status(&mut self);
 
-    /// Push a tool call (running state)
-    fn push_tool_running(&mut self, name: &str);
+    /// Push a tool call (running state) with arguments
+    fn push_tool_running(&mut self, name: &str, args: serde_json::Value);
 
     /// Update tool output (streaming)
     fn update_tool_output(&mut self, name: &str, output: &str);
@@ -481,8 +481,8 @@ impl ConversationView for RatatuiView {
         self.state.conversation.clear_status();
     }
 
-    fn push_tool_running(&mut self, name: &str) {
-        self.state.conversation.push_tool_running(name);
+    fn push_tool_running(&mut self, name: &str, args: serde_json::Value) {
+        self.state.conversation.push_tool_running(name, args);
     }
 
     fn update_tool_output(&mut self, name: &str, output: &str) {

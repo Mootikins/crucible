@@ -216,11 +216,13 @@ mod tests {
                     delta: "Mock response".to_string(),
                     done: false,
                     tool_calls: None,
+                    tool_results: None,
                 }),
                 Ok(crucible_core::traits::chat::ChatChunk {
                     delta: String::new(),
                     done: true,
                     tool_calls: None,
+                    tool_results: None,
                 }),
             ]))
         }

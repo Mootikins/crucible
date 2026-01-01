@@ -32,6 +32,7 @@ pub fn assistant_blocks(blocks: Vec<StreamBlock>) -> ConversationItem {
 pub fn tool_call(name: impl Into<String>, status: ToolStatus) -> ConversationItem {
     ConversationItem::ToolCall(ToolCallDisplay {
         name: name.into(),
+        args: serde_json::json!({}),
         status,
         output_lines: vec![],
     })
@@ -78,6 +79,7 @@ pub fn tool_with_output(
 ) -> ConversationItem {
     ConversationItem::ToolCall(ToolCallDisplay {
         name: name.into(),
+        args: serde_json::json!({}),
         status,
         output_lines: output.into_iter().map(|s| s.to_string()).collect(),
     })

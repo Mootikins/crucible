@@ -484,7 +484,7 @@ mod tests {
             state.append_or_create_prose("Let me read that for you.\n");
             state.complete_last_block();
 
-            state.push_tool_running("read");
+            state.push_tool_running("read", serde_json::json!({"path": "note.md"}));
             state.update_tool_output("read", "Note contents here");
             state.complete_tool("read", Some("success".into()));
 
@@ -500,11 +500,11 @@ mod tests {
             let mut state = ConversationState::new();
             state.push_user_message("Search the codebase");
 
-            state.push_tool_running("grep");
+            state.push_tool_running("grep", serde_json::json!({"pattern": "search"}));
             state.update_tool_output("grep", "match 1\nmatch 2");
             state.complete_tool("grep", Some("2 matches".into()));
 
-            state.push_tool_running("read");
+            state.push_tool_running("read", serde_json::json!({"path": "missing.txt"}));
             state.error_tool("read", "file not found");
 
             let terminal = render_widget(&state, 0);
