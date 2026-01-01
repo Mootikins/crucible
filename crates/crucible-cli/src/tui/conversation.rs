@@ -560,6 +560,8 @@ fn render_status(status: &StatusKind) -> Vec<Line<'static>> {
     ]
 }
 
+/// Render a tool call without leading blank line.
+/// Spacing between items is handled by ConversationWidget::render_to_lines.
 fn render_tool_call(tool: &ToolCallDisplay) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
@@ -568,8 +570,8 @@ fn render_tool_call(tool: &ToolCallDisplay) -> Vec<Line<'static>> {
         return lines;
     }
 
-    // Add blank line for spacing
-    lines.push(Line::from(""));
+    // Note: No blank line added here - spacing is handled at the widget level
+    // to allow consecutive tool calls to be grouped together.
 
     // Tool status line - use " X " prefix to align with " > " and " ● " message prefixes
     let (indicator, style) = match &tool.status {
@@ -634,8 +636,22 @@ impl<'a> ConversationWidget<'a> {
 
     fn render_to_lines(&self, width: usize) -> Vec<Line<'static>> {
         let mut all_lines = Vec::new();
+        let items = self.state.items();
 
-        for item in self.state.items() {
+        for (i, item) in items.iter().enumerate() {
+            // Check if we need spacing before this item
+            // Tool calls don't include their own spacing anymore, so we add it here
+            // BUT skip blank line when previous item was also a tool call (group them)
+            if matches!(item, ConversationItem::ToolCall(_)) {
+                let prev_was_tool = i > 0
+                    && matches!(items.get(i - 1), Some(ConversationItem::ToolCall(_)));
+
+                if !prev_was_tool {
+                    // Add blank line before tool call (unless consecutive)
+                    all_lines.push(Line::from(""));
+                }
+            }
+
             all_lines.extend(render_item_to_lines(item, width));
         }
 

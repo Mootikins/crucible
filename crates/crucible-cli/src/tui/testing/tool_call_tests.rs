@@ -114,6 +114,16 @@ mod snapshots {
         }
         assert_snapshot!("tool_calls_mixed_results", render_conversation(&state));
     }
+
+    /// Test batched tool calls (multiple tools in single agent turn, no prose between)
+    #[test]
+    fn batched_tool_calls_single_turn() {
+        let mut state = ConversationState::new();
+        for item in sessions::batched_tool_calls() {
+            state.push(item);
+        }
+        assert_snapshot!("tool_calls_batched", render_conversation(&state));
+    }
 }
 
 // =============================================================================
@@ -323,8 +333,10 @@ mod unit_tests {
         );
     }
 
+    /// Tool call rendering no longer includes blank line - spacing is now handled
+    /// at the ConversationWidget level to allow consecutive tool calls to be grouped.
     #[test]
-    fn blank_line_before_tool_call() {
+    fn tool_call_renders_without_leading_blank() {
         let tool = ConversationItem::ToolCall(ToolCallDisplay {
             name: "test".to_string(),
             status: ToolStatus::Running,
@@ -333,12 +345,13 @@ mod unit_tests {
 
         let lines = render_item_to_lines(&tool, 80);
 
-        // First line should be blank for spacing
+        // First line should be the tool content, not blank
+        // (spacing is handled by ConversationWidget::render_to_lines)
         assert!(!lines.is_empty(), "Should have at least one line");
         let first_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(
-            first_text.trim().is_empty(),
-            "First line should be blank for spacing. Got: '{}'",
+            first_text.contains("test"),
+            "First line should contain tool name. Got: '{}'",
             first_text
         );
     }
