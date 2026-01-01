@@ -63,6 +63,7 @@ impl PopupItemTrait for LegacyPopupItem {
             PopupItem::File { path, .. } => path,
             PopupItem::Note { path, .. } => path,
             PopupItem::Skill { name, .. } => name,
+            PopupItem::ReplCommand { name, .. } => name,
         }
     }
 
@@ -91,6 +92,7 @@ impl PopupItemTrait for LegacyPopupItem {
             PopupItem::File { .. } => ' ',
             PopupItem::Note { .. } => ' ',
             PopupItem::Skill { .. } => ' ',
+            PopupItem::ReplCommand { .. } => ':',
         })
     }
 

@@ -71,6 +71,14 @@ mod snapshots {
     }
 
     #[test]
+    fn popup_repl_commands() {
+        let h = Harness::new(WIDTH, HEIGHT)
+            .with_popup_items(PopupKind::ReplCommand, registries::test_repl_commands());
+
+        assert_snapshot!("popup_repl_commands", h.render());
+    }
+
+    #[test]
     fn popup_mixed_items() {
         let h = Harness::new(WIDTH, HEIGHT)
             .with_popup_items(PopupKind::AgentOrFile, registries::mixed_agent_file_items());
@@ -211,6 +219,7 @@ mod popup_effect_tests {
             PopupItem::file("test"),
             PopupItem::note("test"),
             PopupItem::skill("test"),
+            PopupItem::repl("quit"),
         ];
 
         for item in items {
@@ -220,6 +229,7 @@ mod popup_effect_tests {
                 PopupEffect::InsertToken { token } => assert!(!token.is_empty()),
                 PopupEffect::AddFileContext { path } => assert!(!path.is_empty()),
                 PopupEffect::AddNoteContext { path } => assert!(!path.is_empty()),
+                PopupEffect::ExecuteReplCommand { name } => assert!(!name.is_empty()),
             }
         }
     }

@@ -29,6 +29,11 @@ pub fn skill(name: impl Into<String>, description: impl Into<String>) -> PopupIt
     PopupItem::skill(&name.into()).desc(description)
 }
 
+/// Helper to create a REPL command item
+pub fn repl(name: impl Into<String>, description: impl Into<String>) -> PopupItem {
+    PopupItem::repl(&name.into()).desc(description)
+}
+
 /// Standard slash commands
 pub fn standard_commands() -> Vec<PopupItem> {
     vec![
@@ -95,6 +100,17 @@ pub fn test_skills() -> Vec<PopupItem> {
         skill("commit", "Create git commit"),
         skill("prime", "Load project context"),
         skill("ultra-think", "Deep analysis mode"),
+    ]
+}
+
+/// Test REPL commands (vim-style system commands)
+pub fn test_repl_commands() -> Vec<PopupItem> {
+    vec![
+        repl("quit", "Exit the application"),
+        repl("help", "Show keybindings and commands"),
+        repl("mode", "Cycle session mode"),
+        repl("agent", "Switch agent backend"),
+        repl("models", "List available models"),
     ]
 }
 
@@ -168,6 +184,18 @@ mod tests {
                 s.token().starts_with("skill:"),
                 "Skill token should start with 'skill:', got: {}",
                 s.token()
+            );
+        }
+    }
+
+    #[test]
+    fn repl_tokens_have_colon_prefix() {
+        // REPL commands use ":" prefix
+        for r in test_repl_commands() {
+            assert!(
+                r.token().starts_with(':'),
+                "REPL token should start with ':', got: {}",
+                r.token()
             );
         }
     }
