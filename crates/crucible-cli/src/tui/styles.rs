@@ -35,6 +35,12 @@ pub mod colors {
     /// Input text color
     pub const INPUT_FG: Color = Color::White;
 
+    /// Shell passthrough (!) background - red tint
+    pub const INPUT_SHELL_BG: Color = Color::Rgb(60, 30, 30); // Dark red
+
+    /// REPL command (:) background - green tint
+    pub const INPUT_REPL_BG: Color = Color::Rgb(30, 50, 30); // Dark green
+
     // --- Mode colors ---
 
     /// Plan mode color
@@ -180,6 +186,20 @@ pub mod presets {
     /// Input box style
     pub fn input_box() -> Style {
         Style::default().fg(colors::INPUT_FG).bg(colors::INPUT_BG)
+    }
+
+    /// Input box style for shell passthrough (!)
+    pub fn input_shell() -> Style {
+        Style::default()
+            .fg(colors::INPUT_FG)
+            .bg(colors::INPUT_SHELL_BG)
+    }
+
+    /// Input box style for REPL commands (:)
+    pub fn input_repl() -> Style {
+        Style::default()
+            .fg(colors::INPUT_FG)
+            .bg(colors::INPUT_REPL_BG)
     }
 
     /// Status line style (no background, dim text)

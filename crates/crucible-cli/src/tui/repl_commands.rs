@@ -17,8 +17,7 @@ pub struct ReplCommand {
 impl ReplCommand {
     /// Check if a query matches this command (name or aliases)
     pub fn matches(&self, query: &str) -> bool {
-        self.name.starts_with(query)
-            || self.aliases.iter().any(|a| a.starts_with(query))
+        self.name.starts_with(query) || self.aliases.iter().any(|a| a.starts_with(query))
     }
 
     /// Get all matchable names (primary + aliases)
@@ -77,9 +76,9 @@ pub fn find_matching(query: &str) -> Vec<&'static ReplCommand> {
 /// Look up a command by exact name or alias
 pub fn lookup(name: &str) -> Option<&'static ReplCommand> {
     let name_lower = name.to_lowercase();
-    REPL_COMMANDS.iter().find(|cmd| {
-        cmd.name == name_lower || cmd.aliases.contains(&name_lower.as_str())
-    })
+    REPL_COMMANDS
+        .iter()
+        .find(|cmd| cmd.name == name_lower || cmd.aliases.contains(&name_lower.as_str()))
 }
 
 #[cfg(test)]
