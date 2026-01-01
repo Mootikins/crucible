@@ -643,8 +643,8 @@ impl<'a> ConversationWidget<'a> {
             // Tool calls don't include their own spacing anymore, so we add it here
             // BUT skip blank line when previous item was also a tool call (group them)
             if matches!(item, ConversationItem::ToolCall(_)) {
-                let prev_was_tool = i > 0
-                    && matches!(items.get(i - 1), Some(ConversationItem::ToolCall(_)));
+                let prev_was_tool =
+                    i > 0 && matches!(items.get(i - 1), Some(ConversationItem::ToolCall(_)));
 
                 if !prev_was_tool {
                     // Add blank line before tool call (unless consecutive)
