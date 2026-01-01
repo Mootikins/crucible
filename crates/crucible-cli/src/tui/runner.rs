@@ -946,7 +946,8 @@ impl RatatuiRunner {
 
         // Look up command (handles aliases)
         let Some(cmd) = lookup(name) else {
-            self.view.set_status_text(&format!("Unknown command: {}", name));
+            self.view
+                .set_status_text(&format!("Unknown command: {}", name));
             return Ok(false);
         };
 
@@ -963,22 +964,27 @@ impl RatatuiRunner {
                 // Cycle mode (same as Shift+Tab)
                 let new_mode = crucible_core::traits::chat::cycle_mode_id(self.view.mode_id());
                 self.view.set_mode_id(new_mode);
-                self.view.set_status_text(&format!("Mode: {}", self.view.mode_id()));
+                self.view
+                    .set_status_text(&format!("Mode: {}", self.view.mode_id()));
             }
             "agent" => {
                 // TODO: Open agent picker popup
-                self.view.set_status_text("Agent switching not yet implemented");
+                self.view
+                    .set_status_text("Agent switching not yet implemented");
             }
             "models" => {
                 // TODO: Open models list popup
-                self.view.set_status_text("Model listing not yet implemented");
+                self.view
+                    .set_status_text("Model listing not yet implemented");
             }
             "config" => {
                 // Show current config summary
-                self.view.set_status_text(&format!("Mode: {}", self.view.mode_id()));
+                self.view
+                    .set_status_text(&format!("Mode: {}", self.view.mode_id()));
             }
             _ => {
-                self.view.set_status_text(&format!("Unknown command: {}", name));
+                self.view
+                    .set_status_text(&format!("Unknown command: {}", name));
             }
         }
 
@@ -1000,9 +1006,7 @@ impl RatatuiRunner {
         crossterm::terminal::disable_raw_mode()?;
 
         // Use bash -ic to get interactive shell with user's aliases/functions
-        let status = Command::new("bash")
-            .args(["-ic", cmd])
-            .status();
+        let status = Command::new("bash").args(["-ic", cmd]).status();
 
         // Re-enter TUI mode
         crossterm::terminal::enable_raw_mode()?;
@@ -1018,7 +1022,8 @@ impl RatatuiRunner {
                     self.view.set_status_text(&format!("!{} [ok]", cmd));
                 } else {
                     let code = exit_status.code().unwrap_or(-1);
-                    self.view.set_status_text(&format!("!{} [exit {}]", cmd, code));
+                    self.view
+                        .set_status_text(&format!("!{} [exit {}]", cmd, code));
                 }
             }
             Err(e) => {
