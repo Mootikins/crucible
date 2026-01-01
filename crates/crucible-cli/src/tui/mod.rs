@@ -38,7 +38,10 @@ pub mod widgets;
 #[cfg(test)]
 mod conversation_ordering_tests;
 
-pub use action_dispatch::{dispatch, DialogEffect, RunnerEffect, ScrollEffect};
+pub use action_dispatch::{
+    dispatch, popup_item_to_effect, ContextResolver, DefaultContextResolver, DialogEffect,
+    PopupEffect, PopupHook, PopupHooks, RunnerEffect, ScrollEffect,
+};
 pub use agent_picker::AgentSelection;
 pub use chat_view::ChatView;
 pub use components::{DialogAction, FocusTarget, InteractiveWidget};
@@ -55,7 +58,7 @@ pub use notification::{NotificationLevel, NotificationState};
 pub use popup::{DynamicPopupProvider, PopupProvider, StaticPopupProvider};
 pub use render::render;
 pub use runner::RatatuiRunner;
-pub use state::TuiState;
+pub use state::{ContextAttachment, ContextKind, TuiState};
 pub use streaming::StreamingBuffer;
 pub use streaming_channel::{
     create_streaming_channel, ChatStream, StreamingEvent, StreamingReceiver, StreamingSender,
