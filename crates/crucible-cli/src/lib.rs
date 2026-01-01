@@ -27,5 +27,6 @@ pub mod formatting;
 pub mod interactive;
 pub mod output;
 pub mod progress;
+pub mod search;
 pub mod sync;
 pub mod tui;
