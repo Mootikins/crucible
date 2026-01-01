@@ -207,12 +207,15 @@ pub enum StorageHandle {
     Embedded(adapters::SurrealClientHandle),
     /// Daemon-backed storage (multi-session via Unix socket)
     Daemon(Arc<DaemonStorageClient>),
+    /// Lightweight mode (LanceDB vectors + ripgrep text search, no SurrealDB)
+    Lightweight(Arc<crucible_lance::LanceStore>),
 }
 
 impl StorageHandle {
     /// Execute a raw query and return JSON
     ///
     /// This provides a unified query interface regardless of storage mode.
+    /// Lightweight mode does not support SQL queries and will return an error.
     pub async fn query_raw(&self, sql: &str) -> Result<serde_json::Value> {
         match self {
             StorageHandle::Embedded(h) => {
@@ -226,10 +229,16 @@ impl StorageHandle {
                 }))
             }
             StorageHandle::Daemon(c) => c.query_raw(sql).await,
+            StorageHandle::Lightweight(_) => {
+                anyhow::bail!(
+                    "SQL queries not supported in lightweight mode.\n\
+                     Configure storage.mode = \"embedded\" or \"daemon\" for full query support."
+                )
+            }
         }
     }
 
-    /// Get as embedded handle (panics if daemon mode)
+    /// Get as embedded handle (panics if daemon or lightweight mode)
     ///
     /// Use for operations that need full SurrealClientHandle capabilities
     /// (e.g., NoteStore, MerkleStore, etc.). This should be called only
@@ -241,16 +250,20 @@ impl StorageHandle {
                 "Operation requires embedded mode. \
                  Configure storage.mode = \"embedded\" or use daemon RPC methods."
             ),
+            StorageHandle::Lightweight(_) => panic!(
+                "Operation requires SurrealDB. \
+                 Configure storage.mode = \"embedded\" or \"daemon\"."
+            ),
         }
     }
 
-    /// Try to get as embedded handle (returns None if daemon mode)
+    /// Try to get as embedded handle (returns None if daemon or lightweight mode)
     ///
     /// Use this for graceful fallback instead of panic.
     pub fn try_embedded(&self) -> Option<&adapters::SurrealClientHandle> {
         match self {
             StorageHandle::Embedded(h) => Some(h),
-            StorageHandle::Daemon(_) => None,
+            StorageHandle::Daemon(_) | StorageHandle::Lightweight(_) => None,
         }
     }
 
@@ -262,6 +275,19 @@ impl StorageHandle {
     /// Check if running in daemon mode
     pub fn is_daemon(&self) -> bool {
         matches!(self, StorageHandle::Daemon(_))
+    }
+
+    /// Check if running in lightweight mode
+    pub fn is_lightweight(&self) -> bool {
+        matches!(self, StorageHandle::Lightweight(_))
+    }
+
+    /// Get the LanceStore if in lightweight mode
+    pub fn try_lance(&self) -> Option<&Arc<crucible_lance::LanceStore>> {
+        match self {
+            StorageHandle::Lightweight(store) => Some(store),
+            _ => None,
+        }
     }
 
     /// Get embedded handle, creating fallback if in daemon mode
@@ -296,6 +322,13 @@ impl StorageHandle {
                     operation
                 );
                 create_surrealdb_storage(config).await
+            }
+            StorageHandle::Lightweight(_) => {
+                anyhow::bail!(
+                    "Operation '{}' requires SurrealDB.\n\
+                     Configure storage.mode = \"embedded\" or \"daemon\".",
+                    operation
+                )
             }
         }
     }
@@ -378,8 +411,10 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
             ))))
         }
         StorageMode::Lightweight => {
-            // TODO: Implement lightweight storage (LanceDB + ripgrep)
-            anyhow::bail!("Lightweight storage mode is not yet implemented")
+            info!("Using lightweight storage mode (LanceDB + ripgrep)");
+            let lance_path = config.kiln_path.join(".crucible").join("lance");
+            let store = crucible_lance::LanceStore::open(&lance_path).await?;
+            Ok(StorageHandle::Lightweight(Arc::new(store)))
         }
     }
 }
