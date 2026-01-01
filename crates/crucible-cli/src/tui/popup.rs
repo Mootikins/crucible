@@ -118,7 +118,7 @@ impl PopupProvider for StaticPopupProvider {
             }
         }
         // Keep top N by score
-        out.sort_by(|a, b| b.score().cmp(&a.score()));
+        out.sort_by_key(|item| std::cmp::Reverse(item.score()));
         out.truncate(20);
         out
     }
@@ -468,7 +468,7 @@ impl PopupMatcherCache {
                 .unwrap_or(0);
             out.push(item.data.to_item(score));
         }
-        out.sort_by(|a, b| b.score().cmp(&a.score()));
+        out.sort_by_key(|item| std::cmp::Reverse(item.score()));
         out.truncate(20);
         out
     }

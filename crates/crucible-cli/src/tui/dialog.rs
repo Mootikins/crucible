@@ -243,6 +243,7 @@ impl Widget for DialogWidget<'_> {
 }
 
 impl DialogWidget<'_> {
+    #[allow(clippy::too_many_arguments)]
     fn render_confirm(
         &self,
         area: Rect,

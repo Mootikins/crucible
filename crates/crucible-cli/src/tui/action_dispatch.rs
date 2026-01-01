@@ -42,9 +42,9 @@ pub fn popup_item_to_effect(item: &PopupItem) -> PopupEffect {
         PopupItem::Skill { name, .. } => PopupEffect::InsertToken {
             token: format!("/{} ", name),
         },
-        PopupItem::ReplCommand { name, .. } => PopupEffect::ExecuteReplCommand {
-            name: name.clone(),
-        },
+        PopupItem::ReplCommand { name, .. } => {
+            PopupEffect::ExecuteReplCommand { name: name.clone() }
+        }
     }
 }
 
