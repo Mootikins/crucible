@@ -377,6 +377,10 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
                 kiln_path,
             ))))
         }
+        StorageMode::Lightweight => {
+            // TODO: Implement lightweight storage (LanceDB + ripgrep)
+            anyhow::bail!("Lightweight storage mode is not yet implemented")
+        }
     }
 }
 
