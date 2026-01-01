@@ -49,12 +49,7 @@ impl EmbeddingCache for LanceStore {
         );
 
         // Query with filter - using only_if method for filtering
-        let mut results = table
-            .query()
-            .only_if(&filter)
-            .limit(1)
-            .execute()
-            .await?;
+        let mut results = table.query().only_if(&filter).limit(1).execute().await?;
 
         // Collect batches from the stream
         let batch: RecordBatch = match results.try_next().await? {
@@ -117,10 +112,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let store = LanceStore::open(tmp.path().join("lance")).await.unwrap();
 
-        let result = store
-            .get_embedding("hash123", "model", None)
-            .await
-            .unwrap();
+        let result = store.get_embedding("hash123", "model", None).await.unwrap();
         assert!(result.is_none());
     }
 
