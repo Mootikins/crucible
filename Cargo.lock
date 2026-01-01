@@ -3754,6 +3754,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
  "crucible-core",
  "crucible-daemon",
  "libc",
