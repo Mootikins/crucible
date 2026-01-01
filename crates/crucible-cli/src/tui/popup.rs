@@ -19,6 +19,7 @@ pub struct StaticPopupProvider {
     pub files: Vec<String>,            // workspace relative
     pub notes: Vec<String>,            // note:<path> or note:<kiln>/<path>
     pub skills: Vec<(String, String, String)>, // (name, description, scope)
+    pub repl_commands: Vec<(String, String)>, // (name, description)
 }
 
 impl StaticPopupProvider {
@@ -98,6 +99,19 @@ impl PopupProvider for StaticPopupProvider {
                     if let Some(score) = score {
                         out.push(
                             PopupItem::note(note).with_score(score.min(i32::MAX as u32) as i32),
+                        );
+                    }
+                }
+            }
+            PopupKind::ReplCommand => {
+                for (name, description) in &self.repl_commands {
+                    let match_col = Utf32String::from(name.as_str());
+                    let score = pattern.score(std::slice::from_ref(&match_col), &mut matcher);
+                    if let Some(score) = score {
+                        out.push(
+                            PopupItem::repl(name)
+                                .desc(description)
+                                .with_score(score.min(i32::MAX as u32) as i32),
                         );
                     }
                 }
@@ -253,7 +267,7 @@ impl DynamicPopupProvider {
         let config_commands = Config::DEFAULT;
         let config_paths = Config::DEFAULT.match_paths();
 
-        Self {
+        let provider = Self {
             inner: parking_lot::RwLock::new(StaticPopupProvider::default()),
             commands_version: AtomicU64::new(1),
             agents_version: AtomicU64::new(1),
@@ -268,7 +282,10 @@ impl DynamicPopupProvider {
                 Nucleo::new(config_paths.clone(), notify, None, 1),
                 Matcher::new(config_paths),
             )),
-        }
+        };
+        // Initialize REPL commands from static registry
+        provider.init_repl_commands();
+        provider
     }
 
     pub fn snapshot(&self) -> StaticPopupProvider {
@@ -298,6 +315,20 @@ impl DynamicPopupProvider {
     pub fn set_skills(&self, skills: Vec<(String, String, String)>) {
         self.inner.write().skills = skills;
         self.skills_version.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn set_repl_commands(&self, repl_commands: Vec<(String, String)>) {
+        self.inner.write().repl_commands = repl_commands;
+    }
+
+    /// Initialize REPL commands from the static registry
+    pub fn init_repl_commands(&self) {
+        use crate::tui::repl_commands::REPL_COMMANDS;
+        let commands: Vec<(String, String)> = REPL_COMMANDS
+            .iter()
+            .map(|cmd| (cmd.name.to_string(), cmd.description.to_string()))
+            .collect();
+        self.set_repl_commands(commands);
     }
 }
 
@@ -470,6 +501,10 @@ impl PopupProvider for DynamicPopupProvider {
                     cache.maybe_rebuild(CacheKind::AgentOrFile, versions, data);
                 }
                 cache.provide(query)
+            }
+            PopupKind::ReplCommand => {
+                // REPL commands are static, just forward to inner provider
+                self.inner.read().provide(kind, query)
             }
         }
     }

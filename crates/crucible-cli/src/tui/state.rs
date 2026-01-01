@@ -60,8 +60,12 @@ pub(crate) fn find_word_start_forward(s: &str) -> usize {
 /// Type of popup trigger
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PopupKind {
+    /// Slash commands: `/search`, `/clear`, skills
     Command,
+    /// Context mentions: `@agent`, `@file`, `@note`
     AgentOrFile,
+    /// REPL commands: `:quit`, `:help`, `:mode`
+    ReplCommand,
 }
 
 // =============================================================================
@@ -130,6 +134,12 @@ pub enum PopupItem {
         score: i32,
         available: bool,
     },
+    /// REPL command: `:name`
+    ReplCommand {
+        name: String,
+        description: String,
+        score: i32,
+    },
 }
 
 impl PopupItem {
@@ -187,17 +197,27 @@ impl PopupItem {
         }
     }
 
+    /// Create a new REPL command popup item: `:name`
+    pub fn repl(name: impl Into<String>) -> Self {
+        PopupItem::ReplCommand {
+            name: name.into(),
+            description: String::new(),
+            score: 0,
+        }
+    }
+
     // =========================================================================
     // Builder methods - chain after constructor
     // =========================================================================
 
-    /// Builder: set description (for Command, Agent, Skill)
+    /// Builder: set description (for Command, Agent, Skill, ReplCommand)
     pub fn desc(mut self, description: impl Into<String>) -> Self {
         let d = description.into();
         match &mut self {
             PopupItem::Command { description, .. } => *description = d,
             PopupItem::Agent { description, .. } => *description = d,
             PopupItem::Skill { description, .. } => *description = d,
+            PopupItem::ReplCommand { description, .. } => *description = d,
             PopupItem::File { .. } | PopupItem::Note { .. } => {}
         }
         self
@@ -227,6 +247,7 @@ impl PopupItem {
             PopupItem::File { score, .. } => *score = s,
             PopupItem::Note { score, .. } => *score = s,
             PopupItem::Skill { score, .. } => *score = s,
+            PopupItem::ReplCommand { score, .. } => *score = s,
         }
         self
     }
@@ -239,6 +260,7 @@ impl PopupItem {
             PopupItem::File { available, .. } => *available = a,
             PopupItem::Note { available, .. } => *available = a,
             PopupItem::Skill { available, .. } => *available = a,
+            PopupItem::ReplCommand { .. } => {} // Always available
         }
         self
     }
@@ -247,7 +269,7 @@ impl PopupItem {
     // Accessors - uniform interface across variants
     // =========================================================================
 
-    /// Display title (e.g., "/search", "@agent", "src/main.rs")
+    /// Display title (e.g., "/search", "@agent", ":quit", "src/main.rs")
     pub fn title(&self) -> String {
         match self {
             PopupItem::Command { name, .. } => format!("/{}", name),
@@ -255,6 +277,7 @@ impl PopupItem {
             PopupItem::File { path, .. } => path.clone(),
             PopupItem::Note { path, .. } => format!("note:{}", path),
             PopupItem::Skill { name, .. } => format!("skill:{}", name),
+            PopupItem::ReplCommand { name, .. } => format!(":{}", name),
         }
     }
 
@@ -274,6 +297,7 @@ impl PopupItem {
                 // Return just description; caller can format with scope if needed
                 description
             }
+            PopupItem::ReplCommand { description, .. } => description,
         }
     }
 
@@ -285,10 +309,11 @@ impl PopupItem {
             PopupItem::File { path, .. } => path.clone(),
             PopupItem::Note { path, .. } => path.clone(),
             PopupItem::Skill { name, .. } => format!("skill:{} ", name),
+            PopupItem::ReplCommand { name, .. } => format!(":{}", name),
         }
     }
 
-    /// Kind label for display (e.g., "cmd", "agent")
+    /// Kind label for display (e.g., "cmd", "agent", "repl")
     pub fn kind_label(&self) -> &'static str {
         match self {
             PopupItem::Command { .. } => "cmd",
@@ -296,6 +321,7 @@ impl PopupItem {
             PopupItem::File { .. } => "file",
             PopupItem::Note { .. } => "note",
             PopupItem::Skill { .. } => "skill",
+            PopupItem::ReplCommand { .. } => "repl",
         }
     }
 
@@ -307,6 +333,7 @@ impl PopupItem {
             PopupItem::File { score, .. } => *score,
             PopupItem::Note { score, .. } => *score,
             PopupItem::Skill { score, .. } => *score,
+            PopupItem::ReplCommand { score, .. } => *score,
         }
     }
 
@@ -318,6 +345,7 @@ impl PopupItem {
             PopupItem::File { available, .. } => *available,
             PopupItem::Note { available, .. } => *available,
             PopupItem::Skill { available, .. } => *available,
+            PopupItem::ReplCommand { .. } => true, // Always available
         }
     }
 
@@ -365,6 +393,11 @@ impl PopupItem {
     pub fn is_skill(&self) -> bool {
         matches!(self, PopupItem::Skill { .. })
     }
+
+    /// Check if this is a ReplCommand variant
+    pub fn is_repl_command(&self) -> bool {
+        matches!(self, PopupItem::ReplCommand { .. })
+    }
 }
 
 /// Legacy type alias for code that still references PopupItemKind
@@ -377,6 +410,7 @@ pub enum PopupItemKind {
     File,
     Note,
     Skill,
+    ReplCommand,
 }
 
 impl PopupItem {
@@ -390,6 +424,7 @@ impl PopupItem {
             PopupItem::File { .. } => PopupItemKind::File,
             PopupItem::Note { .. } => PopupItemKind::Note,
             PopupItem::Skill { .. } => PopupItemKind::Skill,
+            PopupItem::ReplCommand { .. } => PopupItemKind::ReplCommand,
         }
     }
 }
