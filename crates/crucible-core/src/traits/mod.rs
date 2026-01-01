@@ -43,6 +43,7 @@ pub mod provider;
 pub mod registry;
 pub mod storage;
 pub mod storage_client;
+pub mod text_search;
 pub mod tools;
 
 // Re-export key traits
@@ -87,3 +88,4 @@ pub use mcp::{
     ContentBlock, McpClient, McpClientConfig, McpConnection, McpError, McpServerInfo,
     McpToolDiscovery, McpToolExecutor, McpToolInfo, McpTransportConfig, ToolCallResult,
 };
+pub use text_search::{TextSearchMatch, TextSearcher};
