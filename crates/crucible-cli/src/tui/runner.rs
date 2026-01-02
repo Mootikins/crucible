@@ -315,6 +315,16 @@ impl RatatuiRunner {
                 }
             }
 
+            // Flush partial content for progressive display (even without newlines)
+            // This is done after processing all available deltas but before applying events
+            if self.is_streaming && !streaming_complete {
+                if let Some(parser) = &mut self.streaming_parser {
+                    if let Some(partial_event) = parser.flush_partial() {
+                        pending_parse_events.push(partial_event);
+                    }
+                }
+            }
+
             // Apply parse events after borrow of streaming_rx is released
             if !pending_parse_events.is_empty() {
                 self.apply_parse_events(pending_parse_events);
@@ -863,13 +873,16 @@ impl RatatuiRunner {
             }
             InputAction::ToggleMouseCapture => {
                 // Toggle mouse capture (allows terminal text selection when disabled)
+                use std::io::Write;
                 self.mouse_capture_enabled = !self.mouse_capture_enabled;
                 let mut stdout = io::stdout();
                 if self.mouse_capture_enabled {
                     let _ = execute!(stdout, EnableMouseCapture);
+                    let _ = stdout.flush();
                     self.view.set_status_text("Mouse capture enabled (scroll works)");
                 } else {
                     let _ = execute!(stdout, DisableMouseCapture);
+                    let _ = stdout.flush();
                     self.view
                         .set_status_text("Mouse capture disabled (text selection works)");
                 }
