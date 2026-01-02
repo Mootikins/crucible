@@ -147,6 +147,7 @@ mod tests {
                         done: i == len - 1,
                         tool_calls: None,
                         tool_results: None,
+                        reasoning: None,
                     })
                 },
             )))
@@ -371,6 +372,7 @@ mod tests {
                             None
                         },
                         tool_results: None,
+                        reasoning: None,
                     })
                 },
             )))
