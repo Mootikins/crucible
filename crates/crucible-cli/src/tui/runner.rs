@@ -301,8 +301,11 @@ impl RatatuiRunner {
                                 spinner_frame: self.spinner_frame,
                             });
 
+                            // Accumulate reasoning in view for display (Alt+T toggle)
+                            self.view.append_reasoning(&text);
+                            self.view.tick_reasoning_animation();
+
                             // Push reasoning to session using AgentThinking event
-                            // TODO: Add UI for collapsible reasoning display (Alt+T toggle)
                             bridge.ring.push(SessionEvent::AgentThinking { thought: text });
                         }
                     }
@@ -318,6 +321,8 @@ impl RatatuiRunner {
             if streaming_complete {
                 self.streaming_parser = None;
                 self.view.complete_assistant_streaming();
+                // Clear reasoning buffer for next response
+                self.view.clear_reasoning();
             }
 
             // Handle streaming error
@@ -849,9 +854,9 @@ impl RatatuiRunner {
                 }
             }
             InputAction::ToggleReasoning => {
-                // Toggle reasoning visibility (handled by view)
-                // Note: This is a placeholder for when reasoning display is implemented
-                // The view would show/hide accumulated reasoning content
+                // Toggle reasoning panel visibility
+                let current = self.view.show_reasoning();
+                self.view.set_show_reasoning(!current);
             }
             InputAction::None => {}
         }
