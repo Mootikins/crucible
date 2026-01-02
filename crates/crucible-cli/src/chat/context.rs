@@ -217,12 +217,14 @@ mod tests {
                     done: false,
                     tool_calls: None,
                     tool_results: None,
+                    reasoning: None,
                 }),
                 Ok(crucible_core::traits::chat::ChatChunk {
                     delta: String::new(),
                     done: true,
                     tool_calls: None,
                     tool_results: None,
+                    reasoning: None,
                 }),
             ]))
         }
