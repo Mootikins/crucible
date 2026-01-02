@@ -31,7 +31,7 @@ use crate::tui::{
 use anyhow::Result;
 use crossterm::{
     cursor,
-    event::{self, Event, MouseEvent, MouseEventKind},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, MouseEvent, MouseEventKind},
     execute,
     terminal::{
         disable_raw_mode, enable_raw_mode, size, EnterAlternateScreen, LeaveAlternateScreen,
@@ -91,6 +91,8 @@ pub struct RatatuiRunner {
     supports_restart: bool,
     /// Pre-selected agent for first iteration (skips picker, still allows /new)
     default_selection: Option<AgentSelection>,
+    /// Mouse capture state (when disabled, allows terminal text selection)
+    mouse_capture_enabled: bool,
 }
 
 impl RatatuiRunner {
@@ -124,6 +126,7 @@ impl RatatuiRunner {
             restart_requested: false,
             supports_restart: false, // Set to true when using run_with_factory
             default_selection: None,
+            mouse_capture_enabled: true, // Enable by default for scroll support
         })
     }
 
@@ -858,6 +861,32 @@ impl RatatuiRunner {
                 let current = self.view.show_reasoning();
                 self.view.set_show_reasoning(!current);
             }
+            InputAction::ToggleMouseCapture => {
+                // Toggle mouse capture (allows terminal text selection when disabled)
+                self.mouse_capture_enabled = !self.mouse_capture_enabled;
+                let mut stdout = io::stdout();
+                if self.mouse_capture_enabled {
+                    let _ = execute!(stdout, EnableMouseCapture);
+                    self.view.set_status_text("Mouse capture enabled (scroll works)");
+                } else {
+                    let _ = execute!(stdout, DisableMouseCapture);
+                    self.view
+                        .set_status_text("Mouse capture disabled (text selection works)");
+                }
+            }
+            InputAction::CopyMarkdown => {
+                // Copy last assistant message as markdown to clipboard via OSC 52
+                if let Some(markdown) = self.view.state().conversation.last_assistant_markdown() {
+                    if copy_to_clipboard_osc52(&markdown) {
+                        self.view.set_status_text("Copied to clipboard");
+                    } else {
+                        self.view
+                            .set_status_text("Copy failed (terminal may not support OSC 52)");
+                    }
+                } else {
+                    self.view.set_status_text("No assistant message to copy");
+                }
+            }
             InputAction::None => {}
         }
 
@@ -1049,6 +1078,7 @@ impl RatatuiRunner {
         // Temporarily exit alternate screen so user can see shell output
         execute!(
             std::io::stdout(),
+            DisableMouseCapture,
             crossterm::terminal::LeaveAlternateScreen,
             crossterm::cursor::Show
         )?;
@@ -1059,11 +1089,21 @@ impl RatatuiRunner {
 
         // Re-enter TUI mode
         crossterm::terminal::enable_raw_mode()?;
-        execute!(
-            std::io::stdout(),
-            crossterm::terminal::EnterAlternateScreen,
-            crossterm::cursor::Hide
-        )?;
+        // Restore mouse capture to previous state
+        if self.mouse_capture_enabled {
+            execute!(
+                std::io::stdout(),
+                crossterm::terminal::EnterAlternateScreen,
+                EnableMouseCapture,
+                crossterm::cursor::Hide
+            )?;
+        } else {
+            execute!(
+                std::io::stdout(),
+                crossterm::terminal::EnterAlternateScreen,
+                crossterm::cursor::Hide
+            )?;
+        }
 
         match status {
             Ok(exit_status) => {
@@ -1165,10 +1205,10 @@ impl RatatuiRunner {
         // Mark that we support restart (factory allows creating new agents)
         self.supports_restart = true;
 
-        // Enter TUI
+        // Enter TUI with mouse capture for scrolling
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen)?;
+        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
         terminal.clear()?;
@@ -1237,7 +1277,12 @@ impl RatatuiRunner {
 
         // Cleanup
         disable_raw_mode()?;
-        execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show)?;
+        execute!(
+            terminal.backend_mut(),
+            DisableMouseCapture,
+            LeaveAlternateScreen,
+            cursor::Show
+        )?;
 
         Ok(())
     }
@@ -1305,6 +1350,25 @@ impl RatatuiRunner {
 
         self.view.push_dialog(dialog);
     }
+}
+
+/// Copy text to system clipboard using OSC 52 escape sequence.
+///
+/// OSC 52 is widely supported by modern terminals (iTerm2, Alacritty, Kitty,
+/// WezTerm, Windows Terminal, etc.) and works over SSH.
+///
+/// Returns true if the write succeeded, false otherwise.
+fn copy_to_clipboard_osc52(text: &str) -> bool {
+    use base64::Engine;
+    use std::io::Write;
+
+    let encoded = base64::engine::general_purpose::STANDARD.encode(text);
+
+    // OSC 52 format: ESC ] 52 ; c ; <base64-data> BEL
+    // 'c' means clipboard (vs 'p' for primary selection on X11)
+    let osc52 = format!("\x1b]52;c;{}\x07", encoded);
+
+    io::stdout().write_all(osc52.as_bytes()).is_ok() && io::stdout().flush().is_ok()
 }
 
 #[cfg(test)]

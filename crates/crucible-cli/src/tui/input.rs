@@ -44,6 +44,10 @@ pub enum InputAction {
     TransposeChars,     // Ctrl+T
     // Reasoning display toggle
     ToggleReasoning, // Alt+T
+    // Mouse capture toggle (for text selection)
+    ToggleMouseCapture, // Alt+M
+    // Copy last message as markdown
+    CopyMarkdown, // Alt+C
     None,
 }
 
@@ -82,6 +86,8 @@ pub fn map_key_event(event: &KeyEvent, state: &TuiState) -> InputAction {
         (KeyCode::Char('f'), KeyModifiers::ALT) => InputAction::MoveWordForward,
         (KeyCode::Char('t'), KeyModifiers::CONTROL) => InputAction::TransposeChars,
         (KeyCode::Char('t'), KeyModifiers::ALT) => InputAction::ToggleReasoning,
+        (KeyCode::Char('m'), KeyModifiers::ALT) => InputAction::ToggleMouseCapture,
+        (KeyCode::Char('c'), KeyModifiers::ALT) => InputAction::CopyMarkdown,
 
         // Enter: confirm popup if active with / or @, otherwise send message
         (KeyCode::Enter, KeyModifiers::NONE) => {
@@ -519,5 +525,23 @@ mod readline_tests {
         let event = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::ALT);
         let action = map_key_event(&event, &state);
         assert_eq!(action, InputAction::ToggleReasoning);
+    }
+
+    #[test]
+    fn test_alt_m_toggle_mouse_capture() {
+        // Alt+M should toggle mouse capture for text selection
+        let state = TuiState::new("plan");
+        let event = KeyEvent::new(KeyCode::Char('m'), KeyModifiers::ALT);
+        let action = map_key_event(&event, &state);
+        assert_eq!(action, InputAction::ToggleMouseCapture);
+    }
+
+    #[test]
+    fn test_alt_c_copy_markdown() {
+        // Alt+C should copy last message as markdown
+        let state = TuiState::new("plan");
+        let event = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT);
+        let action = map_key_event(&event, &state);
+        assert_eq!(action, InputAction::CopyMarkdown);
     }
 }
