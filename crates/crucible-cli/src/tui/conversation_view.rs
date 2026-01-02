@@ -101,6 +101,12 @@ pub struct ViewState {
     pub dialog_stack: DialogStack,
     /// Notification state for file watch events
     pub notifications: NotificationState,
+    /// Whether to show reasoning/thinking content (Alt+T toggle)
+    pub show_reasoning: bool,
+    /// Accumulated reasoning content from thinking models
+    pub reasoning_content: String,
+    /// Animation frame for reasoning ellipsis (cycles 0-3)
+    pub reasoning_anim_frame: u8,
 }
 
 impl ViewState {
@@ -120,6 +126,9 @@ impl ViewState {
             generic_popup: None,
             dialog_stack: DialogStack::new(),
             notifications: NotificationState::new(),
+            show_reasoning: false,
+            reasoning_content: String::new(),
+            reasoning_anim_frame: 0,
         }
     }
 
@@ -160,6 +169,9 @@ impl RatatuiView {
     /// Maximum popup items to display
     const MAX_POPUP_ITEMS: usize = 5;
 
+    /// Maximum height for reasoning panel (lines)
+    const MAX_REASONING_HEIGHT: u16 = 6;
+
     /// Render to a ratatui frame
     pub fn render_frame(&self, frame: &mut Frame) {
         // Calculate popup height if needed
@@ -171,22 +183,32 @@ impl RatatuiView {
             .map(|p| (p.items.len().min(Self::MAX_POPUP_ITEMS) + 2) as u16)
             .unwrap_or(0);
 
-        let constraints = if popup_height > 0 {
-            vec![
-                Constraint::Min(3),               // Conversation area
-                Constraint::Length(1),            // Spacer above input (visual separation)
-                Constraint::Length(popup_height), // Popup
-                Constraint::Length(3),            // Input box
-                Constraint::Length(1),            // Status bar
-            ]
+        // Calculate reasoning panel height (when visible and has content)
+        let reasoning_height = if self.state.show_reasoning && !self.state.reasoning_content.is_empty()
+        {
+            // Count lines in reasoning content (min 3 for border + header + 1 line)
+            let content_lines = self.state.reasoning_content.lines().count() as u16;
+            (content_lines + 2).min(Self::MAX_REASONING_HEIGHT) // +2 for borders
         } else {
-            vec![
-                Constraint::Min(3),    // Conversation area
-                Constraint::Length(1), // Spacer above input (visual separation)
-                Constraint::Length(3), // Input box
-                Constraint::Length(1), // Status bar
-            ]
+            0
         };
+
+        let mut constraints = vec![Constraint::Min(3)]; // Conversation area
+
+        // Add reasoning panel if visible
+        if reasoning_height > 0 {
+            constraints.push(Constraint::Length(reasoning_height));
+        }
+
+        constraints.push(Constraint::Length(1)); // Spacer above input
+
+        // Add popup if active
+        if popup_height > 0 {
+            constraints.push(Constraint::Length(popup_height));
+        }
+
+        constraints.push(Constraint::Length(3)); // Input box
+        constraints.push(Constraint::Length(1)); // Status bar
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -202,6 +224,12 @@ impl RatatuiView {
             .viewport_height(conv_area.height);
         frame.render_widget(conv_widget, conv_area);
         idx += 1;
+
+        // Reasoning panel (if visible)
+        if reasoning_height > 0 {
+            self.render_reasoning_panel(frame, chunks[idx]);
+            idx += 1;
+        }
 
         // Spacer (visual separation before input - just skip it, it remains empty)
         idx += 1;
@@ -242,6 +270,49 @@ impl RatatuiView {
             let cursor_y = input_area.y + 1;
             frame.set_cursor_position((cursor_x, cursor_y));
         }
+    }
+
+    /// Render the reasoning/thinking panel
+    fn render_reasoning_panel(&self, frame: &mut Frame, area: ratatui::layout::Rect) {
+        // Truncate content to fit in available height (minus borders)
+        let max_lines = (area.height.saturating_sub(2)) as usize;
+        let content: String = self
+            .state
+            .reasoning_content
+            .lines()
+            .take(max_lines)
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // Animated ellipsis based on frame (cycles: "" -> "." -> ".." -> "...")
+        let ellipsis = match self.state.reasoning_anim_frame % 4 {
+            0 => "",
+            1 => ".",
+            2 => "..",
+            _ => "...",
+        };
+        let title = format!("Thinking{}", ellipsis);
+
+        let reasoning_widget = Paragraph::new(content)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::DarkGray))
+                    .title(Span::styled(
+                        title,
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::ITALIC),
+                    )),
+            )
+            .style(
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            )
+            .wrap(Wrap { trim: true });
+
+        frame.render_widget(reasoning_widget, area);
     }
 
     /// Render popup overlay
@@ -393,6 +464,49 @@ impl RatatuiView {
             self.scroll_to_bottom();
         }
     }
+
+    // =========================================================================
+    // Reasoning Panel Methods
+    // =========================================================================
+
+    /// Get current reasoning content
+    pub fn reasoning(&self) -> &str {
+        &self.state.reasoning_content
+    }
+
+    /// Set reasoning content
+    pub fn set_reasoning(&mut self, content: &str) {
+        self.state.reasoning_content = content.to_string();
+    }
+
+    /// Clear reasoning content
+    pub fn clear_reasoning(&mut self) {
+        self.state.reasoning_content.clear();
+    }
+
+    /// Append to reasoning content
+    pub fn append_reasoning(&mut self, content: &str) {
+        self.state.reasoning_content.push_str(content);
+    }
+
+    /// Check if reasoning panel is visible
+    pub fn show_reasoning(&self) -> bool {
+        self.state.show_reasoning
+    }
+
+    /// Set reasoning panel visibility
+    pub fn set_show_reasoning(&mut self, show: bool) {
+        self.state.show_reasoning = show;
+    }
+
+    /// Advance reasoning animation frame (call on each reasoning delta)
+    pub fn tick_reasoning_animation(&mut self) {
+        self.state.reasoning_anim_frame = (self.state.reasoning_anim_frame + 1) % 4;
+    }
+
+    // =========================================================================
+    // Dialog Methods
+    // =========================================================================
 
     /// Push a dialog onto the stack
     pub fn push_dialog(&mut self, dialog: crate::tui::dialog::DialogState) {
@@ -1148,5 +1262,100 @@ mod tests {
             view.set_generic_popup(None);
             assert!(view.generic_popup().is_none());
         }
+    }
+
+    // =========================================================================
+    // Reasoning Panel Tests (TDD - RED PHASE)
+    // =========================================================================
+
+    #[test]
+    fn test_view_state_reasoning_default() {
+        let state = ViewState::new("plan", 80, 24);
+        assert!(!state.show_reasoning);
+        assert!(state.reasoning_content.is_empty());
+    }
+
+    #[test]
+    fn test_ratatui_view_set_reasoning() {
+        let mut view = RatatuiView::new("plan", 80, 24);
+
+        view.set_reasoning("Thinking about the problem...");
+        assert_eq!(view.reasoning(), "Thinking about the problem...");
+
+        view.clear_reasoning();
+        assert!(view.reasoning().is_empty());
+    }
+
+    #[test]
+    fn test_ratatui_view_toggle_reasoning() {
+        let mut view = RatatuiView::new("plan", 80, 24);
+
+        assert!(!view.show_reasoning());
+
+        view.set_show_reasoning(true);
+        assert!(view.show_reasoning());
+
+        view.set_show_reasoning(false);
+        assert!(!view.show_reasoning());
+    }
+
+    #[test]
+    fn test_ratatui_view_renders_reasoning_panel_when_visible() {
+        let mut view = RatatuiView::new("plan", 80, 24);
+
+        // Set up reasoning content and enable display
+        view.set_reasoning("Hmm, let me think about this carefully...");
+        view.set_show_reasoning(true);
+
+        // Render to test backend
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| view.render_frame(f)).unwrap();
+
+        // Get the buffer content as string
+        let buffer = terminal.backend().buffer();
+        let content: String = (0..buffer.area().height)
+            .flat_map(|y| {
+                (0..buffer.area().width)
+                    .map(move |x| buffer.cell((x, y)).map(|c| c.symbol()).unwrap_or(" "))
+            })
+            .collect();
+
+        // Should show thinking indicator
+        assert!(
+            content.contains("Thinking"),
+            "Reasoning panel should be visible. Buffer: {}",
+            content
+        );
+    }
+
+    #[test]
+    fn test_ratatui_view_hides_reasoning_panel_when_disabled() {
+        let mut view = RatatuiView::new("plan", 80, 24);
+
+        // Set up reasoning content but keep display disabled
+        view.set_reasoning("Hmm, let me think about this carefully...");
+        view.set_show_reasoning(false);
+
+        // Render to test backend
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| view.render_frame(f)).unwrap();
+
+        // Get the buffer content as string
+        let buffer = terminal.backend().buffer();
+        let content: String = (0..buffer.area().height)
+            .flat_map(|y| {
+                (0..buffer.area().width)
+                    .map(move |x| buffer.cell((x, y)).map(|c| c.symbol()).unwrap_or(" "))
+            })
+            .collect();
+
+        // Should NOT show reasoning content when disabled
+        assert!(
+            !content.contains("let me think"),
+            "Reasoning panel should be hidden when show_reasoning=false. Buffer: {}",
+            content
+        );
     }
 }
