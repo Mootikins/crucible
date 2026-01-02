@@ -42,6 +42,9 @@ once_cell = "1.19"
 # Logging
 tracing = { workspace = true }
 
+# HTTP client for custom streaming (reasoning_content support)
+reqwest = { workspace = true, features = ["stream", "json"] }
+
 # MCP/RMCP - needed for workspace tools result types
 # Base features always enabled; server/client features gated behind rmcp-full feature
 rmcp = { version = "0.9.0", features = ["macros"] }

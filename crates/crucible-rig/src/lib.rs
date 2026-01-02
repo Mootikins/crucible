@@ -38,6 +38,7 @@ pub mod completion;
 pub mod crucible_agent;
 pub mod handle;
 pub mod kiln_tools;
+pub mod openai_reasoning;
 pub mod providers;
 pub mod session;
 pub mod tools;
