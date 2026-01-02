@@ -80,6 +80,10 @@ pub struct ChatChunk {
     /// Tool results (completions) from executed tools
     #[serde(default)]
     pub tool_results: Option<Vec<ChatToolResult>>,
+    /// Reasoning/thinking content from the model (e.g., Qwen3-thinking, DeepSeek-R1)
+    /// Rendered separately from main delta, typically in a collapsible block
+    #[serde(default)]
+    pub reasoning: Option<String>,
 }
 
 /// Result from a completed tool execution
@@ -323,6 +327,7 @@ mod tests {
                         done: i == total - 1,
                         tool_calls: None,
                         tool_results: None,
+                        reasoning: None,
                     })
                 },
             )))
