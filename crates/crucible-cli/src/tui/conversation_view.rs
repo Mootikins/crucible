@@ -426,6 +426,33 @@ impl RatatuiView {
             .sum()
     }
 
+    /// Calculate the actual conversation viewport height based on current state.
+    ///
+    /// This accounts for UI elements that reduce the available conversation area:
+    /// - Input box (3 lines)
+    /// - Status bar (1 line)
+    /// - Spacer above input (1 line)
+    /// - Reasoning panel (variable, if visible and has content)
+    /// - Popup (variable, if active)
+    fn conversation_viewport_height(&self) -> usize {
+        let mut overhead: u16 = 5; // input (3) + status (1) + spacer (1)
+
+        // Add reasoning panel height if visible
+        if self.state.show_reasoning && !self.state.reasoning_content.is_empty() {
+            let content_lines = self.state.reasoning_content.lines().count() as u16;
+            overhead += (content_lines + 2).min(Self::MAX_REASONING_HEIGHT);
+        }
+
+        // Add popup height if active
+        if let Some(ref popup) = self.state.popup {
+            if !popup.items.is_empty() {
+                overhead += (popup.items.len().min(Self::MAX_POPUP_ITEMS) + 2) as u16;
+            }
+        }
+
+        (self.state.height as usize).saturating_sub(overhead as usize)
+    }
+
     /// Start streaming an assistant message (creates empty message with streaming indicator)
     pub fn start_assistant_streaming(&mut self) {
         self.state.conversation.start_assistant_streaming();
@@ -665,10 +692,9 @@ impl ConversationView for RatatuiView {
 
     fn scroll_up(&mut self, lines: usize) {
         self.state.scroll_offset = self.state.scroll_offset.saturating_add(lines);
-        // Clamp to content bounds
-        let max_scroll = self
-            .content_height()
-            .saturating_sub(self.state.height as usize);
+        // Clamp to content bounds using actual conversation viewport height
+        let viewport_height = self.conversation_viewport_height();
+        let max_scroll = self.content_height().saturating_sub(viewport_height);
         self.state.scroll_offset = self.state.scroll_offset.min(max_scroll);
         self.state.at_bottom = false; // User scrolled up
     }
@@ -681,9 +707,9 @@ impl ConversationView for RatatuiView {
     }
 
     fn scroll_to_top(&mut self) {
-        let max_scroll = self
-            .content_height()
-            .saturating_sub(self.state.height as usize);
+        // Use actual conversation viewport height for max scroll calculation
+        let viewport_height = self.conversation_viewport_height();
+        let max_scroll = self.content_height().saturating_sub(viewport_height);
         self.state.scroll_offset = max_scroll;
         self.state.at_bottom = false;
     }

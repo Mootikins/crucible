@@ -3,8 +3,8 @@
 //! Supports both ACP (external) agents and internal (direct LLM) agents.
 //! Selection priority:
 //! 1. Explicit CLI flag (--internal or --acp)
-//! 2. Config file setting (agent_type)
-//! 3. Default: ACP agent if available, else internal
+//! 2. Config file setting (chat.agent_preference)
+//! 3. Default: Internal (Crucible's built-in Rig-based agents)
 //!
 //! Internal agents use the Rig framework for LLM interaction.
 
@@ -18,9 +18,9 @@ use crucible_core::traits::chat::AgentHandle;
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum AgentType {
     /// External ACP agent (claude-code, etc.)
-    #[default]
     Acp,
-    /// Internal direct LLM agent
+    /// Internal direct LLM agent (Crucible's built-in Rig-based agents)
+    #[default]
     Internal,
 }
 
@@ -174,6 +174,21 @@ impl InitializedAgent {
     }
 }
 
+/// Check if a model likely supports reasoning_content in its streaming responses
+///
+/// Models that use extended thinking (Qwen3 with thinking, DeepSeek-R1, etc.)
+/// return their reasoning in a `reasoning_content` field that requires custom
+/// SSE parsing to extract.
+fn supports_reasoning_content(model_name: &str) -> bool {
+    let name_lower = model_name.to_lowercase();
+    // Qwen3 thinking variants
+    name_lower.contains("qwen3") && name_lower.contains("thinking")
+        // DeepSeek R1 reasoning models
+        || name_lower.contains("deepseek") && name_lower.contains("r1")
+        // Any model with explicit "reasoning" in name
+        || name_lower.contains("reasoning")
+}
+
 /// Create an internal agent using the Rig framework
 pub async fn create_internal_agent(
     config: &CliAppConfig,
@@ -243,6 +258,10 @@ pub async fn create_internal_agent(
 
     use crucible_config::{LlmProviderConfig, LlmProviderType};
 
+    // Track reasoning endpoint for models that support it
+    // This is used for custom SSE parsing to extract reasoning_content field
+    let mut reasoning_endpoint: Option<String> = None;
+
     // Create Rig client based on provider
     let client = match config.chat.provider {
         LlmProvider::Ollama => {
@@ -257,6 +276,12 @@ pub async fn create_internal_agent(
             let is_local = endpoint.contains("localhost") || endpoint.contains("127.0.0.1");
 
             if is_local {
+                // Local Ollama - check for reasoning support
+                if supports_reasoning_content(&model) {
+                    // For local Ollama, the OpenAI-compatible endpoint is at /v1
+                    reasoning_endpoint = Some(format!("{}/v1", endpoint.trim_end_matches('/')));
+                    info!("Enabling reasoning extraction for model: {}", model);
+                }
                 // Local Ollama - use native client
                 crucible_rig::create_client(&LlmProviderConfig {
                     provider_type: LlmProviderType::Ollama,
@@ -271,10 +296,17 @@ pub async fn create_internal_agent(
                 // Remote Ollama-compatible (e.g., llama-swappo) - use OpenAI-compatible client
                 // Append /v1 if not already present for OpenAI-compatible endpoint
                 let compat_endpoint = if endpoint.ends_with("/v1") {
-                    endpoint
+                    endpoint.clone()
                 } else {
                     format!("{}/v1", endpoint.trim_end_matches('/'))
                 };
+
+                // Check for reasoning support
+                if supports_reasoning_content(&model) {
+                    reasoning_endpoint = Some(compat_endpoint.clone());
+                    info!("Enabling reasoning extraction for model: {}", model);
+                }
+
                 info!(
                     "Using OpenAI-compatible endpoint for remote Ollama: {}",
                     compat_endpoint
@@ -329,7 +361,12 @@ pub async fn create_internal_agent(
                 model_size,
                 kiln_ctx,
             )?;
-            Ok(Box::new(RigAgentHandle::new(agent)))
+            let handle = RigAgentHandle::new(agent);
+            Ok(if let Some(endpoint) = reasoning_endpoint {
+                Box::new(handle.with_reasoning_endpoint(endpoint, model))
+            } else {
+                Box::new(handle)
+            })
         }
         crucible_rig::RigClient::OpenAI(openai_client) => {
             let agent = build_agent_with_kiln_tools(
@@ -339,7 +376,12 @@ pub async fn create_internal_agent(
                 model_size,
                 kiln_ctx,
             )?;
-            Ok(Box::new(RigAgentHandle::new(agent)))
+            let handle = RigAgentHandle::new(agent);
+            Ok(if let Some(endpoint) = reasoning_endpoint {
+                Box::new(handle.with_reasoning_endpoint(endpoint, model))
+            } else {
+                Box::new(handle)
+            })
         }
         crucible_rig::RigClient::OpenAICompat(compat_client) => {
             let agent = build_agent_with_kiln_tools(
@@ -349,7 +391,12 @@ pub async fn create_internal_agent(
                 model_size,
                 kiln_ctx,
             )?;
-            Ok(Box::new(RigAgentHandle::new(agent)))
+            let handle = RigAgentHandle::new(agent);
+            Ok(if let Some(endpoint) = reasoning_endpoint {
+                Box::new(handle.with_reasoning_endpoint(endpoint, model))
+            } else {
+                Box::new(handle)
+            })
         }
         crucible_rig::RigClient::Anthropic(anthropic_client) => {
             let agent = build_agent_with_kiln_tools(
@@ -359,6 +406,7 @@ pub async fn create_internal_agent(
                 model_size,
                 kiln_ctx,
             )?;
+            // Anthropic models don't use reasoning_content field
             Ok(Box::new(RigAgentHandle::new(agent)))
         }
     }
@@ -439,7 +487,7 @@ mod tests {
 
     #[test]
     fn test_agent_type_default() {
-        assert_eq!(AgentType::default(), AgentType::Acp);
+        assert_eq!(AgentType::default(), AgentType::Internal);
     }
 
     #[test]
@@ -545,5 +593,26 @@ mod tests {
     fn test_agent_init_params_default_has_empty_env_overrides() {
         let params = AgentInitParams::default();
         assert!(params.env_overrides.is_empty());
+    }
+
+    #[test]
+    fn test_supports_reasoning_content() {
+        // Qwen3 thinking models
+        assert!(supports_reasoning_content("qwen3-4b-thinking-2507-q8_0"));
+        assert!(supports_reasoning_content("Qwen3-8B-Thinking"));
+        assert!(supports_reasoning_content("qwen3-thinking-32b"));
+
+        // DeepSeek R1 models
+        assert!(supports_reasoning_content("deepseek-r1-8b"));
+        assert!(supports_reasoning_content("DeepSeek-R1-Distill"));
+
+        // Generic reasoning in name
+        assert!(supports_reasoning_content("my-reasoning-model"));
+
+        // Not reasoning models
+        assert!(!supports_reasoning_content("qwen3-4b-instruct")); // qwen3 but no thinking
+        assert!(!supports_reasoning_content("llama3.2"));
+        assert!(!supports_reasoning_content("gpt-4o"));
+        assert!(!supports_reasoning_content("claude-3-5-sonnet"));
     }
 }
