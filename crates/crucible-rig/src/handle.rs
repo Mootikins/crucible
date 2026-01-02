@@ -26,6 +26,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
+use crate::openai_reasoning::{self, ReasoningChunk};
 use crate::xml_tool_parser;
 
 /// Rig-based agent handle implementing `AgentHandle` trait.
@@ -58,6 +59,16 @@ where
 
     /// Maximum tool call depth (prevents infinite loops)
     max_tool_depth: usize,
+
+    /// OpenAI-compatible endpoint URL for custom streaming with reasoning support
+    /// When set, uses our SSE parser to extract reasoning_content field
+    reasoning_endpoint: Option<String>,
+
+    /// Model name (needed for custom streaming)
+    model_name: Option<String>,
+
+    /// HTTP client for custom streaming
+    http_client: reqwest::Client,
 }
 
 impl<M> RigAgentHandle<M>
@@ -80,6 +91,9 @@ where
             mode_state,
             current_mode_id,
             max_tool_depth: 50, // High limit for complex agentic workflows
+            reasoning_endpoint: None,
+            model_name: None,
+            http_client: reqwest::Client::new(),
         }
     }
 
@@ -88,6 +102,17 @@ where
     /// This prevents infinite loops when the LLM keeps requesting tool calls.
     pub fn with_max_tool_depth(mut self, depth: usize) -> Self {
         self.max_tool_depth = depth;
+        self
+    }
+
+    /// Enable custom streaming with reasoning_content extraction
+    ///
+    /// When set, uses our SSE parser instead of Rig's to extract the
+    /// non-standard `reasoning_content` field from OpenAI-compatible APIs
+    /// (Ollama, llama.cpp).
+    pub fn with_reasoning_endpoint(mut self, endpoint: String, model: String) -> Self {
+        self.reasoning_endpoint = Some(endpoint);
+        self.model_name = Some(model);
         self
     }
 
@@ -110,6 +135,206 @@ where
     pub async fn clear_history(&self) {
         self.chat_history.write().await.clear();
     }
+
+    /// Stream with custom SSE parsing for reasoning_content extraction
+    ///
+    /// This bypasses Rig's streaming to directly parse the `reasoning_content`
+    /// field from OpenAI-compatible APIs (Ollama, llama.cpp). Use when you need
+    /// to capture model thinking/reasoning output.
+    ///
+    /// Note: This currently doesn't support multi-turn tool execution. Tool calls
+    /// are emitted but not automatically executed.
+    fn send_message_stream_with_reasoning(
+        &self,
+        message: String,
+        endpoint: String,
+        model: String,
+    ) -> BoxStream<'static, ChatResult<ChatChunk>> {
+        let history = Arc::clone(&self.chat_history);
+        let http_client = self.http_client.clone();
+
+        Box::pin(async_stream::stream! {
+            // Build messages array from history + new message
+            let current_history = history.read().await.clone();
+            let mut messages: Vec<serde_json::Value> = Vec::new();
+
+            // Convert Rig messages to OpenAI format
+            for msg in current_history.iter() {
+                match msg {
+                    Message::User { content, .. } => {
+                        // User messages: extract text from content
+                        let text = content.iter()
+                            .filter_map(|c| {
+                                use rig::message::UserContent;
+                                match c {
+                                    UserContent::Text(t) => Some(t.text.clone()),
+                                    _ => None,
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        messages.push(serde_json::json!({
+                            "role": "user",
+                            "content": text
+                        }));
+                    }
+                    Message::Assistant { content, .. } => {
+                        // Assistant messages: extract text and tool calls
+                        let mut text_parts = Vec::new();
+                        let mut tool_calls_json = Vec::new();
+
+                        for c in content.iter() {
+                            match c {
+                                AssistantContent::Text(t) => {
+                                    text_parts.push(t.text.clone());
+                                }
+                                AssistantContent::ToolCall(tc) => {
+                                    tool_calls_json.push(serde_json::json!({
+                                        "id": tc.call_id.as_deref().unwrap_or(""),
+                                        "type": "function",
+                                        "function": {
+                                            "name": tc.function.name,
+                                            "arguments": serde_json::to_string(&tc.function.arguments).unwrap_or_default()
+                                        }
+                                    }));
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        let mut msg_obj = serde_json::json!({
+                            "role": "assistant",
+                            "content": text_parts.join("")
+                        });
+
+                        if !tool_calls_json.is_empty() {
+                            msg_obj["tool_calls"] = serde_json::Value::Array(tool_calls_json);
+                        }
+
+                        messages.push(msg_obj);
+                    }
+                }
+            }
+
+            // Add new user message
+            messages.push(serde_json::json!({
+                "role": "user",
+                "content": message.clone()
+            }));
+
+            // Add user message to history
+            {
+                let mut h = history.write().await;
+                h.push(Message::user(&message));
+            }
+
+            debug!(
+                endpoint = %endpoint,
+                model = %model,
+                message_count = messages.len(),
+                "Starting custom reasoning stream"
+            );
+
+            // Create custom stream with reasoning support
+            let mut stream = openai_reasoning::stream_with_reasoning(
+                http_client,
+                &endpoint,
+                &model,
+                messages,
+                None, // TODO: Support tools in custom streaming
+            );
+
+            let mut accumulated_text = String::new();
+            let mut accumulated_reasoning = String::new();
+
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(chunk) => {
+                        match chunk {
+                            ReasoningChunk::Text(text) => {
+                                accumulated_text.push_str(&text);
+                                yield Ok(ChatChunk {
+                                    delta: text,
+                                    done: false,
+                                    tool_calls: None,
+                                    tool_results: None,
+                                    reasoning: None,
+                                });
+                            }
+                            ReasoningChunk::Reasoning(reasoning) => {
+                                accumulated_reasoning.push_str(&reasoning);
+                                yield Ok(ChatChunk {
+                                    delta: String::new(),
+                                    done: false,
+                                    tool_calls: None,
+                                    tool_results: None,
+                                    reasoning: Some(reasoning),
+                                });
+                            }
+                            ReasoningChunk::ToolCall { id, name, arguments } => {
+                                // Parse arguments as JSON
+                                let args: serde_json::Value = serde_json::from_str(&arguments)
+                                    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+
+                                yield Ok(ChatChunk {
+                                    delta: String::new(),
+                                    done: false,
+                                    tool_calls: Some(vec![ChatToolCall {
+                                        id: Some(id),
+                                        name,
+                                        arguments: Some(args),
+                                    }]),
+                                    tool_results: None,
+                                    reasoning: None,
+                                });
+
+                                // Note: Tool execution not implemented in custom streaming yet
+                                // TUI will display the tool call but won't execute it
+                            }
+                            ReasoningChunk::Done => {
+                                // Update history with assistant response
+                                {
+                                    let mut h = history.write().await;
+                                    if !accumulated_text.is_empty() {
+                                        h.push(Message::assistant(accumulated_text.clone()));
+                                    }
+                                }
+
+                                debug!(
+                                    text_len = accumulated_text.len(),
+                                    reasoning_len = accumulated_reasoning.len(),
+                                    "Custom reasoning stream complete"
+                                );
+
+                                yield Ok(ChatChunk {
+                                    delta: String::new(),
+                                    done: true,
+                                    tool_calls: None,
+                                    tool_results: None,
+                                    reasoning: None,
+                                });
+                                return;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "Custom reasoning stream error");
+                        yield Err(ChatError::Communication(format!("Reasoning stream error: {}", e)));
+                        return;
+                    }
+                }
+            }
+
+            // Stream ended without Done chunk - emit done anyway
+            yield Ok(ChatChunk {
+                delta: String::new(),
+                done: true,
+                tool_calls: None,
+                tool_results: None,
+                reasoning: None,
+            });
+        })
+    }
 }
 
 #[async_trait]
@@ -126,6 +351,15 @@ where
         use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
 
         debug!("RigAgentHandle::send_message_stream called: {}", message);
+
+        // Check if we should use custom streaming for reasoning extraction
+        if let (Some(endpoint), Some(model)) = (&self.reasoning_endpoint, &self.model_name) {
+            return self.send_message_stream_with_reasoning(
+                message,
+                endpoint.clone(),
+                model.clone(),
+            );
+        }
 
         let agent = Arc::clone(&self.agent);
         let history = Arc::clone(&self.chat_history);
@@ -220,6 +454,7 @@ where
                                                 done: false,
                                                 tool_calls: Some(vec![chat_tc]),
                                                 tool_results: None,
+                                                reasoning: None,
                                             });
                                         }
 
@@ -234,6 +469,7 @@ where
                                                 done: false,
                                                 tool_calls: None,
                                                 tool_results: None,
+                                                reasoning: None,
                                             });
                                             emitted_text_len = parse_result.cleaned_text.len();
                                         }
@@ -266,6 +502,7 @@ where
                                                     done: false,
                                                     tool_calls: None,
                                                     tool_results: None,
+                                                    reasoning: None,
                                                 });
                                             }
                                             emitted_text_len = accumulated_text.len();
@@ -277,6 +514,7 @@ where
                                             done: false,
                                             tool_calls: None,
                                             tool_results: None,
+                                            reasoning: None,
                                         });
                                         emitted_text_len = accumulated_text.len();
                                     }
@@ -306,27 +544,33 @@ where
                                         id: tc.call_id.clone(),
                                     }]),
                                     tool_results: None,
+                                    reasoning: None,
                                 });
                             }
                             StreamedAssistantContent::Reasoning(r) => {
-                                // Emit reasoning as delta
+                                // Emit complete reasoning block
                                 let reasoning_text = r.reasoning.join("");
                                 if !reasoning_text.is_empty() {
                                     yield Ok(ChatChunk {
-                                        delta: format!("<thinking>{}</thinking>", reasoning_text),
+                                        delta: String::new(),
                                         done: false,
                                         tool_calls: None,
                                         tool_results: None,
+                                        reasoning: Some(reasoning_text),
                                     });
                                 }
                             }
                             StreamedAssistantContent::ReasoningDelta { reasoning, .. } => {
-                                yield Ok(ChatChunk {
-                                    delta: reasoning,
-                                    done: false,
-                                    tool_calls: None,
-                                    tool_results: None,
-                                });
+                                // Emit reasoning delta separately from main content
+                                if !reasoning.is_empty() {
+                                    yield Ok(ChatChunk {
+                                        delta: String::new(),
+                                        done: false,
+                                        tool_calls: None,
+                                        tool_results: None,
+                                        reasoning: Some(reasoning),
+                                    });
+                                }
                             }
                             StreamedAssistantContent::ToolCallDelta { .. } => {
                                 // Ignore deltas, we get full tool call above
@@ -369,6 +613,7 @@ where
                                 result: result_text,
                                 error: None, // Rig doesn't distinguish error results
                             }]),
+                            reasoning: None,
                         });
 
                         tool_results.push(tr);
@@ -390,6 +635,7 @@ where
                                     done: false,
                                     tool_calls: None,
                                     tool_results: None,
+                                    reasoning: None,
                                 });
                             }
                         }
@@ -446,6 +692,7 @@ where
                                 Some(tool_calls.clone())
                             },
                             tool_results: None,
+                            reasoning: None,
                         });
                     }
                     Err(e) => {
@@ -485,6 +732,7 @@ where
                         Some(tool_calls)
                     },
                     tool_results: None,
+                    reasoning: None,
                 });
             }
         })
@@ -1029,5 +1277,68 @@ mod tests {
         for (i, item) in items.iter().enumerate() {
             println!("  [{}] {}", i, item);
         }
+    }
+
+    // Test custom reasoning stream extraction
+    #[tokio::test]
+    #[ignore = "requires remote endpoint with thinking model"]
+    async fn test_reasoning_stream_extraction() {
+        use crate::openai_reasoning::{stream_with_reasoning, ReasoningChunk};
+
+        let client = reqwest::Client::new();
+        let endpoint = "https://llama.krohnos.io/v1";
+        let model = "qwen3-4b-thinking-2507-q8_0";
+        let messages = vec![serde_json::json!({
+            "role": "user",
+            "content": "What is 2+2?"
+        })];
+
+        println!("=== Testing reasoning extraction ===");
+
+        let mut stream = stream_with_reasoning(client, endpoint, model, messages, None);
+
+        let mut reasoning_chunks = 0u32;
+        let mut text_chunks = 0u32;
+        let mut reasoning_text = String::new();
+        let mut response_text = String::new();
+
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(chunk) => match chunk {
+                    ReasoningChunk::Text(t) => {
+                        text_chunks += 1;
+                        response_text.push_str(&t);
+                    }
+                    ReasoningChunk::Reasoning(r) => {
+                        reasoning_chunks += 1;
+                        reasoning_text.push_str(&r);
+                    }
+                    ReasoningChunk::Done => {
+                        println!("Stream complete");
+                        break;
+                    }
+                    ReasoningChunk::ToolCall { .. } => {}
+                },
+                Err(e) => {
+                    panic!("Stream error: {}", e);
+                }
+            }
+        }
+
+        println!("Reasoning chunks: {}", reasoning_chunks);
+        println!("Text chunks: {}", text_chunks);
+        println!("Reasoning: {}", &reasoning_text[..reasoning_text.len().min(200)]);
+        println!("Response: {}", response_text);
+
+        // With a thinking model, we should get reasoning content
+        assert!(
+            reasoning_chunks > 0,
+            "Expected reasoning chunks from thinking model"
+        );
+        assert!(text_chunks > 0, "Expected text chunks for response");
+        assert!(
+            response_text.contains("4"),
+            "Response should contain the answer"
+        );
     }
 }
