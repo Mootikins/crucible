@@ -59,6 +59,39 @@ impl StreamingParser {
         matches!(self.state, ParserState::InCodeBlock { .. })
     }
 
+    /// Flush partial text for progressive display.
+    ///
+    /// In text mode, returns the current line buffer as a Text event without
+    /// consuming it (the buffer is marked as "flushed" to avoid duplicates).
+    /// In code block mode, returns the accumulated code content.
+    ///
+    /// This enables progressive display of streaming text even before newlines.
+    pub fn flush_partial(&mut self) -> Option<ParseEvent> {
+        match &self.state {
+            ParserState::Text => {
+                if !self.line_buffer.is_empty() {
+                    // Return partial text and clear the buffer
+                    // (it will be re-accumulated if more chars arrive before newline)
+                    Some(ParseEvent::Text(std::mem::take(&mut self.line_buffer)))
+                } else {
+                    None
+                }
+            }
+            ParserState::InCodeBlock { .. } => {
+                // In code blocks, we can show partial code content
+                let content =
+                    format!("{}{}", self.content_buffer, self.line_buffer);
+                if !content.is_empty() {
+                    // Don't clear buffers - this is just for display
+                    // The content_buffer is for proper parsing
+                    Some(ParseEvent::CodeBlockContent(content.clone()))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
     /// Finalize parsing, completing any partial blocks
     pub fn finalize(&mut self) -> Vec<ParseEvent> {
         let mut events = Vec::new();
@@ -467,6 +500,81 @@ mod tests {
             ParseEvent::CodeBlockStart {
                 lang: Some(ref l)
             } if l == "rust,ignore"
+        ));
+    }
+
+    #[test]
+    fn test_flush_partial_text() {
+        let mut parser = StreamingParser::new();
+
+        // Feed text without newline
+        let events = parser.feed("Hello world");
+        assert!(events.is_empty()); // No events yet (no newline)
+
+        // Flush should return partial text
+        let partial = parser.flush_partial();
+        assert!(matches!(
+            partial,
+            Some(ParseEvent::Text(ref t)) if t == "Hello world"
+        ));
+
+        // After flush, buffer should be empty
+        let partial2 = parser.flush_partial();
+        assert!(partial2.is_none());
+    }
+
+    #[test]
+    fn test_flush_partial_progressive() {
+        let mut parser = StreamingParser::new();
+
+        // Stream tokens progressively
+        parser.feed("The ");
+        let p1 = parser.flush_partial();
+        assert!(matches!(p1, Some(ParseEvent::Text(ref t)) if t == "The "));
+
+        parser.feed("answer ");
+        let p2 = parser.flush_partial();
+        assert!(matches!(p2, Some(ParseEvent::Text(ref t)) if t == "answer "));
+
+        parser.feed("is 42");
+        let p3 = parser.flush_partial();
+        assert!(matches!(p3, Some(ParseEvent::Text(ref t)) if t == "is 42"));
+    }
+
+    #[test]
+    fn test_flush_partial_with_newlines() {
+        let mut parser = StreamingParser::new();
+
+        // Feed line with newline
+        let events = parser.feed("Line 1\n");
+        assert_eq!(events.len(), 1); // Newline triggers immediate event
+
+        // Buffer should be empty after newline
+        let partial = parser.flush_partial();
+        assert!(partial.is_none());
+
+        // Feed partial line
+        parser.feed("Line 2");
+        let partial = parser.flush_partial();
+        assert!(matches!(partial, Some(ParseEvent::Text(ref t)) if t == "Line 2"));
+    }
+
+    #[test]
+    fn test_flush_partial_in_code_block() {
+        let mut parser = StreamingParser::new();
+
+        // Start code block
+        let events = parser.feed("```rust\n");
+        assert_eq!(events.len(), 1); // CodeBlockStart
+
+        // Add partial code
+        parser.feed("fn main() {");
+
+        // Flush should return code content
+        let partial = parser.flush_partial();
+        assert!(matches!(
+            partial,
+            Some(ParseEvent::CodeBlockContent(ref c)) if c == "fn main() {"
         ));
     }
 }
