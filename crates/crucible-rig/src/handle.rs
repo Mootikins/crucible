@@ -1327,7 +1327,10 @@ mod tests {
 
         println!("Reasoning chunks: {}", reasoning_chunks);
         println!("Text chunks: {}", text_chunks);
-        println!("Reasoning: {}", &reasoning_text[..reasoning_text.len().min(200)]);
+        println!(
+            "Reasoning: {}",
+            &reasoning_text[..reasoning_text.len().min(200)]
+        );
         println!("Response: {}", response_text);
 
         // With a thinking model, we should get reasoning content

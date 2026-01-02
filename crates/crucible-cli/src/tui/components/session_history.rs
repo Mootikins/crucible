@@ -6,6 +6,7 @@
 use crate::tui::{
     components::{InteractiveWidget, WidgetAction, WidgetEventResult},
     conversation::{render_item_to_lines, ConversationItem, ConversationState},
+    selection::RenderedLineInfo,
 };
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -14,6 +15,14 @@ use ratatui::{
     text::Line,
     widgets::{Paragraph, Widget},
 };
+
+/// Extract plain text from a ratatui Line (stripping ANSI styles).
+fn extract_plain_text(line: &Line) -> String {
+    line.spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect()
+}
 
 /// Widget that renders conversation history with scrolling support
 ///
@@ -79,6 +88,55 @@ impl<'a> SessionHistoryWidget<'a> {
         }
 
         all_lines
+    }
+
+    /// Render conversation items to lines and build selection cache info.
+    ///
+    /// Returns both the display lines and cache data for text extraction.
+    pub fn render_to_lines_with_cache(
+        &self,
+        width: usize,
+    ) -> (Vec<Line<'static>>, Vec<RenderedLineInfo>) {
+        let mut all_lines = Vec::new();
+        let mut cache_info = Vec::new();
+        let items = self.state.items();
+
+        for (item_index, item) in items.iter().enumerate() {
+            // Add blank line before tool calls, but skip between consecutive tools
+            if matches!(item, ConversationItem::ToolCall(_)) {
+                let prev_was_tool = item_index > 0
+                    && matches!(
+                        items.get(item_index - 1),
+                        Some(ConversationItem::ToolCall(_))
+                    );
+
+                if !prev_was_tool {
+                    all_lines.push(Line::from(""));
+                    cache_info.push(RenderedLineInfo {
+                        text: String::new(),
+                        item_index,
+                        is_code: false,
+                    });
+                }
+            }
+
+            let is_code = matches!(item, ConversationItem::ToolCall(_));
+            let item_lines = render_item_to_lines(item, width);
+
+            for line in &item_lines {
+                // Extract plain text from the Line's spans
+                let plain_text = extract_plain_text(line);
+                cache_info.push(RenderedLineInfo {
+                    text: plain_text,
+                    item_index,
+                    is_code,
+                });
+            }
+
+            all_lines.extend(item_lines);
+        }
+
+        (all_lines, cache_info)
     }
 
     /// Calculate total content height
