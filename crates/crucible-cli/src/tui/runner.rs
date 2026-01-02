@@ -1219,6 +1219,8 @@ impl RatatuiRunner {
         self.supports_restart = true;
 
         // Enter TUI with mouse capture for scrolling
+        // TODO: Implement application-level text selection (like OpenCode)
+        // that extracts actual text content, not terminal cells
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
