@@ -289,6 +289,22 @@ impl RatatuiRunner {
                                 error,
                             });
                         }
+                        StreamingEvent::Reasoning { text, seq: _ } => {
+                            // Track reasoning tokens in the status display
+                            // (reasoning is thinking/chain-of-thought from models like Qwen3-thinking)
+                            self.prev_token_count = self.token_count;
+                            self.token_count += 1;
+                            self.spinner_frame = self.spinner_frame.wrapping_add(1);
+                            self.view.set_status(StatusKind::Generating {
+                                token_count: self.token_count,
+                                prev_token_count: self.prev_token_count,
+                                spinner_frame: self.spinner_frame,
+                            });
+
+                            // Push reasoning to session using AgentThinking event
+                            // TODO: Add UI for collapsible reasoning display (Alt+T toggle)
+                            bridge.ring.push(SessionEvent::AgentThinking { thought: text });
+                        }
                     }
                 }
             }
@@ -831,6 +847,11 @@ impl RatatuiRunner {
                     self.view.set_input(&new_input);
                     self.view.set_cursor_position(new_cursor);
                 }
+            }
+            InputAction::ToggleReasoning => {
+                // Toggle reasoning visibility (handled by view)
+                // Note: This is a placeholder for when reasoning display is implemented
+                // The view would show/hide accumulated reasoning content
             }
             InputAction::None => {}
         }
