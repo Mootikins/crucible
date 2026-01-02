@@ -921,22 +921,14 @@ impl RatatuiRunner {
                 }
                 SessionEvent::ToolCompleted {
                     name,
-                    result,
-                    error,
+                    result: _,
+                    error: _,
                 } => {
-                    if let Some(err) = error {
-                        self.view.error_tool(name, err);
-                    } else {
-                        // Truncate result for summary
-                        let summary = if result.len() > 50 {
-                            Some(format!("{}...", &result[..47]))
-                        } else if !result.is_empty() {
-                            Some(result.clone())
-                        } else {
-                            None
-                        };
-                        self.view.complete_tool(name, summary);
-                    }
+                    // NOTE: Tool already completed via StreamingEvent::ToolCompleted handler
+                    // which also emits to the ring buffer. Don't call complete_tool again here
+                    // to avoid duplicate display. Just clear status (ring events may come from
+                    // other sources like external agents).
+                    self.view.set_status_text(&format!("Completed: {}", name));
                 }
                 // Handle interaction requests
                 SessionEvent::InteractionRequested {

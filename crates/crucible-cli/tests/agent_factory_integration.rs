@@ -34,7 +34,8 @@ fn test_agent_init_params_default() {
 
 #[test]
 fn test_agent_type_default() {
-    assert_eq!(AgentType::default(), AgentType::Acp);
+    // Default is Internal (Crucible's built-in Rig-based agents)
+    assert_eq!(AgentType::default(), AgentType::Internal);
 }
 
 #[test]
