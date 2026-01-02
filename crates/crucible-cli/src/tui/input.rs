@@ -42,6 +42,8 @@ pub enum InputAction {
     MoveWordBackward,   // Alt+B
     MoveWordForward,    // Alt+F
     TransposeChars,     // Ctrl+T
+    // Reasoning display toggle
+    ToggleReasoning, // Alt+T
     None,
 }
 
@@ -79,6 +81,7 @@ pub fn map_key_event(event: &KeyEvent, state: &TuiState) -> InputAction {
         (KeyCode::Char('b'), KeyModifiers::ALT) => InputAction::MoveWordBackward,
         (KeyCode::Char('f'), KeyModifiers::ALT) => InputAction::MoveWordForward,
         (KeyCode::Char('t'), KeyModifiers::CONTROL) => InputAction::TransposeChars,
+        (KeyCode::Char('t'), KeyModifiers::ALT) => InputAction::ToggleReasoning,
 
         // Enter: confirm popup if active with / or @, otherwise send message
         (KeyCode::Enter, KeyModifiers::NONE) => {
@@ -507,5 +510,14 @@ mod readline_tests {
         let event = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL);
         let action = map_key_event(&event, &state);
         assert_eq!(action, InputAction::TransposeChars);
+    }
+
+    #[test]
+    fn test_alt_t_toggle_reasoning() {
+        // Alt+T should toggle reasoning visibility
+        let state = TuiState::new("plan");
+        let event = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::ALT);
+        let action = map_key_event(&event, &state);
+        assert_eq!(action, InputAction::ToggleReasoning);
     }
 }

@@ -647,6 +647,10 @@ pub struct TuiState {
     pub notifications: NotificationState,
     /// Context attachments pending for the next message (files, notes)
     pub pending_context: Vec<ContextAttachment>,
+    /// Whether to show reasoning/thinking content (Alt+T toggle)
+    pub show_reasoning: bool,
+    /// Accumulated reasoning from the current response
+    pub accumulated_reasoning: String,
     #[allow(clippy::type_complexity)] // Complex callback type, not worth a type alias
     output_fn: Option<Box<dyn Fn(&str) + Send + Sync>>,
 }
@@ -670,6 +674,8 @@ impl TuiState {
             popup: None,
             notifications: NotificationState::new(),
             pending_context: Vec::new(),
+            show_reasoning: false,
+            accumulated_reasoning: String::new(),
             output_fn: None,
         }
     }
@@ -695,8 +701,24 @@ impl TuiState {
             popup: None,
             notifications: NotificationState::new(),
             pending_context: Vec::new(),
+            show_reasoning: false,
+            accumulated_reasoning: String::new(),
             output_fn: Some(Box::new(output_fn)),
         }
+    }
+
+    // =========================================================================
+    // Reasoning Methods (for thinking models like Qwen3-thinking, DeepSeek-R1)
+    // =========================================================================
+
+    /// Append text to the accumulated reasoning buffer
+    pub fn append_reasoning(&mut self, text: &str) {
+        self.accumulated_reasoning.push_str(text);
+    }
+
+    /// Clear the accumulated reasoning buffer
+    pub fn clear_reasoning(&mut self) {
+        self.accumulated_reasoning.clear();
     }
 
     // =========================================================================
@@ -916,6 +938,10 @@ impl TuiState {
                             .unwrap_or(self.input_buffer.len());
                     }
                 }
+                None
+            }
+            InputAction::ToggleReasoning => {
+                self.show_reasoning = !self.show_reasoning;
                 None
             }
             InputAction::ScrollUp
@@ -1515,5 +1541,53 @@ mod tests {
         // Should not panic with invalid index
         state.remove_context(100);
         assert_eq!(state.pending_context.len(), 1);
+    }
+
+    // =========================================================================
+    // Reasoning Toggle Tests (TDD - RED PHASE)
+    // =========================================================================
+
+    #[test]
+    fn test_show_reasoning_default_false() {
+        // Reasoning should be hidden by default
+        let state = TuiState::new("plan");
+        assert!(!state.show_reasoning);
+    }
+
+    #[test]
+    fn test_accumulated_reasoning_default_empty() {
+        // Accumulated reasoning should start empty
+        let state = TuiState::new("plan");
+        assert!(state.accumulated_reasoning.is_empty());
+    }
+
+    #[test]
+    fn test_toggle_reasoning_flips_state() {
+        let mut state = TuiState::new("plan");
+        assert!(!state.show_reasoning);
+
+        state.execute_action(InputAction::ToggleReasoning);
+        assert!(state.show_reasoning);
+
+        state.execute_action(InputAction::ToggleReasoning);
+        assert!(!state.show_reasoning);
+    }
+
+    #[test]
+    fn test_append_reasoning() {
+        let mut state = TuiState::new("plan");
+        state.append_reasoning("Thinking about ");
+        state.append_reasoning("the problem...");
+        assert_eq!(state.accumulated_reasoning, "Thinking about the problem...");
+    }
+
+    #[test]
+    fn test_clear_reasoning() {
+        let mut state = TuiState::new("plan");
+        state.append_reasoning("Some reasoning");
+        assert!(!state.accumulated_reasoning.is_empty());
+
+        state.clear_reasoning();
+        assert!(state.accumulated_reasoning.is_empty());
     }
 }
