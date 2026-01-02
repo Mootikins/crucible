@@ -954,6 +954,8 @@ impl TuiState {
             | InputAction::ScrollToBottom
             | InputAction::HistoryPrev
             | InputAction::HistoryNext
+            | InputAction::ToggleMouseCapture
+            | InputAction::CopyMarkdown
             | InputAction::None => None,
         }
     }
