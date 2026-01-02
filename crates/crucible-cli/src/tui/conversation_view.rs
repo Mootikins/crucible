@@ -184,14 +184,14 @@ impl RatatuiView {
             .unwrap_or(0);
 
         // Calculate reasoning panel height (when visible and has content)
-        let reasoning_height = if self.state.show_reasoning && !self.state.reasoning_content.is_empty()
-        {
-            // Count lines in reasoning content (min 3 for border + header + 1 line)
-            let content_lines = self.state.reasoning_content.lines().count() as u16;
-            (content_lines + 2).min(Self::MAX_REASONING_HEIGHT) // +2 for borders
-        } else {
-            0
-        };
+        let reasoning_height =
+            if self.state.show_reasoning && !self.state.reasoning_content.is_empty() {
+                // Count lines in reasoning content (min 3 for border + header + 1 line)
+                let content_lines = self.state.reasoning_content.lines().count() as u16;
+                (content_lines + 2).min(Self::MAX_REASONING_HEIGHT) // +2 for borders
+            } else {
+                0
+            };
 
         let mut constraints = vec![Constraint::Min(3)]; // Conversation area
 
@@ -434,7 +434,7 @@ impl RatatuiView {
     /// - Spacer above input (1 line)
     /// - Reasoning panel (variable, if visible and has content)
     /// - Popup (variable, if active)
-    fn conversation_viewport_height(&self) -> usize {
+    pub fn conversation_viewport_height(&self) -> usize {
         let mut overhead: u16 = 5; // input (3) + status (1) + spacer (1)
 
         // Add reasoning panel height if visible
@@ -451,6 +451,20 @@ impl RatatuiView {
         }
 
         (self.state.height as usize).saturating_sub(overhead as usize)
+    }
+
+    /// Build selection cache data for text extraction.
+    ///
+    /// Returns cache info for all rendered lines in the conversation.
+    /// Call this after content changes or when the selection cache needs rebuilding.
+    pub fn build_selection_cache(&self) -> Vec<crate::tui::selection::RenderedLineInfo> {
+        use crate::tui::components::SessionHistoryWidget;
+
+        // Content width must match what's used in render
+        let content_width = (self.state.width as usize).saturating_sub(4);
+        let widget = SessionHistoryWidget::new(&self.state.conversation);
+        let (_lines, cache_info) = widget.render_to_lines_with_cache(content_width);
+        cache_info
     }
 
     /// Start streaming an assistant message (creates empty message with streaming indicator)

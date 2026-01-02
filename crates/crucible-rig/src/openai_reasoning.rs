@@ -254,10 +254,7 @@ mod tests {
     fn test_parse_content_delta() {
         let json = r#"{"choices":[{"finish_reason":null,"index":0,"delta":{"content":"hello"}}]}"#;
         let response: StreamResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(
-            response.choices[0].delta.content,
-            Some("hello".to_string())
-        );
+        assert_eq!(response.choices[0].delta.content, Some("hello".to_string()));
     }
 
     #[test]
@@ -266,6 +263,9 @@ mod tests {
         let response: StreamResponse = serde_json::from_str(json).unwrap();
         let tc = &response.choices[0].delta.tool_calls.as_ref().unwrap()[0];
         assert_eq!(tc.id, Some("call_123".to_string()));
-        assert_eq!(tc.function.as_ref().unwrap().name, Some("read_file".to_string()));
+        assert_eq!(
+            tc.function.as_ref().unwrap().name,
+            Some("read_file".to_string())
+        );
     }
 }

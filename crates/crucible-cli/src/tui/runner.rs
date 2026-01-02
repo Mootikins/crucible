@@ -14,6 +14,69 @@
 use tracing::debug;
 
 use crate::chat::bridge::AgentEventBridge;
+use crate::tui::selection::SelectionState;
+use ratatui::style::{Color, Modifier};
+
+/// Apply selection highlighting to the frame buffer.
+///
+/// Modifies buffer cells within the selected range to show a highlight background.
+fn apply_selection_highlight(
+    frame: &mut ratatui::Frame,
+    selection: &SelectionState,
+    scroll_offset: usize,
+    conv_height: usize,
+) {
+    let Some((start, end)) = selection.range() else {
+        return;
+    };
+
+    let area = frame.area();
+    let conv_area_height = conv_height.min(area.height as usize);
+
+    // Get the buffer for modification
+    let buffer = frame.buffer_mut();
+
+    // Iterate through visible lines in the conversation area
+    for screen_row in 0..conv_area_height {
+        // Convert screen row to content line index
+        let content_line = scroll_offset + screen_row;
+
+        // Check if this line is within selection
+        if content_line < start.line || content_line > end.line {
+            continue;
+        }
+
+        // Determine column bounds for this line
+        let (col_start, col_end) = if content_line == start.line && content_line == end.line {
+            // Single line selection
+            (start.col, end.col)
+        } else if content_line == start.line {
+            // First line of multi-line
+            (start.col, area.width as usize - 1)
+        } else if content_line == end.line {
+            // Last line of multi-line
+            (0, end.col)
+        } else {
+            // Middle line - full width
+            (0, area.width as usize - 1)
+        };
+
+        // Apply highlight to cells in range
+        for col in col_start..=col_end.min(area.width as usize - 1) {
+            let x = area.x + col as u16;
+            let y = area.y + screen_row as u16;
+
+            if x < area.x + area.width && y < area.y + area.height {
+                if let Some(cell) = buffer.cell_mut((x, y)) {
+                    // Invert colors for selection highlight
+                    cell.set_bg(Color::White);
+                    cell.set_fg(Color::Black);
+                    cell.modifier.insert(Modifier::REVERSED);
+                }
+            }
+        }
+    }
+}
 use crate::chat::slash_registry::SlashCommandRegistry;
 use crate::tui::agent_picker::AgentSelection;
 use crate::tui::notification::NotificationLevel;
@@ -31,7 +94,10 @@ use crate::tui::{
 use anyhow::Result;
 use crossterm::{
     cursor,
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, MouseEvent, MouseEventKind},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, MouseButton, MouseEvent,
+        MouseEventKind,
+    },
     execute,
     terminal::{
         disable_raw_mode, enable_raw_mode, size, EnterAlternateScreen, LeaveAlternateScreen,
@@ -93,6 +159,10 @@ pub struct RatatuiRunner {
     default_selection: Option<AgentSelection>,
     /// Mouse capture state (when disabled, allows terminal text selection)
     mouse_capture_enabled: bool,
+    /// Text selection state for mouse-based selection
+    selection: crate::tui::selection::SelectionState,
+    /// Content cache for selection text extraction
+    selection_cache: crate::tui::selection::SelectableContentCache,
 }
 
 impl RatatuiRunner {
@@ -127,6 +197,8 @@ impl RatatuiRunner {
             supports_restart: false, // Set to true when using run_with_factory
             default_selection: None,
             mouse_capture_enabled: true, // Enable by default for scroll support
+            selection: crate::tui::selection::SelectionState::new(),
+            selection_cache: crate::tui::selection::SelectableContentCache::new(),
         })
     }
 
@@ -167,7 +239,17 @@ impl RatatuiRunner {
 
         loop {
             // 1. Render
-            terminal.draw(|f| self.view.render_frame(f))?;
+            {
+                let view = &self.view;
+                let selection = &self.selection;
+                let scroll_offset = view.state().scroll_offset;
+                let conv_height = view.conversation_viewport_height();
+
+                terminal.draw(|f| {
+                    view.render_frame(f);
+                    apply_selection_highlight(f, selection, scroll_offset, conv_height);
+                })?;
+            }
 
             // 2. Poll events (non-blocking, ~60fps)
             if event::poll(Duration::from_millis(16))? {
@@ -309,7 +391,9 @@ impl RatatuiRunner {
                             self.view.tick_reasoning_animation();
 
                             // Push reasoning to session using AgentThinking event
-                            bridge.ring.push(SessionEvent::AgentThinking { thought: text });
+                            bridge
+                                .ring
+                                .push(SessionEvent::AgentThinking { thought: text });
                         }
                     }
                 }
@@ -879,7 +963,8 @@ impl RatatuiRunner {
                 if self.mouse_capture_enabled {
                     let _ = execute!(stdout, EnableMouseCapture);
                     let _ = stdout.flush();
-                    self.view.set_status_text("Mouse capture enabled (scroll works)");
+                    self.view
+                        .set_status_text("Mouse capture enabled (scroll works)");
                 } else {
                     let _ = execute!(stdout, DisableMouseCapture);
                     let _ = stdout.flush();
@@ -906,17 +991,119 @@ impl RatatuiRunner {
         Ok(false)
     }
 
-    /// Handle mouse events for scrolling.
+    /// Handle mouse events for scrolling and text selection.
     fn handle_mouse_event(&mut self, mouse: &MouseEvent) {
+        use crate::tui::selection::SelectionPoint;
+
         match mouse.kind {
             MouseEventKind::ScrollUp => {
                 self.view.scroll_up(3);
+                // Invalidate selection cache on scroll
+                self.selection_cache.invalidate();
             }
             MouseEventKind::ScrollDown => {
                 self.view.scroll_down(3);
+                // Invalidate selection cache on scroll
+                self.selection_cache.invalidate();
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                // Start selection at mouse position
+                if let Some(point) = self.mouse_to_content_point(mouse.column, mouse.row) {
+                    self.selection.start(point);
+                }
+            }
+            MouseEventKind::Drag(MouseButton::Left) => {
+                // Update selection during drag
+                if let Some(point) = self.mouse_to_content_point(mouse.column, mouse.row) {
+                    self.selection.update(point);
+                }
+            }
+            MouseEventKind::Up(MouseButton::Left) => {
+                // Complete selection and copy to clipboard
+                self.selection.complete();
+                if self.selection.has_selection() {
+                    self.copy_selection_to_clipboard();
+                }
             }
             _ => {}
         }
+    }
+
+    /// Convert mouse screen coordinates to content coordinates.
+    ///
+    /// Returns None if the mouse is outside the conversation area.
+    fn mouse_to_content_point(
+        &self,
+        x: u16,
+        y: u16,
+    ) -> Option<crate::tui::selection::SelectionPoint> {
+        use crate::tui::selection::SelectionPoint;
+
+        // Get the conversation area bounds
+        // The conversation area starts at row 0 and takes most of the screen
+        // Layout: conversation | reasoning? | spacer | popup? | input (3) | status (1)
+        let state = self.view.state();
+
+        // Calculate conversation area height (total height minus fixed components)
+        // Input = 3 lines, Status = 1 line, Spacer = 1 line
+        let fixed_height: u16 = 3 + 1 + 1;
+        let conv_height = state.height.saturating_sub(fixed_height);
+
+        // Check if mouse is in conversation area (row < conv_height)
+        if y >= conv_height {
+            return None;
+        }
+
+        // Convert to content coordinates
+        // Line index = scroll_offset + row
+        let line = state.scroll_offset + y as usize;
+        // Column is just the x position (no horizontal scroll for now)
+        let col = x as usize;
+
+        Some(SelectionPoint::new(line, col))
+    }
+
+    /// Copy current selection to clipboard using OSC 52.
+    fn copy_selection_to_clipboard(&mut self) {
+        use base64::Engine;
+
+        let Some((start, end)) = self.selection.range() else {
+            return;
+        };
+
+        // Rebuild cache if needed (width changed or cache is empty)
+        let width = self.view.state().width;
+        if self.selection_cache.needs_rebuild(width) {
+            let cache_data = self.view.build_selection_cache();
+            self.selection_cache.update(cache_data, width);
+        }
+
+        // Extract text from selection cache
+        let text = self.selection_cache.extract_text(start, end);
+
+        if text.is_empty() {
+            self.view.set_status_text("No text selected");
+            return;
+        }
+
+        // Copy via OSC 52 escape sequence
+        let encoded = base64::engine::general_purpose::STANDARD.encode(text.as_bytes());
+        let osc52 = format!("\x1b]52;c;{}\x07", encoded);
+
+        if execute!(io::stdout(), crossterm::style::Print(&osc52)).is_ok() {
+            let line_count = text.lines().count();
+            let char_count = text.chars().count();
+            self.view.set_status_text(&format!(
+                "Copied {} chars ({} lines)",
+                char_count, line_count
+            ));
+        } else {
+            self.view
+                .set_status_text("Copy failed (terminal may not support OSC 52)");
+        }
+
+        // Clear selection after copy
+        self.selection.clear();
     }
 
     /// Poll session events from the ring buffer.
@@ -1307,7 +1494,15 @@ impl RatatuiRunner {
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
-        terminal.draw(|f| self.view.render_frame(f))?;
+        let view = &self.view;
+        let selection = &self.selection;
+        let scroll_offset = view.state().scroll_offset;
+        let conv_height = view.conversation_viewport_height();
+
+        terminal.draw(|f| {
+            view.render_frame(f);
+            apply_selection_highlight(f, selection, scroll_offset, conv_height);
+        })?;
         Ok(())
     }
 

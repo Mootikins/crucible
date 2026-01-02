@@ -25,6 +25,7 @@ pub mod render;
 pub mod repl_commands;
 pub mod runner;
 pub mod scrollback_runner;
+pub mod selection;
 pub mod state;
 pub mod streaming;
 pub mod streaming_channel;
@@ -59,6 +60,7 @@ pub use notification::{NotificationLevel, NotificationState};
 pub use popup::{DynamicPopupProvider, PopupProvider, StaticPopupProvider};
 pub use render::render;
 pub use runner::RatatuiRunner;
+pub use selection::{RenderedLineInfo, SelectableContentCache, SelectionPoint, SelectionState};
 pub use state::{ContextAttachment, ContextKind, TuiState};
 pub use streaming::StreamingBuffer;
 pub use streaming_channel::{
