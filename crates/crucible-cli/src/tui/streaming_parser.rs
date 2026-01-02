@@ -79,8 +79,7 @@ impl StreamingParser {
             }
             ParserState::InCodeBlock { .. } => {
                 // In code blocks, we can show partial code content
-                let content =
-                    format!("{}{}", self.content_buffer, self.line_buffer);
+                let content = format!("{}{}", self.content_buffer, self.line_buffer);
                 if !content.is_empty() {
                     // Don't clear buffers - this is just for display
                     // The content_buffer is for proper parsing
