@@ -364,6 +364,39 @@ impl ConversationState {
         &self.items
     }
 
+    /// Get the last assistant message as markdown.
+    ///
+    /// Reconstructs the original markdown from StreamBlocks.
+    /// Returns None if no assistant message exists.
+    pub fn last_assistant_markdown(&self) -> Option<String> {
+        for item in self.items.iter().rev() {
+            if let ConversationItem::AssistantMessage { blocks, .. } = item {
+                let mut markdown = String::new();
+                for block in blocks {
+                    match block {
+                        StreamBlock::Prose { text, .. } => {
+                            markdown.push_str(text);
+                        }
+                        StreamBlock::Code { lang, content, .. } => {
+                            markdown.push_str("```");
+                            if let Some(lang) = lang {
+                                markdown.push_str(lang);
+                            }
+                            markdown.push('\n');
+                            markdown.push_str(content);
+                            if !content.ends_with('\n') {
+                                markdown.push('\n');
+                            }
+                            markdown.push_str("```\n");
+                        }
+                    }
+                }
+                return Some(markdown);
+            }
+        }
+        None
+    }
+
     pub fn clear(&mut self) {
         self.items.clear();
     }
