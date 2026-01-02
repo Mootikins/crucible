@@ -33,6 +33,8 @@ pub type ChatStream = Pin<Box<dyn Stream<Item = ChatResult<ChatChunk>> + Send>>;
 pub enum StreamingEvent {
     /// Text delta received from LLM
     Delta { text: String, seq: u64 },
+    /// Reasoning/thinking delta from LLM (e.g., Qwen3-thinking, DeepSeek-R1)
+    Reasoning { text: String, seq: u64 },
     /// Tool call received from LLM
     ToolCall {
         id: Option<String>,
@@ -129,6 +131,17 @@ impl StreamingTask {
                                     result: tr.result,
                                     error: tr.error,
                                 });
+                            }
+                        }
+
+                        // Forward reasoning/thinking content to the TUI
+                        if let Some(reasoning) = chunk.reasoning {
+                            if !reasoning.is_empty() {
+                                let _ = tx.send(StreamingEvent::Reasoning {
+                                    text: reasoning,
+                                    seq,
+                                });
+                                seq += 1;
                             }
                         }
 
@@ -252,18 +265,21 @@ mod tests {
                 done: false,
                 tool_calls: None,
                 tool_results: None,
+                reasoning: None,
             }),
             Ok(ChatChunk {
                 delta: "world".to_string(),
                 done: false,
                 tool_calls: None,
                 tool_results: None,
+                reasoning: None,
             }),
             Ok(ChatChunk {
                 delta: "".to_string(),
                 done: true,
                 tool_calls: None,
                 tool_results: None,
+                reasoning: None,
             }),
         ];
         let stream = stream::iter(chunks);
@@ -298,6 +314,7 @@ mod tests {
                 done: false,
                 tool_calls: None,
                 tool_results: None,
+                reasoning: None,
             }),
             Err(ChatError::Connection("Connection lost".to_string())),
         ];
@@ -333,18 +350,21 @@ mod tests {
                 done: false,
                 tool_calls: None,
                 tool_results: None,
+                reasoning: None,
             }),
             Ok(ChatChunk {
                 delta: "".to_string(),
                 done: false,
                 tool_calls: Some(vec![tool_call]),
                 tool_results: None,
+                reasoning: None,
             }),
             Ok(ChatChunk {
                 delta: "".to_string(),
                 done: true,
                 tool_calls: None,
                 tool_results: None,
+                reasoning: None,
             }),
         ];
         let stream = stream::iter(chunks);
