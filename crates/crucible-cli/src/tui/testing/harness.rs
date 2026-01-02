@@ -105,6 +105,10 @@ impl Harness {
     /// Simulate Alt+key
     pub fn key_alt(&mut self, c: char) {
         self.key_with_modifiers(KeyCode::Char(c), KeyModifiers::ALT);
+        // Handle Alt+T for reasoning toggle
+        if c == 't' {
+            self.state.show_reasoning = !self.state.show_reasoning;
+        }
     }
 
     /// Type a string (simulates key-by-key input)
@@ -267,6 +271,8 @@ impl Harness {
             }
             StreamingEvent::Done { full_response: _ } => {
                 self.view.complete_assistant_streaming();
+                // Clear reasoning buffer when response completes
+                self.state.clear_reasoning();
             }
             StreamingEvent::Error { message } => {
                 self.state.status_error = Some(message);
@@ -315,6 +321,11 @@ impl Harness {
                     };
                     self.view.complete_tool(&name, summary);
                 }
+            }
+            StreamingEvent::Reasoning { text, seq } => {
+                // Accumulate reasoning in state for display
+                self.state.append_reasoning(&text);
+                self.state.last_seen_seq = seq;
             }
         }
     }
@@ -378,6 +389,16 @@ impl Harness {
     /// Get error message
     pub fn error(&self) -> Option<&str> {
         self.state.status_error.as_deref()
+    }
+
+    /// Check if reasoning display is enabled
+    pub fn show_reasoning(&self) -> bool {
+        self.state.show_reasoning
+    }
+
+    /// Get accumulated reasoning text
+    pub fn reasoning(&self) -> &str {
+        &self.state.accumulated_reasoning
     }
 
     // =========================================================================
@@ -519,5 +540,57 @@ mod tests {
         let h = Harness::new(40, 10);
         let output = h.render();
         assert!(!output.is_empty());
+    }
+
+    // =========================================================================
+    // Reasoning Toggle Tests (TDD - RED PHASE)
+    // =========================================================================
+
+    #[test]
+    fn harness_reasoning_default_hidden() {
+        let h = Harness::new(80, 24);
+        assert!(!h.show_reasoning());
+        assert!(h.reasoning().is_empty());
+    }
+
+    #[test]
+    fn harness_alt_t_toggles_reasoning() {
+        let mut h = Harness::new(80, 24);
+        assert!(!h.show_reasoning());
+
+        h.key_alt('t');
+        assert!(h.show_reasoning());
+
+        h.key_alt('t');
+        assert!(!h.show_reasoning());
+    }
+
+    #[test]
+    fn harness_reasoning_event_accumulates() {
+        let mut h = Harness::new(80, 24);
+        h.event(StreamingEvent::Reasoning {
+            text: "Thinking about ".to_string(),
+            seq: 0,
+        });
+        h.event(StreamingEvent::Reasoning {
+            text: "the problem".to_string(),
+            seq: 1,
+        });
+        assert_eq!(h.reasoning(), "Thinking about the problem");
+    }
+
+    #[test]
+    fn harness_reasoning_clears_on_done() {
+        let mut h = Harness::new(80, 24);
+        h.event(StreamingEvent::Reasoning {
+            text: "Some thinking".to_string(),
+            seq: 0,
+        });
+        assert!(!h.reasoning().is_empty());
+
+        h.event(StreamingEvent::Done {
+            full_response: "Done".to_string(),
+        });
+        assert!(h.reasoning().is_empty());
     }
 }
