@@ -22,9 +22,9 @@ pub enum LlmProvider {
 #[serde(rename_all = "lowercase")]
 pub enum AgentPreference {
     /// Prefer external ACP agents (claude-code, opencode, etc.)
-    #[default]
     Acp,
     /// Prefer Crucible's built-in agents (using Rig or native backend)
+    #[default]
     Crucible,
 }
 
