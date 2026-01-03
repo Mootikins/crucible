@@ -17,8 +17,7 @@ use tokio::fs;
 
 /// Helper to create a temp dir with tool files
 async fn setup_tool_dir() -> TempDir {
-    let dir = TempDir::new().unwrap();
-    dir
+    TempDir::new().unwrap()
 }
 
 // ============================================================================
