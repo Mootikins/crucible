@@ -1048,7 +1048,6 @@ impl TuiState {
     }
 }
 
-
 fn format_tool_call(name: Option<&str>, args: &JsonValue) -> String {
     format!(
         "Running tool: {}({})",
