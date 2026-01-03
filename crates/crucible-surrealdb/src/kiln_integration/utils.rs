@@ -3,7 +3,7 @@
 //! ID normalization, path resolution, and helper functions.
 
 use crate::utils::resolve_and_normalize_path;
-use std::path::{Component, Path, PathBuf};
+use std::path::Path;
 
 /// Normalize document ID to entities: format
 pub fn normalize_document_id(doc_id: &str) -> String {
@@ -73,46 +73,6 @@ pub(crate) fn resolve_relative_path(path: &Path, kiln_root: &Path) -> String {
     normalized
 }
 
-/// Clean and normalize a relative path
-pub(crate) fn clean_relative_path(path: &Path) -> Option<PathBuf> {
-    let mut stack: Vec<PathBuf> = Vec::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                stack.pop()?;
-            }
-            Component::Normal(part) => stack.push(PathBuf::from(part)),
-            Component::Prefix(_) | Component::RootDir => return None,
-        }
-    }
-
-    let mut normalized = PathBuf::new();
-    for part in stack {
-        normalized.push(part);
-    }
-
-    Some(normalized)
-}
-
-/// Convert record reference to string
-pub(crate) fn record_ref_to_string(value: &serde_json::Value) -> Option<String> {
-    if let Some(s) = value.as_str() {
-        return Some(s.to_string());
-    }
-
-    if let Some(obj) = value.as_object() {
-        if let Some(thing) = obj.get("thing").and_then(|v| v.as_str()) {
-            return Some(thing.to_string());
-        }
-        let table = obj.get("tb")?.as_str()?;
-        let id = obj.get("id")?.as_str()?;
-        return Some(format!("{}:{}", table, id));
-    }
-
-    None
-}
-
 /// Generate a note ID from path and kiln root
 pub fn generate_document_id(document_path: &Path, kiln_root: &Path) -> String {
     let relative = resolve_relative_path(document_path, kiln_root);
@@ -121,25 +81,4 @@ pub fn generate_document_id(document_path: &Path, kiln_root: &Path) -> String {
         .replace('\\', "/")
         .replace(':', "_");
     format!("entities:note:{}", normalized)
-}
-
-/// Parse timestamp from multiple candidate values
-pub(crate) fn parse_timestamp(
-    primary: Option<&serde_json::Value>,
-    fallback_one: Option<&serde_json::Value>,
-    fallback_two: Option<&serde_json::Value>,
-) -> chrono::DateTime<chrono::Utc> {
-    let candidates = [
-        primary.and_then(|v| v.as_str()),
-        fallback_one.and_then(|v| v.as_str()),
-        fallback_two.and_then(|v| v.as_str()),
-    ];
-
-    for ts in candidates.into_iter().flatten() {
-        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(ts) {
-            return parsed.with_timezone(&chrono::Utc);
-        }
-    }
-
-    chrono::Utc::now()
 }

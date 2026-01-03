@@ -234,7 +234,7 @@ impl RatatuiRunner {
         bridge: &AgentEventBridge,
         agent: &mut A,
     ) -> Result<()> {
-        let mut popup_debounce =
+        let _popup_debounce =
             crate::tui::popup::PopupDebounce::new(std::time::Duration::from_millis(50));
         let mut last_seen_seq = 0u64;
 
