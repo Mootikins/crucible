@@ -13,11 +13,13 @@ crucible-core = { path = "../crucible-core" }
 # Backend implementations (feature-gated)
 crucible-sqlite = { path = "../crucible-sqlite", optional = true }
 crucible-surrealdb = { path = "../crucible-surrealdb", optional = true, features = ["test-utils"] }
+crucible-lance = { path = "../crucible-lance", optional = true }
 
 # Test dependencies
 tokio = { workspace = true, features = ["test-util", "full"] }
 chrono = { workspace = true }
 serde_json = { workspace = true }
+tempfile = { workspace = true }
 
 [features]
 default = []
@@ -25,6 +27,8 @@ default = []
 sqlite = ["dep:crucible-sqlite"]
 # Run contract tests against SurrealDB
 surrealdb = ["dep:crucible-surrealdb"]
+# Run contract tests against LanceDB
+lance = ["dep:crucible-lance"]
 
 [lib]
 # This crate is only for tests - no library code
