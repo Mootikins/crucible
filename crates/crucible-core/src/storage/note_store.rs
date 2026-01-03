@@ -58,7 +58,7 @@ use crate::storage::StorageResult;
 ///
 /// This represents the indexed metadata for a single note. The actual content
 /// lives in the plaintext markdown file at `path`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NoteRecord {
     /// Primary key: path to the plaintext file (relative to kiln root)
     pub path: String,
@@ -171,7 +171,7 @@ impl Default for NoteRecord {
 }
 
 /// A search result with score
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SearchResult {
     /// The matching note record
     pub note: NoteRecord,
@@ -246,7 +246,7 @@ impl Op {
 ///     Filter::Property("status".to_string(), Op::Eq, json!("published")),
 /// ]);
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Filter {
     /// Filter by tag (exact match)
     Tag(String),
