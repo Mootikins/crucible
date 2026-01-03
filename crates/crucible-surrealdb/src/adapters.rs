@@ -332,7 +332,10 @@ impl KnowledgeRepository for SurrealKnowledgeRepository {
         Ok(notes)
     }
 
-    async fn search_vectors(&self, _vector: Vec<f32>) -> CrucibleResult<Vec<crucible_core::types::SearchResult>> {
+    async fn search_vectors(
+        &self,
+        _vector: Vec<f32>,
+    ) -> CrucibleResult<Vec<crucible_core::types::SearchResult>> {
         // Vector search requires an embedding provider, which is not available here.
         // This is a placeholder - callers should use semantic_search directly with a provider.
         Ok(Vec::new())

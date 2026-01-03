@@ -320,7 +320,10 @@ async fn search_respects_limit() {
 
     // Act - Search with limit of 2
     let query = make_embedding(384, 0.0);
-    let results = store.search(&query, 2, None).await.expect("Failed to search");
+    let results = store
+        .search(&query, 2, None)
+        .await
+        .expect("Failed to search");
 
     // Assert
     assert_eq!(results.len(), 2, "Should return exactly 2 results");
@@ -477,7 +480,11 @@ async fn search_with_and_filter() {
         .expect("Failed to search");
 
     // Assert
-    assert_eq!(results.len(), 1, "Should find 1 note matching both criteria");
+    assert_eq!(
+        results.len(),
+        1,
+        "Should find 1 note matching both criteria"
+    );
     assert_eq!(results[0].note.path, "notes/rust-published.md");
 }
 
@@ -547,14 +554,11 @@ async fn search_with_path_filter() {
 
     let embedding = make_embedding(384, 1.0);
 
-    let note1 = make_note("projects/alpha/readme.md", "Alpha")
-        .with_embedding(embedding.clone());
+    let note1 = make_note("projects/alpha/readme.md", "Alpha").with_embedding(embedding.clone());
 
-    let note2 = make_note("projects/beta/readme.md", "Beta")
-        .with_embedding(embedding.clone());
+    let note2 = make_note("projects/beta/readme.md", "Beta").with_embedding(embedding.clone());
 
-    let note3 = make_note("notes/general.md", "General")
-        .with_embedding(embedding.clone());
+    let note3 = make_note("notes/general.md", "General").with_embedding(embedding.clone());
 
     store.upsert(note1).await.expect("Failed to upsert");
     store.upsert(note2).await.expect("Failed to upsert");
@@ -608,7 +612,10 @@ async fn search_with_no_embeddings() {
 
     // Act
     let query = make_embedding(384, 1.0);
-    let results = store.search(&query, 10, None).await.expect("Failed to search");
+    let results = store
+        .search(&query, 10, None)
+        .await
+        .expect("Failed to search");
 
     // Assert
     assert!(

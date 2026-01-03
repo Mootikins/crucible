@@ -1176,7 +1176,8 @@ impl RatatuiRunner {
             if self.popup.as_ref().map(|p| p.kind()) != Some(PopupKind::Command) {
                 self.popup = Some(PopupState::new(
                     PopupKind::Command,
-                    std::sync::Arc::clone(&self.popup_provider) as std::sync::Arc<dyn PopupProvider>,
+                    std::sync::Arc::clone(&self.popup_provider)
+                        as std::sync::Arc<dyn PopupProvider>,
                 ));
             }
             if let Some(ref mut popup) = self.popup {
@@ -1187,7 +1188,8 @@ impl RatatuiRunner {
             if self.popup.as_ref().map(|p| p.kind()) != Some(PopupKind::AgentOrFile) {
                 self.popup = Some(PopupState::new(
                     PopupKind::AgentOrFile,
-                    std::sync::Arc::clone(&self.popup_provider) as std::sync::Arc<dyn PopupProvider>,
+                    std::sync::Arc::clone(&self.popup_provider)
+                        as std::sync::Arc<dyn PopupProvider>,
                 ));
             }
             if let Some(ref mut popup) = self.popup {
@@ -1199,7 +1201,8 @@ impl RatatuiRunner {
             if self.popup.as_ref().map(|p| p.kind()) != Some(PopupKind::ReplCommand) {
                 self.popup = Some(PopupState::new(
                     PopupKind::ReplCommand,
-                    std::sync::Arc::clone(&self.popup_provider) as std::sync::Arc<dyn PopupProvider>,
+                    std::sync::Arc::clone(&self.popup_provider)
+                        as std::sync::Arc<dyn PopupProvider>,
                 ));
             }
             if let Some(ref mut popup) = self.popup {

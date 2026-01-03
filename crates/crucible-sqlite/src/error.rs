@@ -49,7 +49,9 @@ impl From<SqliteError> for crucible_core::storage::StorageError {
             SqliteError::Schema(msg) => Self::Backend(msg),
             SqliteError::Pool(msg) => Self::Backend(msg),
             SqliteError::NotFound(msg) => Self::Backend(format!("Not found: {}", msg)),
-            SqliteError::InvalidOperation(msg) => Self::Backend(format!("Invalid operation: {}", msg)),
+            SqliteError::InvalidOperation(msg) => {
+                Self::Backend(format!("Invalid operation: {}", msg))
+            }
             SqliteError::Serialization(msg) => Self::Serialization(msg),
             SqliteError::Rusqlite(e) => Self::Backend(e.to_string()),
         }
