@@ -11,6 +11,9 @@
 //!
 //! # Test SurrealDB backend
 //! cargo test -p crucible-storage-tests --features surrealdb --test note_store_contract
+//!
+//! # Test LanceDB backend
+//! cargo test -p crucible-storage-tests --features lance --test note_store_contract
 //! ```
 //!
 //! # Contract Requirements
@@ -18,7 +21,7 @@
 //! Each test documents the behavioral contract that all implementations must follow.
 //! These are not just "does it work" tests, but "does it behave correctly" tests.
 
-#![cfg(any(feature = "sqlite", feature = "surrealdb"))]
+#![cfg(any(feature = "sqlite", feature = "surrealdb", feature = "lance"))]
 
 use std::collections::HashMap;
 
@@ -31,7 +34,7 @@ use serde_json::Value;
 // ============================================================================
 
 /// Embedding dimensions for vector tests.
-/// SurrealDB uses 384 by default; SQLite computes similarity in Rust so any dimension works.
+/// SurrealDB uses 384 by default; SQLite and LanceDB compute similarity so any dimension works.
 /// We use a small dimension for test clarity and compatibility.
 const TEST_EMBEDDING_DIM: usize = 8;
 
@@ -47,7 +50,7 @@ async fn create_store() -> impl NoteStore {
             .expect("Failed to create SQLite NoteStore")
     }
 
-    #[cfg(all(feature = "surrealdb", not(feature = "sqlite")))]
+    #[cfg(all(feature = "surrealdb", not(feature = "sqlite"), not(feature = "lance")))]
     {
         use crucible_surrealdb::test_utils::SurrealClient;
 
@@ -58,6 +61,22 @@ async fn create_store() -> impl NoteStore {
         crucible_surrealdb::create_note_store_with_dimensions(client, TEST_EMBEDDING_DIM)
             .await
             .expect("Failed to create SurrealDB NoteStore")
+    }
+
+    #[cfg(all(feature = "lance", not(feature = "sqlite"), not(feature = "surrealdb")))]
+    {
+        let dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+        let db_path = dir.path().join("test.lance");
+        // Leak the TempDir to keep it alive for the duration of the test
+        // This is safe in tests since the process will clean up on exit
+        let dir = Box::leak(Box::new(dir));
+        let _ = dir; // silence unused warning
+        crucible_lance::create_note_store_with_dimensions(
+            db_path.to_str().unwrap(),
+            TEST_EMBEDDING_DIM,
+        )
+        .await
+        .expect("Failed to create LanceDB NoteStore")
     }
 }
 
