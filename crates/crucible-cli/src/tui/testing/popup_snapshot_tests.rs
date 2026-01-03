@@ -521,8 +521,8 @@ mod harness_popup_tests {
             .with_popup_items(PopupKind::AgentOrFile, registries::test_agents());
 
         let popup = h.popup().expect("should have popup");
-        assert_eq!(popup.items.len(), 3);
-        assert_eq!(popup.kind, PopupKind::AgentOrFile);
+        assert_eq!(popup.items().len(), 3);
+        assert_eq!(popup.kind(), PopupKind::AgentOrFile);
     }
 }
 
@@ -536,12 +536,10 @@ mod popup_with_context_tests {
 
     #[test]
     fn popup_over_conversation() {
-        let mut h = Harness::new(80, 24).with_session(sessions::basic_exchange());
-
-        h.key(KeyCode::Char('/'));
-        // Manually add items since slash just triggers popup, doesn't populate
-        h.state.popup.as_mut().unwrap().items = registries::minimal_commands();
-        h.view.set_popup(h.state.popup.clone());
+        // Create harness with popup items pre-populated
+        let h = Harness::new(80, 24)
+            .with_session(sessions::basic_exchange())
+            .with_popup_items(PopupKind::Command, registries::minimal_commands());
 
         assert_snapshot!("popup_over_conversation", h.render());
     }

@@ -4,10 +4,9 @@
 //! for snapshot tests with insta.
 
 use crate::tui::render::render;
-use crate::tui::state::{PopupItem, PopupKind, PopupState, TuiState};
+use crate::tui::state::TuiState;
 use crate::tui::streaming::StreamingBuffer;
 use ratatui::{backend::TestBackend, Terminal};
-use std::time::Instant;
 
 /// Standard test terminal width
 pub const TEST_WIDTH: u16 = 80;
@@ -39,16 +38,12 @@ pub fn render_to_terminal(state: &TuiState) -> Terminal<TestBackend> {
 /// ```ignore
 /// let state = TestStateBuilder::new("plan")
 ///     .with_input("/help")
-///     .with_popup_items(PopupKind::Command, vec![
-///         PopupItem::command("help", "Show help"),
-///     ])
 ///     .build();
 /// ```
 pub struct TestStateBuilder {
     mode_id: String,
     input_buffer: String,
     cursor_position: usize,
-    popup: Option<PopupState>,
     streaming_content: Option<String>,
     status_error: Option<String>,
 }
@@ -60,7 +55,6 @@ impl TestStateBuilder {
             mode_id: mode.to_string(),
             input_buffer: String::new(),
             cursor_position: 0,
-            popup: None,
             streaming_content: None,
             status_error: None,
         }
@@ -77,35 +71,6 @@ impl TestStateBuilder {
     pub fn with_input_and_cursor(mut self, text: &str, cursor: usize) -> Self {
         self.input_buffer = text.to_string();
         self.cursor_position = cursor.min(text.len());
-        self
-    }
-
-    /// Add popup with items
-    pub fn with_popup_items(mut self, kind: PopupKind, items: Vec<PopupItem>) -> Self {
-        self.popup = Some(PopupState {
-            kind,
-            query: String::new(),
-            items,
-            selected: 0,
-            viewport_offset: 0,
-            last_update: Instant::now(),
-        });
-        self
-    }
-
-    /// Set which popup item is selected (0-indexed)
-    pub fn with_popup_selected(mut self, index: usize) -> Self {
-        if let Some(ref mut popup) = self.popup {
-            popup.selected = index.min(popup.items.len().saturating_sub(1));
-        }
-        self
-    }
-
-    /// Set the popup query string
-    pub fn with_popup_query(mut self, query: &str) -> Self {
-        if let Some(ref mut popup) = self.popup {
-            popup.query = query.to_string();
-        }
         self
     }
 
@@ -126,7 +91,6 @@ impl TestStateBuilder {
         let mut state = TuiState::new(&self.mode_id);
         state.input_buffer = self.input_buffer;
         state.cursor_position = self.cursor_position;
-        state.popup = self.popup;
         state.status_error = self.status_error;
 
         if let Some(content) = self.streaming_content {
@@ -140,8 +104,6 @@ impl TestStateBuilder {
     }
 }
 
-// PopupItem constructors moved to state.rs - use PopupItem::cmd(), ::agent(), etc.
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,7 +113,6 @@ mod tests {
         let state = TestStateBuilder::new("plan").build();
         assert_eq!(state.mode_id, "plan");
         assert_eq!(state.input_buffer, "");
-        assert!(state.popup.is_none());
     }
 
     #[test]
@@ -162,49 +123,12 @@ mod tests {
     }
 
     #[test]
-    fn test_builder_with_popup() {
-        let state = TestStateBuilder::new("plan")
-            .with_popup_items(
-                PopupKind::Command,
-                vec![
-                    PopupItem::cmd("help").desc("Show help"),
-                    PopupItem::cmd("exit").desc("Exit"),
-                ],
-            )
-            .with_popup_selected(1)
-            .build();
-
-        let popup = state.popup.unwrap();
-        assert_eq!(popup.items.len(), 2);
-        assert_eq!(popup.selected, 1);
-    }
-
-    #[test]
     fn test_builder_with_streaming() {
         let state = TestStateBuilder::new("plan")
             .with_streaming("Hello, I am streaming...")
             .build();
 
         assert!(state.streaming.is_some());
-    }
-
-    #[test]
-    fn test_popup_item_constructors() {
-        let cmd = PopupItem::cmd("search").desc("Search files");
-        assert_eq!(cmd.title(), "/search");
-        assert!(cmd.is_command());
-
-        let agent = PopupItem::agent("dev-helper").desc("Developer assistant");
-        assert_eq!(agent.title(), "@dev-helper");
-        assert!(agent.is_agent());
-
-        let file = PopupItem::file("src/main.rs");
-        assert_eq!(file.title(), "src/main.rs");
-        assert!(file.is_file());
-
-        let note = PopupItem::note("project/todo.md");
-        assert_eq!(note.title(), "note:project/todo.md");
-        assert!(note.is_note());
     }
 
     #[test]
