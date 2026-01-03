@@ -2,9 +2,7 @@
 //!
 //! Provides a trait for rendering conversation history with full ratatui control.
 
-use crate::tui::components::{
-    PopupState, InputBoxWidget, SessionHistoryWidget, StatusBarWidget,
-};
+use crate::tui::components::{InputBoxWidget, PopupState, SessionHistoryWidget, StatusBarWidget};
 use crate::tui::conversation::{render_item_to_lines, ConversationState, StatusKind};
 use crate::tui::dialog::{DialogResult, DialogStack, DialogWidget};
 use crate::tui::notification::NotificationState;

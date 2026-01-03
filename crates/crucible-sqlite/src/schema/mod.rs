@@ -18,7 +18,11 @@ pub fn apply_migrations(conn: &Connection) -> SqliteResult<()> {
     )?;
 
     let current_version = get_current_version(conn)?;
-    debug!(current_version, target_version = SCHEMA_VERSION, "Checking migrations");
+    debug!(
+        current_version,
+        target_version = SCHEMA_VERSION,
+        "Checking migrations"
+    );
 
     if current_version < SCHEMA_VERSION {
         info!(
@@ -35,11 +39,9 @@ pub fn apply_migrations(conn: &Connection) -> SqliteResult<()> {
 /// Get current schema version
 fn get_current_version(conn: &Connection) -> SqliteResult<i32> {
     let version: Option<i32> = conn
-        .query_row(
-            "SELECT MAX(version) FROM schema_migrations",
-            [],
-            |row| row.get(0),
-        )
+        .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+            row.get(0)
+        })
         .unwrap_or(None);
 
     Ok(version.unwrap_or(0))
@@ -58,9 +60,8 @@ fn record_migration(conn: &Connection, version: i32) -> SqliteResult<()> {
 fn apply_migration_v1(conn: &Connection) -> SqliteResult<()> {
     debug!("Applying migration v1: Initial EAV+Graph schema");
 
-    conn.execute_batch(SCHEMA_V1).map_err(|e| {
-        SqliteError::Schema(format!("Failed to apply v1 schema: {}", e))
-    })?;
+    conn.execute_batch(SCHEMA_V1)
+        .map_err(|e| SqliteError::Schema(format!("Failed to apply v1 schema: {}", e)))?;
 
     record_migration(conn, 1)?;
     info!("Migration v1 applied successfully");

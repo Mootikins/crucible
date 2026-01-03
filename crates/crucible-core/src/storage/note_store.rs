@@ -575,7 +575,11 @@ mod tests {
     fn test_filter_serialization() {
         let filter = Filter::And(vec![
             Filter::Tag("rust".to_string()),
-            Filter::Property("status".to_string(), Op::Eq, Value::String("draft".to_string())),
+            Filter::Property(
+                "status".to_string(),
+                Op::Eq,
+                Value::String("draft".to_string()),
+            ),
         ]);
 
         let json = serde_json::to_string(&filter).expect("serialize");

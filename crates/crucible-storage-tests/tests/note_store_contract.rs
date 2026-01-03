@@ -190,7 +190,10 @@ mod crud_contract {
         assert!(store.get("test/delete.md").await.unwrap().is_some());
 
         // Delete
-        store.delete("test/delete.md").await.expect("Failed to delete");
+        store
+            .delete("test/delete.md")
+            .await
+            .expect("Failed to delete");
 
         // Verify it's gone
         let result = store.get("test/delete.md").await.expect("Failed to get");
@@ -440,7 +443,10 @@ mod search_contract {
 
         let query = make_test_embedding(1.0);
         let filter = Filter::Tag("rust".to_string());
-        let results = store.search(&query, 10, Some(filter)).await.expect("search");
+        let results = store
+            .search(&query, 10, Some(filter))
+            .await
+            .expect("search");
 
         assert_eq!(results.len(), 2);
         for result in &results {
@@ -474,7 +480,10 @@ mod search_contract {
 
         let query = make_test_embedding(1.0);
         let filter = Filter::Path("projects/".to_string());
-        let results = store.search(&query, 10, Some(filter)).await.expect("search");
+        let results = store
+            .search(&query, 10, Some(filter))
+            .await
+            .expect("search");
 
         assert_eq!(results.len(), 2);
         for result in &results {
@@ -515,7 +524,10 @@ mod search_contract {
             Op::Eq,
             Value::String("published".to_string()),
         );
-        let results = store.search(&query, 10, Some(filter)).await.expect("search");
+        let results = store
+            .search(&query, 10, Some(filter))
+            .await
+            .expect("search");
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].note.path, "published.md");
@@ -553,7 +565,10 @@ mod search_contract {
             Filter::Path("projects/".to_string()),
             Filter::Tag("rust".to_string()),
         ]);
-        let results = store.search(&query, 10, Some(filter)).await.expect("search");
+        let results = store
+            .search(&query, 10, Some(filter))
+            .await
+            .expect("search");
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].note.path, "projects/rust/note.md");
@@ -595,7 +610,10 @@ mod search_contract {
             Filter::Tag("rust".to_string()),
             Filter::Path("notes/".to_string()),
         ]);
-        let results = store.search(&query, 10, Some(filter)).await.expect("search");
+        let results = store
+            .search(&query, 10, Some(filter))
+            .await
+            .expect("search");
 
         assert_eq!(results.len(), 2);
         let paths: Vec<&str> = results.iter().map(|r| r.note.path.as_str()).collect();
@@ -621,7 +639,10 @@ mod search_contract {
         // Search with non-matching filter
         let query = make_test_embedding(1.0);
         let filter = Filter::Tag("nonexistent".to_string());
-        let results = store.search(&query, 10, Some(filter)).await.expect("search");
+        let results = store
+            .search(&query, 10, Some(filter))
+            .await
+            .expect("search");
 
         assert!(results.is_empty());
     }
@@ -650,18 +671,9 @@ mod integrity_contract {
 
         let retrieved = store.get("props.md").await.unwrap().unwrap();
 
-        assert_eq!(
-            retrieved.properties.get("string"),
-            props.get("string")
-        );
-        assert_eq!(
-            retrieved.properties.get("number"),
-            props.get("number")
-        );
-        assert_eq!(
-            retrieved.properties.get("bool"),
-            props.get("bool")
-        );
+        assert_eq!(retrieved.properties.get("string"), props.get("string"));
+        assert_eq!(retrieved.properties.get("number"), props.get("number"));
+        assert_eq!(retrieved.properties.get("bool"), props.get("bool"));
     }
 
     /// CONTRACT: embedding vectors are preserved exactly

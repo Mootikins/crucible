@@ -57,8 +57,8 @@ fn notes_schema(embedding_dim: usize) -> Schema {
             true, // nullable - some notes may not have embeddings
         ),
         Field::new("title", DataType::Utf8, false),
-        Field::new("tags", DataType::Utf8, false),       // JSON array
-        Field::new("links_to", DataType::Utf8, false),   // JSON array
+        Field::new("tags", DataType::Utf8, false), // JSON array
+        Field::new("links_to", DataType::Utf8, false), // JSON array
         Field::new("properties", DataType::Utf8, false), // JSON object
         Field::new("updated_at", DataType::Int64, false), // Unix timestamp ms
     ])
@@ -168,7 +168,11 @@ fn escape_sql_string(s: &str) -> String {
 // ============================================================================
 
 /// Convert a NoteRecord to an Arrow RecordBatch
-fn note_to_batch(note: &NoteRecord, schema: &Schema, embedding_dim: usize) -> LanceResult<RecordBatch> {
+fn note_to_batch(
+    note: &NoteRecord,
+    schema: &Schema,
+    embedding_dim: usize,
+) -> LanceResult<RecordBatch> {
     // Path column
     let path = StringArray::from(vec![note.path.as_str()]);
 
@@ -197,8 +201,13 @@ fn note_to_batch(note: &NoteRecord, schema: &Schema, embedding_dim: usize) -> La
             // Create a null embedding
             let values = Float32Array::from(vec![0.0f32; embedding_dim]);
             let field = Arc::new(Field::new("item", DataType::Float32, true));
-            let list = FixedSizeListArray::try_new(field, embedding_dim as i32, Arc::new(values), Some(vec![false].into()))
-                .map_err(|e| LanceError::Arrow(e.to_string()))?;
+            let list = FixedSizeListArray::try_new(
+                field,
+                embedding_dim as i32,
+                Arc::new(values),
+                Some(vec![false].into()),
+            )
+            .map_err(|e| LanceError::Arrow(e.to_string()))?;
             Arc::new(list)
         }
     };
@@ -262,7 +271,9 @@ fn batch_to_notes(batch: &RecordBatch) -> LanceResult<Vec<NoteRecord>> {
     let title_col = batch
         .column_by_name("title")
         .and_then(|c| c.as_any().downcast_ref::<StringArray>())
-        .ok_or_else(|| LanceError::Conversion("title column not found or wrong type".to_string()))?;
+        .ok_or_else(|| {
+            LanceError::Conversion("title column not found or wrong type".to_string())
+        })?;
 
     let tags_col = batch
         .column_by_name("tags")
@@ -330,7 +341,8 @@ fn batch_to_notes(batch: &RecordBatch) -> LanceResult<Vec<NoteRecord>> {
 
         // Properties
         let props_json = props_col.value(i);
-        let properties: HashMap<String, Value> = serde_json::from_str(props_json).unwrap_or_default();
+        let properties: HashMap<String, Value> =
+            serde_json::from_str(props_json).unwrap_or_default();
 
         // Updated at
         let timestamp_ms = updated_col.value(i);
@@ -503,7 +515,6 @@ impl LanceNoteStore {
     }
 }
 
-
 #[async_trait]
 impl NoteStore for LanceNoteStore {
     async fn upsert(&self, note: NoteRecord) -> StorageResult<()> {
@@ -649,7 +660,8 @@ impl NoteStore for LanceNoteStore {
         };
 
         // Build the vector search query
-        let query = table.vector_search(embedding.to_vec())
+        let query = table
+            .vector_search(embedding.to_vec())
             .map_err(|e| LanceError::Query(e.to_string()))?;
 
         // Apply filter if provided
@@ -899,7 +911,10 @@ mod tests {
 
         assert!(store.get("test/delete.md").await.unwrap().is_some());
 
-        store.delete("test/delete.md").await.expect("Failed to delete");
+        store
+            .delete("test/delete.md")
+            .await
+            .expect("Failed to delete");
 
         let result = store.get("test/delete.md").await.expect("Failed to get");
         assert!(result.is_none());
@@ -974,7 +989,10 @@ mod tests {
         let (_dir, store) = setup().await;
 
         let hash = BlockHash::new([99u8; 32]);
-        let result = store.get_by_hash(&hash).await.expect("Failed to get by hash");
+        let result = store
+            .get_by_hash(&hash)
+            .await
+            .expect("Failed to get by hash");
         assert!(result.is_none());
     }
 

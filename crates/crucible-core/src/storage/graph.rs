@@ -218,8 +218,7 @@ impl GraphView for InMemoryGraph {
             }
 
             // Store outlinks
-            self.outlinks
-                .insert(source.clone(), note.links_to.clone());
+            self.outlinks.insert(source.clone(), note.links_to.clone());
 
             // Build backlinks (inverse relationship)
             for target in &note.links_to {

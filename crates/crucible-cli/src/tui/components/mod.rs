@@ -51,7 +51,7 @@ use ratatui::widgets::Widget;
 
 pub use dialog::DialogWidget;
 pub use dialog_state::{DialogResult, DialogState};
-pub use generic_popup::{PopupState, LegacyPopupItem};
+pub use generic_popup::{LegacyPopupItem, PopupState};
 pub use input_box::InputBoxWidget;
 pub use input_state::InputState;
 pub use layer_stack::LayerStack;

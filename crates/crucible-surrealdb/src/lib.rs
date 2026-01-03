@@ -86,7 +86,6 @@ pub use hash_lookup::{
     BatchLookupConfig, CacheStats, HashLookupCache, HashLookupResult, StoredFileHash,
 };
 
-
 // Public schema types
 pub mod schema_types;
 pub use schema_types::*;
@@ -110,7 +109,6 @@ pub use database::SurrealEmbeddingDatabase;
 // NoteStore implementation
 pub mod note_store;
 pub use note_store::{create_note_store, create_note_store_with_dimensions, SurrealNoteStore};
-
 
 pub mod kiln_store;
 pub use kiln_store::{InMemoryKilnStore, KilnStore};
@@ -146,7 +144,6 @@ pub use clustering::{
     HeuristicClusteringAlgorithm, KMeansAlgorithmFactory, KMeansClusteringAlgorithm, MocCandidate,
     MocDetectionConfig, PerformanceConfig, QualityPreference, SimpleClusteringService,
 };
-
 
 // Graph query translation via composable pipeline
 pub mod graph_query;
