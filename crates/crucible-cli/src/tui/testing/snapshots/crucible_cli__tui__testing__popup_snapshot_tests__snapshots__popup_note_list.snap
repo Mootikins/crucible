@@ -18,9 +18,9 @@ expression: h.render()
                                                                                 
                                                                                 
 ┌Select────────────────────────────────────────────────────────────────────────┐
-│> note:Projects/Crucible note                                                 │
-│note:Ideas/Backlog note                                                       │
-│note:Meta/Roadmap note                                                        │
+│>   Projects/Crucible note                                                    │
+│    Ideas/Backlog note                                                        │
+│    Meta/Roadmap note                                                         │
 └──────────────────────────────────────────────────────────────────────────────┘
                                                                                 
  >                                                                              

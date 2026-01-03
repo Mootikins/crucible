@@ -15,12 +15,12 @@ expression: h.render()
                                                                                 
                                                                                 
                                                                                 
-┌Select────────────────────────────────────────────────────────────────────────┐
-│/command0 Description for command 0                                           │
-│/command1 Description for command 1                                           │
-│/command2 Description for command 2                                           │
-│/command3 Description for command 3                                           │
-│/command4 Description for command 4                                           │
+┌Select (1/20) ↓───────────────────────────────────────────────────────────────┐
+│> / command0 Description for command 0                                        │
+│  / command1 Description for command 1                                        │
+│  / command2 Description for command 2                                        │
+│  / command3 Description for command 3                                        │
+│  / command4 Description for command 4                                        │
 └──────────────────────────────────────────────────────────────────────────────┘
                                                                                 
  >                                                                              
