@@ -16,9 +16,9 @@ expression: h.render()
                                                                                 
                                                                                 
 ┌Select────────────────────────────────────────────────────────────────────────┐
-│> / search Search notes semantically                                          │
+│  / search Search notes semantically                                          │
 │  / new Start new session                                                     │
-│  / clear Clear conversation context                                          │
+│> / clear Clear conversation context                                          │
 │  / help Show available commands                                              │
 │  / mode Switch session mode                                                  │
 └──────────────────────────────────────────────────────────────────────────────┘
