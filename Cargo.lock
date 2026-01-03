@@ -3626,6 +3626,7 @@ dependencies = [
  "crucible-rig",
  "crucible-rune",
  "crucible-skills",
+ "crucible-sqlite",
  "crucible-surrealdb",
  "crucible-tools",
  "crucible-watch",
@@ -3738,6 +3739,7 @@ name = "crucible-daemon"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "crucible-sqlite",
  "crucible-surrealdb",
  "dirs 6.0.0",
  "scopeguard",
@@ -4017,6 +4019,25 @@ dependencies = [
  "tokio",
  "tracing",
  "walkdir",
+]
+
+[[package]]
+name = "crucible-sqlite"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "crucible-core",
+ "hex",
+ "parking_lot",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
