@@ -828,7 +828,7 @@ impl<'a, T: PopupItem> PopupRenderer<'a, T> {
         let config = self.popup.config();
         let mut spans = Vec::new();
 
-        // Selection marker
+        // Selection marker (1 char + space from label section = 2 char width)
         let marker = if is_selected { ">" } else { " " };
         spans.push(Span::styled(marker.to_string(), self.style.marker));
 
@@ -906,7 +906,10 @@ impl<T: PopupItem> Widget for PopupRenderer<'_, T> {
             .border_style(self.style.border)
             .title(full_title);
 
-        let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
+        // trim: false preserves leading spaces (selection marker padding)
+        let paragraph = Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false });
 
         paragraph.render(area, buf);
     }
