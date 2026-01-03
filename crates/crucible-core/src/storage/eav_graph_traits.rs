@@ -608,6 +608,54 @@ impl Relation {
     }
 }
 
+// ============================================================================
+// EavGraphStorage Composite Trait
+// ============================================================================
+
+/// Composite trait combining all EAV+Graph storage capabilities
+///
+/// This trait provides a single interface for implementing complete EAV+Graph
+/// storage backends. Implement this trait to provide:
+/// - Entity CRUD operations
+/// - Namespaced property storage
+/// - Graph edge storage (relations)
+/// - Hierarchical content blocks
+/// - Tag taxonomy management
+///
+/// # Usage
+///
+/// Implement the individual traits and then implement this composite:
+///
+/// ```rust,ignore
+/// impl EavGraphStorage for MyStorage {}
+/// ```
+///
+/// The composite trait can be used as a trait object for backend abstraction:
+///
+/// ```rust,ignore
+/// fn create_storage() -> Box<dyn EavGraphStorage> {
+///     #[cfg(feature = "sqlite")]
+///     return Box::new(SqliteStorage::new(config)?);
+///
+///     #[cfg(feature = "surrealdb")]
+///     return Box::new(SurrealStorage::new(config)?);
+/// }
+/// ```
+pub trait EavGraphStorage:
+    EntityStorage + PropertyStorage + RelationStorage + BlockStorage + TagStorage
+{
+}
+
+/// Blanket implementation for any type that implements all component traits
+impl<T> EavGraphStorage for T where
+    T: EntityStorage + PropertyStorage + RelationStorage + BlockStorage + TagStorage
+{
+}
+
+// ============================================================================
+// RelationStorage Trait
+// ============================================================================
+
 /// Storage for relations between entities (wikilinks, embeds, inline links)
 ///
 /// This trait manages the graph structure of the knowledge base, storing
