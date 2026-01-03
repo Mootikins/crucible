@@ -10,22 +10,15 @@
 //! - The `Reactor` dispatches events through handlers in dependency+priority order
 //! - `ReactorEventEmitter` provides the `EventEmitter` trait for integration
 //!
-//! # Handler Chain
+//! # Phase 4 Cleanup
 //!
-//! Handlers are registered with explicit dependencies:
-//!
-//! ```text
-//! StorageHandler (priority 100) → TagHandler (priority 110) → EmbeddingHandler (priority 200)
-//!                                      ↑ depends on storage_handler ↑ depends on both
-//! ```
+//! The EAV graph handlers (StorageHandler, TagHandler) have been removed.
+//! Storage is now handled by NoteStore. Event handlers will be updated to use
+//! the new storage system in a future update.
 
 use anyhow::{Context, Result};
 use crucible_core::events::{Reactor, ReactorEventEmitter, SessionEvent};
 use crucible_enrichment::{EmbeddingHandler, EmbeddingHandlerAdapter};
-use crucible_surrealdb::adapters;
-use crucible_surrealdb::event_handlers::{
-    StorageHandler, StorageHandlerAdapter, TagHandler, TagHandlerAdapter,
-};
 use crucible_watch::{WatchManager, WatchManagerConfig};
 use std::path::Path;
 use std::sync::Arc;
@@ -83,24 +76,10 @@ pub async fn initialize_event_system(config: &CliConfig) -> Result<EventSystemHa
     // Create shared reactor for the ReactorEventEmitter
     // We need to wrap it now so handlers can get a reference to the emitter
     let reactor_arc = Arc::new(RwLock::new(Reactor::new()));
-    let emitter = ReactorEventEmitter::new(reactor_arc.clone());
-    let shared_emitter: Arc<dyn crucible_core::events::EventEmitter<Event = SessionEvent>> =
-        Arc::new(emitter);
 
-    // Register StorageHandler
-    debug!("Registering StorageHandler (priority 100)");
-    let storage_handler =
-        adapters::create_storage_handler(storage_client.clone(), shared_emitter.clone());
-    reactor
-        .register(Box::new(StorageHandlerAdapter::new(storage_handler)))
-        .context("Failed to register StorageHandler")?;
-
-    // Register TagHandler (depends on storage_handler)
-    debug!("Registering TagHandler (priority 110)");
-    let tag_handler = adapters::create_tag_handler(storage_client.clone(), shared_emitter.clone());
-    reactor
-        .register(Box::new(TagHandlerAdapter::new(tag_handler)))
-        .context("Failed to register TagHandler")?;
+    // NOTE: Phase 4 cleanup - StorageHandler and TagHandler have been removed.
+    // Storage is now handled by NoteStore. The event system will be updated
+    // to use the new storage system in a future update.
 
     // Initialize embedding provider and register EmbeddingHandler
     debug!("Initializing embedding provider");

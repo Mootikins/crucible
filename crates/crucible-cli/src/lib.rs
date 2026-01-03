@@ -7,7 +7,7 @@
 //!
 //! The `event_system` module provides unified event-driven architecture:
 //! - File system watching via `WatchManager`
-//! - Database persistence via `StorageHandler` and `TagHandler`
+//! - Storage via `NoteStore` trait implementations
 //! - Embedding generation via `EmbeddingHandler`
 //! - Custom handlers via Rune scripting
 

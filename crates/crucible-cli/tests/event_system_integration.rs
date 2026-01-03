@@ -1,10 +1,13 @@
 //! Integration tests for the event system.
+//!
+//! Note: StorageHandler and TagHandler were removed in Phase 4 cleanup.
+//! The event system now uses NoteStore-based handlers instead of EAV.
 
 #![allow(clippy::field_reassign_with_default)]
 
 //!
 //! These tests verify the end-to-end event cascade:
-//! FileChanged -> NoteParsed -> EntityStored -> BlocksUpdated -> EmbeddingGenerated
+//! FileChanged -> NoteParsed -> NoteStored -> EmbeddingGenerated
 
 use crucible_cli::config::CliConfig;
 use crucible_cli::event_system::initialize_event_system;
@@ -48,10 +51,11 @@ async fn test_file_change_triggers_db_update() {
         .expect("Failed to initialize event system");
 
     // Verify handlers are registered
+    // Note: After Phase 4 cleanup, only EmbeddingHandler remains as built-in
     let handler_count = handle.handler_count().await;
     assert!(
-        handler_count >= 2,
-        "Expected at least 2 handlers, got {}",
+        handler_count >= 1,
+        "Expected at least 1 handler, got {}",
         handler_count
     );
 
@@ -173,10 +177,9 @@ async fn test_event_cascade_timing() {
     // The expected order is:
     // 1. FileChanged (from WatchManager)
     // 2. NoteParsed (from parser handler)
-    // 3. EntityStored (from StorageHandler)
-    // 4. BlocksUpdated (from StorageHandler)
-    // 5. EmbeddingRequested (from EmbeddingHandler)
-    // 6. EmbeddingGenerated (from EmbeddingHandler)
+    // 3. NoteStored (from NoteStore handlers)
+    // 4. EmbeddingRequested (from EmbeddingHandler)
+    // 5. EmbeddingGenerated (from EmbeddingHandler)
 
     // Shutdown cleanly
     handle.shutdown().await.expect("Shutdown failed");
@@ -219,8 +222,8 @@ pub fn handle(event) {
     // Verify the Rune handler was loaded
     let handler_count = handle.handler_count().await;
     assert!(
-        handler_count >= 3,
-        "Expected at least 3 handlers (storage + tag + rune), got {}",
+        handler_count >= 2,
+        "Expected at least 2 handlers (embedding + rune), got {}",
         handler_count
     );
 
@@ -250,9 +253,10 @@ async fn test_event_system_initializes() {
     match result {
         Ok(Ok(handle)) => {
             // Verify handlers were registered
+            // Note: After Phase 4 cleanup, only EmbeddingHandler remains as built-in
             let handler_count = handle.handler_count().await;
             println!("Event system initialized with {} handlers", handler_count);
-            assert!(handler_count >= 2, "Expected at least 2 handlers");
+            assert!(handler_count >= 1, "Expected at least 1 handler");
 
             // Shutdown cleanly
             handle.shutdown().await.expect("Shutdown failed");

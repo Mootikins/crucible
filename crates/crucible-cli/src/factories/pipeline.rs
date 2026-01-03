@@ -6,7 +6,9 @@
 
 use crate::config::CliConfig;
 use anyhow::Result;
+use crucible_core::processing::InMemoryChangeDetectionStore;
 use crucible_pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
+use std::sync::Arc;
 
 /// Create NotePipeline with all dependencies wired together
 ///
@@ -53,9 +55,10 @@ pub async fn create_pipeline(
     config: &CliConfig,
     force: bool,
 ) -> Result<NotePipeline> {
-    // 1. Change detection (SurrealDB-backed for persistence)
-    let change_detector =
-        crucible_surrealdb::adapters::create_change_detection_store(storage_client.clone());
+    // 1. Change detection (in-memory for now)
+    // NOTE: Phase 4 cleanup - SurrealDB change detection store was removed.
+    // Using in-memory store until NoteStore-based change detection is implemented.
+    let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
 
     // 2. Merkle store (SurrealDB-backed)
     let merkle_store = super::create_surrealdb_merkle_store(storage_client.clone());

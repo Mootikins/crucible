@@ -35,11 +35,6 @@ lance = ["dep:crucible-lance"]
 path = "src/lib.rs"
 
 [[test]]
-name = "eav_contract"
-path = "tests/eav_contract.rs"
-required-features = []  # Tests have their own cfg guards
-
-[[test]]
 name = "note_store_contract"
 path = "tests/note_store_contract.rs"
 required-features = []  # Tests have their own cfg guards
