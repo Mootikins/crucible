@@ -660,6 +660,113 @@ pub fn surreal_entity_tag_to_core(surreal: SurrealEntityTag) -> core::EntityTag 
     }
 }
 
+// ============================================================================
+// Entity Conversion
+// ============================================================================
+
+use super::types::Entity as SurrealEntity;
+
+/// Convert core Entity to SurrealDB Entity
+pub fn core_entity_to_surreal(entity: core::Entity) -> SurrealEntity {
+    SurrealEntity {
+        id: Some(string_to_entity_id(&entity.id)),
+        entity_type: match entity.entity_type {
+            core::EntityType::Note => super::types::EntityType::Note,
+            core::EntityType::Block => super::types::EntityType::Block,
+            core::EntityType::Tag => super::types::EntityType::Tag,
+            core::EntityType::Section => super::types::EntityType::Section,
+            core::EntityType::Media => super::types::EntityType::Media,
+            core::EntityType::Person => super::types::EntityType::Person,
+        },
+        created_at: entity.created_at,
+        updated_at: entity.updated_at,
+        deleted_at: entity.deleted_at,
+        version: entity.version,
+        content_hash: entity.content_hash,
+        created_by: entity.created_by,
+        vault_id: entity.vault_id,
+        data: entity.data,
+    }
+}
+
+/// Convert SurrealDB Entity to core Entity
+pub fn surreal_entity_to_core(surreal: SurrealEntity) -> core::Entity {
+    core::Entity {
+        // Return just the ID part, not the table:id format
+        id: surreal
+            .id
+            .map(|id| id.id)
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+        entity_type: match surreal.entity_type {
+            super::types::EntityType::Note => core::EntityType::Note,
+            super::types::EntityType::Block => core::EntityType::Block,
+            super::types::EntityType::Tag => core::EntityType::Tag,
+            super::types::EntityType::Section => core::EntityType::Section,
+            super::types::EntityType::Media => core::EntityType::Media,
+            super::types::EntityType::Person => core::EntityType::Person,
+        },
+        created_at: surreal.created_at,
+        updated_at: surreal.updated_at,
+        deleted_at: surreal.deleted_at,
+        version: surreal.version,
+        content_hash: surreal.content_hash,
+        created_by: surreal.created_by,
+        vault_id: surreal.vault_id,
+        data: surreal.data,
+    }
+}
+
+// ============================================================================
+// Block Conversion
+// ============================================================================
+
+use super::types::BlockNode as SurrealBlock;
+
+/// Convert core Block to SurrealDB BlockNode
+pub fn core_block_to_surreal(block: core::Block) -> SurrealBlock {
+    SurrealBlock {
+        id: Some(RecordId::new("blocks", &block.id)),
+        entity_id: string_to_entity_id(&block.entity_id),
+        block_index: block.position,
+        block_type: block.block_type,
+        content: block.content,
+        content_hash: block.content_hash.unwrap_or_default(),
+        start_offset: None,
+        end_offset: None,
+        start_line: None,
+        end_line: None,
+        parent_block_id: block
+            .parent_block_id
+            .map(|id| RecordId::new("blocks", &id)),
+        depth: None,
+        metadata: serde_json::Value::Object(Default::default()),
+        created_at: block.created_at,
+        updated_at: block.updated_at,
+    }
+}
+
+/// Convert SurrealDB BlockNode to core Block
+pub fn surreal_block_to_core(surreal: SurrealBlock) -> core::Block {
+    core::Block {
+        id: surreal
+            .id
+            .map(|id| id.id)
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+        entity_id: entity_id_to_string(&surreal.entity_id),
+        parent_block_id: surreal.parent_block_id.map(|id| id.id),
+        content: surreal.content,
+        block_type: surreal.block_type,
+        position: surreal.block_index,
+        content_hash: if surreal.content_hash.is_empty() {
+            None
+        } else {
+            Some(surreal.content_hash)
+        },
+        created_at: surreal.created_at,
+        updated_at: surreal.updated_at,
+    }
+}
+
 #[cfg(test)]
 mod tag_conversion_tests {
     use super::*;

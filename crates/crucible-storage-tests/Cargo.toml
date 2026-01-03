@@ -12,8 +12,7 @@ crucible-core = { path = "../crucible-core" }
 
 # Backend implementations (feature-gated)
 crucible-sqlite = { path = "../crucible-sqlite", optional = true }
-# SurrealDB uses different traits - see features section for details
-# crucible-surrealdb = { path = "../crucible-surrealdb", optional = true }
+crucible-surrealdb = { path = "../crucible-surrealdb", optional = true, features = ["test-utils"] }
 
 # Test dependencies
 tokio = { workspace = true, features = ["test-util", "full"] }
@@ -24,9 +23,8 @@ serde_json = { workspace = true }
 default = []
 # Run contract tests against SQLite
 sqlite = ["dep:crucible-sqlite"]
-# SurrealDB uses different traits (Core*Storage) than crucible-core (*Storage).
-# Contract tests require an adapter layer. Reserved for future implementation.
-# surrealdb = ["dep:crucible-surrealdb"]
+# Run contract tests against SurrealDB
+surrealdb = ["dep:crucible-surrealdb"]
 
 [lib]
 # This crate is only for tests - no library code

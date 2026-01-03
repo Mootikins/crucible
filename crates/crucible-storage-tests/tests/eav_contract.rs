@@ -8,20 +8,17 @@
 //! ```bash
 //! # Test SQLite backend
 //! cargo test -p crucible-storage-tests --features sqlite
+//!
+//! # Test SurrealDB backend
+//! cargo test -p crucible-storage-tests --features surrealdb
 //! ```
-//!
-//! # Backend Status
-//!
-//! - **SQLite**: Fully supported. Implements all crucible-core EAV traits.
-//! - **SurrealDB**: Uses different traits (CorePropertyStorage, etc.). Contract tests
-//!   require an adapter layer before SurrealDB can be tested with this framework.
 //!
 //! # Contract Requirements
 //!
 //! Each test documents the behavioral contract that all implementations must follow.
 //! These are not just "does it work" tests, but "does it behave correctly" tests.
 
-#![cfg(feature = "sqlite")]
+#![cfg(any(feature = "sqlite", feature = "surrealdb"))]
 
 use chrono::Utc;
 use crucible_core::storage::eav_graph_traits::{
@@ -30,45 +27,124 @@ use crucible_core::storage::eav_graph_traits::{
 };
 
 // ============================================================================
-// Backend Factory
+// Backend Factories
 // ============================================================================
 
-/// Creates an in-memory entity storage for testing
 async fn create_entity_storage() -> impl EntityStorage {
-    let pool = crucible_sqlite::SqlitePool::memory().expect("Failed to create SQLite pool");
-    crucible_sqlite::eav::SqliteEntityStorage::new(pool)
+    #[cfg(feature = "sqlite")]
+    {
+        let pool = crucible_sqlite::SqlitePool::memory().expect("Failed to create SQLite pool");
+        crucible_sqlite::eav::SqliteEntityStorage::new(pool)
+    }
+
+    #[cfg(feature = "surrealdb")]
+    {
+        use crucible_surrealdb::test_utils::{apply_eav_graph_schema, EAVGraphStore, SurrealClient};
+
+        let client = SurrealClient::new_memory()
+            .await
+            .expect("Failed to create SurrealDB client");
+        apply_eav_graph_schema(&client)
+            .await
+            .expect("Failed to apply schema");
+        EAVGraphStore::new(client)
+    }
 }
 
-/// Creates property storage with associated entity storage
 async fn create_property_storage() -> (impl PropertyStorage, impl EntityStorage) {
-    let pool = crucible_sqlite::SqlitePool::memory().expect("Failed to create SQLite pool");
-    let entity = crucible_sqlite::eav::SqliteEntityStorage::new(pool.clone());
-    let property = crucible_sqlite::eav::SqlitePropertyStorage::new(pool);
-    (property, entity)
+    #[cfg(feature = "sqlite")]
+    {
+        let pool = crucible_sqlite::SqlitePool::memory().expect("Failed to create SQLite pool");
+        let entity = crucible_sqlite::eav::SqliteEntityStorage::new(pool.clone());
+        let property = crucible_sqlite::eav::SqlitePropertyStorage::new(pool);
+        (property, entity)
+    }
+
+    #[cfg(feature = "surrealdb")]
+    {
+        use crucible_surrealdb::test_utils::{apply_eav_graph_schema, EAVGraphStore, SurrealClient};
+
+        let client = SurrealClient::new_memory()
+            .await
+            .expect("Failed to create SurrealDB client");
+        apply_eav_graph_schema(&client)
+            .await
+            .expect("Failed to apply schema");
+        let store = EAVGraphStore::new(client);
+        (store.clone(), store)
+    }
 }
 
-/// Creates relation storage with associated entity storage
 async fn create_relation_storage() -> (impl RelationStorage, impl EntityStorage) {
-    let pool = crucible_sqlite::SqlitePool::memory().expect("Failed to create SQLite pool");
-    let entity = crucible_sqlite::eav::SqliteEntityStorage::new(pool.clone());
-    let relation = crucible_sqlite::eav::SqliteRelationStorage::new(pool);
-    (relation, entity)
+    #[cfg(feature = "sqlite")]
+    {
+        let pool = crucible_sqlite::SqlitePool::memory().expect("Failed to create SQLite pool");
+        let entity = crucible_sqlite::eav::SqliteEntityStorage::new(pool.clone());
+        let relation = crucible_sqlite::eav::SqliteRelationStorage::new(pool);
+        (relation, entity)
+    }
+
+    #[cfg(feature = "surrealdb")]
+    {
+        use crucible_surrealdb::test_utils::{apply_eav_graph_schema, EAVGraphStore, SurrealClient};
+
+        let client = SurrealClient::new_memory()
+            .await
+            .expect("Failed to create SurrealDB client");
+        apply_eav_graph_schema(&client)
+            .await
+            .expect("Failed to apply schema");
+        let store = EAVGraphStore::new(client);
+        (store.clone(), store)
+    }
 }
 
-/// Creates block storage with associated entity storage
 async fn create_block_storage() -> (impl BlockStorage, impl EntityStorage) {
-    let pool = crucible_sqlite::SqlitePool::memory().expect("Failed to create SQLite pool");
-    let entity = crucible_sqlite::eav::SqliteEntityStorage::new(pool.clone());
-    let block = crucible_sqlite::eav::SqliteBlockStorage::new(pool);
-    (block, entity)
+    #[cfg(feature = "sqlite")]
+    {
+        let pool = crucible_sqlite::SqlitePool::memory().expect("Failed to create SQLite pool");
+        let entity = crucible_sqlite::eav::SqliteEntityStorage::new(pool.clone());
+        let block = crucible_sqlite::eav::SqliteBlockStorage::new(pool);
+        (block, entity)
+    }
+
+    #[cfg(feature = "surrealdb")]
+    {
+        use crucible_surrealdb::test_utils::{apply_eav_graph_schema, EAVGraphStore, SurrealClient};
+
+        let client = SurrealClient::new_memory()
+            .await
+            .expect("Failed to create SurrealDB client");
+        apply_eav_graph_schema(&client)
+            .await
+            .expect("Failed to apply schema");
+        let store = EAVGraphStore::new(client);
+        (store.clone(), store)
+    }
 }
 
-/// Creates tag storage with associated entity storage
 async fn create_tag_storage() -> (impl TagStorage, impl EntityStorage) {
-    let pool = crucible_sqlite::SqlitePool::memory().expect("Failed to create SQLite pool");
-    let entity = crucible_sqlite::eav::SqliteEntityStorage::new(pool.clone());
-    let tag = crucible_sqlite::eav::SqliteTagStorage::new(pool);
-    (tag, entity)
+    #[cfg(feature = "sqlite")]
+    {
+        let pool = crucible_sqlite::SqlitePool::memory().expect("Failed to create SQLite pool");
+        let entity = crucible_sqlite::eav::SqliteEntityStorage::new(pool.clone());
+        let tag = crucible_sqlite::eav::SqliteTagStorage::new(pool);
+        (tag, entity)
+    }
+
+    #[cfg(feature = "surrealdb")]
+    {
+        use crucible_surrealdb::test_utils::{apply_eav_graph_schema, EAVGraphStore, SurrealClient};
+
+        let client = SurrealClient::new_memory()
+            .await
+            .expect("Failed to create SurrealDB client");
+        apply_eav_graph_schema(&client)
+            .await
+            .expect("Failed to apply schema");
+        let store = EAVGraphStore::new(client);
+        (store.clone(), store)
+    }
 }
 
 // ============================================================================
