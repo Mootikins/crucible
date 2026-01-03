@@ -1,13 +1,12 @@
-//! Content-Addressed Storage Module
+//! Storage Module
 //!
-//! This module provides trait abstractions and implementations for content-addressed storage
-//! with Merkle tree support. It enables efficient change detection, incremental updates,
-//! and cryptographic integrity verification for stored documents.
+//! This module provides storage abstractions and implementations for the Crucible system.
 //!
 //! ## Key Components
 //!
-//! - **ContentAddressedStorage**: Core trait for storage backends
-//! - **ContentHasher**: Trait for pluggable hash algorithms
+//! - **NoteStore**: Unified note metadata and vector search storage
+//! - **GraphView**: In-memory graph from denormalized links
+//! - **Precognition**: Pure computation (hash + embed)
 //! - **MerkleTree**: Binary Merkle tree for block-level integrity
 //! - **HashedBlock**: Individual content blocks with cryptographic hashes
 //!
@@ -16,17 +15,14 @@
 //! The system follows a dependency inversion pattern where business logic depends on
 //! trait abstractions rather than concrete implementations. This enables:
 //! - Comprehensive unit testing with mock implementations
-//! - Multiple storage backends (SurrealDB, in-memory, file-based)
-//! - Pluggable hashing algorithms
+//! - Multiple storage backends (SurrealDB, SQLite, in-memory)
 //! - Clean separation of concerns
 
 pub mod block;
 pub mod builder;
 pub mod change_application;
-pub mod deduplication_traits;
 pub mod deduplicator;
 pub mod diff;
-pub mod eav_graph_traits;
 pub mod error;
 pub mod factory;
 pub mod graph;
@@ -44,9 +40,6 @@ pub use change_application::{
     ApplicationConfig, ApplicationStats, AppliedChange, CacheStats as AppCacheStats,
     ChangeApplicationResult, ChangeApplicationSystem, FailedChange, RollbackInfo,
 };
-pub use deduplication_traits::{
-    BlockInfo, DeduplicationCapable, DeduplicationStorage, DuplicateBlockInfo, StorageUsageStats,
-};
 pub use deduplicator::{
     BlockUsagePattern, DeduplicationAnalysis, DeduplicationStats, Deduplicator,
     DocumentDuplicationPattern, DocumentSimilarity, DuplicateGroup, StorageSavings,
@@ -56,18 +49,13 @@ pub use diff::{
     CacheStats as DiffCacheStats, ChangeMetadata, ChangeSource, DiffConfig, EnhancedChangeDetector,
     EnhancedTreeChange, MovedBlockInfo,
 };
-pub use eav_graph_traits::{
-    AttributeValue, Block, BlockStorage, EavGraphStorage, Entity, EntityStorage, EntityTag,
-    EntityType, Property, PropertyNamespace, PropertyStorage, Relation, RelationStorage, Tag,
-    TagStorage,
-};
 pub use error::{StorageError, StorageResult};
 pub use factory::{BackendConfig, HashAlgorithm, StorageConfig, StorageFactory};
+pub use graph::InMemoryGraph;
 pub use memory::{
     MemoryStorage, MemoryStorageBuilder, MemoryStorageConfig, MemoryStorageShutdown,
     MemoryStorageSnapshot, StorageEvent,
 };
 pub use merkle::{MerkleNode, MerkleTree, TreeChange};
-pub use graph::InMemoryGraph;
 pub use note_store::{Filter, GraphView, NoteRecord, NoteStore, Op, Precognition, SearchResult};
 pub use traits::{ContentAddressedStorage, ContentHasher, StorageBackend};
