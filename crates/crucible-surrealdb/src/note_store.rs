@@ -146,6 +146,11 @@ impl SurrealNoteStore {
         &self.client
     }
 
+    /// Get the configured embedding dimensions
+    pub fn embedding_dimensions(&self) -> usize {
+        self.embedding_dimensions
+    }
+
     /// Apply the NoteStore schema to the database
     ///
     /// This method is idempotent and safe to call multiple times.
@@ -565,6 +570,85 @@ impl NoteStore for SurrealNoteStore {
     }
 }
 
+// ============================================================================
+// Factory Functions
+// ============================================================================
+
+/// Create a `SurrealNoteStore` from a SurrealDB client with default embedding dimensions.
+///
+/// This factory function creates the store and applies the schema, ensuring the
+/// database is ready for use immediately.
+///
+/// # Arguments
+///
+/// * `client` - A SurrealDB client connection
+///
+/// # Returns
+///
+/// A configured and initialized `SurrealNoteStore` ready for CRUD operations
+/// and semantic search.
+///
+/// # Errors
+///
+/// Returns an error if schema application fails.
+///
+/// # Example
+///
+/// ```ignore
+/// use crucible_surrealdb::{SurrealClient, create_note_store};
+///
+/// let client = SurrealClient::new_memory().await?;
+/// let store = create_note_store(client).await?;
+/// ```
+pub async fn create_note_store(client: SurrealClient) -> StorageResult<SurrealNoteStore> {
+    let store = SurrealNoteStore::new(client);
+    store
+        .apply_schema()
+        .await
+        .map_err(|e| StorageError::Backend(format!("Failed to apply NoteStore schema: {}", e)))?;
+    Ok(store)
+}
+
+/// Create a `SurrealNoteStore` with custom embedding dimensions.
+///
+/// Use this variant when your embedding model produces vectors with a different
+/// dimension than the default (384 for all-MiniLM-L6-v2).
+///
+/// # Arguments
+///
+/// * `client` - A SurrealDB client connection
+/// * `dimensions` - The number of dimensions for the embedding vector index
+///
+/// # Returns
+///
+/// A configured and initialized `SurrealNoteStore` with the specified embedding
+/// dimensions.
+///
+/// # Errors
+///
+/// Returns an error if schema application fails.
+///
+/// # Example
+///
+/// ```ignore
+/// use crucible_surrealdb::{SurrealClient, create_note_store_with_dimensions};
+///
+/// let client = SurrealClient::new_memory().await?;
+/// // Use 768 dimensions for a larger embedding model
+/// let store = create_note_store_with_dimensions(client, 768).await?;
+/// ```
+pub async fn create_note_store_with_dimensions(
+    client: SurrealClient,
+    dimensions: usize,
+) -> StorageResult<SurrealNoteStore> {
+    let store = SurrealNoteStore::with_dimensions(client, dimensions);
+    store
+        .apply_schema()
+        .await
+        .map_err(|e| StorageError::Backend(format!("Failed to apply NoteStore schema: {}", e)))?;
+    Ok(store)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -613,5 +697,37 @@ mod tests {
         let back: NoteRecord = surreal.try_into().unwrap();
         assert_eq!(back.path, note.path);
         assert_eq!(back.title, note.title);
+    }
+
+    #[tokio::test]
+    async fn test_create_note_store_factory() {
+        // Clear schema cache to ensure fresh test
+        SurrealNoteStore::clear_schema_cache();
+
+        let client = SurrealClient::new_memory().await.unwrap();
+        let store = create_note_store(client).await.unwrap();
+
+        // Verify default dimensions
+        assert_eq!(store.embedding_dimensions(), DEFAULT_EMBEDDING_DIMENSIONS);
+
+        // Verify store is usable (schema was applied)
+        let notes = store.list().await.unwrap();
+        assert!(notes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_create_note_store_with_dimensions_factory() {
+        // Clear schema cache to ensure fresh test
+        SurrealNoteStore::clear_schema_cache();
+
+        let client = SurrealClient::new_memory().await.unwrap();
+        let store = create_note_store_with_dimensions(client, 1536).await.unwrap();
+
+        // Verify custom dimensions
+        assert_eq!(store.embedding_dimensions(), 1536);
+
+        // Verify store is usable (schema was applied)
+        let notes = store.list().await.unwrap();
+        assert!(notes.is_empty());
     }
 }
