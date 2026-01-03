@@ -3,10 +3,11 @@
 //! Provides a simulated TUI environment for testing component behavior
 //! without a real terminal.
 
-use crate::tui::components::{GenericPopupState, PopupItemProvider};
+use crate::tui::components::generic_popup::PopupState;
 use crate::tui::conversation::{ConversationItem, ConversationState};
 use crate::tui::conversation_view::{ConversationView, RatatuiView};
-use crate::tui::state::{PopupItem, PopupKind, PopupState, TuiState};
+use crate::tui::popup::PopupProvider;
+use crate::tui::state::{PopupItem, PopupKind, TuiState};
 use crate::tui::streaming_channel::StreamingEvent;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::backend::TestBackend;
@@ -19,13 +20,22 @@ struct StaticItemsProvider {
     items: Vec<PopupItem>,
 }
 
-impl PopupItemProvider for StaticItemsProvider {
+impl PopupProvider for StaticItemsProvider {
     fn provide(&self, kind: PopupKind, _query: &str) -> Vec<PopupItem> {
         if kind == self.kind {
             self.items.clone()
         } else {
             Vec::new()
         }
+    }
+}
+
+/// An empty provider for testing (returns no items)
+struct EmptyProvider;
+
+impl PopupProvider for EmptyProvider {
+    fn provide(&self, _kind: PopupKind, _query: &str) -> Vec<PopupItem> {
+        Vec::new()
     }
 }
 
@@ -93,7 +103,7 @@ impl Harness {
 
     /// Builder: set popup items
     ///
-    /// Uses GenericPopupState with PopupRenderer for proper rendering
+    /// Uses PopupState with PopupRenderer for proper rendering
     pub fn with_popup_items(mut self, kind: PopupKind, items: Vec<PopupItem>) -> Self {
         // Create a static provider with the given items
         let provider = Arc::new(StaticItemsProvider {
@@ -101,17 +111,13 @@ impl Harness {
             items: items.clone(),
         });
 
-        // Create GenericPopupState and populate it
-        let mut popup = GenericPopupState::new(kind, provider);
+        // Create PopupState and populate it
+        let mut popup = PopupState::new(kind, provider);
         popup.update_query(""); // Load items from provider
 
-        // Set on the view (render_popup prefers generic_popup)
-        self.view.set_generic_popup(Some(popup));
-
-        // Also set legacy popup for backward compatibility with some tests
-        let mut legacy_popup = PopupState::new(kind);
-        legacy_popup.items = items;
-        self.state.popup = Some(legacy_popup);
+        // Set on the view
+        self.view.set_popup(Some(popup));
+        self.state.has_popup = true;
 
         self
     }
@@ -189,45 +195,46 @@ impl Harness {
         }
 
         // Handle popup input first if popup is open
-        if let Some(ref mut popup) = self.state.popup {
+        if let Some(popup) = self.view.popup_mut() {
             match event.code {
                 KeyCode::Esc => {
-                    self.state.popup = None;
                     self.view.set_popup(None);
+                    self.state.has_popup = false;
                     return;
                 }
                 KeyCode::Up => {
                     popup.move_selection(-1);
-                    self.view.set_popup(self.state.popup.clone());
                     return;
                 }
                 KeyCode::Down => {
                     popup.move_selection(1);
-                    self.view.set_popup(self.state.popup.clone());
                     return;
                 }
                 KeyCode::Enter => {
-                    if let Some(item) = popup.items.get(popup.selected) {
+                    if let Some(item) = popup.selected_item() {
                         let token = item.token();
-                        self.state.popup = None;
                         self.view.set_popup(None);
+                        self.state.has_popup = false;
                         self.state.input_buffer = token;
                         self.state.cursor_position = self.state.input_buffer.len();
                     }
                     return;
                 }
                 KeyCode::Char(c) => {
-                    popup.query.push(c);
-                    self.view.set_popup(self.state.popup.clone());
+                    // Update query (append char and re-query provider)
+                    let current_query = popup.query().to_string();
+                    let new_query = format!("{}{}", current_query, c);
+                    popup.update_query(&new_query);
                     return;
                 }
                 KeyCode::Backspace => {
-                    popup.query.pop();
-                    if popup.query.is_empty() {
-                        self.state.popup = None;
+                    let current_query = popup.query().to_string();
+                    if current_query.is_empty() {
                         self.view.set_popup(None);
+                        self.state.has_popup = false;
                     } else {
-                        self.view.set_popup(self.state.popup.clone());
+                        let new_query = current_query[..current_query.len() - 1].to_string();
+                        popup.update_query(&new_query);
                     }
                     return;
                 }
@@ -239,15 +246,23 @@ impl Harness {
         match event.code {
             KeyCode::Char('/') if self.state.input_buffer.is_empty() => {
                 // Trigger command popup
-                self.state.popup = Some(PopupState::new(PopupKind::Command));
-                self.view.set_popup(self.state.popup.clone());
+                let popup = PopupState::new(
+                    PopupKind::Command,
+                    Arc::new(EmptyProvider) as Arc<dyn PopupProvider>,
+                );
+                self.view.set_popup(Some(popup));
+                self.state.has_popup = true;
                 self.state.input_buffer.push('/');
                 self.state.cursor_position = 1;
             }
             KeyCode::Char('@') if self.state.input_buffer.is_empty() => {
                 // Trigger agent/file popup
-                self.state.popup = Some(PopupState::new(PopupKind::AgentOrFile));
-                self.view.set_popup(self.state.popup.clone());
+                let popup = PopupState::new(
+                    PopupKind::AgentOrFile,
+                    Arc::new(EmptyProvider) as Arc<dyn PopupProvider>,
+                );
+                self.view.set_popup(Some(popup));
+                self.state.has_popup = true;
                 self.state.input_buffer.push('@');
                 self.state.cursor_position = 1;
             }
@@ -387,22 +402,22 @@ impl Harness {
 
     /// Get current popup state
     pub fn popup(&self) -> Option<&PopupState> {
-        self.state.popup.as_ref()
+        self.view.popup()
     }
 
     /// Check if popup is open
     pub fn has_popup(&self) -> bool {
-        self.state.popup.is_some()
+        self.view.popup().is_some()
     }
 
     /// Get popup query
     pub fn popup_query(&self) -> Option<&str> {
-        self.state.popup.as_ref().map(|p| p.query.as_str())
+        self.view.popup().map(|p| p.query())
     }
 
     /// Get popup selected index
     pub fn popup_selected(&self) -> Option<usize> {
-        self.state.popup.as_ref().map(|p| p.selected)
+        self.view.popup().map(|p| p.selected_index())
     }
 
     /// Get conversation items

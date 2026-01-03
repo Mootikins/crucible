@@ -2,204 +2,28 @@
 //!
 //! Uses insta for snapshot testing of TUI rendering.
 //! Run `cargo insta review` to interactively review snapshot changes.
+//!
+//! NOTE: Popup snapshot tests are in src/tui/testing/popup_snapshot_tests.rs
+//! which uses the Harness to properly manage View-owned popup state.
 
 #![allow(clippy::field_reassign_with_default)]
 
 use crucible_cli::tui::render::render;
-use crucible_cli::tui::state::{PopupItem, PopupKind};
 use crucible_cli::tui::testing::{test_terminal, TestStateBuilder, TEST_HEIGHT, TEST_WIDTH};
 use insta::assert_snapshot;
 use ratatui::{backend::TestBackend, Terminal};
 
 // =============================================================================
-// Popup Visibility Tests
+// Basic Rendering Tests
 // =============================================================================
 
 #[test]
-fn popup_hidden_when_none() {
+fn no_popup_renders_clean() {
     let mut terminal = test_terminal();
-    let state = TestStateBuilder::new("plan").with_input("/help").build(); // popup: None
+    let state = TestStateBuilder::new("plan").with_input("/help").build();
 
     terminal.draw(|f| render(f, &state)).unwrap();
-    assert_snapshot!("popup_hidden", terminal.backend());
-}
-
-#[test]
-fn popup_visible_with_commands() {
-    let mut terminal = test_terminal();
-    let state = TestStateBuilder::new("plan")
-        .with_input("/")
-        .with_popup_items(
-            PopupKind::Command,
-            vec![
-                PopupItem::cmd("help").desc("Show help information"),
-                PopupItem::cmd("exit").desc("Exit the chat"),
-                PopupItem::cmd("clear").desc("Clear the screen"),
-            ],
-        )
-        .build();
-
-    terminal.draw(|f| render(f, &state)).unwrap();
-    assert_snapshot!("popup_commands_visible", terminal.backend());
-}
-
-#[test]
-fn popup_visible_with_agents_and_files() {
-    let mut terminal = test_terminal();
-    let state = TestStateBuilder::new("plan")
-        .with_input("@")
-        .with_popup_items(
-            PopupKind::AgentOrFile,
-            vec![
-                PopupItem::agent("dev-helper").desc("Developer assistant"),
-                PopupItem::agent("test-runner").desc("Test automation"),
-                PopupItem::file("src/main.rs"),
-            ],
-        )
-        .build();
-
-    terminal.draw(|f| render(f, &state)).unwrap();
-    assert_snapshot!("popup_agents_files", terminal.backend());
-}
-
-// =============================================================================
-// Popup Selection Tests
-// =============================================================================
-
-#[test]
-fn popup_first_item_selected_by_default() {
-    let mut terminal = test_terminal();
-    let state = TestStateBuilder::new("plan")
-        .with_input("/")
-        .with_popup_items(
-            PopupKind::Command,
-            vec![
-                PopupItem::cmd("help").desc("Show help"),
-                PopupItem::cmd("exit").desc("Exit"),
-            ],
-        )
-        .build();
-
-    terminal.draw(|f| render(f, &state)).unwrap();
-    assert_snapshot!("popup_selection_first", terminal.backend());
-}
-
-#[test]
-fn popup_second_item_selected() {
-    let mut terminal = test_terminal();
-    let state = TestStateBuilder::new("plan")
-        .with_input("/")
-        .with_popup_items(
-            PopupKind::Command,
-            vec![
-                PopupItem::cmd("help").desc("Show help"),
-                PopupItem::cmd("exit").desc("Exit"),
-                PopupItem::cmd("clear").desc("Clear screen"),
-            ],
-        )
-        .with_popup_selected(1)
-        .build();
-
-    terminal.draw(|f| render(f, &state)).unwrap();
-    assert_snapshot!("popup_selection_second", terminal.backend());
-}
-
-#[test]
-fn popup_last_item_selected() {
-    let mut terminal = test_terminal();
-    let state = TestStateBuilder::new("plan")
-        .with_input("@")
-        .with_popup_items(
-            PopupKind::AgentOrFile,
-            vec![
-                PopupItem::agent("agent1").desc("First agent"),
-                PopupItem::agent("agent2").desc("Second agent"),
-                PopupItem::file("README.md"),
-            ],
-        )
-        .with_popup_selected(2)
-        .build();
-
-    terminal.draw(|f| render(f, &state)).unwrap();
-    assert_snapshot!("popup_selection_last", terminal.backend());
-}
-
-// =============================================================================
-// Popup Type Labels Tests
-// =============================================================================
-
-#[test]
-fn popup_shows_mixed_type_labels() {
-    let mut terminal = test_terminal();
-    let state = TestStateBuilder::new("plan")
-        .with_input("@")
-        .with_popup_items(
-            PopupKind::AgentOrFile,
-            vec![
-                PopupItem::agent("helper").desc("AI Helper"),
-                PopupItem::file("README.md"),
-                PopupItem::note("project/todo.md"),
-            ],
-        )
-        .build();
-
-    terminal.draw(|f| render(f, &state)).unwrap();
-    // Snapshot should show [agent], [file], [note] labels
-    assert_snapshot!("popup_mixed_types", terminal.backend());
-}
-
-#[test]
-fn popup_command_type_labels() {
-    let mut terminal = test_terminal();
-    let state = TestStateBuilder::new("act")
-        .with_input("/s")
-        .with_popup_items(
-            PopupKind::Command,
-            vec![
-                PopupItem::cmd("search").desc("Search files"),
-                PopupItem::cmd("stats").desc("Show statistics"),
-            ],
-        )
-        .build();
-
-    terminal.draw(|f| render(f, &state)).unwrap();
-    assert_snapshot!("popup_command_labels", terminal.backend());
-}
-
-// =============================================================================
-// Popup Height/Truncation Tests
-// =============================================================================
-
-#[test]
-fn popup_truncates_to_max_five_items() {
-    let mut terminal = test_terminal();
-    let items: Vec<_> = (0..10)
-        .map(|i| PopupItem::cmd(format!("cmd{i}")).desc(format!("Command {i}")))
-        .collect();
-
-    let state = TestStateBuilder::new("plan")
-        .with_input("/")
-        .with_popup_items(PopupKind::Command, items)
-        .build();
-
-    terminal.draw(|f| render(f, &state)).unwrap();
-    // Should only show 5 items (render.rs:30 has .min(5))
-    assert_snapshot!("popup_max_five_items", terminal.backend());
-}
-
-#[test]
-fn popup_single_item() {
-    let mut terminal = test_terminal();
-    let state = TestStateBuilder::new("plan")
-        .with_input("/exit")
-        .with_popup_items(
-            PopupKind::Command,
-            vec![PopupItem::cmd("exit").desc("Exit")],
-        )
-        .build();
-
-    terminal.draw(|f| render(f, &state)).unwrap();
-    assert_snapshot!("popup_single_item", terminal.backend());
+    assert_snapshot!("no_popup_clean", terminal.backend());
 }
 
 // =============================================================================
@@ -297,30 +121,7 @@ fn input_empty() {
 }
 
 // =============================================================================
-// Combined State Tests
-// =============================================================================
-
-#[test]
-fn popup_with_streaming() {
-    let mut terminal = test_terminal();
-    let state = TestStateBuilder::new("act")
-        .with_input("/")
-        .with_popup_items(
-            PopupKind::Command,
-            vec![
-                PopupItem::cmd("help").desc("Show help"),
-                PopupItem::cmd("exit").desc("Exit"),
-            ],
-        )
-        .with_streaming("Processing your request...")
-        .build();
-
-    terminal.draw(|f| render(f, &state)).unwrap();
-    assert_snapshot!("popup_with_streaming", terminal.backend());
-}
-
-// =============================================================================
-// NEW: Conversation View Tests (target design)
+// Conversation View Tests
 // =============================================================================
 
 use crucible_cli::tui::conversation::{

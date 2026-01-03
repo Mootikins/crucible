@@ -84,9 +84,10 @@ use crate::tui::streaming_channel::{
     create_streaming_channel, StreamingEvent, StreamingReceiver, StreamingTask,
 };
 
+use crate::tui::components::generic_popup::PopupState;
 use crate::tui::conversation::StatusKind;
 use crate::tui::conversation_view::{ConversationView, RatatuiView};
-use crate::tui::state::{find_word_start_backward, find_word_start_forward};
+use crate::tui::state::{find_word_start_backward, find_word_start_forward, PopupKind};
 use crate::tui::{
     map_key_event, DialogState, DynamicPopupProvider, InputAction, ParseEvent, PopupProvider,
     StreamBlock, StreamingParser, TuiState,
@@ -133,8 +134,8 @@ pub struct RatatuiRunner {
     /// Track Ctrl+C for double-press exit
     ctrl_c_count: u8,
     last_ctrl_c: Option<std::time::Instant>,
-    /// Popup state
-    popup: Option<crate::tui::state::PopupState>,
+    /// Popup state (consolidated - uses generic popup with provider)
+    popup: Option<PopupState>,
     /// Background streaming task
     streaming_task: Option<tokio::task::JoinHandle<()>>,
     /// Channel receiver for streaming events
@@ -269,18 +270,11 @@ impl RatatuiRunner {
                 }
             }
 
-            // 3. Refresh popup items and sync with view
-            if let Some(ref mut popup) = self.popup {
-                if popup_debounce.ready() {
-                    let items = self.popup_provider.provide(popup.kind, &popup.query);
-                    let selected = popup.selected.min(items.len().saturating_sub(1));
-                    popup.items = items;
-                    popup.selected = selected;
-                    popup.update_viewport(5); // MAX_POPUP_ITEMS
-                }
-            }
-            // Sync popup state to view for rendering
-            self.view.set_popup(self.popup.clone());
+            // 3. Sync popup state to view for rendering
+            // PopupState handles its own item fetching via provider
+            self.view.set_popup(self.popup.take());
+            // Take and put back - the view needs ownership for rendering
+            self.popup = self.view.popup_take();
 
             // 4. Poll ring buffer for session events
             self.poll_session_events(bridge, &mut last_seen_seq);
@@ -481,7 +475,7 @@ impl RatatuiRunner {
         temp_state.cursor_position = self.view.cursor_position();
         temp_state.ctrl_c_count = self.ctrl_c_count;
         temp_state.last_ctrl_c = self.last_ctrl_c;
-        temp_state.popup = self.popup.clone(); // Needed for Up/Down to navigate popup
+        temp_state.has_popup = self.popup.is_some(); // Needed for Up/Down to navigate popup
         let action = map_key_event(key, &temp_state);
 
         match action {
@@ -692,17 +686,13 @@ impl RatatuiRunner {
             InputAction::MovePopupSelection(delta) => {
                 if let Some(ref mut popup) = self.popup {
                     popup.move_selection(delta);
-                    popup.update_viewport(5); // MAX_POPUP_ITEMS
                 }
             }
             InputAction::ConfirmPopup => {
                 use crate::tui::state::PopupItem;
 
                 if let Some(ref popup) = self.popup {
-                    if !popup.items.is_empty() {
-                        let idx = popup.selected.min(popup.items.len() - 1);
-                        let item = &popup.items[idx];
-
+                    if let Some(item) = popup.selected_item() {
                         // Handle REPL commands specially - execute immediately
                         if let PopupItem::ReplCommand { name, .. } = item {
                             let name = name.clone();
@@ -1176,35 +1166,44 @@ impl RatatuiRunner {
 
     /// Update popup based on current input.
     fn update_popup(&mut self) {
-        use crate::tui::state::{PopupKind, PopupState};
+        // PopupKind is already imported at module level
 
         let input = self.view.input();
         let trimmed = input.trim_start();
 
         if trimmed.starts_with('/') {
             let query = trimmed.strip_prefix('/').unwrap_or("").to_string();
-            if self.popup.as_ref().map(|p| p.kind) != Some(PopupKind::Command) {
-                self.popup = Some(PopupState::new(PopupKind::Command));
+            if self.popup.as_ref().map(|p| p.kind()) != Some(PopupKind::Command) {
+                self.popup = Some(PopupState::new(
+                    PopupKind::Command,
+                    std::sync::Arc::clone(&self.popup_provider) as std::sync::Arc<dyn PopupProvider>,
+                ));
             }
             if let Some(ref mut popup) = self.popup {
-                popup.query = query;
+                popup.update_query(&query);
             }
         } else if trimmed.starts_with('@') {
             let query = trimmed.strip_prefix('@').unwrap_or("").to_string();
-            if self.popup.as_ref().map(|p| p.kind) != Some(PopupKind::AgentOrFile) {
-                self.popup = Some(PopupState::new(PopupKind::AgentOrFile));
+            if self.popup.as_ref().map(|p| p.kind()) != Some(PopupKind::AgentOrFile) {
+                self.popup = Some(PopupState::new(
+                    PopupKind::AgentOrFile,
+                    std::sync::Arc::clone(&self.popup_provider) as std::sync::Arc<dyn PopupProvider>,
+                ));
             }
             if let Some(ref mut popup) = self.popup {
-                popup.query = query;
+                popup.update_query(&query);
             }
         } else if trimmed.starts_with(':') {
             // REPL commands (vim-style system commands)
             let query = trimmed.strip_prefix(':').unwrap_or("").to_string();
-            if self.popup.as_ref().map(|p| p.kind) != Some(PopupKind::ReplCommand) {
-                self.popup = Some(PopupState::new(PopupKind::ReplCommand));
+            if self.popup.as_ref().map(|p| p.kind()) != Some(PopupKind::ReplCommand) {
+                self.popup = Some(PopupState::new(
+                    PopupKind::ReplCommand,
+                    std::sync::Arc::clone(&self.popup_provider) as std::sync::Arc<dyn PopupProvider>,
+                ));
             }
             if let Some(ref mut popup) = self.popup {
-                popup.query = query;
+                popup.update_query(&query);
             }
         } else {
             self.popup = None;
@@ -1871,14 +1870,15 @@ mod tests {
 
     mod generic_popup_tests {
         use super::*;
-        use crate::tui::components::{GenericPopupState, PopupItemProvider};
+        use crate::tui::components::generic_popup::PopupState;
+        use crate::tui::popup::PopupProvider;
         use crate::tui::state::{PopupItem, PopupItemKind, PopupKind};
         use std::sync::Arc;
 
         /// Mock provider for tests
         struct MockProvider;
 
-        impl PopupItemProvider for MockProvider {
+        impl PopupProvider for MockProvider {
             fn provide(&self, _kind: PopupKind, _query: &str) -> Vec<PopupItem> {
                 vec![
                     PopupItem::cmd("help").desc("Show help").with_score(100),
@@ -1887,12 +1887,12 @@ mod tests {
             }
         }
 
-        fn mock_provider() -> Arc<dyn PopupItemProvider> {
+        fn mock_provider() -> Arc<dyn PopupProvider> {
             Arc::new(MockProvider)
         }
 
         #[test]
-        fn test_runner_can_set_generic_popup_on_view() {
+        fn test_runner_can_set_popup_on_view() {
             let mut runner =
                 RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
@@ -1900,12 +1900,12 @@ mod tests {
             assert!(!runner.view.has_popup());
 
             // Set a generic popup via the view
-            let popup = GenericPopupState::new(PopupKind::Command, mock_provider());
-            runner.view.set_generic_popup(Some(popup));
+            let popup = PopupState::new(PopupKind::Command, mock_provider());
+            runner.view.set_popup(Some(popup));
 
             // Should now have a popup
             assert!(runner.view.has_popup());
-            assert!(runner.view.generic_popup().is_some());
+            assert!(runner.view.popup().is_some());
         }
 
         #[test]
@@ -1914,12 +1914,12 @@ mod tests {
                 RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
             // Set a generic popup and populate items
-            let mut popup = GenericPopupState::new(PopupKind::Command, mock_provider());
+            let mut popup = PopupState::new(PopupKind::Command, mock_provider());
             popup.update_query(""); // Fetch items from provider
-            runner.view.set_generic_popup(Some(popup));
+            runner.view.set_popup(Some(popup));
 
             // Navigate through the popup
-            let popup = runner.view.generic_popup_mut().unwrap();
+            let popup = runner.view.popup_mut().unwrap();
             assert_eq!(popup.selected_index(), 0);
             assert_eq!(popup.filtered_count(), 2); // Verify items are loaded
 
@@ -1936,12 +1936,12 @@ mod tests {
                 RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
             // Set popup
-            let popup = GenericPopupState::new(PopupKind::Command, mock_provider());
-            runner.view.set_generic_popup(Some(popup));
+            let popup = PopupState::new(PopupKind::Command, mock_provider());
+            runner.view.set_popup(Some(popup));
             assert!(runner.view.has_popup());
 
             // Clear it
-            runner.view.set_generic_popup(None);
+            runner.view.set_popup(None);
             assert!(!runner.view.has_popup());
         }
     }
