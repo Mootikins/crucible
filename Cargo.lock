@@ -3793,12 +3793,14 @@ dependencies = [
  "arrow-array",
  "arrow-schema",
  "async-trait",
+ "chrono",
  "crucible-core",
  "futures",
  "lancedb",
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror 2.0.17",
  "tokio",
  "tracing",
 ]
@@ -4065,9 +4067,11 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "crucible-core",
+ "crucible-lance",
  "crucible-sqlite",
  "crucible-surrealdb",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 
