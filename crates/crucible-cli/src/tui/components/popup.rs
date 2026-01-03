@@ -59,11 +59,11 @@ impl Widget for PopupWidget<'_> {
                 let absolute_idx = self.state.viewport_offset + idx;
                 let mut spans = Vec::new();
 
-                // Selection marker
+                // Selection marker (fixed 2-char width to prevent item shift)
                 let marker = if absolute_idx == self.state.selected {
-                    ">"
+                    "> "
                 } else {
-                    " "
+                    "  "
                 };
                 spans.push(Span::styled(
                     marker,
@@ -74,7 +74,6 @@ impl Widget for PopupWidget<'_> {
 
                 // Kind label
                 let kind_label = format!("[{}]", item.kind_label());
-                spans.push(Span::raw(" "));
                 spans.push(Span::styled(
                     kind_label,
                     Style::default().fg(Color::Magenta),
@@ -120,7 +119,7 @@ impl Widget for PopupWidget<'_> {
 
         let popup_widget = Paragraph::new(lines)
             .block(Block::default().borders(Borders::ALL).title(title))
-            .wrap(Wrap { trim: true });
+            .wrap(Wrap { trim: false });
 
         popup_widget.render(area, buf);
     }
@@ -470,5 +469,50 @@ mod tests {
         assert!(text.contains("[file]") || text.contains("file"));
         assert!(text.contains("[note]") || text.contains("note"));
         assert!(text.contains("[skill]") || text.contains("skill"));
+    }
+
+    #[test]
+    fn test_popup_indicator_has_fixed_width() {
+        let mut state = PopupState::new(PopupKind::Command);
+        state.items = vec![
+            PopupItem::cmd("search").desc("Search").with_score(10),
+            PopupItem::cmd("help").desc("Help").with_score(8),
+        ];
+        state.selected = 0;
+
+        let widget = PopupWidget::new(&mut state);
+        let area = Rect::new(0, 0, 50, 6);
+        let mut buf = Buffer::empty(area);
+        widget.render(area, &mut buf);
+
+        // Check that kind labels are at same column for all items
+        // Extract lines from buffer
+        let mut lines: Vec<String> = Vec::new();
+        for y in 0..area.height {
+            let line: String = (0..area.width)
+                .map(|x| {
+                    buf.cell((x, y))
+                        .map(|c| c.symbol().chars().next().unwrap_or(' '))
+                        .unwrap_or(' ')
+                })
+                .collect();
+            lines.push(line);
+        }
+
+        // Find lines with [cmd] label and check they start at same column
+        let cmd_positions: Vec<usize> = lines
+            .iter()
+            .filter_map(|line| line.find("[cmd]"))
+            .collect();
+
+        assert!(
+            cmd_positions.len() >= 2,
+            "Should have at least 2 items with [cmd]"
+        );
+        assert!(
+            cmd_positions.windows(2).all(|w| w[0] == w[1]),
+            "All [cmd] labels should be at same column, got: {:?}",
+            cmd_positions
+        );
     }
 }
