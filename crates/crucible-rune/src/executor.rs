@@ -2,6 +2,7 @@
 
 use crate::mcp_types::mcp_types_module;
 use crate::oq_module::oq_module;
+use crate::popup_module::popup_module;
 use crate::shell_module::shell_module;
 use crate::types::{RuneExecutionResult, RuneTool};
 use crate::RuneError;
@@ -69,6 +70,11 @@ impl RuneExecutor {
         // Register oq module for object querying
         context
             .install(oq_module()?)
+            .map_err(|e| RuneError::Context(e.to_string()))?;
+
+        // Register popup module for UI popup entries
+        context
+            .install(popup_module()?)
             .map_err(|e| RuneError::Context(e.to_string()))?;
 
         // Install additional modules (e.g., MCP server modules)
