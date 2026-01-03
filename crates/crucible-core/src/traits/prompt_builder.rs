@@ -69,7 +69,9 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::assertions_on_constants)]
     fn test_priority_ordering() {
+        // These are intentionally constants - we want to verify ordering at compile time
         assert!(priorities::BASE < priorities::PROJECT);
         assert!(priorities::PROJECT < priorities::AGENT_CARD);
         assert!(priorities::AGENT_CARD < priorities::USER);
