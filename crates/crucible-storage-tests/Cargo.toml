@@ -1,0 +1,38 @@
+[package]
+name = "crucible-storage-tests"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+publish = false  # Test-only crate, not published
+
+[dependencies]
+# Core traits
+crucible-core = { path = "../crucible-core" }
+
+# Backend implementations (feature-gated)
+crucible-sqlite = { path = "../crucible-sqlite", optional = true }
+# SurrealDB uses different traits - see features section for details
+# crucible-surrealdb = { path = "../crucible-surrealdb", optional = true }
+
+# Test dependencies
+tokio = { workspace = true, features = ["test-util", "full"] }
+chrono = { workspace = true }
+serde_json = { workspace = true }
+
+[features]
+default = []
+# Run contract tests against SQLite
+sqlite = ["dep:crucible-sqlite"]
+# SurrealDB uses different traits (Core*Storage) than crucible-core (*Storage).
+# Contract tests require an adapter layer. Reserved for future implementation.
+# surrealdb = ["dep:crucible-surrealdb"]
+
+[lib]
+# This crate is only for tests - no library code
+path = "src/lib.rs"
+
+[[test]]
+name = "eav_contract"
+path = "tests/eav_contract.rs"
+required-features = []  # Tests have their own cfg guards
