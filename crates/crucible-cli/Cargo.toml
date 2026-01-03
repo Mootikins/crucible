@@ -130,7 +130,7 @@ toml = { workspace = true }
 blake3 = "1.5"  # For hash verification tests
 serial_test = "3.2"  # For preventing parallel test execution with shared env vars
 scopeguard = "1.2"  # For RAII-style cleanup in tests
-insta = { version = "1.40", features = ["filters"] }  # Snapshot testing for TUI
+insta = { version = "1.45", features = ["filters"] }  # Snapshot testing for TUI
 expectrl = { workspace = true }  # PTY-based TUI testing
 
 # Additional dependencies for resource constraint testing
