@@ -8,6 +8,7 @@ members = [
     "crates/crucible-pipeline",
     "crates/crucible-cli",
     "crates/crucible-surrealdb",
+    "crates/crucible-sqlite",
     "crates/crucible-config",
     "crates/crucible-acp",
     "crates/crucible-context",

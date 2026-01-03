@@ -16,10 +16,17 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 dirs = { workspace = true }
-crucible-surrealdb = { workspace = true }
+crucible-surrealdb = { workspace = true, optional = true }
+crucible-sqlite = { path = "../crucible-sqlite", optional = true }
 scopeguard = "1"
 
 [features]
+default = ["storage-surrealdb"]
+
+# Storage backend selection (mutually exclusive in practice)
+storage-surrealdb = ["dep:crucible-surrealdb"]
+storage-sqlite = ["dep:crucible-sqlite"]
+
 # Test tier flags (see justfile for usage)
 test-fixtures = []       # Tests using docs/ kiln or examples/test-kiln
 test-infrastructure = [] # Tests requiring Ollama, embedding endpoints

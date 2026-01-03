@@ -55,8 +55,9 @@ pub use diff::{
     EnhancedTreeChange, MovedBlockInfo,
 };
 pub use eav_graph_traits::{
-    AttributeValue, Block, BlockStorage, Entity, EntityStorage, EntityTag, EntityType, Property,
-    PropertyNamespace, PropertyStorage, Relation, RelationStorage, Tag, TagStorage,
+    AttributeValue, Block, BlockStorage, EavGraphStorage, Entity, EntityStorage, EntityTag,
+    EntityType, Property, PropertyNamespace, PropertyStorage, Relation, RelationStorage, Tag,
+    TagStorage,
 };
 pub use error::{StorageError, StorageResult};
 pub use factory::{BackendConfig, HashAlgorithm, StorageConfig, StorageFactory};
