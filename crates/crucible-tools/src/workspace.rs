@@ -901,7 +901,7 @@ mod tests {
     async fn test_glob_respects_limit() {
         let (temp, tools) = create_workspace();
         for i in 0..10 {
-            tokio::fs::write(temp.path().join(format!("{}.rs", i)), "")
+            tokio::fs::write(temp.path().join(format!("{i}.rs")), "")
                 .await
                 .unwrap();
         }

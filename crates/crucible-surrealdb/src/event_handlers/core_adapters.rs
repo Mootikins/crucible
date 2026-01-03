@@ -135,7 +135,7 @@ mod tests {
     fn test_storage_adapter_name() {
         // Can't easily test without full setup, but we can test the trait impl exists
         // by checking the name method signature
-        fn assert_handler<T: Handler>(_: &T) {}
+        fn _assert_handler<T: Handler>(_: &T) {}
         // This would compile if the trait is implemented correctly
     }
 
