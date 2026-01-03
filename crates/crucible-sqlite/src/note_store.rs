@@ -582,7 +582,11 @@ mod tests {
 
     #[test]
     fn test_filter_to_sql_property() {
-        let filter = Filter::Property("status".to_string(), Op::Eq, Value::String("draft".to_string()));
+        let filter = Filter::Property(
+            "status".to_string(),
+            Op::Eq,
+            Value::String("draft".to_string()),
+        );
         let mut params: Vec<Box<dyn ToSql + Send>> = Vec::new();
         let sql = filter_to_sql(&filter, &mut params);
 
@@ -620,7 +624,9 @@ mod tests {
     #[tokio::test]
     async fn test_note_store_crud() {
         let pool = SqlitePool::memory().expect("Failed to create pool");
-        let store = create_note_store(pool).await.expect("Failed to create store");
+        let store = create_note_store(pool)
+            .await
+            .expect("Failed to create store");
 
         // Create a note
         let note = NoteRecord::new("test/note.md", BlockHash::zero())
@@ -656,7 +662,10 @@ mod tests {
         assert_eq!(retrieved.title, "Updated Note");
 
         // Delete
-        store.delete("test/note.md").await.expect("Failed to delete");
+        store
+            .delete("test/note.md")
+            .await
+            .expect("Failed to delete");
         let deleted = store.get("test/note.md").await.expect("Failed to get");
         assert!(deleted.is_none());
     }
@@ -664,7 +673,9 @@ mod tests {
     #[tokio::test]
     async fn test_note_store_list() {
         let pool = SqlitePool::memory().expect("Failed to create pool");
-        let store = create_note_store(pool).await.expect("Failed to create store");
+        let store = create_note_store(pool)
+            .await
+            .expect("Failed to create store");
 
         // Create multiple notes
         for i in 0..3 {
@@ -681,7 +692,9 @@ mod tests {
     #[tokio::test]
     async fn test_note_store_get_by_hash() {
         let pool = SqlitePool::memory().expect("Failed to create pool");
-        let store = create_note_store(pool).await.expect("Failed to create store");
+        let store = create_note_store(pool)
+            .await
+            .expect("Failed to create store");
 
         // Create a hash
         let hash = BlockHash::new([1u8; 32]);
@@ -707,7 +720,9 @@ mod tests {
     #[tokio::test]
     async fn test_note_store_search() {
         let pool = SqlitePool::memory().expect("Failed to create pool");
-        let store = create_note_store(pool).await.expect("Failed to create store");
+        let store = create_note_store(pool)
+            .await
+            .expect("Failed to create store");
 
         // Create notes with embeddings
         let note1 = NoteRecord::new("note1.md", BlockHash::zero())
@@ -730,7 +745,10 @@ mod tests {
 
         // Search similar to note1
         let query = vec![1.0, 0.0, 0.0];
-        let results = store.search(&query, 3, None).await.expect("Failed to search");
+        let results = store
+            .search(&query, 3, None)
+            .await
+            .expect("Failed to search");
 
         assert_eq!(results.len(), 3);
         assert_eq!(results[0].note.path, "note1.md"); // Most similar
@@ -750,7 +768,9 @@ mod tests {
     #[tokio::test]
     async fn test_note_store_search_with_path_filter() {
         let pool = SqlitePool::memory().expect("Failed to create pool");
-        let store = create_note_store(pool).await.expect("Failed to create store");
+        let store = create_note_store(pool)
+            .await
+            .expect("Failed to create store");
 
         let note1 = NoteRecord::new("projects/rust/note.md", BlockHash::zero())
             .with_embedding(vec![1.0, 0.0, 0.0]);
@@ -780,14 +800,18 @@ mod tests {
     #[tokio::test]
     async fn test_note_store_with_properties() {
         let pool = SqlitePool::memory().expect("Failed to create pool");
-        let store = create_note_store(pool).await.expect("Failed to create store");
+        let store = create_note_store(pool)
+            .await
+            .expect("Failed to create store");
 
         let mut props = HashMap::new();
         props.insert("status".to_string(), Value::String("published".to_string()));
-        props.insert("priority".to_string(), Value::Number(serde_json::Number::from(1)));
+        props.insert(
+            "priority".to_string(),
+            Value::Number(serde_json::Number::from(1)),
+        );
 
-        let note = NoteRecord::new("test.md", BlockHash::zero())
-            .with_properties(props);
+        let note = NoteRecord::new("test.md", BlockHash::zero()).with_properties(props);
 
         store.upsert(note).await.expect("Failed to upsert");
 

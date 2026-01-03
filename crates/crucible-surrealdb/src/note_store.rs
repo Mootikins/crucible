@@ -37,7 +37,9 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, trace};
 
 use crucible_core::parser::BlockHash;
-use crucible_core::storage::{Filter, NoteRecord, NoteStore, SearchResult, StorageError, StorageResult};
+use crucible_core::storage::{
+    Filter, NoteRecord, NoteStore, SearchResult, StorageError, StorageResult,
+};
 
 use crate::SurrealClient;
 
@@ -243,7 +245,10 @@ impl SurrealNoteStore {
         let batch_result = self.client.query(&batch_query, &[]).await;
 
         if batch_result.is_ok() {
-            debug!("NoteStore schema applied via batch in {:?}", start.elapsed());
+            debug!(
+                "NoteStore schema applied via batch in {:?}",
+                start.elapsed()
+            );
             return Ok(());
         }
 
@@ -286,9 +291,10 @@ impl SurrealNoteStore {
             self.embedding_dimensions
         );
 
-        self.client.query(&query, &[]).await.map_err(|e| {
-            anyhow::anyhow!("Failed to create vector index: {}", e)
-        })?;
+        self.client
+            .query(&query, &[])
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to create vector index: {}", e))?;
 
         debug!(
             "Vector index created/verified with {} dimensions",
@@ -332,17 +338,13 @@ impl SurrealNoteStore {
                 format!("properties.{} {} $prop_value", key, op_str)
             }
             Filter::And(filters) => {
-                let clauses: Vec<String> = filters
-                    .iter()
-                    .map(Self::filter_to_where_clause)
-                    .collect();
+                let clauses: Vec<String> =
+                    filters.iter().map(Self::filter_to_where_clause).collect();
                 format!("({})", clauses.join(" AND "))
             }
             Filter::Or(filters) => {
-                let clauses: Vec<String> = filters
-                    .iter()
-                    .map(Self::filter_to_where_clause)
-                    .collect();
+                let clauses: Vec<String> =
+                    filters.iter().map(Self::filter_to_where_clause).collect();
                 format!("({})", clauses.join(" OR "))
             }
         }
@@ -512,7 +514,10 @@ impl NoteStore for SurrealNoteStore {
                 map.insert("k".to_string(), serde_json::json!(k));
             }
 
-            (format!("WHERE embedding IS NOT NONE AND {}", clause), vec![filter_params])
+            (
+                format!("WHERE embedding IS NOT NONE AND {}", clause),
+                vec![filter_params],
+            )
         } else {
             (
                 "WHERE embedding IS NOT NONE".to_string(),
@@ -721,7 +726,9 @@ mod tests {
         SurrealNoteStore::clear_schema_cache();
 
         let client = SurrealClient::new_memory().await.unwrap();
-        let store = create_note_store_with_dimensions(client, 1536).await.unwrap();
+        let store = create_note_store_with_dimensions(client, 1536)
+            .await
+            .unwrap();
 
         // Verify custom dimensions
         assert_eq!(store.embedding_dimensions(), 1536);
