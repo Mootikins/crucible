@@ -4060,6 +4060,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "crucible-storage-tests"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "crucible-core",
+ "crucible-sqlite",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "crucible-surrealdb"
 version = "0.1.0"
 dependencies = [
