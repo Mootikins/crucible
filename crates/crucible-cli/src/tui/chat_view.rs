@@ -12,10 +12,10 @@ use std::time::{Duration, Instant};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
 use crate::tui::components::dialog_state::{DialogResult, DialogState};
-use crate::tui::components::generic_popup::GenericPopupState;
+use crate::tui::components::generic_popup::PopupState;
 use crate::tui::components::input_state::InputState;
-use crate::tui::components::popup_state::{PopupItemProvider, PopupState};
 use crate::tui::event_result::{EventResult, TuiAction};
+use crate::tui::popup::PopupProvider;
 use crate::tui::state::PopupKind;
 
 /// Time window for double Ctrl+C to trigger exit
@@ -29,17 +29,14 @@ pub struct ChatView<'a> {
     /// Input state (text editor with history)
     pub input: InputState<'a>,
 
-    /// Active popup, if any (legacy)
-    pub popup: Option<PopupState>,
-
-    /// Active generic popup, if any (new)
-    generic_popup: Option<GenericPopupState>,
+    /// Active popup, if any
+    popup: Option<PopupState>,
 
     /// Active dialog, if any
     pub dialog: Option<DialogState>,
 
     /// Provider for popup items
-    popup_provider: Option<Arc<dyn PopupItemProvider>>,
+    popup_provider: Option<Arc<dyn PopupProvider>>,
 
     /// Last Ctrl+C timestamp for double-tap detection
     last_ctrl_c: Option<Instant>,
@@ -55,7 +52,6 @@ impl<'a> ChatView<'a> {
             mode_id: mode_id.into(),
             input: InputState::new(),
             popup: None,
-            generic_popup: None,
             dialog: None,
             popup_provider: None,
             last_ctrl_c: None,
@@ -64,13 +60,13 @@ impl<'a> ChatView<'a> {
     }
 
     /// Set the popup provider for auto-triggering popups
-    pub fn with_popup_provider(mut self, provider: Arc<dyn PopupItemProvider>) -> Self {
+    pub fn with_popup_provider(mut self, provider: Arc<dyn PopupProvider>) -> Self {
         self.popup_provider = Some(provider);
         self
     }
 
     /// Set the popup provider
-    pub fn set_popup_provider(&mut self, provider: Arc<dyn PopupItemProvider>) {
+    pub fn set_popup_provider(&mut self, provider: Arc<dyn PopupProvider>) {
         self.popup_provider = Some(provider);
     }
 
@@ -97,14 +93,7 @@ impl<'a> ChatView<'a> {
         }
 
         // 3. Popup captures navigation, passes chars through
-        // Check generic popup first (preferred), then legacy popup
-        if self.generic_popup.is_some() {
-            let popup_result = self.handle_generic_popup_event(key);
-            if popup_result != EventResult::Ignored {
-                return popup_result;
-            }
-            // Fall through to input for ignored keys (like chars)
-        } else if self.popup.is_some() {
+        if self.popup.is_some() {
             let popup_result = self.handle_popup_event(key);
             if popup_result != EventResult::Ignored {
                 return popup_result;
@@ -114,24 +103,6 @@ impl<'a> ChatView<'a> {
 
         // 4. Input handles the rest
         self.handle_input_event(key)
-    }
-
-    /// Handle events when generic popup is active
-    fn handle_generic_popup_event(&mut self, key: &KeyEvent) -> EventResult {
-        let popup = self.generic_popup.as_mut().unwrap();
-        let result = popup.handle_key(key);
-
-        match &result {
-            EventResult::Action(TuiAction::PopupClose) => {
-                self.generic_popup = None;
-            }
-            EventResult::Action(TuiAction::PopupConfirm(_)) => {
-                // Keep popup for now, let runner handle the action
-            }
-            _ => {}
-        }
-
-        result
     }
 
     /// Handle global shortcuts that work regardless of focus
@@ -157,10 +128,7 @@ impl<'a> ChatView<'a> {
 
             // Escape: close popup if present, otherwise cancel
             (KeyCode::Esc, KeyModifiers::NONE) => {
-                if self.generic_popup.is_some() {
-                    self.generic_popup = None;
-                    Some(EventResult::NeedsRender)
-                } else if self.popup.is_some() {
+                if self.popup.is_some() {
                     self.popup = None;
                     Some(EventResult::NeedsRender)
                 } else if self.dialog.is_none() {
@@ -201,13 +169,13 @@ impl<'a> ChatView<'a> {
         let result = popup.handle_key(key);
 
         match &result {
-            EventResult::Action(TuiAction::PopupConfirm(_)) => {
-                // Keep the action, popup will be closed by runner
-                result
-            }
             EventResult::Action(TuiAction::PopupClose) => {
                 self.popup = None;
                 EventResult::NeedsRender
+            }
+            EventResult::Action(TuiAction::PopupConfirm(_)) => {
+                // Keep popup for now, let runner handle the action
+                result
             }
             _ => result,
         }
@@ -327,24 +295,24 @@ impl<'a> ChatView<'a> {
         self.dialog = None;
     }
 
-    /// Check if a popup is active (either legacy or generic)
+    /// Check if a popup is active
     pub fn has_popup(&self) -> bool {
-        self.popup.is_some() || self.generic_popup.is_some()
+        self.popup.is_some()
     }
 
-    /// Set the generic popup
-    pub fn set_generic_popup(&mut self, popup: Option<GenericPopupState>) {
-        self.generic_popup = popup;
+    /// Set the popup
+    pub fn set_popup(&mut self, popup: Option<PopupState>) {
+        self.popup = popup;
     }
 
-    /// Get a reference to the generic popup
-    pub fn generic_popup(&self) -> Option<&GenericPopupState> {
-        self.generic_popup.as_ref()
+    /// Get a reference to the popup
+    pub fn popup(&self) -> Option<&PopupState> {
+        self.popup.as_ref()
     }
 
-    /// Get a mutable reference to the generic popup
-    pub fn generic_popup_mut(&mut self) -> Option<&mut GenericPopupState> {
-        self.generic_popup.as_mut()
+    /// Get a mutable reference to the popup
+    pub fn popup_mut(&mut self) -> Option<&mut PopupState> {
+        self.popup.as_mut()
     }
 
     /// Check if a dialog is active
@@ -361,11 +329,28 @@ impl<'a> ChatView<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::components::popup_state::MockPopupProvider;
-    use crate::tui::state::{PopupItem, PopupItemKind};
+    use crate::tui::state::PopupItem;
 
-    fn mock_provider() -> Arc<dyn PopupItemProvider> {
-        Arc::new(MockPopupProvider::with_items(vec![
+    /// Mock popup provider for tests
+    #[derive(Debug, Clone, Default)]
+    struct MockProvider {
+        items: Vec<PopupItem>,
+    }
+
+    impl MockProvider {
+        fn with_items(items: Vec<PopupItem>) -> Self {
+            Self { items }
+        }
+    }
+
+    impl PopupProvider for MockProvider {
+        fn provide(&self, _kind: PopupKind, _query: &str) -> Vec<PopupItem> {
+            self.items.clone()
+        }
+    }
+
+    fn mock_provider() -> Arc<dyn PopupProvider> {
+        Arc::new(MockProvider::with_items(vec![
             PopupItem::cmd("help").desc("Show help").with_score(100),
             PopupItem::cmd("exit").desc("Exit").with_score(100),
         ]))
@@ -714,69 +699,69 @@ mod tests {
     }
 
     // ==========================================================================
-    // GenericPopupState integration tests
+    // PopupState integration tests
     // ==========================================================================
 
     #[test]
     fn test_generic_popup_can_be_used() {
-        use crate::tui::components::GenericPopupState;
+        use crate::tui::components::PopupState;
 
         let mut view = ChatView::new("plan");
 
-        // Should be able to create a GenericPopupState from the same provider
-        let generic = GenericPopupState::new(PopupKind::Command, mock_provider());
+        // Should be able to create a PopupState from the same provider
+        let generic = PopupState::new(PopupKind::Command, mock_provider());
 
         // Should be able to set it as the popup
-        view.set_generic_popup(Some(generic));
+        view.set_popup(Some(generic));
 
         assert!(view.has_popup());
     }
 
     #[test]
     fn test_generic_popup_fuzzy_filtering() {
-        use crate::tui::components::GenericPopupState;
+        use crate::tui::components::PopupState;
 
         let mut view = ChatView::new("plan");
-        let mut generic = GenericPopupState::new(PopupKind::Command, mock_provider());
+        let mut generic = PopupState::new(PopupKind::Command, mock_provider());
         generic.update_query("");
 
         // Set filter query for fuzzy filtering within items
         generic.set_filter_query("hel");
 
-        view.set_generic_popup(Some(generic));
+        view.set_popup(Some(generic));
 
         // The generic popup should have filtered results
-        let popup = view.generic_popup().unwrap();
+        let popup = view.popup().unwrap();
         assert!(popup.filtered_count() <= 2);
     }
 
     #[test]
     fn test_generic_popup_navigation() {
-        use crate::tui::components::GenericPopupState;
+        use crate::tui::components::PopupState;
 
         let mut view = ChatView::new("plan");
-        let mut generic = GenericPopupState::new(PopupKind::Command, mock_provider());
+        let mut generic = PopupState::new(PopupKind::Command, mock_provider());
         generic.update_query("");
 
-        view.set_generic_popup(Some(generic));
+        view.set_popup(Some(generic));
 
         // Navigation should work through handle_event
         let down = Event::Key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
         let result = view.handle_event(&down);
 
         assert_eq!(result, EventResult::NeedsRender);
-        assert_eq!(view.generic_popup().unwrap().selected_index(), 1);
+        assert_eq!(view.popup().unwrap().selected_index(), 1);
     }
 
     #[test]
     fn test_generic_popup_confirm_returns_action() {
-        use crate::tui::components::GenericPopupState;
+        use crate::tui::components::PopupState;
 
         let mut view = ChatView::new("plan");
-        let mut generic = GenericPopupState::new(PopupKind::Command, mock_provider());
+        let mut generic = PopupState::new(PopupKind::Command, mock_provider());
         generic.update_query("");
 
-        view.set_generic_popup(Some(generic));
+        view.set_popup(Some(generic));
 
         let tab = Event::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
         let result = view.handle_event(&tab);

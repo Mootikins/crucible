@@ -3,12 +3,11 @@
 //! Provides a trait for rendering conversation history with full ratatui control.
 
 use crate::tui::components::{
-    GenericPopupState, InputBoxWidget, SessionHistoryWidget, StatusBarWidget,
+    PopupState, InputBoxWidget, SessionHistoryWidget, StatusBarWidget,
 };
 use crate::tui::conversation::{render_item_to_lines, ConversationState, StatusKind};
 use crate::tui::dialog::{DialogResult, DialogStack, DialogWidget};
 use crate::tui::notification::NotificationState;
-use crate::tui::state::{PopupItem, PopupState};
 use anyhow::Result;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -93,10 +92,8 @@ pub struct ViewState {
     pub at_bottom: bool,
     pub width: u16,
     pub height: u16,
-    /// Popup state for slash commands / agents / files (legacy)
+    /// Popup state for slash commands / agents / files
     pub popup: Option<PopupState>,
-    /// Generic popup state using new popup system
-    pub generic_popup: Option<GenericPopupState>,
     /// Dialog stack for modal dialogs
     pub dialog_stack: DialogStack,
     /// Notification state for file watch events
@@ -123,7 +120,6 @@ impl ViewState {
             width,
             height,
             popup: None,
-            generic_popup: None,
             dialog_stack: DialogStack::new(),
             notifications: NotificationState::new(),
             show_reasoning: false,
@@ -174,20 +170,13 @@ impl RatatuiView {
 
     /// Render to a ratatui frame
     pub fn render_frame(&self, frame: &mut Frame) {
-        // Calculate popup height - prefer generic_popup, fall back to old popup
+        // Calculate popup height - prefer popup, fall back to old popup
         let popup_height = self
             .state
-            .generic_popup
+            .popup
             .as_ref()
             .filter(|p| p.filtered_count() > 0)
             .map(|p| (p.filtered_count().min(Self::MAX_POPUP_ITEMS) + 2) as u16)
-            .or_else(|| {
-                self.state
-                    .popup
-                    .as_ref()
-                    .filter(|p| !p.items.is_empty())
-                    .map(|p| (p.items.len().min(Self::MAX_POPUP_ITEMS) + 2) as u16)
-            })
             .unwrap_or(0);
 
         // Calculate reasoning panel height (when visible and has content)
@@ -323,67 +312,11 @@ impl RatatuiView {
     }
 
     /// Render popup overlay
-    ///
-    /// Prefers `generic_popup` (uses widget renderer) over legacy `popup`
     fn render_popup(&self, frame: &mut Frame, area: Rect) {
-        // Prefer generic_popup - uses PopupRenderer widget with proper formatting
-        if let Some(ref popup) = self.state.generic_popup {
+        if let Some(ref popup) = self.state.popup {
             let renderer = popup.renderer();
             renderer.render(area, frame.buffer_mut());
-            return;
         }
-
-        // Fallback to legacy popup (deprecated - will be removed)
-        let Some(ref popup) = self.state.popup else {
-            return;
-        };
-
-        let lines: Vec<Line> = popup
-            .items
-            .iter()
-            .enumerate()
-            .skip(popup.viewport_offset)
-            .take(Self::MAX_POPUP_ITEMS)
-            .map(|(idx, item)| {
-                let mut spans = Vec::new();
-                // Fixed-width marker: always 2 chars for consistent alignment
-                let marker = if idx == popup.selected { "> " } else { "  " };
-                spans.push(Span::styled(
-                    marker,
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ));
-
-                // Kind labels removed - trigger char already indicates type
-                spans.push(Span::styled(
-                    item.title(),
-                    if idx == popup.selected {
-                        Style::default()
-                            .fg(Color::White)
-                            .add_modifier(Modifier::BOLD | Modifier::REVERSED)
-                    } else {
-                        Style::default().fg(Color::White)
-                    },
-                ));
-                let subtitle = item.subtitle();
-                if !subtitle.is_empty() {
-                    spans.push(Span::raw(" "));
-                    spans.push(Span::styled(
-                        subtitle.to_string(),
-                        Style::default().fg(Color::DarkGray),
-                    ));
-                }
-                Line::from(spans)
-            })
-            .collect();
-
-        // trim: false preserves leading spaces (selection marker padding)
-        let popup_widget = Paragraph::new(lines)
-            .block(Block::default().borders(Borders::ALL).title("Select"))
-            .wrap(Wrap { trim: false });
-
-        frame.render_widget(popup_widget, area);
     }
 
     /// Get inner state reference
@@ -411,24 +344,14 @@ impl RatatuiView {
         self.state.popup.as_mut()
     }
 
-    /// Set generic popup state
-    pub fn set_generic_popup(&mut self, popup: Option<GenericPopupState>) {
-        self.state.generic_popup = popup;
+    /// Take the popup state (for passing back to runner)
+    pub fn popup_take(&mut self) -> Option<PopupState> {
+        self.state.popup.take()
     }
 
-    /// Get generic popup state reference
-    pub fn generic_popup(&self) -> Option<&GenericPopupState> {
-        self.state.generic_popup.as_ref()
-    }
-
-    /// Get mutable generic popup state reference
-    pub fn generic_popup_mut(&mut self) -> Option<&mut GenericPopupState> {
-        self.state.generic_popup.as_mut()
-    }
-
-    /// Check if any popup (legacy or generic) is active
+    /// Check if popup is active
     pub fn has_popup(&self) -> bool {
-        self.state.popup.is_some() || self.state.generic_popup.is_some()
+        self.state.popup.is_some()
     }
 
     /// Calculate total content height for scroll bounds
@@ -463,8 +386,9 @@ impl RatatuiView {
 
         // Add popup height if active
         if let Some(ref popup) = self.state.popup {
-            if !popup.items.is_empty() {
-                overhead += (popup.items.len().min(Self::MAX_POPUP_ITEMS) + 2) as u16;
+            let count = popup.filtered_count();
+            if count > 0 {
+                overhead += (count.min(Self::MAX_POPUP_ITEMS) + 2) as u16;
             }
         }
 
@@ -755,8 +679,11 @@ impl ConversationView for RatatuiView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::state::{PopupItemKind, PopupKind};
+    use crate::tui::components::PopupState;
+    use crate::tui::state::{PopupItem, PopupItemKind, PopupKind};
     use ratatui::{backend::TestBackend, Terminal};
+    use std::sync::Arc;
+    #[allow(unused_imports)]
     use std::time::Instant;
 
     #[test]
@@ -808,17 +735,18 @@ mod tests {
     /// didn't render the popup at all.
     #[test]
     fn test_ratatui_view_renders_popup() {
-        let mut view = RatatuiView::new("plan", 80, 24);
+        use crate::tui::popup::PopupProvider;
 
-        // Set up popup with a command
-        let popup = PopupState {
-            kind: PopupKind::Command,
-            query: String::new(),
-            items: vec![PopupItem::cmd("help").desc("Show help")],
-            selected: 0,
-            viewport_offset: 0,
-            last_update: Instant::now(),
-        };
+        struct TestProvider;
+        impl PopupProvider for TestProvider {
+            fn provide(&self, _kind: PopupKind, _query: &str) -> Vec<PopupItem> {
+                vec![PopupItem::cmd("help").desc("Show help")]
+            }
+        }
+
+        let mut view = RatatuiView::new("plan", 80, 24);
+        let mut popup = PopupState::new(PopupKind::Command, Arc::new(TestProvider));
+        popup.update_query(""); // Load items from provider
         view.set_popup(Some(popup));
 
         // Render to test backend
@@ -835,10 +763,10 @@ mod tests {
             })
             .collect();
 
-        // The popup should contain "/help" (kind labels removed for cleaner UI)
+        // The popup should contain "/ help" (command items have space after trigger)
         assert!(
-            content.contains("/help"),
-            "Popup should render '/help' command. Buffer content: {}",
+            content.contains("/ help"),
+            "Popup should render '/ help' command. Buffer content: {}",
             content
         );
         // Kind labels are no longer shown - trigger char indicates type
@@ -852,16 +780,18 @@ mod tests {
     /// Test that skill items render (kind labels removed)
     #[test]
     fn test_ratatui_view_renders_skill_popup() {
-        let mut view = RatatuiView::new("plan", 80, 24);
+        use crate::tui::popup::PopupProvider;
 
-        let popup = PopupState {
-            kind: PopupKind::Command,
-            query: String::new(),
-            items: vec![PopupItem::skill("git-commit").desc("Create commits (personal)")],
-            selected: 0,
-            viewport_offset: 0,
-            last_update: Instant::now(),
-        };
+        struct SkillProvider;
+        impl PopupProvider for SkillProvider {
+            fn provide(&self, _kind: PopupKind, _query: &str) -> Vec<PopupItem> {
+                vec![PopupItem::skill("git-commit").desc("Create commits (personal)")]
+            }
+        }
+
+        let mut view = RatatuiView::new("plan", 80, 24);
+        let mut popup = PopupState::new(PopupKind::Command, Arc::new(SkillProvider));
+        popup.update_query("");
         view.set_popup(Some(popup));
 
         let backend = TestBackend::new(80, 24);
@@ -882,9 +812,10 @@ mod tests {
             "Popup should NOT render '[skill]' label (removed). Buffer: {}",
             content
         );
+        // Skill items show the skill name (the display format doesn't include "skill:" prefix)
         assert!(
-            content.contains("skill:git-commit"),
-            "Popup should render skill title. Buffer: {}",
+            content.contains("git-commit"),
+            "Popup should render skill name. Buffer: {}",
             content
         );
     }
@@ -1059,184 +990,24 @@ mod tests {
         );
     }
 
-    // =============================================================================
-    // Viewport Rendering Tests
-    // =============================================================================
-
-    /// Test that render_popup() uses viewport_offset to skip items
-    /// This test should FAIL because render_popup() currently does:
-    ///   popup.items.iter().take(MAX_POPUP_ITEMS)
-    /// instead of:
-    ///   popup.items.iter().skip(viewport_offset).take(MAX_POPUP_ITEMS)
-    #[test]
-    fn test_render_popup_uses_viewport_offset() {
-        let mut view = RatatuiView::new("plan", 80, 24);
-
-        // Create popup with 10 items, viewport_offset=3, selected=5
-        let items = (0..10)
-            .map(|i| PopupItem::cmd(format!("Item {}", i)).desc(format!("Subtitle {}", i)))
-            .collect();
-
-        let popup = PopupState {
-            kind: PopupKind::Command,
-            query: String::new(),
-            items,
-            selected: 5,
-            viewport_offset: 3,
-            last_update: Instant::now(),
-        };
-        view.set_popup(Some(popup));
-
-        // Render to test backend
-        let backend = TestBackend::new(80, 24);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|f| view.render_frame(f)).unwrap();
-
-        let buffer = terminal.backend().buffer();
-        let content: String = (0..buffer.area().height)
-            .flat_map(|y| {
-                (0..buffer.area().width)
-                    .map(move |x| buffer.cell((x, y)).map(|c| c.symbol()).unwrap_or(" "))
-            })
-            .collect();
-
-        // With viewport_offset=3, we should see items 3,4,5,6,7
-        // NOT items 0,1,2,3,4
-        assert!(
-            content.contains("Item 3"),
-            "Viewport should show Item 3 (first visible item). Buffer: {}",
-            content
-        );
-        assert!(
-            content.contains("Item 4"),
-            "Viewport should show Item 4. Buffer: {}",
-            content
-        );
-        assert!(
-            content.contains("Item 5"),
-            "Viewport should show Item 5 (selected). Buffer: {}",
-            content
-        );
-        assert!(
-            content.contains("Item 6"),
-            "Viewport should show Item 6. Buffer: {}",
-            content
-        );
-        assert!(
-            content.contains("Item 7"),
-            "Viewport should show Item 7 (last visible item). Buffer: {}",
-            content
-        );
-
-        // Should NOT show items before viewport
-        assert!(
-            !content.contains("Item 0"),
-            "Viewport should NOT show Item 0 (before viewport_offset). Buffer: {}",
-            content
-        );
-        assert!(
-            !content.contains("Item 1"),
-            "Viewport should NOT show Item 1 (before viewport_offset). Buffer: {}",
-            content
-        );
-        assert!(
-            !content.contains("Item 2"),
-            "Viewport should NOT show Item 2 (before viewport_offset). Buffer: {}",
-            content
-        );
-    }
-
-    /// Test that render_popup() highlights the selected item at correct visual position
-    /// This test should FAIL because the current code uses enumerated index for highlighting,
-    /// not the actual item index. With viewport_offset=3, selected=5, the selected item should
-    /// be at visual position 2 (since we show items 3,4,5,6,7 and item 5 is at index 2).
-    #[test]
-    fn test_render_popup_selected_highlight_correct() {
-        let mut view = RatatuiView::new("plan", 80, 24);
-
-        // Create popup with 10 items, viewport_offset=3, selected=5
-        let items = (0..10)
-            .map(|i| PopupItem::cmd(format!("Item {}", i)).desc(format!("Subtitle {}", i)))
-            .collect();
-
-        let popup = PopupState {
-            kind: PopupKind::Command,
-            query: String::new(),
-            items,
-            selected: 5,
-            viewport_offset: 3,
-            last_update: Instant::now(),
-        };
-        view.set_popup(Some(popup));
-
-        // Render to test backend
-        let backend = TestBackend::new(80, 24);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|f| view.render_frame(f)).unwrap();
-
-        let buffer = terminal.backend().buffer();
-
-        // Find the line containing "Item 5" and check if it has the highlight marker ">"
-        // The highlight marker should be at the start of the line
-        let mut found_item_5 = false;
-        let mut has_highlight_marker = false;
-
-        for y in 0..buffer.area().height {
-            let line: String = (0..buffer.area().width)
-                .map(|x| buffer.cell((x, y)).map(|c| c.symbol()).unwrap_or(" "))
-                .collect();
-
-            if line.contains("Item 5") {
-                found_item_5 = true;
-                // Check if this line has the ">" marker at the start (after border)
-                // The format is: "│> [cmd] Item 5 Subtitle 5..."
-                has_highlight_marker = line.contains("│> ");
-                break;
-            }
-        }
-
-        assert!(found_item_5, "Should render Item 5 in viewport");
-        assert!(
-            has_highlight_marker,
-            "Item 5 should have highlight marker '>' since it's selected"
-        );
-
-        // Additionally, verify that other visible items do NOT have the marker
-        for y in 0..buffer.area().height {
-            let line: String = (0..buffer.area().width)
-                .map(|x| buffer.cell((x, y)).map(|c| c.symbol()).unwrap_or(" "))
-                .collect();
-
-            // Items 3, 4, 6, 7 should NOT have the highlight marker
-            if line.contains("Item 3")
-                || line.contains("Item 4")
-                || line.contains("Item 6")
-                || line.contains("Item 7")
-            {
-                let has_marker = line.contains("│> ");
-                assert!(
-                    !has_marker,
-                    "Non-selected items should NOT have highlight marker '>'. Line: {}",
-                    line
-                );
-            }
-        }
-    }
+    // NOTE: Viewport rendering tests removed - the new PopupState manages viewport
+    // internally and has its own renderer. See generic_popup.rs for viewport tests.
 
     // =============================================================================
     // Generic Popup Integration Tests
     // =============================================================================
 
-    mod generic_popup_tests {
+    mod popup_tests {
         use super::*;
-        use crate::tui::components::{GenericPopupState, PopupItemProvider};
-        use crate::tui::state::PopupKind;
+        use crate::tui::components::PopupState;
+        use crate::tui::popup::PopupProvider;
+        use crate::tui::state::{PopupItem, PopupKind};
         use std::sync::Arc;
 
         /// Mock provider for tests
         struct MockProvider;
 
-        impl PopupItemProvider for MockProvider {
+        impl PopupProvider for MockProvider {
             fn provide(&self, _kind: PopupKind, _query: &str) -> Vec<PopupItem> {
                 vec![
                     PopupItem::cmd("help").desc("Show help").with_score(100),
@@ -1245,80 +1016,74 @@ mod tests {
             }
         }
 
-        fn mock_provider() -> Arc<dyn PopupItemProvider> {
+        fn mock_provider() -> Arc<dyn PopupProvider> {
             Arc::new(MockProvider)
         }
 
         #[test]
-        fn test_view_state_has_generic_popup_field() {
+        fn test_view_state_has_popup_field() {
             let state = ViewState::new("plan", 80, 24);
-            // ViewState should have a generic_popup field that's None by default
-            assert!(state.generic_popup.is_none());
+            // ViewState should have a popup field that's None by default
+            assert!(state.popup.is_none());
         }
 
         #[test]
-        fn test_ratatui_view_set_generic_popup() {
+        fn test_ratatui_view_set_popup() {
             let mut view = RatatuiView::new("plan", 80, 24);
 
             // Create a generic popup
-            let popup = GenericPopupState::new(PopupKind::Command, mock_provider());
+            let popup = PopupState::new(PopupKind::Command, mock_provider());
 
             // Set it on the view
-            view.set_generic_popup(Some(popup));
+            view.set_popup(Some(popup));
 
             // Should be set
-            assert!(view.generic_popup().is_some());
+            assert!(view.popup().is_some());
         }
 
         #[test]
-        fn test_ratatui_view_generic_popup_mutable_access() {
+        fn test_ratatui_view_popup_mutable_access() {
             let mut view = RatatuiView::new("plan", 80, 24);
 
-            let popup = GenericPopupState::new(PopupKind::Command, mock_provider());
-            view.set_generic_popup(Some(popup));
+            let popup = PopupState::new(PopupKind::Command, mock_provider());
+            view.set_popup(Some(popup));
 
             // Should be able to get mutable access
-            let popup_mut = view.generic_popup_mut().unwrap();
+            let popup_mut = view.popup_mut().unwrap();
             popup_mut.set_filter_query("hel");
 
             // Filter query should be updated
-            assert_eq!(view.generic_popup().unwrap().filter_query(), "hel");
+            assert_eq!(view.popup().unwrap().filter_query(), "hel");
         }
 
         #[test]
-        fn test_ratatui_view_has_popup_checks_both() {
+        fn test_ratatui_view_has_popup() {
             let mut view = RatatuiView::new("plan", 80, 24);
 
-            // Neither popup set
+            // No popup set
             assert!(!view.has_popup());
 
-            // Set legacy popup
-            let legacy_popup = PopupState::new(PopupKind::Command);
-            view.set_popup(Some(legacy_popup));
+            // Set popup
+            let popup = PopupState::new(PopupKind::Command, mock_provider());
+            view.set_popup(Some(popup));
             assert!(view.has_popup());
 
-            // Clear legacy, set generic
+            // Clear popup
             view.set_popup(None);
-            let generic_popup = GenericPopupState::new(PopupKind::Command, mock_provider());
-            view.set_generic_popup(Some(generic_popup));
-            assert!(view.has_popup());
-
-            // Clear both
-            view.set_generic_popup(None);
             assert!(!view.has_popup());
         }
 
         #[test]
-        fn test_ratatui_view_clear_generic_popup() {
+        fn test_ratatui_view_clear_popup() {
             let mut view = RatatuiView::new("plan", 80, 24);
 
-            let popup = GenericPopupState::new(PopupKind::Command, mock_provider());
-            view.set_generic_popup(Some(popup));
-            assert!(view.generic_popup().is_some());
+            let popup = PopupState::new(PopupKind::Command, mock_provider());
+            view.set_popup(Some(popup));
+            assert!(view.popup().is_some());
 
             // Clear it
-            view.set_generic_popup(None);
-            assert!(view.generic_popup().is_none());
+            view.set_popup(None);
+            assert!(view.popup().is_none());
         }
     }
 

@@ -100,13 +100,13 @@ pub fn map_key_event(event: &KeyEvent, state: &TuiState) -> InputAction {
                 // Check if this is an exact command match
                 if is_exact_slash_command(trimmed) {
                     InputAction::ExecuteSlashCommand(trimmed.to_string())
-                } else if state.popup.is_some() {
+                } else if state.has_popup {
                     InputAction::ConfirmPopup
                 } else {
                     // Unknown command, no popup - do nothing
                     InputAction::None
                 }
-            } else if trimmed.starts_with('@') && state.popup.is_some() {
+            } else if trimmed.starts_with('@') && state.has_popup {
                 InputAction::ConfirmPopup
             } else {
                 InputAction::SendMessage(state.input_buffer.clone())
@@ -132,14 +132,14 @@ pub fn map_key_event(event: &KeyEvent, state: &TuiState) -> InputAction {
 
         // Navigation: Up/Down depend on whether popup is active
         (KeyCode::Up, KeyModifiers::NONE) => {
-            if state.popup.is_some() {
+            if state.has_popup {
                 InputAction::MovePopupSelection(-1)
             } else {
                 InputAction::HistoryPrev
             }
         }
         (KeyCode::Down, KeyModifiers::NONE) => {
-            if state.popup.is_some() {
+            if state.has_popup {
                 InputAction::MovePopupSelection(1)
             } else {
                 InputAction::HistoryNext
@@ -350,10 +350,8 @@ mod history_tests {
     #[test]
     fn test_up_with_popup_moves_selection() {
         // When popup is active, Up should move popup selection (not history)
-        use crate::tui::state::{PopupKind, PopupState};
-
         let mut state = TuiState::new("plan");
-        state.popup = Some(PopupState::new(PopupKind::Command));
+        state.has_popup = true;
 
         let event = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
         let action = map_key_event(&event, &state);
@@ -365,7 +363,6 @@ mod history_tests {
 #[cfg(test)]
 mod slash_command_tests {
     use super::*;
-    use crate::tui::state::{PopupKind, PopupState};
 
     fn make_enter() -> KeyEvent {
         KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)
@@ -377,7 +374,7 @@ mod slash_command_tests {
         // Expected: ConfirmPopup (fill in the completion)
         let mut state = TuiState::new("plan");
         state.input_buffer = "/hel".to_string();
-        state.popup = Some(PopupState::new(PopupKind::Command));
+        state.has_popup = true;
 
         let action = map_key_event(&make_enter(), &state);
         assert!(
@@ -423,7 +420,7 @@ mod slash_command_tests {
         // Expected: None (do nothing)
         let mut state = TuiState::new("plan");
         state.input_buffer = "/xyz".to_string();
-        state.popup = None;
+        state.has_popup = false;
 
         let action = map_key_event(&make_enter(), &state);
         assert!(
@@ -439,7 +436,7 @@ mod slash_command_tests {
         // Expected: ConfirmPopup
         let mut state = TuiState::new("plan");
         state.input_buffer = "@agent".to_string();
-        state.popup = Some(PopupState::new(PopupKind::AgentOrFile));
+        state.has_popup = true;
 
         let action = map_key_event(&make_enter(), &state);
         assert!(
