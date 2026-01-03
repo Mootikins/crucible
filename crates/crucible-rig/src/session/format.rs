@@ -354,6 +354,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::type_complexity)]
     fn test_format_session_complete() {
         use super::super::types::MessageRole;
 

@@ -287,7 +287,7 @@ mod tests {
     #[test]
     fn test_backend_result_type() {
         let ok: BackendResult<i32> = Ok(42);
-        assert_eq!(ok.unwrap(), 42);
+        assert!(matches!(ok, Ok(42)));
 
         let err: BackendResult<i32> = Err(BackendError::Internal("test".into()));
         assert!(err.is_err());
