@@ -14,10 +14,8 @@
 
 pub mod adapter;
 pub mod coordinator;
-pub mod eav_document;
 pub mod error;
 pub mod extensions;
-pub mod frontmatter_mapper;
 pub mod storage_bridge;
 pub mod traits;
 pub mod types;
@@ -28,13 +26,11 @@ pub use coordinator::{
     CoordinatorStatistics, DefaultParserStorageCoordinator, OperationMetadata, OperationPriority,
     OperationResult, OperationType, ParserStorageCoordinator, ParsingOperation, TransactionContext,
 };
-pub use eav_document::{EAVDocument, EAVDocumentBuilder, ValidationError};
 // Re-export error types from canonical source (this module)
 pub use error::{ErrorSeverity, ParseError, ParseErrorType, ParserError, ParserResult};
 pub use extensions::{
     ExtensionRegistry, ExtensionRegistryBuilder, ExtensionRegistryStats, SyntaxExtension,
 };
-pub use frontmatter_mapper::FrontmatterPropertyMapper;
 pub use storage_bridge::{
     factory as parser_factory, ParseStatistics, StorageAwareMarkdownParser,
     StorageAwareParseResult, StorageAwareParser, StorageAwareParserConfig, StorageOperationResult,

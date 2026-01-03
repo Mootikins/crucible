@@ -5,25 +5,25 @@
 //!
 //! It wires together:
 //! - `Reactor` from `crucible-core` for unified event dispatch
-//! - `StorageHandler` and `TagHandler` from `crucible-surrealdb` for database events
 //! - `EmbeddingHandler` from `crucible-enrichment` for embedding generation
 //! - `WatchManager` from `crucible-watch` for file system monitoring
 //! - `RuneHandler` from `crucible-rune` for user scripts
 //!
+//! Note: StorageHandler and TagHandler were removed in Phase 4 cleanup.
+//! Storage is now handled through NoteStore trait implementations.
+//!
 //! # Event Flow
 //!
 //! ```text
-//! FileChanged -> NoteParsed -> EntityStored -> BlocksUpdated -> EmbeddingRequested -> EmbeddingGenerated
-//!      ^            ^              ^               ^                  ^                     ^
-//!    Watch       Parser         Storage         Storage           Embedding            Embedding
+//! FileChanged -> NoteParsed -> NoteStored -> EmbeddingRequested -> EmbeddingGenerated
+//!      ^            ^             ^                 ^                     ^
+//!    Watch       Parser        NoteStore       Embedding            Embedding
 //! ```
 //!
 //! # Handler Dependencies
 //!
 //! Handlers declare dependencies for proper ordering:
-//! - StorageHandler: no dependencies (runs first)
-//! - TagHandler: depends on `storage_handler`
-//! - EmbeddingHandler: depends on `storage_handler`, `tag_handler`
+//! - EmbeddingHandler: runs for parsed notes
 //! - Rune handlers: run after all built-in handlers (priority 500+)
 //!
 //! # Usage

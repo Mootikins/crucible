@@ -13,7 +13,7 @@
 use crate::config::CliConfig;
 use anyhow::Result;
 use crucible_config::StorageMode;
-use crucible_core::enrichment::EnrichedNoteStore;
+use crucible_core::enrichment::{EnrichedNote, EnrichedNoteStore};
 use crucible_core::hashing::Blake3Hasher;
 use crucible_core::storage::{
     BlockSize, ContentAddressedStorage, ContentAddressedStorageBuilder, HasherConfig,
@@ -26,7 +26,7 @@ use once_cell::sync::Lazy;
 use std::collections::{hash_map::Entry, HashMap};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// Create SurrealDB storage from CLI configuration
 ///
@@ -118,14 +118,31 @@ pub async fn initialize_surrealdb_schema(client: &adapters::SurrealClientHandle)
 /// This factory creates an adapter that implements the `EnrichedNoteStore` trait
 /// using SurrealDB as the backend.
 ///
-/// # Architecture
+/// # Phase 4 Cleanup
 ///
-/// Uses the public factory function from the adapters module, which handles
-/// all the internal wiring (EAVGraphStore, NoteIngestor lifetimes, etc.).
+/// The EAV-based EnrichedNoteStore has been removed.
+/// This function now returns a no-op stub until NoteStore-based storage is implemented.
 pub fn create_surrealdb_enriched_note_store(
-    client: adapters::SurrealClientHandle,
+    _client: adapters::SurrealClientHandle,
 ) -> Arc<dyn EnrichedNoteStore> {
-    adapters::create_enriched_note_store(client)
+    warn!("EnrichedNoteStore is deprecated - using no-op stub");
+    Arc::new(NoOpEnrichedNoteStore)
+}
+
+/// No-op implementation of EnrichedNoteStore for Phase 4 transition
+struct NoOpEnrichedNoteStore;
+
+#[async_trait::async_trait]
+impl EnrichedNoteStore for NoOpEnrichedNoteStore {
+    async fn store_enriched(&self, _enriched: &EnrichedNote, _relative_path: &str) -> Result<()> {
+        // No-op: Storage should use NoteStore directly
+        Ok(())
+    }
+
+    async fn note_exists(&self, _relative_path: &str) -> Result<bool> {
+        // No-op: Always return false since we're not storing
+        Ok(false)
+    }
 }
 
 /// Create in-memory content-addressed storage

@@ -86,15 +86,6 @@ pub use hash_lookup::{
     BatchLookupConfig, CacheStats, HashLookupCache, HashLookupResult, StoredFileHash,
 };
 
-// Public deduplication functionality
-pub mod deduplication_detector;
-pub use deduplication_detector::{DeduplicationDetector, SurrealDeduplicationDetector};
-
-pub mod deduplication_reporting;
-pub use deduplication_reporting::{
-    DeduplicationReport, DeduplicationReportGenerator, ExecutiveSummary, ExportFormat,
-    ImplementationEffort, Recommendation, RecommendationPriority, ReportMetadata, ReportOptions,
-};
 
 // Public schema types
 pub mod schema_types;
@@ -120,8 +111,6 @@ pub use database::SurrealEmbeddingDatabase;
 pub mod note_store;
 pub use note_store::{create_note_store, create_note_store_with_dimensions, SurrealNoteStore};
 
-pub mod content_addressed_storage;
-pub use content_addressed_storage::{ContentAddressedStorageSurrealDB, DocumentBlockRecord};
 
 pub mod kiln_store;
 pub use kiln_store::{InMemoryKilnStore, KilnStore};
@@ -158,9 +147,6 @@ pub use clustering::{
     MocDetectionConfig, PerformanceConfig, QualityPreference, SimpleClusteringService,
 };
 
-// Event handlers for database operations
-pub mod event_handlers;
-pub use event_handlers::{StorageHandler, TagHandler};
 
 // Graph query translation via composable pipeline
 pub mod graph_query;
@@ -171,9 +157,7 @@ pub use graph_query::{create_default_pipeline, create_pipeline_with_tables};
 // ============================================================================
 
 pub(crate) mod batch_aware_client;
-pub(crate) mod change_detection_store;
 pub(crate) mod consistency;
-pub(crate) mod eav_graph;
 pub(crate) mod merkle_persistence;
 pub(crate) mod migration;
 pub(crate) mod query;
@@ -186,7 +170,6 @@ pub mod embedding;
 pub(crate) mod transaction_consumer;
 
 // Internal re-exports for use within this crate only
-pub(crate) use eav_graph::{EAVGraphStore, NoteIngestor};
 pub(crate) use merkle_persistence::MerklePersistence;
 pub(crate) use surreal_client::SurrealClient;
 
@@ -201,7 +184,6 @@ pub mod test_utils {
     //! This module exposes internal types and functions for testing purposes only.
     //! Enable the `test-utils` feature to use these.
 
-    pub use crate::eav_graph::{apply_eav_graph_schema, EAVGraphStore, NoteIngestor};
     pub use crate::note_store::{
         create_note_store, create_note_store_with_dimensions, SurrealNoteStore,
     };

@@ -3,8 +3,6 @@
 //! This module provides the single-threaded database consumer that processes
 //! transactions from the queue to eliminate RocksDB lock contention.
 
-use crate::eav_graph::EAVGraphStore;
-use crate::kiln_integration::parse_entity_record_id;
 use crate::metrics::{record_transaction_failure, record_transaction_success};
 use crate::surreal_client::SurrealClient;
 use crate::transaction_queue::{
@@ -1036,6 +1034,8 @@ impl DatabaseTransactionConsumer {
     }
 
     /// Helper method to completely delete a note and all its relationships
+    ///
+    /// NOTE: Phase 4 cleanup - simplified to use direct SQL without EAVGraphStore
     async fn delete_document_completely(
         &self,
         document_id: &str,
@@ -1043,17 +1043,26 @@ impl DatabaseTransactionConsumer {
     ) -> Result<()> {
         info!("Deleting note: {}", document_id);
 
-        let entity_id = parse_entity_record_id(document_id)?;
-        let store = EAVGraphStore::new(self.client.as_ref().clone());
+        // Parse document_id to get table and id
+        // Format: "entities:note:path/to/file.md" or "note:path/to/file.md"
+        let (table, id) = if let Some(rest) = document_id.strip_prefix("entities:") {
+            ("entities".to_string(), rest.to_string())
+        } else if document_id.contains(':') {
+            let parts: Vec<&str> = document_id.splitn(2, ':').collect();
+            (parts[0].to_string(), parts[1].to_string())
+        } else {
+            ("entities".to_string(), format!("note:{}", document_id))
+        };
 
+        // Delete embeddings
         self.client
             .query(
                 r#"
                 DELETE embeddings WHERE entity_id = type::thing($table, $id);
                 "#,
                 &[json!({
-                    "table": entity_id.table,
-                    "id": entity_id.id,
+                    "table": table,
+                    "id": id,
                 })],
             )
             .await
@@ -1061,68 +1070,20 @@ impl DatabaseTransactionConsumer {
                 anyhow::anyhow!("Failed to delete embeddings for {}: {}", document_id, e)
             })?;
 
+        // Delete from notes table (new NoteStore schema)
         self.client
             .query(
                 r#"
-                DELETE blocks WHERE entity_id = type::thing($table, $id);
+                DELETE notes WHERE path = $path;
                 "#,
                 &[json!({
-                    "table": entity_id.table,
-                    "id": entity_id.id,
+                    "path": id.strip_prefix("note:").unwrap_or(&id),
                 })],
             )
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to delete blocks for {}: {}", document_id, e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to delete note for {}: {}", document_id, e))?;
 
-        self.client
-            .query(
-                r#"
-                DELETE properties WHERE entity_id = type::thing($table, $id);
-                "#,
-                &[json!({
-                    "table": entity_id.table,
-                    "id": entity_id.id,
-                })],
-            )
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!("Failed to delete properties for {}: {}", document_id, e)
-            })?;
-
-        self.client
-            .query(
-                r#"
-                DELETE relations WHERE in = type::thing($table, $id);
-                DELETE relations WHERE out = type::thing($table, $id);
-                "#,
-                &[json!({
-                    "table": entity_id.table,
-                    "id": entity_id.id,
-                })],
-            )
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!("Failed to delete relations for {}: {}", document_id, e)
-            })?;
-
-        store.delete_entity_tags(&entity_id).await.map_err(|e| {
-            anyhow::anyhow!("Failed to delete entity tags for {}: {}", document_id, e)
-        })?;
-
-        self.client
-            .query(
-                r#"
-                DELETE type::thing($table, $id);
-                "#,
-                &[json!({
-                    "table": entity_id.table,
-                    "id": entity_id.id,
-                })],
-            )
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to delete entity {}: {}", document_id, e))?;
-
-        debug!("Successfully deleted entity and relations: {}", document_id);
+        debug!("Successfully deleted note: {}", document_id);
         Ok(())
     }
 }
