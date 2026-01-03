@@ -18,9 +18,9 @@ expression: h.render()
                                                                                 
                                                                                 
 ┌Select────────────────────────────────────────────────────────────────────────┐
-│> @researcher Deep research and analysis                                      │
-│@coder Code generation and review                                             │
-│@writer Writing and editing                                                   │
+│> @ researcher Deep research and analysis                                     │
+│  @ coder Code generation and review                                          │
+│  @ writer Writing and editing                                                │
 └──────────────────────────────────────────────────────────────────────────────┘
                                                                                 
  >                                                                              
