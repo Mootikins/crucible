@@ -192,6 +192,7 @@ impl fmt::Display for EntityType {
 pub struct Entity {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<RecordId<EntityRecord>>,
+    #[serde(rename = "type")]
     pub entity_type: EntityType,
     #[serde(default = "Utc::now")]
     pub created_at: DateTime<Utc>,

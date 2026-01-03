@@ -28,7 +28,7 @@ DEFINE FIELD id ON TABLE entities
 
 DEFINE FIELD type ON TABLE entities
     TYPE string
-    ASSERT $value IN ["note", "block", "tag", "media", "person"];
+    ASSERT $value IN ["note", "block", "tag", "section", "media", "person"];
 
 DEFINE FIELD created_at ON TABLE entities
     TYPE datetime

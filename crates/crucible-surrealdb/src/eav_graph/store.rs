@@ -1076,6 +1076,7 @@ impl CoreRelationStorage for EAVGraphStore {
                     "source": rel.source,
                     "position": rel.position,
                     "metadata": rel.metadata,
+                    "content_category": rel.content_category,
                     "created_at": rel.created_at.to_rfc3339(),
                 })
             })
@@ -1096,6 +1097,7 @@ impl CoreRelationStorage for EAVGraphStore {
                         source = $rel.source,
                         position = $rel.position,
                         metadata = $rel.metadata,
+                        content_category = $rel.content_category,
                         created_at = <datetime> $rel.created_at
                 };
                 "#,
@@ -1806,6 +1808,326 @@ impl CoreTagStorage for EAVGraphStore {
             .map_err(|e| StorageError::Backend(e.to_string()))?;
 
         Ok(result.records.len())
+    }
+}
+
+// ============================================================================
+// EntityStorage Trait Implementation
+// ============================================================================
+
+use crucible_core::storage::EntityStorage as CoreEntityStorage;
+use super::adapter::{core_entity_to_surreal, surreal_entity_to_core};
+
+#[async_trait]
+impl CoreEntityStorage for EAVGraphStore {
+    async fn store_entity(&self, entity: crucible_core::storage::Entity) -> StorageResult<String> {
+        let surreal_entity = core_entity_to_surreal(entity.clone());
+        self.upsert_entity(&surreal_entity)
+            .await
+            .map(|_| entity.id)
+            .map_err(|e| StorageError::Backend(e.to_string()))
+    }
+
+    async fn get_entity(&self, id: &str) -> StorageResult<Option<crucible_core::storage::Entity>> {
+        let entity_id = string_to_entity_id(id);
+        let params = json!({ "id": entity_id.id, "table": entity_id.table });
+
+        let result = self
+            .client
+            .query(
+                "SELECT * FROM type::thing($table, $id)",
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        if let Some(record) = result.records.first() {
+            let mut surreal_entity: Entity = serde_json::from_value(
+                serde_json::to_value(&record.data)
+                    .map_err(|e| StorageError::Backend(e.to_string()))?,
+            )
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+            // Set the ID from the query since it may not be in the data
+            surreal_entity.id = Some(entity_id);
+            Ok(Some(surreal_entity_to_core(surreal_entity)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn update_entity(&self, id: &str, entity: crucible_core::storage::Entity) -> StorageResult<()> {
+        // First check if entity exists
+        let entity_id = string_to_entity_id(id);
+        let exists = self.entity_exists(&entity_id)
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+        if !exists {
+            return Err(StorageError::Backend(format!("Entity {} does not exist", id)));
+        }
+
+        let surreal_entity = core_entity_to_surreal(entity);
+        self.upsert_entity(&surreal_entity)
+            .await
+            .map(|_| ())
+            .map_err(|e| StorageError::Backend(e.to_string()))
+    }
+
+    async fn delete_entity(&self, id: &str) -> StorageResult<()> {
+        let entity_id = string_to_entity_id(id);
+        let params = json!({
+            "id": entity_id.id,
+            "table": entity_id.table
+        });
+
+        // Use SurrealDB's time::now() to set a proper datetime value
+        self.client
+            .query(
+                "UPDATE type::thing($table, $id) SET deleted_at = time::now()",
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn entity_exists(&self, id: &str) -> StorageResult<bool> {
+        let entity_id = string_to_entity_id(id);
+        self.entity_exists(&entity_id)
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))
+    }
+}
+
+// ============================================================================
+// BlockStorage Trait Implementation
+// ============================================================================
+
+use crucible_core::storage::BlockStorage as CoreBlockStorage;
+use super::adapter::{core_block_to_surreal, surreal_block_to_core};
+
+#[async_trait]
+impl CoreBlockStorage for EAVGraphStore {
+    async fn store_block(&self, block: crucible_core::storage::Block) -> StorageResult<String> {
+        let block_id = block.id.clone();
+        let surreal_block = core_block_to_surreal(block);
+
+        let block_id_record = surreal_block.id.as_ref()
+            .ok_or_else(|| StorageError::Backend("Block must have ID".to_string()))?;
+
+        let params = json!({
+            "table": block_id_record.table,
+            "id": block_id_record.id,
+            "entity_table": surreal_block.entity_id.table,
+            "entity_id": surreal_block.entity_id.id,
+            "block_index": surreal_block.block_index,
+            "block_type": surreal_block.block_type,
+            "content": surreal_block.content,
+            "content_hash": surreal_block.content_hash,
+            // Pass just the ID part, not table:id format - type::thing wraps it
+            "parent_block_id": surreal_block.parent_block_id.map(|id| id.id),
+        });
+
+        self.client
+            .query(
+                r#"
+                CREATE type::thing($table, $id) CONTENT {
+                    entity_id: type::thing($entity_table, $entity_id),
+                    block_index: $block_index,
+                    block_type: $block_type,
+                    content: $content,
+                    content_hash: $content_hash,
+                    parent_block_id: IF $parent_block_id != NONE THEN type::thing('blocks', $parent_block_id) ELSE NONE END,
+                    created_at: time::now(),
+                    updated_at: time::now()
+                }
+                "#,
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        Ok(block_id)
+    }
+
+    async fn get_block(&self, id: &str) -> StorageResult<Option<crucible_core::storage::Block>> {
+        let params = json!({ "id": id });
+
+        let result = self
+            .client
+            .query(
+                "SELECT * FROM type::thing('blocks', $id)",
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        if let Some(record) = result.records.first() {
+            let surreal_block: BlockNode = serde_json::from_value(
+                serde_json::to_value(&record.data)
+                    .map_err(|e| StorageError::Backend(e.to_string()))?,
+            )
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+            Ok(Some(surreal_block_to_core(surreal_block)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn get_blocks(&self, entity_id: &str) -> StorageResult<Vec<crucible_core::storage::Block>> {
+        let entity_record_id = string_to_entity_id(entity_id);
+        let params = json!({
+            "entity_table": entity_record_id.table,
+            "entity_id": entity_record_id.id
+        });
+
+        let result = self
+            .client
+            .query(
+                "SELECT * FROM blocks WHERE entity_id = type::thing($entity_table, $entity_id) ORDER BY block_index",
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        let blocks: Vec<crucible_core::storage::Block> = result
+            .records
+            .iter()
+            .filter_map(|record| {
+                serde_json::to_value(&record.data)
+                    .ok()
+                    .and_then(|v| serde_json::from_value::<BlockNode>(v).ok())
+                    .map(surreal_block_to_core)
+            })
+            .collect();
+
+        Ok(blocks)
+    }
+
+    async fn get_child_blocks(&self, parent_block_id: &str) -> StorageResult<Vec<crucible_core::storage::Block>> {
+        let params = json!({ "parent_id": parent_block_id });
+
+        let result = self
+            .client
+            .query(
+                "SELECT * FROM blocks WHERE parent_block_id = type::thing('blocks', $parent_id) ORDER BY block_index",
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        let blocks: Vec<crucible_core::storage::Block> = result
+            .records
+            .iter()
+            .filter_map(|record| {
+                serde_json::to_value(&record.data)
+                    .ok()
+                    .and_then(|v| serde_json::from_value::<BlockNode>(v).ok())
+                    .map(surreal_block_to_core)
+            })
+            .collect();
+
+        Ok(blocks)
+    }
+
+    async fn update_block(&self, id: &str, block: crucible_core::storage::Block) -> StorageResult<()> {
+        let surreal_block = core_block_to_surreal(block);
+
+        let params = json!({
+            "id": id,
+            "block_index": surreal_block.block_index,
+            "block_type": surreal_block.block_type,
+            "content": surreal_block.content,
+            "content_hash": surreal_block.content_hash,
+            "parent_block_id": surreal_block.parent_block_id.map(|id| format!("{}:{}", id.table, id.id)),
+        });
+
+        self.client
+            .query(
+                r#"
+                UPDATE type::thing('blocks', $id) SET
+                    block_index = $block_index,
+                    block_type = $block_type,
+                    content = $content,
+                    content_hash = $content_hash,
+                    parent_block_id = IF $parent_block_id != NONE THEN type::thing('blocks', $parent_block_id) ELSE NONE END,
+                    updated_at = time::now()
+                "#,
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn delete_block(&self, id: &str, recursive: bool) -> StorageResult<usize> {
+        if recursive {
+            // Delete children first via recursive CTE
+            let params = json!({ "id": id });
+            let result = self
+                .client
+                .query(
+                    r#"
+                    LET $descendants = (
+                        SELECT VALUE id FROM blocks
+                        WHERE parent_block_id = type::thing('blocks', $id)
+                    );
+                    DELETE blocks WHERE id IN $descendants;
+                    DELETE type::thing('blocks', $id);
+                    "#,
+                    &[params],
+                )
+                .await
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
+            Ok(result.records.len().saturating_add(1))
+        } else {
+            let params = json!({ "id": id });
+            self.client
+                .query(
+                    "DELETE type::thing('blocks', $id)",
+                    &[params],
+                )
+                .await
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
+            Ok(1)
+        }
+    }
+
+    async fn delete_blocks(&self, entity_id: &str) -> StorageResult<usize> {
+        let entity_record_id = string_to_entity_id(entity_id);
+        let params = json!({
+            "entity_table": entity_record_id.table,
+            "entity_id": entity_record_id.id
+        });
+
+        // Count first
+        let count_result = self
+            .client
+            .query(
+                "SELECT count() as cnt FROM blocks WHERE entity_id = type::thing($entity_table, $entity_id) GROUP ALL",
+                &[params.clone()],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        let count: usize = count_result
+            .records
+            .first()
+            .and_then(|r| r.data.get("cnt"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
+
+        // Then delete
+        self.client
+            .query(
+                "DELETE blocks WHERE entity_id = type::thing($entity_table, $entity_id)",
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        Ok(count)
     }
 }
 

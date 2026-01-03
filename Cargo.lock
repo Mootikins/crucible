@@ -4066,6 +4066,7 @@ dependencies = [
  "chrono",
  "crucible-core",
  "crucible-sqlite",
+ "crucible-surrealdb",
  "serde_json",
  "tokio",
 ]
