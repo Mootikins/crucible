@@ -500,10 +500,8 @@ mod tests {
         }
 
         // Find lines with [cmd] label and check they start at same column
-        let cmd_positions: Vec<usize> = lines
-            .iter()
-            .filter_map(|line| line.find("[cmd]"))
-            .collect();
+        let cmd_positions: Vec<usize> =
+            lines.iter().filter_map(|line| line.find("[cmd]")).collect();
 
         assert!(
             cmd_positions.len() >= 2,

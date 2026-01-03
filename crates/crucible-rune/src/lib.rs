@@ -59,6 +59,7 @@ mod oq_module;
 pub mod persistence_handler;
 mod plugin_loader;
 mod plugin_types;
+mod popup_module;
 pub mod reactor;
 mod regex_module;
 mod registry;
@@ -126,6 +127,7 @@ pub use oq_module::oq_module;
 pub use persistence_handler::PersistenceHandler;
 pub use plugin_loader::PluginLoader;
 pub use plugin_types::{HookConfig, PluginManifest, RegisteredHook};
+pub use popup_module::{entry_impl as popup_entry, popup_module, RunePopupEntry};
 pub use reactor::{
     BoxedReactor, Reactor, ReactorContext, ReactorError, ReactorMetadata, ReactorResult,
     ReactorSessionConfig, SessionEvent, ToolCall,

@@ -1638,7 +1638,9 @@ mod tests {
     fn test_popup_item_to_entry_conversion() {
         use crucible_core::types::PopupEntry;
 
-        let cmd = PopupItem::cmd("search").desc("Search the vault").with_score(100);
+        let cmd = PopupItem::cmd("search")
+            .desc("Search the vault")
+            .with_score(100);
 
         let entry: PopupEntry = cmd.into();
 
@@ -1653,7 +1655,9 @@ mod tests {
     fn test_popup_item_agent_to_entry() {
         use crucible_core::types::PopupEntry;
 
-        let agent = PopupItem::agent("coder").desc("Coding assistant").with_score(50);
+        let agent = PopupItem::agent("coder")
+            .desc("Coding assistant")
+            .with_score(50);
 
         let entry: PopupEntry = agent.into();
 
