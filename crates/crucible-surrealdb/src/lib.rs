@@ -118,7 +118,7 @@ pub use database::SurrealEmbeddingDatabase;
 
 // NoteStore implementation
 pub mod note_store;
-pub use note_store::SurrealNoteStore;
+pub use note_store::{create_note_store, create_note_store_with_dimensions, SurrealNoteStore};
 
 pub mod content_addressed_storage;
 pub use content_addressed_storage::{ContentAddressedStorageSurrealDB, DocumentBlockRecord};
@@ -202,7 +202,9 @@ pub mod test_utils {
     //! Enable the `test-utils` feature to use these.
 
     pub use crate::eav_graph::{apply_eav_graph_schema, EAVGraphStore, NoteIngestor};
-    pub use crate::note_store::SurrealNoteStore;
+    pub use crate::note_store::{
+        create_note_store, create_note_store_with_dimensions, SurrealNoteStore,
+    };
     pub use crate::surreal_client::SurrealClient;
     pub use crate::types::{QueryResult, Record};
 
