@@ -11,7 +11,11 @@ name = "cru"
 path = "src/main.rs"
 
 [features]
-default = []
+default = ["storage-surrealdb"]
+
+# Storage backend selection (mutually exclusive in practice)
+storage-surrealdb = ["dep:crucible-surrealdb"]
+storage-sqlite = ["dep:crucible-sqlite"]
 
 # Test tier flags (see justfile for usage)
 test-fixtures = []       # Tests using docs/ kiln or examples/test-kiln
@@ -22,7 +26,8 @@ test-utils = []          # Expose testing utilities for integration tests
 [dependencies]
 crucible-core = { path = "../crucible-core" }
 crucible-parser = { path = "../crucible-parser" }
-crucible-surrealdb = { path = "../crucible-surrealdb" }
+crucible-surrealdb = { path = "../crucible-surrealdb", optional = true }
+crucible-sqlite = { path = "../crucible-sqlite", optional = true }
 crucible-config = { path = "../crucible-config", features = ["toml"] }
 crucible-llm = { path = "../crucible-llm" }
 crucible-pipeline = { path = "../crucible-pipeline" }
