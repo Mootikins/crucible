@@ -31,6 +31,7 @@ pub mod error;
 pub mod factory;
 pub mod memory;
 pub mod merkle;
+pub mod note_store;
 pub mod traits;
 
 // Re-export main types for convenience
@@ -66,4 +67,5 @@ pub use memory::{
     MemoryStorageSnapshot, StorageEvent,
 };
 pub use merkle::{MerkleNode, MerkleTree, TreeChange};
+pub use note_store::{Filter, GraphView, NoteRecord, NoteStore, Op, Precognition, SearchResult};
 pub use traits::{ContentAddressedStorage, ContentHasher, StorageBackend};
