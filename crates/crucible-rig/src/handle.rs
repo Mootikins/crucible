@@ -1344,4 +1344,307 @@ mod tests {
             "Response should contain the answer"
         );
     }
+
+    /// Helper to check if history has consecutive assistant messages
+    /// Returns (has_consecutive, description) where description explains the issue
+    fn check_no_consecutive_assistant_messages(history: &[Message]) -> (bool, String) {
+        let mut last_was_assistant = false;
+        let mut consecutive_count = 0;
+
+        for (i, msg) in history.iter().enumerate() {
+            let is_assistant = matches!(msg, Message::Assistant { .. });
+
+            if is_assistant {
+                if last_was_assistant {
+                    consecutive_count += 1;
+                    return (
+                        false,
+                        format!(
+                            "Found {} consecutive assistant messages ending at index {}",
+                            consecutive_count + 1,
+                            i
+                        ),
+                    );
+                }
+                last_was_assistant = true;
+            } else {
+                last_was_assistant = false;
+                consecutive_count = 0;
+            }
+        }
+
+        // Also check if history ends with consecutive assistant messages
+        // (the specific error: "Cannot have 2 or more assistant messages at the end")
+        let mut trailing_assistant_count = 0;
+        for msg in history.iter().rev() {
+            if matches!(msg, Message::Assistant { .. }) {
+                trailing_assistant_count += 1;
+            } else {
+                break;
+            }
+        }
+
+        if trailing_assistant_count > 1 {
+            return (
+                false,
+                format!(
+                    "History ends with {} consecutive assistant messages",
+                    trailing_assistant_count
+                ),
+            );
+        }
+
+        (true, "No consecutive assistant messages found".to_string())
+    }
+
+    /// Helper to describe message roles in history
+    fn describe_history(history: &[Message]) -> String {
+        history
+            .iter()
+            .enumerate()
+            .map(|(i, msg)| {
+                let role = match msg {
+                    Message::User { .. } => "User",
+                    Message::Assistant { .. } => "Assistant",
+                };
+                format!("[{}] {}", i, role)
+            })
+            .collect::<Vec<_>>()
+            .join(" -> ")
+    }
+
+    // Test that validates message ordering after multi-turn tool conversations
+    #[tokio::test]
+    #[ignore = "requires running Ollama with tool-capable model"]
+    async fn test_message_ordering_after_tool_calls() {
+        use crate::workspace_tools::{BashTool, ReadFileTool, WorkspaceContext};
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let ctx = WorkspaceContext::new(temp.path());
+
+        // Create test files
+        std::fs::write(temp.path().join("file1.txt"), "Content of file 1").unwrap();
+        std::fs::write(temp.path().join("file2.txt"), "Content of file 2").unwrap();
+
+        let client = create_openai_compatible_client();
+
+        let agent = client
+            .agent("qwen3-4b-instruct-2507-q8_0")
+            .preamble(
+                "You are a helpful assistant with file and shell tools. \
+                 Use tools when asked to read files or run commands.",
+            )
+            .tool(ReadFileTool::new(ctx.clone()))
+            .tool(BashTool::new(ctx))
+            .build();
+
+        let mut handle = RigAgentHandle::new(agent);
+
+        println!("=== Testing message ordering after tool calls ===\n");
+
+        // Turn 1: Simple question (no tools)
+        println!("--- Turn 1: Simple greeting ---");
+        {
+            let mut stream = handle.send_message_stream("Say hi briefly.".to_string());
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(chunk) if chunk.done => break,
+                    Ok(chunk) => print!("{}", chunk.delta),
+                    Err(e) => {
+                        println!("\nError: {:?}", e);
+                        break;
+                    }
+                }
+            }
+            println!();
+        }
+
+        let history1 = handle.get_history().await;
+        println!("History after turn 1: {}", describe_history(&history1));
+        let (ok1, msg1) = check_no_consecutive_assistant_messages(&history1);
+        println!(
+            "Ordering check: {} - {}\n",
+            if ok1 { "✓" } else { "✗" },
+            msg1
+        );
+        assert!(ok1, "Turn 1 failed: {}", msg1);
+
+        // Turn 2: Request tool use (read file)
+        println!("--- Turn 2: Read file (tool call) ---");
+        {
+            let mut stream = handle.send_message_stream("Read file1.txt".to_string());
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(chunk) => {
+                        if let Some(ref tcs) = chunk.tool_calls {
+                            for tc in tcs {
+                                println!("[Tool: {}]", tc.name);
+                            }
+                        }
+                        if let Some(ref trs) = chunk.tool_results {
+                            for tr in trs {
+                                println!("[Result: {} bytes]", tr.result.len());
+                            }
+                        }
+                        if !chunk.delta.is_empty() {
+                            print!("{}", chunk.delta);
+                        }
+                        if chunk.done {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        println!("\nError: {:?}", e);
+                        break;
+                    }
+                }
+            }
+            println!();
+        }
+
+        let history2 = handle.get_history().await;
+        println!("History after turn 2: {}", describe_history(&history2));
+        let (ok2, msg2) = check_no_consecutive_assistant_messages(&history2);
+        println!(
+            "Ordering check: {} - {}\n",
+            if ok2 { "✓" } else { "✗" },
+            msg2
+        );
+        assert!(ok2, "Turn 2 failed: {}", msg2);
+
+        // Turn 3: Another question (should still work)
+        println!("--- Turn 3: Follow-up question ---");
+        {
+            let mut stream = handle.send_message_stream("What did the file contain?".to_string());
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(chunk) if chunk.done => break,
+                    Ok(chunk) => print!("{}", chunk.delta),
+                    Err(e) => {
+                        println!("\nError: {:?}", e);
+                        break;
+                    }
+                }
+            }
+            println!();
+        }
+
+        let history3 = handle.get_history().await;
+        println!("History after turn 3: {}", describe_history(&history3));
+        let (ok3, msg3) = check_no_consecutive_assistant_messages(&history3);
+        println!(
+            "Ordering check: {} - {}\n",
+            if ok3 { "✓" } else { "✗" },
+            msg3
+        );
+        assert!(ok3, "Turn 3 failed: {}", msg3);
+
+        // Turn 4: Multiple tool calls in one turn
+        println!("--- Turn 4: Multiple tool calls ---");
+        {
+            let mut stream =
+                handle.send_message_stream("Run 'pwd' and then read file2.txt".to_string());
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(chunk) => {
+                        if let Some(ref tcs) = chunk.tool_calls {
+                            for tc in tcs {
+                                println!("[Tool: {}]", tc.name);
+                            }
+                        }
+                        if let Some(ref trs) = chunk.tool_results {
+                            for tr in trs {
+                                println!("[Result: {} bytes]", tr.result.len());
+                            }
+                        }
+                        if !chunk.delta.is_empty() {
+                            print!("{}", chunk.delta);
+                        }
+                        if chunk.done {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        println!("\nError: {:?}", e);
+                        break;
+                    }
+                }
+            }
+            println!();
+        }
+
+        let history4 = handle.get_history().await;
+        println!("History after turn 4: {}", describe_history(&history4));
+        let (ok4, msg4) = check_no_consecutive_assistant_messages(&history4);
+        println!(
+            "Ordering check: {} - {}\n",
+            if ok4 { "✓" } else { "✗" },
+            msg4
+        );
+        assert!(ok4, "Turn 4 failed: {}", msg4);
+
+        println!("=== All turns passed message ordering check ===");
+    }
+
+    // Unit test for the helper function itself
+    #[test]
+    fn test_consecutive_message_detection() {
+        use rig::message::AssistantContent;
+
+        // Valid: User -> Assistant
+        let valid1 = vec![Message::user("hi"), Message::assistant("hello")];
+        let (ok, _) = check_no_consecutive_assistant_messages(&valid1);
+        assert!(ok, "User -> Assistant should be valid");
+
+        // Valid: User -> Assistant -> User -> Assistant
+        let valid2 = vec![
+            Message::user("q1"),
+            Message::assistant("a1"),
+            Message::user("q2"),
+            Message::assistant("a2"),
+        ];
+        let (ok, _) = check_no_consecutive_assistant_messages(&valid2);
+        assert!(ok, "Alternating should be valid");
+
+        // Invalid: User -> Assistant -> Assistant
+        let invalid1 = vec![
+            Message::user("q"),
+            Message::assistant("a1"),
+            Message::assistant("a2"),
+        ];
+        let (ok, msg) = check_no_consecutive_assistant_messages(&invalid1);
+        assert!(!ok, "Consecutive assistants should be invalid: {}", msg);
+
+        // Invalid: Ends with multiple assistants
+        let invalid2 = vec![
+            Message::user("q1"),
+            Message::assistant("a1"),
+            Message::user("q2"),
+            Message::assistant("a2"),
+            Message::assistant("a3"),
+        ];
+        let (ok, msg) = check_no_consecutive_assistant_messages(&invalid2);
+        assert!(
+            !ok,
+            "Trailing consecutive assistants should be invalid: {}",
+            msg
+        );
+
+        // Valid with tool results (tool results are User messages in Rig)
+        // User -> Assistant (with tool call) -> User (tool result) -> Assistant
+        let tool_function = rig::message::ToolFunction {
+            name: "test".to_string(),
+            arguments: serde_json::json!({}),
+        };
+        let tool_call = rig::message::ToolCall::new("tc1".to_string(), tool_function);
+        let valid3 = vec![
+            Message::user("read file"),
+            Message::from(rig::OneOrMany::one(AssistantContent::ToolCall(tool_call))),
+            Message::user("tool result here"), // Tool results become user messages
+            Message::assistant("here is the content"),
+        ];
+        let (ok, _) = check_no_consecutive_assistant_messages(&valid3);
+        assert!(ok, "Tool call flow should be valid");
+    }
 }
