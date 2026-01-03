@@ -3,10 +3,7 @@
 //! These tests verify that `get_storage` correctly connects to the daemon
 //! when configured for daemon mode, preventing database lock errors.
 //!
-//! **Important**: These tests modify `XDG_RUNTIME_DIR` and must run single-threaded:
-//! ```bash
-//! cargo test -p crucible-cli --test storage_factory_integration -- --test-threads=1
-//! ```
+//! These tests modify `XDG_RUNTIME_DIR` and use `#[serial]` to prevent conflicts.
 
 use anyhow::Result;
 use crucible_cli::config::CliConfig;
@@ -14,6 +11,7 @@ use crucible_cli::factories::get_storage;
 use crucible_config::StorageMode;
 use crucible_daemon::Server;
 use crucible_daemon_client::lifecycle;
+use serial_test::serial;
 use std::path::PathBuf;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -88,6 +86,7 @@ fn create_daemon_config(kiln_path: PathBuf) -> CliConfig {
 /// when configured, avoiding the database lock error that occurs when both
 /// the daemon and CLI try to open the same database file directly.
 #[tokio::test]
+#[serial]
 async fn test_get_storage_connects_to_daemon() {
     let server = TestServer::start().await.expect("Failed to start daemon");
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
@@ -114,6 +113,7 @@ async fn test_get_storage_connects_to_daemon() {
 
 /// Test that StorageHandle::query_raw works in daemon mode
 #[tokio::test]
+#[serial]
 async fn test_storage_handle_query_through_daemon() {
     let server = TestServer::start().await.expect("Failed to start daemon");
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
@@ -137,6 +137,7 @@ async fn test_storage_handle_query_through_daemon() {
 
 /// Test that is_daemon() and is_embedded() return correct values
 #[tokio::test]
+#[serial]
 async fn test_storage_handle_mode_detection() {
     let server = TestServer::start().await.expect("Failed to start daemon");
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
@@ -157,6 +158,7 @@ async fn test_storage_handle_mode_detection() {
 /// Test that get_storage fails gracefully when daemon is not running
 /// (when configured for daemon mode but no daemon available)
 #[tokio::test]
+#[serial]
 async fn test_get_storage_fails_when_no_daemon() {
     // Set up a temp dir with no daemon running
     let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
@@ -198,6 +200,7 @@ async fn test_get_storage_fails_when_no_daemon() {
 
 /// Test that multiple storage handles can connect to same daemon
 #[tokio::test]
+#[serial]
 async fn test_multiple_storage_handles_same_daemon() {
     let server = TestServer::start().await.expect("Failed to start daemon");
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
@@ -228,6 +231,7 @@ async fn test_multiple_storage_handles_same_daemon() {
 
 /// Test that concurrent queries through daemon storage work
 #[tokio::test]
+#[serial]
 async fn test_concurrent_queries_through_daemon() {
     let server = TestServer::start().await.expect("Failed to start daemon");
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
