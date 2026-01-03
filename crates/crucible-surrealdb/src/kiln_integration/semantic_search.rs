@@ -9,7 +9,6 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tracing::{debug, warn};
 
-use super::document_storage::fetch_document_by_id;
 use super::embeddings::{MTREE_INDEX_DIMENSIONS, MTREE_INDEX_ENSURED};
 use super::utils::normalize_document_id;
 
@@ -208,16 +207,30 @@ pub async fn semantic_search_with_reranking(
             eprintln!("DEBUG RERANK: Fetching document_id: {}", document_id);
 
             let normalized_id = normalize_document_id(document_id);
-            match fetch_document_by_id(client, &normalized_id).await {
-                Ok(Some(doc)) => {
-                    let text = doc.content.plain_text.clone();
+            // Extract path from normalized_id (entities:note:path -> path)
+            let path = normalized_id
+                .strip_prefix("entities:note:")
+                .or_else(|| normalized_id.strip_prefix("entities:"))
+                .or_else(|| normalized_id.strip_prefix("note:"))
+                .unwrap_or(&normalized_id);
+
+            // Query notes table for content
+            let query_sql = "SELECT content FROM notes WHERE path = $path";
+            match client.query(query_sql, &[json!({ "path": path })]).await {
+                Ok(result) if !result.records.is_empty() => {
+                    let text = result.records[0]
+                        .data
+                        .get("content")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     eprintln!(
                         "DEBUG RERANK: Retrieved note with {} chars of text",
                         text.len()
                     );
                     documents.push((normalized_id, text, *vec_score));
                 }
-                Ok(None) => {
+                Ok(_) => {
                     eprintln!(
                         "DEBUG RERANK: Note not found for document_id: {}",
                         document_id
