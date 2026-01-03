@@ -28,6 +28,7 @@ pub mod config;
 pub mod connection;
 pub mod eav;
 pub mod error;
+pub mod note_store;
 pub mod schema;
 
 // Re-exports
@@ -35,3 +36,4 @@ pub use config::SqliteConfig;
 pub use connection::SqlitePool;
 pub use eav::EavGraphStore;
 pub use error::{SqliteError, SqliteResult};
+pub use note_store::{create_note_store, SqliteNoteStore};
