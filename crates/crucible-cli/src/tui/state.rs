@@ -466,53 +466,6 @@ impl From<PopupItem> for crucible_core::types::PopupEntry {
     }
 }
 
-/// Popup state for inline triggers (/ or @)
-#[derive(Debug, Clone)]
-pub struct PopupState {
-    pub kind: PopupKind,
-    pub query: String,
-    pub items: Vec<PopupItem>,
-    pub selected: usize,
-    pub viewport_offset: usize,
-    pub last_update: Instant,
-}
-
-impl PopupState {
-    pub fn new(kind: PopupKind) -> Self {
-        Self {
-            kind,
-            query: String::new(),
-            items: Vec::new(),
-            selected: 0,
-            viewport_offset: 0,
-            last_update: Instant::now(),
-        }
-    }
-
-    pub fn move_selection(&mut self, delta: isize) {
-        if self.items.is_empty() {
-            self.selected = 0;
-            return;
-        }
-        let len = self.items.len() as isize;
-        let new_idx = (self.selected as isize + delta).rem_euclid(len);
-        self.selected = new_idx as usize;
-    }
-
-    /// Update viewport offset to keep selection visible
-    /// Call this after changing `selected`
-    pub fn update_viewport(&mut self, visible_count: usize) {
-        // If selection is above viewport, scroll up
-        if self.selected < self.viewport_offset {
-            self.viewport_offset = self.selected;
-        }
-        // If selection is below viewport, scroll down
-        else if self.selected >= self.viewport_offset + visible_count {
-            self.viewport_offset = self.selected - visible_count + 1;
-        }
-    }
-}
-
 /// A message formatted for display
 #[derive(Debug, Clone)]
 pub struct DisplayMessage {
@@ -678,8 +631,8 @@ pub struct TuiState {
     pub ctrl_c_count: u8,
     pub last_ctrl_c: Option<Instant>,
     pub status_error: Option<String>,
-    // Inline popup for slash commands / agents / files/notes
-    pub popup: Option<PopupState>,
+    // Whether a popup is currently active (used by input handler)
+    pub has_popup: bool,
     // Notification state for file watch events
     pub notifications: NotificationState,
     /// Context attachments pending for the next message (files, notes)
@@ -708,7 +661,7 @@ impl TuiState {
             ctrl_c_count: 0,
             last_ctrl_c: None,
             status_error: None,
-            popup: None,
+            has_popup: false,
             notifications: NotificationState::new(),
             pending_context: Vec::new(),
             show_reasoning: false,
@@ -735,7 +688,7 @@ impl TuiState {
             ctrl_c_count: 0,
             last_ctrl_c: None,
             status_error: None,
-            popup: None,
+            has_popup: false,
             notifications: NotificationState::new(),
             pending_context: Vec::new(),
             show_reasoning: false,
@@ -810,7 +763,7 @@ impl TuiState {
     pub fn execute_action(&mut self, action: crate::tui::InputAction) -> Option<String> {
         match action {
             InputAction::SendMessage(msg) => {
-                self.popup = None;
+                self.has_popup = false;
                 self.input_buffer.clear();
                 self.cursor_position = 0;
                 self.status_error = None;
@@ -861,10 +814,8 @@ impl TuiState {
                 }
                 None
             }
-            InputAction::MovePopupSelection(delta) => {
-                if let Some(ref mut popup) = self.popup {
-                    popup.move_selection(delta);
-                }
+            InputAction::MovePopupSelection(_delta) => {
+                // Popup selection is now managed by runner which owns the popup
                 None
             }
             InputAction::ConfirmPopup => {
@@ -890,7 +841,7 @@ impl TuiState {
                 // Track Ctrl+C for double-press detection
                 self.ctrl_c_count += 1;
                 self.last_ctrl_c = Some(Instant::now());
-                self.popup = None;
+                self.has_popup = false;
                 None
             }
             InputAction::ExecuteSlashCommand(_cmd) => {
@@ -1089,28 +1040,14 @@ impl TuiState {
     }
 
     /// Update popup state based on current input buffer and cursor
+    ///
+    /// This just signals whether a popup should be shown via `has_popup`.
+    /// The actual popup creation and management is done by the runner.
     fn update_popup_on_edit(&mut self) {
-        if let Some(kind) = self.detect_popup_trigger() {
-            let query = self.current_query();
-            let needs_refresh = match &self.popup {
-                Some(p) => p.kind != kind,
-                None => true,
-            };
-
-            if needs_refresh {
-                self.popup = Some(PopupState::new(kind));
-            }
-
-            if let Some(ref mut popup) = self.popup {
-                popup.query = query;
-                popup.last_update = Instant::now();
-                // Actual item population happens externally via a provider
-            }
-        } else {
-            self.popup = None;
-        }
+        self.has_popup = self.detect_popup_trigger().is_some();
     }
 }
+
 
 fn format_tool_call(name: Option<&str>, args: &JsonValue) -> String {
     format!(
@@ -1227,135 +1164,30 @@ mod tests {
     #[test]
     fn test_popup_trigger_detection() {
         let mut s = TuiState::new("plan");
+
+        // Command trigger
         s.input_buffer = "/search".into();
         s.update_popup_on_edit();
-        assert!(matches!(
-            s.popup.as_ref().map(|p| p.kind),
-            Some(PopupKind::Command)
-        ));
+        assert!(s.has_popup);
 
+        // Agent/File trigger
         s.input_buffer = "@dev".into();
         s.update_popup_on_edit();
-        assert!(matches!(
-            s.popup.as_ref().map(|p| p.kind),
-            Some(PopupKind::AgentOrFile)
-        ));
+        assert!(s.has_popup);
 
+        // No trigger
         s.input_buffer = "hello".into();
         s.update_popup_on_edit();
-        assert!(s.popup.is_none());
+        assert!(!s.has_popup);
     }
 
-    #[test]
-    fn test_popup_selection_wraps() {
-        let mut state = TuiState::new("plan");
-        let mut popup = PopupState::new(PopupKind::Command);
-        popup.items = vec![
-            PopupItem::cmd("a").with_score(1),
-            PopupItem::cmd("b").with_score(1),
-        ];
-        state.popup = Some(popup);
-        state.execute_action(InputAction::MovePopupSelection(-1));
-        assert_eq!(state.popup.as_ref().unwrap().selected, 1);
-        state.execute_action(InputAction::MovePopupSelection(1));
-        assert_eq!(state.popup.as_ref().unwrap().selected, 0);
-    }
+    // NOTE: Popup selection and viewport tests moved to generic_popup.rs
+    // The new PopupState handles selection wrapping and viewport management internally.
 
     #[test]
     fn test_tui_state_has_notifications() {
         let state = TuiState::new("plan");
         assert!(state.notifications.is_empty());
-    }
-
-    // ============================================================================
-    // Viewport Offset Tests (TDD Phase 1A - These tests SHOULD FAIL to compile)
-    // ============================================================================
-
-    #[test]
-    fn test_popup_viewport_initial_state() {
-        // New popup should have viewport_offset: 0
-        let popup = PopupState::new(PopupKind::Command);
-        assert_eq!(popup.viewport_offset, 0);
-    }
-
-    /// Helper to create 10 test popup items
-    fn make_ten_items() -> Vec<PopupItem> {
-        (0..10)
-            .map(|i| PopupItem::cmd(i.to_string()).with_score(1))
-            .collect()
-    }
-
-    #[test]
-    fn test_popup_viewport_follows_selection_down() {
-        // With 10 items and 5 visible, selecting item 6 should shift offset to 2
-        // (so items 2-6 are visible, with 6 selected)
-        let mut popup = PopupState::new(PopupKind::Command);
-        popup.items = make_ten_items();
-
-        // Select item 6 (index 6)
-        popup.selected = 6;
-        popup.update_viewport(5); // 5 visible items
-
-        // With 5 visible items and selected=6, we want the selection in the bottom slot
-        // Visible window should be [2, 3, 4, 5, 6] with 6 selected
-        assert_eq!(popup.viewport_offset, 2);
-    }
-
-    #[test]
-    fn test_popup_viewport_follows_selection_up() {
-        // With offset at 3, selecting item 0 should shift offset to 0
-        let mut popup = PopupState::new(PopupKind::Command);
-        popup.items = make_ten_items();
-
-        popup.viewport_offset = 3;
-        popup.selected = 0;
-        popup.update_viewport(5); // 5 visible items
-
-        // Selecting item 0 should force viewport to start at 0
-        assert_eq!(popup.viewport_offset, 0);
-    }
-
-    #[test]
-    fn test_popup_viewport_stable_within_window() {
-        // Selecting item 2 when offset is 0 should keep offset at 0
-        let mut popup = PopupState::new(PopupKind::Command);
-        popup.items = make_ten_items();
-
-        popup.viewport_offset = 0;
-        popup.selected = 2;
-        popup.update_viewport(5); // 5 visible items
-
-        // Item 2 is within visible window [0-4], so offset should stay at 0
-        assert_eq!(popup.viewport_offset, 0);
-    }
-
-    #[test]
-    fn test_popup_viewport_wrap_to_end() {
-        // Wrapping selection from 0 to last item should jump viewport
-        let mut popup = PopupState::new(PopupKind::Command);
-        popup.items = make_ten_items();
-
-        popup.viewport_offset = 0;
-        popup.selected = 9; // Last item (wrapped from 0)
-        popup.update_viewport(5); // 5 visible items
-
-        // Last item should be visible at bottom of window
-        // Visible window should be [5, 6, 7, 8, 9] with 9 selected
-        assert_eq!(popup.viewport_offset, 5);
-    }
-
-    #[test]
-    fn test_popup_viewport_wrap_to_start() {
-        // Wrapping selection from last to 0 should reset viewport to 0
-        let mut popup = PopupState::new(PopupKind::Command);
-        popup.items = make_ten_items();
-
-        popup.viewport_offset = 5;
-        popup.selected = 0; // Wrapped from 9 back to 0
-        popup.update_viewport(5); // 5 visible items
-
-        // Selecting first item should reset viewport to 0
-        assert_eq!(popup.viewport_offset, 0);
     }
 
     // =========================================================================
