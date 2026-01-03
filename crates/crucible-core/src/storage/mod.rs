@@ -29,6 +29,7 @@ pub mod diff;
 pub mod eav_graph_traits;
 pub mod error;
 pub mod factory;
+pub mod graph;
 pub mod memory;
 pub mod merkle;
 pub mod note_store;
@@ -67,5 +68,6 @@ pub use memory::{
     MemoryStorageSnapshot, StorageEvent,
 };
 pub use merkle::{MerkleNode, MerkleTree, TreeChange};
+pub use graph::InMemoryGraph;
 pub use note_store::{Filter, GraphView, NoteRecord, NoteStore, Op, Precognition, SearchResult};
 pub use traits::{ContentAddressedStorage, ContentHasher, StorageBackend};
