@@ -11,10 +11,10 @@ use crate::tui::notification::NotificationState;
 use crate::tui::state::{PopupItem, PopupState};
 use anyhow::Result;
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph, Widget, Wrap},
     Frame,
 };
 
@@ -174,13 +174,20 @@ impl RatatuiView {
 
     /// Render to a ratatui frame
     pub fn render_frame(&self, frame: &mut Frame) {
-        // Calculate popup height if needed
+        // Calculate popup height - prefer generic_popup, fall back to old popup
         let popup_height = self
             .state
-            .popup
+            .generic_popup
             .as_ref()
-            .filter(|p| !p.items.is_empty())
-            .map(|p| (p.items.len().min(Self::MAX_POPUP_ITEMS) + 2) as u16)
+            .filter(|p| p.filtered_count() > 0)
+            .map(|p| (p.filtered_count().min(Self::MAX_POPUP_ITEMS) + 2) as u16)
+            .or_else(|| {
+                self.state
+                    .popup
+                    .as_ref()
+                    .filter(|p| !p.items.is_empty())
+                    .map(|p| (p.items.len().min(Self::MAX_POPUP_ITEMS) + 2) as u16)
+            })
             .unwrap_or(0);
 
         // Calculate reasoning panel height (when visible and has content)
@@ -316,7 +323,17 @@ impl RatatuiView {
     }
 
     /// Render popup overlay
-    fn render_popup(&self, frame: &mut Frame, area: ratatui::layout::Rect) {
+    ///
+    /// Prefers `generic_popup` (uses widget renderer) over legacy `popup`
+    fn render_popup(&self, frame: &mut Frame, area: Rect) {
+        // Prefer generic_popup - uses PopupRenderer widget with proper formatting
+        if let Some(ref popup) = self.state.generic_popup {
+            let renderer = popup.renderer();
+            renderer.render(area, frame.buffer_mut());
+            return;
+        }
+
+        // Fallback to legacy popup (deprecated - will be removed)
         let Some(ref popup) = self.state.popup else {
             return;
         };
@@ -361,9 +378,10 @@ impl RatatuiView {
             })
             .collect();
 
+        // trim: false preserves leading spaces (selection marker padding)
         let popup_widget = Paragraph::new(lines)
             .block(Block::default().borders(Borders::ALL).title("Select"))
-            .wrap(Wrap { trim: true });
+            .wrap(Wrap { trim: false });
 
         frame.render_widget(popup_widget, area);
     }

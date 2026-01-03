@@ -3,6 +3,7 @@
 //! Provides a simulated TUI environment for testing component behavior
 //! without a real terminal.
 
+use crate::tui::components::{GenericPopupState, PopupItemProvider};
 use crate::tui::conversation::{ConversationItem, ConversationState};
 use crate::tui::conversation_view::{ConversationView, RatatuiView};
 use crate::tui::state::{PopupItem, PopupKind, PopupState, TuiState};
@@ -10,6 +11,23 @@ use crate::tui::streaming_channel::StreamingEvent;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
+use std::sync::Arc;
+
+/// A static provider that returns a fixed list of items
+struct StaticItemsProvider {
+    kind: PopupKind,
+    items: Vec<PopupItem>,
+}
+
+impl PopupItemProvider for StaticItemsProvider {
+    fn provide(&self, kind: PopupKind, _query: &str) -> Vec<PopupItem> {
+        if kind == self.kind {
+            self.items.clone()
+        } else {
+            Vec::new()
+        }
+    }
+}
 
 /// Test harness for TUI components
 ///
@@ -74,11 +92,27 @@ impl Harness {
     }
 
     /// Builder: set popup items
+    ///
+    /// Uses GenericPopupState with PopupRenderer for proper rendering
     pub fn with_popup_items(mut self, kind: PopupKind, items: Vec<PopupItem>) -> Self {
-        let mut popup = PopupState::new(kind);
-        popup.items = items;
-        self.state.popup = Some(popup);
-        self.view.set_popup(self.state.popup.clone());
+        // Create a static provider with the given items
+        let provider = Arc::new(StaticItemsProvider {
+            kind,
+            items: items.clone(),
+        });
+
+        // Create GenericPopupState and populate it
+        let mut popup = GenericPopupState::new(kind, provider);
+        popup.update_query(""); // Load items from provider
+
+        // Set on the view (render_popup prefers generic_popup)
+        self.view.set_generic_popup(Some(popup));
+
+        // Also set legacy popup for backward compatibility with some tests
+        let mut legacy_popup = PopupState::new(kind);
+        legacy_popup.items = items;
+        self.state.popup = Some(legacy_popup);
+
         self
     }
 
