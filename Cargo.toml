@@ -26,6 +26,7 @@ members = [
     "crates/crucible-steel",
     "crates/zellij-inbox",
     "crates/crucible-lance",
+    "crates/crucible-storage-tests",
 ]
 default-members = ["crates/crucible-cli"]
 
