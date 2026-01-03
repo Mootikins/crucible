@@ -429,6 +429,43 @@ impl PopupItem {
     }
 }
 
+impl From<PopupItem> for crucible_core::types::PopupEntry {
+    fn from(item: PopupItem) -> Self {
+        use serde_json::json;
+
+        let (label, description, kind) = match &item {
+            PopupItem::Command {
+                name, description, ..
+            } => (format!("/{}", name), Some(description.clone()), "command"),
+            PopupItem::Agent {
+                id, description, ..
+            } => (format!("@{}", id), Some(description.clone()), "agent"),
+            PopupItem::File { path, .. } => (path.clone(), None, "file"),
+            PopupItem::Note { path, .. } => (path.clone(), None, "note"),
+            PopupItem::Skill {
+                name,
+                description,
+                scope,
+                ..
+            } => {
+                let desc = format!("{} ({})", description, scope);
+                (format!("skill:{}", name), Some(desc), "skill")
+            }
+            PopupItem::ReplCommand {
+                name, description, ..
+            } => (format!(":{}", name), Some(description.clone()), "repl"),
+        };
+
+        let mut entry = crucible_core::types::PopupEntry::new(label);
+        if let Some(desc) = description {
+            if !desc.is_empty() {
+                entry = entry.with_description(desc);
+            }
+        }
+        entry.with_data(json!({ "kind": kind }))
+    }
+}
+
 /// Popup state for inline triggers (/ or @)
 #[derive(Debug, Clone)]
 pub struct PopupState {
@@ -1591,5 +1628,100 @@ mod tests {
 
         state.clear_reasoning();
         assert!(state.accumulated_reasoning.is_empty());
+    }
+
+    // =========================================================================
+    // PopupItem to PopupEntry Conversion Tests
+    // =========================================================================
+
+    #[test]
+    fn test_popup_item_to_entry_conversion() {
+        use crucible_core::types::PopupEntry;
+
+        let cmd = PopupItem::cmd("search").desc("Search the vault").with_score(100);
+
+        let entry: PopupEntry = cmd.into();
+
+        assert_eq!(entry.label, "/search");
+        assert_eq!(entry.description.as_deref(), Some("Search the vault"));
+        // Data should contain kind information
+        let data = entry.data.unwrap();
+        assert_eq!(data["kind"], "command");
+    }
+
+    #[test]
+    fn test_popup_item_agent_to_entry() {
+        use crucible_core::types::PopupEntry;
+
+        let agent = PopupItem::agent("coder").desc("Coding assistant").with_score(50);
+
+        let entry: PopupEntry = agent.into();
+
+        assert_eq!(entry.label, "@coder");
+        assert_eq!(entry.description.as_deref(), Some("Coding assistant"));
+        let data = entry.data.unwrap();
+        assert_eq!(data["kind"], "agent");
+    }
+
+    #[test]
+    fn test_popup_item_file_to_entry() {
+        use crucible_core::types::PopupEntry;
+
+        let file = PopupItem::file("src/main.rs").with_score(75);
+
+        let entry: PopupEntry = file.into();
+
+        assert_eq!(entry.label, "src/main.rs");
+        assert!(entry.description.is_none());
+        let data = entry.data.unwrap();
+        assert_eq!(data["kind"], "file");
+    }
+
+    #[test]
+    fn test_popup_item_note_to_entry() {
+        use crucible_core::types::PopupEntry;
+
+        let note = PopupItem::note("Project/README").with_score(80);
+
+        let entry: PopupEntry = note.into();
+
+        assert_eq!(entry.label, "Project/README");
+        assert!(entry.description.is_none());
+        let data = entry.data.unwrap();
+        assert_eq!(data["kind"], "note");
+    }
+
+    #[test]
+    fn test_popup_item_skill_to_entry() {
+        use crucible_core::types::PopupEntry;
+
+        let skill = PopupItem::skill("commit")
+            .desc("Create git commit")
+            .with_scope("user")
+            .with_score(90);
+
+        let entry: PopupEntry = skill.into();
+
+        assert_eq!(entry.label, "skill:commit");
+        assert_eq!(
+            entry.description.as_deref(),
+            Some("Create git commit (user)")
+        );
+        let data = entry.data.unwrap();
+        assert_eq!(data["kind"], "skill");
+    }
+
+    #[test]
+    fn test_popup_item_repl_to_entry() {
+        use crucible_core::types::PopupEntry;
+
+        let repl = PopupItem::repl("quit").desc("Exit the REPL").with_score(50);
+
+        let entry: PopupEntry = repl.into();
+
+        assert_eq!(entry.label, ":quit");
+        assert_eq!(entry.description.as_deref(), Some("Exit the REPL"));
+        let data = entry.data.unwrap();
+        assert_eq!(data["kind"], "repl");
     }
 }
