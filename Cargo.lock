@@ -4033,6 +4033,7 @@ dependencies = [
  "crucible-core",
  "hex",
  "parking_lot",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

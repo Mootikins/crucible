@@ -27,11 +27,19 @@
 pub mod config;
 pub mod connection;
 pub mod error;
+pub mod fts;
+pub mod graph_query;
+pub mod graph_view;
 pub mod note_store;
+pub mod repository;
 pub mod schema;
 
 // Re-exports
 pub use config::SqliteConfig;
 pub use connection::SqlitePool;
 pub use error::{SqliteError, SqliteResult};
+pub use fts::{FtsIndex, FtsResult};
+pub use graph_query::SqliteGraphQueryExecutor;
+pub use graph_view::SqliteGraphView;
 pub use note_store::{create_note_store, SqliteNoteStore};
+pub use repository::{create_knowledge_repository, SqliteKnowledgeRepository};
