@@ -703,3 +703,306 @@ fn dialog_over_conversation() {
 
     assert_snapshot!("dialog_over_conversation", terminal.backend());
 }
+
+// =============================================================================
+// Panel Interaction Tests (InteractivePanel → DialogState)
+// =============================================================================
+// Tests for the InteractivePanel primitive and its TUI rendering.
+// Panels are currently rendered via DialogState::select.
+
+use crucible_core::interaction::{InteractivePanel, PanelHints, PanelItem, PanelResult};
+
+/// Helper to create a dialog from an InteractivePanel (matching runner.rs logic)
+fn panel_to_dialog(panel: &InteractivePanel) -> DialogState {
+    let mut choices: Vec<String> = panel
+        .items
+        .iter()
+        .map(|item| {
+            if let Some(desc) = &item.description {
+                format!("{} - {}", item.label, desc)
+            } else {
+                item.label.clone()
+            }
+        })
+        .collect();
+
+    // Add "Other..." option if hints.allow_other is enabled
+    if panel.hints.allow_other {
+        choices.push("[Other...]".to_string());
+    }
+
+    DialogState::select(&panel.header, choices)
+}
+
+#[test]
+fn panel_basic_select() {
+    let mut terminal = test_terminal();
+
+    let panel = InteractivePanel::new("Select database").items([
+        PanelItem::new("PostgreSQL").with_description("Full-featured RDBMS"),
+        PanelItem::new("SQLite").with_description("Embedded, single-file"),
+        PanelItem::new("MongoDB").with_description("Document store"),
+    ]);
+
+    let dialog = panel_to_dialog(&panel);
+
+    terminal
+        .draw(|f| {
+            let widget = DialogWidget::new(&dialog);
+            f.render_widget(widget, f.area());
+        })
+        .unwrap();
+
+    assert_snapshot!("panel_basic_select", terminal.backend());
+}
+
+#[test]
+fn panel_items_without_descriptions() {
+    let mut terminal = test_terminal();
+
+    let panel = InteractivePanel::new("Pick a color").items([
+        PanelItem::new("Red"),
+        PanelItem::new("Green"),
+        PanelItem::new("Blue"),
+    ]);
+
+    let dialog = panel_to_dialog(&panel);
+
+    terminal
+        .draw(|f| {
+            let widget = DialogWidget::new(&dialog);
+            f.render_widget(widget, f.area());
+        })
+        .unwrap();
+
+    assert_snapshot!("panel_items_without_desc", terminal.backend());
+}
+
+#[test]
+fn panel_with_allow_other() {
+    let mut terminal = test_terminal();
+
+    let panel = InteractivePanel::new("Select framework")
+        .items([
+            PanelItem::new("React"),
+            PanelItem::new("Vue"),
+            PanelItem::new("Svelte"),
+        ])
+        .hints(PanelHints::default().allow_other());
+
+    let dialog = panel_to_dialog(&panel);
+
+    terminal
+        .draw(|f| {
+            let widget = DialogWidget::new(&dialog);
+            f.render_widget(widget, f.area());
+        })
+        .unwrap();
+
+    // Should have "[Other...]" as the last option
+    assert_snapshot!("panel_with_allow_other", terminal.backend());
+}
+
+#[test]
+fn panel_confirm_yes_no() {
+    let mut terminal = test_terminal();
+
+    // Simulates ui.confirm() - a panel with Yes/No choices
+    let panel = InteractivePanel::new("Delete this file?")
+        .items([PanelItem::new("Yes"), PanelItem::new("No")]);
+
+    let dialog = panel_to_dialog(&panel);
+
+    terminal
+        .draw(|f| {
+            let widget = DialogWidget::new(&dialog);
+            f.render_widget(widget, f.area());
+        })
+        .unwrap();
+
+    assert_snapshot!("panel_confirm_yes_no", terminal.backend());
+}
+
+#[test]
+fn panel_select_navigation() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let mut terminal = test_terminal();
+
+    let panel = InteractivePanel::new("Choose mode").items([
+        PanelItem::new("plan").with_description("Plan before acting"),
+        PanelItem::new("act").with_description("Execute immediately"),
+        PanelItem::new("auto").with_description("Automatic execution"),
+    ]);
+
+    let mut dialog = panel_to_dialog(&panel);
+    // Navigate to second item
+    dialog.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+
+    terminal
+        .draw(|f| {
+            let widget = DialogWidget::new(&dialog);
+            f.render_widget(widget, f.area());
+        })
+        .unwrap();
+
+    assert_snapshot!("panel_select_navigation", terminal.backend());
+}
+
+#[test]
+fn panel_many_items_scrolling() {
+    let mut terminal = test_terminal();
+
+    // Create a panel with many items to test scrolling
+    let items: Vec<PanelItem> = (1..=15)
+        .map(|i| PanelItem::new(format!("Option {}", i)))
+        .collect();
+
+    let panel = InteractivePanel::new("Select from many").items(items);
+    let dialog = panel_to_dialog(&panel);
+
+    terminal
+        .draw(|f| {
+            let widget = DialogWidget::new(&dialog);
+            f.render_widget(widget, f.area());
+        })
+        .unwrap();
+
+    assert_snapshot!("panel_many_items", terminal.backend());
+}
+
+#[test]
+fn panel_search_with_hints() {
+    let mut terminal = test_terminal();
+
+    // Simulates ui.search() - filterable + allow_other
+    let panel = InteractivePanel::new("Find note")
+        .items([
+            PanelItem::new("Daily Note"),
+            PanelItem::new("Todo List"),
+            PanelItem::new("Project Ideas"),
+        ])
+        .hints(PanelHints::default().filterable().allow_other());
+
+    let dialog = panel_to_dialog(&panel);
+
+    terminal
+        .draw(|f| {
+            let widget = DialogWidget::new(&dialog);
+            f.render_widget(widget, f.area());
+        })
+        .unwrap();
+
+    // Note: filtering is not yet implemented in dialog, but allow_other shows "[Other...]"
+    assert_snapshot!("panel_search_hints", terminal.backend());
+}
+
+#[test]
+fn panel_over_conversation() {
+    let mut terminal = test_terminal();
+    let mut view = RatatuiView::new("plan", TEST_WIDTH, TEST_HEIGHT);
+
+    // Add conversation context
+    view.push_user_message("What database should I use?")
+        .unwrap();
+    view.push_assistant_message("I'll help you choose a database. Let me present some options.")
+        .unwrap();
+
+    // Create and display panel as dialog
+    let panel = InteractivePanel::new("Select database").items([
+        PanelItem::new("PostgreSQL").with_description("Full-featured RDBMS"),
+        PanelItem::new("SQLite").with_description("Embedded, single-file"),
+    ]);
+
+    view.push_dialog(panel_to_dialog(&panel));
+
+    terminal.draw(|f| view.render_frame(f)).unwrap();
+
+    assert_snapshot!("panel_over_conversation", terminal.backend());
+}
+
+#[test]
+fn panel_with_data_renders_correctly() {
+    let mut terminal = test_terminal();
+
+    // Items with attached data (not visible in render, but should not affect display)
+    let panel = InteractivePanel::new("Select agent").items([
+        PanelItem::new("researcher")
+            .with_description("Research agent")
+            .with_data(serde_json::json!({"id": "agent-1", "model": "opus"})),
+        PanelItem::new("coder")
+            .with_description("Coding agent")
+            .with_data(serde_json::json!({"id": "agent-2", "model": "sonnet"})),
+    ]);
+
+    let dialog = panel_to_dialog(&panel);
+
+    terminal
+        .draw(|f| {
+            let widget = DialogWidget::new(&dialog);
+            f.render_widget(widget, f.area());
+        })
+        .unwrap();
+
+    assert_snapshot!("panel_with_data", terminal.backend());
+}
+
+// =============================================================================
+// PanelResult Tests (Verify result types serialize correctly)
+// =============================================================================
+
+#[test]
+fn panel_result_selected_serializes() {
+    let result = PanelResult::selected([0, 2]);
+    let json = serde_json::to_string_pretty(&result).unwrap();
+    insta::assert_snapshot!("panel_result_selected", json);
+}
+
+#[test]
+fn panel_result_cancelled_serializes() {
+    let result = PanelResult::cancelled();
+    let json = serde_json::to_string_pretty(&result).unwrap();
+    insta::assert_snapshot!("panel_result_cancelled", json);
+}
+
+#[test]
+fn panel_result_other_serializes() {
+    let result = PanelResult::other("custom input");
+    let json = serde_json::to_string_pretty(&result).unwrap();
+    insta::assert_snapshot!("panel_result_other", json);
+}
+
+// =============================================================================
+// InteractivePanel Serialization Tests
+// =============================================================================
+
+#[test]
+fn interactive_panel_serializes() {
+    let panel = InteractivePanel::new("Select database")
+        .items([
+            PanelItem::new("PostgreSQL").with_description("Full-featured RDBMS"),
+            PanelItem::new("SQLite"),
+        ])
+        .hints(PanelHints::default().filterable().allow_other());
+
+    let json = serde_json::to_string_pretty(&panel).unwrap();
+    insta::assert_snapshot!("interactive_panel_json", json);
+}
+
+#[test]
+fn interactive_panel_with_multi_select() {
+    let panel = InteractivePanel::new("Select features")
+        .items([
+            PanelItem::new("Auth"),
+            PanelItem::new("Logging"),
+            PanelItem::new("Caching"),
+        ])
+        .hints(
+            PanelHints::default()
+                .multi_select()
+                .initial_selection([0, 2]),
+        );
+
+    let json = serde_json::to_string_pretty(&panel).unwrap();
+    insta::assert_snapshot!("panel_multi_select_json", json);
+}

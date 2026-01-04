@@ -543,8 +543,8 @@ mod tests {
     #[test]
     fn test_rune_popup_request_with_entries() {
         let entry1 = RunePopupEntry::new_impl("Note 1".to_string());
-        let entry2 =
-            RunePopupEntry::new_impl("Note 2".to_string()).with_description_impl("A note".to_string());
+        let entry2 = RunePopupEntry::new_impl("Note 2".to_string())
+            .with_description_impl("A note".to_string());
 
         let request = RunePopupRequest::new_impl("Select".to_string())
             .entry_impl(entry1)
@@ -569,8 +569,7 @@ mod tests {
     #[test]
     fn test_popup_request_into_core() {
         let entry = entry_impl("Test".to_string(), Some("Desc".to_string()));
-        let request =
-            RunePopupRequest::new_impl("Title".to_string()).entry_impl(entry);
+        let request = RunePopupRequest::new_impl("Title".to_string()).entry_impl(entry);
 
         let core = request.into_core();
 

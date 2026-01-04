@@ -1,0 +1,9 @@
+---
+source: crates/crucible-cli/tests/tui_snapshot_tests.rs
+expression: json
+---
+{
+  "cancelled": false,
+  "selected": [],
+  "other": "custom input"
+}
