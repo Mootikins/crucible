@@ -8,7 +8,9 @@
 
 use async_trait::async_trait;
 use crucible_core::parser::BlockHash;
-use crucible_core::storage::{Filter, NoteRecord, NoteStore, SearchResult, StorageError, StorageResult};
+use crucible_core::storage::{
+    Filter, NoteRecord, NoteStore, SearchResult, StorageError, StorageResult,
+};
 use crucible_rune::register_note_functions;
 use rune::Module;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -174,7 +176,11 @@ async fn test_notestore_pipeline_note_get() {
     let result = run_rune_with_note_store(store, script).await.unwrap();
 
     // Verify the mock was called
-    assert_eq!(mock_store.get_call_count(), 1, "get() should be called once");
+    assert_eq!(
+        mock_store.get_call_count(),
+        1,
+        "get() should be called once"
+    );
 
     // Verify the result came from NoteStore
     assert_eq!(result["path"], "test.md");
@@ -206,7 +212,11 @@ async fn test_notestore_pipeline_note_get_missing() {
     assert_eq!(mock_store.get_call_count(), 1);
 
     // Should return null for missing note
-    assert!(result.is_null(), "Expected null for missing note, got: {:?}", result);
+    assert!(
+        result.is_null(),
+        "Expected null for missing note, got: {:?}",
+        result
+    );
 }
 
 /// Test note_list returns all notes
@@ -226,16 +236,18 @@ async fn test_notestore_pipeline_note_list() {
     let result = run_rune_with_note_store(store, script).await.unwrap();
 
     // Verify the mock was called
-    assert_eq!(mock_store.list_call_count(), 1, "list() should be called once");
+    assert_eq!(
+        mock_store.list_call_count(),
+        1,
+        "list() should be called once"
+    );
 
     // Verify result is an array with 3 notes
     let arr = result.as_array().expect("Should be array");
     assert_eq!(arr.len(), 3, "Should return all 3 notes");
 
     // Verify note paths are present
-    let paths: Vec<&str> = arr.iter()
-        .filter_map(|n| n["path"].as_str())
-        .collect();
+    let paths: Vec<&str> = arr.iter().filter_map(|n| n["path"].as_str()).collect();
     assert!(paths.contains(&"test.md"));
     assert!(paths.contains(&"other.md"));
     assert!(paths.contains(&"notes/deep/nested.md"));
@@ -411,7 +423,9 @@ async fn test_notestore_with_rune_executor() {
     "#;
 
     let mut sources = Sources::new();
-    sources.insert(Source::new("test", source).unwrap()).unwrap();
+    sources
+        .insert(Source::new("test", source).unwrap())
+        .unwrap();
     let mut diagnostics = Diagnostics::new();
 
     let unit = rune::prepare(&mut sources)
@@ -425,7 +439,11 @@ async fn test_notestore_with_rune_executor() {
     // Execute using send_execute for proper async handling
     let vm = Vm::new(runtime, unit);
     let execution = vm.send_execute(["main"], ()).expect("Send execute");
-    let output = execution.async_complete().await.into_result().expect("Complete");
+    let output = execution
+        .async_complete()
+        .await
+        .into_result()
+        .expect("Complete");
 
     // Convert to JSON
     let result = crucible_rune::rune_to_json(&output).expect("To JSON");
