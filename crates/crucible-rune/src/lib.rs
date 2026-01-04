@@ -96,7 +96,9 @@ pub use events::{
     ContentBlock, CrucibleEvent, EnrichedRecipe, RecipeEnrichment, RecipeParameter, ToolResultEvent,
 };
 pub use executor::RuneExecutor;
-pub use graph_module::{graph_module, graph_module_with_executor};
+pub use graph_module::{
+    graph_module, graph_module_with_executor, graph_module_with_stores, register_note_functions,
+};
 pub use handler::{
     BoxedRingHandler, RingHandler, RingHandlerContext, RingHandlerError, RingHandlerInfo,
     RingHandlerResult,
