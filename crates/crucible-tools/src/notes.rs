@@ -475,8 +475,13 @@ impl NoteTools {
         }
 
         // Fallback: list from filesystem
-        self.list_notes_via_filesystem(&search_path, folder.as_deref(), include_frontmatter, recursive)
-            .await
+        self.list_notes_via_filesystem(
+            &search_path,
+            folder.as_deref(),
+            include_frontmatter,
+            recursive,
+        )
+        .await
     }
 
     /// List notes using `NoteStore` index
@@ -503,7 +508,8 @@ impl NoteTools {
 
                 // Non-recursive: check if note is in the immediate folder
                 if !recursive {
-                    let relative_to_folder = note.path.strip_prefix(folder_prefix).unwrap_or(&note.path);
+                    let relative_to_folder =
+                        note.path.strip_prefix(folder_prefix).unwrap_or(&note.path);
                     let relative_to_folder = relative_to_folder.trim_start_matches('/');
                     // If there's a / in the relative path, it's in a subfolder
                     if relative_to_folder.contains('/') {
@@ -517,11 +523,7 @@ impl NoteTools {
                 }
             }
 
-            let modified: Option<u64> = note
-                .updated_at
-                .timestamp()
-                .try_into()
-                .ok();
+            let modified: Option<u64> = note.updated_at.timestamp().try_into().ok();
 
             let mut note_json = serde_json::json!({
                 "path": note.path,
@@ -1986,7 +1988,10 @@ mod note_store_tests {
                 let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
 
                 // Should NOT have "source": "index" since it came from filesystem
-                assert!(parsed.get("source").is_none(), "Should not have index source");
+                assert!(
+                    parsed.get("source").is_none(),
+                    "Should not have index source"
+                );
                 assert_eq!(parsed["frontmatter"]["title"], "Filesystem Note");
             }
         }
