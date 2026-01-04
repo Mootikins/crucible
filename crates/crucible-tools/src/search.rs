@@ -387,9 +387,9 @@ impl SearchTools {
                 }
 
                 // Check in properties map
-                note.properties.get(key).is_some_and(|prop_value| {
-                    property_matches(prop_value, search_value)
-                })
+                note.properties
+                    .get(key)
+                    .is_some_and(|prop_value| property_matches(prop_value, search_value))
             });
 
             if matches_all {
@@ -462,9 +462,9 @@ impl SearchTools {
 
             // Check if all search properties match
             let matches_all = search_props.iter().all(|(key, search_value)| {
-                frontmatter.get(key).is_some_and(|prop_value| {
-                    property_matches(prop_value, search_value)
-                })
+                frontmatter
+                    .get(key)
+                    .is_some_and(|prop_value| property_matches(prop_value, search_value))
             });
 
             if matches_all {

@@ -1007,7 +1007,9 @@ mod note_store_tests {
     use super::*;
     use async_trait::async_trait;
     use crucible_core::parser::BlockHash;
-    use crucible_core::storage::{NoteRecord, NoteStore, SearchResult, StorageError, StorageResult};
+    use crucible_core::storage::{
+        NoteRecord, NoteStore, SearchResult, StorageError, StorageResult,
+    };
     use serde_json::json;
 
     /// Mock NoteStore that returns predetermined results
@@ -1184,7 +1186,11 @@ mod note_store_tests {
         "#;
 
         let result = run_rune_async(module, script).await.unwrap();
-        assert!(result.is_null(), "Expected null for missing note, got: {:?}", result);
+        assert!(
+            result.is_null(),
+            "Expected null for missing note, got: {:?}",
+            result
+        );
     }
 
     #[tokio::test]
@@ -1370,7 +1376,10 @@ mod graph_view_tests {
     impl MockGraphView {
         fn new() -> Self {
             Self {
-                outlinks_result: vec!["linked/note-a.md".to_string(), "linked/note-b.md".to_string()],
+                outlinks_result: vec![
+                    "linked/note-a.md".to_string(),
+                    "linked/note-b.md".to_string(),
+                ],
                 backlinks_result: vec!["backlink/from-a.md".to_string()],
                 neighbors_result: vec![
                     "linked/note-a.md".to_string(),
