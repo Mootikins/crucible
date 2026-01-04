@@ -163,9 +163,7 @@ impl DialogState {
                 }
                 _ => DialogResult::Pending,
             },
-            DialogState::Input {
-                buffer, cursor, ..
-            } => match key.code {
+            DialogState::Input { buffer, cursor, .. } => match key.code {
                 KeyCode::Enter => {
                     if buffer.is_empty() {
                         DialogResult::Cancel
@@ -801,10 +799,7 @@ mod tests {
     fn test_input_dialog_empty_cancels() {
         let mut dialog = DialogState::input("Enter", "");
         // Enter on empty buffer should cancel
-        assert_eq!(
-            dialog.handle_key(key(KeyCode::Enter)),
-            DialogResult::Cancel
-        );
+        assert_eq!(dialog.handle_key(key(KeyCode::Enter)), DialogResult::Cancel);
     }
 
     #[test]
