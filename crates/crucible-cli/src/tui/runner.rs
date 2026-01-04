@@ -164,6 +164,10 @@ pub struct RatatuiRunner {
     selection: crate::tui::selection::SelectionState,
     /// Content cache for selection text extraction
     selection_cache: crate::tui::selection::SelectableContentCache,
+    /// Pending interaction request ID (for response correlation)
+    pending_interaction_id: Option<String>,
+    /// Pending popup request (for handling "Other" selections)
+    pending_popup: Option<crucible_core::interaction::PopupRequest>,
 }
 
 impl RatatuiRunner {
@@ -200,6 +204,8 @@ impl RatatuiRunner {
             mouse_capture_enabled: true, // Enable by default for scroll support
             selection: crate::tui::selection::SelectionState::new(),
             selection_cache: crate::tui::selection::SelectableContentCache::new(),
+            pending_interaction_id: None,
+            pending_popup: None,
         })
     }
 
@@ -1334,14 +1340,57 @@ impl RatatuiRunner {
 
         match result {
             DialogResult::Confirm(value) => {
-                // Handle confirmation based on context
-                // For now, just log that a dialog was confirmed
-                // In the future, this could emit events or call callbacks
-                self.view
-                    .set_status_text(&format!("Dialog confirmed: {}", value));
+                // Check if this was an "[Other...]" selection from a popup
+                if value == "[Other...]" {
+                    if let Some(popup) = &self.pending_popup {
+                        // Show input dialog for free-text entry
+                        let input_dialog = DialogState::input(
+                            &popup.title,
+                            "Type your response...",
+                        );
+                        self.view.push_dialog(input_dialog);
+                        // Don't clear pending state yet - we need it for the input result
+                        return Ok(());
+                    }
+                }
+
+                // Handle popup response
+                if let Some(popup) = self.pending_popup.take() {
+                    // Check if this was a text input (from "Other" dialog)
+                    // or a selection from the list
+                    let is_entry_selection = popup.entries.iter().any(|e| {
+                        e.label == value
+                            || value.starts_with(&e.label)
+                    });
+
+                    if is_entry_selection {
+                        // Find the selected entry
+                        if let Some((idx, entry)) = popup.entries.iter().enumerate().find(|(_, e)| {
+                            e.label == value || value.starts_with(&e.label)
+                        }) {
+                            let _response = crucible_core::interaction::PopupResponse::selected(idx, entry.clone());
+                            self.view
+                                .set_status_text(&format!("Selected: {}", entry.label));
+                        }
+                    } else {
+                        // This was typed text from the "Other" input
+                        let _response = crucible_core::interaction::PopupResponse::other(&value);
+                        self.view
+                            .set_status_text(&format!("Entered: {}", value));
+                    }
+
+                    // Clear interaction state
+                    self.pending_interaction_id = None;
+                } else {
+                    // Regular dialog confirmation
+                    self.view
+                        .set_status_text(&format!("Dialog confirmed: {}", value));
+                }
             }
             DialogResult::Cancel => {
-                // Dialog was cancelled
+                // Dialog was cancelled - clear pending state
+                self.pending_popup = None;
+                self.pending_interaction_id = None;
                 self.view.set_status_text("Dialog cancelled");
             }
             DialogResult::Pending => {
@@ -1556,7 +1605,7 @@ impl RatatuiRunner {
             }
             InteractionRequest::Popup(popup) => {
                 // Convert PopupEntry labels to choices for selection dialog
-                let choices: Vec<String> = popup
+                let mut choices: Vec<String> = popup
                     .entries
                     .iter()
                     .map(|e| {
@@ -1567,12 +1616,21 @@ impl RatatuiRunner {
                         }
                     })
                     .collect();
+
+                // Add "Other..." option if allow_other is enabled
+                if popup.allow_other {
+                    choices.push("[Other...]".to_string());
+                }
+
+                // Store the popup request for potential "Other" handling
+                self.pending_popup = Some(popup.clone());
+
                 DialogState::select(&popup.title, choices)
             }
         };
 
         // Store the request_id for response correlation
-        // TODO: Add pending_interaction_id field to runner
+        self.pending_interaction_id = Some(request_id.to_string());
         debug!("Interaction request {}: showing dialog", request_id);
 
         self.view.push_dialog(dialog);

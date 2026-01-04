@@ -72,6 +72,7 @@ mod executor;
 mod fennel;
 mod graph;
 mod json_query;
+mod popup;
 mod registry;
 pub mod schema;
 mod shell;
@@ -92,6 +93,7 @@ pub use json_query::{
     detect_format, encode_to_format, json_to_lua, lua_to_json, parse_auto, parse_with_format,
     register_oq_module, Format,
 };
+pub use popup::{lua_entry_to_core, lua_request_to_core, register_popup_module};
 pub use registry::LuaToolRegistry;
 pub use schema::{
     extract_signatures, generate_input_schema, type_to_string, FunctionSignature, LuauType,
