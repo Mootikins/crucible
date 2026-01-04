@@ -1,0 +1,86 @@
+---
+title: TUI Keybindings
+tags: [help, tui, keybindings]
+---
+
+# TUI Keybindings
+
+Crucible's terminal UI supports readline-style editing and custom shortcuts.
+
+## Input Editing (Emacs Mode)
+
+Standard readline keybindings for the input box:
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+A` | Move to beginning of line |
+| `Ctrl+E` | Move to end of line |
+| `Ctrl+W` | Delete word backward |
+| `Ctrl+U` | Delete to beginning of line |
+| `Ctrl+K` | Delete to end of line |
+| `Alt+B` | Move word backward |
+| `Alt+F` | Move word forward |
+| `Ctrl+T` | Transpose characters |
+
+## Navigation
+
+| Key | Action |
+|-----|--------|
+| `Up/Down` | Scroll conversation history |
+| `PageUp/PageDown` | Scroll by page |
+| `Home` | Scroll to top |
+| `End` | Scroll to bottom |
+| `Ctrl+C` | Cancel current operation / Exit |
+
+## Display Toggles
+
+| Key | Action |
+|-----|--------|
+| `Alt+T` | Toggle reasoning panel (for thinking models) |
+| `Alt+M` | Toggle mouse capture mode |
+
+### Reasoning Panel
+
+When using models that emit reasoning/thinking tokens (Qwen3-thinking, DeepSeek-R1, etc.), press `Alt+T` to show or hide the reasoning panel. This displays the model's internal thought process.
+
+### Mouse Capture
+
+By default, mouse capture is enabled for scrolling. Press `Alt+M` to toggle:
+- **Enabled**: Scroll with mouse wheel, application handles selection
+- **Disabled**: Terminal-native text selection works
+
+## Text Selection
+
+With mouse capture enabled, you can select text by clicking and dragging. Selected text is automatically copied to the clipboard on mouse release.
+
+Selection works across:
+- User messages
+- Assistant responses
+- Code blocks
+- Tool outputs
+
+## Popup Navigation
+
+When a popup menu is open (commands, agents, files):
+
+| Key | Action |
+|-----|--------|
+| `Up/Down` | Navigate items |
+| `Enter` | Select item |
+| `Escape` | Close popup |
+| `Tab` | Accept completion |
+| Type | Filter items |
+
+## Command Prefixes
+
+| Prefix | Purpose | Example |
+|--------|---------|---------|
+| `/` | Slash commands | `/commit`, `/search` |
+| `@` | Context references | `@agent-name`, `@file.md` |
+| `:` | System commands | `:set`, `:map` |
+| `!` | Shell passthrough | `!ls -la` |
+
+## See Also
+
+- [[TUI/Index|TUI Overview]]
+- [[Configuration|Configuration Options]]
