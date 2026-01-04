@@ -239,7 +239,7 @@ pub fn graph_module() -> Result<Module, ContextError> {
 // Database-backed Module Registration
 // =============================================================================
 
-use crucible_core::storage::NoteStore;
+use crucible_core::storage::{GraphView, NoteStore};
 use crucible_core::traits::GraphQueryExecutor;
 use std::sync::Arc;
 
@@ -479,6 +479,64 @@ pub fn register_note_functions(
     Ok(())
 }
 
+// =============================================================================
+// GraphView Functions (Fast Path)
+// =============================================================================
+
+/// Register fast graph traversal functions using GraphView
+///
+/// These functions provide O(1) lookups for graph traversal, bypassing
+/// the query parser. Use these when you need fast, synchronous access
+/// to link relationships.
+///
+/// # Functions registered
+///
+/// - `fast_outlinks(path)` - Get paths of notes this note links to
+/// - `fast_backlinks(path)` - Get paths of notes linking to this note
+/// - `fast_neighbors(path, depth)` - Get all connected notes within depth
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use crucible_core::storage::GraphView;
+/// use crucible_rune::register_graph_view_functions;
+///
+/// let view: Arc<dyn GraphView> = create_graph_view();
+/// let mut module = Module::with_crate("graph")?;
+/// register_graph_view_functions(&mut module, view)?;
+///
+/// // In Rune scripts:
+/// // let links = graph::fast_outlinks("notes/index.md");
+/// // let backlinks = graph::fast_backlinks("notes/target.md");
+/// // let nearby = graph::fast_neighbors("notes/hub.md", 2);
+/// ```
+pub fn register_graph_view_functions(
+    module: &mut Module,
+    view: Arc<dyn GraphView>,
+) -> Result<(), ContextError> {
+    // fast_outlinks - Get paths of notes this note links to
+    let v = Arc::clone(&view);
+    module
+        .function("fast_outlinks", move |path: String| v.outlinks(&path))
+        .build()?;
+
+    // fast_backlinks - Get paths of notes linking to this note
+    let v = Arc::clone(&view);
+    module
+        .function("fast_backlinks", move |path: String| v.backlinks(&path))
+        .build()?;
+
+    // fast_neighbors - Get all connected notes within depth
+    let v = Arc::clone(&view);
+    module
+        .function("fast_neighbors", move |path: String, depth: i64| {
+            v.neighbors(&path, depth as usize)
+        })
+        .build()?;
+
+    Ok(())
+}
+
 /// Create a graph module with both executor and note store
 ///
 /// This combines `graph_module_with_executor` functionality with NoteStore
@@ -526,6 +584,57 @@ pub fn graph_module_with_stores(
 
     // Add NoteStore functions
     register_note_functions(&mut module, store)?;
+
+    Ok(module)
+}
+
+/// Create a graph module with executor, note store, and graph view
+///
+/// This is the most complete module, providing:
+/// - Database-backed query functions (db_*)
+/// - NoteStore access (note_*)
+/// - Fast GraphView traversal (fast_*)
+///
+/// # Functions available
+///
+/// From GraphQueryExecutor:
+/// - `db_find(title)` - Find note by title
+/// - `db_outlinks(title)` - Get outlinks via query
+/// - `db_inlinks(title)` - Get inlinks via query
+/// - `db_neighbors(title)` - Get all connected notes via query
+/// - `db_query(query)` - Execute arbitrary graph query
+///
+/// From NoteStore:
+/// - `note_get(path)` - Get note by path
+/// - `note_list(limit)` - List notes
+///
+/// From GraphView (fast path):
+/// - `fast_outlinks(path)` - O(1) outlinks lookup
+/// - `fast_backlinks(path)` - O(1) backlinks lookup
+/// - `fast_neighbors(path, depth)` - O(k) neighbors lookup
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use crucible_core::traits::GraphQueryExecutor;
+/// use crucible_core::storage::{NoteStore, GraphView};
+/// use crucible_rune::graph_module_with_all;
+///
+/// let executor: Arc<dyn GraphQueryExecutor> = create_executor();
+/// let store: Arc<dyn NoteStore> = create_store();
+/// let view: Arc<dyn GraphView> = create_view();
+/// let module = graph_module_with_all(executor, store, view)?;
+/// ```
+pub fn graph_module_with_all(
+    executor: Arc<dyn GraphQueryExecutor>,
+    store: Arc<dyn NoteStore>,
+    view: Arc<dyn GraphView>,
+) -> Result<Module, ContextError> {
+    // Start with executor + store
+    let mut module = graph_module_with_stores(executor, store)?;
+
+    // Add fast GraphView functions
+    register_graph_view_functions(&mut module, view)?;
 
     Ok(module)
 }
@@ -1243,5 +1352,259 @@ mod note_store_tests {
         let result = run_rune_async(module, script).await.unwrap();
         assert_eq!(result["store_path"], "notes/index.md");
         assert_eq!(result["executor_title"], "From Executor");
+    }
+}
+
+#[cfg(test)]
+mod graph_view_tests {
+    use super::*;
+    use crucible_core::storage::{GraphView, NoteRecord};
+
+    /// Mock GraphView that returns predetermined results
+    struct MockGraphView {
+        outlinks_result: Vec<String>,
+        backlinks_result: Vec<String>,
+        neighbors_result: Vec<String>,
+    }
+
+    impl MockGraphView {
+        fn new() -> Self {
+            Self {
+                outlinks_result: vec!["linked/note-a.md".to_string(), "linked/note-b.md".to_string()],
+                backlinks_result: vec!["backlink/from-a.md".to_string()],
+                neighbors_result: vec![
+                    "linked/note-a.md".to_string(),
+                    "linked/note-b.md".to_string(),
+                    "backlink/from-a.md".to_string(),
+                ],
+            }
+        }
+
+        fn with_outlinks(mut self, links: Vec<String>) -> Self {
+            self.outlinks_result = links;
+            self
+        }
+
+        fn with_backlinks(mut self, links: Vec<String>) -> Self {
+            self.backlinks_result = links;
+            self
+        }
+
+        fn with_neighbors(mut self, links: Vec<String>) -> Self {
+            self.neighbors_result = links;
+            self
+        }
+    }
+
+    impl GraphView for MockGraphView {
+        fn outlinks(&self, _path: &str) -> Vec<String> {
+            self.outlinks_result.clone()
+        }
+
+        fn backlinks(&self, _path: &str) -> Vec<String> {
+            self.backlinks_result.clone()
+        }
+
+        fn neighbors(&self, _path: &str, _depth: usize) -> Vec<String> {
+            self.neighbors_result.clone()
+        }
+
+        fn rebuild(&mut self, _notes: &[NoteRecord]) {
+            // No-op for mock
+        }
+    }
+
+    /// Helper to create module with GraphView functions
+    fn graph_view_module(view: Arc<dyn GraphView>) -> Result<Module, ContextError> {
+        let mut module = Module::with_crate("graph")?;
+        register_graph_view_functions(&mut module, view)?;
+        Ok(module)
+    }
+
+    /// Helper to compile and run async Rune script
+    async fn run_rune_async(
+        module: Module,
+        script: &str,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+        use rune::termcolor::{ColorChoice, StandardStream};
+        use rune::{Context, Diagnostics, Source, Sources, Vm};
+
+        let mut context = Context::with_default_modules()?;
+        context.install(module)?;
+        let runtime = std::sync::Arc::new(context.runtime()?);
+
+        let mut sources = Sources::new();
+        sources.insert(Source::new("test", script)?)?;
+
+        let mut diagnostics = Diagnostics::new();
+        let result = rune::prepare(&mut sources)
+            .with_context(&context)
+            .with_diagnostics(&mut diagnostics)
+            .build();
+
+        if !diagnostics.is_empty() {
+            let mut writer = StandardStream::stderr(ColorChoice::Always);
+            diagnostics.emit(&mut writer, &sources)?;
+        }
+
+        let unit = result?;
+        let unit = std::sync::Arc::new(unit);
+
+        let vm = Vm::new(runtime, unit);
+        let execution = vm.send_execute(["main"], ())?;
+        let output = execution.async_complete().await.into_result()?;
+
+        let json = crate::mcp_types::rune_to_json(&output)?;
+        Ok(json)
+    }
+
+    // =========================================================================
+    // outlinks tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_fast_outlinks_returns_paths() {
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new());
+        let module = graph_view_module(view).unwrap();
+
+        let script = r#"
+            use graph::fast_outlinks;
+
+            pub async fn main() {
+                fast_outlinks("notes/index.md")
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await.unwrap();
+        let arr = result.as_array().expect("Should be array");
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0], "linked/note-a.md");
+        assert_eq!(arr[1], "linked/note-b.md");
+    }
+
+    #[tokio::test]
+    async fn test_fast_outlinks_empty_result() {
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new().with_outlinks(vec![]));
+        let module = graph_view_module(view).unwrap();
+
+        let script = r#"
+            use graph::fast_outlinks;
+
+            pub async fn main() {
+                fast_outlinks("orphan.md")
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await.unwrap();
+        let arr = result.as_array().expect("Should be array");
+        assert!(arr.is_empty());
+    }
+
+    // =========================================================================
+    // backlinks tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_fast_backlinks_returns_paths() {
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new());
+        let module = graph_view_module(view).unwrap();
+
+        let script = r#"
+            use graph::fast_backlinks;
+
+            pub async fn main() {
+                fast_backlinks("notes/target.md")
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await.unwrap();
+        let arr = result.as_array().expect("Should be array");
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0], "backlink/from-a.md");
+    }
+
+    #[tokio::test]
+    async fn test_fast_backlinks_empty_result() {
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new().with_backlinks(vec![]));
+        let module = graph_view_module(view).unwrap();
+
+        let script = r#"
+            use graph::fast_backlinks;
+
+            pub async fn main() {
+                fast_backlinks("orphan.md")
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await.unwrap();
+        let arr = result.as_array().expect("Should be array");
+        assert!(arr.is_empty());
+    }
+
+    // =========================================================================
+    // neighbors tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_fast_neighbors_returns_paths() {
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new());
+        let module = graph_view_module(view).unwrap();
+
+        let script = r#"
+            use graph::fast_neighbors;
+
+            pub async fn main() {
+                fast_neighbors("notes/hub.md", 1)
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await.unwrap();
+        let arr = result.as_array().expect("Should be array");
+        assert_eq!(arr.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_fast_neighbors_empty_result() {
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new().with_neighbors(vec![]));
+        let module = graph_view_module(view).unwrap();
+
+        let script = r#"
+            use graph::fast_neighbors;
+
+            pub async fn main() {
+                fast_neighbors("isolated.md", 2)
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await.unwrap();
+        let arr = result.as_array().expect("Should be array");
+        assert!(arr.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_fast_neighbors_depth_parameter() {
+        // Verify that depth is passed correctly (mock doesn't use it, but signature works)
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new());
+        let module = graph_view_module(view).unwrap();
+
+        let script = r#"
+            use graph::fast_neighbors;
+
+            pub async fn main() {
+                // Test with different depths
+                let depth1 = fast_neighbors("notes/hub.md", 1);
+                let depth3 = fast_neighbors("notes/hub.md", 3);
+                // Cast to i64 since u64 (from .len()) cannot be serialized to JSON
+                #{
+                    depth1_len: depth1.len() as i64,
+                    depth3_len: depth3.len() as i64,
+                }
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await.unwrap();
+        // Both return same length since mock doesn't vary by depth
+        assert_eq!(result["depth1_len"], 3);
+        assert_eq!(result["depth3_len"], 3);
     }
 }
