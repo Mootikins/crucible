@@ -41,6 +41,7 @@ pub struct SessionHistoryWidget<'a> {
     state: &'a ConversationState,
     scroll_offset: usize,
     viewport_height: u16,
+    viewport_width: u16,
 }
 
 impl<'a> SessionHistoryWidget<'a> {
@@ -50,6 +51,7 @@ impl<'a> SessionHistoryWidget<'a> {
             state,
             scroll_offset: 0,
             viewport_height: 0,
+            viewport_width: 80, // Default width for tests
         }
     }
 
@@ -62,6 +64,15 @@ impl<'a> SessionHistoryWidget<'a> {
     /// Set the viewport height (for scroll bounds checking)
     pub fn viewport_height(mut self, height: u16) -> Self {
         self.viewport_height = height;
+        self
+    }
+
+    /// Set the viewport width (for scroll bounds checking)
+    ///
+    /// Used by `scroll_up()` and `scroll_to_top()` to calculate content height.
+    /// Defaults to 80 if not set.
+    pub fn viewport_width(mut self, width: u16) -> Self {
+        self.viewport_width = width;
         self
     }
 
@@ -153,7 +164,7 @@ impl<'a> SessionHistoryWidget<'a> {
         self.scroll_offset = self.scroll_offset.saturating_add(lines);
         // Clamp to content bounds if viewport_height is set
         if self.viewport_height > 0 {
-            let content_width = (80usize).saturating_sub(4); // Default width minus margins
+            let content_width = (self.viewport_width as usize).saturating_sub(4); // Width minus margins
             let max_scroll = self
                 .content_height(content_width)
                 .saturating_sub(self.viewport_height as usize);
@@ -169,7 +180,7 @@ impl<'a> SessionHistoryWidget<'a> {
     /// Scroll to top of content
     pub fn scroll_to_top(&mut self) {
         if self.viewport_height > 0 {
-            let content_width = (80usize).saturating_sub(4);
+            let content_width = (self.viewport_width as usize).saturating_sub(4);
             let max_scroll = self
                 .content_height(content_width)
                 .saturating_sub(self.viewport_height as usize);
@@ -296,6 +307,41 @@ mod tests {
         let state = ConversationState::new();
         let widget = SessionHistoryWidget::new(&state).viewport_height(24);
         assert_eq!(widget.viewport_height, 24);
+    }
+
+    #[test]
+    fn test_viewport_width_builder() {
+        let state = ConversationState::new();
+        let widget = SessionHistoryWidget::new(&state).viewport_width(120);
+        assert_eq!(widget.viewport_width, 120);
+    }
+
+    #[test]
+    fn test_scroll_uses_viewport_width() {
+        // Create a conversation with content
+        let mut state = ConversationState::new();
+        for i in 0..10 {
+            state.push_user_message(format!("Message {}", i));
+        }
+
+        // With narrow width, same content wraps to more lines
+        let mut narrow = SessionHistoryWidget::new(&state)
+            .viewport_height(10)
+            .viewport_width(40);
+        let mut wide = SessionHistoryWidget::new(&state)
+            .viewport_height(10)
+            .viewport_width(120);
+
+        narrow.scroll_to_top();
+        wide.scroll_to_top();
+
+        // Narrow viewport should have higher scroll offset due to wrapping
+        assert!(
+            narrow.scroll_offset >= wide.scroll_offset,
+            "Narrow viewport ({}) should scroll at least as much as wide ({})",
+            narrow.scroll_offset,
+            wide.scroll_offset
+        );
     }
 
     #[test]
