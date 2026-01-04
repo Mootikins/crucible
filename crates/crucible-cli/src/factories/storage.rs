@@ -16,7 +16,7 @@ use crucible_config::StorageMode;
 use crucible_core::enrichment::{EnrichedNote, EnrichedNoteStore};
 use crucible_core::hashing::Blake3Hasher;
 use crucible_core::storage::{
-    BlockSize, ContentAddressedStorage, ContentAddressedStorageBuilder, HasherConfig,
+    BlockSize, ContentAddressedStorage, ContentAddressedStorageBuilder, HasherConfig, NoteStore,
     StorageBackendType, StorageResult,
 };
 use crucible_core::traits::StorageClient;
@@ -225,7 +225,7 @@ pub enum StorageHandle {
     /// Daemon-backed storage (multi-session via Unix socket)
     Daemon(Arc<DaemonStorageClient>),
     /// Lightweight mode (LanceDB vectors + ripgrep text search, no SurrealDB)
-    Lightweight(Arc<crucible_lance::LanceStore>),
+    Lightweight(Arc<crucible_lance::LanceNoteStore>),
 }
 
 impl StorageHandle {
@@ -300,11 +300,37 @@ impl StorageHandle {
         matches!(self, StorageHandle::Lightweight(_))
     }
 
-    /// Get the LanceStore if in lightweight mode
-    pub fn try_lance(&self) -> Option<&Arc<crucible_lance::LanceStore>> {
+    /// Get the LanceNoteStore if in lightweight mode
+    ///
+    /// Returns a reference to the underlying LanceNoteStore for lightweight mode.
+    pub fn try_lance_note_store(&self) -> Option<&Arc<crucible_lance::LanceNoteStore>> {
         match self {
             StorageHandle::Lightweight(store) => Some(store),
             _ => None,
+        }
+    }
+
+    /// Get NoteStore trait object (if available)
+    ///
+    /// Returns `Some` for embedded and lightweight modes, `None` for daemon mode.
+    /// Daemon mode will need RPC wrapper (future work).
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use crucible_cli::factories::get_storage;
+    /// use crucible_core::storage::NoteStore;
+    ///
+    /// let storage = get_storage(&config).await?;
+    /// if let Some(note_store) = storage.note_store() {
+    ///     let notes = note_store.list().await?;
+    /// }
+    /// ```
+    pub fn note_store(&self) -> Option<Arc<dyn NoteStore>> {
+        match self {
+            StorageHandle::Embedded(h) => Some(h.as_note_store()),
+            StorageHandle::Daemon(_) => None, // TODO: DaemonNoteStoreClient
+            StorageHandle::Lightweight(store) => Some(Arc::clone(store) as Arc<dyn NoteStore>),
         }
     }
 
@@ -450,7 +476,9 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
         StorageMode::Lightweight => {
             info!("Using lightweight storage mode (LanceDB + ripgrep)");
             let lance_path = config.kiln_path.join(".crucible").join("lance");
-            let store = crucible_lance::LanceStore::open(&lance_path).await?;
+            let store = crucible_lance::LanceNoteStore::new(lance_path.to_string_lossy().as_ref())
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to create LanceNoteStore: {}", e))?;
             Ok(StorageHandle::Lightweight(Arc::new(store)))
         }
     }
