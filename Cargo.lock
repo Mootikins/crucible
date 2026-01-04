@@ -3647,6 +3647,7 @@ dependencies = [
  "ratatui 0.30.0",
  "regex",
  "rmcp",
+ "rune",
  "scopeguard",
  "serde",
  "serde_json",
