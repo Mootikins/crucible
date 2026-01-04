@@ -53,17 +53,20 @@ See [[Help/TUI/Rune API]] for scripting TUI behavior.
 
 ## Keyboard Shortcuts
 
+Quick reference (see [[Help/TUI/Keybindings]] for complete list):
+
 | Key | Action |
 |-----|--------|
 | `Enter` | Send message / confirm |
 | `Ctrl+C` | Cancel (double to exit) |
-| `Ctrl+D` | Exit immediately |
 | `Shift+Tab` | Cycle mode |
-| `Ctrl+Up/Down` | Scroll by 3 lines |
-| `Page Up/Down` | Scroll by 10 lines |
+| `Alt+T` | Toggle reasoning panel |
+| `Alt+M` | Toggle mouse capture |
 | `/` | Open command popup |
 | `@` | Open agent/file popup |
 | `Esc` | Dismiss popup/dialog |
+
+Readline-style editing (`Ctrl+A/E/W/U/K`, `Alt+B/F`) is supported in the input box.
 
 ## Testing
 
@@ -71,6 +74,7 @@ For developers contributing to the TUI, see [[Help/TUI/E2E Testing]] for informa
 
 ## See Also
 
+- [[Help/TUI/Keybindings]] - Complete keyboard shortcuts
 - [[Help/TUI/Component Architecture]] - Widget system details
 - [[Help/TUI/Rune API]] - Scripting interface
 - [[Help/TUI/E2E Testing]] - End-to-end test harness
