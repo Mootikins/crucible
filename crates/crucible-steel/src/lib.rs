@@ -22,7 +22,7 @@ pub use error::SteelError;
 pub use executor::SteelExecutor;
 pub use graph::{GraphModule, GraphViewModule, NoteStoreModule};
 pub use json_query::{Format as OqFormat, OqModule};
-pub use popup::PopupModule;
+pub use popup::{PanelModule, PopupModule};
 pub use registry::SteelToolRegistry;
 pub use schema::{ContractSignature, ContractType};
 pub use shell::{ShellModule, ShellPolicy};
