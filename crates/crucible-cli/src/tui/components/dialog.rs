@@ -75,6 +75,7 @@ impl Widget for DialogWidget<'_> {
                 Self::centered_rect(50, height_percent, area)
             }
             DialogState::Info { .. } => Self::centered_rect(60, 40, area),
+            DialogState::Input { .. } => Self::centered_rect(60, 25, area),
         };
 
         // Clear dialog area
@@ -111,6 +112,14 @@ impl Widget for DialogWidget<'_> {
                 ref content,
             } => {
                 Self::render_info_static(dialog_area, buf, title, content);
+            }
+            DialogState::Input {
+                ref title,
+                ref placeholder,
+                ref buffer,
+                cursor,
+            } => {
+                Self::render_input_static(dialog_area, buf, title, placeholder, buffer, *cursor);
             }
         }
     }
@@ -231,6 +240,101 @@ impl DialogWidget<'_> {
         let hint = "[Press Enter or Esc to close]";
         let hint_x = inner.x + (inner.width.saturating_sub(hint.len() as u16)) / 2;
         if inner.height > 0 {
+            buf.set_string(
+                hint_x,
+                inner.y + inner.height - 1,
+                hint,
+                Style::default().fg(Color::DarkGray),
+            );
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_input_static(
+        area: Rect,
+        buf: &mut Buffer,
+        title: &str,
+        placeholder: &str,
+        buffer: &str,
+        cursor: usize,
+    ) {
+        let block = Block::default()
+            .title(format!(" {} ", title))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan));
+
+        let inner = block.inner(area);
+        block.render(area, buf);
+
+        // Show placeholder if buffer is empty
+        let display_text = if buffer.is_empty() {
+            placeholder
+        } else {
+            buffer
+        };
+
+        // Calculate visible portion of text
+        let text_style = if buffer.is_empty() {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            Style::default()
+        };
+
+        // Input field background - show it centered vertically
+        let input_y = inner.y + (inner.height.saturating_sub(3)) / 2;
+        let input_area = Rect {
+            x: inner.x + 1,
+            y: input_y,
+            width: inner.width.saturating_sub(2),
+            height: 1,
+        };
+
+        // Draw input background
+        let input_bg = Style::default().bg(Color::DarkGray);
+        for x in input_area.x..input_area.x + input_area.width {
+            if let Some(cell) = buf.cell_mut((x, input_area.y)) {
+                cell.set_char(' ');
+                cell.set_style(input_bg);
+            }
+        }
+
+        // Draw the text
+        let visible_width = input_area.width as usize;
+        let (display_start, cursor_screen_pos) = if cursor > visible_width.saturating_sub(5) {
+            // Scroll the view if cursor is near the right edge
+            let start = cursor.saturating_sub(visible_width.saturating_sub(5));
+            (start, cursor - start)
+        } else {
+            (0, cursor)
+        };
+
+        let visible_text: String = display_text
+            .chars()
+            .skip(display_start)
+            .take(visible_width)
+            .collect();
+
+        buf.set_string(input_area.x, input_area.y, &visible_text, text_style);
+
+        // Draw cursor if buffer is not empty (or always show it)
+        if !buffer.is_empty() {
+            let cursor_x = input_area.x + cursor_screen_pos as u16;
+            if cursor_x < input_area.x + input_area.width {
+                if let Some(cell) = buf.cell_mut((cursor_x, input_area.y)) {
+                    cell.set_style(
+                        Style::default()
+                            .fg(Color::Black)
+                            .bg(Color::White)
+                            .add_modifier(Modifier::SLOW_BLINK),
+                    );
+                }
+            }
+        }
+
+        // Hint at bottom
+        let hint = "[Enter to submit, Esc to cancel]";
+        let hint_x = inner.x + (inner.width.saturating_sub(hint.len() as u16)) / 2;
+        if inner.height > 2 {
             buf.set_string(
                 hint_x,
                 inner.y + inner.height - 1,
