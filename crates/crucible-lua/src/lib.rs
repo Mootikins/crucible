@@ -83,7 +83,10 @@ pub use error::LuaError;
 pub use executor::LuaExecutor;
 #[cfg(feature = "fennel")]
 pub use fennel::FennelCompiler;
-pub use graph::{register_graph_module, register_graph_module_with_executor};
+pub use graph::{
+    register_graph_module, register_graph_module_full, register_graph_module_with_executor,
+    register_note_store_functions,
+};
 pub use json_query::{
     detect_format, encode_to_format, json_to_lua, lua_to_json, parse_auto, parse_with_format,
     register_oq_module, Format,
