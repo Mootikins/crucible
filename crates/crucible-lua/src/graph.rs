@@ -252,10 +252,7 @@ pub fn register_graph_module_with_executor(
 ///     print(note.title)
 /// end
 /// ```
-pub fn register_note_store_functions(
-    lua: &Lua,
-    store: Arc<dyn NoteStore>,
-) -> Result<(), LuaError> {
+pub fn register_note_store_functions(lua: &Lua, store: Arc<dyn NoteStore>) -> Result<(), LuaError> {
     // Get the graph table (must exist from prior registration)
     let graph: Table = lua.globals().get("graph")?;
 
@@ -424,7 +421,10 @@ fn string_vec_to_lua_table(lua: &Lua, values: &[String]) -> Result<Value, mlua::
 }
 
 /// Convert a NoteRecord to a Lua table
-fn note_record_to_lua(lua: &Lua, record: &crucible_core::storage::NoteRecord) -> Result<Value, mlua::Error> {
+fn note_record_to_lua(
+    lua: &Lua,
+    record: &crucible_core::storage::NoteRecord,
+) -> Result<Value, mlua::Error> {
     let table = lua.create_table()?;
 
     table.set("path", record.path.as_str())?;
@@ -988,8 +988,7 @@ mod note_store_tests {
     async fn test_note_get_includes_tags() {
         let lua = Lua::new();
         let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::with_notes(vec![sample_note(
-            "Index.md",
-            "Index",
+            "Index.md", "Index",
         )]));
 
         register_graph_module(&lua).unwrap();
@@ -1015,8 +1014,7 @@ mod note_store_tests {
     async fn test_note_get_includes_links() {
         let lua = Lua::new();
         let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::with_notes(vec![sample_note(
-            "Index.md",
-            "Index",
+            "Index.md", "Index",
         )]));
 
         register_graph_module(&lua).unwrap();
@@ -1150,8 +1148,7 @@ mod note_store_tests {
         let lua = Lua::new();
         let executor: Arc<dyn GraphQueryExecutor> = Arc::new(MockExecutor);
         let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::with_notes(vec![sample_note(
-            "test.md",
-            "Test",
+            "test.md", "Test",
         )]));
 
         // Use the combined registration function
@@ -1180,7 +1177,10 @@ mod graph_view_tests {
     impl MockGraphView {
         fn new() -> Self {
             Self {
-                outlinks_result: vec!["linked/note-a.md".to_string(), "linked/note-b.md".to_string()],
+                outlinks_result: vec![
+                    "linked/note-a.md".to_string(),
+                    "linked/note-b.md".to_string(),
+                ],
                 backlinks_result: vec!["backlink/from-a.md".to_string()],
                 neighbors_result: vec![
                     "linked/note-a.md".to_string(),

@@ -156,11 +156,9 @@ impl NoteStoreModule {
     /// Returns the note record as a JSON object, or None if not found.
     pub async fn get(&self, path: &str) -> Result<Option<serde_json::Value>, SteelError> {
         match self.store.get(path).await {
-            Ok(Some(record)) => {
-                serde_json::to_value(&record)
-                    .map(Some)
-                    .map_err(|e| SteelError::Execution(format!("Failed to serialize note: {}", e)))
-            }
+            Ok(Some(record)) => serde_json::to_value(&record)
+                .map(Some)
+                .map_err(|e| SteelError::Execution(format!("Failed to serialize note: {}", e))),
             Ok(None) => Ok(None),
             Err(e) => Err(SteelError::Execution(format!("NoteStore error: {}", e))),
         }
@@ -695,7 +693,10 @@ mod graph_view_tests {
     impl MockGraphView {
         fn new() -> Self {
             Self {
-                outlinks_result: vec!["linked/note-a.md".to_string(), "linked/note-b.md".to_string()],
+                outlinks_result: vec![
+                    "linked/note-a.md".to_string(),
+                    "linked/note-b.md".to_string(),
+                ],
                 backlinks_result: vec!["backlink/from-a.md".to_string()],
                 neighbors_result: vec![
                     "linked/note-a.md".to_string(),

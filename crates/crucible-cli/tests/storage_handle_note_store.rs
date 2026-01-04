@@ -20,7 +20,10 @@ async fn test_storage_handle_note_store_embedded() {
 
     // Should be able to get NoteStore
     let note_store = storage.note_store();
-    assert!(note_store.is_some(), "Embedded mode should provide NoteStore");
+    assert!(
+        note_store.is_some(),
+        "Embedded mode should provide NoteStore"
+    );
 
     // Should work for queries
     let result = note_store.unwrap().list().await;
