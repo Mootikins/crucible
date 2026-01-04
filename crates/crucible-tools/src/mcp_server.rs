@@ -16,7 +16,7 @@
 //! - Easy testing of individual tool categories
 //! - Future composition of additional tool routers
 //!
-//! ## NoteStore Integration
+//! ## `NoteStore` Integration
 //!
 //! When a `NoteStore` is provided via `with_note_store()`, the tools use indexed
 //! metadata for faster operations:
@@ -77,9 +77,9 @@ impl CrucibleMcpServer {
         }
     }
 
-    /// Create a new MCP server with NoteStore for optimized operations
+    /// Create a new MCP server with `NoteStore` for optimized operations
     ///
-    /// When a NoteStore is provided, the following operations use indexed metadata:
+    /// When a `NoteStore` is provided, the following operations use indexed metadata:
     /// - `read_metadata` - Uses index instead of parsing from filesystem
     /// - `list_notes` - Uses index for directory listing
     /// - `property_search` - Uses index for property filtering
@@ -89,7 +89,7 @@ impl CrucibleMcpServer {
     /// * `kiln_path` - Path to the kiln directory
     /// * `knowledge_repo` - Repository for semantic search
     /// * `embedding_provider` - Provider for generating embeddings
-    /// * `note_store` - NoteStore for indexed metadata access
+    /// * `note_store` - `NoteStore` for indexed metadata access
     pub fn with_note_store(
         kiln_path: String,
         knowledge_repo: Arc<dyn KnowledgeRepository>,
