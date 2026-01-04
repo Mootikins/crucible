@@ -1,11 +1,11 @@
 //! Popup module for Rune
 //!
-//! Provides popup entry creation for Rune scripts.
+//! Provides popup entry creation and popup request handling for Rune scripts.
 //!
 //! # Example
 //!
 //! ```rune
-//! use crucible::popup::{PopupEntry, entry};
+//! use crucible::popup::{PopupEntry, PopupRequest, entry, request};
 //!
 //! // Create a simple entry
 //! let item = entry("help", None);
@@ -16,8 +16,15 @@
 //! // Create using the type constructor
 //! let item = PopupEntry::new("quit")
 //!     .with_description("Exit the application");
+//!
+//! // Create a popup request for user selection
+//! let req = request("Select a note", [
+//!     entry("Daily Note", Some("Today's journal")),
+//!     entry("Todo List", Some("Tasks for the week")),
+//! ]);
 //! ```
 
+use crucible_core::interaction::PopupRequest;
 use crucible_core::types::PopupEntry;
 use rune::runtime::VmResult;
 use rune::{Any, ContextError, Module, Value};
@@ -42,6 +49,22 @@ pub fn popup_module() -> Result<Module, ContextError> {
 
     // Convenience function: entry(label, description) -> PopupEntry
     module.function_meta(entry)?;
+
+    // Register the RunePopupRequest wrapper type
+    module.ty::<RunePopupRequest>()?;
+
+    // PopupRequest constructor methods
+    module.function_meta(RunePopupRequest::new)?;
+    module.function_meta(RunePopupRequest::entry)?;
+    module.function_meta(RunePopupRequest::allow_other)?;
+
+    // PopupRequest accessor methods
+    module.function_meta(RunePopupRequest::title)?;
+    module.function_meta(RunePopupRequest::entries)?;
+    module.function_meta(RunePopupRequest::entry_count)?;
+
+    // Convenience function: request(title, entries) -> PopupRequest
+    module.function_meta(request)?;
 
     Ok(module)
 }
@@ -180,6 +203,138 @@ pub fn entry_impl(label: String, description: Option<String>) -> RunePopupEntry 
 #[rune::function]
 fn entry(label: String, description: Option<String>) -> RunePopupEntry {
     entry_impl(label, description)
+}
+
+// =============================================================================
+// RunePopupRequest - Wrapper for PopupRequest
+// =============================================================================
+
+/// PopupRequest wrapper for Rune
+///
+/// Wraps crucible_core::interaction::PopupRequest with Rune-friendly methods.
+/// Use this to create popup requests that can trigger user interactions.
+#[derive(Debug, Clone, Any)]
+#[rune(item = ::crucible::popup, name = PopupRequest)]
+pub struct RunePopupRequest {
+    inner: PopupRequest,
+}
+
+impl RunePopupRequest {
+    // === Implementation methods (for Rust use) ===
+
+    /// Create from a core PopupRequest
+    pub fn from_core(request: PopupRequest) -> Self {
+        Self { inner: request }
+    }
+
+    /// Convert to core PopupRequest
+    pub fn into_core(self) -> PopupRequest {
+        self.inner
+    }
+
+    /// Get a reference to the inner PopupRequest
+    pub fn as_core(&self) -> &PopupRequest {
+        &self.inner
+    }
+
+    /// Create a new popup request with title (impl)
+    pub fn new_impl(title: String) -> Self {
+        Self {
+            inner: PopupRequest::new(title),
+        }
+    }
+
+    /// Add an entry (impl)
+    pub fn entry_impl(mut self, entry: RunePopupEntry) -> Self {
+        self.inner = self.inner.entry(entry.into_core());
+        self
+    }
+
+    /// Set allow_other (impl)
+    pub fn allow_other_impl(mut self) -> Self {
+        self.inner = self.inner.allow_other();
+        self
+    }
+
+    /// Get the title (impl)
+    pub fn title_impl(&self) -> String {
+        self.inner.title.clone()
+    }
+
+    /// Get the entry count (impl)
+    pub fn entry_count_impl(&self) -> usize {
+        self.inner.entries.len()
+    }
+
+    // === Rune bindings ===
+
+    /// Create a new popup request with a title
+    #[rune::function(path = Self::new)]
+    pub fn new(title: String) -> Self {
+        Self::new_impl(title)
+    }
+
+    /// Add an entry (builder pattern)
+    #[rune::function(path = Self::entry)]
+    pub fn entry(self, entry: RunePopupEntry) -> Self {
+        self.entry_impl(entry)
+    }
+
+    /// Allow free-text input (builder pattern)
+    #[rune::function(path = Self::allow_other)]
+    pub fn allow_other(self) -> Self {
+        self.allow_other_impl()
+    }
+
+    /// Get the popup title
+    #[rune::function(path = Self::title)]
+    pub fn title(&self) -> String {
+        self.title_impl()
+    }
+
+    /// Get all entries as a vector
+    #[rune::function(path = Self::entries)]
+    pub fn entries(&self) -> Vec<RunePopupEntry> {
+        self.inner
+            .entries
+            .iter()
+            .map(|e| RunePopupEntry::from_core(e.clone()))
+            .collect()
+    }
+
+    /// Get the number of entries
+    #[rune::function(path = Self::entry_count)]
+    pub fn entry_count(&self) -> usize {
+        self.entry_count_impl()
+    }
+}
+
+/// Create a popup request (implementation for Rust use)
+pub fn request_impl(title: String, entries: Vec<RunePopupEntry>) -> RunePopupRequest {
+    let core_entries: Vec<PopupEntry> = entries.into_iter().map(|e| e.into_core()).collect();
+    RunePopupRequest {
+        inner: PopupRequest::new(title).entries(core_entries),
+    }
+}
+
+/// Convenience function to create a popup request
+///
+/// # Arguments
+/// * `title` - The popup title/prompt
+/// * `entries` - Array of popup entries
+///
+/// # Example
+/// ```rune
+/// use crucible::popup::{entry, request};
+///
+/// let req = request("Select an option", [
+///     entry("First", Some("The first option")),
+///     entry("Second", None),
+/// ]);
+/// ```
+#[rune::function]
+fn request(title: String, entries: Vec<RunePopupEntry>) -> RunePopupRequest {
+    request_impl(title, entries)
 }
 
 /// Convert a Rune Value to serde_json::Value
@@ -372,5 +527,155 @@ mod tests {
         let output: Option<String> = rune::from_value(output).unwrap();
 
         assert_eq!(output, Some("Exit application".to_string()));
+    }
+
+    // =========================================================================
+    // PopupRequest tests
+    // =========================================================================
+
+    #[test]
+    fn test_rune_popup_request_new() {
+        let request = RunePopupRequest::new_impl("Select a note".to_string());
+        assert_eq!(request.title_impl(), "Select a note");
+        assert_eq!(request.entry_count_impl(), 0);
+    }
+
+    #[test]
+    fn test_rune_popup_request_with_entries() {
+        let entry1 = RunePopupEntry::new_impl("Note 1".to_string());
+        let entry2 =
+            RunePopupEntry::new_impl("Note 2".to_string()).with_description_impl("A note".to_string());
+
+        let request = RunePopupRequest::new_impl("Select".to_string())
+            .entry_impl(entry1)
+            .entry_impl(entry2);
+
+        assert_eq!(request.entry_count_impl(), 2);
+    }
+
+    #[test]
+    fn test_request_convenience_function() {
+        let entries = vec![
+            entry_impl("First".to_string(), None),
+            entry_impl("Second".to_string(), Some("Description".to_string())),
+        ];
+
+        let request = request_impl("Choose one".to_string(), entries);
+
+        assert_eq!(request.title_impl(), "Choose one");
+        assert_eq!(request.entry_count_impl(), 2);
+    }
+
+    #[test]
+    fn test_popup_request_into_core() {
+        let entry = entry_impl("Test".to_string(), Some("Desc".to_string()));
+        let request =
+            RunePopupRequest::new_impl("Title".to_string()).entry_impl(entry);
+
+        let core = request.into_core();
+
+        assert_eq!(core.title, "Title");
+        assert_eq!(core.entries.len(), 1);
+        assert_eq!(core.entries[0].label, "Test");
+        assert_eq!(core.entries[0].description, Some("Desc".to_string()));
+    }
+
+    /// Test PopupRequest from Rune script
+    #[test]
+    fn test_popup_request_from_rune() {
+        use rune::termcolor::{ColorChoice, StandardStream};
+        use rune::{Context, Diagnostics, Source, Sources, Vm};
+        use std::sync::Arc;
+
+        let mut context = Context::with_default_modules().unwrap();
+        context.install(popup_module().unwrap()).unwrap();
+        let runtime = Arc::new(context.runtime().unwrap());
+
+        let script = r#"
+            use crucible::popup::{PopupRequest, PopupEntry, entry, request};
+
+            pub fn main() {
+                // Test using convenience function
+                let req = request("Select a note", [
+                    entry("Daily", Some("Daily journal")),
+                    entry("Todo", None),
+                ]);
+                req.entry_count()
+            }
+        "#;
+
+        let mut sources = Sources::new();
+        sources
+            .insert(Source::new("test", script).unwrap())
+            .unwrap();
+
+        let mut diagnostics = Diagnostics::new();
+        let result = rune::prepare(&mut sources)
+            .with_context(&context)
+            .with_diagnostics(&mut diagnostics)
+            .build();
+
+        if !diagnostics.is_empty() {
+            let mut writer = StandardStream::stderr(ColorChoice::Always);
+            diagnostics.emit(&mut writer, &sources).unwrap();
+        }
+
+        let unit = result.expect("Should compile script with popup request");
+        let unit = Arc::new(unit);
+
+        let mut vm = Vm::new(runtime, unit);
+        let output = vm.call(rune::Hash::type_hash(["main"]), ()).unwrap();
+        let count: usize = rune::from_value(output).unwrap();
+
+        assert_eq!(count, 2, "Should have 2 entries");
+    }
+
+    /// Test PopupRequest builder pattern from Rune
+    #[test]
+    fn test_popup_request_builder_from_rune() {
+        use rune::termcolor::{ColorChoice, StandardStream};
+        use rune::{Context, Diagnostics, Source, Sources, Vm};
+        use std::sync::Arc;
+
+        let mut context = Context::with_default_modules().unwrap();
+        context.install(popup_module().unwrap()).unwrap();
+        let runtime = Arc::new(context.runtime().unwrap());
+
+        let script = r#"
+            use crucible::popup::{PopupRequest, PopupEntry};
+
+            pub fn main() {
+                let req = PopupRequest::new("Choose action")
+                    .entry(PopupEntry::new("Save").with_description("Save file"))
+                    .entry(PopupEntry::new("Discard"))
+                    .allow_other();
+                req.title()
+            }
+        "#;
+
+        let mut sources = Sources::new();
+        sources
+            .insert(Source::new("test", script).unwrap())
+            .unwrap();
+
+        let mut diagnostics = Diagnostics::new();
+        let result = rune::prepare(&mut sources)
+            .with_context(&context)
+            .with_diagnostics(&mut diagnostics)
+            .build();
+
+        if !diagnostics.is_empty() {
+            let mut writer = StandardStream::stderr(ColorChoice::Always);
+            diagnostics.emit(&mut writer, &sources).unwrap();
+        }
+
+        let unit = result.expect("Should compile");
+        let unit = Arc::new(unit);
+
+        let mut vm = Vm::new(runtime, unit);
+        let output = vm.call(rune::Hash::type_hash(["main"]), ()).unwrap();
+        let title: String = rune::from_value(output).unwrap();
+
+        assert_eq!(title, "Choose action");
     }
 }

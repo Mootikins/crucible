@@ -184,7 +184,8 @@ pub use properties::{AttributeValue, PropertyMap};
 // Re-export interaction protocol types
 pub use interaction::{
     ArtifactFormat, AskRequest, AskResponse, EditRequest, EditResponse, InteractionRequest,
-    InteractionResponse, PermAction, PermRequest, PermResponse, PermissionScope, ShowRequest,
+    InteractionResponse, PermAction, PermRequest, PermResponse, PermissionScope, PopupRequest,
+    PopupResponse, ShowRequest,
 };
 
 // Re-export event system types

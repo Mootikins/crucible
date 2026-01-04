@@ -29,6 +29,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use crate::types::PopupEntry;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Ask Request/Response
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,6 +120,124 @@ impl AskResponse {
         Self {
             selected: Vec::new(),
             other: Some(text.into()),
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Popup Request/Response
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A request to show a popup with selectable entries.
+///
+/// Unlike [`AskRequest`] which uses simple string choices, `PopupRequest` uses
+/// [`PopupEntry`] items that can include labels, descriptions, and arbitrary data.
+/// This makes it suitable for rich scripted popups from Rune/Lua plugins.
+///
+/// # Example
+///
+/// ```
+/// use crucible_core::interaction::PopupRequest;
+/// use crucible_core::types::PopupEntry;
+///
+/// let popup = PopupRequest::new("Select a note")
+///     .entries([
+///         PopupEntry::new("Daily Note").with_description("Today's journal"),
+///         PopupEntry::new("Todo List").with_description("Tasks for the week"),
+///     ]);
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PopupRequest {
+    /// Title/prompt to display above the popup.
+    pub title: String,
+    /// Entries to display in the popup.
+    #[serde(default)]
+    pub entries: Vec<PopupEntry>,
+    /// Allow free-text input if no entry is selected.
+    #[serde(default)]
+    pub allow_other: bool,
+}
+
+impl PopupRequest {
+    /// Create a new popup request with a title.
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            entries: Vec::new(),
+            allow_other: false,
+        }
+    }
+
+    /// Set the popup entries.
+    pub fn entries<I>(mut self, entries: I) -> Self
+    where
+        I: IntoIterator<Item = PopupEntry>,
+    {
+        self.entries = entries.into_iter().collect();
+        self
+    }
+
+    /// Add a single entry to the popup.
+    pub fn entry(mut self, entry: PopupEntry) -> Self {
+        self.entries.push(entry);
+        self
+    }
+
+    /// Allow free-text "other" input.
+    pub fn allow_other(mut self) -> Self {
+        self.allow_other = true;
+        self
+    }
+}
+
+/// Response to a [`PopupRequest`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PopupResponse {
+    /// Index of the selected entry (if any).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_index: Option<usize>,
+    /// The selected entry (if any).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_entry: Option<PopupEntry>,
+    /// Free-text input if "other" was chosen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub other: Option<String>,
+}
+
+impl PopupResponse {
+    /// Create a response with a selection.
+    pub fn selected(index: usize, entry: PopupEntry) -> Self {
+        Self {
+            selected_index: Some(index),
+            selected_entry: Some(entry),
+            other: None,
+        }
+    }
+
+    /// Create a response with a selection index only.
+    pub fn selected_index(index: usize) -> Self {
+        Self {
+            selected_index: Some(index),
+            selected_entry: None,
+            other: None,
+        }
+    }
+
+    /// Create a response with free-text input.
+    pub fn other(text: impl Into<String>) -> Self {
+        Self {
+            selected_index: None,
+            selected_entry: None,
+            other: Some(text.into()),
+        }
+    }
+
+    /// Create an empty response (popup dismissed without selection).
+    pub fn none() -> Self {
+        Self {
+            selected_index: None,
+            selected_entry: None,
+            other: None,
         }
     }
 }
@@ -432,6 +552,8 @@ pub enum InteractionRequest {
     Show(ShowRequest),
     /// Permission request.
     Permission(PermRequest),
+    /// Popup with rich entries (for scripted popups).
+    Popup(PopupRequest),
 }
 
 impl InteractionRequest {
@@ -442,6 +564,7 @@ impl InteractionRequest {
             Self::Edit(_) => "edit",
             Self::Show(_) => "show",
             Self::Permission(_) => "permission",
+            Self::Popup(_) => "popup",
         }
     }
 
@@ -475,6 +598,12 @@ impl From<PermRequest> for InteractionRequest {
     }
 }
 
+impl From<PopupRequest> for InteractionRequest {
+    fn from(req: PopupRequest) -> Self {
+        InteractionRequest::Popup(req)
+    }
+}
+
 /// Unified interaction response type.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -485,6 +614,8 @@ pub enum InteractionResponse {
     Edit(EditResponse),
     /// Response to a permission request.
     Permission(PermResponse),
+    /// Response to a popup request.
+    Popup(PopupResponse),
     /// Request was cancelled by the user.
     Cancelled,
 }
@@ -504,6 +635,12 @@ impl From<EditResponse> for InteractionResponse {
 impl From<PermResponse> for InteractionResponse {
     fn from(resp: PermResponse) -> Self {
         InteractionResponse::Permission(resp)
+    }
+}
+
+impl From<PopupResponse> for InteractionResponse {
+    fn from(resp: PopupResponse) -> Self {
+        InteractionResponse::Popup(resp)
     }
 }
 
@@ -725,5 +862,103 @@ mod tests {
         assert!(json.contains("\"kind\":\"cancelled\""));
         let restored: InteractionResponse = serde_json::from_str(&json).unwrap();
         assert_eq!(resp, restored);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PopupRequest tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn popup_request_with_entries() {
+        let popup = PopupRequest::new("Select a note").entries([
+            PopupEntry::new("Daily Note").with_description("Today's journal"),
+            PopupEntry::new("Todo List"),
+        ]);
+
+        assert_eq!(popup.title, "Select a note");
+        assert_eq!(popup.entries.len(), 2);
+        assert_eq!(popup.entries[0].label, "Daily Note");
+        assert_eq!(
+            popup.entries[0].description,
+            Some("Today's journal".to_string())
+        );
+        assert!(!popup.allow_other);
+    }
+
+    #[test]
+    fn popup_request_builder_pattern() {
+        let popup = PopupRequest::new("Choose action")
+            .entry(PopupEntry::new("Save"))
+            .entry(PopupEntry::new("Discard"))
+            .allow_other();
+
+        assert_eq!(popup.entries.len(), 2);
+        assert!(popup.allow_other);
+    }
+
+    #[test]
+    fn popup_response_with_selection() {
+        let entry = PopupEntry::new("Selected Item");
+        let resp = PopupResponse::selected(1, entry.clone());
+
+        assert_eq!(resp.selected_index, Some(1));
+        assert_eq!(resp.selected_entry, Some(entry));
+        assert!(resp.other.is_none());
+    }
+
+    #[test]
+    fn popup_response_with_other() {
+        let resp = PopupResponse::other("Custom text");
+
+        assert!(resp.selected_index.is_none());
+        assert!(resp.selected_entry.is_none());
+        assert_eq!(resp.other, Some("Custom text".to_string()));
+    }
+
+    #[test]
+    fn popup_response_none() {
+        let resp = PopupResponse::none();
+
+        assert!(resp.selected_index.is_none());
+        assert!(resp.selected_entry.is_none());
+        assert!(resp.other.is_none());
+    }
+
+    #[test]
+    fn interaction_request_from_popup() {
+        let popup = PopupRequest::new("Test");
+        let req: InteractionRequest = popup.into();
+
+        assert!(matches!(req, InteractionRequest::Popup(_)));
+        assert_eq!(req.kind(), "popup");
+        assert!(req.expects_response());
+    }
+
+    #[test]
+    fn popup_request_serialization() {
+        let popup = PopupRequest::new("Select").entries([PopupEntry::new("Option A")]);
+        let json = serde_json::to_string(&popup).unwrap();
+        let restored: PopupRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(popup.title, restored.title);
+        assert_eq!(popup.entries.len(), restored.entries.len());
+    }
+
+    #[test]
+    fn popup_response_serialization() {
+        let entry = PopupEntry::new("Item");
+        let resp = PopupResponse::selected(0, entry);
+        let json = serde_json::to_string(&resp).unwrap();
+        let restored: PopupResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(resp.selected_index, restored.selected_index);
+    }
+
+    #[test]
+    fn interaction_response_popup_serialization() {
+        let entry = PopupEntry::new("Test");
+        let resp: InteractionResponse = PopupResponse::selected(0, entry).into();
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"kind\":\"popup\""));
+        let restored: InteractionResponse = serde_json::from_str(&json).unwrap();
+        assert!(matches!(restored, InteractionResponse::Popup(_)));
     }
 }
