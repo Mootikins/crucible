@@ -631,43 +631,15 @@ impl DatabaseTransactionConsumer {
                 note, kiln_root, ..
             } => {
                 debug!("Creating note: {}", note.path.display());
-
-                // Store the note and all its relationships in one operation
-                let document_id =
-                    crate::kiln_integration::store_parsed_document(&self.client, note, kiln_root)
-                        .await?;
-
-                // Create all related entities (links, embeds, tags) automatically
-                self.create_document_relationships(&document_id, note, kiln_root)
-                    .await?;
+                self.store_note(note, kiln_root).await?;
             }
 
             DatabaseTransaction::Update {
                 note, kiln_root, ..
             } => {
                 debug!("Updating note: {}", note.path.display());
-
-                // Check if note exists and determine what changed
-                let document_id =
-                    crate::kiln_integration::generate_document_id(&note.path, kiln_root);
-                let existing_doc = self.get_existing_document(&document_id).await?;
-
-                if let Some(existing_document) = existing_doc {
-                    // Intelligent diffing - update only what changed
-                    self.update_document_intelligently(&existing_document, note, kiln_root)
-                        .await?;
-                } else {
-                    // Note doesn't exist, treat as create
-                    info!("Note {} not found, treating as create", document_id);
-                    let created_id = crate::kiln_integration::store_parsed_document(
-                        &self.client,
-                        note,
-                        kiln_root,
-                    )
-                    .await?;
-                    self.create_document_relationships(&created_id, note, kiln_root)
-                        .await?;
-                }
+                // Simple upsert - store_note handles both create and update
+                self.store_note(note, kiln_root).await?;
             }
 
             DatabaseTransaction::Delete {
@@ -963,74 +935,61 @@ impl DatabaseTransactionConsumer {
         Ok(())
     }
 
-    /// Helper method to create all note relationships (wikilinks, embeds, tags)
-    async fn create_document_relationships(
+    /// Store a parsed note to the database
+    ///
+    /// This replaces the deprecated `kiln_integration::store_parsed_document`.
+    /// Links and embeds are stored inline in NoteRecord by NoteIngestor.
+    async fn store_note(
         &self,
-        document_id: &str,
         note: &crucible_core::types::ParsedNote,
         kiln_root: &std::path::Path,
-    ) -> Result<()> {
-        // Create wikilink edges
-        if !note.wikilinks.is_empty() {
-            crate::kiln_integration::create_wikilink_edges(
-                &self.client,
-                document_id,
-                note,
-                kiln_root,
+    ) -> Result<String> {
+        let relative_path = note
+            .path
+            .strip_prefix(kiln_root)
+            .unwrap_or(&note.path)
+            .to_string_lossy()
+            .replace('\\', "/");
+
+        let doc_id = format!("entities:note:{}", relative_path);
+
+        let sql = r#"
+            UPSERT notes CONTENT {
+                path: $path,
+                title: $title,
+                content_hash: $content_hash,
+                content: $content,
+                updated_at: time::now()
+            }
+        "#;
+
+        let title = note
+            .frontmatter
+            .as_ref()
+            .and_then(|fm| fm.properties().get("title"))
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .unwrap_or_else(|| {
+                note.path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("Untitled")
+                    .to_string()
+            });
+
+        self.client
+            .query(
+                sql,
+                &[json!({
+                    "path": relative_path,
+                    "title": title,
+                    "content_hash": note.content_hash,
+                    "content": note.content.plain_text,
+                })],
             )
             .await?;
-        }
 
-        // Create embed relations
-        crate::kiln_integration::create_embed_relationships(
-            &self.client,
-            document_id,
-            note,
-            kiln_root,
-        )
-        .await?;
-
-        // Tags are now automatically stored during note ingestion in NoteIngestor
-
-        // Note: embeds are handled through content processing, not as separate relationships
-        // The intelligent consumer handles all content-related updates automatically
-
-        Ok(())
-    }
-
-    /// Helper method to get existing note from database
-    async fn get_existing_document(
-        &self,
-        document_id: &str,
-    ) -> Result<Option<crucible_core::types::ParsedNote>> {
-        // For now, always return None to simplify the intelligent consumer
-        // This means all Update operations will be treated as Create operations
-        // which is fine for the simple queue architecture goal of eliminating lock contention
-        debug!(
-            "Checking for existing note: {} (simplified check)",
-            document_id
-        );
-        Ok(None)
-    }
-
-    /// Helper method to intelligently update note based on diff
-    async fn update_document_intelligently(
-        &self,
-        _existing: &crucible_core::types::ParsedNote,
-        new: &crucible_core::types::ParsedNote,
-        kiln_root: &std::path::Path,
-    ) -> Result<()> {
-        debug!("Updating note: {}", new.path.display());
-
-        // Simple intelligent update: just store the new note
-        // The consumer is "intelligent" because it figures out what to do automatically
-        // without the processing layer having to specify granular operations
-        let document_id =
-            crate::kiln_integration::store_parsed_document(&self.client, new, kiln_root).await?;
-        self.create_document_relationships(&document_id, new, kiln_root)
-            .await?;
-
-        Ok(())
+        Ok(doc_id)
     }
 
     /// Helper method to completely delete a note and all its relationships

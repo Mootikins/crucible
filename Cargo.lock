@@ -3405,7 +3405,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tinytemplate",
- "tokio",
  "walkdir",
 ]
 
@@ -4087,7 +4086,6 @@ dependencies = [
  "blake3",
  "chrono",
  "comfy-table",
- "criterion",
  "crucible-core",
  "crucible-enrichment",
  "crucible-llm",

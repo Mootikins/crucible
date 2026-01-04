@@ -62,13 +62,8 @@ crucible-surrealdb = { path = ".", features = ["test-utils"] }
 tempfile = "3.24"
 tokio-test = "0.4"
 tracing-test = "0.2"
-criterion = { version = "0.8", features = ["async_tokio"] }
 fake = { version = "4.4", features = ["derive"] }
 rand = "0.9"
 crucible-parser = { path = "../crucible-parser" }
 walkdir = "2.4"
 regex = "1.11"
-
-[[bench]]
-name = "graph_relations_bench"
-harness = false
