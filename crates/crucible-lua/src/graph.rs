@@ -31,7 +31,7 @@
 //! ```
 
 use crate::error::LuaError;
-use crucible_core::storage::NoteStore;
+use crucible_core::storage::{GraphView, NoteStore};
 use crucible_core::traits::GraphQueryExecutor;
 use mlua::{Lua, Table, Value};
 use std::sync::Arc;
@@ -318,6 +318,109 @@ pub fn register_graph_module_full(
     register_graph_module_with_executor(lua, executor)?;
     register_note_store_functions(lua, store)?;
     Ok(())
+}
+
+// =============================================================================
+// GraphView Functions (Fast Path)
+// =============================================================================
+
+/// Register fast graph traversal functions using GraphView
+///
+/// These functions provide O(1) lookups for graph traversal, bypassing
+/// the query parser. Use these when you need fast, synchronous access
+/// to link relationships.
+///
+/// # Functions registered
+///
+/// - `fast_outlinks(path)` - Get paths of notes this note links to
+/// - `fast_backlinks(path)` - Get paths of notes linking to this note
+/// - `fast_neighbors(path, depth)` - Get all connected notes within depth
+///
+/// # Example
+///
+/// ```lua
+/// -- Get outlinks (synchronous, fast)
+/// local links = graph.fast_outlinks("notes/index.md")
+/// for _, link in ipairs(links) do
+///     print(link)
+/// end
+///
+/// -- Get backlinks
+/// local backlinks = graph.fast_backlinks("notes/target.md")
+///
+/// -- Get neighbors within depth
+/// local nearby = graph.fast_neighbors("notes/hub.md", 2)
+/// ```
+pub fn register_graph_view_functions(lua: &Lua, view: Arc<dyn GraphView>) -> Result<(), LuaError> {
+    // Get the graph table (must exist from prior registration)
+    let graph: Table = lua.globals().get("graph")?;
+
+    // fast_outlinks - Get paths of notes this note links to
+    let v = Arc::clone(&view);
+    let fast_outlinks = lua.create_function(move |lua, path: String| {
+        let paths = v.outlinks(&path);
+        string_vec_to_lua_table(lua, &paths)
+    })?;
+    graph.set("fast_outlinks", fast_outlinks)?;
+
+    // fast_backlinks - Get paths of notes linking to this note
+    let v = Arc::clone(&view);
+    let fast_backlinks = lua.create_function(move |lua, path: String| {
+        let paths = v.backlinks(&path);
+        string_vec_to_lua_table(lua, &paths)
+    })?;
+    graph.set("fast_backlinks", fast_backlinks)?;
+
+    // fast_neighbors - Get all connected notes within depth
+    let v = Arc::clone(&view);
+    let fast_neighbors = lua.create_function(move |lua, (path, depth): (String, usize)| {
+        let paths = v.neighbors(&path, depth);
+        string_vec_to_lua_table(lua, &paths)
+    })?;
+    graph.set("fast_neighbors", fast_neighbors)?;
+
+    Ok(())
+}
+
+/// Register the graph module with executor, note store, and graph view
+///
+/// This is the most complete module, providing:
+/// - Database-backed query functions (db_*)
+/// - NoteStore access (note_*)
+/// - Fast GraphView traversal (fast_*)
+///
+/// # Example
+///
+/// ```lua
+/// -- Fast path functions
+/// local links = graph.fast_outlinks("notes/index.md")
+/// local backlinks = graph.fast_backlinks("notes/target.md")
+/// local nearby = graph.fast_neighbors("notes/hub.md", 2)
+///
+/// -- Database queries
+/// local note = graph.db_find("Index")
+///
+/// -- NoteStore access
+/// local record = graph.note_get("notes/index.md")
+/// ```
+pub fn register_graph_module_with_all(
+    lua: &Lua,
+    executor: Arc<dyn GraphQueryExecutor>,
+    store: Arc<dyn NoteStore>,
+    view: Arc<dyn GraphView>,
+) -> Result<(), LuaError> {
+    register_graph_module_full(lua, executor, store)?;
+    register_graph_view_functions(lua, view)?;
+    Ok(())
+}
+
+/// Convert a Vec<String> to a Lua table
+fn string_vec_to_lua_table(lua: &Lua, values: &[String]) -> Result<Value, mlua::Error> {
+    let table = lua.create_table()?;
+    for (i, v) in values.iter().enumerate() {
+        table.set(i + 1, v.as_str())?;
+    }
+    Ok(Value::Table(table))
 }
 
 /// Convert a NoteRecord to a Lua table
@@ -1059,5 +1162,271 @@ mod note_store_tests {
         assert!(graph.contains_key("db_find").unwrap());
         assert!(graph.contains_key("note_get").unwrap());
         assert!(graph.contains_key("note_list").unwrap());
+    }
+}
+
+#[cfg(test)]
+mod graph_view_tests {
+    use super::*;
+    use crucible_core::storage::{GraphView, NoteRecord};
+
+    /// Mock GraphView that returns predetermined results
+    struct MockGraphView {
+        outlinks_result: Vec<String>,
+        backlinks_result: Vec<String>,
+        neighbors_result: Vec<String>,
+    }
+
+    impl MockGraphView {
+        fn new() -> Self {
+            Self {
+                outlinks_result: vec!["linked/note-a.md".to_string(), "linked/note-b.md".to_string()],
+                backlinks_result: vec!["backlink/from-a.md".to_string()],
+                neighbors_result: vec![
+                    "linked/note-a.md".to_string(),
+                    "linked/note-b.md".to_string(),
+                    "backlink/from-a.md".to_string(),
+                ],
+            }
+        }
+
+        fn with_outlinks(mut self, links: Vec<String>) -> Self {
+            self.outlinks_result = links;
+            self
+        }
+
+        fn with_backlinks(mut self, links: Vec<String>) -> Self {
+            self.backlinks_result = links;
+            self
+        }
+
+        fn with_neighbors(mut self, links: Vec<String>) -> Self {
+            self.neighbors_result = links;
+            self
+        }
+    }
+
+    impl GraphView for MockGraphView {
+        fn outlinks(&self, _path: &str) -> Vec<String> {
+            self.outlinks_result.clone()
+        }
+
+        fn backlinks(&self, _path: &str) -> Vec<String> {
+            self.backlinks_result.clone()
+        }
+
+        fn neighbors(&self, _path: &str, _depth: usize) -> Vec<String> {
+            self.neighbors_result.clone()
+        }
+
+        fn rebuild(&mut self, _notes: &[NoteRecord]) {
+            // No-op for mock
+        }
+    }
+
+    // =========================================================================
+    // fast_outlinks tests
+    // =========================================================================
+
+    #[test]
+    fn test_fast_outlinks_returns_paths() {
+        let lua = Lua::new();
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new());
+
+        register_graph_module(&lua).unwrap();
+        register_graph_view_functions(&lua, view).unwrap();
+
+        let result: Table = lua
+            .load(r#"return graph.fast_outlinks("notes/index.md")"#)
+            .eval()
+            .unwrap();
+
+        assert_eq!(result.len().unwrap(), 2);
+        assert_eq!(result.get::<String>(1).unwrap(), "linked/note-a.md");
+        assert_eq!(result.get::<String>(2).unwrap(), "linked/note-b.md");
+    }
+
+    #[test]
+    fn test_fast_outlinks_empty_result() {
+        let lua = Lua::new();
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new().with_outlinks(vec![]));
+
+        register_graph_module(&lua).unwrap();
+        register_graph_view_functions(&lua, view).unwrap();
+
+        let result: Table = lua
+            .load(r#"return graph.fast_outlinks("orphan.md")"#)
+            .eval()
+            .unwrap();
+
+        assert_eq!(result.len().unwrap(), 0);
+    }
+
+    // =========================================================================
+    // fast_backlinks tests
+    // =========================================================================
+
+    #[test]
+    fn test_fast_backlinks_returns_paths() {
+        let lua = Lua::new();
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new());
+
+        register_graph_module(&lua).unwrap();
+        register_graph_view_functions(&lua, view).unwrap();
+
+        let result: Table = lua
+            .load(r#"return graph.fast_backlinks("notes/target.md")"#)
+            .eval()
+            .unwrap();
+
+        assert_eq!(result.len().unwrap(), 1);
+        assert_eq!(result.get::<String>(1).unwrap(), "backlink/from-a.md");
+    }
+
+    #[test]
+    fn test_fast_backlinks_empty_result() {
+        let lua = Lua::new();
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new().with_backlinks(vec![]));
+
+        register_graph_module(&lua).unwrap();
+        register_graph_view_functions(&lua, view).unwrap();
+
+        let result: Table = lua
+            .load(r#"return graph.fast_backlinks("orphan.md")"#)
+            .eval()
+            .unwrap();
+
+        assert_eq!(result.len().unwrap(), 0);
+    }
+
+    // =========================================================================
+    // fast_neighbors tests
+    // =========================================================================
+
+    #[test]
+    fn test_fast_neighbors_returns_paths() {
+        let lua = Lua::new();
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new());
+
+        register_graph_module(&lua).unwrap();
+        register_graph_view_functions(&lua, view).unwrap();
+
+        let result: Table = lua
+            .load(r#"return graph.fast_neighbors("notes/hub.md", 1)"#)
+            .eval()
+            .unwrap();
+
+        assert_eq!(result.len().unwrap(), 3);
+    }
+
+    #[test]
+    fn test_fast_neighbors_empty_result() {
+        let lua = Lua::new();
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new().with_neighbors(vec![]));
+
+        register_graph_module(&lua).unwrap();
+        register_graph_view_functions(&lua, view).unwrap();
+
+        let result: Table = lua
+            .load(r#"return graph.fast_neighbors("isolated.md", 2)"#)
+            .eval()
+            .unwrap();
+
+        assert_eq!(result.len().unwrap(), 0);
+    }
+
+    #[test]
+    fn test_fast_neighbors_depth_parameter() {
+        // Verify that depth is passed correctly (mock doesn't use it, but signature works)
+        let lua = Lua::new();
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new());
+
+        register_graph_module(&lua).unwrap();
+        register_graph_view_functions(&lua, view).unwrap();
+
+        let result: Table = lua
+            .load(
+                r#"
+                local depth1 = graph.fast_neighbors("notes/hub.md", 1)
+                local depth3 = graph.fast_neighbors("notes/hub.md", 3)
+                return {
+                    depth1_len = #depth1,
+                    depth3_len = #depth3,
+                }
+                "#,
+            )
+            .eval()
+            .unwrap();
+
+        // Both return same length since mock doesn't vary by depth
+        assert_eq!(result.get::<i64>("depth1_len").unwrap(), 3);
+        assert_eq!(result.get::<i64>("depth3_len").unwrap(), 3);
+    }
+
+    // =========================================================================
+    // Combined module tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_register_graph_module_with_all() {
+        use async_trait::async_trait;
+        use crucible_core::parser::BlockHash;
+        use crucible_core::storage::{Filter, NoteRecord, NoteStore, SearchResult, StorageResult};
+        use crucible_core::traits::{GraphQueryExecutor, GraphQueryResult};
+
+        struct MockExecutor;
+
+        #[async_trait]
+        impl GraphQueryExecutor for MockExecutor {
+            async fn execute(&self, _query: &str) -> GraphQueryResult<Vec<serde_json::Value>> {
+                Ok(vec![])
+            }
+        }
+
+        struct MockNoteStore;
+
+        #[async_trait]
+        impl NoteStore for MockNoteStore {
+            async fn upsert(&self, _note: NoteRecord) -> StorageResult<()> {
+                Ok(())
+            }
+            async fn get(&self, _path: &str) -> StorageResult<Option<NoteRecord>> {
+                Ok(None)
+            }
+            async fn delete(&self, _path: &str) -> StorageResult<()> {
+                Ok(())
+            }
+            async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
+                Ok(vec![])
+            }
+            async fn get_by_hash(&self, _hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
+                Ok(None)
+            }
+            async fn search(
+                &self,
+                _embedding: &[f32],
+                _k: usize,
+                _filter: Option<Filter>,
+            ) -> StorageResult<Vec<SearchResult>> {
+                Ok(vec![])
+            }
+        }
+
+        let lua = Lua::new();
+        let executor: Arc<dyn GraphQueryExecutor> = Arc::new(MockExecutor);
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore);
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new());
+
+        // Use the combined registration function
+        register_graph_module_with_all(&lua, executor, store, view).unwrap();
+
+        // All functions should be available
+        let graph: Table = lua.globals().get("graph").unwrap();
+        assert!(graph.contains_key("db_find").unwrap());
+        assert!(graph.contains_key("note_get").unwrap());
+        assert!(graph.contains_key("note_list").unwrap());
+        assert!(graph.contains_key("fast_outlinks").unwrap());
+        assert!(graph.contains_key("fast_backlinks").unwrap());
+        assert!(graph.contains_key("fast_neighbors").unwrap());
     }
 }

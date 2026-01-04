@@ -19,7 +19,7 @@ pub mod types;
 
 pub use error::SteelError;
 pub use executor::SteelExecutor;
-pub use graph::{GraphModule, NoteStoreModule};
+pub use graph::{GraphModule, GraphViewModule, NoteStoreModule};
 pub use json_query::{Format as OqFormat, OqModule};
 pub use registry::SteelToolRegistry;
 pub use schema::{ContractSignature, ContractType};

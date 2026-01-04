@@ -25,7 +25,7 @@
 //! ```
 
 use crate::error::SteelError;
-use crucible_core::storage::NoteStore;
+use crucible_core::storage::{GraphView, NoteStore};
 use crucible_core::traits::GraphQueryExecutor;
 use std::sync::Arc;
 
@@ -199,6 +199,81 @@ impl NoteStoreModule {
 
 (define (note-list limit)
   (error "note-list not available: no NoteStore connection"))
+"#
+    }
+}
+
+// =============================================================================
+// GraphView Module (Fast Path)
+// =============================================================================
+
+/// GraphView module that provides fast graph traversal via Steel functions
+///
+/// This module provides O(1) lookups for link relationships, bypassing
+/// the query parser. Use when you need fast, synchronous access to
+/// graph structure.
+///
+/// ## Steel Usage
+///
+/// ```scheme
+/// ;; Get outlinks (fast, synchronous)
+/// (fast-outlinks "path/to/note.md")  ; => list of paths
+///
+/// ;; Get backlinks
+/// (fast-backlinks "path/to/note.md") ; => list of paths
+///
+/// ;; Get neighbors within depth
+/// (fast-neighbors "path/to/note.md" 2) ; => list of paths
+/// ```
+pub struct GraphViewModule {
+    view: Arc<dyn GraphView>,
+}
+
+impl GraphViewModule {
+    /// Create a new graph view module
+    pub fn new(view: Arc<dyn GraphView>) -> Self {
+        Self { view }
+    }
+
+    /// Get paths of notes this note links to
+    ///
+    /// Returns a list of paths for outgoing links.
+    pub fn outlinks(&self, path: &str) -> Vec<String> {
+        self.view.outlinks(path)
+    }
+
+    /// Get paths of notes linking to this note
+    ///
+    /// Returns a list of paths for incoming links (backlinks).
+    pub fn backlinks(&self, path: &str) -> Vec<String> {
+        self.view.backlinks(path)
+    }
+
+    /// Get paths of all notes within a given depth
+    ///
+    /// Returns a list of paths for all notes reachable within the specified
+    /// link distance, not including the starting note.
+    pub fn neighbors(&self, path: &str, depth: usize) -> Vec<String> {
+        self.view.neighbors(path, depth)
+    }
+
+    /// Generate Steel code that defines the fast-* functions
+    ///
+    /// These functions are stubs that will be replaced by Rust implementations
+    /// when registered with an executor that has GraphView access.
+    pub fn steel_stubs() -> &'static str {
+        r#"
+;; GraphView functions (stubs - replaced by Rust)
+;; These provide fast O(1) graph traversal.
+
+(define (fast-outlinks path)
+  (error "fast-outlinks not available: no GraphView"))
+
+(define (fast-backlinks path)
+  (error "fast-backlinks not available: no GraphView"))
+
+(define (fast-neighbors path depth)
+  (error "fast-neighbors not available: no GraphView"))
 "#
     }
 }
@@ -598,5 +673,171 @@ mod note_store_tests {
         let links = result["links_to"].as_array().unwrap();
         assert_eq!(links.len(), 1);
         assert_eq!(links[0], "notes/index.md");
+    }
+}
+
+// =============================================================================
+// GraphViewModule Tests
+// =============================================================================
+
+#[cfg(test)]
+mod graph_view_tests {
+    use super::*;
+    use crucible_core::storage::{GraphView, NoteRecord};
+
+    /// Mock GraphView that returns predetermined results
+    struct MockGraphView {
+        outlinks_result: Vec<String>,
+        backlinks_result: Vec<String>,
+        neighbors_result: Vec<String>,
+    }
+
+    impl MockGraphView {
+        fn new() -> Self {
+            Self {
+                outlinks_result: vec!["linked/note-a.md".to_string(), "linked/note-b.md".to_string()],
+                backlinks_result: vec!["backlink/from-a.md".to_string()],
+                neighbors_result: vec![
+                    "linked/note-a.md".to_string(),
+                    "linked/note-b.md".to_string(),
+                    "backlink/from-a.md".to_string(),
+                ],
+            }
+        }
+
+        fn with_outlinks(mut self, links: Vec<String>) -> Self {
+            self.outlinks_result = links;
+            self
+        }
+
+        fn with_backlinks(mut self, links: Vec<String>) -> Self {
+            self.backlinks_result = links;
+            self
+        }
+
+        fn with_neighbors(mut self, links: Vec<String>) -> Self {
+            self.neighbors_result = links;
+            self
+        }
+    }
+
+    impl GraphView for MockGraphView {
+        fn outlinks(&self, _path: &str) -> Vec<String> {
+            self.outlinks_result.clone()
+        }
+
+        fn backlinks(&self, _path: &str) -> Vec<String> {
+            self.backlinks_result.clone()
+        }
+
+        fn neighbors(&self, _path: &str, _depth: usize) -> Vec<String> {
+            self.neighbors_result.clone()
+        }
+
+        fn rebuild(&mut self, _notes: &[NoteRecord]) {
+            // No-op for mock
+        }
+    }
+
+    // =========================================================================
+    // outlinks tests
+    // =========================================================================
+
+    #[test]
+    fn test_fast_outlinks_returns_paths() {
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new());
+        let module = GraphViewModule::new(view);
+
+        let result = module.outlinks("notes/index.md");
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], "linked/note-a.md");
+        assert_eq!(result[1], "linked/note-b.md");
+    }
+
+    #[test]
+    fn test_fast_outlinks_empty_result() {
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new().with_outlinks(vec![]));
+        let module = GraphViewModule::new(view);
+
+        let result = module.outlinks("orphan.md");
+
+        assert!(result.is_empty());
+    }
+
+    // =========================================================================
+    // backlinks tests
+    // =========================================================================
+
+    #[test]
+    fn test_fast_backlinks_returns_paths() {
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new());
+        let module = GraphViewModule::new(view);
+
+        let result = module.backlinks("notes/target.md");
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], "backlink/from-a.md");
+    }
+
+    #[test]
+    fn test_fast_backlinks_empty_result() {
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new().with_backlinks(vec![]));
+        let module = GraphViewModule::new(view);
+
+        let result = module.backlinks("orphan.md");
+
+        assert!(result.is_empty());
+    }
+
+    // =========================================================================
+    // neighbors tests
+    // =========================================================================
+
+    #[test]
+    fn test_fast_neighbors_returns_paths() {
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new());
+        let module = GraphViewModule::new(view);
+
+        let result = module.neighbors("notes/hub.md", 1);
+
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn test_fast_neighbors_empty_result() {
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new().with_neighbors(vec![]));
+        let module = GraphViewModule::new(view);
+
+        let result = module.neighbors("isolated.md", 2);
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_fast_neighbors_depth_parameter() {
+        // Verify that depth is passed correctly (mock doesn't use it, but signature works)
+        let view: Arc<dyn GraphView> = Arc::new(MockGraphView::new());
+        let module = GraphViewModule::new(view);
+
+        // Test with different depths - mock returns same result regardless
+        let depth1 = module.neighbors("notes/hub.md", 1);
+        let depth3 = module.neighbors("notes/hub.md", 3);
+
+        // Both return same length since mock doesn't vary by depth
+        assert_eq!(depth1.len(), 3);
+        assert_eq!(depth3.len(), 3);
+    }
+
+    // =========================================================================
+    // steel_stubs tests
+    // =========================================================================
+
+    #[test]
+    fn test_steel_stubs_contains_fast_functions() {
+        let stubs = GraphViewModule::steel_stubs();
+        assert!(stubs.contains("fast-outlinks"));
+        assert!(stubs.contains("fast-backlinks"));
+        assert!(stubs.contains("fast-neighbors"));
     }
 }
