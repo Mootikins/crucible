@@ -6,9 +6,25 @@
 //! ## Features
 //!
 //! - **NoteStore**: Unified note metadata and vector search storage
+//! - **Graph Queries**: Full pipeline support for jaq, SQL sugar, and PGQ MATCH syntax
 //! - **FTS5 Full-Text Search**: Built-in full-text search using SQLite's FTS5 extension
 //! - **WAL Mode**: Optimized for concurrent read access with write-ahead logging
 //! - **Thread Safety**: Arc<Mutex<Connection>> pattern for concurrent access
+//!
+//! ## Graph Query Syntaxes
+//!
+//! ```ignore
+//! // jaq-style (like jq)
+//! executor.execute(r#"outlinks("Index")"#).await?;
+//! executor.execute(r#"inlinks("Index")"#).await?;
+//!
+//! // SQL sugar
+//! executor.execute("SELECT outlinks FROM 'Index'").await?;
+//! executor.execute("SELECT inlinks FROM 'Index'").await?;
+//!
+//! // PGQ MATCH (SQL:2023 graph pattern matching)
+//! executor.execute("MATCH (a {title: 'Index'})-[:wikilink]->(b)").await?;
+//! ```
 //!
 //! ## Usage
 //!
