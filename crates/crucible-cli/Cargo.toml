@@ -123,6 +123,7 @@ base64.workspace = true
 [dev-dependencies]
 crucible-cli = { path = ".", features = ["test-utils"] }  # Enable test utilities
 crucible-config = { path = "../crucible-config", features = ["test-utils"] }
+rune = "0.14"  # For NoteStore integration tests
 # MCP client for testing examples
 rmcp = { version = "0.9.0", features = ["client", "transport-child-process"] }
 tempfile = { workspace = true }
