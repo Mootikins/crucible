@@ -53,6 +53,16 @@ pub enum DialogState {
     },
     /// Information display dialog
     Info { title: String, content: String },
+    /// Text input dialog for written answers
+    Input {
+        title: String,
+        /// Optional placeholder/hint text
+        placeholder: String,
+        /// Current text buffer
+        buffer: String,
+        /// Cursor position in buffer (byte offset)
+        cursor: usize,
+    },
 }
 
 impl DialogState {
@@ -81,6 +91,16 @@ impl DialogState {
         DialogState::Info {
             title: title.into(),
             content: content.into(),
+        }
+    }
+
+    /// Create a text input dialog
+    pub fn input(title: impl Into<String>, placeholder: impl Into<String>) -> Self {
+        DialogState::Input {
+            title: title.into(),
+            placeholder: placeholder.into(),
+            buffer: String::new(),
+            cursor: 0,
         }
     }
 
@@ -140,6 +160,77 @@ impl DialogState {
             DialogState::Info { .. } => match key.code {
                 KeyCode::Enter | KeyCode::Esc | KeyCode::Char(' ') | KeyCode::Char('q') => {
                     DialogResult::Confirm("ok".into())
+                }
+                _ => DialogResult::Pending,
+            },
+            DialogState::Input {
+                buffer, cursor, ..
+            } => match key.code {
+                KeyCode::Enter => {
+                    if buffer.is_empty() {
+                        DialogResult::Cancel
+                    } else {
+                        DialogResult::Confirm(buffer.clone())
+                    }
+                }
+                KeyCode::Esc => DialogResult::Cancel,
+                KeyCode::Backspace => {
+                    if *cursor > 0 {
+                        // Find the previous character boundary
+                        let prev_cursor = buffer[..*cursor]
+                            .char_indices()
+                            .next_back()
+                            .map(|(i, _)| i)
+                            .unwrap_or(0);
+                        buffer.drain(prev_cursor..*cursor);
+                        *cursor = prev_cursor;
+                    }
+                    DialogResult::Pending
+                }
+                KeyCode::Delete => {
+                    if *cursor < buffer.len() {
+                        // Find the next character boundary
+                        let next_cursor = buffer[*cursor..]
+                            .char_indices()
+                            .nth(1)
+                            .map(|(i, _)| *cursor + i)
+                            .unwrap_or(buffer.len());
+                        buffer.drain(*cursor..next_cursor);
+                    }
+                    DialogResult::Pending
+                }
+                KeyCode::Left => {
+                    if *cursor > 0 {
+                        *cursor = buffer[..*cursor]
+                            .char_indices()
+                            .next_back()
+                            .map(|(i, _)| i)
+                            .unwrap_or(0);
+                    }
+                    DialogResult::Pending
+                }
+                KeyCode::Right => {
+                    if *cursor < buffer.len() {
+                        *cursor = buffer[*cursor..]
+                            .char_indices()
+                            .nth(1)
+                            .map(|(i, _)| *cursor + i)
+                            .unwrap_or(buffer.len());
+                    }
+                    DialogResult::Pending
+                }
+                KeyCode::Home => {
+                    *cursor = 0;
+                    DialogResult::Pending
+                }
+                KeyCode::End => {
+                    *cursor = buffer.len();
+                    DialogResult::Pending
+                }
+                KeyCode::Char(c) => {
+                    buffer.insert(*cursor, c);
+                    *cursor += c.len_utf8();
+                    DialogResult::Pending
                 }
                 _ => DialogResult::Pending,
             },
@@ -204,6 +295,7 @@ impl Widget for DialogWidget<'_> {
                 Self::centered_rect(50, height_percent, area)
             }
             DialogState::Info { .. } => Self::centered_rect(60, 40, area),
+            DialogState::Input { .. } => Self::centered_rect(60, 25, area),
         };
 
         // Clear dialog area
@@ -237,6 +329,14 @@ impl Widget for DialogWidget<'_> {
             }
             DialogState::Info { title, content } => {
                 self.render_info(dialog_area, buf, title, content);
+            }
+            DialogState::Input {
+                title,
+                placeholder,
+                buffer,
+                cursor,
+            } => {
+                self.render_input(dialog_area, buf, title, placeholder, buffer, *cursor);
             }
         }
     }
@@ -360,6 +460,102 @@ impl DialogWidget<'_> {
         let hint = "[Press Enter or Esc to close]";
         let hint_x = inner.x + (inner.width.saturating_sub(hint.len() as u16)) / 2;
         if inner.height > 0 {
+            buf.set_string(
+                hint_x,
+                inner.y + inner.height - 1,
+                hint,
+                Style::default().fg(Color::DarkGray),
+            );
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_input(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        title: &str,
+        placeholder: &str,
+        buffer: &str,
+        cursor: usize,
+    ) {
+        let block = Block::default()
+            .title(format!(" {} ", title))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan));
+
+        let inner = block.inner(area);
+        block.render(area, buf);
+
+        // Show placeholder if buffer is empty
+        let display_text = if buffer.is_empty() {
+            placeholder
+        } else {
+            buffer
+        };
+
+        // Calculate visible portion of text
+        let text_style = if buffer.is_empty() {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            Style::default()
+        };
+
+        // Input field background - show it centered vertically
+        let input_y = inner.y + (inner.height.saturating_sub(3)) / 2;
+        let input_area = Rect {
+            x: inner.x + 1,
+            y: input_y,
+            width: inner.width.saturating_sub(2),
+            height: 1,
+        };
+
+        // Draw input background
+        let input_bg = Style::default().bg(Color::DarkGray);
+        for x in input_area.x..input_area.x + input_area.width {
+            if let Some(cell) = buf.cell_mut((x, input_area.y)) {
+                cell.set_char(' ');
+                cell.set_style(input_bg);
+            }
+        }
+
+        // Draw the text
+        let visible_width = input_area.width as usize;
+        let (display_start, cursor_screen_pos) = if cursor > visible_width.saturating_sub(5) {
+            // Scroll the view if cursor is near the right edge
+            let start = cursor.saturating_sub(visible_width.saturating_sub(5));
+            (start, cursor - start)
+        } else {
+            (0, cursor)
+        };
+
+        let visible_text: String = display_text
+            .chars()
+            .skip(display_start)
+            .take(visible_width)
+            .collect();
+
+        buf.set_string(input_area.x, input_area.y, &visible_text, text_style);
+
+        // Draw cursor if buffer is not empty (or always show it)
+        if !buffer.is_empty() {
+            let cursor_x = input_area.x + cursor_screen_pos as u16;
+            if cursor_x < input_area.x + input_area.width {
+                if let Some(cell) = buf.cell_mut((cursor_x, input_area.y)) {
+                    cell.set_style(
+                        Style::default()
+                            .fg(Color::Black)
+                            .bg(Color::White)
+                            .add_modifier(Modifier::SLOW_BLINK),
+                    );
+                }
+            }
+        }
+
+        // Hint at bottom
+        let hint = "[Enter to submit, Esc to cancel]";
+        let hint_x = inner.x + (inner.width.saturating_sub(hint.len() as u16)) / 2;
+        if inner.height > 2 {
             buf.set_string(
                 hint_x,
                 inner.y + inner.height - 1,
@@ -556,6 +752,108 @@ mod tests {
         assert_eq!(
             dialog.handle_key(key(KeyCode::Enter)),
             DialogResult::Confirm("B".into())
+        );
+    }
+
+    // =========================================================================
+    // Input dialog tests
+    // =========================================================================
+
+    #[test]
+    fn test_input_dialog_typing() {
+        let mut dialog = DialogState::input("Enter name", "Type here...");
+        dialog.handle_key(key(KeyCode::Char('H')));
+        dialog.handle_key(key(KeyCode::Char('e')));
+        dialog.handle_key(key(KeyCode::Char('l')));
+        dialog.handle_key(key(KeyCode::Char('l')));
+        dialog.handle_key(key(KeyCode::Char('o')));
+
+        assert_eq!(
+            dialog.handle_key(key(KeyCode::Enter)),
+            DialogResult::Confirm("Hello".into())
+        );
+    }
+
+    #[test]
+    fn test_input_dialog_backspace() {
+        let mut dialog = DialogState::input("Enter", "");
+        dialog.handle_key(key(KeyCode::Char('a')));
+        dialog.handle_key(key(KeyCode::Char('b')));
+        dialog.handle_key(key(KeyCode::Char('c')));
+        dialog.handle_key(key(KeyCode::Backspace));
+
+        assert_eq!(
+            dialog.handle_key(key(KeyCode::Enter)),
+            DialogResult::Confirm("ab".into())
+        );
+    }
+
+    #[test]
+    fn test_input_dialog_escape_cancels() {
+        let mut dialog = DialogState::input("Enter", "");
+        dialog.handle_key(key(KeyCode::Char('t')));
+        dialog.handle_key(key(KeyCode::Char('e')));
+
+        assert_eq!(dialog.handle_key(key(KeyCode::Esc)), DialogResult::Cancel);
+    }
+
+    #[test]
+    fn test_input_dialog_empty_cancels() {
+        let mut dialog = DialogState::input("Enter", "");
+        // Enter on empty buffer should cancel
+        assert_eq!(
+            dialog.handle_key(key(KeyCode::Enter)),
+            DialogResult::Cancel
+        );
+    }
+
+    #[test]
+    fn test_input_dialog_cursor_navigation() {
+        let mut dialog = DialogState::input("Edit", "");
+        dialog.handle_key(key(KeyCode::Char('a')));
+        dialog.handle_key(key(KeyCode::Char('c')));
+        // Move left
+        dialog.handle_key(key(KeyCode::Left));
+        // Insert 'b' between 'a' and 'c'
+        dialog.handle_key(key(KeyCode::Char('b')));
+
+        assert_eq!(
+            dialog.handle_key(key(KeyCode::Enter)),
+            DialogResult::Confirm("abc".into())
+        );
+    }
+
+    #[test]
+    fn test_input_dialog_home_end() {
+        let mut dialog = DialogState::input("Edit", "");
+        dialog.handle_key(key(KeyCode::Char('b')));
+        dialog.handle_key(key(KeyCode::Char('c')));
+        // Move to start
+        dialog.handle_key(key(KeyCode::Home));
+        // Insert 'a' at start
+        dialog.handle_key(key(KeyCode::Char('a')));
+
+        assert_eq!(
+            dialog.handle_key(key(KeyCode::Enter)),
+            DialogResult::Confirm("abc".into())
+        );
+    }
+
+    #[test]
+    fn test_input_dialog_delete() {
+        let mut dialog = DialogState::input("Edit", "");
+        dialog.handle_key(key(KeyCode::Char('a')));
+        dialog.handle_key(key(KeyCode::Char('X')));
+        dialog.handle_key(key(KeyCode::Char('b')));
+        // Move left twice
+        dialog.handle_key(key(KeyCode::Left));
+        dialog.handle_key(key(KeyCode::Left));
+        // Delete the 'X'
+        dialog.handle_key(key(KeyCode::Delete));
+
+        assert_eq!(
+            dialog.handle_key(key(KeyCode::Enter)),
+            DialogResult::Confirm("ab".into())
         );
     }
 }
