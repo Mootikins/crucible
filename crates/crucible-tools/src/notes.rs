@@ -2,7 +2,7 @@
 //!
 //! This module provides simple filesystem-based note CRUD tools.
 //!
-//! # NoteStore Integration
+//! # `NoteStore` Integration
 //!
 //! `NoteTools` can optionally use a `NoteStore` for faster metadata reads. When a
 //! `NoteStore` is provided:
@@ -38,7 +38,7 @@ fn optional_json_object_schema(_gen: &mut schemars::SchemaGenerator) -> schemars
 #[allow(missing_docs)]
 pub struct NoteTools {
     kiln_path: String,
-    /// Optional NoteStore for faster metadata reads
+    /// Optional `NoteStore` for faster metadata reads
     note_store: Option<Arc<dyn NoteStore>>,
 }
 
@@ -119,9 +119,9 @@ impl NoteTools {
         }
     }
 
-    /// Create NoteTools with a NoteStore for faster metadata operations
+    /// Create `NoteTools` with a `NoteStore` for faster metadata operations
     ///
-    /// When a NoteStore is provided, `read_metadata` and `list_notes` use the
+    /// When a `NoteStore` is provided, `read_metadata` and `list_notes` use the
     /// indexed metadata instead of parsing from the filesystem.
     #[must_use]
     pub fn with_note_store(kiln_path: String, note_store: Arc<dyn NoteStore>) -> Self {
@@ -479,7 +479,7 @@ impl NoteTools {
             .await
     }
 
-    /// List notes using NoteStore index
+    /// List notes using `NoteStore` index
     async fn list_notes_via_store(
         &self,
         note_store: &Arc<dyn NoteStore>,
@@ -563,6 +563,10 @@ impl NoteTools {
     }
 
     /// List notes using filesystem scanning (fallback)
+    ///
+    /// This function is async for API consistency with the `NoteStore` path,
+    /// even though filesystem operations are synchronous.
+    #[allow(clippy::unused_async)]
     async fn list_notes_via_filesystem(
         &self,
         search_path: &std::path::Path,
@@ -1845,7 +1849,7 @@ mod note_store_tests {
     use std::sync::Mutex;
     use tempfile::TempDir;
 
-    /// Mock NoteStore for testing the NoteStore integration path
+    /// Mock `NoteStore` for testing the `NoteStore` integration path
     struct MockNoteStore {
         notes: Mutex<HashMap<String, NoteRecord>>,
     }
