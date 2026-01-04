@@ -22,6 +22,7 @@ use arrow_schema::{DataType, Field, Schema};
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
 use futures::TryStreamExt;
+use lancedb::index::Index;
 use lancedb::query::{ExecutableQuery, QueryBase};
 use lancedb::{Connection, Table};
 use serde_json::Value;
@@ -512,6 +513,46 @@ impl LanceNoteStore {
     /// Get the embedding dimensions
     pub fn embedding_dimensions(&self) -> usize {
         self.embedding_dim
+    }
+
+    /// Create or rebuild the vector index on the embedding column
+    ///
+    /// This should be called after bulk loading data for optimal search performance.
+    /// LanceDB uses IVF-PQ indexing which requires a minimum number of rows
+    /// (typically 256+) to be effective.
+    ///
+    /// Without an index, vector search falls back to brute-force scan.
+    pub async fn create_index(&self) -> LanceResult<()> {
+        let table_guard = self.table.read().await;
+        let table = match &*table_guard {
+            Some(t) => t,
+            None => return Err(LanceError::Table("Table not created yet".to_string())),
+        };
+
+        // Create IVF-PQ index on the embedding column
+        // Index::Auto will select appropriate parameters based on data
+        table
+            .create_index(&["embedding"], Index::Auto)
+            .execute()
+            .await
+            .map_err(|e| LanceError::Table(format!("Failed to create index: {}", e)))?;
+
+        debug!("Created vector index on embedding column");
+        Ok(())
+    }
+
+    /// Check if the table has a vector index
+    pub async fn has_index(&self) -> bool {
+        let table_guard = self.table.read().await;
+        if let Some(table) = &*table_guard {
+            // Try to list indices - if embedding index exists, we have one
+            if let Ok(indices) = table.list_indices().await {
+                return indices.iter().any(|idx| {
+                    idx.columns.contains(&"embedding".to_string())
+                });
+            }
+        }
+        false
     }
 }
 
