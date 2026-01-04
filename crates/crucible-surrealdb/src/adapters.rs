@@ -36,9 +36,10 @@
 //! }
 //! ```
 
-use crate::{MerklePersistence, SurrealClient, SurrealDbConfig};
+use crate::{MerklePersistence, SurrealClient, SurrealDbConfig, SurrealNoteStore};
 use anyhow::Result;
 use async_trait::async_trait;
+use crucible_core::storage::NoteStore;
 use crucible_merkle::MerkleStore;
 use std::sync::Arc;
 
@@ -86,6 +87,14 @@ impl SurrealClientHandle {
     /// to code that depends on the trait, not the implementation.
     pub fn as_knowledge_repository(&self) -> Arc<dyn crucible_core::traits::KnowledgeRepository> {
         Arc::new(SurrealKnowledgeRepository::new(self.inner_arc()))
+    }
+
+    /// Get a trait object for NoteStore
+    ///
+    /// Returns the consolidated storage interface for note CRUD and search.
+    /// Note: Schema should be applied via client initialization before use.
+    pub fn as_note_store(&self) -> Arc<dyn NoteStore> {
+        Arc::new(SurrealNoteStore::new((*self.inner()).clone()))
     }
 }
 
