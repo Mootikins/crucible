@@ -347,6 +347,7 @@ impl EventToMarkdown for SessionEvent {
                     crucible_core::InteractionResponse::Edit(_) => "Edit response",
                     crucible_core::InteractionResponse::Permission(_) => "Permission response",
                     crucible_core::InteractionResponse::Popup(_) => "Popup response",
+                    crucible_core::InteractionResponse::Panel(_) => "Panel response",
                     crucible_core::InteractionResponse::Cancelled => "Cancelled",
                 };
                 format!(

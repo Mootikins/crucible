@@ -42,11 +42,7 @@ impl PopupModule {
     }
 
     /// Create a popup entry with data
-    pub fn entry_with_data(
-        label: &str,
-        description: Option<&str>,
-        data: JsonValue,
-    ) -> PopupEntry {
+    pub fn entry_with_data(label: &str, description: Option<&str>, data: JsonValue) -> PopupEntry {
         let mut entry = PopupEntry::new(label);
         if let Some(desc) = description {
             entry = entry.with_description(desc);
