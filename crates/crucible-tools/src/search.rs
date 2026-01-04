@@ -429,6 +429,10 @@ impl SearchTools {
     }
 
     /// Property search using filesystem scanning (fallback)
+    ///
+    /// This function is async for API consistency with the `NoteStore` path,
+    /// even though filesystem operations are synchronous.
+    #[allow(clippy::unused_async)]
     async fn property_search_via_filesystem(
         &self,
         search_props: &serde_json::Map<String, serde_json::Value>,
