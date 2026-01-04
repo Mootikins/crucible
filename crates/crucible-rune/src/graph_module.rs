@@ -239,6 +239,7 @@ pub fn graph_module() -> Result<Module, ContextError> {
 // Database-backed Module Registration
 // =============================================================================
 
+use crucible_core::storage::NoteStore;
 use crucible_core::traits::GraphQueryExecutor;
 use std::sync::Arc;
 
@@ -382,6 +383,149 @@ pub fn graph_module_with_executor(
             }
         })
         .build()?;
+
+    Ok(module)
+}
+
+// =============================================================================
+// NoteStore Functions
+// =============================================================================
+
+/// Register note store functions on an existing module
+///
+/// This adds `note_get` and `note_list` functions that query the NoteStore.
+/// Use with `graph_module_with_stores()` for a module that has both
+/// graph traversal and note store functionality.
+///
+/// # Functions registered
+///
+/// - `note_get(path)` - Get a note by path, returns note record or nil
+/// - `note_list(limit)` - List notes up to limit, returns array
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use crucible_core::storage::NoteStore;
+/// use crucible_rune::register_note_functions;
+///
+/// let store: Arc<dyn NoteStore> = create_store();
+/// let mut module = Module::with_crate("graph")?;
+/// register_note_functions(&mut module, store)?;
+/// ```
+pub fn register_note_functions(
+    module: &mut Module,
+    store: Arc<dyn NoteStore>,
+) -> Result<(), ContextError> {
+    // note_get - Get a note by path
+    let store_clone = Arc::clone(&store);
+    module
+        .function("note_get", move |path: String| {
+            let s = Arc::clone(&store_clone);
+            async move {
+                match s.get(&path).await {
+                    Ok(Some(record)) => {
+                        // Serialize NoteRecord to JSON, then convert to Rune Value
+                        match serde_json::to_value(&record) {
+                            Ok(json) => json_to_rune(&json),
+                            Err(e) => VmResult::Err(rune::runtime::VmError::panic(format!(
+                                "Failed to serialize note record: {}",
+                                e
+                            ))),
+                        }
+                    }
+                    Ok(None) => VmResult::Ok(Value::empty()),
+                    Err(e) => VmResult::Err(rune::runtime::VmError::panic(format!(
+                        "Note store error: {}",
+                        e
+                    ))),
+                }
+            }
+        })
+        .build()?;
+
+    // note_list - List notes with optional limit
+    let store_clone = Arc::clone(&store);
+    module
+        .function("note_list", move |limit: i64| {
+            let s = Arc::clone(&store_clone);
+            async move {
+                match s.list().await {
+                    Ok(records) => {
+                        // Apply limit (if limit <= 0, return all)
+                        let limited: Vec<_> = if limit > 0 {
+                            records.into_iter().take(limit as usize).collect()
+                        } else {
+                            records
+                        };
+
+                        // Serialize to JSON array, then convert to Rune Value
+                        match serde_json::to_value(&limited) {
+                            Ok(json) => json_to_rune(&json),
+                            Err(e) => VmResult::Err(rune::runtime::VmError::panic(format!(
+                                "Failed to serialize note records: {}",
+                                e
+                            ))),
+                        }
+                    }
+                    Err(e) => VmResult::Err(rune::runtime::VmError::panic(format!(
+                        "Note store error: {}",
+                        e
+                    ))),
+                }
+            }
+        })
+        .build()?;
+
+    Ok(())
+}
+
+/// Create a graph module with both executor and note store
+///
+/// This combines `graph_module_with_executor` functionality with NoteStore
+/// functions, providing a unified module for graph traversal and note access.
+///
+/// # Functions available
+///
+/// From GraphQueryExecutor:
+/// - `db_find(title)` - Find note by title
+/// - `db_outlinks(title)` - Get outlinks
+/// - `db_inlinks(title)` - Get inlinks
+/// - `db_neighbors(title)` - Get all connected notes
+/// - `db_query(query)` - Execute arbitrary graph query
+///
+/// From NoteStore:
+/// - `note_get(path)` - Get note by path
+/// - `note_list(limit)` - List notes
+///
+/// From in-memory (backward compat):
+/// - `find(graph, title)`
+/// - `outlinks(graph, title)`
+/// - `inlinks(graph, title)`
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use crucible_core::traits::GraphQueryExecutor;
+/// use crucible_core::storage::NoteStore;
+/// use crucible_rune::graph_module_with_stores;
+///
+/// let executor: Arc<dyn GraphQueryExecutor> = create_executor();
+/// let store: Arc<dyn NoteStore> = create_store();
+/// let module = graph_module_with_stores(executor, store)?;
+///
+/// // In Rune scripts:
+/// // let note = graph::note_get("notes/example.md").await?;
+/// // let all = graph::note_list(100).await;
+/// ```
+pub fn graph_module_with_stores(
+    executor: Arc<dyn GraphQueryExecutor>,
+    store: Arc<dyn NoteStore>,
+) -> Result<Module, ContextError> {
+    // Start with the executor-based module
+    let mut module = graph_module_with_executor(executor)?;
+
+    // Add NoteStore functions
+    register_note_functions(&mut module, store)?;
 
     Ok(module)
 }
@@ -746,5 +890,358 @@ mod db_tests {
             "Expected error message, got: {}",
             err
         );
+    }
+}
+
+#[cfg(test)]
+mod note_store_tests {
+    use super::*;
+    use async_trait::async_trait;
+    use crucible_core::parser::BlockHash;
+    use crucible_core::storage::{NoteRecord, NoteStore, SearchResult, StorageError, StorageResult};
+    use serde_json::json;
+
+    /// Mock NoteStore that returns predetermined results
+    struct MockNoteStore {
+        notes: Vec<NoteRecord>,
+    }
+
+    impl MockNoteStore {
+        fn new(notes: Vec<NoteRecord>) -> Self {
+            Self { notes }
+        }
+
+        fn with_sample_notes() -> Self {
+            Self::new(vec![
+                NoteRecord::new("notes/index.md", BlockHash::zero())
+                    .with_title("Index".to_string())
+                    .with_tags(vec!["home".to_string()]),
+                NoteRecord::new("notes/project-a.md", BlockHash::zero())
+                    .with_title("Project A".to_string())
+                    .with_links(vec!["notes/index.md".to_string()]),
+                NoteRecord::new("notes/project-b.md", BlockHash::zero())
+                    .with_title("Project B".to_string()),
+            ])
+        }
+    }
+
+    #[async_trait]
+    impl NoteStore for MockNoteStore {
+        async fn upsert(&self, _note: NoteRecord) -> StorageResult<()> {
+            Ok(())
+        }
+
+        async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
+            Ok(self.notes.iter().find(|n| n.path == path).cloned())
+        }
+
+        async fn delete(&self, _path: &str) -> StorageResult<()> {
+            Ok(())
+        }
+
+        async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
+            Ok(self.notes.clone())
+        }
+
+        async fn get_by_hash(&self, _hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
+            Ok(None)
+        }
+
+        async fn search(
+            &self,
+            _embedding: &[f32],
+            _limit: usize,
+            _filter: Option<crucible_core::storage::Filter>,
+        ) -> StorageResult<Vec<SearchResult>> {
+            Ok(vec![])
+        }
+    }
+
+    /// Mock NoteStore that always fails
+    struct FailingNoteStore {
+        message: String,
+    }
+
+    #[async_trait]
+    impl NoteStore for FailingNoteStore {
+        async fn upsert(&self, _note: NoteRecord) -> StorageResult<()> {
+            Err(StorageError::backend(&self.message))
+        }
+
+        async fn get(&self, _path: &str) -> StorageResult<Option<NoteRecord>> {
+            Err(StorageError::backend(&self.message))
+        }
+
+        async fn delete(&self, _path: &str) -> StorageResult<()> {
+            Err(StorageError::backend(&self.message))
+        }
+
+        async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
+            Err(StorageError::backend(&self.message))
+        }
+
+        async fn get_by_hash(&self, _hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
+            Err(StorageError::backend(&self.message))
+        }
+
+        async fn search(
+            &self,
+            _embedding: &[f32],
+            _limit: usize,
+            _filter: Option<crucible_core::storage::Filter>,
+        ) -> StorageResult<Vec<SearchResult>> {
+            Err(StorageError::backend(&self.message))
+        }
+    }
+
+    /// Helper to create a module with just NoteStore functions (no executor)
+    fn note_store_module(store: Arc<dyn NoteStore>) -> Result<Module, ContextError> {
+        let mut module = Module::with_crate("graph")?;
+        register_note_functions(&mut module, store)?;
+        Ok(module)
+    }
+
+    /// Helper to compile and run async Rune script
+    async fn run_rune_async(
+        module: Module,
+        script: &str,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+        use rune::termcolor::{ColorChoice, StandardStream};
+        use rune::{Context, Diagnostics, Source, Sources, Vm};
+
+        let mut context = Context::with_default_modules()?;
+        context.install(module)?;
+        let runtime = std::sync::Arc::new(context.runtime()?);
+
+        let mut sources = Sources::new();
+        sources.insert(Source::new("test", script)?)?;
+
+        let mut diagnostics = Diagnostics::new();
+        let result = rune::prepare(&mut sources)
+            .with_context(&context)
+            .with_diagnostics(&mut diagnostics)
+            .build();
+
+        if !diagnostics.is_empty() {
+            let mut writer = StandardStream::stderr(ColorChoice::Always);
+            diagnostics.emit(&mut writer, &sources)?;
+        }
+
+        let unit = result?;
+        let unit = std::sync::Arc::new(unit);
+
+        let vm = Vm::new(runtime, unit);
+        let execution = vm.send_execute(["main"], ())?;
+        let output = execution.async_complete().await.into_result()?;
+
+        let json = crate::mcp_types::rune_to_json(&output)?;
+        Ok(json)
+    }
+
+    // =========================================================================
+    // note_get tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_note_get_returns_record() {
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::with_sample_notes());
+        let module = note_store_module(store).unwrap();
+
+        let script = r#"
+            use graph::note_get;
+
+            pub async fn main() {
+                note_get("notes/index.md").await
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await.unwrap();
+        assert_eq!(result["path"], "notes/index.md");
+        assert_eq!(result["title"], "Index");
+        assert!(result["tags"].as_array().unwrap().contains(&json!("home")));
+    }
+
+    #[tokio::test]
+    async fn test_note_get_returns_nil_when_not_found() {
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::with_sample_notes());
+        let module = note_store_module(store).unwrap();
+
+        let script = r#"
+            use graph::note_get;
+
+            pub async fn main() {
+                note_get("nonexistent/path.md").await
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await.unwrap();
+        assert!(result.is_null(), "Expected null for missing note, got: {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn test_note_get_propagates_error() {
+        let store: Arc<dyn NoteStore> = Arc::new(FailingNoteStore {
+            message: "Database connection lost".to_string(),
+        });
+        let module = note_store_module(store).unwrap();
+
+        let script = r#"
+            use graph::note_get;
+
+            pub async fn main() {
+                note_get("any/path.md").await
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("Database connection lost"),
+            "Expected error message, got: {}",
+            err
+        );
+    }
+
+    // =========================================================================
+    // note_list tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_note_list_returns_all_notes() {
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::with_sample_notes());
+        let module = note_store_module(store).unwrap();
+
+        let script = r#"
+            use graph::note_list;
+
+            pub async fn main() {
+                note_list(0).await  // 0 means no limit
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await.unwrap();
+        let arr = result.as_array().expect("Should be array");
+        assert_eq!(arr.len(), 3, "Should return all 3 notes");
+    }
+
+    #[tokio::test]
+    async fn test_note_list_respects_limit() {
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::with_sample_notes());
+        let module = note_store_module(store).unwrap();
+
+        let script = r#"
+            use graph::note_list;
+
+            pub async fn main() {
+                note_list(2).await
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await.unwrap();
+        let arr = result.as_array().expect("Should be array");
+        assert_eq!(arr.len(), 2, "Should return only 2 notes");
+    }
+
+    #[tokio::test]
+    async fn test_note_list_with_limit_greater_than_count() {
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::with_sample_notes());
+        let module = note_store_module(store).unwrap();
+
+        let script = r#"
+            use graph::note_list;
+
+            pub async fn main() {
+                note_list(100).await
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await.unwrap();
+        let arr = result.as_array().expect("Should be array");
+        assert_eq!(arr.len(), 3, "Should return all notes when limit > count");
+    }
+
+    #[tokio::test]
+    async fn test_note_list_empty_store() {
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::new(vec![]));
+        let module = note_store_module(store).unwrap();
+
+        let script = r#"
+            use graph::note_list;
+
+            pub async fn main() {
+                note_list(10).await
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await.unwrap();
+        let arr = result.as_array().expect("Should be array");
+        assert_eq!(arr.len(), 0, "Should return empty array");
+    }
+
+    #[tokio::test]
+    async fn test_note_list_propagates_error() {
+        let store: Arc<dyn NoteStore> = Arc::new(FailingNoteStore {
+            message: "Storage unavailable".to_string(),
+        });
+        let module = note_store_module(store).unwrap();
+
+        let script = r#"
+            use graph::note_list;
+
+            pub async fn main() {
+                note_list(10).await
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("Storage unavailable"),
+            "Expected error message, got: {}",
+            err
+        );
+    }
+
+    // =========================================================================
+    // Combined module tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_graph_module_with_stores_has_both_functions() {
+        use crucible_core::traits::{GraphQueryExecutor, GraphQueryResult};
+
+        struct MockExecutor;
+
+        #[async_trait]
+        impl GraphQueryExecutor for MockExecutor {
+            async fn execute(&self, _query: &str) -> GraphQueryResult<Vec<serde_json::Value>> {
+                Ok(vec![json!({"title": "From Executor"})])
+            }
+        }
+
+        let executor: Arc<dyn GraphQueryExecutor> = Arc::new(MockExecutor);
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::with_sample_notes());
+
+        let module = graph_module_with_stores(executor, store).unwrap();
+
+        // Test that note_get works
+        let script = r#"
+            use graph::{note_get, db_find};
+
+            pub async fn main() {
+                let from_store = note_get("notes/index.md").await;
+                let from_executor = db_find("Any").await;
+                #{
+                    store_path: from_store.path,
+                    executor_title: from_executor.title,
+                }
+            }
+        "#;
+
+        let result = run_rune_async(module, script).await.unwrap();
+        assert_eq!(result["store_path"], "notes/index.md");
+        assert_eq!(result["executor_title"], "From Executor");
     }
 }
