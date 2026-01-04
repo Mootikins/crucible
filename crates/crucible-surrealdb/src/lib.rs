@@ -188,7 +188,5 @@ pub mod test_utils {
     pub use crate::types::{QueryResult, Record};
 
     #[cfg(feature = "embeddings")]
-    pub use crate::kiln_integration::{
-        semantic_search, semantic_search_with_reranking, store_parsed_document,
-    };
+    pub use crate::kiln_integration::{semantic_search, semantic_search_with_reranking};
 }
