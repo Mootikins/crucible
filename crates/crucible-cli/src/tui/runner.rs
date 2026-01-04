@@ -1554,6 +1554,21 @@ impl RatatuiRunner {
                 let title = show.title.as_deref().unwrap_or("Information");
                 DialogState::info(title, &show.content)
             }
+            InteractionRequest::Popup(popup) => {
+                // Convert PopupEntry labels to choices for selection dialog
+                let choices: Vec<String> = popup
+                    .entries
+                    .iter()
+                    .map(|e| {
+                        if let Some(desc) = &e.description {
+                            format!("{} - {}", e.label, desc)
+                        } else {
+                            e.label.clone()
+                        }
+                    })
+                    .collect();
+                DialogState::select(&popup.title, choices)
+            }
         };
 
         // Store the request_id for response correlation
