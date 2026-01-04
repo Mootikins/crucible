@@ -31,6 +31,7 @@
 //! ```
 
 use crate::error::LuaError;
+use crucible_core::storage::NoteStore;
 use crucible_core::traits::GraphQueryExecutor;
 use mlua::{Lua, Table, Value};
 use std::sync::Arc;
@@ -228,6 +229,134 @@ pub fn register_graph_module_with_executor(
     graph.set("db_query", db_query)?;
 
     Ok(())
+}
+
+/// Register NoteStore functions on the graph module
+///
+/// This adds async functions that query the NoteStore directly:
+///
+/// # Example
+///
+/// ```lua
+/// -- Get a note by path
+/// local note = graph.note_get("path/to/note.md")
+/// if note then
+///     print(note.title)
+///     print(note.path)
+///     print(#note.tags)
+/// end
+///
+/// -- List all notes (with optional limit)
+/// local notes = graph.note_list(10)
+/// for i, note in ipairs(notes) do
+///     print(note.title)
+/// end
+/// ```
+pub fn register_note_store_functions(
+    lua: &Lua,
+    store: Arc<dyn NoteStore>,
+) -> Result<(), LuaError> {
+    // Get the graph table (must exist from prior registration)
+    let graph: Table = lua.globals().get("graph")?;
+
+    // note_get - Get a note by path
+    let s = Arc::clone(&store);
+    let note_get = lua.create_async_function(move |lua, path: String| {
+        let s = Arc::clone(&s);
+        async move {
+            match s.get(&path).await {
+                Ok(Some(record)) => {
+                    // Convert NoteRecord to Lua table
+                    note_record_to_lua(&lua, &record)
+                }
+                Ok(None) => Ok(Value::Nil),
+                Err(e) => Err(mlua::Error::runtime(format!("NoteStore error: {}", e))),
+            }
+        }
+    })?;
+    graph.set("note_get", note_get)?;
+
+    // note_list - List notes with optional limit
+    let s = Arc::clone(&store);
+    let note_list = lua.create_async_function(move |lua, limit: Option<usize>| {
+        let s = Arc::clone(&s);
+        async move {
+            match s.list().await {
+                Ok(records) => {
+                    let table = lua.create_table()?;
+                    let iter = records.iter();
+                    let iter: Box<dyn Iterator<Item = _>> = if let Some(lim) = limit {
+                        Box::new(iter.take(lim))
+                    } else {
+                        Box::new(iter)
+                    };
+
+                    for (i, record) in iter.enumerate() {
+                        let lua_record = note_record_to_lua(&lua, record)?;
+                        table.set(i + 1, lua_record)?;
+                    }
+                    Ok(Value::Table(table))
+                }
+                Err(e) => Err(mlua::Error::runtime(format!("NoteStore error: {}", e))),
+            }
+        }
+    })?;
+    graph.set("note_list", note_list)?;
+
+    Ok(())
+}
+
+/// Register the graph module with both executor and note store
+///
+/// This is a convenience function that combines `register_graph_module_with_executor`
+/// and `register_note_store_functions`.
+pub fn register_graph_module_full(
+    lua: &Lua,
+    executor: Arc<dyn GraphQueryExecutor>,
+    store: Arc<dyn NoteStore>,
+) -> Result<(), LuaError> {
+    register_graph_module_with_executor(lua, executor)?;
+    register_note_store_functions(lua, store)?;
+    Ok(())
+}
+
+/// Convert a NoteRecord to a Lua table
+fn note_record_to_lua(lua: &Lua, record: &crucible_core::storage::NoteRecord) -> Result<Value, mlua::Error> {
+    let table = lua.create_table()?;
+
+    table.set("path", record.path.as_str())?;
+    table.set("title", record.title.as_str())?;
+    table.set("content_hash", record.content_hash.to_string())?;
+
+    // Tags as array
+    let tags = lua.create_table()?;
+    for (i, tag) in record.tags.iter().enumerate() {
+        tags.set(i + 1, tag.as_str())?;
+    }
+    table.set("tags", tags)?;
+
+    // Links as array
+    let links = lua.create_table()?;
+    for (i, link) in record.links_to.iter().enumerate() {
+        links.set(i + 1, link.as_str())?;
+    }
+    table.set("links_to", links)?;
+
+    // Properties as table (convert serde_json::Value to Lua)
+    let props = lua.create_table()?;
+    for (k, v) in &record.properties {
+        props.set(k.as_str(), json_to_lua_value(lua, v)?)?;
+    }
+    table.set("properties", props)?;
+
+    // Updated timestamp as ISO string
+    table.set("updated_at", record.updated_at.to_rfc3339())?;
+
+    // Embedding: skip for now (large vectors not useful in Lua)
+    // We set has_embedding boolean instead
+    table.set("has_embedding", record.has_embedding())?;
+
+    Ok(Value::Table(table))
 }
 
 /// Escape double quotes in a string for safe embedding in queries
@@ -631,5 +760,304 @@ mod db_tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("Connection failed"));
+    }
+}
+
+#[cfg(test)]
+mod note_store_tests {
+    use super::*;
+    use async_trait::async_trait;
+    use crucible_core::parser::BlockHash;
+    use crucible_core::storage::{Filter, NoteRecord, NoteStore, SearchResult, StorageResult};
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    /// Mock NoteStore for testing
+    struct MockNoteStore {
+        notes: Mutex<HashMap<String, NoteRecord>>,
+    }
+
+    impl MockNoteStore {
+        fn new() -> Self {
+            Self {
+                notes: Mutex::new(HashMap::new()),
+            }
+        }
+
+        fn with_notes(notes: Vec<NoteRecord>) -> Self {
+            let store = Self::new();
+            {
+                let mut map = store.notes.lock().unwrap();
+                for note in notes {
+                    map.insert(note.path.clone(), note);
+                }
+            }
+            store
+        }
+    }
+
+    #[async_trait]
+    impl NoteStore for MockNoteStore {
+        async fn upsert(&self, note: NoteRecord) -> StorageResult<()> {
+            let mut map = self.notes.lock().unwrap();
+            map.insert(note.path.clone(), note);
+            Ok(())
+        }
+
+        async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
+            let map = self.notes.lock().unwrap();
+            Ok(map.get(path).cloned())
+        }
+
+        async fn delete(&self, path: &str) -> StorageResult<()> {
+            let mut map = self.notes.lock().unwrap();
+            map.remove(path);
+            Ok(())
+        }
+
+        async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
+            let map = self.notes.lock().unwrap();
+            Ok(map.values().cloned().collect())
+        }
+
+        async fn get_by_hash(&self, _hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
+            Ok(None)
+        }
+
+        async fn search(
+            &self,
+            _embedding: &[f32],
+            _k: usize,
+            _filter: Option<Filter>,
+        ) -> StorageResult<Vec<SearchResult>> {
+            Ok(vec![])
+        }
+    }
+
+    fn sample_note(path: &str, title: &str) -> NoteRecord {
+        NoteRecord::new(path, BlockHash::zero())
+            .with_title(title)
+            .with_tags(vec!["rust".to_string(), "test".to_string()])
+            .with_links(vec!["other/note.md".to_string()])
+    }
+
+    #[tokio::test]
+    async fn test_note_get_returns_record() {
+        let lua = Lua::new();
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::with_notes(vec![
+            sample_note("Index.md", "Index"),
+            sample_note("other.md", "Other"),
+        ]));
+
+        // First register the basic graph module, then add note store functions
+        register_graph_module(&lua).unwrap();
+        register_note_store_functions(&lua, store).unwrap();
+
+        let result: Table = lua
+            .load(r#"return graph.note_get("Index.md")"#)
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert_eq!(result.get::<String>("path").unwrap(), "Index.md");
+        assert_eq!(result.get::<String>("title").unwrap(), "Index");
+        assert!(result.get::<bool>("has_embedding").is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_note_get_returns_nil_when_not_found() {
+        let lua = Lua::new();
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::new());
+
+        register_graph_module(&lua).unwrap();
+        register_note_store_functions(&lua, store).unwrap();
+
+        let result: Value = lua
+            .load(r#"return graph.note_get("nonexistent.md")"#)
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert!(matches!(result, Value::Nil));
+    }
+
+    #[tokio::test]
+    async fn test_note_get_includes_tags() {
+        let lua = Lua::new();
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::with_notes(vec![sample_note(
+            "Index.md",
+            "Index",
+        )]));
+
+        register_graph_module(&lua).unwrap();
+        register_note_store_functions(&lua, store).unwrap();
+
+        let result: Table = lua
+            .load(
+                r#"
+                local note = graph.note_get("Index.md")
+                return note.tags
+                "#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert_eq!(result.len().unwrap(), 2);
+        assert_eq!(result.get::<String>(1).unwrap(), "rust");
+        assert_eq!(result.get::<String>(2).unwrap(), "test");
+    }
+
+    #[tokio::test]
+    async fn test_note_get_includes_links() {
+        let lua = Lua::new();
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::with_notes(vec![sample_note(
+            "Index.md",
+            "Index",
+        )]));
+
+        register_graph_module(&lua).unwrap();
+        register_note_store_functions(&lua, store).unwrap();
+
+        let result: Table = lua
+            .load(
+                r#"
+                local note = graph.note_get("Index.md")
+                return note.links_to
+                "#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert_eq!(result.len().unwrap(), 1);
+        assert_eq!(result.get::<String>(1).unwrap(), "other/note.md");
+    }
+
+    #[tokio::test]
+    async fn test_note_list_returns_all_notes() {
+        let lua = Lua::new();
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::with_notes(vec![
+            sample_note("a.md", "Note A"),
+            sample_note("b.md", "Note B"),
+            sample_note("c.md", "Note C"),
+        ]));
+
+        register_graph_module(&lua).unwrap();
+        register_note_store_functions(&lua, store).unwrap();
+
+        let result: Table = lua
+            .load(r#"return graph.note_list()"#)
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert_eq!(result.len().unwrap(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_note_list_with_limit() {
+        let lua = Lua::new();
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::with_notes(vec![
+            sample_note("a.md", "Note A"),
+            sample_note("b.md", "Note B"),
+            sample_note("c.md", "Note C"),
+        ]));
+
+        register_graph_module(&lua).unwrap();
+        register_note_store_functions(&lua, store).unwrap();
+
+        let result: Table = lua
+            .load(r#"return graph.note_list(2)"#)
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert_eq!(result.len().unwrap(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_note_list_empty_store() {
+        let lua = Lua::new();
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::new());
+
+        register_graph_module(&lua).unwrap();
+        register_note_store_functions(&lua, store).unwrap();
+
+        let result: Table = lua
+            .load(r#"return graph.note_list()"#)
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert_eq!(result.len().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_note_list_items_have_expected_fields() {
+        let lua = Lua::new();
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::with_notes(vec![sample_note(
+            "test.md",
+            "Test Note",
+        )]));
+
+        register_graph_module(&lua).unwrap();
+        register_note_store_functions(&lua, store).unwrap();
+
+        let result: Table = lua
+            .load(
+                r#"
+                local notes = graph.note_list()
+                local note = notes[1]
+                return {
+                    has_path = note.path ~= nil,
+                    has_title = note.title ~= nil,
+                    has_tags = note.tags ~= nil,
+                    has_links = note.links_to ~= nil,
+                    has_updated = note.updated_at ~= nil,
+                    has_embedding_flag = note.has_embedding ~= nil,
+                }
+                "#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert!(result.get::<bool>("has_path").unwrap());
+        assert!(result.get::<bool>("has_title").unwrap());
+        assert!(result.get::<bool>("has_tags").unwrap());
+        assert!(result.get::<bool>("has_links").unwrap());
+        assert!(result.get::<bool>("has_updated").unwrap());
+        assert!(result.get::<bool>("has_embedding_flag").unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_register_graph_module_full() {
+        use crucible_core::traits::{GraphQueryExecutor, GraphQueryResult};
+
+        struct MockExecutor;
+
+        #[async_trait]
+        impl GraphQueryExecutor for MockExecutor {
+            async fn execute(&self, _query: &str) -> GraphQueryResult<Vec<serde_json::Value>> {
+                Ok(vec![])
+            }
+        }
+
+        let lua = Lua::new();
+        let executor: Arc<dyn GraphQueryExecutor> = Arc::new(MockExecutor);
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::with_notes(vec![sample_note(
+            "test.md",
+            "Test",
+        )]));
+
+        // Use the combined registration function
+        register_graph_module_full(&lua, executor, store).unwrap();
+
+        // Both db_find and note_get should be available
+        let graph: Table = lua.globals().get("graph").unwrap();
+        assert!(graph.contains_key("db_find").unwrap());
+        assert!(graph.contains_key("note_get").unwrap());
+        assert!(graph.contains_key("note_list").unwrap());
     }
 }
