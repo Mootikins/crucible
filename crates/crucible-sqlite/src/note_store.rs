@@ -510,7 +510,7 @@ mod tests {
 
     #[test]
     fn test_serialize_deserialize_embedding() {
-        let original = vec![1.0_f32, 2.5, -3.14159, 0.0, f32::MAX, f32::MIN];
+        let original = vec![1.0_f32, 2.5, -std::f32::consts::PI, 0.0, f32::MAX, f32::MIN];
         let bytes = serialize_embedding(&original);
         let restored = deserialize_embedding(&bytes);
 
