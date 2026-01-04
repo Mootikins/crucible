@@ -243,6 +243,255 @@ impl PopupResponse {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Interactive Panel (primitive for scripted UI flows)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// An item in an interactive panel.
+///
+/// Each item has a label, optional description, and optional arbitrary data
+/// that can be returned when selected.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PanelItem {
+    /// Display label for this item.
+    pub label: String,
+    /// Optional description shown below or beside the label.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Arbitrary data associated with this item (returned on selection).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+impl PanelItem {
+    /// Create a new panel item with just a label.
+    pub fn new(label: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            description: None,
+            data: None,
+        }
+    }
+
+    /// Add a description to this item.
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// Add arbitrary data to this item.
+    pub fn with_data(mut self, data: serde_json::Value) -> Self {
+        self.data = Some(data);
+        self
+    }
+}
+
+/// Render/behavior hints for an interactive panel.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PanelHints {
+    /// Show filter/search input for fuzzy matching.
+    #[serde(default)]
+    pub filterable: bool,
+    /// Allow selecting multiple items (toggle with space/tab).
+    #[serde(default)]
+    pub multi_select: bool,
+    /// Show "Other..." option for free-text input.
+    #[serde(default)]
+    pub allow_other: bool,
+    /// Pre-select these indices when panel opens.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub initial_selection: Vec<usize>,
+    /// Initial filter text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_filter: Option<String>,
+}
+
+impl PanelHints {
+    /// Create default hints.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Enable filtering/search.
+    pub fn filterable(mut self) -> Self {
+        self.filterable = true;
+        self
+    }
+
+    /// Enable multi-select mode.
+    pub fn multi_select(mut self) -> Self {
+        self.multi_select = true;
+        self
+    }
+
+    /// Enable "Other..." free-text option.
+    pub fn allow_other(mut self) -> Self {
+        self.allow_other = true;
+        self
+    }
+
+    /// Set initial selection.
+    pub fn initial_selection<I: IntoIterator<Item = usize>>(mut self, indices: I) -> Self {
+        self.initial_selection = indices.into_iter().collect();
+        self
+    }
+}
+
+/// An interactive panel request.
+///
+/// This is the core primitive for scripted UI flows. Scripts provide items
+/// and hints; the TUI renders an interactive list with filtering, selection,
+/// and optional key handler callbacks.
+///
+/// Higher-level patterns (question sequences, fuzzy search, wizards) are
+/// built on top of this primitive in script-land.
+///
+/// # Example
+///
+/// ```
+/// use crucible_core::interaction::{InteractivePanel, PanelItem, PanelHints};
+///
+/// let panel = InteractivePanel::new("Select database")
+///     .item(PanelItem::new("PostgreSQL").with_description("Full-featured RDBMS"))
+///     .item(PanelItem::new("SQLite").with_description("Embedded, single-file"))
+///     .hints(PanelHints::new().filterable());
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InteractivePanel {
+    /// Header/prompt text displayed above the panel.
+    pub header: String,
+    /// Items to display.
+    #[serde(default)]
+    pub items: Vec<PanelItem>,
+    /// Render/behavior hints.
+    #[serde(default)]
+    pub hints: PanelHints,
+}
+
+impl InteractivePanel {
+    /// Create a new interactive panel with a header.
+    pub fn new(header: impl Into<String>) -> Self {
+        Self {
+            header: header.into(),
+            items: Vec::new(),
+            hints: PanelHints::default(),
+        }
+    }
+
+    /// Add an item to the panel.
+    pub fn item(mut self, item: PanelItem) -> Self {
+        self.items.push(item);
+        self
+    }
+
+    /// Set all items at once.
+    pub fn items<I: IntoIterator<Item = PanelItem>>(mut self, items: I) -> Self {
+        self.items = items.into_iter().collect();
+        self
+    }
+
+    /// Set render/behavior hints.
+    pub fn hints(mut self, hints: PanelHints) -> Self {
+        self.hints = hints;
+        self
+    }
+}
+
+/// Current state of an interactive panel (exposed to key handlers).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PanelState {
+    /// Current cursor position (index in visible items).
+    pub cursor: usize,
+    /// Selected indices (in original items list).
+    #[serde(default)]
+    pub selected: Vec<usize>,
+    /// Current filter text.
+    #[serde(default)]
+    pub filter: String,
+    /// Indices of items currently visible after filtering.
+    #[serde(default)]
+    pub visible: Vec<usize>,
+}
+
+impl PanelState {
+    /// Create initial state for a panel.
+    pub fn initial(panel: &InteractivePanel) -> Self {
+        Self {
+            cursor: 0,
+            selected: panel.hints.initial_selection.clone(),
+            filter: panel.hints.initial_filter.clone().unwrap_or_default(),
+            visible: (0..panel.items.len()).collect(),
+        }
+    }
+}
+
+/// Action returned by a key handler to control panel behavior.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum PanelAction {
+    /// Continue with default key handling.
+    Continue,
+    /// Accept current selection and close panel.
+    Accept,
+    /// Accept with specific selection (overrides current).
+    AcceptWith {
+        selected: Vec<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        other: Option<String>,
+    },
+    /// Cancel and close panel.
+    Cancel,
+    /// Toggle selection at specified index.
+    ToggleSelect { index: usize },
+    /// Move cursor by delta (positive = down, negative = up).
+    MoveCursor { delta: i32 },
+    /// Set filter text.
+    SetFilter { text: String },
+}
+
+/// Result when an interactive panel closes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PanelResult {
+    /// Whether the user cancelled (Escape).
+    #[serde(default)]
+    pub cancelled: bool,
+    /// Selected item indices (in original items list).
+    #[serde(default)]
+    pub selected: Vec<usize>,
+    /// Free-text "other" input if used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub other: Option<String>,
+}
+
+impl PanelResult {
+    /// Create a result with selected indices.
+    pub fn selected<I: IntoIterator<Item = usize>>(indices: I) -> Self {
+        Self {
+            cancelled: false,
+            selected: indices.into_iter().collect(),
+            other: None,
+        }
+    }
+
+    /// Create a result with free-text input.
+    pub fn other(text: impl Into<String>) -> Self {
+        Self {
+            cancelled: false,
+            selected: Vec::new(),
+            other: Some(text.into()),
+        }
+    }
+
+    /// Create a cancelled result.
+    pub fn cancelled() -> Self {
+        Self {
+            cancelled: true,
+            selected: Vec::new(),
+            other: None,
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Permission Request/Response
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -554,6 +803,8 @@ pub enum InteractionRequest {
     Permission(PermRequest),
     /// Popup with rich entries (for scripted popups).
     Popup(PopupRequest),
+    /// Interactive panel (core primitive for scripted UI flows).
+    Panel(InteractivePanel),
 }
 
 impl InteractionRequest {
@@ -565,6 +816,7 @@ impl InteractionRequest {
             Self::Show(_) => "show",
             Self::Permission(_) => "permission",
             Self::Popup(_) => "popup",
+            Self::Panel(_) => "panel",
         }
     }
 
@@ -604,6 +856,12 @@ impl From<PopupRequest> for InteractionRequest {
     }
 }
 
+impl From<InteractivePanel> for InteractionRequest {
+    fn from(panel: InteractivePanel) -> Self {
+        InteractionRequest::Panel(panel)
+    }
+}
+
 /// Unified interaction response type.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -616,6 +874,8 @@ pub enum InteractionResponse {
     Permission(PermResponse),
     /// Response to a popup request.
     Popup(PopupResponse),
+    /// Response to an interactive panel.
+    Panel(PanelResult),
     /// Request was cancelled by the user.
     Cancelled,
 }
@@ -641,6 +901,12 @@ impl From<PermResponse> for InteractionResponse {
 impl From<PopupResponse> for InteractionResponse {
     fn from(resp: PopupResponse) -> Self {
         InteractionResponse::Popup(resp)
+    }
+}
+
+impl From<PanelResult> for InteractionResponse {
+    fn from(result: PanelResult) -> Self {
+        InteractionResponse::Panel(result)
     }
 }
 
@@ -960,5 +1226,158 @@ mod tests {
         assert!(json.contains("\"kind\":\"popup\""));
         let restored: InteractionResponse = serde_json::from_str(&json).unwrap();
         assert!(matches!(restored, InteractionResponse::Popup(_)));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // InteractivePanel tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn panel_item_builder() {
+        let item = PanelItem::new("PostgreSQL")
+            .with_description("Full-featured RDBMS")
+            .with_data(serde_json::json!({"type": "sql"}));
+
+        assert_eq!(item.label, "PostgreSQL");
+        assert_eq!(item.description, Some("Full-featured RDBMS".into()));
+        assert!(item.data.is_some());
+    }
+
+    #[test]
+    fn panel_hints_builder() {
+        let hints = PanelHints::new()
+            .filterable()
+            .multi_select()
+            .allow_other()
+            .initial_selection([0, 2]);
+
+        assert!(hints.filterable);
+        assert!(hints.multi_select);
+        assert!(hints.allow_other);
+        assert_eq!(hints.initial_selection, vec![0, 2]);
+    }
+
+    #[test]
+    fn interactive_panel_builder() {
+        let panel = InteractivePanel::new("Select database")
+            .item(PanelItem::new("PostgreSQL"))
+            .item(PanelItem::new("SQLite").with_description("Embedded"))
+            .hints(PanelHints::new().filterable());
+
+        assert_eq!(panel.header, "Select database");
+        assert_eq!(panel.items.len(), 2);
+        assert_eq!(panel.items[0].label, "PostgreSQL");
+        assert_eq!(panel.items[1].description, Some("Embedded".into()));
+        assert!(panel.hints.filterable);
+    }
+
+    #[test]
+    fn panel_state_initial() {
+        let panel = InteractivePanel::new("Test")
+            .items([
+                PanelItem::new("A"),
+                PanelItem::new("B"),
+                PanelItem::new("C"),
+            ])
+            .hints(PanelHints::new().initial_selection([1]));
+
+        let state = PanelState::initial(&panel);
+
+        assert_eq!(state.cursor, 0);
+        assert_eq!(state.selected, vec![1]);
+        assert_eq!(state.filter, "");
+        assert_eq!(state.visible, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn panel_result_variants() {
+        let selected = PanelResult::selected([0, 2]);
+        assert!(!selected.cancelled);
+        assert_eq!(selected.selected, vec![0, 2]);
+        assert!(selected.other.is_none());
+
+        let other = PanelResult::other("Custom choice");
+        assert!(!other.cancelled);
+        assert!(other.selected.is_empty());
+        assert_eq!(other.other, Some("Custom choice".into()));
+
+        let cancelled = PanelResult::cancelled();
+        assert!(cancelled.cancelled);
+        assert!(cancelled.selected.is_empty());
+    }
+
+    #[test]
+    fn interaction_request_from_panel() {
+        let panel = InteractivePanel::new("Test").item(PanelItem::new("A"));
+        let req: InteractionRequest = panel.into();
+
+        assert!(matches!(req, InteractionRequest::Panel(_)));
+        assert_eq!(req.kind(), "panel");
+        assert!(req.expects_response());
+    }
+
+    #[test]
+    fn interaction_response_from_panel_result() {
+        let resp: InteractionResponse = PanelResult::selected([0]).into();
+
+        assert!(matches!(resp, InteractionResponse::Panel(_)));
+    }
+
+    #[test]
+    fn panel_serialization() {
+        let panel = InteractivePanel::new("Test")
+            .item(PanelItem::new("A").with_description("Option A"))
+            .hints(PanelHints::new().filterable().multi_select());
+
+        let json = serde_json::to_string(&panel).unwrap();
+        let restored: InteractivePanel = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(panel.header, restored.header);
+        assert_eq!(panel.items.len(), restored.items.len());
+        assert_eq!(panel.hints.filterable, restored.hints.filterable);
+        assert_eq!(panel.hints.multi_select, restored.hints.multi_select);
+    }
+
+    #[test]
+    fn panel_result_serialization() {
+        let result = PanelResult::selected([0, 1]);
+        let json = serde_json::to_string(&result).unwrap();
+        let restored: PanelResult = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(result.selected, restored.selected);
+        assert_eq!(result.cancelled, restored.cancelled);
+    }
+
+    #[test]
+    fn interaction_request_panel_serialization() {
+        let panel = InteractivePanel::new("Test").item(PanelItem::new("A"));
+        let req: InteractionRequest = panel.into();
+        let json = serde_json::to_string(&req).unwrap();
+
+        assert!(json.contains("\"kind\":\"panel\""));
+        let restored: InteractionRequest = serde_json::from_str(&json).unwrap();
+        assert!(matches!(restored, InteractionRequest::Panel(_)));
+    }
+
+    #[test]
+    fn interaction_response_panel_serialization() {
+        let resp: InteractionResponse = PanelResult::selected([0]).into();
+        let json = serde_json::to_string(&resp).unwrap();
+
+        assert!(json.contains("\"kind\":\"panel\""));
+        let restored: InteractionResponse = serde_json::from_str(&json).unwrap();
+        assert!(matches!(restored, InteractionResponse::Panel(_)));
+    }
+
+    #[test]
+    fn panel_action_serialization() {
+        let action = PanelAction::AcceptWith {
+            selected: vec![0, 1],
+            other: Some("custom".into()),
+        };
+        let json = serde_json::to_string(&action).unwrap();
+        let restored: PanelAction = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(action, restored);
     }
 }

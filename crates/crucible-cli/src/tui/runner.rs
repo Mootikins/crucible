@@ -1344,10 +1344,8 @@ impl RatatuiRunner {
                 if value == "[Other...]" {
                     if let Some(popup) = &self.pending_popup {
                         // Show input dialog for free-text entry
-                        let input_dialog = DialogState::input(
-                            &popup.title,
-                            "Type your response...",
-                        );
+                        let input_dialog =
+                            DialogState::input(&popup.title, "Type your response...");
                         self.view.push_dialog(input_dialog);
                         // Don't clear pending state yet - we need it for the input result
                         return Ok(());
@@ -1358,25 +1356,30 @@ impl RatatuiRunner {
                 if let Some(popup) = self.pending_popup.take() {
                     // Check if this was a text input (from "Other" dialog)
                     // or a selection from the list
-                    let is_entry_selection = popup.entries.iter().any(|e| {
-                        e.label == value
-                            || value.starts_with(&e.label)
-                    });
+                    let is_entry_selection = popup
+                        .entries
+                        .iter()
+                        .any(|e| e.label == value || value.starts_with(&e.label));
 
                     if is_entry_selection {
                         // Find the selected entry
-                        if let Some((idx, entry)) = popup.entries.iter().enumerate().find(|(_, e)| {
-                            e.label == value || value.starts_with(&e.label)
-                        }) {
-                            let _response = crucible_core::interaction::PopupResponse::selected(idx, entry.clone());
+                        if let Some((idx, entry)) = popup
+                            .entries
+                            .iter()
+                            .enumerate()
+                            .find(|(_, e)| e.label == value || value.starts_with(&e.label))
+                        {
+                            let _response = crucible_core::interaction::PopupResponse::selected(
+                                idx,
+                                entry.clone(),
+                            );
                             self.view
                                 .set_status_text(&format!("Selected: {}", entry.label));
                         }
                     } else {
                         // This was typed text from the "Other" input
                         let _response = crucible_core::interaction::PopupResponse::other(&value);
-                        self.view
-                            .set_status_text(&format!("Entered: {}", value));
+                        self.view.set_status_text(&format!("Entered: {}", value));
                     }
 
                     // Clear interaction state
@@ -1626,6 +1629,28 @@ impl RatatuiRunner {
                 self.pending_popup = Some(popup.clone());
 
                 DialogState::select(&popup.title, choices)
+            }
+            InteractionRequest::Panel(panel) => {
+                // Convert PanelItem to choices for selection dialog
+                // TODO: Implement full panel widget with filtering, multi-select, key handlers
+                let mut choices: Vec<String> = panel
+                    .items
+                    .iter()
+                    .map(|item| {
+                        if let Some(desc) = &item.description {
+                            format!("{} - {}", item.label, desc)
+                        } else {
+                            item.label.clone()
+                        }
+                    })
+                    .collect();
+
+                // Add "Other..." option if hints.allow_other is enabled
+                if panel.hints.allow_other {
+                    choices.push("[Other...]".to_string());
+                }
+
+                DialogState::select(&panel.header, choices)
             }
         };
 
