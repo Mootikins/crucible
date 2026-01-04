@@ -16,7 +16,7 @@ chrono = { version = "0.4", features = ["serde"] }
 hex = "0.4"
 
 # Async
-tokio = { version = "1.42", features = ["sync"] }
+tokio = { version = "1.49", features = ["sync"] }
 async-trait = "0.1"
 
 # Thread safety
@@ -30,6 +30,6 @@ thiserror = "2.0"
 
 [dev-dependencies]
 # Testing utilities
-tokio = { version = "1.42", features = ["full"] }
+tokio = { version = "1.49", features = ["full"] }
 # Parser implementation for tests (not needed for library code)
 crucible-parser = { path = "../crucible-parser" }

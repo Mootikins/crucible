@@ -19,7 +19,7 @@ crucible-parser = { path = "../crucible-parser" }
 crucible-merkle = { path = "../crucible-merkle" }
 
 # Async runtime
-tokio = { version = "1.42", features = ["full"] }
+tokio = { version = "1.49", features = ["full"] }
 async-trait = { workspace = true }
 
 # Error handling
