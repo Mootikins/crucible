@@ -4068,6 +4068,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "crucible-core",
+ "crucible-query",
  "hex",
  "parking_lot",
  "regex",
