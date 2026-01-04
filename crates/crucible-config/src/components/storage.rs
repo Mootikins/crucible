@@ -13,12 +13,14 @@ pub enum StorageMode {
     Daemon,
     /// Lightweight mode without SurrealDB (LanceDB + ripgrep)
     Lightweight,
+    /// SQLite mode (experimental alternative to SurrealDB)
+    Sqlite,
 }
 
 /// Storage configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageConfig {
-    /// Storage mode: "embedded" (default), "daemon", or "lightweight"
+    /// Storage mode: "embedded" (default), "daemon", "lightweight", or "sqlite"
     #[serde(default)]
     pub mode: StorageMode,
 
@@ -86,5 +88,12 @@ mod tests {
         let toml = r#"mode = "lightweight""#;
         let config: StorageConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.mode, StorageMode::Lightweight);
+    }
+
+    #[test]
+    fn test_storage_mode_sqlite_deserialize() {
+        let toml = r#"mode = "sqlite""#;
+        let config: StorageConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.mode, StorageMode::Sqlite);
     }
 }
