@@ -226,6 +226,9 @@ pub enum StorageHandle {
     Daemon(Arc<DaemonStorageClient>),
     /// Lightweight mode (LanceDB vectors + ripgrep text search, no SurrealDB)
     Lightweight(Arc<crucible_lance::LanceNoteStore>),
+    /// SQLite mode (experimental alternative to SurrealDB)
+    #[cfg(feature = "storage-sqlite")]
+    Sqlite(Arc<crucible_sqlite::SqliteNoteStore>),
 }
 
 impl StorageHandle {
@@ -253,6 +256,14 @@ impl StorageHandle {
                      Configure storage.mode = \"embedded\" or \"daemon\" for full query support."
                 )
             }
+            #[cfg(feature = "storage-sqlite")]
+            StorageHandle::Sqlite(_) => {
+                crate::output::storage_warning("SQL queries");
+                anyhow::bail!(
+                    "Raw SQL queries not supported in SQLite mode.\n\
+                     Use NoteStore methods instead, or configure storage.mode = \"embedded\"."
+                )
+            }
         }
     }
 
@@ -272,6 +283,11 @@ impl StorageHandle {
                 "Operation requires SurrealDB. \
                  Configure storage.mode = \"embedded\" or \"daemon\"."
             ),
+            #[cfg(feature = "storage-sqlite")]
+            StorageHandle::Sqlite(_) => panic!(
+                "Operation requires SurrealDB. \
+                 Configure storage.mode = \"embedded\" or \"daemon\"."
+            ),
         }
     }
 
@@ -282,6 +298,8 @@ impl StorageHandle {
         match self {
             StorageHandle::Embedded(h) => Some(h),
             StorageHandle::Daemon(_) | StorageHandle::Lightweight(_) => None,
+            #[cfg(feature = "storage-sqlite")]
+            StorageHandle::Sqlite(_) => None,
         }
     }
 
@@ -298,6 +316,21 @@ impl StorageHandle {
     /// Check if running in lightweight mode
     pub fn is_lightweight(&self) -> bool {
         matches!(self, StorageHandle::Lightweight(_))
+    }
+
+    /// Check if running in SQLite mode
+    #[cfg(feature = "storage-sqlite")]
+    pub fn is_sqlite(&self) -> bool {
+        matches!(self, StorageHandle::Sqlite(_))
+    }
+
+    /// Get the SqliteNoteStore if in SQLite mode
+    #[cfg(feature = "storage-sqlite")]
+    pub fn try_sqlite_note_store(&self) -> Option<&Arc<crucible_sqlite::SqliteNoteStore>> {
+        match self {
+            StorageHandle::Sqlite(store) => Some(store),
+            _ => None,
+        }
     }
 
     /// Get the LanceNoteStore if in lightweight mode
@@ -331,6 +364,8 @@ impl StorageHandle {
             StorageHandle::Embedded(h) => Some(h.as_note_store()),
             StorageHandle::Daemon(_) => None, // TODO: DaemonNoteStoreClient
             StorageHandle::Lightweight(store) => Some(Arc::clone(store) as Arc<dyn NoteStore>),
+            #[cfg(feature = "storage-sqlite")]
+            StorageHandle::Sqlite(store) => Some(Arc::clone(store) as Arc<dyn NoteStore>),
         }
     }
 
@@ -349,6 +384,10 @@ impl StorageHandle {
                 Some(Arc::clone(c) as Arc<dyn crucible_core::traits::KnowledgeRepository>)
             }
             StorageHandle::Lightweight(_) => None,
+            #[cfg(feature = "storage-sqlite")]
+            StorageHandle::Sqlite(store) => Some(crucible_sqlite::create_knowledge_repository(
+                Arc::clone(store),
+            )),
         }
     }
 
@@ -386,6 +425,15 @@ impl StorageHandle {
                 create_surrealdb_storage(config).await
             }
             StorageHandle::Lightweight(_) => {
+                crate::output::storage_warning(operation);
+                anyhow::bail!(
+                    "Operation '{}' requires SurrealDB.\n\
+                     Configure storage.mode = \"embedded\" or \"daemon\".",
+                    operation
+                )
+            }
+            #[cfg(feature = "storage-sqlite")]
+            StorageHandle::Sqlite(_) => {
                 crate::output::storage_warning(operation);
                 anyhow::bail!(
                     "Operation '{}' requires SurrealDB.\n\
@@ -480,6 +528,29 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to create LanceNoteStore: {}", e))?;
             Ok(StorageHandle::Lightweight(Arc::new(store)))
+        }
+        StorageMode::Sqlite => {
+            #[cfg(feature = "storage-sqlite")]
+            {
+                info!("Using SQLite storage mode (experimental)");
+                let sqlite_path = config.kiln_path.join(".crucible").join("crucible.db");
+                let sqlite_config =
+                    crucible_sqlite::SqliteConfig::new(sqlite_path.to_string_lossy().as_ref());
+                let pool = crucible_sqlite::SqlitePool::new(sqlite_config)
+                    .map_err(|e| anyhow::anyhow!("Failed to create SQLite pool: {}", e))?;
+                let store = crucible_sqlite::create_note_store(pool)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to create SQLite NoteStore: {}", e))?;
+                Ok(StorageHandle::Sqlite(Arc::new(store)))
+            }
+            #[cfg(not(feature = "storage-sqlite"))]
+            {
+                anyhow::bail!(
+                    "SQLite storage mode requires the 'storage-sqlite' feature.\n\
+                     Build with: cargo build --features storage-sqlite\n\
+                     Or use storage.mode = \"embedded\" (SurrealDB) instead."
+                )
+            }
         }
     }
 }
