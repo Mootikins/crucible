@@ -97,7 +97,8 @@ pub use events::{
 };
 pub use executor::RuneExecutor;
 pub use graph_module::{
-    graph_module, graph_module_with_executor, graph_module_with_stores, register_note_functions,
+    graph_module, graph_module_with_all, graph_module_with_executor, graph_module_with_stores,
+    register_graph_view_functions, register_note_functions,
 };
 pub use handler::{
     BoxedRingHandler, RingHandler, RingHandlerContext, RingHandlerError, RingHandlerInfo,
