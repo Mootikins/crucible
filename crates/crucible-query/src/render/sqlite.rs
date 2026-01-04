@@ -14,9 +14,9 @@ use crate::render::{QueryRenderer, RenderedQuery};
 use serde_json::Value;
 use std::collections::HashMap;
 
-/// SQLite renderer with configurable table names.
+/// SQLite renderer with configurable table and column names.
 ///
-/// Assumes the following schema:
+/// Assumes the following schema by default:
 /// ```sql
 /// CREATE TABLE notes (
 ///     path TEXT PRIMARY KEY,
@@ -32,11 +32,19 @@ use std::collections::HashMap;
 ///     PRIMARY KEY (source, target, type)
 /// );
 /// ```
+///
+/// Column names can be customized via [`Self::with_schema`] or [`Self::for_crucible_eav`].
 pub struct SqliteRenderer {
     /// Table name for notes
     pub notes_table: String,
     /// Table name for edges
     pub edges_table: String,
+    /// Column name for source entity (default: "source")
+    pub source_column: String,
+    /// Column name for target entity (default: "target")
+    pub target_column: String,
+    /// Column name for edge type (default: "type")
+    pub type_column: String,
 }
 
 impl Default for SqliteRenderer {
@@ -44,17 +52,51 @@ impl Default for SqliteRenderer {
         Self {
             notes_table: "notes".to_string(),
             edges_table: "edges".to_string(),
+            source_column: "source".to_string(),
+            target_column: "target".to_string(),
+            type_column: "type".to_string(),
         }
     }
 }
 
 impl SqliteRenderer {
-    /// Create renderer with custom table names
+    /// Create renderer with custom table names (uses default column names)
     pub fn with_tables(notes: impl Into<String>, edges: impl Into<String>) -> Self {
         Self {
             notes_table: notes.into(),
             edges_table: edges.into(),
+            source_column: "source".to_string(),
+            target_column: "target".to_string(),
+            type_column: "type".to_string(),
         }
+    }
+
+    /// Create renderer with custom table and column names
+    pub fn with_schema(
+        notes_table: impl Into<String>,
+        edges_table: impl Into<String>,
+        source_column: impl Into<String>,
+        target_column: impl Into<String>,
+        type_column: impl Into<String>,
+    ) -> Self {
+        Self {
+            notes_table: notes_table.into(),
+            edges_table: edges_table.into(),
+            source_column: source_column.into(),
+            target_column: target_column.into(),
+            type_column: type_column.into(),
+        }
+    }
+
+    /// Create renderer for Crucible's EAV schema
+    pub fn for_crucible_eav() -> Self {
+        Self::with_schema(
+            "entities",
+            "relations",
+            "from_entity_id",
+            "to_entity_id",
+            "relation_type",
+        )
     }
 
     /// Check if the pattern needs a recursive CTE (has variable-length paths)
@@ -107,24 +149,34 @@ impl SqliteRenderer {
                     let join = match edge.direction {
                         EdgeDirection::Out => {
                             format!(
-                                "JOIN {} {} ON {}.source = {}.path",
-                                self.edges_table, edge_alias, edge_alias, prev_node
+                                "JOIN {} {} ON {}.{} = {}.path",
+                                self.edges_table,
+                                edge_alias,
+                                edge_alias,
+                                self.source_column,
+                                prev_node
                             )
                         }
                         EdgeDirection::In => {
                             format!(
-                                "JOIN {} {} ON {}.target = {}.path",
-                                self.edges_table, edge_alias, edge_alias, prev_node
+                                "JOIN {} {} ON {}.{} = {}.path",
+                                self.edges_table,
+                                edge_alias,
+                                edge_alias,
+                                self.target_column,
+                                prev_node
                             )
                         }
                         EdgeDirection::Both | EdgeDirection::Undirected => {
                             format!(
-                                "JOIN {} {} ON ({}.source = {}.path OR {}.target = {}.path)",
+                                "JOIN {} {} ON ({}.{} = {}.path OR {}.{} = {}.path)",
                                 self.edges_table,
                                 edge_alias,
                                 edge_alias,
+                                self.source_column,
                                 prev_node,
                                 edge_alias,
+                                self.target_column,
                                 prev_node
                             )
                         }
@@ -135,7 +187,10 @@ impl SqliteRenderer {
                     if let Some(etype) = &edge.edge_type {
                         let param_name = format!("edge_type_{}", edge_idx);
                         params.insert(param_name.clone(), Value::String(etype.clone()));
-                        conditions.push(format!("{}.type = :{}", edge_alias, param_name));
+                        conditions.push(format!(
+                            "{}.{} = :{}",
+                            edge_alias, self.type_column, param_name
+                        ));
                     }
 
                     edge_idx += 1;
@@ -216,19 +271,25 @@ impl SqliteRenderer {
 
         // Direction-specific join conditions
         let direction_condition = match direction {
-            EdgeDirection::Out => "e.source = t.path",
-            EdgeDirection::In => "e.target = t.path",
+            EdgeDirection::Out => format!("e.{} = t.path", self.source_column),
+            EdgeDirection::In => format!("e.{} = t.path", self.target_column),
             EdgeDirection::Both | EdgeDirection::Undirected => {
-                "(e.source = t.path OR e.target = t.path)"
+                format!(
+                    "(e.{} = t.path OR e.{} = t.path)",
+                    self.source_column, self.target_column
+                )
             }
         };
 
         // Next node expression
         let next_node = match direction {
-            EdgeDirection::Out => "e.target",
-            EdgeDirection::In => "e.source",
+            EdgeDirection::Out => format!("e.{}", self.target_column),
+            EdgeDirection::In => format!("e.{}", self.source_column),
             EdgeDirection::Both | EdgeDirection::Undirected => {
-                "CASE WHEN e.source = t.path THEN e.target ELSE e.source END"
+                format!(
+                    "CASE WHEN e.{} = t.path THEN e.{} ELSE e.{} END",
+                    self.source_column, self.target_column, self.source_column
+                )
             }
         };
 
@@ -236,7 +297,7 @@ impl SqliteRenderer {
         let edge_filter = match edge_type {
             Some(t) => {
                 params.insert("edge_type".to_string(), Value::String(t.to_string()));
-                " AND e.type = :edge_type".to_string()
+                format!(" AND e.{} = :edge_type", self.type_column)
             }
             None => String::new(),
         };
@@ -467,15 +528,18 @@ WHERE t.depth >= {min_depth}{exclude_source}"#,
                         let edge_alias = format!("e{}", i);
                         full_from.push_str(&format!(
                             "\nJOIN {} {} ON {}.path = CASE \
-                             WHEN {}.source = {}.path THEN {}.target \
-                             ELSE {}.source END",
+                             WHEN {}.{} = {}.path THEN {}.{} \
+                             ELSE {}.{} END",
                             self.notes_table,
                             next_alias,
                             next_alias,
                             edge_alias,
+                            self.source_column,
                             node_aliases[i],
                             edge_alias,
-                            edge_alias
+                            self.target_column,
+                            edge_alias,
+                            self.source_column
                         ));
                     }
                 }
@@ -989,5 +1053,117 @@ mod tests {
         let result = renderer.render(&ir).unwrap();
 
         assert!(result.sql.contains("FROM documents"));
+    }
+
+    // =========================================================================
+    // Custom column names
+    // =========================================================================
+
+    #[test]
+    fn test_crucible_eav_schema() {
+        let renderer = SqliteRenderer::for_crucible_eav();
+        let ir = GraphIR {
+            source: QuerySource::ByTitle("Index".to_string()),
+            pattern: GraphPattern {
+                elements: vec![
+                    PatternElement::Node(NodePattern {
+                        alias: Some("a".to_string()),
+                        ..Default::default()
+                    }),
+                    PatternElement::Edge(EdgePattern {
+                        direction: EdgeDirection::Out,
+                        edge_type: Some("wikilink".to_string()),
+                        ..Default::default()
+                    }),
+                    PatternElement::Node(NodePattern {
+                        alias: Some("b".to_string()),
+                        ..Default::default()
+                    }),
+                ],
+            },
+            ..Default::default()
+        };
+
+        let result = renderer.render(&ir).unwrap();
+
+        assert!(result.sql.contains("FROM entities"));
+        assert!(result.sql.contains("JOIN relations"));
+        assert!(result.sql.contains("from_entity_id"));
+        assert!(result.sql.contains("relation_type"));
+    }
+
+    #[test]
+    fn test_custom_columns_with_schema() {
+        let renderer = SqliteRenderer::with_schema(
+            "nodes",
+            "edges",
+            "src",
+            "dst",
+            "edge_kind",
+        );
+        let ir = GraphIR {
+            source: QuerySource::ByTitle("Test".to_string()),
+            pattern: GraphPattern {
+                elements: vec![
+                    PatternElement::Node(NodePattern {
+                        alias: Some("a".to_string()),
+                        ..Default::default()
+                    }),
+                    PatternElement::Edge(EdgePattern {
+                        direction: EdgeDirection::Out,
+                        edge_type: Some("link".to_string()),
+                        ..Default::default()
+                    }),
+                    PatternElement::Node(NodePattern {
+                        alias: Some("b".to_string()),
+                        ..Default::default()
+                    }),
+                ],
+            },
+            ..Default::default()
+        };
+
+        let result = renderer.render(&ir).unwrap();
+
+        assert!(result.sql.contains("FROM nodes"));
+        assert!(result.sql.contains("JOIN edges"));
+        assert!(result.sql.contains("e0.src"));
+        assert!(result.sql.contains("e0.edge_kind"));
+    }
+
+    #[test]
+    fn test_crucible_eav_recursive() {
+        let renderer = SqliteRenderer::for_crucible_eav();
+        let ir = GraphIR {
+            source: QuerySource::ByPath("index.md".to_string()),
+            pattern: GraphPattern {
+                elements: vec![
+                    PatternElement::Node(NodePattern {
+                        alias: Some("a".to_string()),
+                        ..Default::default()
+                    }),
+                    PatternElement::Edge(EdgePattern {
+                        direction: EdgeDirection::Out,
+                        edge_type: Some("wikilink".to_string()),
+                        quantifier: Some(Quantifier::OneOrMore),
+                        ..Default::default()
+                    }),
+                    PatternElement::Node(NodePattern {
+                        alias: Some("b".to_string()),
+                        ..Default::default()
+                    }),
+                ],
+            },
+            ..Default::default()
+        };
+
+        let result = renderer.render(&ir).unwrap();
+
+        // Verify recursive CTE uses custom column names
+        assert!(result.sql.contains("WITH RECURSIVE traverse"));
+        assert!(result.sql.contains("JOIN relations"));
+        assert!(result.sql.contains("e.from_entity_id"));
+        assert!(result.sql.contains("e.to_entity_id"));
+        assert!(result.sql.contains("e.relation_type"));
     }
 }
