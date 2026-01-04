@@ -141,6 +141,7 @@ async fn execute_mode(config: &CliConfig) -> Result<()> {
         StorageMode::Embedded => "embedded (full)",
         StorageMode::Daemon => "daemon",
         StorageMode::Lightweight => "lightweight",
+        StorageMode::Sqlite => "sqlite (experimental)",
     };
 
     println!("  Current mode: {}", mode_name);
@@ -161,6 +162,11 @@ async fn execute_mode(config: &CliConfig) -> Result<()> {
             println!("  Description: Client-server mode with shared database");
             println!("  Backend: SurrealDB daemon process");
             println!("  Use case: Multiple concurrent CLI sessions");
+        }
+        StorageMode::Sqlite => {
+            println!("  Description: Lightweight SQLite-based storage (experimental)");
+            println!("  Backend: SQLite with FTS5 full-text search");
+            println!("  Use case: Testing alternative to SurrealDB");
         }
     }
 
