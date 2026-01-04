@@ -1,9 +1,22 @@
 //! Search operations tools
 //!
 //! This module provides semantic, text, and property search tools.
+//!
+//! # NoteStore Integration
+//!
+//! `SearchTools` can optionally use a `NoteStore` for property searches. When a
+//! `NoteStore` is provided, `property_search` uses the indexed metadata instead of
+//! walking the filesystem. This provides:
+//!
+//! - Faster queries on large kilns
+//! - Consistent data from the indexed store
+//! - Support for complex filters via `NoteStore::search`
+//!
+//! If no `NoteStore` is provided, property search falls back to filesystem scanning.
 
 #![allow(clippy::doc_markdown, clippy::manual_let_else, missing_docs)]
 
+use crucible_core::storage::NoteStore;
 use crucible_core::{enrichment::EmbeddingProvider, traits::KnowledgeRepository};
 use crucible_skills::storage::SkillStore;
 use grep::regex::RegexMatcher;
@@ -41,6 +54,8 @@ pub struct SearchTools {
     knowledge_repo: Arc<dyn KnowledgeRepository>,
     embedding_provider: Arc<dyn EmbeddingProvider>,
     skill_store: Option<Arc<SkillStore>>,
+    /// Optional NoteStore for indexed property searches
+    note_store: Option<Arc<dyn NoteStore>>,
 }
 
 /// Parameters for semantic search
@@ -85,6 +100,7 @@ impl SearchTools {
             knowledge_repo,
             embedding_provider,
             skill_store: None,
+            note_store: None,
         }
     }
 
@@ -101,6 +117,43 @@ impl SearchTools {
             knowledge_repo,
             embedding_provider,
             skill_store: Some(skill_store),
+            note_store: None,
+        }
+    }
+
+    /// Create SearchTools with NoteStore for optimized property searches
+    ///
+    /// When a NoteStore is provided, `property_search` uses the indexed metadata
+    /// instead of walking the filesystem, providing faster queries on large kilns.
+    pub fn with_note_store(
+        kiln_path: String,
+        knowledge_repo: Arc<dyn KnowledgeRepository>,
+        embedding_provider: Arc<dyn EmbeddingProvider>,
+        note_store: Arc<dyn NoteStore>,
+    ) -> Self {
+        Self {
+            kiln_path,
+            knowledge_repo,
+            embedding_provider,
+            skill_store: None,
+            note_store: Some(note_store),
+        }
+    }
+
+    /// Create SearchTools with both SkillStore and NoteStore
+    pub fn with_stores(
+        kiln_path: String,
+        knowledge_repo: Arc<dyn KnowledgeRepository>,
+        embedding_provider: Arc<dyn EmbeddingProvider>,
+        skill_store: Arc<SkillStore>,
+        note_store: Arc<dyn NoteStore>,
+    ) -> Self {
+        Self {
+            kiln_path,
+            knowledge_repo,
+            embedding_provider,
+            skill_store: Some(skill_store),
+            note_store: Some(note_store),
         }
     }
 }
@@ -298,6 +351,90 @@ impl SearchTools {
             .ok_or_else(|| rmcp::ErrorData::invalid_params("properties must be an object", None))?;
         let limit = params.limit;
 
+        // Use NoteStore if available for faster indexed access
+        if let Some(ref note_store) = self.note_store {
+            return self
+                .property_search_via_store(note_store, search_props, limit, &params.properties)
+                .await;
+        }
+
+        // Fall back to filesystem-based search
+        self.property_search_via_filesystem(search_props, limit, &params.properties)
+            .await
+    }
+
+    /// Property search using NoteStore index
+    async fn property_search_via_store(
+        &self,
+        note_store: &Arc<dyn NoteStore>,
+        search_props: &serde_json::Map<String, serde_json::Value>,
+        limit: usize,
+        original_properties: &serde_json::Value,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        // Get all notes from the store
+        let all_notes = note_store.list().await.map_err(|e| {
+            rmcp::ErrorData::internal_error(format!("Failed to list notes from store: {e}"), None)
+        })?;
+
+        let mut matches = Vec::new();
+
+        for note in all_notes {
+            // Check if all search properties match against the note's properties
+            let matches_all = search_props.iter().all(|(key, search_value)| {
+                // Special handling for tags - check the tags field directly
+                if key == "tags" {
+                    return match_tags_property(&note.tags, search_value);
+                }
+
+                // Check in properties map
+                note.properties.get(key).is_some_and(|prop_value| {
+                    property_matches(prop_value, search_value)
+                })
+            });
+
+            if matches_all {
+                // Convert NoteRecord properties to JSON for consistent response format
+                let frontmatter: serde_json::Value = serde_json::json!({
+                    "title": note.title,
+                    "tags": note.tags,
+                });
+
+                // Merge with other properties
+                let mut frontmatter_obj = frontmatter.as_object().cloned().unwrap_or_default();
+                for (k, v) in &note.properties {
+                    frontmatter_obj.insert(k.clone(), v.clone());
+                }
+
+                matches.push(serde_json::json!({
+                    "path": note.path,
+                    "frontmatter": frontmatter_obj,
+                    "source": "index",
+                }));
+
+                if matches.len() >= limit {
+                    break;
+                }
+            }
+        }
+
+        let count = matches.len();
+
+        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
+            serde_json::json!({
+                "properties": original_properties,
+                "matches": matches,
+                "count": count,
+            }),
+        )?]))
+    }
+
+    /// Property search using filesystem scanning (fallback)
+    async fn property_search_via_filesystem(
+        &self,
+        search_props: &serde_json::Map<String, serde_json::Value>,
+        limit: usize,
+        original_properties: &serde_json::Value,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
         let mut matches = Vec::new();
 
         // Walk all markdown files
@@ -322,20 +459,7 @@ impl SearchTools {
             // Check if all search properties match
             let matches_all = search_props.iter().all(|(key, search_value)| {
                 frontmatter.get(key).is_some_and(|prop_value| {
-                    // Handle array values as OR logic
-                    if let Some(search_array) = search_value.as_array() {
-                        // Property value must match any of the search values
-                        if let Some(prop_array) = prop_value.as_array() {
-                            // Array intersection
-                            search_array.iter().any(|sv| prop_array.contains(sv))
-                        } else {
-                            // Single value must match any search value
-                            search_array.contains(prop_value)
-                        }
-                    } else {
-                        // Exact match
-                        prop_value == search_value
-                    }
+                    property_matches(prop_value, search_value)
                 })
             });
 
@@ -366,11 +490,48 @@ impl SearchTools {
 
         Ok(CallToolResult::success(vec![rmcp::model::Content::json(
             serde_json::json!({
-                "properties": params.properties,
+                "properties": original_properties,
                 "matches": matches,
                 "count": count,
             }),
         )?]))
+    }
+}
+
+/// Check if a property value matches a search value
+fn property_matches(prop_value: &serde_json::Value, search_value: &serde_json::Value) -> bool {
+    // Handle array values as OR logic
+    if let Some(search_array) = search_value.as_array() {
+        // Property value must match any of the search values
+        if let Some(prop_array) = prop_value.as_array() {
+            // Array intersection
+            search_array.iter().any(|sv| prop_array.contains(sv))
+        } else {
+            // Single value must match any search value
+            search_array.contains(prop_value)
+        }
+    } else {
+        // Exact match
+        prop_value == search_value
+    }
+}
+
+/// Check if tags match a search value (special handling for NoteRecord.tags)
+fn match_tags_property(tags: &[String], search_value: &serde_json::Value) -> bool {
+    if let Some(search_array) = search_value.as_array() {
+        // OR logic: any search tag matches any note tag
+        search_array.iter().any(|sv| {
+            if let Some(s) = sv.as_str() {
+                tags.contains(&s.to_string())
+            } else {
+                false
+            }
+        })
+    } else if let Some(search_str) = search_value.as_str() {
+        // Single tag match
+        tags.contains(&search_str.to_string())
+    } else {
+        false
     }
 }
 
@@ -883,5 +1044,421 @@ mod tests {
             "Schema compatibility issues:\n{}",
             errors.join("\n")
         );
+    }
+}
+
+// ===== NoteStore Integration Tests =====
+// These tests verify the property_search NoteStore code path works correctly
+
+#[cfg(test)]
+mod note_store_tests {
+    use super::*;
+    use async_trait::async_trait;
+    use chrono::Utc;
+    use crucible_core::parser::BlockHash;
+    use crucible_core::storage::{Filter, NoteRecord, StorageResult};
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    use tempfile::TempDir;
+
+    // Mock implementations for testing
+    struct MockKnowledgeRepository;
+    struct MockEmbeddingProvider;
+
+    #[async_trait]
+    impl crucible_core::traits::KnowledgeRepository for MockKnowledgeRepository {
+        async fn get_note_by_name(
+            &self,
+            _name: &str,
+        ) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
+            Ok(None)
+        }
+
+        async fn list_notes(
+            &self,
+            _path: Option<&str>,
+        ) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteInfo>> {
+            Ok(vec![])
+        }
+
+        async fn search_vectors(
+            &self,
+            _vector: Vec<f32>,
+        ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
+            Ok(vec![])
+        }
+    }
+
+    #[async_trait]
+    impl crucible_core::enrichment::EmbeddingProvider for MockEmbeddingProvider {
+        async fn embed(&self, _text: &str) -> anyhow::Result<Vec<f32>> {
+            Ok(vec![0.1; 384])
+        }
+
+        async fn embed_batch(&self, _texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
+            Ok(vec![vec![0.1; 384]; _texts.len()])
+        }
+
+        fn model_name(&self) -> &'static str {
+            "mock-model"
+        }
+
+        fn dimensions(&self) -> usize {
+            384
+        }
+    }
+
+    /// Mock NoteStore for testing the NoteStore integration path
+    struct MockNoteStore {
+        notes: Mutex<HashMap<String, NoteRecord>>,
+    }
+
+    impl MockNoteStore {
+        fn new() -> Self {
+            Self {
+                notes: Mutex::new(HashMap::new()),
+            }
+        }
+
+        fn add_note(&self, record: NoteRecord) {
+            let mut notes = self.notes.lock().unwrap();
+            notes.insert(record.path.clone(), record);
+        }
+    }
+
+    #[async_trait]
+    impl NoteStore for MockNoteStore {
+        async fn upsert(&self, note: NoteRecord) -> StorageResult<()> {
+            self.add_note(note);
+            Ok(())
+        }
+
+        async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
+            let notes = self.notes.lock().unwrap();
+            Ok(notes.get(path).cloned())
+        }
+
+        async fn delete(&self, path: &str) -> StorageResult<()> {
+            let mut notes = self.notes.lock().unwrap();
+            notes.remove(path);
+            Ok(())
+        }
+
+        async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
+            let notes = self.notes.lock().unwrap();
+            Ok(notes.values().cloned().collect())
+        }
+
+        async fn get_by_hash(&self, _hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
+            Ok(None)
+        }
+
+        async fn search(
+            &self,
+            _embedding: &[f32],
+            _k: usize,
+            _filter: Option<Filter>,
+        ) -> StorageResult<Vec<crucible_core::storage::note_store::SearchResult>> {
+            Ok(vec![])
+        }
+    }
+
+    fn create_search_tools_with_store(
+        kiln_path: String,
+        note_store: Arc<dyn NoteStore>,
+    ) -> SearchTools {
+        let knowledge_repo = Arc::new(MockKnowledgeRepository);
+        let embedding_provider = Arc::new(MockEmbeddingProvider);
+        SearchTools::with_note_store(kiln_path, knowledge_repo, embedding_provider, note_store)
+    }
+
+    #[tokio::test]
+    async fn test_property_search_uses_note_store() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+
+        // Create a mock NoteStore with notes having properties
+        let mock_store = Arc::new(MockNoteStore::new());
+
+        let mut props1 = HashMap::new();
+        props1.insert("status".to_string(), serde_json::json!("draft"));
+
+        mock_store.add_note(NoteRecord {
+            path: "draft-note.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: None,
+            title: "Draft Note".to_string(),
+            tags: vec!["work".to_string()],
+            links_to: vec![],
+            properties: props1,
+            updated_at: Utc::now(),
+        });
+
+        let mut props2 = HashMap::new();
+        props2.insert("status".to_string(), serde_json::json!("published"));
+
+        mock_store.add_note(NoteRecord {
+            path: "published-note.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: None,
+            title: "Published Note".to_string(),
+            tags: vec!["blog".to_string()],
+            links_to: vec![],
+            properties: props2,
+            updated_at: Utc::now(),
+        });
+
+        let search_tools = create_search_tools_with_store(kiln_path, mock_store);
+
+        // Search for draft notes
+        let result = search_tools
+            .property_search(Parameters(PropertySearchParams {
+                properties: serde_json::json!({"status": "draft"}),
+                limit: 10,
+            }))
+            .await;
+
+        assert!(result.is_ok(), "property_search should succeed");
+
+        let call_result = result.unwrap();
+        if let Some(content) = call_result.content.first() {
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+
+                assert_eq!(parsed["count"], 1);
+                let matches = parsed["matches"].as_array().unwrap();
+                assert_eq!(matches.len(), 1);
+
+                // Verify source is from index
+                assert_eq!(matches[0]["source"], "index");
+                assert!(matches[0]["path"].as_str().unwrap().contains("draft"));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_property_search_by_tags_uses_note_store() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+
+        // Create a mock NoteStore with tagged notes
+        let mock_store = Arc::new(MockNoteStore::new());
+
+        mock_store.add_note(NoteRecord {
+            path: "rust-note.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: None,
+            title: "Rust Note".to_string(),
+            tags: vec!["rust".to_string(), "programming".to_string()],
+            links_to: vec![],
+            properties: HashMap::new(),
+            updated_at: Utc::now(),
+        });
+
+        mock_store.add_note(NoteRecord {
+            path: "python-note.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: None,
+            title: "Python Note".to_string(),
+            tags: vec!["python".to_string(), "programming".to_string()],
+            links_to: vec![],
+            properties: HashMap::new(),
+            updated_at: Utc::now(),
+        });
+
+        mock_store.add_note(NoteRecord {
+            path: "cooking-note.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: None,
+            title: "Cooking Note".to_string(),
+            tags: vec!["cooking".to_string(), "recipes".to_string()],
+            links_to: vec![],
+            properties: HashMap::new(),
+            updated_at: Utc::now(),
+        });
+
+        let search_tools = create_search_tools_with_store(kiln_path, mock_store);
+
+        // Search for notes with "rust" or "python" tags (OR logic)
+        let result = search_tools
+            .property_search(Parameters(PropertySearchParams {
+                properties: serde_json::json!({"tags": ["rust", "python"]}),
+                limit: 10,
+            }))
+            .await;
+
+        assert!(result.is_ok(), "property_search should succeed");
+
+        let call_result = result.unwrap();
+        if let Some(content) = call_result.content.first() {
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+
+                // Should match both rust and python notes (OR logic)
+                assert_eq!(parsed["count"], 2);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_property_search_single_tag() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+
+        let mock_store = Arc::new(MockNoteStore::new());
+
+        mock_store.add_note(NoteRecord {
+            path: "tagged.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: None,
+            title: "Tagged Note".to_string(),
+            tags: vec!["important".to_string()],
+            links_to: vec![],
+            properties: HashMap::new(),
+            updated_at: Utc::now(),
+        });
+
+        mock_store.add_note(NoteRecord {
+            path: "untagged.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: None,
+            title: "Untagged Note".to_string(),
+            tags: vec![],
+            links_to: vec![],
+            properties: HashMap::new(),
+            updated_at: Utc::now(),
+        });
+
+        let search_tools = create_search_tools_with_store(kiln_path, mock_store);
+
+        // Search for notes with "important" tag (single string)
+        let result = search_tools
+            .property_search(Parameters(PropertySearchParams {
+                properties: serde_json::json!({"tags": "important"}),
+                limit: 10,
+            }))
+            .await;
+
+        assert!(result.is_ok());
+
+        let call_result = result.unwrap();
+        if let Some(content) = call_result.content.first() {
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+                assert_eq!(parsed["count"], 1);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_property_search_multiple_properties_and_logic() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+
+        let mock_store = Arc::new(MockNoteStore::new());
+
+        let mut props1 = HashMap::new();
+        props1.insert("status".to_string(), serde_json::json!("draft"));
+        props1.insert("priority".to_string(), serde_json::json!("high"));
+
+        mock_store.add_note(NoteRecord {
+            path: "high-priority-draft.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: None,
+            title: "High Priority Draft".to_string(),
+            tags: vec![],
+            links_to: vec![],
+            properties: props1,
+            updated_at: Utc::now(),
+        });
+
+        let mut props2 = HashMap::new();
+        props2.insert("status".to_string(), serde_json::json!("draft"));
+        props2.insert("priority".to_string(), serde_json::json!("low"));
+
+        mock_store.add_note(NoteRecord {
+            path: "low-priority-draft.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: None,
+            title: "Low Priority Draft".to_string(),
+            tags: vec![],
+            links_to: vec![],
+            properties: props2,
+            updated_at: Utc::now(),
+        });
+
+        let search_tools = create_search_tools_with_store(kiln_path, mock_store);
+
+        // Search for draft AND high priority (AND logic between properties)
+        let result = search_tools
+            .property_search(Parameters(PropertySearchParams {
+                properties: serde_json::json!({"status": "draft", "priority": "high"}),
+                limit: 10,
+            }))
+            .await;
+
+        assert!(result.is_ok());
+
+        let call_result = result.unwrap();
+        if let Some(content) = call_result.content.first() {
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+
+                // Should only match the high priority draft
+                assert_eq!(parsed["count"], 1);
+                let matches = parsed["matches"].as_array().unwrap();
+                assert!(matches[0]["path"]
+                    .as_str()
+                    .unwrap()
+                    .contains("high-priority"));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_property_search_respects_limit() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+
+        let mock_store = Arc::new(MockNoteStore::new());
+
+        // Add multiple notes with same status
+        for i in 0..5 {
+            let mut props = HashMap::new();
+            props.insert("status".to_string(), serde_json::json!("draft"));
+
+            mock_store.add_note(NoteRecord {
+                path: format!("note{i}.md"),
+                content_hash: BlockHash::zero(),
+                embedding: None,
+                title: format!("Note {i}"),
+                tags: vec![],
+                links_to: vec![],
+                properties: props,
+                updated_at: Utc::now(),
+            });
+        }
+
+        let search_tools = create_search_tools_with_store(kiln_path, mock_store);
+
+        // Search with limit of 3
+        let result = search_tools
+            .property_search(Parameters(PropertySearchParams {
+                properties: serde_json::json!({"status": "draft"}),
+                limit: 3,
+            }))
+            .await;
+
+        assert!(result.is_ok());
+
+        let call_result = result.unwrap();
+        if let Some(content) = call_result.content.first() {
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+
+                // Should respect the limit
+                assert_eq!(parsed["count"], 3);
+            }
+        }
     }
 }

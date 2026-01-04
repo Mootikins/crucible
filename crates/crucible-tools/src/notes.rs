@@ -1,14 +1,27 @@
 //! Note CRUD operations tools
 //!
 //! This module provides simple filesystem-based note CRUD tools.
+//!
+//! # NoteStore Integration
+//!
+//! `NoteTools` can optionally use a `NoteStore` for faster metadata reads. When a
+//! `NoteStore` is provided:
+//!
+//! - `read_metadata` uses the indexed metadata instead of parsing from filesystem
+//! - `list_notes` uses the indexed note list for faster directory listing
+//!
+//! CRUD operations (create, read, update, delete) always use the filesystem directly
+//! since the filesystem is the source of truth.
 
 #![allow(missing_docs)]
 
+use crucible_core::storage::NoteStore;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{model::CallToolResult, tool, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::path::Path;
+use std::sync::Arc;
 use walkdir::WalkDir;
 
 /// Custom schema for optional JSON object (used for frontmatter fields).
@@ -25,6 +38,8 @@ fn optional_json_object_schema(_gen: &mut schemars::SchemaGenerator) -> schemars
 #[allow(missing_docs)]
 pub struct NoteTools {
     kiln_path: String,
+    /// Optional NoteStore for faster metadata reads
+    note_store: Option<Arc<dyn NoteStore>>,
 }
 
 fn ensure_md_suffix(path: String) -> String {
@@ -98,7 +113,22 @@ impl NoteTools {
     #[allow(missing_docs)]
     #[must_use]
     pub fn new(kiln_path: String) -> Self {
-        Self { kiln_path }
+        Self {
+            kiln_path,
+            note_store: None,
+        }
+    }
+
+    /// Create NoteTools with a NoteStore for faster metadata operations
+    ///
+    /// When a NoteStore is provided, `read_metadata` and `list_notes` use the
+    /// indexed metadata instead of parsing from the filesystem.
+    #[must_use]
+    pub fn with_note_store(kiln_path: String, note_store: Arc<dyn NoteStore>) -> Self {
+        Self {
+            kiln_path,
+            note_store: Some(note_store),
+        }
     }
 }
 
@@ -208,6 +238,47 @@ impl NoteTools {
         // Security: Validate path to prevent traversal attacks
         let full_path = validate_path_within_kiln(&self.kiln_path, &path)?;
 
+        // Try NoteStore first for faster indexed access
+        if let Some(ref note_store) = self.note_store {
+            if let Ok(Some(note_record)) = note_store.get(&path).await {
+                // Build frontmatter from NoteRecord
+                let mut frontmatter = serde_json::json!({
+                    "title": note_record.title,
+                    "tags": note_record.tags,
+                });
+
+                // Merge additional properties
+                if let Some(obj) = frontmatter.as_object_mut() {
+                    for (k, v) in &note_record.properties {
+                        obj.insert(k.clone(), v.clone());
+                    }
+                }
+
+                let modified = note_record
+                    .updated_at
+                    .timestamp()
+                    .try_into()
+                    .ok()
+                    .map(|ts: u64| ts);
+
+                return Ok(CallToolResult::success(vec![rmcp::model::Content::json(
+                    serde_json::json!({
+                        "path": path,
+                        "frontmatter": frontmatter,
+                        "stats": {
+                            "links_count": note_record.links_to.len(),
+                            "tags_count": note_record.tags.len(),
+                            "has_embedding": note_record.has_embedding(),
+                        },
+                        "modified": modified,
+                        "source": "index"
+                    }),
+                )?]));
+            }
+            // Note not found in store, fall through to filesystem
+        }
+
+        // Fallback: read from filesystem
         if !full_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
                 format!("File not found: {path}"),
@@ -377,7 +448,7 @@ impl NoteTools {
         params: Parameters<ListNotesParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
-        let folder = params.folder;
+        let folder = params.folder.clone();
         let include_frontmatter = params.include_frontmatter;
         let recursive = params.recursive;
 
@@ -391,11 +462,119 @@ impl NoteTools {
             ));
         }
 
+        // Try NoteStore first for faster indexed access
+        if let Some(ref note_store) = self.note_store {
+            return self
+                .list_notes_via_store(
+                    note_store,
+                    folder.as_deref(),
+                    include_frontmatter,
+                    recursive,
+                )
+                .await;
+        }
+
+        // Fallback: list from filesystem
+        self.list_notes_via_filesystem(&search_path, folder.as_deref(), include_frontmatter, recursive)
+            .await
+    }
+
+    /// List notes using NoteStore index
+    async fn list_notes_via_store(
+        &self,
+        note_store: &Arc<dyn NoteStore>,
+        folder: Option<&str>,
+        include_frontmatter: bool,
+        recursive: bool,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let all_notes = note_store.list().await.map_err(|e| {
+            rmcp::ErrorData::internal_error(format!("Failed to list notes from store: {e}"), None)
+        })?;
+
+        let folder_prefix = folder.unwrap_or("");
+        let mut notes = Vec::new();
+
+        for note in all_notes {
+            // Filter by folder
+            if !folder_prefix.is_empty() {
+                if !note.path.starts_with(folder_prefix) {
+                    continue;
+                }
+
+                // Non-recursive: check if note is in the immediate folder
+                if !recursive {
+                    let relative_to_folder = note.path.strip_prefix(folder_prefix).unwrap_or(&note.path);
+                    let relative_to_folder = relative_to_folder.trim_start_matches('/');
+                    // If there's a / in the relative path, it's in a subfolder
+                    if relative_to_folder.contains('/') {
+                        continue;
+                    }
+                }
+            } else if !recursive {
+                // Non-recursive at root: only top-level files
+                if note.path.contains('/') {
+                    continue;
+                }
+            }
+
+            let modified: Option<u64> = note
+                .updated_at
+                .timestamp()
+                .try_into()
+                .ok();
+
+            let mut note_json = serde_json::json!({
+                "path": note.path,
+                "title": note.title,
+                "modified": modified,
+                "source": "index"
+            });
+
+            if include_frontmatter {
+                // Build frontmatter from NoteRecord
+                let mut frontmatter = serde_json::json!({
+                    "title": note.title,
+                    "tags": note.tags,
+                });
+
+                if let Some(obj) = frontmatter.as_object_mut() {
+                    for (k, v) in &note.properties {
+                        obj.insert(k.clone(), v.clone());
+                    }
+                }
+
+                note_json["frontmatter"] = frontmatter;
+                note_json["tags_count"] = serde_json::json!(note.tags.len());
+                note_json["links_count"] = serde_json::json!(note.links_to.len());
+            }
+
+            notes.push(note_json);
+        }
+
+        Ok(CallToolResult::success(vec![rmcp::model::Content::json(
+            serde_json::json!({
+                "notes": notes,
+                "folder": folder,
+                "count": notes.len(),
+                "recursive": recursive,
+                "source": "index"
+            }),
+        )?]))
+    }
+
+    /// List notes using filesystem scanning (fallback)
+    async fn list_notes_via_filesystem(
+        &self,
+        search_path: &std::path::Path,
+        folder: Option<&str>,
+        include_frontmatter: bool,
+        recursive: bool,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
         let mut notes = Vec::new();
 
         // Use WalkDir for recursive or std::fs::read_dir for non-recursive
         if recursive {
-            for entry in WalkDir::new(&search_path)
+            for entry in WalkDir::new(search_path)
                 .follow_links(false)
                 .into_iter()
                 .filter_map(std::result::Result::ok)
@@ -432,7 +611,7 @@ impl NoteTools {
             }
         } else {
             // Non-recursive: just immediate children
-            for entry in std::fs::read_dir(&search_path).map_err(|e| {
+            for entry in std::fs::read_dir(search_path).map_err(|e| {
                 rmcp::ErrorData::internal_error(format!("Failed to read directory: {e}"), None)
             })? {
                 let entry = entry.map_err(|e| {
@@ -1649,5 +1828,347 @@ mod tests {
             .await;
 
         assert!(result.is_ok(), "Should allow valid nested path");
+    }
+}
+
+// ===== NoteStore Integration Tests =====
+// These tests verify the NoteStore code path works correctly
+
+#[cfg(test)]
+mod note_store_tests {
+    use super::*;
+    use async_trait::async_trait;
+    use chrono::Utc;
+    use crucible_core::parser::BlockHash;
+    use crucible_core::storage::{Filter, NoteRecord, StorageResult};
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    use tempfile::TempDir;
+
+    /// Mock NoteStore for testing the NoteStore integration path
+    struct MockNoteStore {
+        notes: Mutex<HashMap<String, NoteRecord>>,
+    }
+
+    impl MockNoteStore {
+        fn new() -> Self {
+            Self {
+                notes: Mutex::new(HashMap::new()),
+            }
+        }
+
+        fn add_note(&self, record: NoteRecord) {
+            let mut notes = self.notes.lock().unwrap();
+            notes.insert(record.path.clone(), record);
+        }
+    }
+
+    #[async_trait]
+    impl NoteStore for MockNoteStore {
+        async fn upsert(&self, note: NoteRecord) -> StorageResult<()> {
+            self.add_note(note);
+            Ok(())
+        }
+
+        async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
+            let notes = self.notes.lock().unwrap();
+            Ok(notes.get(path).cloned())
+        }
+
+        async fn delete(&self, path: &str) -> StorageResult<()> {
+            let mut notes = self.notes.lock().unwrap();
+            notes.remove(path);
+            Ok(())
+        }
+
+        async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
+            let notes = self.notes.lock().unwrap();
+            Ok(notes.values().cloned().collect())
+        }
+
+        async fn get_by_hash(&self, _hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
+            Ok(None)
+        }
+
+        async fn search(
+            &self,
+            _embedding: &[f32],
+            _k: usize,
+            _filter: Option<Filter>,
+        ) -> StorageResult<Vec<crucible_core::storage::note_store::SearchResult>> {
+            Ok(vec![])
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_metadata_uses_note_store() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+
+        // Create a mock NoteStore with a pre-populated note
+        let mock_store = Arc::new(MockNoteStore::new());
+
+        let mut properties = HashMap::new();
+        properties.insert("status".to_string(), serde_json::json!("published"));
+
+        mock_store.add_note(NoteRecord {
+            path: "test.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: Some(vec![0.1; 384]),
+            title: "Test Note from Index".to_string(),
+            tags: vec!["rust".to_string(), "test".to_string()],
+            links_to: vec!["other.md".to_string()],
+            properties,
+            updated_at: Utc::now(),
+        });
+
+        // Create NoteTools with the mock store
+        let note_tools = NoteTools::with_note_store(kiln_path, mock_store);
+
+        // Read metadata - should use the NoteStore, not filesystem
+        let result = note_tools
+            .read_metadata(Parameters(ReadMetadataParams {
+                path: "test.md".to_string(),
+            }))
+            .await;
+
+        assert!(result.is_ok(), "read_metadata should succeed");
+
+        let call_result = result.unwrap();
+        if let Some(content) = call_result.content.first() {
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+
+                // Verify data came from NoteStore (has "source": "index")
+                assert_eq!(parsed["source"], "index", "Should indicate index source");
+                assert_eq!(parsed["frontmatter"]["title"], "Test Note from Index");
+                assert_eq!(parsed["frontmatter"]["status"], "published");
+
+                // Verify stats from NoteStore
+                assert_eq!(parsed["stats"]["links_count"], 1);
+                assert_eq!(parsed["stats"]["tags_count"], 2);
+                assert_eq!(parsed["stats"]["has_embedding"], true);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_metadata_fallback_to_filesystem() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+
+        // Create a mock NoteStore that doesn't have the note
+        let mock_store = Arc::new(MockNoteStore::new());
+
+        // Create a file on the filesystem
+        let note_content = "---\ntitle: Filesystem Note\ntags: [fs]\n---\n\n# Content";
+        std::fs::write(temp_dir.path().join("fs-note.md"), note_content).unwrap();
+
+        // Create NoteTools with the mock store
+        let note_tools = NoteTools::with_note_store(kiln_path, mock_store);
+
+        // Read metadata - should fall back to filesystem since note not in store
+        let result = note_tools
+            .read_metadata(Parameters(ReadMetadataParams {
+                path: "fs-note.md".to_string(),
+            }))
+            .await;
+
+        assert!(result.is_ok(), "read_metadata should succeed via fallback");
+
+        let call_result = result.unwrap();
+        if let Some(content) = call_result.content.first() {
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+
+                // Should NOT have "source": "index" since it came from filesystem
+                assert!(parsed.get("source").is_none(), "Should not have index source");
+                assert_eq!(parsed["frontmatter"]["title"], "Filesystem Note");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_list_notes_uses_note_store() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+
+        // Create a mock NoteStore with multiple notes
+        let mock_store = Arc::new(MockNoteStore::new());
+
+        mock_store.add_note(NoteRecord {
+            path: "note1.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: None,
+            title: "Note 1".to_string(),
+            tags: vec!["tag1".to_string()],
+            links_to: vec![],
+            properties: HashMap::new(),
+            updated_at: Utc::now(),
+        });
+
+        mock_store.add_note(NoteRecord {
+            path: "folder/note2.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: None,
+            title: "Note 2".to_string(),
+            tags: vec!["tag2".to_string()],
+            links_to: vec![],
+            properties: HashMap::new(),
+            updated_at: Utc::now(),
+        });
+
+        // Create NoteTools with the mock store
+        let note_tools = NoteTools::with_note_store(kiln_path, mock_store);
+
+        // List notes - should use the NoteStore
+        let result = note_tools
+            .list_notes(Parameters(ListNotesParams {
+                folder: None,
+                include_frontmatter: true,
+                recursive: true,
+            }))
+            .await;
+
+        assert!(result.is_ok(), "list_notes should succeed");
+
+        let call_result = result.unwrap();
+        if let Some(content) = call_result.content.first() {
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+
+                // Verify data came from NoteStore
+                assert_eq!(parsed["source"], "index", "Should indicate index source");
+                assert_eq!(parsed["count"], 2);
+
+                let notes = parsed["notes"].as_array().unwrap();
+                assert_eq!(notes.len(), 2);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_list_notes_filters_by_folder() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+
+        // Create a mock NoteStore with notes in different folders
+        let mock_store = Arc::new(MockNoteStore::new());
+
+        mock_store.add_note(NoteRecord {
+            path: "root.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: None,
+            title: "Root Note".to_string(),
+            tags: vec![],
+            links_to: vec![],
+            properties: HashMap::new(),
+            updated_at: Utc::now(),
+        });
+
+        mock_store.add_note(NoteRecord {
+            path: "projects/rust.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: None,
+            title: "Rust Project".to_string(),
+            tags: vec![],
+            links_to: vec![],
+            properties: HashMap::new(),
+            updated_at: Utc::now(),
+        });
+
+        mock_store.add_note(NoteRecord {
+            path: "projects/python.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: None,
+            title: "Python Project".to_string(),
+            tags: vec![],
+            links_to: vec![],
+            properties: HashMap::new(),
+            updated_at: Utc::now(),
+        });
+
+        // Create the folder on filesystem (required for validation)
+        std::fs::create_dir_all(temp_dir.path().join("projects")).unwrap();
+
+        // Create NoteTools with the mock store
+        let note_tools = NoteTools::with_note_store(kiln_path, mock_store);
+
+        // List notes in projects folder only
+        let result = note_tools
+            .list_notes(Parameters(ListNotesParams {
+                folder: Some("projects".to_string()),
+                include_frontmatter: false,
+                recursive: true,
+            }))
+            .await;
+
+        assert!(result.is_ok(), "list_notes should succeed");
+
+        let call_result = result.unwrap();
+        if let Some(content) = call_result.content.first() {
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+
+                // Should only return notes in the projects folder
+                assert_eq!(parsed["count"], 2);
+                assert_eq!(parsed["folder"], "projects");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_list_notes_non_recursive_with_store() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+
+        // Create a mock NoteStore with notes at different levels
+        let mock_store = Arc::new(MockNoteStore::new());
+
+        mock_store.add_note(NoteRecord {
+            path: "root.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: None,
+            title: "Root".to_string(),
+            tags: vec![],
+            links_to: vec![],
+            properties: HashMap::new(),
+            updated_at: Utc::now(),
+        });
+
+        mock_store.add_note(NoteRecord {
+            path: "nested/deep.md".to_string(),
+            content_hash: BlockHash::zero(),
+            embedding: None,
+            title: "Deep".to_string(),
+            tags: vec![],
+            links_to: vec![],
+            properties: HashMap::new(),
+            updated_at: Utc::now(),
+        });
+
+        let note_tools = NoteTools::with_note_store(kiln_path, mock_store);
+
+        // List notes non-recursively at root
+        let result = note_tools
+            .list_notes(Parameters(ListNotesParams {
+                folder: None,
+                include_frontmatter: false,
+                recursive: false,
+            }))
+            .await;
+
+        assert!(result.is_ok());
+
+        let call_result = result.unwrap();
+        if let Some(content) = call_result.content.first() {
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+
+                // Non-recursive should only return root.md
+                assert_eq!(parsed["count"], 1);
+                assert_eq!(parsed["recursive"], false);
+            }
+        }
     }
 }

@@ -15,11 +15,20 @@
 //! - Organized business logic in separate modules
 //! - Easy testing of individual tool categories
 //! - Future composition of additional tool routers
+//!
+//! ## NoteStore Integration
+//!
+//! When a `NoteStore` is provided via `with_note_store()`, the tools use indexed
+//! metadata for faster operations:
+//! - `read_metadata` uses the index instead of parsing from filesystem
+//! - `list_notes` uses the index for directory listing
+//! - `property_search` uses the index for property filtering
 
 #![allow(missing_docs)]
 
 use crate::{KilnTools, NoteTools, SearchTools};
 use crucible_core::enrichment::EmbeddingProvider;
+use crucible_core::storage::NoteStore;
 use crucible_core::traits::KnowledgeRepository;
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -63,6 +72,38 @@ impl CrucibleMcpServer {
         Self {
             note_tools: NoteTools::new(kiln_path.clone()),
             search_tools: SearchTools::new(kiln_path.clone(), knowledge_repo, embedding_provider),
+            kiln_tools: KilnTools::new(kiln_path),
+            tool_router: Self::tool_router(),
+        }
+    }
+
+    /// Create a new MCP server with NoteStore for optimized operations
+    ///
+    /// When a NoteStore is provided, the following operations use indexed metadata:
+    /// - `read_metadata` - Uses index instead of parsing from filesystem
+    /// - `list_notes` - Uses index for directory listing
+    /// - `property_search` - Uses index for property filtering
+    ///
+    /// # Arguments
+    ///
+    /// * `kiln_path` - Path to the kiln directory
+    /// * `knowledge_repo` - Repository for semantic search
+    /// * `embedding_provider` - Provider for generating embeddings
+    /// * `note_store` - NoteStore for indexed metadata access
+    pub fn with_note_store(
+        kiln_path: String,
+        knowledge_repo: Arc<dyn KnowledgeRepository>,
+        embedding_provider: Arc<dyn EmbeddingProvider>,
+        note_store: Arc<dyn NoteStore>,
+    ) -> Self {
+        Self {
+            note_tools: NoteTools::with_note_store(kiln_path.clone(), note_store.clone()),
+            search_tools: SearchTools::with_note_store(
+                kiln_path.clone(),
+                knowledge_repo,
+                embedding_provider,
+                note_store,
+            ),
             kiln_tools: KilnTools::new(kiln_path),
             tool_router: Self::tool_router(),
         }
