@@ -186,6 +186,7 @@ The `docs/` directory is a **reference kiln** — a valid Crucible vault that se
 ### Development Workflow
 
 **Use `just`**: The project uses Just for common development recipes:
+- `just ci` - **Run before committing**: format check, clippy, and quick tests
 - `just build` - Build all crates
 - `just test` - Run all tests
 - `just check` - Cargo check workspace
