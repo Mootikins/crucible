@@ -91,13 +91,12 @@ pub fn register_popup_module(lua: &Lua) -> Result<(), LuaError> {
     popup.set("request_with_other", request_with_other_fn)?;
 
     // popup.response_selected(index, entry) -> table
-    let response_selected_fn =
-        lua.create_function(|lua, (index, entry): (usize, Table)| {
-            let response = lua.create_table()?;
-            response.set("selected_index", index)?;
-            response.set("selected_entry", entry)?;
-            Ok(response)
-        })?;
+    let response_selected_fn = lua.create_function(|lua, (index, entry): (usize, Table)| {
+        let response = lua.create_table()?;
+        response.set("selected_index", index)?;
+        response.set("selected_entry", entry)?;
+        Ok(response)
+    })?;
     popup.set("response_selected", response_selected_fn)?;
 
     // popup.response_other(text) -> table
@@ -145,9 +144,7 @@ pub fn lua_entry_to_core(entry: &Table) -> LuaResult<crucible_core::types::Popup
 }
 
 /// Convert a Lua popup request table to a crucible_core PopupRequest
-pub fn lua_request_to_core(
-    request: &Table,
-) -> LuaResult<crucible_core::interaction::PopupRequest> {
+pub fn lua_request_to_core(request: &Table) -> LuaResult<crucible_core::interaction::PopupRequest> {
     let title: String = request.get("title")?;
     let entries_table: Table = request.get("entries")?;
     let allow_other: bool = request.get("allow_other").unwrap_or(false);
@@ -158,8 +155,7 @@ pub fn lua_request_to_core(
         entries.push(lua_entry_to_core(&entry_table)?);
     }
 
-    let mut popup_request =
-        crucible_core::interaction::PopupRequest::new(title).entries(entries);
+    let mut popup_request = crucible_core::interaction::PopupRequest::new(title).entries(entries);
 
     if allow_other {
         popup_request = popup_request.allow_other();
