@@ -20,6 +20,10 @@ tokio = { workspace = true, features = ["test-util", "full"] }
 chrono = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
+rand = "0.9"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["async_tokio"] }
 
 [features]
 default = []
@@ -38,3 +42,11 @@ path = "src/lib.rs"
 name = "note_store_contract"
 path = "tests/note_store_contract.rs"
 required-features = []  # Tests have their own cfg guards
+
+[[bench]]
+name = "storage_comparison"
+harness = false
+
+[[bench]]
+name = "vector_search_comparison"
+harness = false
