@@ -318,6 +318,14 @@ pub enum SessionEvent {
         change_type: NoteChangeType,
     },
 
+    /// Note was deleted.
+    NoteDeleted {
+        /// Path to the deleted note.
+        path: PathBuf,
+        /// Whether the note existed before deletion.
+        existed: bool,
+    },
+
     // ─────────────────────────────────────────────────────────────────────
     // Storage events (database persistence)
     // ─────────────────────────────────────────────────────────────────────
@@ -504,6 +512,7 @@ impl SessionEvent {
             Self::NoteParsed { .. } => "note_parsed",
             Self::NoteCreated { .. } => "note_created",
             Self::NoteModified { .. } => "note_modified",
+            Self::NoteDeleted { .. } => "note_deleted",
             Self::EntityStored { .. } => "entity_stored",
             Self::EntityDeleted { .. } => "entity_deleted",
             Self::BlocksUpdated { .. } => "blocks_updated",
@@ -556,6 +565,7 @@ impl SessionEvent {
             Self::NoteParsed { path, .. } => path.display().to_string(),
             Self::NoteCreated { path, .. } => path.display().to_string(),
             Self::NoteModified { path, .. } => path.display().to_string(),
+            Self::NoteDeleted { path, .. } => path.display().to_string(),
             Self::EntityStored { entity_id, .. } => entity_id.clone(),
             Self::EntityDeleted { entity_id, .. } => entity_id.clone(),
             Self::BlocksUpdated { entity_id, .. } => entity_id.clone(),
@@ -635,7 +645,7 @@ impl SessionEvent {
     pub fn is_note_event(&self) -> bool {
         matches!(
             self,
-            Self::NoteParsed { .. } | Self::NoteCreated { .. } | Self::NoteModified { .. }
+            Self::NoteParsed { .. } | Self::NoteCreated { .. } | Self::NoteModified { .. } | Self::NoteDeleted { .. }
         )
     }
 
@@ -1504,6 +1514,11 @@ mod tests {
             title: None
         }
         .is_note_event());
+        assert!(SessionEvent::NoteDeleted {
+            path: PathBuf::from("/notes/test.md"),
+            existed: true,
+        }
+        .is_note_event());
         assert!(!SessionEvent::ToolCalled {
             name: "".into(),
             args: JsonValue::Null
@@ -1762,6 +1777,10 @@ mod tests {
             SessionEvent::NoteModified {
                 path: PathBuf::from("/notes/test.md"),
                 change_type: NoteChangeType::Content,
+            },
+            SessionEvent::NoteDeleted {
+                path: PathBuf::from("/notes/deleted.md"),
+                existed: true,
             },
             // Storage events
             SessionEvent::EntityStored {
