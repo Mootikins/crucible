@@ -1370,6 +1370,7 @@ mod graph_view_tests {
     #[tokio::test]
     async fn test_register_graph_module_with_all() {
         use async_trait::async_trait;
+        use crucible_core::events::{NoteChangeType, SessionEvent};
         use crucible_core::parser::BlockHash;
         use crucible_core::storage::{Filter, NoteRecord, NoteStore, SearchResult, StorageResult};
         use crucible_core::traits::{GraphQueryExecutor, GraphQueryResult};
@@ -1387,14 +1388,21 @@ mod graph_view_tests {
 
         #[async_trait]
         impl NoteStore for MockNoteStore {
-            async fn upsert(&self, _note: NoteRecord) -> StorageResult<()> {
-                Ok(())
+            async fn upsert(&self, note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
+                let event = SessionEvent::NoteCreated {
+                    path: note.path.into(),
+                    title: Some(note.title),
+                };
+                Ok(vec![event])
             }
             async fn get(&self, _path: &str) -> StorageResult<Option<NoteRecord>> {
                 Ok(None)
             }
-            async fn delete(&self, _path: &str) -> StorageResult<()> {
-                Ok(())
+            async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
+                Ok(SessionEvent::NoteDeleted {
+                    path: path.into(),
+                    existed: false,
+                })
             }
             async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
                 Ok(vec![])
