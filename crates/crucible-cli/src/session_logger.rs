@@ -26,6 +26,38 @@ impl SessionLogger {
         }
     }
 
+    /// Resume an existing session by ID
+    ///
+    /// Returns the loaded events if successful, or None if the session doesn't exist.
+    pub async fn resume_session(&self, session_id: &SessionId) -> Option<Vec<LogEvent>> {
+        // Try to open the existing session
+        match SessionWriter::open(&self.sessions_dir, session_id.clone()).await {
+            Ok(writer) => {
+                debug!("Resumed session: {}", writer.id());
+
+                // Load existing events before storing the writer
+                let session_dir = self.sessions_dir.join(session_id.as_str());
+                let events = match load_events(&session_dir).await {
+                    Ok(e) => e,
+                    Err(e) => {
+                        warn!("Failed to load session events: {}", e);
+                        Vec::new()
+                    }
+                };
+
+                // Store the writer for future appends
+                let mut writer_guard = self.writer.lock().await;
+                *writer_guard = Some(writer);
+
+                Some(events)
+            }
+            Err(e) => {
+                warn!("Failed to resume session {}: {}", session_id, e);
+                None
+            }
+        }
+    }
+
     /// Get or create the session writer
     async fn ensure_writer(&self) -> Option<()> {
         let mut writer_guard = self.writer.lock().await;
