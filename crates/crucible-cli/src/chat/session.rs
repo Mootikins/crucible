@@ -64,6 +64,8 @@ pub struct ChatSessionConfig {
     pub agent_name: Option<String>,
     /// Pre-selected agent for first iteration (skips picker, still allows /new restart)
     pub default_selection: Option<AgentSelection>,
+    /// Session ID to resume from (loads existing conversation history)
+    pub resume_session_id: Option<String>,
 }
 
 impl Default for ChatSessionConfig {
@@ -75,6 +77,7 @@ impl Default for ChatSessionConfig {
             skip_splash: false,
             agent_name: None,
             default_selection: None,
+            resume_session_id: None,
         }
     }
 }
@@ -93,6 +96,7 @@ impl ChatSessionConfig {
             skip_splash: false,
             agent_name: None,
             default_selection: None,
+            resume_session_id: None,
         }
     }
 
@@ -114,6 +118,15 @@ impl ChatSessionConfig {
     /// restart via `/new` command (which will show the picker).
     pub fn with_default_selection(mut self, selection: AgentSelection) -> Self {
         self.default_selection = Some(selection);
+        self
+    }
+
+    /// Set a session ID to resume from.
+    ///
+    /// When set, the runner will load existing conversation history from the
+    /// session and prepopulate the conversation view.
+    pub fn with_resume_session(mut self, session_id: impl Into<String>) -> Self {
+        self.resume_session_id = Some(session_id.into());
         self
     }
 
@@ -390,6 +403,11 @@ impl ChatSession {
         // Set default selection if pre-specified (skips picker first time, allows /new restart)
         if let Some(selection) = self.config.default_selection.clone() {
             runner.with_default_selection(selection);
+        }
+
+        // Set session to resume from (loads existing conversation history)
+        if let Some(session_id) = self.config.resume_session_id.clone() {
+            runner.with_resume_session(session_id);
         }
 
         runner.run_with_factory(&bridge, create_agent).await
