@@ -904,10 +904,11 @@ mod note_store_tests {
     impl NoteStore for MockNoteStore {
         async fn upsert(&self, note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
             let title = note.title.clone();
+            let path = note.path.clone();
             let mut map = self.notes.lock().unwrap();
             map.insert(note.path.clone(), note);
             let event = SessionEvent::NoteCreated {
-                path: note.path.into(),
+                path: path.into(),
                 title: Some(title),
             };
             Ok(vec![event])
