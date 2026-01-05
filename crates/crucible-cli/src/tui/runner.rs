@@ -1059,6 +1059,30 @@ impl RatatuiRunner {
                             return self.execute_repl_command(&name, "");
                         }
 
+                        // Handle Session items - resume the selected session
+                        if let PopupItem::Session { id, .. } = item {
+                            let session_id = id.clone();
+                            self.popup = None;
+                            self.view.set_popup(None);
+                            self.view.set_input("");
+                            self.view.set_cursor_position(0);
+
+                            // Request session resume via restart mechanism
+                            if self.supports_restart {
+                                self.resume_session_id = Some(session_id.clone());
+                                self.restart_requested = true;
+                                self.view.set_status_text(&format!(
+                                    "Resuming session {}...",
+                                    session_id
+                                ));
+                                return Ok(true); // Exit to trigger restart with resume
+                            } else {
+                                self.view
+                                    .set_status_text("Session resume requires deferred agent mode");
+                            }
+                            return Ok(false);
+                        }
+
                         // For other items, insert the token
                         let token = item.token();
                         self.view.set_input(&token);
@@ -1188,6 +1212,47 @@ impl RatatuiRunner {
                                     // Can't restart without a factory
                                     self.view
                                         .set_status_text("/new requires deferred agent mode");
+                                }
+                            }
+                            "resume" => {
+                                // Open session picker popup
+                                if let Some(ref logger) = self.session_logger {
+                                    let sessions = logger.list_sessions().await;
+                                    if sessions.is_empty() {
+                                        self.view.set_status_text("No sessions found");
+                                    } else {
+                                        // Convert sessions to PopupItems
+                                        let items: Vec<crate::tui::state::PopupItem> = sessions
+                                            .into_iter()
+                                            .take(20) // Limit to 20 most recent
+                                            .map(|id| {
+                                                crate::tui::state::PopupItem::session(id.as_str())
+                                                    .desc("Resume this session")
+                                            })
+                                            .collect();
+
+                                        // Create popup with session items
+                                        let mut popup = PopupState::new(
+                                            PopupKind::Session,
+                                            std::sync::Arc::clone(&self.popup_provider)
+                                                as std::sync::Arc<dyn PopupProvider>,
+                                        );
+                                        popup.set_items(items.clone());
+                                        self.popup = Some(popup);
+
+                                        // Create separate popup for view
+                                        let mut view_popup = PopupState::new(
+                                            PopupKind::Session,
+                                            std::sync::Arc::clone(&self.popup_provider)
+                                                as std::sync::Arc<dyn PopupProvider>,
+                                        );
+                                        view_popup.set_items(items);
+                                        self.view.set_popup(Some(view_popup));
+                                        self.view.set_status_text("Select a session to resume");
+                                        return Ok(false); // Don't clear input yet
+                                    }
+                                } else {
+                                    self.view.set_status_text("Session logging not enabled");
                                 }
                             }
                             _ => {
@@ -2421,7 +2486,10 @@ impl RatatuiRunner {
         for event in events {
             match event {
                 LogEvent::User { content, .. } => {
-                    self.view.state_mut().conversation.push_user_message(content);
+                    self.view
+                        .state_mut()
+                        .conversation
+                        .push_user_message(content);
                 }
                 LogEvent::Assistant { content, .. } => {
                     self.view

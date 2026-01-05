@@ -227,6 +227,11 @@ impl ChatSession {
                 "new",
                 Arc::new(handlers::NewHandler),
                 "Start a new session with agent picker",
+            )
+            .command(
+                "resume",
+                Arc::new(handlers::ResumeHandler),
+                "Browse and resume recent sessions",
             );
 
         // Register /models command if models are available (e.g., from OpenCode)

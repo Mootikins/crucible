@@ -52,6 +52,7 @@ impl PopupItemTrait for LegacyPopupItem {
             PopupItem::Note { path, .. } => path,
             PopupItem::Skill { name, .. } => name,
             PopupItem::ReplCommand { name, .. } => name,
+            PopupItem::Session { id, .. } => id,
         }
     }
 
@@ -196,6 +197,15 @@ impl PopupState {
     pub fn update_query(&mut self, query: &str) {
         self.provider_query = query.to_string();
         let items = self.provider.provide(self.kind, query);
+        let wrapped: Vec<LegacyPopupItem> = items
+            .into_iter()
+            .map(LegacyPopupItem::from_legacy)
+            .collect();
+        self.popup.set_items(wrapped);
+    }
+
+    /// Set items directly (bypasses provider, useful for programmatic popups)
+    pub fn set_items(&mut self, items: Vec<PopupItem>) {
         let wrapped: Vec<LegacyPopupItem> = items
             .into_iter()
             .map(LegacyPopupItem::from_legacy)
