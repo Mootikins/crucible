@@ -106,6 +106,7 @@ fn estimate_event_tokens(event: &SessionEvent) -> usize {
             title.as_ref().map(|t| t.len()).unwrap_or(0) + 50
         }
         SessionEvent::NoteModified { .. } => 50,
+        SessionEvent::NoteDeleted { .. } => 50,
         // MCP/Tool events
         SessionEvent::McpAttached { server, .. } => server.len() + 50,
         SessionEvent::ToolDiscovered { name, schema, .. } => {
