@@ -2,6 +2,7 @@
 //!
 //! This module maps `LlmProviderConfig` from crucible-config to Rig provider clients.
 
+use crate::github_copilot::CopilotClient;
 use crucible_config::llm::{LlmProviderConfig, LlmProviderType};
 use rig::client::Nothing;
 use rig::providers::{anthropic, ollama, openai};
@@ -26,6 +27,10 @@ pub enum RigError {
     /// Client creation failed
     #[error("Failed to create client: {0}")]
     ClientCreation(String),
+
+    /// GitHub Copilot requires OAuth authentication
+    #[error("GitHub Copilot requires OAuth authentication. Run device flow first or provide OAuth token via api_key.")]
+    CopilotAuthRequired,
 }
 
 /// Result type for Rig operations
@@ -46,6 +51,8 @@ pub enum RigClient {
     OpenAICompat(openai::CompletionsClient),
     /// Anthropic client
     Anthropic(anthropic::Client),
+    /// GitHub Copilot client (uses OAuth + Copilot API token exchange)
+    GitHubCopilot(CopilotClient),
 }
 
 impl RigClient {
@@ -56,6 +63,7 @@ impl RigClient {
             RigClient::OpenAI(_) => "openai",
             RigClient::OpenAICompat(_) => "openai-compat",
             RigClient::Anthropic(_) => "anthropic",
+            RigClient::GitHubCopilot(_) => "github-copilot",
         }
     }
 
@@ -91,6 +99,17 @@ impl RigClient {
     pub fn as_openai_compat(&self) -> Option<&openai::CompletionsClient> {
         match self {
             RigClient::OpenAICompat(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// Get the inner GitHub Copilot client, if this is a GitHub Copilot client.
+    ///
+    /// This client handles OAuth token exchange with GitHub's Copilot API,
+    /// automatically refreshing the API token (30-minute TTL) as needed.
+    pub fn as_github_copilot(&self) -> Option<&CopilotClient> {
+        match self {
+            RigClient::GitHubCopilot(c) => Some(c),
             _ => None,
         }
     }
@@ -132,6 +151,7 @@ pub fn create_client(config: &LlmProviderConfig) -> RigResult<RigClient> {
         LlmProviderType::Ollama => create_ollama_client(config),
         LlmProviderType::OpenAI => create_openai_client(config),
         LlmProviderType::Anthropic => create_anthropic_client(config),
+        LlmProviderType::GitHubCopilot => create_github_copilot_client(config),
     }
 }
 
@@ -221,6 +241,34 @@ fn create_anthropic_client(config: &LlmProviderConfig) -> RigResult<RigClient> {
         .map_err(|e| RigError::ClientCreation(e.to_string()))?;
 
     Ok(RigClient::Anthropic(client))
+}
+
+/// Create a GitHub Copilot client
+///
+/// GitHub Copilot requires an OAuth token (obtained via device flow authentication).
+/// The token should be stored in the config's `api_key` field.
+///
+/// To obtain an OAuth token, use [`crate::github_copilot::CopilotAuth`]:
+///
+/// ```rust,ignore
+/// use crucible_rig::github_copilot::CopilotAuth;
+///
+/// let auth = CopilotAuth::new();
+/// let oauth_token = auth.complete_device_flow(|code, uri| {
+///     println!("Visit {} and enter code: {}", uri, code);
+/// }).await?;
+///
+/// // Save oauth_token.access_token to config
+/// ```
+fn create_github_copilot_client(config: &LlmProviderConfig) -> RigResult<RigClient> {
+    // GitHub Copilot requires an OAuth token
+    let oauth_token = config.api_key().ok_or(RigError::CopilotAuthRequired)?;
+
+    tracing::debug!("Creating GitHub Copilot client");
+
+    let client = CopilotClient::new(oauth_token);
+
+    Ok(RigClient::GitHubCopilot(client))
 }
 
 #[cfg(test)]

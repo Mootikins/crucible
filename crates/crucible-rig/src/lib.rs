@@ -36,6 +36,7 @@
 pub mod agent;
 pub mod completion;
 pub mod crucible_agent;
+pub mod github_copilot;
 pub mod handle;
 pub mod kiln_tools;
 pub mod openai_reasoning;
@@ -71,3 +72,8 @@ pub use workspace_tools::{
 
 // Re-export kiln tools (for knowledge base access)
 pub use kiln_tools::{KilnContext, KilnToolError, ListNotesTool, ReadNoteTool, SemanticSearchTool};
+
+// Re-export GitHub Copilot client
+pub use github_copilot::{
+    CopilotAuth, CopilotClient, CopilotError, CopilotModel, CopilotResult, DeviceCodeResponse,
+};
