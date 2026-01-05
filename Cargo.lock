@@ -3675,6 +3675,7 @@ dependencies = [
  "crucible-enrichment",
  "crucible-lance",
  "crucible-llm",
+ "crucible-observe",
  "crucible-parser",
  "crucible-pipeline",
  "crucible-rig",
@@ -3923,6 +3924,23 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "toml 0.9.10+spec-1.1.0",
+ "tracing",
+]
+
+[[package]]
+name = "crucible-observe"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chrono",
+ "rand 0.9.2",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-test",
  "tracing",
 ]
 
