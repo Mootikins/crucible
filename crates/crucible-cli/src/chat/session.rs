@@ -366,11 +366,15 @@ impl ChatSession {
 
         // Create and run TUI with factory
         let registry = std::sync::Arc::new(self.command_registry.clone());
+        let kiln_path = self.core.config().kiln_path.clone();
         let mut runner = RatatuiRunner::new(
             &self.config.initial_mode_id,
             popup_provider.clone(),
             registry,
         )?;
+
+        // Set up session logging to persist chat events
+        runner.with_session_logger(kiln_path);
 
         // Set default selection if pre-specified (skips picker first time, allows /new restart)
         if let Some(selection) = self.config.default_selection.clone() {

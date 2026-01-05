@@ -248,6 +248,100 @@ streaming = false
 }
 
 // ============================================================================
+// Config Show --trace Tests
+// ============================================================================
+
+#[test]
+#[serial]
+fn test_config_show_trace_without_config_file() {
+    let temp = TempDir::new().unwrap();
+    let mut cmd = Command::cargo_bin("cru").unwrap();
+    cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
+        .arg("config")
+        .arg("show")
+        .arg("--trace");
+
+    // Without a config file, all values should show "from: default"
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("# from: default"))
+        .stdout(predicate::str::contains("kiln_path"))
+        .stdout(predicate::str::contains("[embedding]"));
+}
+
+#[test]
+#[serial]
+fn test_config_show_trace_with_config_file() {
+    let temp = TempDir::new().unwrap();
+    let config_dir = temp.path().join("config");
+    fs::create_dir_all(&config_dir).unwrap();
+    let config_path = config_dir.join("config.toml");
+
+    // Create a config file with some values
+    fs::write(
+        &config_path,
+        r#"
+kiln_path = "/test/kiln"
+
+[embedding]
+provider = "ollama"
+model = "nomic-embed-text"
+"#,
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("cru").unwrap();
+    cmd.env("CRUCIBLE_CONFIG_DIR", &config_dir)
+        .arg("config")
+        .arg("show")
+        .arg("--trace");
+
+    // Values from file should show "from: file (...)"
+    // Values not in file should show "from: default"
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("# from: file"))
+        .stdout(predicate::str::contains("# from: default"))
+        .stdout(predicate::str::contains("kiln_path"));
+}
+
+#[test]
+#[serial]
+fn test_config_show_sources_alias() {
+    // Test that --sources works as an alias for --trace
+    let temp = TempDir::new().unwrap();
+    let mut cmd = Command::cargo_bin("cru").unwrap();
+    cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
+        .arg("config")
+        .arg("show")
+        .arg("--sources");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("# from: default"));
+}
+
+#[test]
+#[serial]
+fn test_config_show_trace_json_format() {
+    let temp = TempDir::new().unwrap();
+    let mut cmd = Command::cargo_bin("cru").unwrap();
+    cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
+        .arg("config")
+        .arg("show")
+        .arg("--trace")
+        .arg("--format")
+        .arg("json");
+
+    // JSON output should include source information
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("\"source\""))
+        .stdout(predicate::str::contains("\"source_short\""))
+        .stdout(predicate::str::contains("\"value\""));
+}
+
+// ============================================================================
 // Config Dump Command Tests
 // ============================================================================
 
