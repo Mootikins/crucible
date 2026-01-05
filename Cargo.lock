@@ -3794,6 +3794,7 @@ name = "crucible-daemon"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "crucible-core",
  "crucible-sqlite",
  "crucible-surrealdb",
  "dirs 6.0.0",
@@ -4063,6 +4064,7 @@ dependencies = [
 name = "crucible-sqlite"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "chrono",
  "crucible-core",

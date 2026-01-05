@@ -1,19 +1,74 @@
 //! Multi-kiln connection manager
 //!
 //! Manages connections to multiple kilns on-demand with idle timeout.
+//! Supports both SQLite (default) and SurrealDB backends via feature flags.
 
 use anyhow::Result;
-use crucible_surrealdb::adapters::{self, SurrealClientHandle};
-use crucible_surrealdb::SurrealDbConfig;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tokio::sync::RwLock;
 use tracing::info;
 
+// Backend-specific imports
+#[cfg(feature = "storage-sqlite")]
+use crucible_sqlite::{adapters as sqlite_adapters, SqliteClientHandle, SqliteConfig};
+
+#[cfg(feature = "storage-surrealdb")]
+use crucible_surrealdb::{adapters as surreal_adapters, SurrealClientHandle, SurrealDbConfig};
+
+// ===========================================================================
+// Backend Abstraction
+// ===========================================================================
+
+/// Storage backend handle that wraps either SQLite or SurrealDB client
+#[derive(Clone)]
+pub enum StorageHandle {
+    #[cfg(feature = "storage-sqlite")]
+    Sqlite(SqliteClientHandle),
+
+    #[cfg(feature = "storage-surrealdb")]
+    Surreal(SurrealClientHandle),
+}
+
+impl StorageHandle {
+    /// Execute a query against the storage backend
+    pub async fn query(
+        &self,
+        sql: &str,
+        params: &[serde_json::Value],
+    ) -> Result<crucible_core::database::QueryResult> {
+        match self {
+            #[cfg(feature = "storage-sqlite")]
+            StorageHandle::Sqlite(client) => client.query(sql, params).await,
+
+            #[cfg(feature = "storage-surrealdb")]
+            StorageHandle::Surreal(client) => {
+                let result = client.inner().query(sql, params).await?;
+                Ok(result)
+            }
+        }
+    }
+
+    /// Get the backend name for logging
+    pub fn backend_name(&self) -> &'static str {
+        match self {
+            #[cfg(feature = "storage-sqlite")]
+            StorageHandle::Sqlite(_) => "sqlite",
+
+            #[cfg(feature = "storage-surrealdb")]
+            StorageHandle::Surreal(_) => "surrealdb",
+        }
+    }
+}
+
+// ===========================================================================
+// KilnConnection and KilnManager
+// ===========================================================================
+
 /// Connection to a single kiln
 pub struct KilnConnection {
-    pub client: SurrealClientHandle,
+    pub handle: StorageHandle,
     pub last_access: Instant,
 }
 
@@ -45,24 +100,18 @@ impl KilnManager {
         let db_path = canonical.join(".crucible").join("kiln.db");
         info!("Opening kiln at {:?}", db_path);
 
-        let config = SurrealDbConfig {
-            path: db_path.to_string_lossy().to_string(),
-            namespace: "crucible".to_string(),
-            database: "kiln".to_string(),
-            ..Default::default()
-        };
-
-        let client = adapters::create_surreal_client(config).await?;
-
-        // Initialize schema on first open (idempotent)
-        crucible_surrealdb::kiln_integration::initialize_kiln_schema(client.inner()).await?;
-        info!("Schema initialized for kiln at {:?}", db_path);
+        let handle = create_storage_handle(&db_path).await?;
+        info!(
+            "Kiln opened with {} backend at {:?}",
+            handle.backend_name(),
+            db_path
+        );
 
         let mut conns = self.connections.write().await;
         conns.insert(
             canonical,
             KilnConnection {
-                client,
+                handle,
                 last_access: Instant::now(),
             },
         );
@@ -91,9 +140,9 @@ impl KilnManager {
             .collect()
     }
 
-    /// Get client for a kiln if it's already open (does not open if closed)
+    /// Get handle for a kiln if it's already open (does not open if closed)
     #[allow(dead_code)]
-    pub async fn get(&self, kiln_path: &Path) -> Option<SurrealClientHandle> {
+    pub async fn get(&self, kiln_path: &Path) -> Option<StorageHandle> {
         let canonical = kiln_path
             .canonicalize()
             .unwrap_or_else(|_| kiln_path.to_path_buf());
@@ -101,14 +150,14 @@ impl KilnManager {
         let mut conns = self.connections.write().await;
         if let Some(conn) = conns.get_mut(&canonical) {
             conn.last_access = Instant::now();
-            Some(conn.client.clone())
+            Some(conn.handle.clone())
         } else {
             None
         }
     }
 
-    /// Get client for a kiln, opening if needed
-    pub async fn get_or_open(&self, kiln_path: &Path) -> Result<SurrealClientHandle> {
+    /// Get handle for a kiln, opening if needed
+    pub async fn get_or_open(&self, kiln_path: &Path) -> Result<StorageHandle> {
         let canonical = kiln_path
             .canonicalize()
             .unwrap_or_else(|_| kiln_path.to_path_buf());
@@ -118,7 +167,7 @@ impl KilnManager {
             let mut conns = self.connections.write().await;
             if let Some(conn) = conns.get_mut(&canonical) {
                 conn.last_access = Instant::now();
-                return Ok(conn.client.clone());
+                return Ok(conn.handle.clone());
             }
         }
 
@@ -128,7 +177,7 @@ impl KilnManager {
         let conns = self.connections.read().await;
         conns
             .get(&canonical)
-            .map(|c| c.client.clone())
+            .map(|c| c.handle.clone())
             .ok_or_else(|| anyhow::anyhow!("Failed to get connection after opening"))
     }
 }
@@ -136,6 +185,46 @@ impl KilnManager {
 impl Default for KilnManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// ===========================================================================
+// Backend Factory
+// ===========================================================================
+
+/// Create a storage handle for the given database path.
+/// Uses SQLite by default, SurrealDB if SQLite feature is disabled.
+async fn create_storage_handle(db_path: &Path) -> Result<StorageHandle> {
+    // SQLite is the default backend
+    #[cfg(feature = "storage-sqlite")]
+    {
+        let config = SqliteConfig::new(db_path);
+        let client = sqlite_adapters::create_sqlite_client(config).await?;
+        return Ok(StorageHandle::Sqlite(client));
+    }
+
+    // Fall back to SurrealDB if SQLite is not enabled
+    #[cfg(all(feature = "storage-surrealdb", not(feature = "storage-sqlite")))]
+    {
+        let config = SurrealDbConfig {
+            path: db_path.to_string_lossy().to_string(),
+            namespace: "crucible".to_string(),
+            database: "kiln".to_string(),
+            ..Default::default()
+        };
+
+        let client = surreal_adapters::create_surreal_client(config).await?;
+
+        // Initialize schema on first open (idempotent)
+        crucible_surrealdb::kiln_integration::initialize_kiln_schema(client.inner()).await?;
+
+        return Ok(StorageHandle::Surreal(client));
+    }
+
+    // If neither feature is enabled, compilation will fail here
+    #[cfg(not(any(feature = "storage-sqlite", feature = "storage-surrealdb")))]
+    {
+        compile_error!("At least one storage backend must be enabled");
     }
 }
 
@@ -161,8 +250,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_open_creates_kiln_if_needed() {
-        // Note: SurrealDB will create a new database if the path is valid
-        // This test verifies we can open a kiln in a temp directory
         let km = KilnManager::new();
         let tmp = TempDir::new().unwrap();
         let kiln_path = tmp.path().join("test_kiln");
@@ -196,47 +283,17 @@ mod tests {
     async fn test_close_removes_from_list() {
         let km = KilnManager::new();
         let tmp = TempDir::new().unwrap();
-        let path = tmp.path().to_path_buf();
+        let kiln_path = tmp.path().join("test_kiln");
 
-        // Manually insert a mock connection for testing
-        {
-            use crucible_surrealdb::SurrealDbConfig;
-
-            // We can't actually open a kiln without a real DB file,
-            // but we can verify that close() removes entries from the map
-            let mut conns = km.connections.write().await;
-
-            // Create a temporary in-memory client for testing
-            let config = SurrealDbConfig {
-                path: "memory".to_string(),
-                namespace: "test".to_string(),
-                database: "test".to_string(),
-                ..Default::default()
-            };
-
-            // Skip this test if we can't create a client
-            if let Ok(client) = adapters::create_surreal_client(config).await {
-                conns.insert(
-                    path.clone(),
-                    KilnConnection {
-                        client,
-                        last_access: Instant::now(),
-                    },
-                );
-            } else {
-                return; // Skip test if client creation fails
-            }
-        }
+        // Open the kiln
+        km.open(&kiln_path).await.unwrap();
 
         // Verify it's in the list
         let list = km.list().await;
-        if list.is_empty() {
-            return; // Test was skipped due to client creation failure
-        }
         assert_eq!(list.len(), 1);
 
         // Close it
-        km.close(&path).await.unwrap();
+        km.close(&kiln_path).await.unwrap();
 
         // Verify it's no longer in the list
         let list = km.list().await;
@@ -252,7 +309,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_or_open_creates_kiln() {
-        // get_or_open should create a new kiln if needed
         let km = KilnManager::new();
         let tmp = TempDir::new().unwrap();
         let kiln_path = tmp.path().join("test_kiln");
@@ -272,18 +328,14 @@ mod tests {
         let kiln_path = tmp.path().join("test_kiln");
 
         // First call creates the kiln
-        let client1 = km.get_or_open(&kiln_path).await.unwrap();
+        let _handle1 = km.get_or_open(&kiln_path).await.unwrap();
 
         // Second call should reuse the same connection
-        let client2 = km.get_or_open(&kiln_path).await.unwrap();
+        let _handle2 = km.get_or_open(&kiln_path).await.unwrap();
 
         // Should only have one entry in the list
         let list = km.list().await;
         assert_eq!(list.len(), 1);
-
-        // Clients should be clones of the same handle
-        drop(client1);
-        drop(client2);
     }
 
     #[tokio::test]
@@ -298,7 +350,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_returns_client_if_open() {
+    async fn test_get_returns_handle_if_open() {
         let km = KilnManager::new();
         let tmp = TempDir::new().unwrap();
         let kiln_path = tmp.path().join("test_kiln");
@@ -306,7 +358,7 @@ mod tests {
         // Open the kiln first
         km.open(&kiln_path).await.unwrap();
 
-        // get() should now return Some(client)
+        // get() should now return Some(handle)
         let result = km.get(&kiln_path).await;
         assert!(result.is_some());
     }
@@ -333,5 +385,18 @@ mod tests {
         let updated_time = updated_list[0].1;
 
         assert!(updated_time > initial_time);
+    }
+
+    #[tokio::test]
+    async fn test_query_works() {
+        let km = KilnManager::new();
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path().join("test_kiln");
+
+        let handle = km.get_or_open(&kiln_path).await.unwrap();
+
+        // Basic query
+        let result = handle.query("SELECT 1 + 1 AS result", &[]).await;
+        assert!(result.is_ok());
     }
 }

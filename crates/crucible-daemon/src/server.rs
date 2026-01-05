@@ -188,20 +188,18 @@ async fn handle_query(req: Request, km: &Arc<KilnManager>) -> Response {
     };
 
     // Get or open connection to the kiln
-    let client = match km.get_or_open(Path::new(kiln_path)).await {
+    let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
         Err(e) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
     };
 
-    // Execute query using the inner SurrealClient
-    let inner = client.inner();
-
+    // Execute query using the storage handle
     // Query accepts params array, but we'll pass empty for now
     // Could extend the RPC protocol to accept params in the future
-    match inner.query(sql, &[]).await {
+    match handle.query(sql, &[]).await {
         Ok(result) => {
             // Convert QueryResult to JSON
-            // QueryResult has records (Vec<Record>), each Record is a HashMap<String, AttributeValue>
+            // QueryResult has records (Vec<Record>), each Record is a HashMap<String, serde_json::Value>
             let json_result = serde_json::json!({
                 "records": result.records,
                 "total_count": result.total_count,
