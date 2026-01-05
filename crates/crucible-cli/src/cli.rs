@@ -306,7 +306,7 @@ pub enum ConfigCommands {
         format: String,
 
         /// Show where each value came from (file, env, cli, default)
-        #[arg(long)]
+        #[arg(long, visible_alias = "trace")]
         sources: bool,
     },
 

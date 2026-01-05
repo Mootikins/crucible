@@ -831,20 +831,33 @@ impl CliAppConfig {
     pub fn display_as_json_with_sources(&self) -> anyhow::Result<String> {
         use crate::value_source::SourceMapBuilder;
 
-        // Build source map
+        // Build source map based on whether config file exists
         let config_path = Self::default_config_path();
         let config_path_str = config_path.to_string_lossy().to_string();
-        let mut builder = SourceMapBuilder::new().config_file(Some(config_path_str));
+        let config_file_exists = config_path.exists();
+        let mut builder = SourceMapBuilder::new().config_file(Some(config_path_str.clone()));
 
-        // Track file values (would be done during actual loading)
-        // This is a simplified version - in practice, this would be built during load()
-        builder = builder
-            .default_value("kiln_path")
-            .default_value("embedding.provider")
-            .default_value("embedding.batch_size")
-            .default_value("acp.default_agent")
-            .default_value("chat.model")
-            .default_value("cli.verbose");
+        // For values that were loaded: if config file exists, mark as from file
+        // Otherwise mark as default. This is a heuristic until full tracking is implemented.
+        if config_file_exists {
+            builder = builder
+                .file_value("kiln_path")
+                .file_value("embedding.provider")
+                .file_value("embedding.model")
+                .file_value("embedding.batch_size")
+                .file_value("acp.default_agent")
+                .file_value("chat.model")
+                .file_value("cli.verbose");
+        } else {
+            builder = builder
+                .default_value("kiln_path")
+                .default_value("embedding.provider")
+                .default_value("embedding.model")
+                .default_value("embedding.batch_size")
+                .default_value("acp.default_agent")
+                .default_value("chat.model")
+                .default_value("cli.verbose");
+        }
 
         let source_map = builder.build();
 
@@ -943,19 +956,33 @@ impl CliAppConfig {
     pub fn display_as_toml_with_sources(&self) -> anyhow::Result<String> {
         use crate::value_source::{SourceMapBuilder, ValueSource};
 
-        // Build source map (same as JSON version)
+        // Build source map based on whether config file exists
         let config_path = Self::default_config_path();
         let config_path_str = config_path.to_string_lossy().to_string();
-        let mut builder = SourceMapBuilder::new().config_file(Some(config_path_str));
+        let config_file_exists = config_path.exists();
+        let mut builder = SourceMapBuilder::new().config_file(Some(config_path_str.clone()));
 
-        // Track default values
-        builder = builder
-            .default_value("kiln_path")
-            .default_value("embedding.provider")
-            .default_value("embedding.batch_size")
-            .default_value("acp.default_agent")
-            .default_value("chat.model")
-            .default_value("cli.verbose");
+        // For values that were loaded: if config file exists, mark as from file
+        // Otherwise mark as default. This is a heuristic until full tracking is implemented.
+        if config_file_exists {
+            builder = builder
+                .file_value("kiln_path")
+                .file_value("embedding.provider")
+                .file_value("embedding.model")
+                .file_value("embedding.batch_size")
+                .file_value("acp.default_agent")
+                .file_value("chat.model")
+                .file_value("cli.verbose");
+        } else {
+            builder = builder
+                .default_value("kiln_path")
+                .default_value("embedding.provider")
+                .default_value("embedding.model")
+                .default_value("embedding.batch_size")
+                .default_value("acp.default_agent")
+                .default_value("chat.model")
+                .default_value("cli.verbose");
+        }
 
         let source_map = builder.build();
 
