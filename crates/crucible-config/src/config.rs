@@ -827,39 +827,50 @@ impl CliAppConfig {
             .map_err(|e| anyhow::anyhow!("Failed to serialize config as JSON: {}", e))
     }
 
-    /// Display the current configuration as JSON with source tracking
-    pub fn display_as_json_with_sources(&self) -> anyhow::Result<String> {
+    /// Build a heuristic source map based on config file existence.
+    ///
+    /// NOTE: This is approximate tracking. If the config file exists, we assume
+    /// values came from it; otherwise we mark them as defaults. This doesn't
+    /// account for:
+    /// - Empty config files or missing fields (would still show "file")
+    /// - CLI/env overrides (would incorrectly show "file" or "default")
+    ///
+    /// Full source tracking would require tagging values during `load()`.
+    /// This heuristic provides useful information for the common case where
+    /// users either have a config file with their settings or use defaults.
+    fn build_heuristic_source_map() -> crate::value_source::ValueSourceMap {
         use crate::value_source::SourceMapBuilder;
 
-        // Build source map based on whether config file exists
         let config_path = Self::default_config_path();
         let config_path_str = config_path.to_string_lossy().to_string();
         let config_file_exists = config_path.exists();
-        let mut builder = SourceMapBuilder::new().config_file(Some(config_path_str.clone()));
 
-        // For values that were loaded: if config file exists, mark as from file
-        // Otherwise mark as default. This is a heuristic until full tracking is implemented.
-        if config_file_exists {
-            builder = builder
-                .file_value("kiln_path")
-                .file_value("embedding.provider")
-                .file_value("embedding.model")
-                .file_value("embedding.batch_size")
-                .file_value("acp.default_agent")
-                .file_value("chat.model")
-                .file_value("cli.verbose");
-        } else {
-            builder = builder
-                .default_value("kiln_path")
-                .default_value("embedding.provider")
-                .default_value("embedding.model")
-                .default_value("embedding.batch_size")
-                .default_value("acp.default_agent")
-                .default_value("chat.model")
-                .default_value("cli.verbose");
+        let mut builder = SourceMapBuilder::new().config_file(Some(config_path_str));
+
+        let tracked_fields = [
+            "kiln_path",
+            "embedding.provider",
+            "embedding.model",
+            "embedding.batch_size",
+            "acp.default_agent",
+            "chat.model",
+            "cli.verbose",
+        ];
+
+        for field in &tracked_fields {
+            builder = if config_file_exists {
+                builder.file_value(field)
+            } else {
+                builder.default_value(field)
+            };
         }
 
-        let source_map = builder.build();
+        builder.build()
+    }
+
+    /// Display the current configuration as JSON with source tracking
+    pub fn display_as_json_with_sources(&self) -> anyhow::Result<String> {
+        let source_map = Self::build_heuristic_source_map();
 
         // Create a simplified output with sources
         let mut output = serde_json::Map::new();
@@ -954,44 +965,18 @@ impl CliAppConfig {
 
     /// Display the current configuration as TOML with source tracking
     pub fn display_as_toml_with_sources(&self) -> anyhow::Result<String> {
-        use crate::value_source::{SourceMapBuilder, ValueSource};
+        use crate::value_source::ValueSource;
 
-        // Build source map based on whether config file exists
-        let config_path = Self::default_config_path();
-        let config_path_str = config_path.to_string_lossy().to_string();
-        let config_file_exists = config_path.exists();
-        let mut builder = SourceMapBuilder::new().config_file(Some(config_path_str.clone()));
-
-        // For values that were loaded: if config file exists, mark as from file
-        // Otherwise mark as default. This is a heuristic until full tracking is implemented.
-        if config_file_exists {
-            builder = builder
-                .file_value("kiln_path")
-                .file_value("embedding.provider")
-                .file_value("embedding.model")
-                .file_value("embedding.batch_size")
-                .file_value("acp.default_agent")
-                .file_value("chat.model")
-                .file_value("cli.verbose");
-        } else {
-            builder = builder
-                .default_value("kiln_path")
-                .default_value("embedding.provider")
-                .default_value("embedding.model")
-                .default_value("embedding.batch_size")
-                .default_value("acp.default_agent")
-                .default_value("chat.model")
-                .default_value("cli.verbose");
-        }
-
-        let source_map = builder.build();
+        let source_map = Self::build_heuristic_source_map();
 
         // Generate TOML with inline comments for sources
         let mut output = String::new();
 
         // Add header comment
-        output.push_str("# Effective Configuration with Sources\n");
-        output.push_str("# Sources: file, environment, cli, default\n\n");
+        output.push_str("# Effective Configuration with Sources (heuristic)\n");
+        output.push_str(
+            "# Sources: file, default (approximate - see `cru config show` for raw values)\n\n",
+        );
 
         // kiln_path
         let kiln_source = source_map.get("kiln_path").unwrap_or(&ValueSource::Default);
