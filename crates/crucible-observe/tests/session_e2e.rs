@@ -91,8 +91,8 @@ async fn test_markdown_export_imperative() {
 
     // Verify markdown structure
     assert!(
-        md.contains("<details>"),
-        "Should have system prompt details"
+        md.contains("[!system]-"),
+        "Should have system prompt callout"
     );
     assert!(md.contains("## User"), "Should have user heading");
     assert!(
@@ -133,8 +133,8 @@ async fn test_markdown_export_serde() {
 
     // Verify markdown structure (serde variant)
     assert!(
-        md.contains("<details>"),
-        "Should have system prompt details"
+        md.contains("[!system]-"),
+        "Should have system prompt callout"
     );
     assert!(md.contains("## User"), "Should have user heading");
     assert!(md.contains("## Assistant"), "Should have assistant heading");

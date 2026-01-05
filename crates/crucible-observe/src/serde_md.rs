@@ -373,11 +373,15 @@ impl ser::SerializeStruct for StructSerializer<'_> {
 
         // Domain-specific rendering for LogEvent variants
         match variant {
+            "init" | "Init" => render_init(&mut self.ser.output, &self.fields)?,
             "user" | "User" => render_user(&mut self.ser.output, &self.fields)?,
             "assistant" | "Assistant" => render_assistant(&mut self.ser.output, &self.fields)?,
+            "thinking" | "Thinking" => render_thinking(&mut self.ser.output, &self.fields)?,
             "system" | "System" => render_system(&mut self.ser.output, &self.fields)?,
             "tool_call" | "ToolCall" => render_tool_call(&mut self.ser.output, &self.fields)?,
+            "permission" | "Permission" => render_permission(&mut self.ser.output, &self.fields)?,
             "tool_result" | "ToolResult" => render_tool_result(&mut self.ser.output, &self.fields)?,
+            "summary" | "Summary" => render_summary(&mut self.ser.output, &self.fields)?,
             "error" | "Error" => render_error(&mut self.ser.output, &self.fields)?,
             "TokenUsage" => {
                 let empty = String::new();
@@ -457,11 +461,12 @@ fn render_assistant(output: &mut String, fields: &BTreeMap<&str, String>) -> Res
 }
 
 fn render_system(output: &mut String, fields: &BTreeMap<&str, String>) -> Result<()> {
-    writeln!(output, "<details><summary>System Prompt</summary>\n").map_err(Error::from)?;
+    writeln!(output, "> [!system]- System Prompt").map_err(Error::from)?;
     if let Some(content) = fields.get("content") {
-        writeln!(output, "{content}").map_err(Error::from)?;
+        for line in content.lines() {
+            writeln!(output, "> {line}").map_err(Error::from)?;
+        }
     }
-    writeln!(output, "\n</details>").map_err(Error::from)?;
     Ok(())
 }
 
@@ -523,6 +528,67 @@ fn render_error(output: &mut String, fields: &BTreeMap<&str, String>) -> Result<
     Ok(())
 }
 
+fn render_init(output: &mut String, fields: &BTreeMap<&str, String>) -> Result<()> {
+    writeln!(output, "---").map_err(Error::from)?;
+    if let Some(session_id) = fields.get("session_id") {
+        writeln!(output, "session: {session_id}").map_err(Error::from)?;
+    }
+    if let Some(cwd) = fields.get("cwd").filter(|s| !s.is_empty()) {
+        writeln!(output, "cwd: {cwd}").map_err(Error::from)?;
+    }
+    if let Some(model) = fields.get("model").filter(|s| !s.is_empty()) {
+        writeln!(output, "model: {model}").map_err(Error::from)?;
+    }
+    writeln!(output, "---").map_err(Error::from)?;
+    Ok(())
+}
+
+fn render_thinking(output: &mut String, fields: &BTreeMap<&str, String>) -> Result<()> {
+    writeln!(output, "> [!thinking]- Thinking").map_err(Error::from)?;
+    if let Some(content) = fields.get("content") {
+        for line in content.lines() {
+            writeln!(output, "> {line}").map_err(Error::from)?;
+        }
+    }
+    Ok(())
+}
+
+fn render_permission(output: &mut String, fields: &BTreeMap<&str, String>) -> Result<()> {
+    let tool = fields.get("tool").map(|s| s.as_str()).unwrap_or("unknown");
+    let id = fields.get("id").map(|s| s.as_str()).unwrap_or("?");
+    let decision = fields.get("decision").map(|s| s.as_str()).unwrap_or("?");
+    let reason = fields.get("reason").filter(|s| !s.is_empty());
+
+    let decision_str = match decision {
+        "allow" => "✓ Allowed",
+        "deny" => "✗ Denied",
+        "auto_allow" => "⚡ Auto-allowed",
+        _ => decision,
+    };
+
+    if let Some(reason) = reason {
+        writeln!(output, "> {decision_str}: `{tool}` (id: {id}) - {reason}")
+            .map_err(Error::from)?;
+    } else {
+        writeln!(output, "> {decision_str}: `{tool}` (id: {id})").map_err(Error::from)?;
+    }
+    Ok(())
+}
+
+fn render_summary(output: &mut String, fields: &BTreeMap<&str, String>) -> Result<()> {
+    let count = fields.get("messages_summarized").filter(|s| !s.is_empty());
+    let count_str = count
+        .map(|n| format!(" ({n} messages)"))
+        .unwrap_or_default();
+
+    writeln!(output, "---\n**Context Summary**{count_str}\n").map_err(Error::from)?;
+    if let Some(content) = fields.get("content") {
+        writeln!(output, "{content}").map_err(Error::from)?;
+    }
+    writeln!(output, "\n---").map_err(Error::from)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -568,7 +634,7 @@ mod tests {
         let event = LogEvent::system("You are a helpful assistant.");
         let md = to_string(&event).unwrap();
 
-        assert!(md.contains("<details>"));
+        assert!(md.contains("[!system]-"));
         assert!(md.contains("System Prompt"));
         assert!(md.contains("You are a helpful assistant."));
     }

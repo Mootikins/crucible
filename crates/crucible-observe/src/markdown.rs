@@ -1,6 +1,6 @@
 //! JSONL to Markdown rendering for session export
 
-use crate::events::LogEvent;
+use crate::events::{LogEvent, PermissionDecision};
 use std::fmt::Write;
 
 /// Options for markdown rendering
@@ -40,13 +40,35 @@ pub fn render_to_markdown(events: &[LogEvent], options: &RenderOptions) -> Strin
 
 fn render_event(output: &mut String, event: &LogEvent, options: &RenderOptions) {
     match event {
+        LogEvent::Init {
+            ts,
+            session_id,
+            cwd,
+            model,
+        } => {
+            if options.include_timestamps {
+                writeln!(output, "<!-- init: {} -->", ts.format("%H:%M:%S")).unwrap();
+            }
+            writeln!(output, "---").unwrap();
+            writeln!(output, "session: {session_id}").unwrap();
+            if let Some(cwd) = cwd {
+                writeln!(output, "cwd: {cwd}").unwrap();
+            }
+            if let Some(model) = model {
+                writeln!(output, "model: {model}").unwrap();
+            }
+            writeln!(output, "---\n").unwrap();
+        }
+
         LogEvent::System { ts, content } => {
             if options.include_timestamps {
                 writeln!(output, "<!-- system: {} -->", ts.format("%H:%M:%S")).unwrap();
             }
-            writeln!(output, "<details><summary>System Prompt</summary>\n").unwrap();
-            writeln!(output, "{}", truncate(content, options.max_content_length)).unwrap();
-            writeln!(output, "\n</details>\n").unwrap();
+            writeln!(output, "> [!system]- System Prompt").unwrap();
+            for line in truncate(content, options.max_content_length).lines() {
+                writeln!(output, "> {line}").unwrap();
+            }
+            writeln!(output).unwrap();
         }
 
         LogEvent::User { ts, content } => {
@@ -97,6 +119,17 @@ fn render_event(output: &mut String, event: &LogEvent, options: &RenderOptions) 
             }
         }
 
+        LogEvent::Thinking { ts, content } => {
+            if options.include_timestamps {
+                writeln!(output, "<!-- thinking: {} -->", ts.format("%H:%M:%S")).unwrap();
+            }
+            writeln!(output, "> [!thinking]- Thinking").unwrap();
+            for line in truncate(content, options.max_content_length).lines() {
+                writeln!(output, "> {line}").unwrap();
+            }
+            writeln!(output).unwrap();
+        }
+
         LogEvent::ToolCall { ts, id, name, args } => {
             if !options.include_tools {
                 return;
@@ -114,6 +147,34 @@ fn render_event(output: &mut String, event: &LogEvent, options: &RenderOptions) 
             )
             .unwrap();
             writeln!(output, "```\n").unwrap();
+        }
+
+        LogEvent::Permission {
+            ts,
+            id,
+            tool,
+            decision,
+            reason,
+        } => {
+            if !options.include_tools {
+                return;
+            }
+
+            if options.include_timestamps {
+                writeln!(output, "<!-- permission: {} -->", ts.format("%H:%M:%S")).unwrap();
+            }
+
+            let decision_str = match decision {
+                PermissionDecision::Allow => "✓ Allowed",
+                PermissionDecision::Deny => "✗ Denied",
+                PermissionDecision::AutoAllow => "⚡ Auto-allowed",
+            };
+
+            if let Some(reason) = reason {
+                writeln!(output, "> {decision_str}: `{tool}` (id: {id}) - {reason}\n").unwrap();
+            } else {
+                writeln!(output, "> {decision_str}: `{tool}` (id: {id})\n").unwrap();
+            }
         }
 
         LogEvent::ToolResult {
@@ -143,6 +204,27 @@ fn render_event(output: &mut String, event: &LogEvent, options: &RenderOptions) 
                 writeln!(output, "{}", truncate(result, options.max_content_length)).unwrap();
                 writeln!(output, "```\n").unwrap();
             }
+        }
+
+        LogEvent::Summary {
+            ts,
+            content,
+            messages_summarized,
+        } => {
+            if options.include_timestamps {
+                writeln!(output, "<!-- summary: {} -->", ts.format("%H:%M:%S")).unwrap();
+            }
+            let count_str = messages_summarized
+                .map(|n| format!(" ({n} messages)"))
+                .unwrap_or_default();
+            writeln!(output, "---\n**Context Summary**{count_str}\n").unwrap();
+            writeln!(
+                output,
+                "{}\n",
+                truncate(content, options.max_content_length)
+            )
+            .unwrap();
+            writeln!(output, "---\n").unwrap();
         }
 
         LogEvent::Error {
@@ -279,7 +361,7 @@ mod tests {
         let events = vec![LogEvent::system("You are helpful")];
         let md = render_to_markdown(&events, &RenderOptions::default());
 
-        assert!(md.contains("<details>"));
+        assert!(md.contains("[!system]-"));
         assert!(md.contains("System Prompt"));
         assert!(md.contains("You are helpful"));
     }
