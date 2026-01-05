@@ -152,6 +152,48 @@ pub fn on_init(ctx) {
 }
 ```
 
+## Context Optimization
+
+TASKS.md serves as more than task tracking—it's a **context management strategy** for AI agents.
+
+### The Problem: Context Window Bloat
+
+Traditional agent loops accumulate conversation history:
+- Turn 1: 1k tokens
+- Turn 2: 2k tokens (includes turn 1)
+- Turn N: N×k tokens → context explosion
+
+### The Solution: File-as-State
+
+TASKS.md follows the "Ralph Wiggum" pattern (named after [Geoffrey Huntley's technique](https://ghuntley.com/ralph/)):
+
+1. **State lives in files**, not conversation history
+2. Each agent iteration gets a **fresh context window**
+3. The file is read as part of a **cached prefix** (system prompt position)
+4. Progress accumulates in the file, not in tokens
+
+### Token Economics
+
+| Position | Attention | Cost |
+|----------|-----------|------|
+| Start (TASKS.md) | High | Cached (75% cheaper) |
+| Middle (old history) | Low | Full price |
+| End (current query) | High | Full price |
+
+TASKS.md in the prefix = high attention + amortized cost across iterations.
+
+### Multi-Agent Handoffs
+
+Instead of passing full conversation history between agents:
+
+```markdown
+## Handoff Notes
+- agent-A completed auth schema (see task 1.1.1)
+- agent-B found edge case: empty password validation
+```
+
+Curated handoffs in the file replace expensive message passing.
+
 ## Best Practices
 
 1. **Use descriptive IDs**: IDs should reflect the phase/section structure
@@ -159,6 +201,7 @@ pub fn on_init(ctx) {
 3. **Specify dependencies explicitly**: Don't assume order implies dependency
 4. **Include verification steps**: Add `[tests::]` for testable tasks
 5. **Group related work**: Use phases and sections to organize logically
+6. **Use for context optimization**: Keep TASKS.md in the cached prefix for efficient multi-turn agent work
 
 ## See Also
 
