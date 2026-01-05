@@ -125,9 +125,8 @@ fn bench_vector_search_scaling(c: &mut Criterion) {
                 BenchmarkId::new("sqlite_bruteforce", count),
                 &count,
                 |b, _| {
-                    b.to_async(&rt).iter(|| async {
-                        store.search(&q, 10, None).await.unwrap()
-                    });
+                    b.to_async(&rt)
+                        .iter(|| async { store.search(&q, 10, None).await.unwrap() });
                 },
             );
         }
@@ -138,15 +137,10 @@ fn bench_vector_search_scaling(c: &mut Criterion) {
             // Use indexed store for fair comparison
             let store = rt.block_on(lance_bench::create_store_with_index(&dir, &notes));
             let q = query.clone();
-            group.bench_with_input(
-                BenchmarkId::new("lance_ann", count),
-                &count,
-                |b, _| {
-                    b.to_async(&rt).iter(|| async {
-                        store.search(&q, 10, None).await.unwrap()
-                    });
-                },
-            );
+            group.bench_with_input(BenchmarkId::new("lance_ann", count), &count, |b, _| {
+                b.to_async(&rt)
+                    .iter(|| async { store.search(&q, 10, None).await.unwrap() });
+            });
         }
     }
     group.finish();
@@ -173,9 +167,8 @@ fn bench_search_only(c: &mut Criterion) {
         });
         let q = query.clone();
         group.bench_function("sqlite", |b| {
-            b.to_async(&rt).iter(|| async {
-                store.search(&q, 10, None).await.unwrap()
-            });
+            b.to_async(&rt)
+                .iter(|| async { store.search(&q, 10, None).await.unwrap() });
         });
     }
 
@@ -186,9 +179,8 @@ fn bench_search_only(c: &mut Criterion) {
         let store = rt.block_on(lance_bench::create_store_with_index(&dir, &notes));
         let q = query.clone();
         group.bench_function("lance", |b| {
-            b.to_async(&rt).iter(|| async {
-                store.search(&q, 10, None).await.unwrap()
-            });
+            b.to_async(&rt)
+                .iter(|| async { store.search(&q, 10, None).await.unwrap() });
         });
     }
 
