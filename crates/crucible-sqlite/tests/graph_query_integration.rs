@@ -3,7 +3,7 @@
 //! Tests the graph query executor with the full schema setup and real SqlitePool.
 
 use crucible_core::traits::graph_query::GraphQueryExecutor;
-use crucible_sqlite::{SqliteConfig, SqlitePool, SqliteGraphQueryExecutor};
+use crucible_sqlite::{SqliteConfig, SqliteGraphQueryExecutor, SqlitePool};
 use rusqlite::Connection;
 use serde_json::Value;
 use std::sync::Arc;
@@ -142,11 +142,7 @@ async fn test_graph_query_pgq_match_outlinks() {
         .await
         .unwrap();
 
-    assert_eq!(
-        results.len(),
-        2,
-        "PGQ MATCH should find Hub's 2 outlinks"
-    );
+    assert_eq!(results.len(), 2, "PGQ MATCH should find Hub's 2 outlinks");
 }
 
 #[tokio::test]
@@ -157,11 +153,7 @@ async fn test_graph_query_jaq_inlinks() {
     // Test inlinks - Hub should be linked to by Spoke 1
     let results = executor.execute(r#"inlinks("Hub")"#).await.unwrap();
 
-    assert_eq!(
-        results.len(),
-        1,
-        "Hub should have 1 inlink (from Spoke 1)"
-    );
+    assert_eq!(results.len(), 1, "Hub should have 1 inlink (from Spoke 1)");
 
     let title = results[0].get("title").and_then(|t| t.as_str());
     assert_eq!(title, Some("Spoke 1"));
@@ -178,11 +170,7 @@ async fn test_graph_query_pgq_match_inlinks() {
         .await
         .unwrap();
 
-    assert_eq!(
-        results.len(),
-        1,
-        "Hub should be linked to by Spoke 1"
-    );
+    assert_eq!(results.len(), 1, "Hub should be linked to by Spoke 1");
 }
 
 #[tokio::test]
@@ -290,15 +278,9 @@ async fn test_graph_query_note_with_no_outlinks() {
     let executor = create_executor_from_pool(&pool);
 
     // Spoke 2 has no outlinks in our test data
-    let results = executor
-        .execute(r#"outlinks("Spoke 2")"#)
-        .await
-        .unwrap();
+    let results = executor.execute(r#"outlinks("Spoke 2")"#).await.unwrap();
 
-    assert!(
-        results.is_empty(),
-        "Spoke 2 should have no outlinks"
-    );
+    assert!(results.is_empty(), "Spoke 2 should have no outlinks");
 }
 
 #[tokio::test]
@@ -312,10 +294,7 @@ async fn test_graph_query_result_format() {
     let result = &results[0];
 
     // Verify all expected fields are present
-    assert!(
-        result.get("id").is_some(),
-        "Result should contain id field"
-    );
+    assert!(result.get("id").is_some(), "Result should contain id field");
     assert!(
         result.get("title").is_some(),
         "Result should contain title field"

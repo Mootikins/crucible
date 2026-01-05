@@ -1094,13 +1094,7 @@ mod tests {
 
     #[test]
     fn test_custom_columns_with_schema() {
-        let renderer = SqliteRenderer::with_schema(
-            "nodes",
-            "edges",
-            "src",
-            "dst",
-            "edge_kind",
-        );
+        let renderer = SqliteRenderer::with_schema("nodes", "edges", "src", "dst", "edge_kind");
         let ir = GraphIR {
             source: QuerySource::ByTitle("Test".to_string()),
             pattern: GraphPattern {
