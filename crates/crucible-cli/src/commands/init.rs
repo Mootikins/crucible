@@ -14,13 +14,10 @@ pub async fn execute(path: Option<PathBuf>, force: bool) -> Result<()> {
 
     // Check if .crucible directory already exists
     if crucible_dir.exists() && !force {
-        println!(
-            "{} Kiln already initialized at: {}",
-            "Error:".red().bold(),
+        anyhow::bail!(
+            "Kiln already initialized at {}. Use --force to reinitialize.",
             crucible_dir.display()
         );
-        println!("Use {} to reinitialize", "--force".yellow());
-        return Ok(());
     }
 
     // Create the kiln directories and files

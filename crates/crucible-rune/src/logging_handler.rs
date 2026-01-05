@@ -229,6 +229,7 @@ impl LoggingHandler {
             SessionEvent::NoteParsed { .. } => "NoteParsed",
             SessionEvent::NoteCreated { .. } => "NoteCreated",
             SessionEvent::NoteModified { .. } => "NoteModified",
+            SessionEvent::NoteDeleted { .. } => "NoteDeleted",
             SessionEvent::McpAttached { .. } => "McpAttached",
             SessionEvent::ToolDiscovered { .. } => "ToolDiscovered",
             SessionEvent::Custom { .. } => "Custom",
@@ -348,6 +349,9 @@ impl LoggingHandler {
             }
             SessionEvent::NoteModified { path, change_type } => {
                 format!("path={}, change={:?}", path.display(), change_type)
+            }
+            SessionEvent::NoteDeleted { path, existed } => {
+                format!("path={}, existed={}", path.display(), existed)
             }
             SessionEvent::McpAttached { server, tool_count } => {
                 format!("server={}, tools={}", server, tool_count)
@@ -497,6 +501,9 @@ impl LoggingHandler {
             )),
             SessionEvent::NoteModified { path, change_type } => {
                 Some(format!("{}: {:?}", path.display(), change_type))
+            }
+            SessionEvent::NoteDeleted { path, existed } => {
+                Some(format!("{}: existed={}", path.display(), existed))
             }
             SessionEvent::McpAttached { server, tool_count } => {
                 Some(format!("{}: {} tools", server, tool_count))
