@@ -7,8 +7,7 @@ use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
 use chrono::{Duration, Utc};
 use crucible_observe::{
-    list_sessions, load_events, render_to_markdown, LogEvent, RenderOptions, SessionId,
-    SessionType,
+    list_sessions, load_events, render_to_markdown, LogEvent, RenderOptions, SessionId, SessionType,
 };
 use std::path::PathBuf;
 use tokio::fs;
@@ -30,9 +29,10 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             timestamps,
         } => export(config, id, output, timestamps).await,
         SessionCommands::Reindex => reindex(config).await,
-        SessionCommands::Cleanup { older_than, dry_run } => {
-            cleanup(config, older_than, dry_run).await
-        }
+        SessionCommands::Cleanup {
+            older_than,
+            dry_run,
+        } => cleanup(config, older_than, dry_run).await,
     }
 }
 
@@ -88,12 +88,7 @@ async fn list(
                 let events = load_events(&session_dir).await.unwrap_or_default();
                 let msg_count = events
                     .iter()
-                    .filter(|e| {
-                        matches!(
-                            e,
-                            LogEvent::User { .. } | LogEvent::Assistant { .. }
-                        )
-                    })
+                    .filter(|e| matches!(e, LogEvent::User { .. } | LogEvent::Assistant { .. }))
                     .count();
 
                 // Get title from first user message
@@ -379,7 +374,7 @@ fn truncate(s: &str, max_len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_observe::{SessionWriter, SessionType};
+    use crucible_observe::{SessionType, SessionWriter};
     use tempfile::TempDir;
 
     async fn setup_test_session(sessions_dir: &std::path::Path) -> SessionId {
@@ -459,7 +454,12 @@ mod tests {
             ..Default::default()
         };
 
-        let result = show(config, "chat-20260104-1530-a1b2".to_string(), "text".to_string()).await;
+        let result = show(
+            config,
+            "chat-20260104-1530-a1b2".to_string(),
+            "text".to_string(),
+        )
+        .await;
         assert!(result.is_err());
     }
 
@@ -477,13 +477,7 @@ mod tests {
         };
 
         let output_path = tmp.path().join("exported.md");
-        let result = export(
-            config,
-            id.to_string(),
-            Some(output_path.clone()),
-            false,
-        )
-        .await;
+        let result = export(config, id.to_string(), Some(output_path.clone()), false).await;
         assert!(result.is_ok());
         assert!(output_path.exists());
 
