@@ -1059,6 +1059,7 @@ mod note_store_tests {
     use super::*;
     use async_trait::async_trait;
     use chrono::Utc;
+    use crucible_core::events::{NoteChangeType, SessionEvent};
     use crucible_core::parser::BlockHash;
     use crucible_core::storage::{Filter, NoteRecord, StorageResult};
     use std::collections::HashMap;
@@ -1132,9 +1133,21 @@ mod note_store_tests {
 
     #[async_trait]
     impl NoteStore for MockNoteStore {
-        async fn upsert(&self, note: NoteRecord) -> StorageResult<()> {
-            self.add_note(note);
-            Ok(())
+        async fn upsert(&self, note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
+            self.add_note(note.clone());
+            let existed = self.notes.lock().unwrap().contains_key(&note.path);
+            let event = if existed {
+                SessionEvent::NoteModified {
+                    path: note.path.into(),
+                    change_type: NoteChangeType::Content,
+                }
+            } else {
+                SessionEvent::NoteCreated {
+                    path: note.path.into(),
+                    title: Some(note.title),
+                }
+            };
+            Ok(vec![event])
         }
 
         async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
@@ -1142,10 +1155,13 @@ mod note_store_tests {
             Ok(notes.get(path).cloned())
         }
 
-        async fn delete(&self, path: &str) -> StorageResult<()> {
+        async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
             let mut notes = self.notes.lock().unwrap();
-            notes.remove(path);
-            Ok(())
+            let existed = notes.remove(path).is_some();
+            Ok(SessionEvent::NoteDeleted {
+                path: path.into(),
+                existed,
+            })
         }
 
         async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
