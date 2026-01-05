@@ -1,8 +1,7 @@
-//! Serde Serializer for Markdown output
+//! LogEvent-specific Markdown serialization
 //!
-//! This module provides a custom serde Serializer that outputs Markdown
-//! instead of JSON. Types that derive `Serialize` can be rendered to
-//! Markdown using the same API as `serde_json`.
+//! This module extends `crucible_core::serde_md` with domain-specific
+//! rendering for LogEvent variants (User, Assistant, ToolCall, etc.).
 //!
 //! # Example
 //!
@@ -13,79 +12,39 @@
 //! let md = serde_md::to_string(&event).unwrap();
 //! assert!(md.contains("## User"));
 //! ```
-//!
-//! # Design
-//!
-//! The serializer intercepts serde's data model and translates it to Markdown:
-//! - Structs with known names (User, Assistant, etc.) get domain-specific formatting
-//! - Internally tagged enums (via `#[serde(tag = "type")]`) appear as structs
-//! - Unknown types fall back to JSON embedding
-//!
-//! This design leverages existing `#[derive(Serialize)]` without requiring
-//! custom serialization logic per type.
 
+use crate::events::LogEvent;
+use crucible_core::serde_md::{Error, Result};
 use serde::ser::{self, Serialize};
 use std::collections::BTreeMap;
-use std::fmt::{self, Display, Write};
+use std::fmt::Write;
 
-/// Errors that can occur during Markdown serialization
-#[derive(Debug)]
-pub enum Error {
-    /// Custom error message
-    Message(String),
-    /// Formatting error
-    Fmt(fmt::Error),
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Message(msg) => write!(f, "{msg}"),
-            Error::Fmt(e) => write!(f, "format error: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl ser::Error for Error {
-    fn custom<T: Display>(msg: T) -> Self {
-        Error::Message(msg.to_string())
-    }
-}
-
-impl From<fmt::Error> for Error {
-    fn from(e: fmt::Error) -> Self {
-        Error::Fmt(e)
-    }
-}
-
-/// Result type for Markdown serialization
-pub type Result<T> = std::result::Result<T, Error>;
-
-/// Serialize a value to Markdown string
-pub fn to_string<T: Serialize>(value: &T) -> Result<String> {
-    let mut serializer = Serializer::new();
-    value.serialize(&mut serializer)?;
+/// Serialize a LogEvent to Markdown string
+pub fn to_string(event: &LogEvent) -> Result<String> {
+    let mut serializer = LogEventSerializer::new();
+    event.serialize(&mut serializer)?;
     Ok(serializer.output)
 }
 
-/// Serialize multiple values to Markdown, one per line
-pub fn to_string_seq<T: Serialize>(values: &[T]) -> Result<String> {
+/// Serialize multiple LogEvents to Markdown
+pub fn to_string_seq(events: &[LogEvent]) -> Result<String> {
     let mut output = String::new();
-    for value in values {
-        output.push_str(&to_string(value)?);
+    for event in events {
+        output.push_str(&to_string(event)?);
         output.push('\n');
     }
     Ok(output)
 }
 
-/// The Markdown serializer
-pub struct Serializer {
+/// LogEvent-specific Markdown serializer
+///
+/// Extends core's Serializer with domain-specific rendering for
+/// chat event types (User, Assistant, ToolCall, etc.)
+pub struct LogEventSerializer {
     output: String,
 }
 
-impl Serializer {
+impl LogEventSerializer {
     fn new() -> Self {
         Self {
             output: String::new(),
@@ -93,11 +52,10 @@ impl Serializer {
     }
 }
 
-impl<'a> ser::Serializer for &'a mut Serializer {
+impl<'a> ser::Serializer for &'a mut LogEventSerializer {
     type Ok = ();
     type Error = Error;
 
-    // Compound type serializers
     type SerializeSeq = SeqSerializer<'a>;
     type SerializeTuple = SeqSerializer<'a>;
     type SerializeTupleStruct = SeqSerializer<'a>;
@@ -106,65 +64,53 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     type SerializeStruct = StructSerializer<'a>;
     type SerializeStructVariant = StructSerializer<'a>;
 
-    // Primitives - just convert to string
+    // Primitives delegate to simple string conversion
     fn serialize_bool(self, v: bool) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
+        write!(self.output, "{v}").map_err(Error::from)
     }
 
     fn serialize_i8(self, v: i8) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
+        write!(self.output, "{v}").map_err(Error::from)
     }
 
     fn serialize_i16(self, v: i16) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
+        write!(self.output, "{v}").map_err(Error::from)
     }
 
     fn serialize_i32(self, v: i32) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
+        write!(self.output, "{v}").map_err(Error::from)
     }
 
     fn serialize_i64(self, v: i64) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
+        write!(self.output, "{v}").map_err(Error::from)
     }
 
     fn serialize_u8(self, v: u8) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
+        write!(self.output, "{v}").map_err(Error::from)
     }
 
     fn serialize_u16(self, v: u16) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
+        write!(self.output, "{v}").map_err(Error::from)
     }
 
     fn serialize_u32(self, v: u32) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
+        write!(self.output, "{v}").map_err(Error::from)
     }
 
     fn serialize_u64(self, v: u64) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
+        write!(self.output, "{v}").map_err(Error::from)
     }
 
     fn serialize_f32(self, v: f32) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
+        write!(self.output, "{v}").map_err(Error::from)
     }
 
     fn serialize_f64(self, v: f64) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
+        write!(self.output, "{v}").map_err(Error::from)
     }
 
     fn serialize_char(self, v: char) -> Result<()> {
-        write!(self.output, "{v}")?;
-        Ok(())
+        write!(self.output, "{v}").map_err(Error::from)
     }
 
     fn serialize_str(self, v: &str) -> Result<()> {
@@ -173,13 +119,10 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<()> {
-        // Render bytes as base64-ish representation
-        write!(self.output, "`<{} bytes>`", v.len())?;
-        Ok(())
+        write!(self.output, "`<{} bytes>`", v.len()).map_err(Error::from)
     }
 
     fn serialize_none(self) -> Result<()> {
-        // None produces no output
         Ok(())
     }
 
@@ -201,8 +144,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         _variant_index: u32,
         variant: &'static str,
     ) -> Result<()> {
-        write!(self.output, "{variant}")?;
-        Ok(())
+        write!(self.output, "{variant}").map_err(Error::from)
     }
 
     fn serialize_newtype_struct<T: ?Sized + Serialize>(
@@ -220,7 +162,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         variant: &'static str,
         value: &T,
     ) -> Result<()> {
-        write!(self.output, "**{variant}**: ")?;
+        write!(self.output, "**{variant}**: ").map_err(Error::from)?;
         value.serialize(self)
     }
 
@@ -256,7 +198,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         variant: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeTupleVariant> {
-        write!(self.output, "**{variant}**: ")?;
+        write!(self.output, "**{variant}**: ").map_err(Error::from)?;
         Ok(SeqSerializer {
             ser: self,
             first: true,
@@ -293,9 +235,9 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 }
 
-/// Serializer for sequences (Vec, arrays, tuples)
+/// Sequence serializer
 pub struct SeqSerializer<'a> {
-    ser: &'a mut Serializer,
+    ser: &'a mut LogEventSerializer,
     first: bool,
 }
 
@@ -360,9 +302,9 @@ impl ser::SerializeTupleVariant for SeqSerializer<'_> {
     }
 }
 
-/// Serializer for maps (HashMap, BTreeMap)
+/// Map serializer
 pub struct MapSerializer<'a> {
-    ser: &'a mut Serializer,
+    ser: &'a mut LogEventSerializer,
     key: Option<String>,
 }
 
@@ -371,8 +313,7 @@ impl ser::SerializeMap for MapSerializer<'_> {
     type Error = Error;
 
     fn serialize_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<()> {
-        // Capture key as string
-        let mut key_ser = Serializer::new();
+        let mut key_ser = LogEventSerializer::new();
         key.serialize(&mut key_ser)?;
         self.key = Some(key_ser.output);
         Ok(())
@@ -380,7 +321,7 @@ impl ser::SerializeMap for MapSerializer<'_> {
 
     fn serialize_value<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<()> {
         let key = self.key.take().unwrap_or_default();
-        write!(self.ser.output, "**{key}**: ")?;
+        write!(self.ser.output, "**{key}**: ").map_err(Error::from)?;
         value.serialize(&mut *self.ser)?;
         self.ser.output.push('\n');
         Ok(())
@@ -391,9 +332,9 @@ impl ser::SerializeMap for MapSerializer<'_> {
     }
 }
 
-/// Serializer for structs - this is where the magic happens for LogEvent
+/// Struct serializer with LogEvent-specific rendering
 pub struct StructSerializer<'a> {
-    ser: &'a mut Serializer,
+    ser: &'a mut LogEventSerializer,
     name: &'static str,
     fields: BTreeMap<&'static str, String>,
 }
@@ -407,18 +348,15 @@ impl ser::SerializeStruct for StructSerializer<'_> {
         key: &'static str,
         value: &T,
     ) -> Result<()> {
-        // For certain fields, preserve JSON format instead of markdown
-        // This is needed for serde_json::Value fields like "args"
+        // For JSON fields like "args", preserve JSON format
         let serialized = if key == "args" {
-            // Use serde_json to keep JSON structure
             serde_json::to_string(value).unwrap_or_else(|_| {
-                let mut s = Serializer::new();
+                let mut s = LogEventSerializer::new();
                 let _ = value.serialize(&mut s);
                 s.output
             })
         } else {
-            // Use our markdown serializer
-            let mut value_ser = Serializer::new();
+            let mut value_ser = LogEventSerializer::new();
             value.serialize(&mut value_ser)?;
             value_ser.output
         };
@@ -427,15 +365,13 @@ impl ser::SerializeStruct for StructSerializer<'_> {
     }
 
     fn end(self) -> Result<()> {
-        // For internally tagged enums, get the variant from "type" field
-        // Otherwise use the struct name
         let variant = self
             .fields
             .get("type")
             .map(|s| s.as_str())
             .unwrap_or(self.name);
 
-        // Domain-specific markdown rendering based on variant/struct name
+        // Domain-specific rendering for LogEvent variants
         match variant {
             "user" | "User" => render_user(&mut self.ser.output, &self.fields)?,
             "assistant" | "Assistant" => render_assistant(&mut self.ser.output, &self.fields)?,
@@ -443,7 +379,6 @@ impl ser::SerializeStruct for StructSerializer<'_> {
             "tool_call" | "ToolCall" => render_tool_call(&mut self.ser.output, &self.fields)?,
             "tool_result" | "ToolResult" => render_tool_result(&mut self.ser.output, &self.fields)?,
             "error" | "Error" => render_error(&mut self.ser.output, &self.fields)?,
-            // For TokenUsage and other nested types, inline render
             "TokenUsage" => {
                 let empty = String::new();
                 let input = self
@@ -456,15 +391,14 @@ impl ser::SerializeStruct for StructSerializer<'_> {
                     .get("out")
                     .or(self.fields.get("output"))
                     .unwrap_or(&empty);
-                write!(self.ser.output, "{input} in / {output} out")?;
+                write!(self.ser.output, "{input} in / {output} out").map_err(Error::from)?;
             }
-            // Unknown structs: render as key-value list
+            // Unknown: fall back to generic key-value
             _ => {
-                writeln!(self.ser.output, "### {}", self.name)?;
+                writeln!(self.ser.output, "### {}", self.name).map_err(Error::from)?;
                 for (key, value) in &self.fields {
                     if *key != "type" {
-                        // Skip the serde tag field
-                        writeln!(self.ser.output, "**{key}**: {value}")?;
+                        writeln!(self.ser.output, "**{key}**: {value}").map_err(Error::from)?;
                     }
                 }
             }
@@ -493,9 +427,9 @@ impl ser::SerializeStructVariant for StructSerializer<'_> {
 // Domain-specific renderers for LogEvent variants
 
 fn render_user(output: &mut String, fields: &BTreeMap<&str, String>) -> Result<()> {
-    writeln!(output, "## User\n")?;
+    writeln!(output, "## User\n").map_err(Error::from)?;
     if let Some(content) = fields.get("content") {
-        writeln!(output, "{content}")?;
+        writeln!(output, "{content}").map_err(Error::from)?;
     }
     Ok(())
 }
@@ -504,19 +438,18 @@ fn render_assistant(output: &mut String, fields: &BTreeMap<&str, String>) -> Res
     let model = fields.get("model").filter(|s| !s.is_empty());
 
     if let Some(m) = model {
-        writeln!(output, "## Assistant ({m})\n")?;
+        writeln!(output, "## Assistant ({m})\n").map_err(Error::from)?;
     } else {
-        writeln!(output, "## Assistant\n")?;
+        writeln!(output, "## Assistant\n").map_err(Error::from)?;
     }
 
     if let Some(content) = fields.get("content") {
-        writeln!(output, "{content}")?;
+        writeln!(output, "{content}").map_err(Error::from)?;
     }
 
-    // Token info as italic footnote
     if let Some(tokens) = fields.get("tokens") {
         if !tokens.is_empty() {
-            writeln!(output, "\n*Tokens: {tokens}*")?;
+            writeln!(output, "\n*Tokens: {tokens}*").map_err(Error::from)?;
         }
     }
 
@@ -524,11 +457,11 @@ fn render_assistant(output: &mut String, fields: &BTreeMap<&str, String>) -> Res
 }
 
 fn render_system(output: &mut String, fields: &BTreeMap<&str, String>) -> Result<()> {
-    writeln!(output, "<details><summary>System Prompt</summary>\n")?;
+    writeln!(output, "<details><summary>System Prompt</summary>\n").map_err(Error::from)?;
     if let Some(content) = fields.get("content") {
-        writeln!(output, "{content}")?;
+        writeln!(output, "{content}").map_err(Error::from)?;
     }
-    writeln!(output, "\n</details>")?;
+    writeln!(output, "\n</details>").map_err(Error::from)?;
     Ok(())
 }
 
@@ -536,20 +469,20 @@ fn render_tool_call(output: &mut String, fields: &BTreeMap<&str, String>) -> Res
     let name = fields.get("name").map(|s| s.as_str()).unwrap_or("unknown");
     let id = fields.get("id").map(|s| s.as_str()).unwrap_or("?");
 
-    writeln!(output, "### Tool: `{name}` (id: {id})\n")?;
+    writeln!(output, "### Tool: `{name}` (id: {id})\n").map_err(Error::from)?;
 
     if let Some(args) = fields.get("args") {
-        // Args is already serialized, try to pretty-print JSON
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(args) {
-            writeln!(output, "```json")?;
+            writeln!(output, "```json").map_err(Error::from)?;
             writeln!(
                 output,
                 "{}",
                 serde_json::to_string_pretty(&parsed).unwrap_or_else(|_| args.clone())
-            )?;
-            writeln!(output, "```")?;
+            )
+            .map_err(Error::from)?;
+            writeln!(output, "```").map_err(Error::from)?;
         } else {
-            writeln!(output, "```\n{args}\n```")?;
+            writeln!(output, "```\n{args}\n```").map_err(Error::from)?;
         }
     }
 
@@ -565,13 +498,13 @@ fn render_tool_result(output: &mut String, fields: &BTreeMap<&str, String>) -> R
     let error = fields.get("error").filter(|s| !s.is_empty());
 
     if let Some(err) = error {
-        writeln!(output, "#### Result (id: {id}) - ERROR\n")?;
-        writeln!(output, "```\n{err}\n```")?;
+        writeln!(output, "#### Result (id: {id}) - ERROR\n").map_err(Error::from)?;
+        writeln!(output, "```\n{err}\n```").map_err(Error::from)?;
     } else {
         let marker = if truncated { " (truncated)" } else { "" };
-        writeln!(output, "#### Result (id: {id}){marker}\n")?;
+        writeln!(output, "#### Result (id: {id}){marker}\n").map_err(Error::from)?;
         if let Some(result) = fields.get("result") {
-            writeln!(output, "```\n{result}\n```")?;
+            writeln!(output, "```\n{result}\n```").map_err(Error::from)?;
         }
     }
 
@@ -586,14 +519,14 @@ fn render_error(output: &mut String, fields: &BTreeMap<&str, String>) -> Result<
     let severity = if recoverable { "Warning" } else { "Error" };
     let message = fields.get("message").map(|s| s.as_str()).unwrap_or("");
 
-    writeln!(output, "> **{severity}:** {message}")?;
+    writeln!(output, "> **{severity}:** {message}").map_err(Error::from)?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::{LogEvent, TokenUsage};
+    use crate::events::TokenUsage;
 
     #[test]
     fn test_user_event() {
@@ -628,8 +561,6 @@ mod tests {
         assert!(md.contains("## Assistant (claude-3-haiku)"));
         assert!(md.contains("Response text"));
         assert!(md.contains("Tokens:"));
-        assert!(md.contains("100"));
-        assert!(md.contains("50"));
     }
 
     #[test]
@@ -701,16 +632,8 @@ mod tests {
 
         assert!(md.contains("## User"));
         assert!(md.contains("## Assistant"));
-        // Verify ordering
         let user_pos = md.find("## User").unwrap();
         let asst_pos = md.find("## Assistant").unwrap();
         assert!(user_pos < asst_pos);
-    }
-
-    #[test]
-    fn test_primitives() {
-        assert_eq!(to_string(&42i32).unwrap(), "42");
-        assert_eq!(to_string(&true).unwrap(), "true");
-        assert_eq!(to_string(&"hello").unwrap(), "hello");
     }
 }
