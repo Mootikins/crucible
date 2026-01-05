@@ -246,6 +246,8 @@ pub struct RatatuiRunner {
     interaction_registry: Option<Arc<Mutex<InteractionRegistry>>>,
     /// Kiln context for search operations
     kiln_context: Option<Arc<crate::core_facade::KilnContext>>,
+    /// Session ID to resume from (loads existing conversation history)
+    resume_session_id: Option<String>,
 }
 
 impl RatatuiRunner {
@@ -293,12 +295,23 @@ impl RatatuiRunner {
             event_ring: None,
             interaction_registry: None,
             kiln_context: None,
+            resume_session_id: None,
         })
     }
 
     /// Set the session logger for persisting chat events.
     pub fn with_session_logger(&mut self, kiln_path: std::path::PathBuf) -> &mut Self {
         self.session_logger = Some(std::sync::Arc::new(SessionLogger::new(kiln_path)));
+        self
+    }
+
+    /// Set a session ID to resume from.
+    ///
+    /// When set, the runner will load existing conversation history from the
+    /// session and prepopulate the conversation view. The session logger will
+    /// also be configured to append to the existing session instead of creating new.
+    pub fn with_resume_session(&mut self, session_id: impl Into<String>) -> &mut Self {
+        self.resume_session_id = Some(session_id.into());
         self
     }
 
@@ -2307,6 +2320,19 @@ impl RatatuiRunner {
 
             // Clear conversation for fresh start
             self.view.state_mut().conversation.clear();
+
+            // Resume session if requested (loads existing conversation history)
+            if let Some(session_id_str) = self.resume_session_id.take() {
+                self.view.set_status_text("Resuming session...");
+                self.render_frame(&mut terminal)?;
+
+                if let Err(e) = self.resume_session_from_id(&session_id_str).await {
+                    tracing::warn!("Failed to resume session: {}", e);
+                    // Show error in notification area
+                    self.view.echo_error(&format!("Resume failed: {}", e));
+                }
+            }
+
             self.view.set_status_text("Ready");
             self.render_frame(&mut terminal)?;
 
@@ -2359,6 +2385,70 @@ impl RatatuiRunner {
                 AskBatchDialogWidget::new(state).render(f.area(), f.buffer_mut());
             }
         })?;
+        Ok(())
+    }
+
+    /// Resume a session from a session ID string.
+    ///
+    /// Parses the session ID, loads events from the session log, and populates
+    /// the conversation view with the loaded messages.
+    async fn resume_session_from_id(&mut self, session_id_str: &str) -> Result<()> {
+        use crucible_observe::{LogEvent, SessionId};
+
+        // Parse session ID
+        let session_id = SessionId::parse(session_id_str)
+            .map_err(|e| anyhow::anyhow!("Invalid session ID '{}': {}", session_id_str, e))?;
+
+        // Get session logger (required for resume)
+        let logger = self
+            .session_logger
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Session logger not configured"))?;
+
+        // Load events from the session
+        let events = logger
+            .resume_session(&session_id)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("Session '{}' not found", session_id_str))?;
+
+        tracing::info!(
+            "Resumed session {} with {} events",
+            session_id_str,
+            events.len()
+        );
+
+        // Convert events to conversation items
+        for event in events {
+            match event {
+                LogEvent::User { content, .. } => {
+                    self.view.state_mut().conversation.push_user_message(content);
+                }
+                LogEvent::Assistant { content, .. } => {
+                    self.view
+                        .state_mut()
+                        .conversation
+                        .push_assistant_message(content);
+                }
+                LogEvent::ToolCall { name, args, .. } => {
+                    // Add tool call as completed (historical)
+                    use crate::tui::conversation::{ToolCallDisplay, ToolStatus};
+                    let tool = ToolCallDisplay {
+                        name,
+                        args,
+                        status: ToolStatus::Complete { summary: None },
+                        output_lines: vec![],
+                    };
+                    self.view
+                        .state_mut()
+                        .conversation
+                        .push(crate::tui::conversation::ConversationItem::ToolCall(tool));
+                }
+                // Skip other event types (System, ToolResult, Error, etc.)
+                // They're logged but don't need to be displayed in conversation
+                _ => {}
+            }
+        }
+
         Ok(())
     }
 
