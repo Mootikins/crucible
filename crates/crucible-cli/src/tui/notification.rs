@@ -2,6 +2,8 @@
 //!
 //! Accumulates file change and error events between render ticks,
 //! then formats them as right-aligned notifications in the statusline.
+//!
+//! Also maintains a message history for the `:messages` command.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -15,10 +17,37 @@ pub enum NotificationLevel {
     Error,
 }
 
+/// A message stored in the history buffer
+#[derive(Debug, Clone)]
+pub struct MessageHistoryEntry {
+    /// The message content
+    pub message: String,
+    /// Severity level
+    pub level: NotificationLevel,
+    /// When this message was created
+    pub timestamp: Instant,
+}
+
+impl MessageHistoryEntry {
+    /// Create a new history entry
+    pub fn new(message: impl Into<String>, level: NotificationLevel) -> Self {
+        Self {
+            message: message.into(),
+            level,
+            timestamp: Instant::now(),
+        }
+    }
+}
+
+/// Maximum number of messages to keep in history
+const MAX_HISTORY_SIZE: usize = 100;
+
 /// Manages notification state from watch events
 ///
 /// Events are accumulated between render ticks. On each tick, pending
 /// events are drained and formatted into a notification string.
+///
+/// Also maintains a message history for the `:messages` command (vim-style).
 #[derive(Debug)]
 pub struct NotificationState {
     /// Pending file change paths (accumulated between ticks)
@@ -31,6 +60,8 @@ pub struct NotificationState {
     current_level: NotificationLevel,
     /// When the current notification expires
     expires_at: Option<Instant>,
+    /// Message history buffer (most recent last)
+    history: Vec<MessageHistoryEntry>,
 }
 
 impl NotificationState {
@@ -42,6 +73,7 @@ impl NotificationState {
             current_message: String::new(),
             current_level: NotificationLevel::Info,
             expires_at: None,
+            history: Vec::new(),
         }
     }
 
@@ -199,6 +231,62 @@ impl NotificationState {
     pub fn force_expire_for_testing(&mut self) {
         self.expires_at = Some(Instant::now() - Duration::from_secs(1));
     }
+
+    // =========================================================================
+    // Message History (for :messages command)
+    // =========================================================================
+
+    /// Add a message to the history buffer.
+    ///
+    /// Messages are stored with their severity level and timestamp.
+    /// Old messages are evicted when the buffer exceeds MAX_HISTORY_SIZE.
+    pub fn push_message(&mut self, message: impl Into<String>, level: NotificationLevel) {
+        let entry = MessageHistoryEntry::new(message, level);
+        self.history.push(entry);
+
+        // Evict old messages if over limit
+        if self.history.len() > MAX_HISTORY_SIZE {
+            let excess = self.history.len() - MAX_HISTORY_SIZE;
+            self.history.drain(0..excess);
+        }
+    }
+
+    /// Get the message history as a slice (most recent last).
+    pub fn history(&self) -> &[MessageHistoryEntry] {
+        &self.history
+    }
+
+    /// Check if history is empty.
+    pub fn history_is_empty(&self) -> bool {
+        self.history.is_empty()
+    }
+
+    /// Format the message history as a multi-line string.
+    ///
+    /// Each line shows: [level] message
+    /// Most recent messages appear at the bottom (vim-style).
+    pub fn format_history(&self) -> String {
+        if self.history.is_empty() {
+            return "No messages.".to_string();
+        }
+
+        self.history
+            .iter()
+            .map(|entry| {
+                let level_str = match entry.level {
+                    NotificationLevel::Info => "[info]",
+                    NotificationLevel::Error => "[error]",
+                };
+                format!("{} {}", level_str, entry.message)
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Clear the message history.
+    pub fn clear_history(&mut self) {
+        self.history.clear();
+    }
 }
 
 impl Default for NotificationState {
@@ -340,5 +428,84 @@ mod tests {
         assert!(msg.contains("..."), "26-char filename should be truncated");
         // Should be first 22 chars + "..."
         assert!(msg.starts_with("1234567890123456789012"));
+    }
+
+    // =========================================================================
+    // Message History Tests
+    // =========================================================================
+
+    #[test]
+    fn test_history_initially_empty() {
+        let state = NotificationState::new();
+        assert!(state.history_is_empty());
+        assert!(state.history().is_empty());
+    }
+
+    #[test]
+    fn test_push_message_adds_to_history() {
+        let mut state = NotificationState::new();
+        state.push_message("Test message", NotificationLevel::Info);
+
+        assert!(!state.history_is_empty());
+        assert_eq!(state.history().len(), 1);
+        assert_eq!(state.history()[0].message, "Test message");
+        assert_eq!(state.history()[0].level, NotificationLevel::Info);
+    }
+
+    #[test]
+    fn test_push_multiple_messages() {
+        let mut state = NotificationState::new();
+        state.push_message("First", NotificationLevel::Info);
+        state.push_message("Second", NotificationLevel::Error);
+        state.push_message("Third", NotificationLevel::Info);
+
+        assert_eq!(state.history().len(), 3);
+        assert_eq!(state.history()[0].message, "First");
+        assert_eq!(state.history()[1].message, "Second");
+        assert_eq!(state.history()[2].message, "Third");
+    }
+
+    #[test]
+    fn test_format_history_empty() {
+        let state = NotificationState::new();
+        assert_eq!(state.format_history(), "No messages.");
+    }
+
+    #[test]
+    fn test_format_history_with_messages() {
+        let mut state = NotificationState::new();
+        state.push_message("Info message", NotificationLevel::Info);
+        state.push_message("Error message", NotificationLevel::Error);
+
+        let formatted = state.format_history();
+        assert!(formatted.contains("[info] Info message"));
+        assert!(formatted.contains("[error] Error message"));
+    }
+
+    #[test]
+    fn test_clear_history() {
+        let mut state = NotificationState::new();
+        state.push_message("Test", NotificationLevel::Info);
+        assert!(!state.history_is_empty());
+
+        state.clear_history();
+        assert!(state.history_is_empty());
+    }
+
+    #[test]
+    fn test_history_eviction_at_max_size() {
+        let mut state = NotificationState::new();
+
+        // Push more than MAX_HISTORY_SIZE messages
+        for i in 0..(super::MAX_HISTORY_SIZE + 10) {
+            state.push_message(format!("Message {}", i), NotificationLevel::Info);
+        }
+
+        // Should be exactly MAX_HISTORY_SIZE
+        assert_eq!(state.history().len(), super::MAX_HISTORY_SIZE);
+
+        // Oldest messages should be evicted (0-9 gone)
+        // First remaining message should be message 10
+        assert_eq!(state.history()[0].message, "Message 10");
     }
 }
