@@ -262,6 +262,83 @@ pub enum Commands {
         #[arg(short = 'F', long)]
         force: bool,
     },
+
+    /// Session management (list, show, resume, export)
+    #[command(subcommand)]
+    Session(SessionCommands),
+}
+
+/// Session management subcommands
+#[derive(Subcommand)]
+pub enum SessionCommands {
+    /// List recent sessions
+    List {
+        /// Maximum number of sessions to show (default: 20)
+        #[arg(short = 'n', long, default_value = "20")]
+        limit: u32,
+
+        /// Filter by session type (chat, workflow, mcp)
+        #[arg(short = 't', long)]
+        session_type: Option<String>,
+
+        /// Output format (table, json)
+        #[arg(short = 'f', long, default_value = "table")]
+        format: String,
+    },
+
+    /// Search sessions by title
+    Search {
+        /// Search query
+        query: String,
+
+        /// Maximum number of results
+        #[arg(short = 'n', long, default_value = "20")]
+        limit: u32,
+    },
+
+    /// Show session details
+    Show {
+        /// Session ID
+        id: String,
+
+        /// Output format (text, json, markdown)
+        #[arg(short = 'f', long, default_value = "text")]
+        format: String,
+    },
+
+    /// Resume a previous session
+    Resume {
+        /// Session ID to resume
+        id: String,
+    },
+
+    /// Export session to markdown file
+    Export {
+        /// Session ID
+        id: String,
+
+        /// Output file (defaults to session.md in session directory)
+        #[arg(short = 'o', long)]
+        output: Option<PathBuf>,
+
+        /// Include timestamps
+        #[arg(long)]
+        timestamps: bool,
+    },
+
+    /// Rebuild session index from JSONL files
+    Reindex,
+
+    /// Clean up old sessions
+    Cleanup {
+        /// Delete sessions older than this many days
+        #[arg(long, default_value = "30")]
+        older_than: u32,
+
+        /// Dry run - show what would be deleted
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 /// Agent card management subcommands
@@ -778,5 +855,106 @@ mod tests {
         } else {
             panic!("Expected Init command");
         }
+    }
+
+    #[test]
+    fn test_session_list_parses() {
+        let cli = Cli::try_parse_from(["cru", "session", "list"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Session(SessionCommands::List { .. }))
+        ));
+    }
+
+    #[test]
+    fn test_session_list_with_options() {
+        let cli =
+            Cli::try_parse_from(["cru", "session", "list", "-n", "10", "-t", "chat"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::List {
+            limit,
+            session_type,
+            ..
+        })) = cli.command
+        {
+            assert_eq!(limit, 10);
+            assert_eq!(session_type, Some("chat".to_string()));
+        } else {
+            panic!("Expected Session List command");
+        }
+    }
+
+    #[test]
+    fn test_session_show_parses() {
+        let cli =
+            Cli::try_parse_from(["cru", "session", "show", "chat-20260104-1530-a1b2"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Show { id, .. })) = cli.command {
+            assert_eq!(id, "chat-20260104-1530-a1b2");
+        } else {
+            panic!("Expected Session Show command");
+        }
+    }
+
+    #[test]
+    fn test_session_resume_parses() {
+        let cli =
+            Cli::try_parse_from(["cru", "session", "resume", "chat-20260104-1530-a1b2"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Resume { id })) = cli.command {
+            assert_eq!(id, "chat-20260104-1530-a1b2");
+        } else {
+            panic!("Expected Session Resume command");
+        }
+    }
+
+    #[test]
+    fn test_session_export_parses() {
+        let cli = Cli::try_parse_from([
+            "cru",
+            "session",
+            "export",
+            "chat-20260104-1530-a1b2",
+            "--timestamps",
+        ])
+        .unwrap();
+        if let Some(Commands::Session(SessionCommands::Export { id, timestamps, .. })) = cli.command
+        {
+            assert_eq!(id, "chat-20260104-1530-a1b2");
+            assert!(timestamps);
+        } else {
+            panic!("Expected Session Export command");
+        }
+    }
+
+    #[test]
+    fn test_session_search_parses() {
+        let cli = Cli::try_parse_from(["cru", "session", "search", "rust"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Search { query, .. })) = cli.command {
+            assert_eq!(query, "rust");
+        } else {
+            panic!("Expected Session Search command");
+        }
+    }
+
+    #[test]
+    fn test_session_cleanup_parses() {
+        let cli =
+            Cli::try_parse_from(["cru", "session", "cleanup", "--older-than", "60", "--dry-run"])
+                .unwrap();
+        if let Some(Commands::Session(SessionCommands::Cleanup { older_than, dry_run })) =
+            cli.command
+        {
+            assert_eq!(older_than, 60);
+            assert!(dry_run);
+        } else {
+            panic!("Expected Session Cleanup command");
+        }
+    }
+
+    #[test]
+    fn test_session_reindex_parses() {
+        let cli = Cli::try_parse_from(["cru", "session", "reindex"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Session(SessionCommands::Reindex))
+        ));
     }
 }

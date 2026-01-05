@@ -6,6 +6,7 @@ pub mod db_server;
 pub mod init;
 pub mod mcp;
 pub mod process;
+pub mod session;
 pub mod skills;
 pub mod tasks;
 
