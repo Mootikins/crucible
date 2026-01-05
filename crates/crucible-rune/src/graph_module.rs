@@ -1006,6 +1006,7 @@ mod db_tests {
 mod note_store_tests {
     use super::*;
     use async_trait::async_trait;
+    use crucible_core::events::SessionEvent;
     use crucible_core::parser::BlockHash;
     use crucible_core::storage::{
         NoteRecord, NoteStore, SearchResult, StorageError, StorageResult,
@@ -1038,16 +1039,23 @@ mod note_store_tests {
 
     #[async_trait]
     impl NoteStore for MockNoteStore {
-        async fn upsert(&self, _note: NoteRecord) -> StorageResult<()> {
-            Ok(())
+        async fn upsert(&self, note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
+            let event = SessionEvent::NoteCreated {
+                path: note.path.into(),
+                title: Some(note.title),
+            };
+            Ok(vec![event])
         }
 
         async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
             Ok(self.notes.iter().find(|n| n.path == path).cloned())
         }
 
-        async fn delete(&self, _path: &str) -> StorageResult<()> {
-            Ok(())
+        async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
+            Ok(SessionEvent::NoteDeleted {
+                path: path.into(),
+                existed: false,
+            })
         }
 
         async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
@@ -1075,7 +1083,7 @@ mod note_store_tests {
 
     #[async_trait]
     impl NoteStore for FailingNoteStore {
-        async fn upsert(&self, _note: NoteRecord) -> StorageResult<()> {
+        async fn upsert(&self, _note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
             Err(StorageError::backend(&self.message))
         }
 
@@ -1083,7 +1091,7 @@ mod note_store_tests {
             Err(StorageError::backend(&self.message))
         }
 
-        async fn delete(&self, _path: &str) -> StorageResult<()> {
+        async fn delete(&self, _path: &str) -> StorageResult<SessionEvent> {
             Err(StorageError::backend(&self.message))
         }
 
