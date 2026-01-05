@@ -63,7 +63,11 @@ mod sqlite_bench {
         pub setup_duration_ms: u128,
     }
 
-    pub async fn measure_resources(dir: &TempDir, note_count: usize, avg_links: usize) -> SqliteMetrics {
+    pub async fn measure_resources(
+        dir: &TempDir,
+        note_count: usize,
+        avg_links: usize,
+    ) -> SqliteMetrics {
         let rss_before = get_rss_bytes();
         let start = Instant::now();
 
@@ -121,7 +125,11 @@ mod surreal_bench {
         pub setup_duration_ms: u128,
     }
 
-    pub async fn measure_resources(dir: &TempDir, note_count: usize, avg_links: usize) -> SurrealMetrics {
+    pub async fn measure_resources(
+        dir: &TempDir,
+        note_count: usize,
+        avg_links: usize,
+    ) -> SurrealMetrics {
         let rss_before = get_rss_bytes();
         let start = Instant::now();
 
@@ -218,13 +226,18 @@ fn bench_resources(c: &mut Criterion) {
             let metrics = rt.block_on(sqlite_bench::measure_resources(&dir, note_count, avg_links));
 
             println!("\n=== SQLite ({}) ===", label);
-            println!("  Disk size: {}", format_bytes(metrics.db_size_bytes as usize));
+            println!(
+                "  Disk size: {}",
+                format_bytes(metrics.db_size_bytes as usize)
+            );
             println!("  Setup time: {}ms", metrics.setup_duration_ms);
             if let (Some(before), Some(after)) = (metrics.rss_before, metrics.rss_after) {
-                println!("  RSS delta: {} -> {} ({})",
+                println!(
+                    "  RSS delta: {} -> {} ({})",
                     format_bytes(before),
                     format_bytes(after),
-                    format_bytes(after.saturating_sub(before)));
+                    format_bytes(after.saturating_sub(before))
+                );
             }
 
             // Benchmark cold startup
@@ -234,7 +247,8 @@ fn bench_resources(c: &mut Criterion) {
                     for _ in 0..iters {
                         let dir = TempDir::new().unwrap();
                         let _ = rt.block_on(sqlite_bench::measure_resources(&dir, 100, 3));
-                        total += rt.block_on(sqlite_bench::cold_startup(&dir.path().join("bench.db")));
+                        total +=
+                            rt.block_on(sqlite_bench::cold_startup(&dir.path().join("bench.db")));
                     }
                     total
                 });
@@ -244,16 +258,23 @@ fn bench_resources(c: &mut Criterion) {
         #[cfg(feature = "surrealdb")]
         {
             let dir = TempDir::new().unwrap();
-            let metrics = rt.block_on(surreal_bench::measure_resources(&dir, note_count, avg_links));
+            let metrics = rt.block_on(surreal_bench::measure_resources(
+                &dir, note_count, avg_links,
+            ));
 
             println!("\n=== SurrealDB ({}) ===", label);
-            println!("  Disk size: {}", format_bytes(metrics.db_size_bytes as usize));
+            println!(
+                "  Disk size: {}",
+                format_bytes(metrics.db_size_bytes as usize)
+            );
             println!("  Setup time: {}ms", metrics.setup_duration_ms);
             if let (Some(before), Some(after)) = (metrics.rss_before, metrics.rss_after) {
-                println!("  RSS delta: {} -> {} ({})",
+                println!(
+                    "  RSS delta: {} -> {} ({})",
                     format_bytes(before),
                     format_bytes(after),
-                    format_bytes(after.saturating_sub(before)));
+                    format_bytes(after.saturating_sub(before))
+                );
             }
 
             group.bench_function(BenchmarkId::new("surrealdb", label), |b| {
@@ -262,7 +283,8 @@ fn bench_resources(c: &mut Criterion) {
                     for _ in 0..iters {
                         let dir = TempDir::new().unwrap();
                         let _ = rt.block_on(surreal_bench::measure_resources(&dir, 100, 3));
-                        total += rt.block_on(surreal_bench::cold_startup(&dir.path().join("surreal.db")));
+                        total += rt
+                            .block_on(surreal_bench::cold_startup(&dir.path().join("surreal.db")));
                     }
                     total
                 });
@@ -290,7 +312,8 @@ fn bench_startup(c: &mut Criterion) {
         let db_path = dir.path().join("bench.db");
 
         group.bench_function("sqlite/cold", |b| {
-            b.to_async(&rt).iter(|| sqlite_bench::cold_startup(&db_path));
+            b.to_async(&rt)
+                .iter(|| sqlite_bench::cold_startup(&db_path));
         });
     }
 
@@ -301,7 +324,8 @@ fn bench_startup(c: &mut Criterion) {
         let db_path = dir.path().join("surreal.db");
 
         group.bench_function("surrealdb/cold", |b| {
-            b.to_async(&rt).iter(|| surreal_bench::cold_startup(&db_path));
+            b.to_async(&rt)
+                .iter(|| surreal_bench::cold_startup(&db_path));
         });
     }
 
