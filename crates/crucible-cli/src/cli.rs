@@ -247,6 +247,21 @@ pub enum Commands {
         #[arg(long, default_value = "300")]
         idle_timeout: u64,
     },
+
+    /// Initialize a new kiln (crucible workspace)
+    ///
+    /// Creates a .crucible directory with configuration, sessions, and plugins directories.
+    /// Use --path to specify a different location (defaults to current directory).
+    /// Use --force to overwrite an existing kiln.
+    Init {
+        /// Path where kiln should be created (defaults to current directory)
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+
+        /// Overwrite existing kiln
+        #[arg(short = 'F', long)]
+        force: bool,
+    },
 }
 
 /// Agent card management subcommands
@@ -718,5 +733,44 @@ mod tests {
             cli.command,
             Some(Commands::Storage(StorageCommands::Mode))
         ));
+    }
+
+    #[test]
+    fn test_init_parses() {
+        let cli = Cli::try_parse_from(["cru", "init"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Init { path: None, force: false })));
+    }
+
+    #[test]
+    fn test_init_with_path_parses() {
+        let cli = Cli::try_parse_from(["cru", "init", "--path", "/tmp/test"]).unwrap();
+        if let Some(Commands::Init { path, force }) = cli.command {
+            assert_eq!(path, Some(std::path::PathBuf::from("/tmp/test")));
+            assert!(!force);
+        } else {
+            panic!("Expected Init command");
+        }
+    }
+
+    #[test]
+    fn test_init_with_force_parses() {
+        let cli = Cli::try_parse_from(["cru", "init", "--force"]).unwrap();
+        if let Some(Commands::Init { path, force }) = cli.command {
+            assert_eq!(path, None);
+            assert!(force);
+        } else {
+            panic!("Expected Init command");
+        }
+    }
+
+    #[test]
+    fn test_init_with_short_flags_parses() {
+        let cli = Cli::try_parse_from(["cru", "init", "-p", "/tmp/test", "-F"]).unwrap();
+        if let Some(Commands::Init { path, force }) = cli.command {
+            assert_eq!(path, Some(std::path::PathBuf::from("/tmp/test")));
+            assert!(force);
+        } else {
+            panic!("Expected Init command");
+        }
     }
 }
