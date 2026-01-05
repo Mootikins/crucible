@@ -3633,6 +3633,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "crucible-benchmarks"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "criterion 0.5.1",
+ "crucible-core",
+ "crucible-lance",
+ "crucible-sqlite",
+ "crucible-surrealdb",
+ "rand 0.9.2",
+ "rand_chacha 0.9.0",
+ "rusqlite",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "crucible-cli"
 version = "0.1.0"
 dependencies = [
@@ -4079,22 +4097,6 @@ dependencies = [
  "tokio",
  "toml 0.9.10+spec-1.1.0",
  "tracing",
-]
-
-[[package]]
-name = "crucible-storage-tests"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "criterion 0.5.1",
- "crucible-core",
- "crucible-lance",
- "crucible-sqlite",
- "crucible-surrealdb",
- "rand 0.9.2",
- "serde_json",
- "tempfile",
- "tokio",
 ]
 
 [[package]]

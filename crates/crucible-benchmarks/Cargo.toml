@@ -1,10 +1,11 @@
 [package]
-name = "crucible-storage-tests"
+name = "crucible-benchmarks"
 version.workspace = true
 authors.workspace = true
 license.workspace = true
 edition.workspace = true
-publish = false  # Test-only crate, not published
+publish = false  # Benchmarks and contract tests, not published
+description = "Benchmarks and contract tests for Crucible storage backends"
 
 [dependencies]
 # Core traits
@@ -21,9 +22,11 @@ chrono = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 rand = "0.9"
+rand_chacha = "0.9"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_tokio"] }
+rusqlite = { version = "0.37", features = ["bundled"] }
 
 [features]
 default = []
@@ -49,4 +52,16 @@ harness = false
 
 [[bench]]
 name = "vector_search_comparison"
+harness = false
+
+[[bench]]
+name = "graph_query_comparison"
+harness = false
+
+[[bench]]
+name = "resource_comparison"
+harness = false
+
+[[bench]]
+name = "write_comparison"
 harness = false
