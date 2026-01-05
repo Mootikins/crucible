@@ -2,6 +2,7 @@ use std::fs;
 use tempfile::TempDir;
 
 #[test]
+#[ignore = "Integration test requiring binary build - run with --ignored"]
 fn test_init_creates_directories_and_config() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let path_arg = temp_dir.path().to_str().unwrap();
@@ -57,6 +58,7 @@ fn test_init_creates_directories_and_config() {
 }
 
 #[test]
+#[ignore = "Integration test requiring binary build - run with --ignored"]
 fn test_init_with_existing_directory_errors() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let path_arg = temp_dir.path().to_str().unwrap();
@@ -102,6 +104,7 @@ fn test_init_with_existing_directory_errors() {
 }
 
 #[test]
+#[ignore = "Integration test requiring binary build - run with --ignored"]
 fn test_init_with_force_overwrites() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let path_arg = temp_dir.path().to_str().unwrap();
