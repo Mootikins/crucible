@@ -305,14 +305,13 @@ async fn handle_query(req: Request, km: &Arc<KilnManager>) -> Response {
     };
 
     // Get or open connection to the kiln
-    let client = match km.get_or_open(Path::new(kiln_path)).await {
+    let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
         Err(e) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
     };
 
-    // Execute query
-    let inner = client.inner();
-    match inner.query(sql, &[]).await {
+    // Execute query using the storage handle
+    match handle.query(sql, &[]).await {
         Ok(result) => {
             let json_result = serde_json::json!({
                 "records": result.records,
