@@ -409,12 +409,34 @@ pub async fn create_internal_agent(
             // Anthropic models don't use reasoning_content field
             Ok(Box::new(RigAgentHandle::new(agent)))
         }
-        crucible_rig::RigClient::GitHubCopilot(_) => {
-            // GitHub Copilot uses OpenAI-compatible API but requires token refresh
-            // TODO: Implement proper Rig agent integration for Copilot
-            anyhow::bail!(
-                "GitHub Copilot agent support is not yet implemented. Use a different provider for agent mode."
-            )
+        crucible_rig::RigClient::GitHubCopilot(copilot_client) => {
+            // CopilotClient manages OAuth token exchange with GitHub's Copilot API.
+            // Get the API token and base URL, then create an OpenAI-compatible client.
+            let api_token = copilot_client
+                .api_token()
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to get Copilot API token: {}", e))?;
+            let api_base = copilot_client
+                .api_base()
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to get Copilot API base: {}", e))?;
+
+            // Create OpenAI-compatible client with Copilot credentials
+            let compat_client = crucible_rig::create_openai_compat_client(&api_token, &api_base)?;
+
+            let agent = build_agent_with_kiln_tools(
+                &agent_config,
+                &compat_client,
+                &workspace_root,
+                model_size,
+                kiln_ctx,
+            )?;
+            let handle = RigAgentHandle::new(agent);
+            Ok(if let Some(endpoint) = reasoning_endpoint {
+                Box::new(handle.with_reasoning_endpoint(endpoint, model))
+            } else {
+                Box::new(handle)
+            })
         }
     }
 }
