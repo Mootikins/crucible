@@ -13,11 +13,10 @@ use std::sync::Arc;
 /// Create NotePipeline with all dependencies wired together
 ///
 /// This factory assembles a complete NotePipeline by creating and connecting:
-/// 1. Change detection (SurrealDB-backed for persistence)
-/// 2. Merkle tree storage (SurrealDB-backed)
-/// 3. Enrichment service (with optional embeddings)
-/// 4. Enriched note storage (SurrealDB-backed)
-/// 5. Pipeline configuration
+/// 1. Change detection (in-memory for now)
+/// 2. Enrichment service (with optional embeddings)
+/// 3. Enriched note storage (SurrealDB-backed)
+/// 4. Pipeline configuration
 ///
 /// All dependencies are created as trait objects (`Arc<dyn Trait>`), following
 /// the Dependency Inversion Principle. This allows easy swapping of implementations
@@ -60,26 +59,22 @@ pub async fn create_pipeline(
     // Using in-memory store until NoteStore-based change detection is implemented.
     let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
 
-    // 2. Merkle store (SurrealDB-backed)
-    let merkle_store = super::create_surrealdb_merkle_store(storage_client.clone());
-
-    // 3. Enrichment service (with optional embeddings)
+    // 2. Enrichment service (with optional embeddings)
     let enrichment_service = super::create_default_enrichment_service(config).await?;
 
-    // 4. Enriched note store (SurrealDB-backed)
+    // 3. Enriched note store (SurrealDB-backed)
     let note_store = super::create_surrealdb_enriched_note_store(storage_client);
 
-    // 5. Pipeline configuration
+    // 4. Pipeline configuration
     let pipeline_config = NotePipelineConfig {
         parser: ParserBackend::default(),
         skip_enrichment: false,
         force_reprocess: force,
     };
 
-    // 6. Assemble pipeline (all trait objects)
+    // 5. Assemble pipeline (all trait objects)
     Ok(NotePipeline::with_config(
         change_detector,
-        merkle_store,
         enrichment_service,
         note_store,
         pipeline_config,

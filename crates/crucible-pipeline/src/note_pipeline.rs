@@ -1,14 +1,13 @@
 //! Note Processing Pipeline Orchestrator
 //!
-//! This module implements the 5-phase pipeline for processing notes in Crucible.
+//! This module implements the pipeline for processing notes in Crucible.
 //!
-//! ## Five-Phase Architecture
+//! ## Pipeline Architecture
 //!
 //! 1. **Quick Filter**: Check file state (date modified + BLAKE3 hash) to skip unchanged files
 //! 2. **Parse**: Transform markdown to AST using crucible-parser
-//! 3. **Merkle Diff**: Build Merkle tree and compare with stored version to identify changed blocks
-//! 4. **Enrich**: Generate embeddings and metadata for changed blocks using crucible-enrichment
-//! 5. **Store**: Persist all changes using storage layer
+//! 3. **Enrich**: Generate embeddings and metadata using crucible-enrichment
+//! 4. **Store**: Persist all changes using storage layer
 //!
 //! ## Design Principles
 //!
@@ -23,7 +22,6 @@ use crucible_core::processing::{
     ChangeDetectionStore, FileState, NotePipelineOrchestrator, PipelineMetrics, ProcessingResult,
 };
 use crucible_core::{EnrichedNoteStore, EnrichmentService};
-use crucible_merkle::{HybridMerkleTree, MerkleStore};
 use crucible_parser::{traits::MarkdownParser, CrucibleParser};
 use std::path::Path;
 use std::sync::Arc;
@@ -54,7 +52,7 @@ pub struct NotePipelineConfig {
 
 /// The main pipeline orchestrator
 ///
-/// Coordinates all five phases of note processing. This is the single
+/// Coordinates all phases of note processing. This is the single
 /// entry point for all note processing operations across all frontends
 /// (CLI, Desktop, MCP, Obsidian plugin, etc.).
 ///
@@ -64,9 +62,8 @@ pub struct NotePipelineConfig {
 /// NotePipeline (orchestration)
 ///   ├─> ChangeDetectionStore (Phase 1: skip checks)
 ///   ├─> crucible-parser (Phase 2: AST)
-///   ├─> MerkleStore (Phase 3: diff)
-///   ├─> EnrichmentService (Phase 4: embeddings)
-///   └─> Storage (Phase 5: persistence)
+///   ├─> EnrichmentService (Phase 3: embeddings)
+///   └─> Storage (Phase 4: persistence)
 /// ```
 ///
 pub struct NotePipeline {
@@ -76,13 +73,10 @@ pub struct NotePipeline {
     /// Storage for file state tracking (Phase 1)
     change_detector: Arc<dyn ChangeDetectionStore>,
 
-    /// Storage for Merkle trees (Phase 3)
-    merkle_store: Arc<dyn MerkleStore>,
-
-    /// Enrichment service for embeddings and metadata (Phase 4)
+    /// Enrichment service for embeddings and metadata (Phase 3)
     enrichment_service: Arc<dyn EnrichmentService>,
 
-    /// Storage for enriched notes (Phase 5)
+    /// Storage for enriched notes (Phase 4)
     storage: Arc<dyn EnrichedNoteStore>,
 
     /// Configuration
@@ -105,7 +99,6 @@ impl NotePipeline {
     /// Create a new pipeline with dependencies (uses default config)
     pub fn new(
         change_detector: Arc<dyn ChangeDetectionStore>,
-        merkle_store: Arc<dyn MerkleStore>,
         enrichment_service: Arc<dyn EnrichmentService>,
         storage: Arc<dyn EnrichedNoteStore>,
     ) -> Self {
@@ -115,7 +108,6 @@ impl NotePipeline {
         Self {
             parser,
             change_detector,
-            merkle_store,
             enrichment_service,
             storage,
             config,
@@ -125,7 +117,6 @@ impl NotePipeline {
     /// Create a new pipeline with custom configuration
     pub fn with_config(
         change_detector: Arc<dyn ChangeDetectionStore>,
-        merkle_store: Arc<dyn MerkleStore>,
         enrichment_service: Arc<dyn EnrichmentService>,
         storage: Arc<dyn EnrichedNoteStore>,
         config: NotePipelineConfig,
@@ -135,14 +126,13 @@ impl NotePipeline {
         Self {
             parser,
             change_detector,
-            merkle_store,
             enrichment_service,
             storage,
             config,
         }
     }
 
-    /// Process a note through all five phases
+    /// Process a note through all phases
     ///
     /// This is the main entry point for note processing. It coordinates
     /// all phases and handles errors gracefully.
@@ -160,9 +150,8 @@ impl NotePipeline {
     ///
     /// 1. **Quick Filter**: Check if file hash changed
     /// 2. **Parse**: Convert markdown to AST
-    /// 3. **Merkle Diff**: Identify changed blocks
-    /// 4. **Enrich**: Generate embeddings for changed blocks
-    /// 5. **Store**: Persist changes to database
+    /// 3. **Enrich**: Generate embeddings for all blocks
+    /// 4. **Store**: Persist changes to database
     pub async fn process(&self, path: &Path) -> Result<ProcessingResult> {
         let start = std::time::Instant::now();
 
@@ -187,100 +176,20 @@ impl NotePipeline {
         let phase2_duration = phase2_start.elapsed().as_millis() as u64;
         debug!("Phase 2: Parsed note successfully");
 
-        // Phase 3: Build Merkle tree and diff
-        let phase3_start = std::time::Instant::now();
-        let new_tree = HybridMerkleTree::from_document(&parsed);
-
-        // Get old tree from storage
         let path_str = path.to_string_lossy();
-        let old_tree = self.merkle_store.retrieve(&path_str).await.ok();
 
-        // Compute diff
-        let diff = if let Some(ref old) = old_tree {
-            new_tree.diff(old)
-        } else {
-            // No old tree means all blocks are "changed"
-            new_tree.diff(&HybridMerkleTree::default())
-        };
-
-        let phase3_duration = phase3_start.elapsed().as_millis() as u64;
-
-        // If no changes and not forcing reprocess, update file state and return
-        if diff.changed_sections.is_empty() && old_tree.is_some() && !self.config.force_reprocess {
-            debug!("Phase 3: No content changes detected");
-            self.update_file_state(path).await.with_context(|| {
-                format!(
-                    "Failed to update file state for '{}' after detecting no changes",
-                    path.display()
-                )
-            })?;
-            self.merkle_store
-                .store(&path_str, &new_tree)
-                .await
-                .with_context(|| {
-                    format!(
-                        "Failed to update Merkle tree for '{}' after detecting no changes",
-                        path.display()
-                    )
-                })?;
-            return Ok(ProcessingResult::NoChanges);
-        }
-
-        // Extract changed block IDs from diff
-        // Note: The diff provides section-level changes. For now, we treat entire sections
-        // as changed blocks. Future enhancement: block-level granularity.
-
-        // Count all types of changes: modified, added, and removed sections
-        let changed_count =
-            diff.changed_sections.len() + diff.added_sections + diff.removed_sections;
-
-        // Build IDs for all affected sections
-        let mut changed_block_ids = Vec::with_capacity(changed_count);
-
-        // Add modified sections
-        for section in diff.changed_sections.iter() {
-            changed_block_ids.push(format!("modified_section_{}", section.section_index));
-        }
-
-        // Add newly added sections
-        for idx in 0..diff.added_sections {
-            changed_block_ids.push(format!("added_section_{}", idx));
-        }
-
-        // Add removed sections (for tracking purposes)
-        for idx in 0..diff.removed_sections {
-            changed_block_ids.push(format!("removed_section_{}", idx));
-        }
-
-        debug!(
-            "Phase 3: {} sections changed (modified: {}, added: {}, removed: {})",
-            changed_count,
-            diff.changed_sections.len(),
-            diff.added_sections,
-            diff.removed_sections
-        );
-
-        // Phase 4: Enrichment (if enabled)
-        let phase4_start = std::time::Instant::now();
+        // Phase 3: Enrichment (if enabled)
+        let phase3_start = std::time::Instant::now();
         let enriched = if !self.config.skip_enrichment {
-            debug!(
-                "Phase 4: Enriching note with {} changed blocks",
-                changed_count
-            );
+            debug!("Phase 3: Enriching note");
 
-            // Call enrichment service with Merkle tree (avoids recomputation)
+            // Enrich all blocks (empty changed_blocks means embed all)
             self.enrichment_service
-                .enrich_with_tree(parsed.clone(), changed_block_ids.clone())
+                .enrich(parsed.clone(), Vec::new())
                 .await
-                .with_context(|| {
-                    format!(
-                        "Phase 4: Failed to enrich note '{}' (processing {} changed blocks)",
-                        path.display(),
-                        changed_count
-                    )
-                })?
+                .with_context(|| format!("Phase 3: Failed to enrich note '{}'", path.display()))?
         } else {
-            debug!("Phase 4: Enrichment skipped (disabled in config)");
+            debug!("Phase 3: Enrichment skipped (disabled in config)");
 
             // Create minimal enriched note without embeddings
             use crucible_core::enrichment::{EnrichedNote, EnrichmentMetadata};
@@ -293,34 +202,23 @@ impl NotePipeline {
         };
 
         let embeddings_generated = !enriched.embeddings.is_empty();
-        let phase4_duration = phase4_start.elapsed().as_millis() as u64;
+        let phase3_duration = phase3_start.elapsed().as_millis() as u64;
         debug!(
-            "Phase 4: Generated {} embeddings, {} relations",
+            "Phase 3: Generated {} embeddings, {} relations",
             enriched.embeddings.len(),
             enriched.inferred_relations.len()
         );
 
-        // Phase 5: Storage
-        let phase5_start = std::time::Instant::now();
+        // Phase 4: Storage
+        let phase4_start = std::time::Instant::now();
 
-        // Store enriched note (includes parsed content, Merkle tree, embeddings, metadata)
+        // Store enriched note (includes parsed content, embeddings, metadata)
         self.storage
             .store_enriched(&enriched, &path_str)
             .await
             .with_context(|| {
                 format!(
-                    "Phase 5: Failed to store enriched note for '{}'",
-                    path.display()
-                )
-            })?;
-
-        // Store Merkle tree separately for future diffs
-        self.merkle_store
-            .store(&path_str, &new_tree)
-            .await
-            .with_context(|| {
-                format!(
-                    "Phase 5: Failed to store Merkle tree for '{}'",
+                    "Phase 4: Failed to store enriched note for '{}'",
                     path.display()
                 )
             })?;
@@ -328,27 +226,25 @@ impl NotePipeline {
         // Update file state tracking
         self.update_file_state(path).await.with_context(|| {
             format!(
-                "Phase 5: Failed to update file state for '{}'",
+                "Phase 4: Failed to update file state for '{}'",
                 path.display()
             )
         })?;
 
-        let phase5_duration = phase5_start.elapsed().as_millis() as u64;
+        let phase4_duration = phase4_start.elapsed().as_millis() as u64;
 
         let total_duration = start.elapsed().as_millis() as u64;
 
         info!(
-            "Completed processing in {}ms (P1:{}, P2:{}, P3:{}, P4:{}, P5:{})",
-            total_duration,
-            phase1_duration,
-            phase2_duration,
-            phase3_duration,
-            phase4_duration,
-            phase5_duration
+            "Completed processing in {}ms (P1:{}, P2:{}, P3:{}, P4:{})",
+            total_duration, phase1_duration, phase2_duration, phase3_duration, phase4_duration
         );
 
+        // Count of blocks enriched (embeddings generated)
+        let blocks_enriched = enriched.embeddings.len();
+
         Ok(ProcessingResult::success(
-            changed_count,
+            blocks_enriched,
             embeddings_generated,
         ))
     }
@@ -438,9 +334,7 @@ impl NotePipelineOrchestrator for NotePipeline {
 
 #[cfg(test)]
 mod tests {
-
     use crucible_core::processing::InMemoryChangeDetectionStore;
-    use crucible_merkle::InMemoryMerkleStore;
     use std::io::Write;
     use std::sync::Arc;
     use tempfile::NamedTempFile;
@@ -450,78 +344,30 @@ mod tests {
     #[tokio::test]
     async fn test_pipeline_creation() {
         let _change_detector = Arc::new(InMemoryChangeDetectionStore::new());
-        let _merkle_store = Arc::new(InMemoryMerkleStore::new());
 
         // For now, we can't test without a mock EnrichmentService
         // This will be added once we wire up the full implementation
     }
 
-    /// Bug #3 RED: Test that Phase 2 parse errors include file path in error message
-    ///
-    /// When parsing fails, the error should clearly identify:
-    /// - The file that failed
-    /// - The phase that failed (Phase 2: Parse)
-    /// - The underlying error details
+    /// Test that Phase 2 parse errors include file path in error message
     #[tokio::test]
     async fn test_parse_error_includes_file_path() {
-        // This test will fail initially because current error messages lack file context
-
-        // Create a file with invalid markdown that will cause parse failure
         let mut temp_file = NamedTempFile::new().unwrap();
-        // Write some content that might cause issues (actual failure will depend on parser)
         writeln!(temp_file, "# Test").unwrap();
         let _file_path = temp_file.path();
 
-        // When we implement this test properly with mocks, we'll verify:
-        // - Error contains file path: assert!(error_msg.contains(file_path.display()))
-        // - Error contains phase info: assert!(error_msg.contains("Phase 2"))
-        // - Error contains specific details: assert!(error_msg.contains("Failed to parse"))
-
-        // For now, this is a placeholder that documents what we need to test
         // TODO: Implement with mock parser that returns errors
     }
 
-    /// Bug #3 RED: Test that Phase 4 enrichment errors include file path and phase info
-    ///
-    /// When enrichment fails, the error should clearly identify:
-    /// - The file being enriched
-    /// - The phase that failed (Phase 4: Enrich)
-    /// - How many blocks were being enriched
-    /// - The underlying error from the enrichment service
+    /// Test that Phase 3 enrichment errors include file path and phase info
     #[tokio::test]
     async fn test_enrichment_error_includes_context() {
-        // This test will fail initially because current error at line 268 lacks detail
-
-        // When we implement this test properly with mocks, we'll verify error message contains:
-        // - File path: "Failed to enrich /path/to/note.md"
-        // - Phase info: "Phase 4: Enrich"
-        // - Block count: "while processing 5 changed blocks"
-        // - Underlying error: actual error from enrichment service
-
         // TODO: Implement with mock enrichment service that returns errors
     }
 
-    /// Bug #3 RED: Test that Phase 5 storage errors include file path and what failed
-    ///
-    /// When storage fails, the error should clearly identify:
-    /// - The file being stored
-    /// - The phase that failed (Phase 5: Store)
-    /// - Which storage operation failed (enriched note vs Merkle tree vs file state)
-    /// - The underlying storage error
+    /// Test that Phase 4 storage errors include file path and what failed
     #[tokio::test]
     async fn test_storage_error_includes_operation_context() {
-        // This test will fail initially because errors at lines 297, 301, 305 lack detail
-
-        // When we implement this test properly with mocks, we'll verify:
-        // Storage of enriched note:
-        //   - "Phase 5: Failed to store enriched note for /path/to/note.md"
-        // Merkle tree storage:
-        //   - "Phase 5: Failed to store Merkle tree for /path/to/note.md"
-        // File state update:
-        //   - "Phase 5: Failed to update file state for /path/to/note.md"
-
-        // Each error should include the underlying storage error details
-
         // TODO: Implement with mock storage that returns errors
     }
 }

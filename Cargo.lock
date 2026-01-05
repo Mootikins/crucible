@@ -3657,7 +3657,6 @@ dependencies = [
  "crucible-enrichment",
  "crucible-lance",
  "crucible-llm",
- "crucible-merkle",
  "crucible-parser",
  "crucible-pipeline",
  "crucible-rig",
@@ -3814,7 +3813,6 @@ dependencies = [
  "async-trait",
  "chrono",
  "crucible-core",
- "crucible-merkle",
  "num_cpus",
  "serde",
  "tempfile",
@@ -3910,23 +3908,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crucible-merkle"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "blake3",
- "chrono",
- "crucible-core",
- "crucible-parser",
- "hex",
- "parking_lot",
- "serde",
- "serde_json",
- "thiserror 2.0.17",
- "tokio",
-]
-
-[[package]]
 name = "crucible-parser"
 version = "0.1.0"
 dependencies = [
@@ -3959,7 +3940,6 @@ dependencies = [
  "blake3",
  "chrono",
  "crucible-core",
- "crucible-merkle",
  "crucible-parser",
  "tempfile",
  "thiserror 2.0.17",
@@ -4130,7 +4110,6 @@ dependencies = [
  "crucible-core",
  "crucible-enrichment",
  "crucible-llm",
- "crucible-merkle",
  "crucible-parser",
  "crucible-query",
  "crucible-surrealdb",

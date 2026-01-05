@@ -10,10 +10,9 @@ description = "SurrealDB backend for the Crucible knowledge management system"
 # Dependency Inversion: Only depend on crucible-core for abstractions
 # Parser implementations are injected by higher-level crates
 crucible-core = { path = "../crucible-core" }
-crucible-merkle = { path = "../crucible-merkle" }
 crucible-query = { path = "../crucible-query" }
 
-# Enrichment types (EnrichedNoteWithTree)
+# Enrichment types
 crucible-enrichment = { path = "../crucible-enrichment" }
 crucible-llm = { workspace = true, optional = true }
 serde = { workspace = true }

@@ -4,12 +4,12 @@
 //! metadata extraction, and relation inference. Follows clean architecture
 //! principles with dependency injection.
 
-use crate::types::{BlockEmbedding, EnrichedNoteWithTree, EnrichmentMetadata, InferredRelation};
+use crate::types::{BlockEmbedding, EnrichmentMetadata, InferredRelation};
 use anyhow::Result;
 use async_trait::async_trait;
-use crucible_core::enrichment::EmbeddingProvider;
+use crucible_core::enrichment::{EmbeddingProvider, EnrichedNote};
 use crucible_core::events::{SessionEvent, SharedEventBus};
-use crucible_core::{MerkleTreeBuilder, ParsedNote};
+use crucible_core::ParsedNote;
 use std::sync::Arc;
 use tracing::{debug, info};
 
@@ -27,12 +27,9 @@ pub const DEFAULT_MAX_BATCH_SIZE: usize = 10;
 /// - Relation inference (semantic similarity, clustering)
 ///
 /// Returns an EnrichedNote ready for storage.
-pub struct DefaultEnrichmentService<M: MerkleTreeBuilder> {
+pub struct DefaultEnrichmentService {
     /// Embedding provider (dependency injected)
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
-
-    /// Merkle tree builder (dependency injected)
-    merkle_builder: M,
 
     /// Minimum word count for embedding generation
     min_words_for_embedding: usize,
@@ -44,12 +41,11 @@ pub struct DefaultEnrichmentService<M: MerkleTreeBuilder> {
     emitter: Option<SharedEventBus<SessionEvent>>,
 }
 
-impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
+impl DefaultEnrichmentService {
     /// Create a new enrichment service with an embedding provider
-    pub fn new(merkle_builder: M, embedding_provider: Arc<dyn EmbeddingProvider>) -> Self {
+    pub fn new(embedding_provider: Arc<dyn EmbeddingProvider>) -> Self {
         Self {
             embedding_provider: Some(embedding_provider),
-            merkle_builder,
             min_words_for_embedding: DEFAULT_MIN_WORDS_FOR_EMBEDDING,
             max_batch_size: DEFAULT_MAX_BATCH_SIZE,
             emitter: None,
@@ -57,10 +53,9 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
     }
 
     /// Create an enrichment service without embeddings (metadata/relations only)
-    pub fn without_embeddings(merkle_builder: M) -> Self {
+    pub fn without_embeddings() -> Self {
         Self {
             embedding_provider: None,
-            merkle_builder,
             min_words_for_embedding: DEFAULT_MIN_WORDS_FOR_EMBEDDING,
             max_batch_size: DEFAULT_MAX_BATCH_SIZE,
             emitter: None,
@@ -101,17 +96,15 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
     ///
     /// # Arguments
     /// * `parsed` - The parsed note with AST
-    /// * `merkle_tree` - The Merkle tree (already computed from AST)
-    /// * `changed_blocks` - List of block IDs that changed (from Merkle diff)
+    /// * `changed_blocks` - List of block IDs that changed
     ///
     /// # Returns
     /// An EnrichedNote with embeddings, metadata, and inferred relations
     pub async fn enrich_internal(
         &self,
         parsed: ParsedNote,
-        merkle_tree: M::Tree,
         changed_blocks: Vec<String>,
-    ) -> Result<EnrichedNoteWithTree<M::Tree>> {
+    ) -> Result<EnrichedNote> {
         use std::time::Instant;
 
         info!(
@@ -150,13 +143,7 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
             }
         }
 
-        Ok(EnrichedNoteWithTree::new(
-            parsed,
-            merkle_tree,
-            embeddings,
-            metadata?,
-            relations?,
-        ))
+        Ok(EnrichedNote::new(parsed, embeddings, metadata?, relations?))
     }
 
     /// Generate embeddings for changed blocks only
@@ -546,48 +533,28 @@ fn build_breadcrumbs(parsed: &ParsedNote) -> std::collections::HashMap<usize, St
 }
 
 // Trait implementation for SOLID principles (Dependency Inversion)
-// Returns core::EnrichedNote (without merkle_tree) to match trait signature
 #[async_trait]
-impl<M: MerkleTreeBuilder> crucible_core::enrichment::EnrichmentService
-    for DefaultEnrichmentService<M>
-{
+impl crucible_core::enrichment::EnrichmentService for DefaultEnrichmentService {
     async fn enrich(
         &self,
         parsed: ParsedNote,
         changed_block_ids: Vec<String>,
-    ) -> Result<crucible_core::enrichment::EnrichedNote> {
-        // Build Merkle tree from parsed note using injected builder
-        let merkle_tree = self.merkle_builder.from_document(&parsed);
-
-        // Delegate to internal method
-        let enriched_with_tree = self
-            .enrich_internal(parsed, merkle_tree, changed_block_ids)
-            .await?;
-
-        // Return core enriched note (without merkle tree)
-        Ok(enriched_with_tree.core)
+    ) -> Result<EnrichedNote> {
+        self.enrich_internal(parsed, changed_block_ids).await
     }
 
     async fn enrich_with_tree(
         &self,
         parsed: ParsedNote,
         changed_block_ids: Vec<String>,
-    ) -> Result<crucible_core::enrichment::EnrichedNote> {
-        // Build merkle tree internally using injected builder
-        let merkle_tree = self.merkle_builder.from_document(&parsed);
-
-        // Delegate to internal method
-        let enriched_with_tree = self
-            .enrich_internal(parsed, merkle_tree, changed_block_ids)
-            .await?;
-
-        // Return core enriched note (without merkle tree)
-        Ok(enriched_with_tree.core)
+    ) -> Result<EnrichedNote> {
+        // Same as enrich - tree building is now handled elsewhere if needed
+        self.enrich_internal(parsed, changed_block_ids).await
     }
 
     async fn infer_relations(
         &self,
-        _enriched: &crucible_core::enrichment::EnrichedNote,
+        _enriched: &EnrichedNote,
         _threshold: f64,
     ) -> Result<Vec<InferredRelation>> {
         // Delegate to existing infer_relations method
@@ -649,10 +616,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_enrichment_service_with_provider() {
-        use crucible_merkle::HybridMerkleTreeBuilder;
-
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = DefaultEnrichmentService::new(HybridMerkleTreeBuilder, provider);
+        let service = DefaultEnrichmentService::new(provider);
 
         assert!(service.embedding_provider.is_some());
         assert_eq!(service.min_words_for_embedding, 5);
@@ -660,29 +625,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_enrichment_service_without_provider() {
-        use crucible_merkle::HybridMerkleTreeBuilder;
-
-        let service = DefaultEnrichmentService::without_embeddings(HybridMerkleTreeBuilder);
+        let service = DefaultEnrichmentService::without_embeddings();
 
         assert!(service.embedding_provider.is_none());
     }
 
     #[tokio::test]
     async fn test_enrichment_service_with_custom_min_words() {
-        use crucible_merkle::HybridMerkleTreeBuilder;
-
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service =
-            DefaultEnrichmentService::new(HybridMerkleTreeBuilder, provider).with_min_words(10);
+        let service = DefaultEnrichmentService::new(provider).with_min_words(10);
 
         assert_eq!(service.min_words_for_embedding, 10);
     }
 
     #[tokio::test]
     async fn test_generate_embeddings_without_provider() {
-        use crucible_merkle::HybridMerkleTreeBuilder;
-
-        let service = DefaultEnrichmentService::without_embeddings(HybridMerkleTreeBuilder);
+        let service = DefaultEnrichmentService::without_embeddings();
 
         // Create a minimal ParsedNote for testing
         let parsed = create_test_parsed_note();
@@ -698,9 +656,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_extract_metadata() {
-        use crucible_merkle::HybridMerkleTreeBuilder;
-
-        let service = DefaultEnrichmentService::without_embeddings(HybridMerkleTreeBuilder);
+        let service = DefaultEnrichmentService::without_embeddings();
         let parsed = create_test_parsed_note();
 
         let metadata = service.extract_metadata(&parsed).await.unwrap();
@@ -716,9 +672,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_infer_relations() {
-        use crucible_merkle::HybridMerkleTreeBuilder;
-
-        let service = DefaultEnrichmentService::without_embeddings(HybridMerkleTreeBuilder);
+        let service = DefaultEnrichmentService::without_embeddings();
         let parsed = create_test_parsed_note();
 
         let relations = service.infer_relations(&parsed).await.unwrap();
@@ -756,10 +710,8 @@ mod tests {
     /// Test that embeddings are generated when changed_blocks is empty (embed all)
     #[tokio::test]
     async fn test_generate_embeddings_with_empty_changed_blocks() {
-        use crucible_merkle::HybridMerkleTreeBuilder;
-
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = DefaultEnrichmentService::new(HybridMerkleTreeBuilder, provider);
+        let service = DefaultEnrichmentService::new(provider);
 
         let parsed = create_test_parsed_note_with_content();
 
@@ -780,10 +732,8 @@ mod tests {
     /// This is the bug reproduction test - with section-style IDs, no blocks should be skipped
     #[tokio::test]
     async fn test_generate_embeddings_with_section_style_changed_blocks() {
-        use crucible_merkle::HybridMerkleTreeBuilder;
-
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = DefaultEnrichmentService::new(HybridMerkleTreeBuilder, provider);
+        let service = DefaultEnrichmentService::new(provider);
 
         let parsed = create_test_parsed_note_with_content();
 

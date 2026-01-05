@@ -6,7 +6,7 @@
 //!
 //! ## Architecture (SOLID Phase 5)
 //!
-//! - Concrete types (SurrealClient, MerklePersistence, etc.) are private to the crate
+//! - Concrete types (SurrealClient, etc.) are private to the crate
 //! - Public API provides trait objects and factory functions via the `adapters` module
 //! - CLI code depends on abstractions, not implementations
 //!
@@ -29,18 +29,14 @@
 //!     // Create client (opaque handle)
 //!     let client = adapters::create_surreal_client(config).await?;
 //!
-//!     // Create trait objects
-//!     let merkle_store = adapters::create_merkle_store(client.clone());
-//!
 //!     Ok(())
 //! }
 //! ```
 
-use crate::{MerklePersistence, SurrealClient, SurrealDbConfig, SurrealNoteStore};
+use crate::{SurrealClient, SurrealDbConfig, SurrealNoteStore};
 use anyhow::Result;
 use async_trait::async_trait;
 use crucible_core::storage::NoteStore;
-use crucible_merkle::MerkleStore;
 use std::sync::Arc;
 
 // ============================================================================
@@ -112,19 +108,6 @@ impl SurrealClientHandle {
 pub async fn create_surreal_client(config: SurrealDbConfig) -> Result<SurrealClientHandle> {
     let client = SurrealClient::new(config).await?;
     Ok(SurrealClientHandle::new(client))
-}
-
-/// Create a Merkle tree store backed by SurrealDB.
-///
-/// # Arguments
-///
-/// * `client` - Opaque handle to a SurrealDB client
-///
-/// # Returns
-///
-/// A trait object implementing `MerkleStore`
-pub fn create_merkle_store(client: SurrealClientHandle) -> Arc<dyn MerkleStore> {
-    Arc::new(MerklePersistence::new((*client.inner()).clone()))
 }
 
 // ============================================================================

@@ -49,9 +49,7 @@ pub mod event_handler;
 pub mod types;
 
 // Re-export enrichment types (domain types are public)
-pub use types::{
-    BlockEmbedding, EnrichedNoteWithTree, EnrichmentMetadata, InferredRelation, RelationType,
-};
+pub use types::{BlockEmbedding, EnrichedNote, EnrichmentMetadata, InferredRelation, RelationType};
 
 // Re-export event handler and adapter
 pub use event_handler::{EmbeddingHandler, EmbeddingHandlerAdapter};
@@ -64,7 +62,6 @@ pub(crate) mod service;
 
 // Factory function - public API for creating the service
 use crucible_core::enrichment::{EmbeddingProvider, EnrichmentService};
-use crucible_merkle::HybridMerkleTreeBuilder;
 use std::sync::Arc;
 
 /// Create a DefaultEnrichmentService with optional embedding provider.
@@ -82,12 +79,10 @@ use std::sync::Arc;
 pub fn create_default_enrichment_service(
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
 ) -> anyhow::Result<Arc<dyn EnrichmentService>> {
-    let merkle_builder = HybridMerkleTreeBuilder;
-
     let service = if let Some(provider) = embedding_provider {
-        service::DefaultEnrichmentService::new(merkle_builder, provider)
+        service::DefaultEnrichmentService::new(provider)
     } else {
-        service::DefaultEnrichmentService::without_embeddings(merkle_builder)
+        service::DefaultEnrichmentService::without_embeddings()
     };
 
     Ok(Arc::new(service))

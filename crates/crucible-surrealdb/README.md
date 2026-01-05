@@ -199,61 +199,6 @@ let nodes = db.graph_traversal_query(&query).await?;
 - `src/schema_types.rs` - Rust type definitions
 - `examples/queries.surql` - Query examples
 
-## ContentAddressedStorage Backend
-
-This crate also provides a SurrealDB backend for the Crucible content-addressed storage system. It implements the `ContentAddressedStorage` trait using SurrealDB as the underlying database.
-
-### Features
-
-- **Persistent Storage**: Content blocks and Merkle trees are stored in SurrealDB
-- **ACID Transactions**: Full transaction support for data consistency
-- **Efficient Indexing**: Hash-based lookups with optimized indexes
-- **Async/Await Support**: Full async/await support with Tokio integration
-- **Connection Pooling**: Efficient connection management
-- **RocksDB Backend**: Uses RocksDB for high-performance persistence
-
-### Usage
-
-```rust
-use crucible_surrealdb::ContentAddressedStorageSurrealDB;
-use crucible_core::storage::ContentAddressedStorage;
-
-// Create an in-memory storage for testing
-let storage = ContentAddressedStorageSurrealDB::new_memory().await?;
-
-// Create a file-based storage
-let storage = ContentAddressedStorageSurrealDB::new_file("/path/to/database").await?;
-
-// Store and retrieve content blocks
-let hash = "content_hash_123";
-let data = b"Hello, World!";
-
-storage.store_block(hash, data).await?;
-let retrieved = storage.get_block(hash).await?;
-assert_eq!(retrieved, Some(data.to_vec()));
-```
-
-### Integration with Storage Builder
-
-Due to the async nature of SurrealDB initialization, use the `Custom` backend:
-
-```rust
-use crucible_core::storage::builder::{ContentAddressedStorageBuilder, StorageBackendType, HasherConfig};
-use crucible_core::hashing::blake3::Blake3Hasher;
-use crucible_surrealdb::ContentAddressedStorageSurrealDB;
-use std::sync::Arc;
-
-// Create the SurrealDB storage instance
-let surrealdb_storage = ContentAddressedStorageSurrealDB::new_file("./my_db").await?;
-let storage_arc = Arc::new(surrealdb_storage) as Arc<dyn ContentAddressedStorage>;
-
-// Use it with the builder
-let storage = ContentAddressedStorageBuilder::new()
-    .with_backend(StorageBackendType::Custom(storage_arc))
-    .with_hasher(HasherConfig::Blake3(Blake3Hasher::new()))
-    .build()?;
-```
-
 ## Implementation Status
 
 ### Completed
@@ -262,13 +207,12 @@ let storage = ContentAddressedStorageBuilder::new()
 - [x] Rust type definitions
 - [x] Query examples
 - [x] Type-safe builders
-- [x] ContentAddressedStorage trait implementation
+- [x] NoteStore trait implementation
 - [x] Async/await support
 - [x] Connection pooling and configuration
 
 ### In Progress
-- [ ] Database connection implementation
-- [ ] Query execution layer
+- [ ] Graph query pipeline
 - [ ] Markdown parser integration
 - [ ] File watcher pipeline
 

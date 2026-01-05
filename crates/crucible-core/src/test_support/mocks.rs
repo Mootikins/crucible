@@ -36,22 +36,15 @@
 //!
 //! ```rust
 //! use crucible_core::test_support::mocks::MockStorage;
-//! use crucible_core::storage::traits::BlockOperations;
 //!
-//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let storage = MockStorage::new();
 //!
-//! // Store and retrieve blocks
-//! storage.store_block("hash1", b"data").await?;
-//! let data = storage.get_block("hash1").await?;
-//! assert_eq!(data, Some(b"data".to_vec()));
-//!
-//! // Verify operations were called
+//! // Access statistics
 //! let stats = storage.stats();
-//! assert_eq!(stats.store_count, 1);
-//! assert_eq!(stats.get_count, 1);
-//! # Ok(())
-//! # }
+//! assert_eq!(stats.store_count, 0);
+//!
+//! // Configure error simulation
+//! storage.set_simulate_errors(true, "Storage full");
 //! ```
 //!
 //! ## Mock Content Hasher
@@ -82,10 +75,6 @@ use std::time::SystemTime;
 
 use crate::events::{EmitOutcome, EmitResult, EventEmitter, EventError, HandlerErrorInfo};
 use crate::hashing::algorithm::HashingAlgorithm;
-use crate::storage::traits::{
-    BlockOperations, StorageBackend, StorageManagement, StorageStats, TreeOperations,
-};
-use crate::storage::{MerkleTree, StorageError, StorageResult};
 use crate::traits::change_detection::{
     BatchLookupConfig, ChangeDetectionMetrics, ChangeDetectionResult, ChangeDetector, ChangeSet,
     ChangeStatistics, ContentHasher, HashLookupResult, HashLookupStorage, StoredHash,
@@ -176,13 +165,6 @@ impl HashingAlgorithm for MockHashingAlgorithm {
         Self::compute_hash(data)
     }
 
-    fn hash_nodes(&self, left: &[u8], right: &[u8]) -> Vec<u8> {
-        let mut combined = Vec::with_capacity(left.len() + right.len());
-        combined.extend_from_slice(left);
-        combined.extend_from_slice(right);
-        Self::compute_hash(&combined)
-    }
-
     fn algorithm_name(&self) -> &'static str {
         "MockHash"
     }
@@ -210,10 +192,6 @@ pub struct MockStorageStats {
     pub exists_count: usize,
     /// Number of delete_block calls
     pub delete_count: usize,
-    /// Number of store_tree calls
-    pub store_tree_count: usize,
-    /// Number of get_tree calls
-    pub get_tree_count: usize,
     /// Total bytes stored
     pub total_bytes_stored: u64,
     /// Total bytes retrieved
@@ -225,8 +203,6 @@ pub struct MockStorageStats {
 struct MockStorageState {
     /// Stored blocks (hash -> data)
     blocks: HashMap<String, Vec<u8>>,
-    /// Stored Merkle trees (root_hash -> tree)
-    trees: HashMap<String, MerkleTree>,
     /// Operation statistics
     stats: MockStorageStats,
     /// Whether to simulate errors
@@ -246,30 +222,22 @@ struct MockStorageState {
 /// - **Observable**: Tracks all operations via statistics
 /// - **Error Injection**: Can simulate storage failures
 /// - **Thread-Safe**: Uses Arc<Mutex<>> for concurrent access
-/// - **Complete**: Implements all storage traits
 ///
 /// # Examples
 ///
 /// ```rust
 /// use crucible_core::test_support::mocks::MockStorage;
-/// use crucible_core::storage::traits::BlockOperations;
 ///
-/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let storage = MockStorage::new();
 ///
-/// // Normal operations
-/// storage.store_block("hash1", b"data").await?;
-/// assert!(storage.block_exists("hash1").await?);
+/// // Check initial state
+/// assert_eq!(storage.block_count(), 0);
 ///
 /// // Error injection
 /// storage.set_simulate_errors(true, "Storage full");
-/// let result = storage.store_block("hash2", b"data").await;
-/// assert!(result.is_err());
 ///
 /// // Reset for normal operation
 /// storage.set_simulate_errors(false, "");
-/// # Ok(())
-/// # }
 /// ```
 #[derive(Debug, Clone)]
 pub struct MockStorage {
@@ -293,7 +261,6 @@ impl MockStorage {
     pub fn reset(&self) {
         let mut state = self.state.lock().unwrap();
         state.blocks.clear();
-        state.trees.clear();
         state.stats = MockStorageStats::default();
         state.simulate_errors = false;
         state.error_message.clear();
@@ -315,169 +282,11 @@ impl MockStorage {
     pub fn block_count(&self) -> usize {
         self.state.lock().unwrap().blocks.len()
     }
-
-    /// Get the number of stored trees
-    pub fn tree_count(&self) -> usize {
-        self.state.lock().unwrap().trees.len()
-    }
 }
 
 impl Default for MockStorage {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[async_trait]
-impl BlockOperations for MockStorage {
-    async fn store_block(&self, hash: &str, data: &[u8]) -> StorageResult<()> {
-        let mut state = self.state.lock().unwrap();
-
-        if state.simulate_errors {
-            return Err(StorageError::Backend(state.error_message.clone()));
-        }
-
-        state.stats.store_count += 1;
-        state.stats.total_bytes_stored += data.len() as u64;
-        state.blocks.insert(hash.to_string(), data.to_vec());
-
-        Ok(())
-    }
-
-    async fn get_block(&self, hash: &str) -> StorageResult<Option<Vec<u8>>> {
-        let mut state = self.state.lock().unwrap();
-
-        if state.simulate_errors {
-            return Err(StorageError::Backend(state.error_message.clone()));
-        }
-
-        state.stats.get_count += 1;
-
-        if let Some(data) = state.blocks.get(hash) {
-            let data_len = data.len() as u64;
-            let data_clone = data.clone();
-            state.stats.total_bytes_retrieved += data_len;
-            Ok(Some(data_clone))
-        } else {
-            Ok(None)
-        }
-    }
-
-    async fn block_exists(&self, hash: &str) -> StorageResult<bool> {
-        let mut state = self.state.lock().unwrap();
-
-        if state.simulate_errors {
-            return Err(StorageError::Backend(state.error_message.clone()));
-        }
-
-        state.stats.exists_count += 1;
-        Ok(state.blocks.contains_key(hash))
-    }
-
-    async fn delete_block(&self, hash: &str) -> StorageResult<bool> {
-        let mut state = self.state.lock().unwrap();
-
-        if state.simulate_errors {
-            return Err(StorageError::Backend(state.error_message.clone()));
-        }
-
-        state.stats.delete_count += 1;
-        Ok(state.blocks.remove(hash).is_some())
-    }
-}
-
-#[async_trait]
-impl TreeOperations for MockStorage {
-    async fn store_tree(&self, root_hash: &str, tree: &MerkleTree) -> StorageResult<()> {
-        let mut state = self.state.lock().unwrap();
-
-        if state.simulate_errors {
-            return Err(StorageError::Backend(state.error_message.clone()));
-        }
-
-        state.stats.store_tree_count += 1;
-        state.trees.insert(root_hash.to_string(), tree.clone());
-
-        Ok(())
-    }
-
-    async fn get_tree(&self, root_hash: &str) -> StorageResult<Option<MerkleTree>> {
-        let mut state = self.state.lock().unwrap();
-
-        if state.simulate_errors {
-            return Err(StorageError::Backend(state.error_message.clone()));
-        }
-
-        state.stats.get_tree_count += 1;
-        Ok(state.trees.get(root_hash).cloned())
-    }
-
-    async fn tree_exists(&self, root_hash: &str) -> StorageResult<bool> {
-        let state = self.state.lock().unwrap();
-
-        if state.simulate_errors {
-            return Err(StorageError::Backend(state.error_message.clone()));
-        }
-
-        Ok(state.trees.contains_key(root_hash))
-    }
-
-    async fn delete_tree(&self, root_hash: &str) -> StorageResult<bool> {
-        let mut state = self.state.lock().unwrap();
-
-        if state.simulate_errors {
-            return Err(StorageError::Backend(state.error_message.clone()));
-        }
-
-        Ok(state.trees.remove(root_hash).is_some())
-    }
-}
-
-#[async_trait]
-impl StorageManagement for MockStorage {
-    async fn get_stats(&self) -> StorageResult<StorageStats> {
-        let state = self.state.lock().unwrap();
-
-        if state.simulate_errors {
-            return Err(StorageError::Backend(state.error_message.clone()));
-        }
-
-        let total_block_size: u64 = state.blocks.values().map(|v| v.len() as u64).sum();
-        let avg_block_size = if !state.blocks.is_empty() {
-            total_block_size as f64 / state.blocks.len() as f64
-        } else {
-            0.0
-        };
-        let largest_block = state
-            .blocks
-            .values()
-            .map(|v| v.len() as u64)
-            .max()
-            .unwrap_or(0);
-
-        Ok(StorageStats {
-            backend: StorageBackend::InMemory,
-            block_count: state.blocks.len() as u64,
-            block_size_bytes: total_block_size,
-            tree_count: state.trees.len() as u64,
-            section_count: 0, // Mock storage doesn't track sections
-            deduplication_savings: 0,
-            average_block_size: avg_block_size,
-            largest_block_size: largest_block,
-            evicted_blocks: 0,
-            quota_usage: None,
-        })
-    }
-
-    async fn maintenance(&self) -> StorageResult<()> {
-        let state = self.state.lock().unwrap();
-
-        if state.simulate_errors {
-            return Err(StorageError::Backend(state.error_message.clone()));
-        }
-
-        // Mock maintenance does nothing
-        Ok(())
     }
 }
 
@@ -1238,59 +1047,6 @@ mod tests {
 
         let decoded = hasher.parse_hex(&hex).unwrap();
         assert_eq!(decoded, hash);
-    }
-
-    #[tokio::test]
-    async fn test_mock_storage_basic_operations() {
-        let storage = MockStorage::new();
-
-        // Store block
-        storage.store_block("hash1", b"test data").await.unwrap();
-        assert_eq!(storage.block_count(), 1);
-
-        // Retrieve block
-        let data = storage.get_block("hash1").await.unwrap();
-        assert_eq!(data, Some(b"test data".to_vec()));
-
-        // Check existence
-        assert!(storage.block_exists("hash1").await.unwrap());
-        assert!(!storage.block_exists("nonexistent").await.unwrap());
-
-        // Delete block
-        assert!(storage.delete_block("hash1").await.unwrap());
-        assert_eq!(storage.block_count(), 0);
-        assert!(!storage.delete_block("hash1").await.unwrap());
-    }
-
-    #[tokio::test]
-    async fn test_mock_storage_statistics() {
-        let storage = MockStorage::new();
-
-        storage.store_block("hash1", b"data1").await.unwrap();
-        storage.store_block("hash2", b"data2").await.unwrap();
-        storage.get_block("hash1").await.unwrap();
-
-        let stats = storage.stats();
-        assert_eq!(stats.store_count, 2);
-        assert_eq!(stats.get_count, 1);
-        assert_eq!(stats.total_bytes_stored, 10); // "data1" + "data2"
-    }
-
-    #[tokio::test]
-    async fn test_mock_storage_error_simulation() {
-        let storage = MockStorage::new();
-
-        // Enable error simulation
-        storage.set_simulate_errors(true, "Storage full");
-
-        // Operations should fail
-        let result = storage.store_block("hash1", b"data").await;
-        assert!(result.is_err());
-
-        // Disable errors
-        storage.set_simulate_errors(false, "");
-        storage.store_block("hash1", b"data").await.unwrap();
-        assert_eq!(storage.block_count(), 1);
     }
 
     #[tokio::test]
