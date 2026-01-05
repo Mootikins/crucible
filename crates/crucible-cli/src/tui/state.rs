@@ -504,7 +504,11 @@ impl From<PopupItem> for crucible_core::types::PopupEntry {
                 message_count,
                 ..
             } => {
-                let desc = format!("{} ({} messages)", description, message_count);
+                let desc = if description.is_empty() {
+                    format!("{} messages", message_count)
+                } else {
+                    format!("{} ({} messages)", description, message_count)
+                };
                 (id.clone(), Some(desc), "session")
             }
         };
