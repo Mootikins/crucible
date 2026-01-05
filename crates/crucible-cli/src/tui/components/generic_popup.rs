@@ -231,6 +231,11 @@ impl PopupState {
         PopupRenderer::new(&self.popup)
     }
 
+    /// Get reference to the inner generic popup (for alternative renderers)
+    pub fn inner_popup(&self) -> &Popup<LegacyPopupItem> {
+        &self.popup
+    }
+
     /// Handle a key event
     pub fn handle_key(&mut self, key: &KeyEvent) -> EventResult {
         match (key.code, key.modifiers) {
