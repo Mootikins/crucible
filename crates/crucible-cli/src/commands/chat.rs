@@ -496,20 +496,18 @@ async fn run_deferred_chat(
     // Note: We don't print "Ready" since TUI's EnterAlternateScreen clears the screen
     status.update("");
 
-    // Log session resume if requested
-    // TODO: Full resume implementation would load events and prepopulate conversation
-    if let Some(ref session_id) = resume_session_id {
-        info!("Resuming session: {}", session_id);
-        // Future: Load session events from .crucible/sessions/<id>/events.jsonl
-        // and prepopulate the conversation view before starting the chat loop
-    }
-
     // Create session configuration
     let mut session_config = ChatSessionConfig::new(initial_mode, !no_context, context_size);
 
     // Set preselected agent if provided (skips picker first time, allows /new restart)
     if let Some(selection) = preselected_agent {
         session_config = session_config.with_default_selection(selection);
+    }
+
+    // Set session to resume from (loads existing conversation history)
+    if let Some(session_id) = resume_session_id {
+        info!("Will resume session: {}", session_id);
+        session_config = session_config.with_resume_session(session_id);
     }
 
     let mut session = ChatSession::new(session_config, core.clone(), None);
