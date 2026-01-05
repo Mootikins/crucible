@@ -3,6 +3,7 @@ pub mod agents;
 pub mod chat;
 pub mod daemon;
 pub mod db_server;
+pub mod init;
 pub mod mcp;
 pub mod process;
 pub mod skills;
