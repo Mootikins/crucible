@@ -8,9 +8,42 @@
 mod sqlite_impl {
     use crate::id::{SessionId, SessionType};
     use crate::session::{SessionError, SessionMetadata};
-    use chrono::{DateTime, Utc};
+    use chrono::DateTime;
     use rusqlite::{params, Connection, OptionalExtension};
     use std::path::Path;
+
+    /// Parse a row tuple into SessionMetadata, returning None if parsing fails
+    fn parse_session_row(
+        row: (
+            String,
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            u32,
+            String,
+        ),
+    ) -> Option<SessionMetadata> {
+        let (id_str, type_str, started_at_str, ended_at_str, title, message_count, kiln_path_str) =
+            row;
+
+        let id = SessionId::parse(&id_str).ok()?;
+        let session_type: SessionType = type_str.parse().ok()?;
+        let started_at = DateTime::parse_from_rfc3339(&started_at_str).ok()?.to_utc();
+        let ended_at = ended_at_str
+            .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
+            .map(|d| d.to_utc());
+
+        Some(SessionMetadata {
+            id,
+            session_type,
+            started_at,
+            ended_at,
+            title,
+            message_count,
+            kiln_path: kiln_path_str.into(),
+        })
+    }
 
     /// Session index backed by SQLite
     pub struct SessionIndex {
@@ -31,8 +64,8 @@ mod sqlite_impl {
 
         /// Open an in-memory index (for testing)
         pub fn open_memory() -> Result<Self, SessionError> {
-            let conn =
-                Connection::open_in_memory().map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
+            let conn = Connection::open_in_memory()
+                .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
 
             let index = Self { conn };
             index.init_schema()?;
@@ -129,7 +162,16 @@ mod sqlite_impl {
                 .optional()
                 .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
 
-            if let Some((id_str, type_str, started_at_str, ended_at_str, title, message_count, kiln_path_str)) = result {
+            if let Some((
+                id_str,
+                type_str,
+                started_at_str,
+                ended_at_str,
+                title,
+                message_count,
+                kiln_path_str,
+            )) = result
+            {
                 let id = SessionId::parse(&id_str)
                     .map_err(|e| SessionError::Io(std::io::Error::other(e.to_string())))?;
                 let session_type: SessionType = type_str
@@ -169,64 +211,49 @@ mod sqlite_impl {
 
         /// List sessions, newest first
         pub fn list(&self, limit: Option<u32>) -> Result<Vec<SessionMetadata>, SessionError> {
-            let sql = if let Some(limit) = limit {
-                format!(
-                    "SELECT id, type, started_at, ended_at, title, message_count, kiln_path FROM sessions ORDER BY started_at DESC LIMIT {limit}"
+            // Use parameterized query for LIMIT to prevent SQL injection
+            let (sql, use_limit) = if limit.is_some() {
+                (
+                    "SELECT id, type, started_at, ended_at, title, message_count, kiln_path FROM sessions ORDER BY started_at DESC LIMIT ?1",
+                    true,
                 )
             } else {
-                "SELECT id, type, started_at, ended_at, title, message_count, kiln_path FROM sessions ORDER BY started_at DESC".to_string()
+                (
+                    "SELECT id, type, started_at, ended_at, title, message_count, kiln_path FROM sessions ORDER BY started_at DESC",
+                    false,
+                )
             };
 
             let mut stmt = self
                 .conn
-                .prepare(&sql)
+                .prepare(sql)
                 .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
 
-            let rows = stmt
-                .query_map([], |row| {
-                    let id_str: String = row.get(0)?;
-                    let type_str: String = row.get(1)?;
-                    let started_at_str: String = row.get(2)?;
-                    let ended_at_str: Option<String> = row.get(3)?;
-                    let title: Option<String> = row.get(4)?;
-                    let message_count: u32 = row.get(5)?;
-                    let kiln_path_str: String = row.get(6)?;
+            let row_mapper = |row: &rusqlite::Row| -> rusqlite::Result<_> {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, u32>(5)?,
+                    row.get::<_, String>(6)?,
+                ))
+            };
 
-                    Ok((id_str, type_str, started_at_str, ended_at_str, title, message_count, kiln_path_str))
-                })
-                .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
-
-            let mut sessions = Vec::new();
-            for row in rows {
-                let (id_str, type_str, started_at_str, ended_at_str, title, message_count, kiln_path_str) =
-                    row.map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
-
-                let id = match SessionId::parse(&id_str) {
-                    Ok(id) => id,
-                    Err(_) => continue, // Skip invalid IDs
-                };
-                let session_type: SessionType = match type_str.parse() {
-                    Ok(t) => t,
-                    Err(_) => continue,
-                };
-                let started_at = match DateTime::parse_from_rfc3339(&started_at_str) {
-                    Ok(d) => d.to_utc(),
-                    Err(_) => continue,
-                };
-                let ended_at = ended_at_str
-                    .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
-                    .map(|d| d.to_utc());
-
-                sessions.push(SessionMetadata {
-                    id,
-                    session_type,
-                    started_at,
-                    ended_at,
-                    title,
-                    message_count,
-                    kiln_path: kiln_path_str.into(),
-                });
-            }
+            let sessions: Vec<SessionMetadata> = if use_limit {
+                stmt.query_map(params![limit.unwrap()], row_mapper)
+                    .map_err(|e| SessionError::Io(std::io::Error::other(e)))?
+                    .filter_map(|r| r.ok())
+                    .filter_map(parse_session_row)
+                    .collect()
+            } else {
+                stmt.query_map([], row_mapper)
+                    .map_err(|e| SessionError::Io(std::io::Error::other(e)))?
+                    .filter_map(|r| r.ok())
+                    .filter_map(parse_session_row)
+                    .collect()
+            };
 
             Ok(sessions)
         }
@@ -237,64 +264,52 @@ mod sqlite_impl {
             session_type: SessionType,
             limit: Option<u32>,
         ) -> Result<Vec<SessionMetadata>, SessionError> {
-            let sql = if let Some(limit) = limit {
-                format!(
-                    "SELECT id, type, started_at, ended_at, title, message_count, kiln_path FROM sessions WHERE type = ?1 ORDER BY started_at DESC LIMIT {limit}"
+            // Use parameterized query for LIMIT to prevent SQL injection
+            let (sql, use_limit) = if limit.is_some() {
+                (
+                    "SELECT id, type, started_at, ended_at, title, message_count, kiln_path FROM sessions WHERE type = ?1 ORDER BY started_at DESC LIMIT ?2",
+                    true,
                 )
             } else {
-                "SELECT id, type, started_at, ended_at, title, message_count, kiln_path FROM sessions WHERE type = ?1 ORDER BY started_at DESC".to_string()
+                (
+                    "SELECT id, type, started_at, ended_at, title, message_count, kiln_path FROM sessions WHERE type = ?1 ORDER BY started_at DESC",
+                    false,
+                )
             };
 
             let mut stmt = self
                 .conn
-                .prepare(&sql)
+                .prepare(sql)
                 .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
 
-            let rows = stmt
-                .query_map(params![session_type.to_string()], |row| {
-                    let id_str: String = row.get(0)?;
-                    let type_str: String = row.get(1)?;
-                    let started_at_str: String = row.get(2)?;
-                    let ended_at_str: Option<String> = row.get(3)?;
-                    let title: Option<String> = row.get(4)?;
-                    let message_count: u32 = row.get(5)?;
-                    let kiln_path_str: String = row.get(6)?;
+            let row_mapper = |row: &rusqlite::Row| -> rusqlite::Result<_> {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, u32>(5)?,
+                    row.get::<_, String>(6)?,
+                ))
+            };
 
-                    Ok((id_str, type_str, started_at_str, ended_at_str, title, message_count, kiln_path_str))
-                })
-                .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
-
-            let mut sessions = Vec::new();
-            for row in rows {
-                let (id_str, type_str, started_at_str, ended_at_str, title, message_count, kiln_path_str) =
-                    row.map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
-
-                let id = match SessionId::parse(&id_str) {
-                    Ok(id) => id,
-                    Err(_) => continue,
-                };
-                let session_type: SessionType = match type_str.parse() {
-                    Ok(t) => t,
-                    Err(_) => continue,
-                };
-                let started_at = match DateTime::parse_from_rfc3339(&started_at_str) {
-                    Ok(d) => d.to_utc(),
-                    Err(_) => continue,
-                };
-                let ended_at = ended_at_str
-                    .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
-                    .map(|d| d.to_utc());
-
-                sessions.push(SessionMetadata {
-                    id,
-                    session_type,
-                    started_at,
-                    ended_at,
-                    title,
-                    message_count,
-                    kiln_path: kiln_path_str.into(),
-                });
-            }
+            let sessions: Vec<SessionMetadata> = if use_limit {
+                stmt.query_map(
+                    params![session_type.to_string(), limit.unwrap()],
+                    row_mapper,
+                )
+                .map_err(|e| SessionError::Io(std::io::Error::other(e)))?
+                .filter_map(|r| r.ok())
+                .filter_map(parse_session_row)
+                .collect()
+            } else {
+                stmt.query_map(params![session_type.to_string()], row_mapper)
+                    .map_err(|e| SessionError::Io(std::io::Error::other(e)))?
+                    .filter_map(|r| r.ok())
+                    .filter_map(parse_session_row)
+                    .collect()
+            };
 
             Ok(sessions)
         }
@@ -306,64 +321,49 @@ mod sqlite_impl {
             limit: Option<u32>,
         ) -> Result<Vec<SessionMetadata>, SessionError> {
             let pattern = format!("%{query}%");
-            let sql = if let Some(limit) = limit {
-                format!(
-                    "SELECT id, type, started_at, ended_at, title, message_count, kiln_path FROM sessions WHERE title LIKE ?1 ORDER BY started_at DESC LIMIT {limit}"
+            // Use parameterized query for LIMIT to prevent SQL injection
+            let (sql, use_limit) = if limit.is_some() {
+                (
+                    "SELECT id, type, started_at, ended_at, title, message_count, kiln_path FROM sessions WHERE title LIKE ?1 ORDER BY started_at DESC LIMIT ?2",
+                    true,
                 )
             } else {
-                "SELECT id, type, started_at, ended_at, title, message_count, kiln_path FROM sessions WHERE title LIKE ?1 ORDER BY started_at DESC".to_string()
+                (
+                    "SELECT id, type, started_at, ended_at, title, message_count, kiln_path FROM sessions WHERE title LIKE ?1 ORDER BY started_at DESC",
+                    false,
+                )
             };
 
             let mut stmt = self
                 .conn
-                .prepare(&sql)
+                .prepare(sql)
                 .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
 
-            let rows = stmt
-                .query_map(params![pattern], |row| {
-                    let id_str: String = row.get(0)?;
-                    let type_str: String = row.get(1)?;
-                    let started_at_str: String = row.get(2)?;
-                    let ended_at_str: Option<String> = row.get(3)?;
-                    let title: Option<String> = row.get(4)?;
-                    let message_count: u32 = row.get(5)?;
-                    let kiln_path_str: String = row.get(6)?;
+            let row_mapper = |row: &rusqlite::Row| -> rusqlite::Result<_> {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, u32>(5)?,
+                    row.get::<_, String>(6)?,
+                ))
+            };
 
-                    Ok((id_str, type_str, started_at_str, ended_at_str, title, message_count, kiln_path_str))
-                })
-                .map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
-
-            let mut sessions = Vec::new();
-            for row in rows {
-                let (id_str, type_str, started_at_str, ended_at_str, title, message_count, kiln_path_str) =
-                    row.map_err(|e| SessionError::Io(std::io::Error::other(e)))?;
-
-                let id = match SessionId::parse(&id_str) {
-                    Ok(id) => id,
-                    Err(_) => continue,
-                };
-                let session_type: SessionType = match type_str.parse() {
-                    Ok(t) => t,
-                    Err(_) => continue,
-                };
-                let started_at = match DateTime::parse_from_rfc3339(&started_at_str) {
-                    Ok(d) => d.to_utc(),
-                    Err(_) => continue,
-                };
-                let ended_at = ended_at_str
-                    .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
-                    .map(|d| d.to_utc());
-
-                sessions.push(SessionMetadata {
-                    id,
-                    session_type,
-                    started_at,
-                    ended_at,
-                    title,
-                    message_count,
-                    kiln_path: kiln_path_str.into(),
-                });
-            }
+            let sessions: Vec<SessionMetadata> = if use_limit {
+                stmt.query_map(params![pattern, limit.unwrap()], row_mapper)
+                    .map_err(|e| SessionError::Io(std::io::Error::other(e)))?
+                    .filter_map(|r| r.ok())
+                    .filter_map(parse_session_row)
+                    .collect()
+            } else {
+                stmt.query_map(params![pattern], row_mapper)
+                    .map_err(|e| SessionError::Io(std::io::Error::other(e)))?
+                    .filter_map(|r| r.ok())
+                    .filter_map(parse_session_row)
+                    .collect()
+            };
 
             Ok(sessions)
         }
@@ -382,6 +382,7 @@ mod sqlite_impl {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use chrono::Utc;
         use std::path::PathBuf;
 
         fn create_test_meta(id: &str, title: Option<&str>) -> SessionMetadata {
