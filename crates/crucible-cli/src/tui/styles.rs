@@ -6,7 +6,49 @@
 use ratatui::style::{Color, Modifier, Style};
 
 // =============================================================================
-// Color Palette
+// Theme Variables (defaults, ready for future scripting exposure)
+// =============================================================================
+
+/// Theme variables for the TUI - these are the "light" configurable values
+/// that will eventually be exposed to scripts. For now, they're module-level
+/// constants with sensible defaults.
+pub mod theme {
+    use super::*;
+
+    // --- Main colors ---
+
+    /// Terminal/main background color
+    pub const MAIN_BG: Color = Color::Rgb(17, 17, 17); // Near-black
+
+    /// Terminal/main foreground color
+    pub const MAIN_FG: Color = Color::White;
+
+    // --- Input area colors ---
+
+    /// Dither base (darker, for dither background)
+    pub const DITHER_BASE: Color = Color::Rgb(30, 30, 45); // Darker blue-gray
+
+    /// Input box / prompt line background (lighter)
+    pub const INPUT_BG: Color = Color::Rgb(50, 50, 70); // Lighter blue-gray
+
+    /// Input box foreground (text)
+    pub const INPUT_FG: Color = Color::White;
+
+    /// Dither highlight - midpoint between base and prompt for subtle effect
+    /// (halfway between DITHER_BASE and INPUT_BG)
+    pub const DITHER_HIGHLIGHT: Color = Color::Rgb(40, 40, 58);
+
+    // --- Message colors ---
+
+    /// User message background
+    pub const USER_BG: Color = Color::Rgb(60, 60, 80); // Subtle blue-gray
+
+    /// User message foreground
+    pub const USER_FG: Color = Color::White;
+}
+
+// =============================================================================
+// Color Palette (legacy, references theme where applicable)
 // =============================================================================
 
 /// Colors for the TUI interface
@@ -16,10 +58,10 @@ pub mod colors {
     // --- Message colors ---
 
     /// User message background (inverted display)
-    pub const USER_BG: Color = Color::Rgb(60, 60, 80); // Subtle blue-gray
+    pub const USER_BG: Color = theme::USER_BG;
 
     /// User message foreground (inverted display)
-    pub const USER_FG: Color = Color::White;
+    pub const USER_FG: Color = theme::USER_FG;
 
     /// Assistant message foreground (normal, bright)
     pub const ASSISTANT_FG: Color = Color::Reset; // Terminal default
@@ -27,13 +69,22 @@ pub mod colors {
     /// Dim text (status, metadata)
     pub const DIM: Color = Color::DarkGray;
 
+    /// Main background (terminal background for dither effects)
+    pub const MAIN_BG: Color = theme::MAIN_BG;
+
     // --- Input box colors ---
 
     /// Input box background (darker)
-    pub const INPUT_BG: Color = Color::Rgb(35, 35, 50); // Dark blue-gray
+    pub const INPUT_BG: Color = theme::INPUT_BG;
 
     /// Input text color
-    pub const INPUT_FG: Color = Color::White;
+    pub const INPUT_FG: Color = theme::INPUT_FG;
+
+    /// Dither highlight (lighter, for raised edge effect)
+    pub const DITHER_HIGHLIGHT: Color = theme::DITHER_HIGHLIGHT;
+
+    /// Dither base (darker, for dither background)
+    pub const DITHER_BASE: Color = theme::DITHER_BASE;
 
     /// Shell passthrough (!) background - red tint
     pub const INPUT_SHELL_BG: Color = Color::Rgb(60, 30, 30); // Dark red

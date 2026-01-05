@@ -5,15 +5,20 @@
 
 use crate::tui::{
     components::{InteractiveWidget, WidgetEventResult},
-    styles::presets,
+    styles::{colors, presets},
 };
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Paragraph, Widget},
 };
+
+/// Dither character for edge effect (creates "raised" look)
+/// Options: '▓' (75%), '▒' (50%), '░' (25% - sparsest)
+const DITHER_CHAR: char = '░';
 
 /// Widget that renders an input box with cursor support
 ///
@@ -34,6 +39,8 @@ pub struct InputBoxWidget<'a> {
     cursor_position: usize,
     prompt: &'a str,
     focused: bool,
+    /// Whether to render dither on top/bottom rows (creates "raised" effect)
+    use_dither_edges: bool,
 }
 
 impl<'a> InputBoxWidget<'a> {
@@ -49,6 +56,7 @@ impl<'a> InputBoxWidget<'a> {
             cursor_position,
             prompt: " > ",
             focused: true,
+            use_dither_edges: false,
         }
     }
 
@@ -61,6 +69,12 @@ impl<'a> InputBoxWidget<'a> {
     /// Set whether the widget is focused
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
+        self
+    }
+
+    /// Enable dither edges on top/bottom rows (creates "raised" floating effect)
+    pub fn dither_edges(mut self, enabled: bool) -> Self {
+        self.use_dither_edges = enabled;
         self
     }
 }
@@ -82,8 +96,36 @@ impl Widget for InputBoxWidget<'_> {
             (presets::input_box(), self.prompt, self.buffer)
         };
 
-        // Fill background
+        // Fill entire area with input box background (creates "raised" look)
         buf.set_style(area, style);
+
+        // Render dither on top and bottom rows if enabled
+        // Dither: FG = prompt BG (lighter), BG = darker base
+        // Creates "raised" effect transitioning from dark edges to lighter prompt
+        if self.use_dither_edges && area.height >= 3 {
+            // Dither colors match current mode (FG = prompt BG)
+            let (dither_fg, dither_bg) = if !self.focused {
+                (colors::DIM, colors::DITHER_BASE)
+            } else if trimmed.starts_with('!') {
+                // Shell mode: red-tinted
+                (colors::INPUT_SHELL_BG, Color::Rgb(40, 20, 20))
+            } else if trimmed.starts_with(':') {
+                // REPL mode: green-tinted
+                (colors::INPUT_REPL_BG, Color::Rgb(20, 35, 20))
+            } else {
+                // Normal mode: blue-tinted
+                (colors::INPUT_BG, colors::DITHER_BASE)
+            };
+            let dither_style = Style::default().fg(dither_fg).bg(dither_bg);
+            let dither_line = DITHER_CHAR.to_string().repeat(area.width as usize);
+
+            // Top row dither
+            buf.set_string(area.x, area.y, &dither_line, dither_style);
+
+            // Bottom row dither
+            let bottom_y = area.y + area.height - 1;
+            buf.set_string(area.x, bottom_y, &dither_line, dither_style);
+        }
 
         // Render content with cursor, centered vertically
         // Add space at end if cursor is at the end (shows cursor position)
