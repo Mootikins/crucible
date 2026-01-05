@@ -400,6 +400,77 @@ impl ConversationState {
     pub fn clear(&mut self) {
         self.items.clear();
     }
+
+    /// Serialize the conversation to markdown format.
+    ///
+    /// Produces human-readable markdown with role prefixes:
+    /// - `> **You:** ` for user messages
+    /// - `**Assistant:** ` for assistant messages
+    /// - `**Tool:** ` for tool calls
+    pub fn to_markdown(&self) -> String {
+        let mut md = String::new();
+        md.push_str("# Chat Session\n\n");
+
+        for item in &self.items {
+            match item {
+                ConversationItem::UserMessage { content } => {
+                    md.push_str("> **You:** ");
+                    for (i, line) in content.lines().enumerate() {
+                        if i > 0 {
+                            md.push_str("> ");
+                        }
+                        md.push_str(line);
+                        md.push('\n');
+                    }
+                    md.push('\n');
+                }
+                ConversationItem::AssistantMessage { blocks, .. } => {
+                    md.push_str("**Assistant:** ");
+                    for block in blocks {
+                        match block {
+                            StreamBlock::Prose { text, .. } => {
+                                md.push_str(text);
+                            }
+                            StreamBlock::Code { lang, content, .. } => {
+                                md.push_str("```");
+                                if let Some(lang) = lang {
+                                    md.push_str(lang);
+                                }
+                                md.push('\n');
+                                md.push_str(content);
+                                if !content.ends_with('\n') {
+                                    md.push('\n');
+                                }
+                                md.push_str("```\n");
+                            }
+                        }
+                    }
+                    if !md.ends_with("\n\n") {
+                        md.push('\n');
+                    }
+                }
+                ConversationItem::ToolCall(tool) => {
+                    let status = match &tool.status {
+                        ToolStatus::Running => "running",
+                        ToolStatus::Complete { summary } => {
+                            if let Some(s) = summary {
+                                s.as_str()
+                            } else {
+                                "completed"
+                            }
+                        }
+                        ToolStatus::Error { message } => message.as_str(),
+                    };
+                    md.push_str(&format!("**Tool:** `{}` - {}\n\n", tool.name, status));
+                }
+                ConversationItem::Status(_) => {
+                    // Skip status indicators in export
+                }
+            }
+        }
+
+        md
+    }
 }
 
 // =============================================================================
@@ -1432,5 +1503,54 @@ mod tests {
 
         // Verify we still have exactly 3 items (2 tools + 1 status)
         assert_eq!(items.len(), 3, "Should have 2 tools + 1 status");
+    }
+
+    // =============================================================================
+    // to_markdown tests
+    // =============================================================================
+
+    #[test]
+    fn test_to_markdown_empty_conversation() {
+        let state = ConversationState::new();
+        let md = state.to_markdown();
+        assert_eq!(md, "# Chat Session\n\n");
+    }
+
+    #[test]
+    fn test_to_markdown_user_message() {
+        let mut state = ConversationState::new();
+        state.push_user_message("Hello there!");
+        let md = state.to_markdown();
+        assert!(md.contains("> **You:** Hello there!"));
+    }
+
+    #[test]
+    fn test_to_markdown_assistant_message() {
+        let mut state = ConversationState::new();
+        state.push_assistant_message("Hi! How can I help?");
+        let md = state.to_markdown();
+        assert!(md.contains("**Assistant:** Hi! How can I help?"));
+    }
+
+    #[test]
+    fn test_to_markdown_full_conversation() {
+        let mut state = ConversationState::new();
+        state.push_user_message("What is 2+2?");
+        state.push_assistant_message("2+2 equals 4.");
+        let md = state.to_markdown();
+
+        assert!(md.contains("# Chat Session"));
+        assert!(md.contains("> **You:** What is 2+2?"));
+        assert!(md.contains("**Assistant:** 2+2 equals 4."));
+    }
+
+    #[test]
+    fn test_to_markdown_with_tool_call() {
+        let mut state = ConversationState::new();
+        state.push_tool_running("calculator", serde_json::json!({"expr": "2+2"}));
+        state.complete_tool("calculator", Some("4".to_string()));
+        let md = state.to_markdown();
+
+        assert!(md.contains("**Tool:** `calculator` - 4"));
     }
 }
