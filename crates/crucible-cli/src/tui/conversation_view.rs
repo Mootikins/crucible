@@ -64,6 +64,10 @@ pub trait ConversationView {
     fn set_token_count(&mut self, count: Option<usize>);
     fn status_text(&self) -> &str;
     fn set_status_text(&mut self, status: &str);
+    /// Set status text and record to message history for :messages
+    fn echo_message(&mut self, message: &str);
+    /// Record an error to message history
+    fn echo_error(&mut self, message: &str);
 
     /// Scroll control
     fn scroll_up(&mut self, lines: usize);
@@ -642,6 +646,22 @@ impl ConversationView for RatatuiView {
 
     fn set_status_text(&mut self, status: &str) {
         self.state.status_text = status.to_string();
+    }
+
+    fn echo_message(&mut self, message: &str) {
+        use crate::tui::notification::NotificationLevel;
+        self.state.status_text = message.to_string();
+        self.state
+            .notifications
+            .push_message(message, NotificationLevel::Info);
+    }
+
+    fn echo_error(&mut self, message: &str) {
+        use crate::tui::notification::NotificationLevel;
+        self.state.status_text = message.to_string();
+        self.state
+            .notifications
+            .push_message(message, NotificationLevel::Error);
     }
 
     fn scroll_up(&mut self, lines: usize) {
