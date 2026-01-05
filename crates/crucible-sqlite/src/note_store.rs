@@ -20,7 +20,7 @@ use crucible_core::storage::{Filter, NoteRecord, NoteStore, Op, SearchResult, St
 // Schema
 // ============================================================================
 
-/// SQL schema for the notes table
+/// SQL schema for the notes table and note_links junction table
 const NOTES_SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS notes (
     path TEXT PRIMARY KEY,
@@ -35,6 +35,18 @@ CREATE TABLE IF NOT EXISTS notes (
 
 CREATE INDEX IF NOT EXISTS notes_hash_idx ON notes(content_hash);
 CREATE INDEX IF NOT EXISTS notes_updated_idx ON notes(updated_at);
+
+-- Junction table for fast inlinks queries
+-- Denormalized from links_to JSON array for O(1) reverse lookups
+CREATE TABLE IF NOT EXISTS note_links (
+    source_path TEXT NOT NULL,
+    target_path TEXT NOT NULL,
+    PRIMARY KEY (source_path, target_path),
+    FOREIGN KEY (source_path) REFERENCES notes(path) ON DELETE CASCADE
+);
+
+-- Index for inlinks queries: "what notes link to this path?"
+CREATE INDEX IF NOT EXISTS note_links_target_idx ON note_links(target_path);
 "#;
 
 // ============================================================================
@@ -281,6 +293,7 @@ impl NoteStore for SqliteNoteStore {
                     serde_json::to_string(&note.properties).map_err(|e| SqliteError::Serialization(e.to_string()))?;
                 let updated_at_str = note.updated_at.to_rfc3339();
 
+                // Upsert the note
                 conn.execute(
                     r#"
                     INSERT INTO notes (path, content_hash, embedding, title, tags, links_to, properties, updated_at)
@@ -305,6 +318,23 @@ impl NoteStore for SqliteNoteStore {
                         updated_at_str,
                     ],
                 )?;
+
+                // Update note_links junction table for fast inlinks queries
+                // Delete old links from this source
+                conn.execute(
+                    "DELETE FROM note_links WHERE source_path = ?1",
+                    params![note.path],
+                )?;
+
+                // Insert new links
+                if !note.links_to.is_empty() {
+                    let mut stmt = conn.prepare(
+                        "INSERT OR IGNORE INTO note_links (source_path, target_path) VALUES (?1, ?2)",
+                    )?;
+                    for target in &note.links_to {
+                        stmt.execute(params![note.path, target])?;
+                    }
+                }
 
                 Ok(())
             })
@@ -829,5 +859,67 @@ mod tests {
             retrieved.properties.get("priority"),
             Some(&Value::Number(serde_json::Number::from(1)))
         );
+    }
+
+    #[tokio::test]
+    async fn test_note_links_junction_table() {
+        let pool = SqlitePool::memory().expect("Failed to create pool");
+        let store = create_note_store(pool.clone())
+            .await
+            .expect("Failed to create store");
+
+        // Create notes with links
+        let note_a = NoteRecord::new("a.md", BlockHash::zero())
+            .with_title("Note A")
+            .with_links(vec!["b.md".to_string(), "c.md".to_string()]);
+        let note_b = NoteRecord::new("b.md", BlockHash::zero())
+            .with_title("Note B")
+            .with_links(vec!["c.md".to_string()]);
+        let note_c = NoteRecord::new("c.md", BlockHash::zero()).with_title("Note C");
+
+        store.upsert(note_a).await.expect("Failed to upsert A");
+        store.upsert(note_b).await.expect("Failed to upsert B");
+        store.upsert(note_c).await.expect("Failed to upsert C");
+
+        // Query the junction table directly to verify it's populated
+        let inlinks_to_c: Vec<String> = pool
+            .with_connection(|conn| {
+                let mut stmt = conn
+                    .prepare("SELECT source_path FROM note_links WHERE target_path = ?1")
+                    .unwrap();
+                let rows = stmt
+                    .query_map(["c.md"], |row| row.get(0))
+                    .unwrap();
+                Ok(rows.filter_map(|r| r.ok()).collect())
+            })
+            .expect("Failed to query");
+
+        // Both a.md and b.md link to c.md
+        assert_eq!(inlinks_to_c.len(), 2);
+        assert!(inlinks_to_c.contains(&"a.md".to_string()));
+        assert!(inlinks_to_c.contains(&"b.md".to_string()));
+
+        // Update note_a to remove link to c.md
+        let updated_a = NoteRecord::new("a.md", BlockHash::zero())
+            .with_title("Note A Updated")
+            .with_links(vec!["b.md".to_string()]); // No longer links to c.md
+        store.upsert(updated_a).await.expect("Failed to update A");
+
+        // Verify junction table was updated
+        let inlinks_to_c: Vec<String> = pool
+            .with_connection(|conn| {
+                let mut stmt = conn
+                    .prepare("SELECT source_path FROM note_links WHERE target_path = ?1")
+                    .unwrap();
+                let rows = stmt
+                    .query_map(["c.md"], |row| row.get(0))
+                    .unwrap();
+                Ok(rows.filter_map(|r| r.ok()).collect())
+            })
+            .expect("Failed to query");
+
+        // Only b.md links to c.md now
+        assert_eq!(inlinks_to_c.len(), 1);
+        assert!(inlinks_to_c.contains(&"b.md".to_string()));
     }
 }
