@@ -17,6 +17,7 @@ pub mod registry;
 pub mod schema;
 pub mod shell;
 pub mod types;
+pub mod worker;
 
 pub use error::SteelError;
 pub use executor::SteelExecutor;
@@ -27,6 +28,7 @@ pub use registry::SteelToolRegistry;
 pub use schema::{ContractSignature, ContractType};
 pub use shell::{ShellModule, ShellPolicy};
 pub use types::{SteelTool, ToolParam};
+pub use worker::CompiledId;
 
 /// Steel library source code
 pub mod lib_sources {
