@@ -78,7 +78,8 @@ pub fn generate_graph(
             (avg_links_per_note * multiplier).min(note_count - 1)
         } else {
             // Regular notes get 0 to 2x average
-            rng.random_range(0..=(avg_links_per_note * 2)).min(note_count - 1)
+            rng.random_range(0..=(avg_links_per_note * 2))
+                .min(note_count - 1)
         };
 
         if is_hub {

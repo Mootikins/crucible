@@ -228,7 +228,8 @@ fn bench_bulk_insert(c: &mut Criterion) {
                         let fixture = rt.block_on(surreal_bench::setup(&dir));
 
                         batch_counter += 1;
-                        let notes = generate_batch(batch_counter * batch_size + 100_000, batch_size);
+                        let notes =
+                            generate_batch(batch_counter * batch_size + 100_000, batch_size);
 
                         let start = std::time::Instant::now();
                         for note in notes {

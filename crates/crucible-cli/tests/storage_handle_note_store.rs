@@ -9,6 +9,10 @@ use crucible_core::storage::NoteStore;
 use tempfile::TempDir;
 
 #[tokio::test]
+#[cfg_attr(
+    not(feature = "storage-sqlite"),
+    ignore = "requires storage-sqlite feature"
+)]
 async fn test_storage_handle_note_store_embedded() {
     let temp = TempDir::new().unwrap();
     let config = CliConfig {
