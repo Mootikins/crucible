@@ -1,0 +1,28 @@
+---
+source: crates/crucible-cli/src/tui/testing/e2e_flow_tests.rs
+expression: h.render()
+---
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ > What is Crucible?                                                            
+                                                                                
+ ● Crucible is a knowledge management system that combines wikilinks with AI.   
+                                                                                
+ > How do I search?                                                             
+                                                                                
+ ● Use the /search command or @ to reference files.                             
+                                                                                
+> / search Search notes semantically                                            
+  / new Start new session                                                       
+  / clear Clear conversation context                                            
+  / help Show available commands                                                
+  / mode Switch session mode                                                    
+  / agents List available agents                                                
+                                                                                
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+ >                                                                              
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+▸ Plan │ Ready

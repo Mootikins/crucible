@@ -1,0 +1,28 @@
+---
+source: crates/crucible-cli/src/tui/testing/e2e_flow_tests.rs
+expression: h.render()
+---
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ > Hello                                                                        
+                                                                                
+ ● Hi! How can I help?                                                          
+                                                                                
+ ● glob(pattern="**/*.rs") → Found 15 files                                     
+ ● read_file(path="src/main.rs", limit=50) → fn main() { ... }                  
+ ✗ grep(pattern="[invalid") → Invalid regex pattern                             
+                                                                                
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+ >                                                                              
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+▸ Plan │ Ready
