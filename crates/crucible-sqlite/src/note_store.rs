@@ -887,9 +887,7 @@ mod tests {
                 let mut stmt = conn
                     .prepare("SELECT source_path FROM note_links WHERE target_path = ?1")
                     .unwrap();
-                let rows = stmt
-                    .query_map(["c.md"], |row| row.get(0))
-                    .unwrap();
+                let rows = stmt.query_map(["c.md"], |row| row.get(0)).unwrap();
                 Ok(rows.filter_map(|r| r.ok()).collect())
             })
             .expect("Failed to query");
@@ -911,9 +909,7 @@ mod tests {
                 let mut stmt = conn
                     .prepare("SELECT source_path FROM note_links WHERE target_path = ?1")
                     .unwrap();
-                let rows = stmt
-                    .query_map(["c.md"], |row| row.get(0))
-                    .unwrap();
+                let rows = stmt.query_map(["c.md"], |row| row.get(0)).unwrap();
                 Ok(rows.filter_map(|r| r.ok()).collect())
             })
             .expect("Failed to query");

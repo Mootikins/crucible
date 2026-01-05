@@ -53,3 +53,16 @@ jobs:
         run: mkdir -p crates/crucible-web/web/dist && echo "<html></html>" > crates/crucible-web/web/dist/index.html
       - name: Run tests with nextest
         run: cargo nextest run --profile ci --workspace
+
+  test-sqlite:
+    name: Test SQLite Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      - name: Run SQLite-specific tests
+        run: |
+          cargo nextest run -p crucible-sqlite
+          cargo nextest run -p crucible-daemon --features storage-sqlite
