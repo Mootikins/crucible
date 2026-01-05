@@ -762,7 +762,7 @@ mod tests {
             .await
             .unwrap();
 
-        // Create a record with composite ID structure (like Merkle sections)
+        // Create a record with composite ID structure
         client
             .query(
                 "CREATE section:{tree_id: $tree_id, index: $index} CONTENT {

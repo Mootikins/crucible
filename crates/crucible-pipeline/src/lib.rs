@@ -4,12 +4,11 @@
 //!
 //! ## Architecture
 //!
-//! The pipeline coordinates five phases:
+//! The pipeline coordinates four phases:
 //! 1. **Quick Filter**: Check file state (date modified + BLAKE3 hash) to skip unchanged files
 //! 2. **Parse**: Transform markdown to AST using crucible-parser
-//! 3. **Merkle Diff**: Build Merkle tree and compare with stored version to identify changed blocks
-//! 4. **Enrich**: Generate embeddings and metadata for changed blocks using crucible-enrichment
-//! 5. **Store**: Persist all changes using storage layer
+//! 3. **Enrich**: Generate embeddings and metadata using crucible-enrichment
+//! 4. **Store**: Persist all changes using storage layer
 //!
 //! ## Clear Separation of Concerns
 //!
@@ -20,7 +19,7 @@
 //! - `crucible-surrealdb`: Just provides storage operations
 //!
 //! This crate (crucible-pipeline):
-//! - Coordinates all five phases in the right order
+//! - Coordinates all four phases in the right order
 //! - Manages dependencies between phases
 //! - Handles error recovery and rollback
 //! - Provides single interface for UI layers (CLI, Desktop, MCP, etc.)

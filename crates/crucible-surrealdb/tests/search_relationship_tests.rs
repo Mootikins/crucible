@@ -501,7 +501,7 @@ async fn block_hash_mismatch() {
     // In practice, when re-ingesting a note:
     // - Old block has content_hash = original_hash
     // - New block has content_hash = modified_hash
-    // - Merkle tree comparison detects the change
+    // - Hash comparison detects the change
     // - Block is updated with new hash
 }
 
