@@ -79,9 +79,22 @@ Use a specific agent:
 cru chat --agent Researcher
 ```
 
+## Context Management
+
+Agents need context to work effectively, but context windows are finite and attention degrades in long conversations.
+
+**Key strategies:**
+
+1. **File-as-state**: Store progress in files (like [[Help/Task Management|TASKS.md]]) instead of accumulating message history
+2. **Cached prefixes**: Put static context (system prompt, task definitions) at the start—cached tokens are 75% cheaper
+3. **Curated handoffs**: Pass summaries between agents, not full conversation history
+
+See [[Help/Task Management#Context Optimization]] for implementation details.
+
 ## See Also
 
 - [[AI Features]] - All AI capabilities
 - [[Help/CLI/chat]] - Chat command reference
 - [[Help/Extending/Agent Cards]] - Creating agents
 - [[Help/Extending/Custom Tools]] - Adding agent capabilities
+- [[Help/Task Management]] - TASKS.md format and context optimization
