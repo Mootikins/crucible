@@ -148,5 +148,5 @@ The current `Help/Extending/Workflow Authoring` describes YAML-based workflows. 
 ## See Also
 
 - [[Help/Workflows/Index]] - Workflow overview
-- [[Help/Workflows/Sessions]] - Tracking workflow progress
+- [[Help/Core/Sessions]] - Session tracking (orthogonal to workflows)
 - [[Help/Extending/Workflow Authoring]] - Current YAML format
