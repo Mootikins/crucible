@@ -265,10 +265,7 @@ impl CopilotAuth {
             .client
             .post(DEVICE_CODE_URL)
             .header("Accept", "application/json")
-            .form(&[
-                ("client_id", COPILOT_CLIENT_ID),
-                ("scope", "user:email"),
-            ])
+            .form(&[("client_id", COPILOT_CLIENT_ID), ("scope", "user:email")])
             .send()
             .await?;
 
@@ -345,10 +342,7 @@ impl CopilotAuth {
     /// This is a convenience method that handles polling automatically.
     /// The callback is invoked with the user code and verification URI
     /// so the caller can display them to the user.
-    pub async fn complete_device_flow<F>(
-        &self,
-        on_code: F,
-    ) -> CopilotResult<OAuthTokenResponse>
+    pub async fn complete_device_flow<F>(&self, on_code: F) -> CopilotResult<OAuthTokenResponse>
     where
         F: FnOnce(&str, &str),
     {
@@ -437,8 +431,7 @@ impl CopilotClient {
         // Calculate expiration time
         let expires_at = Instant::now()
             + Duration::from_secs(
-                (token_response.expires_at - chrono::Utc::now().timestamp())
-                    .max(0) as u64,
+                (token_response.expires_at - chrono::Utc::now().timestamp()).max(0) as u64,
             );
 
         let api_base = if token_response.endpoints.api.is_empty() {
