@@ -13,27 +13,16 @@
 //! The `crucible-parser` crate depends on these types and provides implementations.
 
 pub mod adapter;
-pub mod coordinator;
 pub mod error;
 pub mod extensions;
-pub mod storage_bridge;
 pub mod traits;
 pub mod types;
 
 pub use adapter::SurrealDBAdapter;
-pub use coordinator::{
-    factory as coordinator_factory, BatchOperationResult, BatchStatistics, CoordinatorConfig,
-    CoordinatorStatistics, DefaultParserStorageCoordinator, OperationMetadata, OperationPriority,
-    OperationResult, OperationType, ParserStorageCoordinator, ParsingOperation, TransactionContext,
-};
 // Re-export error types from canonical source (this module)
 pub use error::{ErrorSeverity, ParseError, ParseErrorType, ParserError, ParserResult};
 pub use extensions::{
     ExtensionRegistry, ExtensionRegistryBuilder, ExtensionRegistryStats, SyntaxExtension,
-};
-pub use storage_bridge::{
-    factory as parser_factory, ParseStatistics, StorageAwareMarkdownParser,
-    StorageAwareParseResult, StorageAwareParser, StorageAwareParserConfig, StorageOperationResult,
 };
 pub use traits::{MarkdownParser, ParserCapabilities, ParserCapabilitiesExt, ParserRequirements};
 

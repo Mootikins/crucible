@@ -36,7 +36,6 @@ crucible-acp = { path = "../crucible-acp" }
 crucible-context = { path = "../crucible-context" }
 crucible-rig = { path = "../crucible-rig" }
 crucible-enrichment = { path = "../crucible-enrichment" }
-crucible-merkle = { path = "../crucible-merkle" }
 crucible-watch = { path = "../crucible-watch" }
 crucible-daemon = { path = "../crucible-daemon" }
 crucible-daemon-client = { path = "../crucible-daemon-client" }

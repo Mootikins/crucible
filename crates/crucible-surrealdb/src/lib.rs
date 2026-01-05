@@ -14,7 +14,7 @@
 //! ## Architecture - SOLID Principles (Phase 5)
 //!
 //! This crate follows the Dependency Inversion Principle:
-//! - Concrete types (SurrealClient, EAVGraphStore, MerklePersistence, etc.) are PRIVATE
+//! - Concrete types (SurrealClient, EAVGraphStore, etc.) are PRIVATE
 //! - Public API provides trait objects and factory functions via the `adapters` module
 //! - CLI code depends on abstractions, not implementations
 //!
@@ -36,7 +36,6 @@
 //!
 //!     // Use factory functions from adapters module
 //!     let client = adapters::create_surreal_client(config).await?;
-//!     let merkle_store = adapters::create_merkle_store(client.clone());
 //!
 //!     Ok(())
 //! }
@@ -155,7 +154,6 @@ pub use graph_query::{create_default_pipeline, create_pipeline_with_tables};
 
 pub(crate) mod batch_aware_client;
 pub(crate) mod consistency;
-pub(crate) mod merkle_persistence;
 pub(crate) mod migration;
 pub(crate) mod query;
 pub(crate) mod surreal_client;
@@ -167,7 +165,6 @@ pub mod embedding;
 pub(crate) mod transaction_consumer;
 
 // Internal re-exports for use within this crate only
-pub(crate) use merkle_persistence::MerklePersistence;
 pub(crate) use surreal_client::SurrealClient;
 
 // ============================================================================

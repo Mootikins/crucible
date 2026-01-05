@@ -6,7 +6,6 @@
 
 pub mod agent;
 pub mod enrichment;
-pub mod merkle;
 pub mod pipeline;
 pub mod storage;
 pub mod watch;
@@ -15,11 +14,9 @@ pub use agent::{
     create_agent, create_internal_agent, AgentInitParams, AgentType, InitializedAgent,
 };
 pub use enrichment::{create_default_enrichment_service, get_or_create_embedding_provider};
-pub use merkle::create_surrealdb_merkle_store;
 pub use pipeline::create_pipeline;
 pub use storage::{
-    create_content_addressed_storage, create_daemon_storage, create_surrealdb_enriched_note_store,
-    create_surrealdb_storage, get_storage, initialize_surrealdb_schema, shutdown_storage,
-    StorageHandle,
+    create_daemon_storage, create_surrealdb_enriched_note_store, create_surrealdb_storage,
+    get_storage, initialize_surrealdb_schema, shutdown_storage, StorageHandle,
 };
 pub use watch::create_file_watcher;
