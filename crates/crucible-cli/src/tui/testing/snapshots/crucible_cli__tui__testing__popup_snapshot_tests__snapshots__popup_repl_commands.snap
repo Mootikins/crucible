@@ -15,14 +15,14 @@ expression: h.render()
                                                                                 
                                                                                 
                                                                                 
-┌Select────────────────────────────────────────────────────────────────────────┐
-│> : quit Exit the application                                                 │
-│  : help Show keybindings and commands                                        │
-│  : mode Cycle session mode                                                   │
-│  : agent Switch agent backend                                                │
-│  : models List available models                                              │
-└──────────────────────────────────────────────────────────────────────────────┘
+> : quit Exit the application                                                   
+  : help Show keybindings and commands                                          
+  : mode Cycle session mode                                                     
+  : agent Switch agent backend                                                  
+  : models List available models                                                
                                                                                 
+                                                                                
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
  >                                                                              
-                                                                                
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 ▸ Plan │ Ready

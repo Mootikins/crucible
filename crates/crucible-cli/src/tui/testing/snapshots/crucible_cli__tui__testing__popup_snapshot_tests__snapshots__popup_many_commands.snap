@@ -15,14 +15,14 @@ expression: h.render()
                                                                                 
                                                                                 
                                                                                 
-┌Select (1/20) ↓───────────────────────────────────────────────────────────────┐
-│> / command0 Description for command 0                                        │
-│  / command1 Description for command 1                                        │
-│  / command2 Description for command 2                                        │
-│  / command3 Description for command 3                                        │
-│  / command4 Description for command 4                                        │
-└──────────────────────────────────────────────────────────────────────────────┘
-                                                                                
+> / command0 Description for command 0                                          
+  / command1 Description for command 1                                          
+  / command2 Description for command 2                                          
+  / command3 Description for command 3                                          
+  / command4 Description for command 4                                          
+  / command5 Description for command 5                                          
+  / command6 Description for command 6                                          
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
  >                                                                              
-                                                                                
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 ▸ Plan │ Ready
