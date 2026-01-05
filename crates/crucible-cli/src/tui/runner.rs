@@ -425,7 +425,7 @@ impl RatatuiRunner {
             // Handle streaming error
             if let Some(message) = streaming_error {
                 self.view.clear_status();
-                self.view.set_status_text(&format!("Error: {}", message));
+                self.view.echo_error(&format!("Error: {}", message));
                 self.streaming_parser = None;
             }
 
@@ -739,7 +739,7 @@ impl RatatuiRunner {
                             }
                             "clear" => {
                                 self.view.state_mut().conversation.clear();
-                                self.view.set_status_text("Conversation cleared");
+                                self.view.echo_message("Conversation cleared");
                             }
                             "mode" | "plan" | "act" | "auto" => {
                                 self.view.set_status_text("Use Shift+Tab to switch modes");
@@ -1268,9 +1268,17 @@ impl RatatuiRunner {
                 self.view
                     .set_status_text(&format!("Mode: {}", self.view.mode_id()));
             }
+            "messages" | "mes" => {
+                // Show message history popup (vim-style :messages)
+                let history = self.view.state().notifications.format_history();
+                self.view.push_dialog(crate::tui::dialog::DialogState::info(
+                    "Messages",
+                    history,
+                ));
+            }
             _ => {
                 self.view
-                    .set_status_text(&format!("Unknown command: {}", name));
+                    .echo_error(&format!("Unknown command: {}", name));
             }
         }
 

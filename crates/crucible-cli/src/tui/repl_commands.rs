@@ -58,6 +58,11 @@ pub const REPL_COMMANDS: &[ReplCommand] = &[
         aliases: &["cfg"],
         description: "Show current configuration",
     },
+    ReplCommand {
+        name: "messages",
+        aliases: &["mes"],
+        description: "Show message history (notifications)",
+    },
 ];
 
 /// Find REPL commands matching a query (fuzzy prefix match)
@@ -89,6 +94,8 @@ mod tests {
     fn test_find_matching_empty_query() {
         let matches = find_matching("");
         assert_eq!(matches.len(), REPL_COMMANDS.len());
+        // Verify expected count (quit, help, mode, agent, models, config, messages)
+        assert_eq!(REPL_COMMANDS.len(), 7);
     }
 
     #[test]
@@ -107,9 +114,9 @@ mod tests {
 
     #[test]
     fn test_find_matching_multiple() {
-        // "m" matches "mode" and "models"
+        // "m" matches "mode", "models", and "messages"
         let matches = find_matching("m");
-        assert_eq!(matches.len(), 2);
+        assert_eq!(matches.len(), 3);
     }
 
     #[test]
