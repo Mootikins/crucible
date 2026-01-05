@@ -15,14 +15,14 @@ expression: h.render()
                                                                                 
                                                                                 
                                                                                 
-┌Select────────────────────────────────────────────────────────────────────────┐
-│> / search Search notes semantically                                          │
-│  / new Start new session                                                     │
-│  / clear Clear conversation context                                          │
-│  / help Show available commands                                              │
-│  / mode Switch session mode                                                  │
-└──────────────────────────────────────────────────────────────────────────────┘
+> / search Search notes semantically                                            
+  / new Start new session                                                       
+  / clear Clear conversation context                                            
+  / help Show available commands                                                
+  / mode Switch session mode                                                    
+  / agents List available agents                                                
                                                                                 
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
  >                                                                              
-                                                                                
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 ▸ Plan │ Ready
