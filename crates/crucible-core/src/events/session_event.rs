@@ -645,7 +645,10 @@ impl SessionEvent {
     pub fn is_note_event(&self) -> bool {
         matches!(
             self,
-            Self::NoteParsed { .. } | Self::NoteCreated { .. } | Self::NoteModified { .. } | Self::NoteDeleted { .. }
+            Self::NoteParsed { .. }
+                | Self::NoteCreated { .. }
+                | Self::NoteModified { .. }
+                | Self::NoteDeleted { .. }
         )
     }
 

@@ -738,7 +738,13 @@ mod tests {
     #[test]
     fn test_init_parses() {
         let cli = Cli::try_parse_from(["cru", "init"]).unwrap();
-        assert!(matches!(cli.command, Some(Commands::Init { path: None, force: false })));
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Init {
+                path: None,
+                force: false
+            })
+        ));
     }
 
     #[test]
