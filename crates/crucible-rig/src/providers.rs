@@ -271,6 +271,21 @@ fn create_github_copilot_client(config: &LlmProviderConfig) -> RigResult<RigClie
     Ok(RigClient::GitHubCopilot(client))
 }
 
+/// Create an OpenAI-compatible client with explicit credentials.
+///
+/// This is useful for creating clients from dynamically-obtained tokens,
+/// such as GitHub Copilot's API tokens.
+pub fn create_openai_compat_client(
+    api_key: &str,
+    base_url: &str,
+) -> RigResult<openai::CompletionsClient> {
+    openai::CompletionsClient::builder()
+        .api_key(api_key)
+        .base_url(base_url)
+        .build()
+        .map_err(|e| RigError::ClientCreation(e.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
