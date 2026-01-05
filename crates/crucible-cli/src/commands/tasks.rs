@@ -245,6 +245,7 @@ mod tests {
             providers: ProvidersConfig::default(),
             context: None,
             storage: None,
+            source_map: None,
         }
     }
 

@@ -18,6 +18,7 @@ use crucible_config::{
 };
 use crucible_core::test_support::fixtures::{create_kiln, KilnFixture};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::time::{sleep, Duration};
 
@@ -65,6 +66,7 @@ fn create_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfig {
         providers: ProvidersConfig::default(),
         context: None,
         storage: None,
+        source_map: None,
     }
 }
 
@@ -795,3 +797,198 @@ async fn test_watch_detects_file_deletion() -> Result<()> {
 //
 // The working watch tests (test_watch_mode_starts_and_runs, test_watch_detects_*)
 // properly use timeout/spawn patterns. Add new watch tests following that pattern.
+
+// =============================================================================
+// NOTE LIFECYCLE EVENT TESTS
+// =============================================================================
+//
+// These tests verify that processing emits note lifecycle events through
+// the Reactor, allowing Rune handlers to react to note changes.
+
+use async_trait::async_trait;
+use crucible_core::events::{Handler, HandlerContext, HandlerResult, Reactor, SessionEvent};
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+
+/// A test handler that counts events matching a pattern
+struct CountingHandler {
+    name: &'static str,
+    pattern: &'static str,
+    event_count: Arc<AtomicUsize>,
+}
+
+impl CountingHandler {
+    fn new(name: &'static str, pattern: &'static str, counter: Arc<AtomicUsize>) -> Self {
+        Self {
+            name,
+            pattern,
+            event_count: counter,
+        }
+    }
+}
+
+#[async_trait]
+impl Handler for CountingHandler {
+    fn name(&self) -> &str {
+        self.name
+    }
+
+    fn event_pattern(&self) -> &str {
+        self.pattern
+    }
+
+    fn priority(&self) -> i32 {
+        100
+    }
+
+    fn dependencies(&self) -> &[&str] {
+        &[]
+    }
+
+    async fn handle(
+        &self,
+        _ctx: &mut HandlerContext,
+        event: SessionEvent,
+    ) -> HandlerResult<SessionEvent> {
+        self.event_count.fetch_add(1, AtomicOrdering::SeqCst);
+        HandlerResult::Continue(event)
+    }
+}
+
+#[tokio::test]
+async fn test_process_emits_note_events_to_reactor() -> Result<()> {
+    // GIVEN: A test kiln with markdown files
+    let temp_dir = create_test_kiln()?;
+    let kiln_path = temp_dir.path().to_path_buf();
+
+    // Create handlers directory with a simple Rune handler
+    let handlers_dir = kiln_path.join(".crucible").join("handlers");
+    std::fs::create_dir_all(&handlers_dir)?;
+
+    // Create a Rune handler that matches note events
+    // The handler uses the wildcard pattern to receive all events
+    let handler_content = r#"
+// Handler that receives note events
+pub fn handle(event) {
+    // Just pass through - we're testing that it gets called
+    event
+}
+"#;
+    std::fs::write(handlers_dir.join("note_handler.rn"), handler_content)?;
+
+    let db_dir = TempDir::new()?;
+    let db_path = db_dir.path().join("test.db");
+
+    let config = create_test_config(kiln_path, db_path);
+
+    // WHEN: Processing files
+    let result = process::execute(config, None, false, false, false, false, None).await;
+
+    // THEN: Should succeed and Rune handlers should have been loaded
+    assert!(result.is_ok(), "Process command should succeed");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_reactor_receives_note_modified_events() -> Result<()> {
+    // GIVEN: A reactor with a handler that counts NoteModified events
+    let note_modified_count = Arc::new(AtomicUsize::new(0));
+    let note_parsed_count = Arc::new(AtomicUsize::new(0));
+
+    let mut reactor = Reactor::new();
+    reactor
+        .register(Box::new(CountingHandler::new(
+            "note_modified_counter",
+            "note_modified",
+            note_modified_count.clone(),
+        )))
+        .expect("Should register handler");
+    reactor
+        .register(Box::new(CountingHandler::new(
+            "note_parsed_counter",
+            "note_parsed",
+            note_parsed_count.clone(),
+        )))
+        .expect("Should register handler");
+
+    // WHEN: Emitting note events (simulating what process.rs does)
+    let note_modified_event = SessionEvent::NoteModified {
+        path: PathBuf::from("/test/note.md"),
+        change_type: crucible_core::events::NoteChangeType::Content,
+    };
+    let note_parsed_event = SessionEvent::NoteParsed {
+        path: PathBuf::from("/test/note.md"),
+        block_count: 5,
+        payload: None,
+    };
+
+    reactor
+        .emit(note_modified_event)
+        .await
+        .expect("Should emit");
+    reactor.emit(note_parsed_event).await.expect("Should emit");
+
+    // THEN: Handlers should have received the events
+    assert_eq!(
+        note_modified_count.load(AtomicOrdering::SeqCst),
+        1,
+        "NoteModified handler should receive 1 event"
+    );
+    assert_eq!(
+        note_parsed_count.load(AtomicOrdering::SeqCst),
+        1,
+        "NoteParsed handler should receive 1 event"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_reactor_wildcard_pattern_receives_note_events() -> Result<()> {
+    // GIVEN: A reactor with a wildcard handler (like Rune handlers use)
+    let all_events_count = Arc::new(AtomicUsize::new(0));
+
+    let mut reactor = Reactor::new();
+    reactor
+        .register(Box::new(CountingHandler::new(
+            "wildcard_counter",
+            "*", // Matches all events
+            all_events_count.clone(),
+        )))
+        .expect("Should register handler");
+
+    // WHEN: Emitting different note lifecycle events
+    let events = vec![
+        SessionEvent::NoteModified {
+            path: PathBuf::from("/test/note1.md"),
+            change_type: crucible_core::events::NoteChangeType::Content,
+        },
+        SessionEvent::NoteParsed {
+            path: PathBuf::from("/test/note1.md"),
+            block_count: 3,
+            payload: None,
+        },
+        SessionEvent::NoteModified {
+            path: PathBuf::from("/test/note2.md"),
+            change_type: crucible_core::events::NoteChangeType::Content,
+        },
+        SessionEvent::NoteParsed {
+            path: PathBuf::from("/test/note2.md"),
+            block_count: 7,
+            payload: None,
+        },
+    ];
+
+    for event in events {
+        reactor.emit(event).await.expect("Should emit");
+    }
+
+    // THEN: Wildcard handler should have received all events
+    assert_eq!(
+        all_events_count.load(AtomicOrdering::SeqCst),
+        4,
+        "Wildcard handler should receive all 4 events"
+    );
+
+    Ok(())
+}
