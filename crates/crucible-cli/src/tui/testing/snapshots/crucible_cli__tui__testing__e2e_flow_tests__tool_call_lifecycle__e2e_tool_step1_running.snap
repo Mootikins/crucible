@@ -1,0 +1,28 @@
+---
+source: crates/crucible-cli/src/tui/testing/e2e_flow_tests.rs
+expression: h.render()
+---
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ > Hello                                                                        
+                                                                                
+ ● Hi! How can I help?                                                          
+                                                                                
+ ◐ glob(pattern="**/*.rs")                                                      
+                                                                                
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+ >                                                                              
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+▸ Plan │ Ready
