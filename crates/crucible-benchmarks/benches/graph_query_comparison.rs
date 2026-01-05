@@ -286,9 +286,24 @@ mod sqlite_raw {
             .unwrap_or_default()
     }
 
-    /// Single-hop inlinks via raw SQL
-    /// Uses SQLite json_each to find notes that link to the target
+    /// Single-hop inlinks via raw SQL using junction table
+    /// O(log n) via index on note_links(target_path)
     pub async fn inlinks(conn: &Arc<Mutex<Connection>>, target_path: &str) -> Vec<String> {
+        let conn = conn.lock().await;
+        let mut stmt = conn
+            .prepare_cached(
+                r#"SELECT source_path FROM note_links WHERE target_path = ?1"#,
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map([target_path], |row| row.get(0))
+            .unwrap();
+        rows.filter_map(|r| r.ok()).collect()
+    }
+
+    /// Single-hop inlinks via LIKE (old method for comparison)
+    /// O(n) full table scan
+    pub async fn inlinks_like(conn: &Arc<Mutex<Connection>>, target_path: &str) -> Vec<String> {
         let conn = conn.lock().await;
         let mut stmt = conn
             .prepare_cached(
@@ -511,6 +526,20 @@ fn bench_raw_single_hop(c: &mut Criterion) {
                 |b, path| {
                     b.to_async(&rt)
                         .iter(|| sqlite_raw::inlinks(&conn2, path));
+                },
+            );
+
+            // Also benchmark the old LIKE method for comparison
+            let conn3 = Arc::new(tokio::sync::Mutex::new(
+                rusqlite::Connection::open(dir.path().join("bench.db")).unwrap(),
+            ));
+
+            group.bench_with_input(
+                BenchmarkId::new("sqlite/inlinks_like", label),
+                &hub_path,
+                |b, path| {
+                    b.to_async(&rt)
+                        .iter(|| sqlite_raw::inlinks_like(&conn3, path));
                 },
             );
         }
