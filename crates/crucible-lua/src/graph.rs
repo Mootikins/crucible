@@ -903,11 +903,12 @@ mod note_store_tests {
     #[async_trait]
     impl NoteStore for MockNoteStore {
         async fn upsert(&self, note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
+            let title = note.title.clone();
             let mut map = self.notes.lock().unwrap();
             map.insert(note.path.clone(), note);
             let event = SessionEvent::NoteCreated {
                 path: note.path.into(),
-                title: Some(note.title),
+                title: Some(title),
             };
             Ok(vec![event])
         }
@@ -1378,7 +1379,7 @@ mod graph_view_tests {
     #[tokio::test]
     async fn test_register_graph_module_with_all() {
         use async_trait::async_trait;
-        use crucible_core::events::{NoteChangeType, SessionEvent};
+        use crucible_core::events::SessionEvent;
         use crucible_core::parser::BlockHash;
         use crucible_core::storage::{Filter, NoteRecord, NoteStore, SearchResult, StorageResult};
         use crucible_core::traits::{GraphQueryExecutor, GraphQueryResult};
