@@ -14,6 +14,7 @@ pub mod parser;
 pub mod processing;
 pub mod prompts;
 pub mod properties;
+pub mod serde_md;
 pub mod storage;
 pub mod test_support;
 pub mod traits;
