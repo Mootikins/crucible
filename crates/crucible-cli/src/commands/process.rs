@@ -7,14 +7,18 @@
 //! ```text
 //! FileChanged -> NoteParsed -> EntityStored -> BlocksUpdated -> EmbeddingGenerated
 //! ```
+//!
+//! Note lifecycle events (`NoteParsed`, `NoteModified`) are emitted through the
+//! Reactor during processing, allowing Rune handlers to react to note changes.
 
 use anyhow::Result;
+use crucible_core::events::{NoteChangeType, Reactor, SessionEvent};
 use indicatif::{ProgressBar, ProgressStyle};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use tokio::sync::Semaphore;
-use tracing::{info, warn};
+use tokio::sync::{RwLock, Semaphore};
+use tracing::{debug, info, warn};
 use walkdir::WalkDir;
 
 use crate::config::CliConfig;
@@ -98,6 +102,15 @@ pub async fn execute(
         Arc::new(factories::create_pipeline(storage_client.clone(), &config, force).await?);
     output::success("Pipeline ready");
 
+    // Initialize Reactor for note lifecycle events
+    // This allows Rune handlers to react to note processing
+    let reactor = Arc::new(RwLock::new(Reactor::new()));
+    load_rune_handlers(&mut *reactor.write().await, &config.kiln_path).await;
+    let handler_count = reactor.read().await.handler_count();
+    if handler_count > 0 {
+        info!("Loaded {} Rune handlers for note events", handler_count);
+    }
+
     // Discover files to process
     let files = discover_markdown_files(target_path)?;
     info!("Found {} markdown files", files.len());
@@ -158,6 +171,7 @@ pub async fn execute(
     for file in files {
         let permit = semaphore.clone().acquire_owned().await?;
         let pipeline = pipeline.clone();
+        let reactor = reactor.clone();
         let pb = pb.clone();
         let processed = processed_count.clone();
         let skipped = skipped_count.clone();
@@ -177,8 +191,14 @@ pub async fn execute(
                 processed.fetch_add(1, Ordering::Relaxed);
             } else {
                 match pipeline.process(&file).await {
-                    Ok(crucible_core::processing::ProcessingResult::Success { .. }) => {
+                    Ok(crucible_core::processing::ProcessingResult::Success {
+                        changed_blocks,
+                        ..
+                    }) => {
                         processed.fetch_add(1, Ordering::Relaxed);
+
+                        // Emit note lifecycle event through Reactor
+                        emit_note_event(&reactor, &file, changed_blocks).await;
                     }
                     Ok(crucible_core::processing::ProcessingResult::Skipped)
                     | Ok(crucible_core::processing::ProcessingResult::NoChanges) => {
@@ -336,4 +356,122 @@ fn is_excluded_dir(path: &std::path::Path) -> bool {
 /// Check if a path is a markdown file
 pub fn is_markdown_file(path: &std::path::Path) -> bool {
     path.extension().and_then(|s| s.to_str()) == Some("md")
+}
+
+/// Emit note lifecycle event through the Reactor.
+///
+/// Emits a `NoteModified` event for successfully processed notes, allowing
+/// Rune handlers registered with `note:*` patterns to react.
+async fn emit_note_event(reactor: &Arc<RwLock<Reactor>>, path: &Path, block_count: usize) {
+    // Emit NoteModified for processed notes (we use NoteModified since the pipeline
+    // handles both creates and updates - distinguishing would require tracking prior state)
+    let event = SessionEvent::NoteModified {
+        path: path.to_path_buf(),
+        change_type: NoteChangeType::Content,
+    };
+
+    let mut reactor_guard = reactor.write().await;
+    match reactor_guard.emit(event).await {
+        Ok(result) => {
+            if result.is_completed() {
+                debug!(
+                    "Note event dispatched for {}: {} handlers ran",
+                    path.display(),
+                    result.handlers_run().len()
+                );
+            }
+        }
+        Err(e) => {
+            warn!("Failed to emit note event for {}: {}", path.display(), e);
+        }
+    }
+
+    // Also emit NoteParsed with block count info for handlers that want parse details
+    let parsed_event = SessionEvent::NoteParsed {
+        path: path.to_path_buf(),
+        block_count,
+        payload: None,
+    };
+
+    if let Err(e) = reactor_guard.emit(parsed_event).await {
+        warn!(
+            "Failed to emit NoteParsed event for {}: {}",
+            path.display(),
+            e
+        );
+    }
+}
+
+/// Load Rune handlers from the kiln's `.crucible/handlers/` directory.
+///
+/// Handlers matching `note:*` patterns will receive note lifecycle events.
+async fn load_rune_handlers(reactor: &mut Reactor, kiln_path: &Path) {
+    let handlers_dir = kiln_path.join(".crucible").join("handlers");
+
+    if !handlers_dir.exists() {
+        debug!(
+            "No handlers directory at {}, skipping Rune handlers",
+            handlers_dir.display()
+        );
+        return;
+    }
+
+    // Scan for .rn files
+    let entries = match std::fs::read_dir(&handlers_dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            warn!("Failed to read handlers directory: {}", e);
+            return;
+        }
+    };
+
+    let mut loaded_count = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|ext| ext == "rn") {
+            match load_single_rune_handler(&path).await {
+                Ok(handler) => {
+                    if let Err(e) = reactor.register(handler) {
+                        warn!("Failed to register Rune handler {}: {}", path.display(), e);
+                    } else {
+                        loaded_count += 1;
+                        debug!("Loaded Rune handler from {}", path.display());
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to load Rune handler from {}: {}", path.display(), e);
+                }
+            }
+        }
+    }
+
+    if loaded_count > 0 {
+        info!(
+            "Loaded {} Rune handlers from {}",
+            loaded_count,
+            handlers_dir.display()
+        );
+    }
+}
+
+/// Load a single Rune handler from a file.
+async fn load_single_rune_handler(path: &Path) -> Result<Box<dyn crucible_core::events::Handler>> {
+    use anyhow::Context;
+    use crucible_rune::core_handler::{RuneHandler, RuneHandlerMeta};
+    use crucible_rune::RuneExecutor;
+
+    // Create executor for this handler
+    let executor = Arc::new(RuneExecutor::new().with_context(|| "Failed to create Rune executor")?);
+
+    // Create handler metadata
+    // Priority 500+ for user scripts (after built-in handlers)
+    let meta = RuneHandlerMeta::new(path.to_path_buf(), "handle")
+        .with_priority(500)
+        .with_event_pattern("*");
+
+    // Create RuneHandler - this will compile the script
+    let handler = RuneHandler::new(meta, executor)
+        .with_context(|| format!("Failed to create Rune handler from {}", path.display()))?;
+
+    Ok(Box::new(handler))
 }
