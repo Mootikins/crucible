@@ -116,6 +116,10 @@ pub enum CopilotError {
     #[error("Authorization pending - user must complete device flow")]
     AuthorizationPending,
 
+    /// Rate limited - caller should increase polling interval
+    #[error("Rate limited - increase polling interval by 5 seconds")]
+    SlowDown,
+
     /// Device flow expired
     #[error("Device code expired - please restart authentication")]
     DeviceCodeExpired,
@@ -244,9 +248,12 @@ impl Default for CopilotAuth {
 impl CopilotAuth {
     /// Create a new authentication handler
     pub fn new() -> Self {
-        Self {
-            client: reqwest::Client::new(),
-        }
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .expect("Failed to create HTTP client");
+
+        Self { client }
     }
 
     /// Start the OAuth device flow
@@ -306,7 +313,7 @@ impl CopilotAuth {
             if let Some(error) = error_response.get("error").and_then(|e| e.as_str()) {
                 return match error {
                     "authorization_pending" => Err(CopilotError::AuthorizationPending),
-                    "slow_down" => Err(CopilotError::AuthorizationPending), // Treat as pending, caller should increase interval
+                    "slow_down" => Err(CopilotError::SlowDown),
                     "expired_token" => Err(CopilotError::DeviceCodeExpired),
                     "access_denied" => Err(CopilotError::AccessDenied),
                     _ => Err(CopilotError::OAuth(format!(
@@ -389,8 +396,13 @@ impl CopilotClient {
     /// The OAuth token should be obtained via [`CopilotAuth`] or loaded
     /// from persistent storage.
     pub fn new(oauth_token: impl Into<String>) -> Self {
+        let http = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .expect("Failed to create HTTP client");
+
         Self {
-            http: reqwest::Client::new(),
+            http,
             oauth_token: oauth_token.into(),
             cached_token: Arc::new(RwLock::new(None)),
         }
@@ -444,7 +456,7 @@ impl CopilotClient {
 
     /// Get a valid API token, refreshing if necessary
     async fn ensure_token(&self) -> CopilotResult<(String, String)> {
-        // Check cache first
+        // Fast path: check cache with read lock
         {
             let cache = self.cached_token.read().await;
             if let Some(ref cached) = *cache {
@@ -454,15 +466,20 @@ impl CopilotClient {
             }
         }
 
-        // Refresh token
+        // Slow path: acquire write lock and double-check
+        let mut cache = self.cached_token.write().await;
+
+        // Re-check under write lock (another task may have refreshed)
+        if let Some(ref cached) = *cache {
+            if !cached.is_expired() {
+                return Ok((cached.token.clone(), cached.api_base.clone()));
+            }
+        }
+
+        // Refresh token while holding the lock
         let new_token = self.get_copilot_token().await?;
         let result = (new_token.token.clone(), new_token.api_base.clone());
-
-        // Update cache
-        {
-            let mut cache = self.cached_token.write().await;
-            *cache = Some(new_token);
-        }
+        *cache = Some(new_token);
 
         Ok(result)
     }
@@ -500,8 +517,8 @@ impl CopilotClient {
 
     /// Get the current API token (for use with OpenAI-compatible clients)
     ///
-    /// Note: This token expires after ~30 minutes. Use [`ensure_token`] for
-    /// automatic refresh.
+    /// Note: This token expires after ~30 minutes. The client automatically
+    /// refreshes expired tokens on subsequent calls.
     pub async fn api_token(&self) -> CopilotResult<String> {
         let (token, _) = self.ensure_token().await?;
         Ok(token)
