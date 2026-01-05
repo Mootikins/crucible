@@ -547,9 +547,9 @@ impl LanceNoteStore {
         if let Some(table) = &*table_guard {
             // Try to list indices - if embedding index exists, we have one
             if let Ok(indices) = table.list_indices().await {
-                return indices.iter().any(|idx| {
-                    idx.columns.contains(&"embedding".to_string())
-                });
+                return indices
+                    .iter()
+                    .any(|idx| idx.columns.contains(&"embedding".to_string()));
             }
         }
         false

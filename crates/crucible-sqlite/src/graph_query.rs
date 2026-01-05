@@ -19,7 +19,9 @@ use async_trait::async_trait;
 use crucible_core::traits::graph_query::{GraphQueryError, GraphQueryExecutor, GraphQueryResult};
 use crucible_query::{
     ir::{EdgeDirection, GraphIR, PatternElement, QuerySource},
-    syntax::{JaqSyntax, PgqSyntax, QuerySyntaxRegistry, QuerySyntaxRegistryBuilder, SqlSugarSyntax},
+    syntax::{
+        JaqSyntax, PgqSyntax, QuerySyntaxRegistry, QuerySyntaxRegistryBuilder, SqlSugarSyntax,
+    },
     transform::{QueryTransform, ValidateTransform},
 };
 use rusqlite::Connection;
@@ -41,9 +43,9 @@ impl SqliteGraphQueryExecutor {
     /// Create a new executor with a database connection
     pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
         let syntax_registry = QuerySyntaxRegistryBuilder::new()
-            .with_syntax(PgqSyntax)      // Priority 50 - MATCH syntax
+            .with_syntax(PgqSyntax) // Priority 50 - MATCH syntax
             .with_syntax(SqlSugarSyntax) // Priority 40 - SELECT outlinks FROM
-            .with_syntax(JaqSyntax)      // Priority 30 - outlinks("title")
+            .with_syntax(JaqSyntax) // Priority 30 - outlinks("title")
             .build();
 
         Self {
@@ -55,20 +57,25 @@ impl SqliteGraphQueryExecutor {
 
     /// Parse a query string into GraphIR using the syntax registry
     fn parse(&self, query: &str) -> Result<GraphIR, GraphQueryError> {
-        let ir = self.syntax_registry.parse(query).map_err(|e| {
-            GraphQueryError::with_query(format!("Parse error: {}", e), query)
-        })?;
+        let ir = self
+            .syntax_registry
+            .parse(query)
+            .map_err(|e| GraphQueryError::with_query(format!("Parse error: {}", e), query))?;
 
         // Apply validation transform
-        let ir = self.validator.transform(ir).map_err(|e| {
-            GraphQueryError::with_query(format!("Validation error: {}", e), query)
-        })?;
+        let ir = self
+            .validator
+            .transform(ir)
+            .map_err(|e| GraphQueryError::with_query(format!("Validation error: {}", e), query))?;
 
         Ok(ir)
     }
 
     /// Generate SQL for Crucible's EAV schema from GraphIR
-    fn generate_sql(&self, ir: &GraphIR) -> Result<(String, Vec<(String, String)>), GraphQueryError> {
+    fn generate_sql(
+        &self,
+        ir: &GraphIR,
+    ) -> Result<(String, Vec<(String, String)>), GraphQueryError> {
         // Determine query type and target
         let title = match &ir.source {
             QuerySource::ByTitle(t) => t.clone(),
@@ -89,28 +96,39 @@ impl SqliteGraphQueryExecutor {
             return Ok((
                 r#"SELECT id, type, data FROM entities
                    WHERE type = 'note'
-                   AND json_extract(data, '$.title') = ?1"#.to_string(),
+                   AND json_extract(data, '$.title') = ?1"#
+                    .to_string(),
                 vec![("1".to_string(), title)],
             ));
         }
 
         // Determine traversal direction from pattern
-        let direction = ir.pattern.elements.iter().find_map(|e| {
-            if let PatternElement::Edge(edge) = e {
-                Some(edge.direction)
-            } else {
-                None
-            }
-        }).unwrap_or(EdgeDirection::Out);
+        let direction = ir
+            .pattern
+            .elements
+            .iter()
+            .find_map(|e| {
+                if let PatternElement::Edge(edge) = e {
+                    Some(edge.direction)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(EdgeDirection::Out);
 
         // Get edge type from pattern
-        let edge_type = ir.pattern.elements.iter().find_map(|e| {
-            if let PatternElement::Edge(edge) = e {
-                edge.edge_type.clone()
-            } else {
-                None
-            }
-        }).unwrap_or_else(|| "wikilink".to_string());
+        let edge_type = ir
+            .pattern
+            .elements
+            .iter()
+            .find_map(|e| {
+                if let PatternElement::Edge(edge) = e {
+                    edge.edge_type.clone()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| "wikilink".to_string());
 
         // Generate SQL based on direction
         let sql = match direction {
@@ -124,7 +142,8 @@ impl SqliteGraphQueryExecutor {
                     WHERE e1.type = 'note'
                     AND json_extract(e1.data, '$.title') = ?1
                     AND r.relation_type = ?2
-                "#.to_string()
+                "#
+                .to_string()
             }
             EdgeDirection::In => {
                 // inlinks: find entities that link TO the source
@@ -136,7 +155,8 @@ impl SqliteGraphQueryExecutor {
                     WHERE e1.type = 'note'
                     AND json_extract(e1.data, '$.title') = ?1
                     AND r.relation_type = ?2
-                "#.to_string()
+                "#
+                .to_string()
             }
             EdgeDirection::Both | EdgeDirection::Undirected => {
                 // neighbors: both directions
@@ -152,14 +172,15 @@ impl SqliteGraphQueryExecutor {
                     AND json_extract(e1.data, '$.title') = ?1
                     AND r.relation_type = ?2
                     AND e2.id != e1.id
-                "#.to_string()
+                "#
+                .to_string()
             }
         };
 
-        Ok((sql, vec![
-            ("1".to_string(), title),
-            ("2".to_string(), edge_type),
-        ]))
+        Ok((
+            sql,
+            vec![("1".to_string(), title), ("2".to_string(), edge_type)],
+        ))
     }
 
     /// Execute SQL and return JSON results
@@ -182,8 +203,8 @@ impl SqliteGraphQueryExecutor {
                 let data: String = row.get(2)?;
 
                 // Parse the JSON data
-                let mut result: serde_json::Map<String, Value> = serde_json::from_str(&data)
-                    .unwrap_or_else(|_| serde_json::Map::new());
+                let mut result: serde_json::Map<String, Value> =
+                    serde_json::from_str(&data).unwrap_or_else(|_| serde_json::Map::new());
 
                 // Add id and type to result
                 result.insert("id".to_string(), Value::String(id));
@@ -250,9 +271,9 @@ mod tests {
 
     #[test]
     fn test_syntax_registry_has_all_syntaxes() {
-        let executor = SqliteGraphQueryExecutor::new(
-            Arc::new(Mutex::new(Connection::open_in_memory().unwrap()))
-        );
+        let executor = SqliteGraphQueryExecutor::new(Arc::new(Mutex::new(
+            Connection::open_in_memory().unwrap(),
+        )));
         let names = executor.syntax_registry.syntax_names();
 
         assert!(names.contains(&"sql-pgq"));
@@ -262,9 +283,9 @@ mod tests {
 
     #[test]
     fn test_parse_jaq_syntax() {
-        let executor = SqliteGraphQueryExecutor::new(
-            Arc::new(Mutex::new(Connection::open_in_memory().unwrap()))
-        );
+        let executor = SqliteGraphQueryExecutor::new(Arc::new(Mutex::new(
+            Connection::open_in_memory().unwrap(),
+        )));
 
         let ir = executor.parse(r#"outlinks("Index")"#).unwrap();
         assert!(matches!(ir.source, QuerySource::ByTitle(ref t) if t == "Index"));
@@ -272,9 +293,9 @@ mod tests {
 
     #[test]
     fn test_parse_sql_sugar_syntax() {
-        let executor = SqliteGraphQueryExecutor::new(
-            Arc::new(Mutex::new(Connection::open_in_memory().unwrap()))
-        );
+        let executor = SqliteGraphQueryExecutor::new(Arc::new(Mutex::new(
+            Connection::open_in_memory().unwrap(),
+        )));
 
         let ir = executor.parse("SELECT outlinks FROM 'Index'").unwrap();
         assert!(matches!(ir.source, QuerySource::ByTitle(ref t) if t == "Index"));
@@ -282,11 +303,13 @@ mod tests {
 
     #[test]
     fn test_parse_pgq_match_syntax() {
-        let executor = SqliteGraphQueryExecutor::new(
-            Arc::new(Mutex::new(Connection::open_in_memory().unwrap()))
-        );
+        let executor = SqliteGraphQueryExecutor::new(Arc::new(Mutex::new(
+            Connection::open_in_memory().unwrap(),
+        )));
 
-        let ir = executor.parse("MATCH (a {title: 'Index'})-[:wikilink]->(b)").unwrap();
+        let ir = executor
+            .parse("MATCH (a {title: 'Index'})-[:wikilink]->(b)")
+            .unwrap();
         assert!(matches!(ir.source, QuerySource::ByTitle(ref t) if t == "Index"));
     }
 
@@ -359,7 +382,11 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(results.len(), 2, "SQL sugar outlinks should return 2 results");
+        assert_eq!(
+            results.len(),
+            2,
+            "SQL sugar outlinks should return 2 results"
+        );
     }
 
     #[tokio::test]
@@ -387,7 +414,11 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(results.len(), 2, "PGQ MATCH outlinks should return 2 results");
+        assert_eq!(
+            results.len(),
+            2,
+            "PGQ MATCH outlinks should return 2 results"
+        );
     }
 
     #[tokio::test]
@@ -439,9 +470,15 @@ mod tests {
     async fn test_nonexistent_note() {
         let executor = setup_pipeline_executor().await;
 
-        let results = executor.execute(r#"outlinks("Nonexistent")"#).await.unwrap();
+        let results = executor
+            .execute(r#"outlinks("Nonexistent")"#)
+            .await
+            .unwrap();
 
-        assert!(results.is_empty(), "Nonexistent note should return empty results");
+        assert!(
+            results.is_empty(),
+            "Nonexistent note should return empty results"
+        );
     }
 
     #[tokio::test]
