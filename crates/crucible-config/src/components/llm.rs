@@ -13,6 +13,11 @@ pub enum LlmProviderType {
     OpenAI,
     /// Anthropic provider
     Anthropic,
+    /// GitHub Copilot provider (via VS Code OAuth flow)
+    /// Uses the same OAuth client ID as VS Code for authentication.
+    /// Requires initial device flow authentication, then stores OAuth token.
+    #[serde(alias = "github-copilot", alias = "github_copilot", alias = "copilot")]
+    GitHubCopilot,
 }
 
 /// Named LLM provider instance configuration
@@ -50,6 +55,7 @@ impl LlmProviderConfig {
                 LlmProviderType::Ollama => "http://localhost:11434".to_string(),
                 LlmProviderType::OpenAI => "https://api.openai.com/v1".to_string(),
                 LlmProviderType::Anthropic => "https://api.anthropic.com/v1".to_string(),
+                LlmProviderType::GitHubCopilot => "https://api.githubcopilot.com".to_string(),
             })
     }
 
@@ -61,6 +67,7 @@ impl LlmProviderConfig {
                 LlmProviderType::Ollama => "llama3.2".to_string(),
                 LlmProviderType::OpenAI => "gpt-4o".to_string(),
                 LlmProviderType::Anthropic => "claude-3-5-sonnet-20241022".to_string(),
+                LlmProviderType::GitHubCopilot => "gpt-4o".to_string(),
             })
     }
 
