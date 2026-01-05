@@ -43,6 +43,7 @@
 pub mod events;
 pub mod id;
 pub mod markdown;
+pub mod serde_md;
 pub mod session;
 pub mod storage;
 
