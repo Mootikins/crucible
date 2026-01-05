@@ -26,6 +26,7 @@ members = [
     "crates/zellij-inbox",
     "crates/crucible-lance",
     "crates/crucible-benchmarks",
+    "crates/crucible-observe",
 ]
 default-members = ["crates/crucible-cli"]
 
@@ -178,6 +179,7 @@ crucible-surrealdb = { path = "crates/crucible-surrealdb" }
 crucible-rune = { path = "crates/crucible-rune" }
 crucible-rig = { path = "crates/crucible-rig" }
 crucible-web = { path = "crates/crucible-web" }
+crucible-observe = { path = "crates/crucible-observe" }
 crucible-daemon = { path = "crates/crucible-daemon" }
 crucible-daemon-client = { path = "crates/crucible-daemon-client" }
 oq = "0.1"

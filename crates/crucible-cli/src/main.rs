@@ -339,6 +339,10 @@ async fn main() -> Result<()> {
             commands::init::execute(path, force).await?;
         }
 
+        Some(Commands::Session(cmd)) => {
+            commands::session::execute(config, cmd).await?;
+        }
+
         None => {
             // Default to chat when no command is provided
             commands::chat::execute(
