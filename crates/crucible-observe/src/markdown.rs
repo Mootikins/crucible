@@ -54,7 +54,12 @@ fn render_event(output: &mut String, event: &LogEvent, options: &RenderOptions) 
                 writeln!(output, "<!-- {} -->", ts.format("%H:%M:%S")).unwrap();
             }
             writeln!(output, "## User\n").unwrap();
-            writeln!(output, "{}\n", truncate(content, options.max_content_length)).unwrap();
+            writeln!(
+                output,
+                "{}\n",
+                truncate(content, options.max_content_length)
+            )
+            .unwrap();
         }
 
         LogEvent::Assistant {
@@ -73,7 +78,12 @@ fn render_event(output: &mut String, event: &LogEvent, options: &RenderOptions) 
             }
             writeln!(output, "{header}\n").unwrap();
 
-            writeln!(output, "{}\n", truncate(content, options.max_content_length)).unwrap();
+            writeln!(
+                output,
+                "{}\n",
+                truncate(content, options.max_content_length)
+            )
+            .unwrap();
 
             if options.include_tokens {
                 if let Some(tokens) = tokens {
@@ -87,12 +97,7 @@ fn render_event(output: &mut String, event: &LogEvent, options: &RenderOptions) 
             }
         }
 
-        LogEvent::ToolCall {
-            ts,
-            id,
-            name,
-            args,
-        } => {
+        LogEvent::ToolCall { ts, id, name, args } => {
             if !options.include_tools {
                 return;
             }

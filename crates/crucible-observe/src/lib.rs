@@ -50,7 +50,7 @@ pub mod storage;
 pub use events::{LogEvent, TokenUsage};
 pub use id::{SessionId, SessionIdError, SessionType};
 pub use markdown::{render_to_markdown, RenderOptions};
-pub use session::{load_events, list_sessions, SessionError, SessionMetadata, SessionWriter};
+pub use session::{list_sessions, load_events, SessionError, SessionMetadata, SessionWriter};
 
 #[cfg(feature = "sqlite")]
 pub use storage::SessionIndex;

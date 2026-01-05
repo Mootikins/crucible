@@ -936,11 +936,19 @@ mod tests {
 
     #[test]
     fn test_session_cleanup_parses() {
-        let cli =
-            Cli::try_parse_from(["cru", "session", "cleanup", "--older-than", "60", "--dry-run"])
-                .unwrap();
-        if let Some(Commands::Session(SessionCommands::Cleanup { older_than, dry_run })) =
-            cli.command
+        let cli = Cli::try_parse_from([
+            "cru",
+            "session",
+            "cleanup",
+            "--older-than",
+            "60",
+            "--dry-run",
+        ])
+        .unwrap();
+        if let Some(Commands::Session(SessionCommands::Cleanup {
+            older_than,
+            dry_run,
+        })) = cli.command
         {
             assert_eq!(older_than, 60);
             assert!(dry_run);
