@@ -80,7 +80,7 @@ fn test_init_with_existing_directory_errors() {
     // Run init command again (should fail)
     let output2 = std::process::Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap())
-        .args(&[
+        .args([
             "run",
             "-p",
             "crucible-cli",
@@ -115,7 +115,7 @@ fn test_init_with_force_overwrites() {
     // Run init command with force
     let output = std::process::Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap())
-        .args(&[
+        .args([
             "run",
             "-p",
             "crucible-cli",
