@@ -51,7 +51,7 @@ cru workflow status
 cru workflow resume
 ```
 
-See [[Help/Workflows/Sessions]] for session management.
+See [[Help/Core/Sessions]] for session management (sessions are orthogonal to workflows).
 
 ## Example Workflows
 
