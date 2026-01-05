@@ -511,7 +511,7 @@ mod note_store_tests {
 
     #[async_trait]
     impl NoteStore for FailingNoteStore {
-        async fn upsert(&self, _note: NoteRecord) -> StorageResult<()> {
+        async fn upsert(&self, _note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
             Err(StorageError::backend(&self.message))
         }
 
@@ -519,7 +519,7 @@ mod note_store_tests {
             Err(StorageError::backend(&self.message))
         }
 
-        async fn delete(&self, _path: &str) -> StorageResult<()> {
+        async fn delete(&self, _path: &str) -> StorageResult<SessionEvent> {
             Err(StorageError::backend(&self.message))
         }
 
