@@ -54,7 +54,7 @@ pub use agent::{
 pub use completion::RigCompletionBackend;
 pub use crucible_agent::{CrucibleAgent, CrucibleAgentError, CrucibleAgentResult};
 pub use handle::RigAgentHandle;
-pub use providers::{create_client, RigClient, RigError, RigResult};
+pub use providers::{create_client, create_openai_compat_client, RigClient, RigError, RigResult};
 pub use session::{
     LoggerError, LoggerResult, MessageRole, SessionEntry, SessionIndex, SessionLogger,
     SessionMessage, SessionMetadata, SessionState, Task, TaskStatus,

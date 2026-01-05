@@ -66,16 +66,9 @@ impl FennelCompiler {
     }
 
     /// Compile Fennel source to Lua
-    pub fn compile(&self, _source: &str) -> Result<String, LuaError> {
-        // We need to get the Lua state from somewhere...
-        // This is a limitation - we need the Lua reference
-        // For now, this is a placeholder that will be called via executor
-        Err(LuaError::FennelCompile(
-            "Use compile_with_lua instead".into(),
-        ))
-    }
-
-    /// Compile Fennel source to Lua with explicit Lua reference
+    ///
+    /// Requires the Lua state reference since the compiler function is stored
+    /// in the Lua registry.
     pub fn compile_with_lua(&self, lua: &Lua, source: &str) -> Result<String, LuaError> {
         let compile_fn: Function = lua.registry_value(&self.compile_fn_key)?;
 

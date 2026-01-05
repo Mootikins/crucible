@@ -293,45 +293,21 @@ impl Harness {
     fn update_popup(&mut self) {
         let trimmed = self.state.input_buffer.trim_start();
 
-        if trimmed.starts_with('/') {
-            let query = trimmed.strip_prefix('/').unwrap_or("").to_string();
-            if !self.state.has_popup
-                || self.view.popup().map(|p| p.kind()) != Some(PopupKind::Command)
-            {
-                let popup = PopupState::new(
-                    PopupKind::Command,
-                    Arc::new(EmptyProvider) as Arc<dyn PopupProvider>,
-                );
-                self.view.set_popup(Some(popup));
-                self.state.has_popup = true;
-            }
-            if let Some(popup) = self.view.popup_mut() {
-                popup.update_query(&query);
-            }
-        } else if trimmed.starts_with('@') {
-            let query = trimmed.strip_prefix('@').unwrap_or("").to_string();
-            if !self.state.has_popup
-                || self.view.popup().map(|p| p.kind()) != Some(PopupKind::AgentOrFile)
-            {
-                let popup = PopupState::new(
-                    PopupKind::AgentOrFile,
-                    Arc::new(EmptyProvider) as Arc<dyn PopupProvider>,
-                );
-                self.view.set_popup(Some(popup));
-                self.state.has_popup = true;
-            }
-            if let Some(popup) = self.view.popup_mut() {
-                popup.update_query(&query);
-            }
-        } else if trimmed.starts_with(':') {
-            let query = trimmed.strip_prefix(':').unwrap_or("").to_string();
-            if !self.state.has_popup
-                || self.view.popup().map(|p| p.kind()) != Some(PopupKind::ReplCommand)
-            {
-                let popup = PopupState::new(
-                    PopupKind::ReplCommand,
-                    Arc::new(EmptyProvider) as Arc<dyn PopupProvider>,
-                );
+        // Detect popup trigger prefix and corresponding kind
+        let trigger = [
+            ('/', PopupKind::Command),
+            ('@', PopupKind::AgentOrFile),
+            (':', PopupKind::ReplCommand),
+        ]
+        .into_iter()
+        .find(|(prefix, _)| trimmed.starts_with(*prefix));
+
+        if let Some((prefix, kind)) = trigger {
+            let query = trimmed.strip_prefix(prefix).unwrap_or("").to_string();
+            // Create popup if needed (wrong kind or none)
+            if !self.state.has_popup || self.view.popup().map(|p| p.kind()) != Some(kind) {
+                let popup =
+                    PopupState::new(kind, Arc::new(EmptyProvider) as Arc<dyn PopupProvider>);
                 self.view.set_popup(Some(popup));
                 self.state.has_popup = true;
             }
