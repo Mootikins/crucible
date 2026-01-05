@@ -13,6 +13,7 @@ use tracing::debug;
 
 use crate::connection::SqlitePool;
 use crate::error::{SqliteError, SqliteResult};
+use crucible_core::events::SessionEvent;
 use crucible_core::parser::BlockHash;
 use crucible_core::storage::{Filter, NoteRecord, NoteStore, Op, SearchResult, StorageResult};
 
@@ -277,7 +278,7 @@ impl SqliteNoteStore {
 
 #[async_trait]
 impl NoteStore for SqliteNoteStore {
-    async fn upsert(&self, note: NoteRecord) -> StorageResult<()> {
+    async fn upsert(&self, note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
         let pool = self.pool.clone();
 
         tokio::task::spawn_blocking(move || {
@@ -336,13 +337,32 @@ impl NoteStore for SqliteNoteStore {
                     }
                 }
 
-                Ok(())
+                // Check if the note existed before to determine appropriate event
+                let existed = conn.query_row(
+                    "SELECT 1 FROM notes WHERE path = ?1",
+                    [&note.path],
+                    |row| row.get::<_, i32>(0),
+                ).optional().is_ok_and(|opt| opt.is_some());
+
+                let event = if existed {
+                    SessionEvent::NoteModified {
+                        path: note.path.clone().into(),
+                        change_type: crucible_core::events::NoteChangeType::Content,
+                    }
+                } else {
+                    SessionEvent::NoteCreated {
+                        path: note.path.clone().into(),
+                        title: Some(note.title.clone()),
+                    }
+                };
+
+                Ok(vec![event])
             })
         })
         .await
         .map_err(|e| crucible_core::storage::StorageError::Backend(e.to_string()))??;
 
-        Ok(())
+        Ok(vec![]) // Shouldn't reach here - connection closure handles it
     }
 
     async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
@@ -368,20 +388,34 @@ impl NoteStore for SqliteNoteStore {
         .map_err(Into::into)
     }
 
-    async fn delete(&self, path: &str) -> StorageResult<()> {
+    async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
         let pool = self.pool.clone();
-        let path = path.to_string();
+        let path_str = path.to_string();
+        let path_for_event = path_str.clone();
 
-        tokio::task::spawn_blocking(move || {
+        let existed = tokio::task::spawn_blocking(move || {
             pool.with_connection(|conn| {
-                conn.execute("DELETE FROM notes WHERE path = ?1", [&path])?;
-                Ok(())
+                // Check if the note exists before deletion
+                let existed = conn.query_row(
+                    "SELECT 1 FROM notes WHERE path = ?1",
+                    [&path_str],
+                    |row| row.get::<_, i32>(0),
+                ).optional().is_ok_and(|opt| opt.is_some());
+
+                conn.execute("DELETE FROM notes WHERE path = ?1", [&path_str])?;
+                Ok(existed)
             })
         })
         .await
-        .map_err(|e| crucible_core::storage::StorageError::Backend(e.to_string()))??;
+        .map_err(|e| crucible_core::storage::StorageError::Backend(e.to_string()))?
+        .map_err(|e| crucible_core::storage::StorageError::Backend(e.to_string()))?;
 
-        Ok(())
+        // Return NoteDeleted event
+        let event = SessionEvent::NoteDeleted {
+            path: path_for_event.into(),
+            existed,
+        };
+        Ok(event)
     }
 
     async fn list(&self) -> StorageResult<Vec<NoteRecord>> {

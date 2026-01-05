@@ -7,6 +7,7 @@
 //! 4. Result verification
 
 use async_trait::async_trait;
+use crucible_core::events::{NoteChangeType, SessionEvent};
 use crucible_core::parser::BlockHash;
 use crucible_core::storage::{
     Filter, NoteRecord, NoteStore, SearchResult, StorageError, StorageResult,
@@ -68,8 +69,21 @@ impl MockNoteStore {
 
 #[async_trait]
 impl NoteStore for MockNoteStore {
-    async fn upsert(&self, _note: NoteRecord) -> StorageResult<()> {
-        Ok(())
+    async fn upsert(&self, note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
+        // Check if note exists to determine which event to return
+        let existed = self.notes.iter().any(|n| n.path == note.path);
+        let event = if existed {
+            SessionEvent::NoteModified {
+                path: note.path.into(),
+                change_type: NoteChangeType::Content,
+            }
+        } else {
+            SessionEvent::NoteCreated {
+                path: note.path.into(),
+                title: Some(note.title),
+            }
+        };
+        Ok(vec![event])
     }
 
     async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
@@ -77,8 +91,12 @@ impl NoteStore for MockNoteStore {
         Ok(self.notes.iter().find(|n| n.path == path).cloned())
     }
 
-    async fn delete(&self, _path: &str) -> StorageResult<()> {
-        Ok(())
+    async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
+        let existed = self.notes.iter().any(|n| n.path == path);
+        Ok(SessionEvent::NoteDeleted {
+            path: path.into(),
+            existed,
+        })
     }
 
     async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
@@ -343,7 +361,7 @@ async fn test_notestore_pipeline_error_propagation() {
 
     #[async_trait]
     impl NoteStore for FailingNoteStore {
-        async fn upsert(&self, _note: NoteRecord) -> StorageResult<()> {
+        async fn upsert(&self, _note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
             Err(StorageError::backend("Store unavailable"))
         }
 
@@ -351,7 +369,7 @@ async fn test_notestore_pipeline_error_propagation() {
             Err(StorageError::backend("Connection lost"))
         }
 
-        async fn delete(&self, _path: &str) -> StorageResult<()> {
+        async fn delete(&self, _path: &str) -> StorageResult<SessionEvent> {
             Err(StorageError::backend("Store unavailable"))
         }
 

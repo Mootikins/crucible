@@ -47,6 +47,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::events::SessionEvent;
 use crate::parser::BlockHash;
 use crate::storage::StorageResult;
 
@@ -318,7 +319,8 @@ pub trait NoteStore: Send + Sync {
     /// Insert or update a note record
     ///
     /// If a record with the same `path` exists, it will be replaced.
-    async fn upsert(&self, note: NoteRecord) -> StorageResult<()>;
+    /// Returns a vector of SessionEvent instances representing note lifecycle events.
+    async fn upsert(&self, note: NoteRecord) -> StorageResult<Vec<SessionEvent>>;
 
     /// Get a note record by path
     ///
@@ -328,7 +330,8 @@ pub trait NoteStore: Send + Sync {
     /// Delete a note record by path
     ///
     /// This is idempotent: deleting a non-existent note succeeds.
-    async fn delete(&self, path: &str) -> StorageResult<()>;
+    /// Returns a SessionEvent representing the deletion.
+    async fn delete(&self, path: &str) -> StorageResult<SessionEvent>;
 
     /// List all note records
     ///
@@ -445,7 +448,7 @@ pub trait Precognition: Send + Sync {
 /// Blanket implementation of NoteStore for Arc<T>
 #[async_trait]
 impl<T: NoteStore + ?Sized> NoteStore for std::sync::Arc<T> {
-    async fn upsert(&self, note: NoteRecord) -> StorageResult<()> {
+    async fn upsert(&self, note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
         (**self).upsert(note).await
     }
 
@@ -453,7 +456,7 @@ impl<T: NoteStore + ?Sized> NoteStore for std::sync::Arc<T> {
         (**self).get(path).await
     }
 
-    async fn delete(&self, path: &str) -> StorageResult<()> {
+    async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
         (**self).delete(path).await
     }
 

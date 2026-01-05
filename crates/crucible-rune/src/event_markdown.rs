@@ -73,6 +73,7 @@ impl EventToMarkdown for SessionEvent {
             SessionEvent::NoteParsed { .. } => "NoteParsed",
             SessionEvent::NoteCreated { .. } => "NoteCreated",
             SessionEvent::NoteModified { .. } => "NoteModified",
+            SessionEvent::NoteDeleted { .. } => "NoteDeleted",
             SessionEvent::McpAttached { .. } => "McpAttached",
             SessionEvent::ToolDiscovered { .. } => "ToolDiscovered",
             SessionEvent::Custom { .. } => "Custom",
@@ -179,6 +180,14 @@ impl EventToMarkdown for SessionEvent {
                     "**Path:** `{}`\n**Change:** {:?}\n",
                     path.display(),
                     change_type
+                )
+            }
+
+            SessionEvent::NoteDeleted { path, existed } => {
+                format!(
+                    "**Path:** `{}`\n**Existed:** {}\n",
+                    path.display(),
+                    existed
                 )
             }
 
