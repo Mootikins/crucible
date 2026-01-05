@@ -16,6 +16,12 @@ crucible-sqlite = { path = "../crucible-sqlite", optional = true }
 crucible-surrealdb = { path = "../crucible-surrealdb", optional = true, features = ["test-utils"] }
 crucible-lance = { path = "../crucible-lance", optional = true }
 
+# Scripting runtimes (feature-gated)
+crucible-rune = { path = "../crucible-rune", optional = true }
+crucible-steel = { path = "../crucible-steel", optional = true }
+crucible-lua = { path = "../crucible-lua", optional = true }
+rune = { version = "0.14", optional = true }
+
 # Test dependencies
 tokio = { workspace = true, features = ["test-util", "full"] }
 chrono = { workspace = true }
@@ -36,6 +42,10 @@ sqlite = ["dep:crucible-sqlite"]
 surrealdb = ["dep:crucible-surrealdb"]
 # Run contract tests against LanceDB
 lance = ["dep:crucible-lance"]
+# Scripting runtime benchmarks
+rune = ["dep:crucible-rune", "dep:rune"]
+steel = ["dep:crucible-steel"]
+lua = ["dep:crucible-lua"]
 
 [lib]
 # This crate is only for tests - no library code
@@ -64,4 +74,8 @@ harness = false
 
 [[bench]]
 name = "write_comparison"
+harness = false
+
+[[bench]]
+name = "scripting_comparison"
 harness = false
