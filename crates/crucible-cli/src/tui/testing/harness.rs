@@ -122,6 +122,12 @@ impl Harness {
         self
     }
 
+    /// Builder: enable gradient popup style (neovim-inspired raised effect)
+    pub fn with_gradient_popup(mut self, enabled: bool) -> Self {
+        self.view.state_mut().use_gradient_popup = enabled;
+        self
+    }
+
     // =========================================================================
     // Input simulation
     // =========================================================================
