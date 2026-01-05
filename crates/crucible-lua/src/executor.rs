@@ -30,7 +30,9 @@ impl LuaExecutor {
         // DEBUG is not in ALL_SAFE, so we use unsafe_new_with for Fennel support.
         // This is safe because we're running controlled Fennel code, not arbitrary C modules.
         #[cfg(feature = "fennel")]
-        let lua = unsafe { Lua::unsafe_new_with(StdLib::ALL_SAFE | StdLib::DEBUG, LuaOptions::default()) };
+        let lua = unsafe {
+            Lua::unsafe_new_with(StdLib::ALL_SAFE | StdLib::DEBUG, LuaOptions::default())
+        };
 
         #[cfg(not(feature = "fennel"))]
         let lua = Lua::new();

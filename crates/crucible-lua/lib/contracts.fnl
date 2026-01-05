@@ -270,6 +270,144 @@
    :post [table?]})
 
 ;; ═══════════════════════════════════════════════════════════════════════════
+;; Tool Schema Registry (for RMCP tool generation)
+;; ═══════════════════════════════════════════════════════════════════════════
+
+;; Global registry for tool schemas
+(global __tool_schemas__ (or __tool_schemas__ {}))
+
+(fn type-to-json-schema [type-name]
+  "Convert Fennel type name to JSON Schema type"
+  (match type-name
+    :string {:type :string}
+    :number {:type :number}
+    :integer {:type :integer}
+    :boolean {:type :boolean}
+    :table {:type :object}
+    :array {:type :array}
+    :any {}
+    _ {:type :string}))
+
+(fn param-to-json-schema [param]
+  "Convert param spec to JSON Schema property"
+  (let [base (type-to-json-schema param.type)]
+    (when param.description
+      (tset base :description param.description))
+    (when param.default
+      (tset base :default param.default))
+    base))
+
+(fn schema-to-json-schema [schema]
+  "Convert tool schema to JSON Schema format for RMCP"
+  (let [properties {}
+        required []]
+    (each [_ param (ipairs (or schema.params []))]
+      (tset properties param.name (param-to-json-schema param))
+      (when (and (not= param.required false) (not param.default))
+        (table.insert required param.name)))
+    {:type :object
+     :properties properties
+     :required required}))
+
+(fn register-tool-schema [name schema]
+  "Register a tool schema in the global registry"
+  (tset __tool_schemas__ name schema))
+
+(fn get-tool-schema [name]
+  "Get a specific tool schema"
+  (. __tool_schemas__ name))
+
+(fn get-all-tool-schemas []
+  "Get all registered tool schemas"
+  __tool_schemas__)
+
+(fn schemas-to-rmcp-tools []
+  "Convert all schemas to RMCP tool definitions"
+  (let [tools []]
+    (each [name schema (pairs __tool_schemas__)]
+      (table.insert tools
+        {:name name
+         :description (or schema.description "")
+         :inputSchema (schema-to-json-schema schema)}))
+    tools))
+
+;; ═══════════════════════════════════════════════════════════════════════════
+;; Macro: deftool - Define a tool with contracts AND schema
+;; ═══════════════════════════════════════════════════════════════════════════
+
+;; Usage:
+;;   (deftool search
+;;     {:description "Search the knowledge base"
+;;      :params [{:name "query" :type "string" :required true :description "Search query"}
+;;               {:name "limit" :type "number" :required false :default 10}]
+;;      :returns "array"}
+;;     [args]
+;;     (do-search args.query (or args.limit 10)))
+
+(fn validate-tool-params [args params tool-name]
+  "Validate arguments against param schema"
+  (each [_ param (ipairs params)]
+    (let [val (. args param.name)
+          required (if (= param.required nil) true param.required)]
+      ;; Check required
+      (when (and required (= val nil) (not param.default))
+        (error (.. "Contract violation in " tool-name ": missing required param '" param.name "'")))
+      ;; Type check (if value provided)
+      (when (and (not= val nil) param.type)
+        (let [actual-type (type val)
+              expected (match param.type
+                         :string :string
+                         :number :number
+                         :integer :number
+                         :boolean :boolean
+                         :table :table
+                         :array :table
+                         :object :table
+                         _ nil)]
+          (when (and expected (not= actual-type expected))
+            (error (.. "Contract violation in " tool-name ": param '" param.name
+                       "' must be " param.type ", got " actual-type))))))))
+
+(fn apply-defaults [args params]
+  "Apply default values to args"
+  (let [result (or args {})]
+    (each [_ param (ipairs params)]
+      (when (and (= (. result param.name) nil) param.default)
+        (tset result param.name param.default)))
+    result))
+
+(fn make-tool [name schema impl]
+  "Create a tool with contract validation and schema registration"
+  ;; Register schema
+  (register-tool-schema name schema)
+  ;; Return wrapped handler
+  (fn [args]
+    ;; Apply defaults
+    (let [with-defaults (apply-defaults args (or schema.params []))]
+      ;; Validate params
+      (validate-tool-params with-defaults (or schema.params []) name)
+      ;; Execute implementation
+      (let [result (impl with-defaults)]
+        ;; Validate return type if specified
+        (when schema.returns
+          (let [ret-type (type result)
+                expected (match schema.returns
+                           :string :string
+                           :number :number
+                           :boolean :boolean
+                           :table :table
+                           :array :table
+                           :object :table
+                           _ nil)]
+            (when (and expected (not= ret-type expected))
+              (error (.. "Contract violation in " name ": return must be " schema.returns ", got " ret-type)))))
+        result))))
+
+(macro deftool [name schema params ...]
+  "Define a tool with schema and contracts"
+  `(global ,name (make-tool ,(tostring name) ,schema (fn ,params ,...))))
+
+;; ═══════════════════════════════════════════════════════════════════════════
 ;; Export
 ;; ═══════════════════════════════════════════════════════════════════════════
 
@@ -306,4 +444,14 @@
  ;; Event pipeline
  : event-handler-c
  : tool-result-event-c
- : message-event-c}
+ : message-event-c
+
+ ;; Tool schema (RMCP integration)
+ : register-tool-schema
+ : get-tool-schema
+ : get-all-tool-schemas
+ : schemas-to-rmcp-tools
+ : schema-to-json-schema
+ : make-tool
+ : validate-tool-params
+ : apply-defaults}
