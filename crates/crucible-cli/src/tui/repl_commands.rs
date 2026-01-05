@@ -63,6 +63,11 @@ pub const REPL_COMMANDS: &[ReplCommand] = &[
         aliases: &["mes"],
         description: "Show message history (notifications)",
     },
+    ReplCommand {
+        name: "edit",
+        aliases: &["e", "view"],
+        description: "Open session in $EDITOR",
+    },
 ];
 
 /// Find REPL commands matching a query (fuzzy prefix match)
@@ -94,8 +99,8 @@ mod tests {
     fn test_find_matching_empty_query() {
         let matches = find_matching("");
         assert_eq!(matches.len(), REPL_COMMANDS.len());
-        // Verify expected count (quit, help, mode, agent, models, config, messages)
-        assert_eq!(REPL_COMMANDS.len(), 7);
+        // Verify expected count (quit, help, mode, agent, models, config, messages, edit)
+        assert_eq!(REPL_COMMANDS.len(), 8);
     }
 
     #[test]
