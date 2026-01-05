@@ -78,6 +78,7 @@ fn apply_selection_highlight(
     }
 }
 use crate::chat::slash_registry::SlashCommandRegistry;
+use crate::session_logger::SessionLogger;
 use crate::tui::agent_picker::AgentSelection;
 use crate::tui::notification::NotificationLevel;
 use crate::tui::streaming_channel::{
@@ -168,6 +169,8 @@ pub struct RatatuiRunner {
     pending_interaction_id: Option<String>,
     /// Pending popup request (for handling "Other" selections)
     pending_popup: Option<crucible_core::interaction::PopupRequest>,
+    /// Session logger for persisting chat events to JSONL files
+    session_logger: Option<std::sync::Arc<SessionLogger>>,
 }
 
 impl RatatuiRunner {
@@ -206,7 +209,14 @@ impl RatatuiRunner {
             selection_cache: crate::tui::selection::SelectableContentCache::new(),
             pending_interaction_id: None,
             pending_popup: None,
+            session_logger: None,
         })
+    }
+
+    /// Set the session logger for persisting chat events.
+    pub fn with_session_logger(&mut self, kiln_path: std::path::PathBuf) -> &mut Self {
+        self.session_logger = Some(std::sync::Arc::new(SessionLogger::new(kiln_path)));
+        self
     }
 
     /// Set a default agent selection for the first iteration.
@@ -309,6 +319,15 @@ impl RatatuiRunner {
                                 pending_parse_events.extend(parse_events);
                             }
 
+                            // Accumulate assistant chunk for session logging
+                            if let Some(logger) = &self.session_logger {
+                                let logger = logger.clone();
+                                let text_clone = text.clone();
+                                tokio::spawn(async move {
+                                    logger.accumulate_assistant_chunk(&text_clone).await;
+                                });
+                            }
+
                             bridge.ring.push(SessionEvent::TextDelta {
                                 delta: text,
                                 seq: self.token_count as u64,
@@ -327,6 +346,15 @@ impl RatatuiRunner {
 
                             streaming_complete = true;
 
+                            // Flush accumulated assistant message to session log
+                            if let Some(logger) = &self.session_logger {
+                                let logger = logger.clone();
+                                let model = self.current_agent.clone();
+                                tokio::spawn(async move {
+                                    logger.flush_assistant_message(model.as_deref()).await;
+                                });
+                            }
+
                             bridge.ring.push(SessionEvent::AgentResponded {
                                 content: full_response,
                                 tool_calls: vec![],
@@ -334,12 +362,31 @@ impl RatatuiRunner {
                         }
                         StreamingEvent::Error { message } => {
                             self.is_streaming = false;
+                            // Log error to session
+                            if let Some(logger) = &self.session_logger {
+                                let logger = logger.clone();
+                                let msg = message.clone();
+                                tokio::spawn(async move {
+                                    logger.log_error(&msg, true).await;
+                                });
+                            }
                             streaming_error = Some(message);
                         }
-                        StreamingEvent::ToolCall { id: _, name, args } => {
+                        StreamingEvent::ToolCall { id, name, args } => {
                             // Display tool call in the TUI with arguments
                             self.view.push_tool_running(&name, args.clone());
                             self.view.set_status_text(&format!("Running: {}", name));
+
+                            // Log tool call to session
+                            if let Some(logger) = &self.session_logger {
+                                let logger = logger.clone();
+                                let id_str = id.clone().unwrap_or_default();
+                                let name_clone = name.clone();
+                                let args_clone = args.clone();
+                                tokio::spawn(async move {
+                                    logger.log_tool_call(&id_str, &name_clone, args_clone).await;
+                                });
+                            }
 
                             // Push to event ring for session tracking
                             bridge.ring.push(SessionEvent::ToolCalled { name, args });
@@ -366,6 +413,24 @@ impl RatatuiRunner {
 
                             // Clear status (tool is done)
                             self.view.clear_status();
+
+                            // Log tool result to session
+                            if let Some(logger) = &self.session_logger {
+                                let logger = logger.clone();
+                                let name_clone = name.clone();
+                                // Truncate large results for logging
+                                let truncated = result.len() > 8192;
+                                let result_str = if truncated {
+                                    result[..8192].to_string()
+                                } else {
+                                    result.clone()
+                                };
+                                tokio::spawn(async move {
+                                    logger
+                                        .log_tool_result(&name_clone, &result_str, truncated)
+                                        .await;
+                                });
+                            }
 
                             // Push to event ring for session tracking
                             bridge.ring.push(SessionEvent::ToolCompleted {
@@ -577,6 +642,15 @@ impl RatatuiRunner {
                 // Add user message to view
                 self.view.push_user_message(&msg)?;
                 debug!(prompt = %msg, "User message sent");
+
+                // Log user message to session (creates session on first message)
+                if let Some(logger) = &self.session_logger {
+                    let logger = logger.clone();
+                    let msg_clone = msg.clone();
+                    tokio::spawn(async move {
+                        logger.log_user_message(&msg_clone).await;
+                    });
+                }
 
                 // Set thinking status
                 self.is_streaming = true;

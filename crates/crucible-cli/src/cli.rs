@@ -87,6 +87,10 @@ pub enum Commands {
         #[arg(short = 'a', long)]
         agent: Option<String>,
 
+        /// Resume a previous session by ID (format: chat-YYYYMMDD-HHMM-xxxx)
+        #[arg(short = 'r', long)]
+        resume: Option<String>,
+
         /// Environment variables to pass to the ACP agent (can be repeated)
         /// Format: KEY=VALUE
         /// Example: --env ANTHROPIC_BASE_URL=http://localhost:4000

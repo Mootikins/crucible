@@ -34,6 +34,7 @@ use crucible_watch::{EventFilter, WatchMode};
 /// * `provider_key` - Optional LLM provider for internal agent
 /// * `max_context_tokens` - Maximum context window tokens for internal agent
 /// * `env_overrides` - Environment variables to pass to ACP agent (KEY=VALUE pairs)
+/// * `resume_session_id` - Optional session ID to resume from
 #[allow(clippy::too_many_arguments)] // CLI entry point takes CLI args directly
 pub async fn execute(
     config: CliConfig,
@@ -47,6 +48,7 @@ pub async fn execute(
     provider_key: Option<String>,
     max_context_tokens: usize,
     env_overrides: Vec<String>,
+    resume_session_id: Option<String>,
 ) -> Result<()> {
     // Determine initial mode
     let initial_mode = if read_only { "plan" } else { "act" };
@@ -126,6 +128,7 @@ pub async fn execute(
             working_dir.clone(),
             status,
             preselected_agent,
+            resume_session_id,
         )
         .await;
     }
@@ -382,6 +385,8 @@ async fn run_deferred_chat(
     mut status: StatusLine,
     // Pre-selected agent for first iteration (skips picker, still allows /new restart)
     preselected_agent: Option<AgentSelection>,
+    // Session ID to resume from (loads existing conversation context)
+    resume_session_id: Option<String>,
 ) -> Result<()> {
     use crate::chat::{ChatSession, ChatSessionConfig};
 
@@ -490,6 +495,14 @@ async fn run_deferred_chat(
     // Clear status line - TUI will take over with its own display
     // Note: We don't print "Ready" since TUI's EnterAlternateScreen clears the screen
     status.update("");
+
+    // Log session resume if requested
+    // TODO: Full resume implementation would load events and prepopulate conversation
+    if let Some(ref session_id) = resume_session_id {
+        info!("Resuming session: {}", session_id);
+        // Future: Load session events from .crucible/sessions/<id>/events.jsonl
+        // and prepopulate the conversation view before starting the chat loop
+    }
 
     // Create session configuration
     let mut session_config = ChatSessionConfig::new(initial_mode, !no_context, context_size);

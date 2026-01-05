@@ -46,6 +46,7 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
         providers: ProvidersConfig::default(),
         context: None,
         storage: None,
+        source_map: None,
     };
 
     // This should NOT panic with "lock hold by current process" error
@@ -62,6 +63,7 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
         None,                             // provider_key
         8192,                             // max_context_tokens
         vec![],                           // env_overrides
+        None,                             // resume (session ID)
     )
     .await;
 
@@ -132,6 +134,7 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
         providers: ProvidersConfig::default(),
         context: None,
         storage: None,
+        source_map: None,
     };
 
     // Try to execute with a query - should fail at agent discovery,
@@ -148,6 +151,7 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
         None,   // provider_key
         8192,   // max_context_tokens
         vec![], // env_overrides
+        None,   // resume (session ID)
     )
     .await;
 

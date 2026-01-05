@@ -245,6 +245,7 @@ async fn main() -> Result<()> {
         Some(Commands::Chat {
             query,
             agent,
+            resume,
             env,
             internal,
             provider,
@@ -264,7 +265,8 @@ async fn main() -> Result<()> {
                 internal,
                 provider,
                 max_context,
-                env, // Pass env vars to agent spawning
+                env,    // Pass env vars to agent spawning
+                resume, // Session ID to resume
             )
             .await?
         }
@@ -357,6 +359,7 @@ async fn main() -> Result<()> {
                 None,           // No provider specified
                 16384,          // default max_context = 16384
                 vec![],         // No env overrides
+                None,           // No session to resume
             )
             .await?
         }
