@@ -162,11 +162,92 @@ fn complex_interaction_sequence() {
     h.keys("he");
     h.key(KeyCode::Esc);
     assert!(!h.has_popup());
-    // Input should still have the /
-    assert_eq!(h.input_text(), "/");
+    // Esc clears ALL input (matches runner Cancel behavior)
+    assert_eq!(h.input_text(), "");
 
     // Clear and start fresh
     h.key_ctrl('u');
     h.keys("New message");
     assert_eq!(h.input_text(), "New message");
+}
+
+/// Test: Colon triggers REPL command popup (matches runner behavior)
+#[test]
+fn colon_triggers_repl_popup() {
+    let mut h = Harness::new(80, 24);
+
+    // Type :
+    h.key(KeyCode::Char(':'));
+    assert!(h.has_popup());
+    assert_eq!(h.popup_query(), Some(""));
+    assert_eq!(h.input_text(), ":");
+
+    // Type query
+    h.keys("qu");
+    assert!(h.has_popup());
+    assert_eq!(h.popup_query(), Some("qu"));
+    assert_eq!(h.input_text(), ":qu");
+}
+
+/// Test: Popup works with leading whitespace (trim_start behavior)
+#[test]
+fn popup_with_leading_whitespace() {
+    let mut h = Harness::new(80, 24);
+
+    // Type space then /
+    h.keys("  /");
+    assert!(h.has_popup());
+    assert_eq!(h.popup_query(), Some(""));
+    assert_eq!(h.input_text(), "  /");
+
+    // Type query
+    h.keys("cmd");
+    assert!(h.has_popup());
+    assert_eq!(h.popup_query(), Some("cmd"));
+    assert_eq!(h.input_text(), "  /cmd");
+}
+
+/// Test: Popup closes when prefix is deleted
+#[test]
+fn popup_closes_on_prefix_deletion() {
+    let mut h = Harness::new(80, 24);
+
+    // Open popup
+    h.key(KeyCode::Char('/'));
+    assert!(h.has_popup());
+
+    // Delete the /
+    h.key(KeyCode::Backspace);
+    assert!(!h.has_popup());
+    assert_eq!(h.input_text(), "");
+}
+
+/// Test: Input buffer and popup query stay in sync
+#[test]
+fn input_buffer_sync_with_popup_query() {
+    let mut h = Harness::new(80, 24);
+
+    // Open popup and type
+    h.keys("/search");
+    assert!(h.has_popup());
+    assert_eq!(h.popup_query(), Some("search"));
+    assert_eq!(h.input_text(), "/search");
+
+    // Backspace
+    h.key(KeyCode::Backspace);
+    assert_eq!(h.popup_query(), Some("searc"));
+    assert_eq!(h.input_text(), "/searc");
+
+    // More backspaces to just /
+    h.key(KeyCode::Backspace);
+    h.key(KeyCode::Backspace);
+    h.key(KeyCode::Backspace);
+    h.key(KeyCode::Backspace);
+    h.key(KeyCode::Backspace);
+    assert_eq!(h.popup_query(), Some(""));
+    assert_eq!(h.input_text(), "/");
+
+    // Final backspace closes popup
+    h.key(KeyCode::Backspace);
+    assert!(!h.has_popup());
 }

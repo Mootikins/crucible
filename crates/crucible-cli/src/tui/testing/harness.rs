@@ -200,83 +200,57 @@ impl Harness {
             }
         }
 
-        // Handle popup input first if popup is open
-        if let Some(popup) = self.view.popup_mut() {
+        // Handle popup navigation (Esc, Up, Down, Enter) - these don't modify input
+        // Char and Backspace fall through to normal handling which updates input_buffer
+        // and then update_popup() derives the query from input (matches runner behavior)
+        if self.state.has_popup {
             match event.code {
                 KeyCode::Esc => {
+                    // Matches runner Cancel behavior: clear input AND close popup
                     self.view.set_popup(None);
                     self.state.has_popup = false;
+                    self.state.input_buffer.clear();
+                    self.state.cursor_position = 0;
                     return;
                 }
                 KeyCode::Up => {
-                    popup.move_selection(-1);
+                    if let Some(popup) = self.view.popup_mut() {
+                        popup.move_selection(-1);
+                    }
                     return;
                 }
                 KeyCode::Down => {
-                    popup.move_selection(1);
+                    if let Some(popup) = self.view.popup_mut() {
+                        popup.move_selection(1);
+                    }
                     return;
                 }
                 KeyCode::Enter => {
-                    if let Some(item) = popup.selected_item() {
-                        let token = item.token();
-                        self.view.set_popup(None);
-                        self.state.has_popup = false;
-                        self.state.input_buffer = token;
-                        self.state.cursor_position = self.state.input_buffer.len();
+                    if let Some(popup) = self.view.popup_mut() {
+                        if let Some(item) = popup.selected_item() {
+                            let token = item.token();
+                            self.view.set_popup(None);
+                            self.state.has_popup = false;
+                            self.state.input_buffer = token;
+                            self.state.cursor_position = self.state.input_buffer.len();
+                        }
                     }
                     return;
                 }
-                KeyCode::Char(c) => {
-                    // Update query (append char and re-query provider)
-                    let current_query = popup.query().to_string();
-                    let new_query = format!("{}{}", current_query, c);
-                    popup.update_query(&new_query);
-                    return;
-                }
-                KeyCode::Backspace => {
-                    let current_query = popup.query().to_string();
-                    if current_query.is_empty() {
-                        self.view.set_popup(None);
-                        self.state.has_popup = false;
-                    } else {
-                        let new_query = current_query[..current_query.len() - 1].to_string();
-                        popup.update_query(&new_query);
-                    }
-                    return;
-                }
+                // Char and Backspace fall through to normal handling
                 _ => {}
             }
         }
 
         // Normal input handling
         match event.code {
-            KeyCode::Char('/') if self.state.input_buffer.is_empty() => {
-                // Trigger command popup
-                let popup = PopupState::new(
-                    PopupKind::Command,
-                    Arc::new(EmptyProvider) as Arc<dyn PopupProvider>,
-                );
-                self.view.set_popup(Some(popup));
-                self.state.has_popup = true;
-                self.state.input_buffer.push('/');
-                self.state.cursor_position = 1;
-            }
-            KeyCode::Char('@') if self.state.input_buffer.is_empty() => {
-                // Trigger agent/file popup
-                let popup = PopupState::new(
-                    PopupKind::AgentOrFile,
-                    Arc::new(EmptyProvider) as Arc<dyn PopupProvider>,
-                );
-                self.view.set_popup(Some(popup));
-                self.state.has_popup = true;
-                self.state.input_buffer.push('@');
-                self.state.cursor_position = 1;
-            }
             KeyCode::Char(c) => {
                 self.state
                     .input_buffer
                     .insert(self.state.cursor_position, c);
                 self.state.cursor_position += c.len_utf8();
+                // Update popup based on input prefix (matches runner behavior)
+                self.update_popup();
             }
             KeyCode::Backspace => {
                 if self.state.cursor_position > 0 {
@@ -287,6 +261,8 @@ impl Harness {
                         .unwrap_or(0);
                     self.state.input_buffer.remove(prev_char_boundary);
                     self.state.cursor_position = prev_char_boundary;
+                    // Update popup after deletion (matches runner behavior)
+                    self.update_popup();
                 }
             }
             KeyCode::Left => {
@@ -310,6 +286,61 @@ impl Harness {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// Update popup based on current input (matches TuiRunner::update_popup behavior)
+    fn update_popup(&mut self) {
+        let trimmed = self.state.input_buffer.trim_start();
+
+        if trimmed.starts_with('/') {
+            let query = trimmed.strip_prefix('/').unwrap_or("").to_string();
+            if !self.state.has_popup
+                || self.view.popup().map(|p| p.kind()) != Some(PopupKind::Command)
+            {
+                let popup = PopupState::new(
+                    PopupKind::Command,
+                    Arc::new(EmptyProvider) as Arc<dyn PopupProvider>,
+                );
+                self.view.set_popup(Some(popup));
+                self.state.has_popup = true;
+            }
+            if let Some(popup) = self.view.popup_mut() {
+                popup.update_query(&query);
+            }
+        } else if trimmed.starts_with('@') {
+            let query = trimmed.strip_prefix('@').unwrap_or("").to_string();
+            if !self.state.has_popup
+                || self.view.popup().map(|p| p.kind()) != Some(PopupKind::AgentOrFile)
+            {
+                let popup = PopupState::new(
+                    PopupKind::AgentOrFile,
+                    Arc::new(EmptyProvider) as Arc<dyn PopupProvider>,
+                );
+                self.view.set_popup(Some(popup));
+                self.state.has_popup = true;
+            }
+            if let Some(popup) = self.view.popup_mut() {
+                popup.update_query(&query);
+            }
+        } else if trimmed.starts_with(':') {
+            let query = trimmed.strip_prefix(':').unwrap_or("").to_string();
+            if !self.state.has_popup
+                || self.view.popup().map(|p| p.kind()) != Some(PopupKind::ReplCommand)
+            {
+                let popup = PopupState::new(
+                    PopupKind::ReplCommand,
+                    Arc::new(EmptyProvider) as Arc<dyn PopupProvider>,
+                );
+                self.view.set_popup(Some(popup));
+                self.state.has_popup = true;
+            }
+            if let Some(popup) = self.view.popup_mut() {
+                popup.update_query(&query);
+            }
+        } else {
+            self.view.set_popup(None);
+            self.state.has_popup = false;
         }
     }
 
