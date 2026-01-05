@@ -40,21 +40,18 @@ pub struct FennelCompiler {
 impl FennelCompiler {
     /// Initialize Fennel in the given Lua state
     pub fn new(lua: &Lua) -> Result<Self, LuaError> {
-        // Load Fennel into the Lua state
-        lua.load(FENNEL_SOURCE)
+        // Load Fennel into the Lua state and capture return value
+        // fennel.lua returns a module table, it doesn't set a global
+        let fennel: mlua::Table = lua
+            .load(FENNEL_SOURCE)
             .set_name("fennel")
-            .exec()
+            .eval()
             .map_err(|e| LuaError::FennelCompile(format!("Failed to load Fennel: {}", e)))?;
 
-        // Get the fennel.compileString function and cache it
-        // This will fail if fennel.lua is just a placeholder
-        let fennel: mlua::Table = lua.globals().get("fennel").map_err(|_| {
-            LuaError::FennelCompile(
-                "Fennel not available. Download fennel.lua from https://fennel-lang.org/downloads \
-                and place in crates/crucible-lua/vendor/fennel.lua"
-                    .into(),
-            )
-        })?;
+        // Store as global for compatibility with code that expects `fennel` global
+        lua.globals()
+            .set("fennel", fennel.clone())
+            .map_err(|e| LuaError::FennelCompile(format!("Failed to set fennel global: {}", e)))?;
 
         let compile_string: Function = fennel.get("compileString").map_err(|_| {
             LuaError::FennelCompile("Fennel loaded but compileString function not found".into())
@@ -98,14 +95,14 @@ impl FennelCompiler {
 pub fn compile_fennel(source: &str) -> Result<String, LuaError> {
     let lua = Lua::new();
 
-    // Load Fennel
-    lua.load(FENNEL_SOURCE)
+    // Load Fennel - it returns a module, doesn't set global
+    let fennel: mlua::Table = lua
+        .load(FENNEL_SOURCE)
         .set_name("fennel")
-        .exec()
+        .eval()
         .map_err(|e| LuaError::FennelCompile(format!("Failed to load Fennel: {}", e)))?;
 
     // Compile
-    let fennel: mlua::Table = lua.globals().get("fennel")?;
     let compile_string: Function = fennel.get("compileString")?;
 
     let result: String = compile_string
