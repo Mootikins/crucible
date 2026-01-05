@@ -10,7 +10,7 @@ fn test_init_creates_directories_and_config() {
     // Run init command
     let output = std::process::Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap())
-        .args(&[
+        .args([
             "run",
             "-p",
             "crucible-cli",
@@ -66,7 +66,7 @@ fn test_init_with_existing_directory_errors() {
     // Run init command first
     let output1 = std::process::Command::new("cargo")
         .current_dir(std::env::current_dir().unwrap())
-        .args(&[
+        .args([
             "run",
             "-p",
             "crucible-cli",
