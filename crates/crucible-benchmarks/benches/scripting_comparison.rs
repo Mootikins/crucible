@@ -205,9 +205,7 @@ mod lua_bench {
 
     /// Check if Fennel compiler is available
     pub fn fennel_available(executor: &LuaExecutor) -> bool {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(executor.execute_source("(+ 1 1)", true, JsonValue::Null))
-            .is_ok()
+        executor.fennel_available()
     }
 
     /// Execute a simple arithmetic expression
