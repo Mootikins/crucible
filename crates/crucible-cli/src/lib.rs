@@ -28,5 +28,6 @@ pub mod interactive;
 pub mod output;
 pub mod progress;
 pub mod search;
+pub mod session_logger;
 pub mod sync;
 pub mod tui;
