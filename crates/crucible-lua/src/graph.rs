@@ -870,6 +870,7 @@ mod db_tests {
 mod note_store_tests {
     use super::*;
     use async_trait::async_trait;
+    use crucible_core::events::SessionEvent;
     use crucible_core::parser::BlockHash;
     use crucible_core::storage::{Filter, NoteRecord, NoteStore, SearchResult, StorageResult};
     use std::collections::HashMap;
@@ -901,10 +902,14 @@ mod note_store_tests {
 
     #[async_trait]
     impl NoteStore for MockNoteStore {
-        async fn upsert(&self, note: NoteRecord) -> StorageResult<()> {
+        async fn upsert(&self, note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
             let mut map = self.notes.lock().unwrap();
             map.insert(note.path.clone(), note);
-            Ok(())
+            let event = SessionEvent::NoteCreated {
+                path: note.path.into(),
+                title: Some(note.title),
+            };
+            Ok(vec![event])
         }
 
         async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
@@ -912,10 +917,13 @@ mod note_store_tests {
             Ok(map.get(path).cloned())
         }
 
-        async fn delete(&self, path: &str) -> StorageResult<()> {
+        async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
             let mut map = self.notes.lock().unwrap();
             map.remove(path);
-            Ok(())
+            Ok(SessionEvent::NoteDeleted {
+                path: path.into(),
+                existed: false,
+            })
         }
 
         async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
