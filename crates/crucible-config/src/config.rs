@@ -653,6 +653,13 @@ pub struct CliAppConfig {
     /// Storage configuration (embedded vs daemon mode)
     #[serde(default)]
     pub storage: Option<StorageConfig>,
+
+    /// Value source tracking for configuration provenance
+    ///
+    /// Tracks where each configuration value came from (file, environment, CLI, default).
+    /// Populated during `load()` or `load_with_tracking()`.
+    #[serde(skip)]
+    pub source_map: Option<crate::value_source::ValueSourceMap>,
 }
 
 fn default_kiln_path() -> std::path::PathBuf {
@@ -674,6 +681,7 @@ impl Default for CliAppConfig {
             processing: ProcessingConfig::default(),
             context: None,
             storage: None,
+            source_map: None,
         }
     }
 }
@@ -688,18 +696,27 @@ impl CliAppConfig {
     ///
     /// Note: API keys are read from environment variables specified in config
     /// (e.g., `api_key = "OPENAI_API_KEY"`)
+    ///
+    /// This version also populates the `source_map` field to track where each
+    /// configuration value came from. Use `--trace` with `cru config show` to
+    /// display this information.
     pub fn load(
         config_file: Option<std::path::PathBuf>,
         embedding_url: Option<String>,
         embedding_model: Option<String>,
     ) -> anyhow::Result<Self> {
+        use crate::value_source::{ValueSource, ValueSourceMap};
+
         // Determine config file path
         let config_path = config_file.unwrap_or_else(Self::default_config_path);
 
         debug!("Attempting to load config from: {}", config_path.display());
 
+        let mut source_map = ValueSourceMap::new();
+        let config_path_str = config_path.to_string_lossy().to_string();
+
         // Try to load config file or use defaults
-        let mut config = if config_path.exists() {
+        let (mut config, file_fields) = if config_path.exists() {
             info!("Found config file at: {}", config_path.display());
 
             let contents = std::fs::read_to_string(&config_path)
@@ -707,10 +724,26 @@ impl CliAppConfig {
 
             #[cfg(feature = "toml")]
             {
+                // First parse as a raw TOML table to detect which fields are present
+                let raw_table: toml::Table = toml::from_str(&contents).map_err(|e| {
+                    error!(
+                        "Failed to parse config file {}: {}",
+                        config_path.display(),
+                        e
+                    );
+                    anyhow::anyhow!(
+                        "Failed to parse config file {}: {}",
+                        config_path.display(),
+                        e
+                    )
+                })?;
+
+                let file_fields = Self::detect_present_fields(&raw_table);
+
                 match toml::from_str::<CliAppConfig>(&contents) {
                     Ok(cfg) => {
                         info!("Successfully loaded config file: {}", config_path.display());
-                        cfg
+                        (cfg, file_fields)
                     }
                     Err(e) => {
                         error!(
@@ -738,20 +771,166 @@ impl CliAppConfig {
                 "No config file found at {}, using defaults",
                 config_path.display()
             );
-            Self::default()
+            (Self::default(), Vec::new())
         };
+
+        // Track sources for all known fields
+        let all_tracked_fields = [
+            "kiln_path",
+            "agent_directories",
+            "embedding.provider",
+            "embedding.model",
+            "embedding.api_url",
+            "embedding.batch_size",
+            "embedding.max_concurrent",
+            "acp.default_agent",
+            "acp.enable_discovery",
+            "acp.session_timeout_minutes",
+            "acp.max_message_size_mb",
+            "chat.model",
+            "chat.enable_markdown",
+            "chat.provider",
+            "chat.endpoint",
+            "chat.temperature",
+            "chat.max_tokens",
+            "chat.timeout_secs",
+            "cli.show_progress",
+            "cli.confirm_destructive",
+            "cli.verbose",
+            "logging.level",
+            "processing.parallel_workers",
+        ];
+
+        for field in &all_tracked_fields {
+            if file_fields.contains(&(*field).to_string()) {
+                source_map.set(
+                    field,
+                    ValueSource::File {
+                        path: Some(config_path_str.clone()),
+                    },
+                );
+            } else {
+                source_map.set(field, ValueSource::Default);
+            }
+        }
 
         // Apply CLI flag overrides (priority 1 - highest)
         if let Some(url) = embedding_url {
             debug!("Overriding embedding.api_url from CLI flag: {}", url);
             config.embedding.api_url = Some(url);
+            source_map.set("embedding.api_url", ValueSource::Cli);
         }
         if let Some(model) = embedding_model {
             debug!("Overriding embedding.model from CLI flag: {}", model);
             config.embedding.model = Some(model);
+            source_map.set("embedding.model", ValueSource::Cli);
         }
 
+        config.source_map = Some(source_map);
         Ok(config)
+    }
+
+    /// Detect which fields are present in a TOML table
+    #[cfg(feature = "toml")]
+    fn detect_present_fields(table: &toml::Table) -> Vec<String> {
+        let mut fields = Vec::new();
+
+        // Top-level fields
+        if table.contains_key("kiln_path") {
+            fields.push("kiln_path".to_string());
+        }
+        if table.contains_key("agent_directories") {
+            fields.push("agent_directories".to_string());
+        }
+
+        // Embedding section
+        if let Some(toml::Value::Table(embedding)) = table.get("embedding") {
+            if embedding.contains_key("provider") {
+                fields.push("embedding.provider".to_string());
+            }
+            if embedding.contains_key("model") {
+                fields.push("embedding.model".to_string());
+            }
+            if embedding.contains_key("api_url") {
+                fields.push("embedding.api_url".to_string());
+            }
+            if embedding.contains_key("batch_size") {
+                fields.push("embedding.batch_size".to_string());
+            }
+            if embedding.contains_key("max_concurrent") {
+                fields.push("embedding.max_concurrent".to_string());
+            }
+        }
+
+        // ACP section
+        if let Some(toml::Value::Table(acp)) = table.get("acp") {
+            if acp.contains_key("default_agent") {
+                fields.push("acp.default_agent".to_string());
+            }
+            if acp.contains_key("enable_discovery") {
+                fields.push("acp.enable_discovery".to_string());
+            }
+            if acp.contains_key("session_timeout_minutes") {
+                fields.push("acp.session_timeout_minutes".to_string());
+            }
+            if acp.contains_key("max_message_size_mb") {
+                fields.push("acp.max_message_size_mb".to_string());
+            }
+        }
+
+        // Chat section
+        if let Some(toml::Value::Table(chat)) = table.get("chat") {
+            if chat.contains_key("model") {
+                fields.push("chat.model".to_string());
+            }
+            if chat.contains_key("enable_markdown") {
+                fields.push("chat.enable_markdown".to_string());
+            }
+            if chat.contains_key("provider") {
+                fields.push("chat.provider".to_string());
+            }
+            if chat.contains_key("endpoint") {
+                fields.push("chat.endpoint".to_string());
+            }
+            if chat.contains_key("temperature") {
+                fields.push("chat.temperature".to_string());
+            }
+            if chat.contains_key("max_tokens") {
+                fields.push("chat.max_tokens".to_string());
+            }
+            if chat.contains_key("timeout_secs") {
+                fields.push("chat.timeout_secs".to_string());
+            }
+        }
+
+        // CLI section
+        if let Some(toml::Value::Table(cli)) = table.get("cli") {
+            if cli.contains_key("show_progress") {
+                fields.push("cli.show_progress".to_string());
+            }
+            if cli.contains_key("confirm_destructive") {
+                fields.push("cli.confirm_destructive".to_string());
+            }
+            if cli.contains_key("verbose") {
+                fields.push("cli.verbose".to_string());
+            }
+        }
+
+        // Logging section
+        if let Some(toml::Value::Table(logging)) = table.get("logging") {
+            if logging.contains_key("level") {
+                fields.push("logging.level".to_string());
+            }
+        }
+
+        // Processing section
+        if let Some(toml::Value::Table(processing)) = table.get("processing") {
+            if processing.contains_key("parallel_workers") {
+                fields.push("processing.parallel_workers".to_string());
+            }
+        }
+
+        fields
     }
 
     /// Log the effective configuration for debugging
@@ -827,136 +1006,221 @@ impl CliAppConfig {
             .map_err(|e| anyhow::anyhow!("Failed to serialize config as JSON: {}", e))
     }
 
-    /// Build a heuristic source map based on config file existence.
-    ///
-    /// NOTE: This is approximate tracking. If the config file exists, we assume
-    /// values came from it; otherwise we mark them as defaults. This doesn't
-    /// account for:
-    /// - Empty config files or missing fields (would still show "file")
-    /// - CLI/env overrides (would incorrectly show "file" or "default")
-    ///
-    /// Full source tracking would require tagging values during `load()`.
-    /// This heuristic provides useful information for the common case where
-    /// users either have a config file with their settings or use defaults.
-    fn build_heuristic_source_map() -> crate::value_source::ValueSourceMap {
-        use crate::value_source::SourceMapBuilder;
+    /// Get the source map, preferring the stored one if available
+    fn get_source_map(&self) -> crate::value_source::ValueSourceMap {
+        if let Some(ref map) = self.source_map {
+            return map.clone();
+        }
+        // Fallback to heuristic for configs created without load()
+        Self::build_fallback_source_map()
+    }
 
-        let config_path = Self::default_config_path();
-        let config_path_str = config_path.to_string_lossy().to_string();
-        let config_file_exists = config_path.exists();
+    /// Build a fallback source map when no tracking data is available.
+    /// Used when config is created with default() instead of load().
+    fn build_fallback_source_map() -> crate::value_source::ValueSourceMap {
+        use crate::value_source::{ValueSource, ValueSourceMap};
 
-        let mut builder = SourceMapBuilder::new().config_file(Some(config_path_str));
-
+        let mut map = ValueSourceMap::new();
         let tracked_fields = [
             "kiln_path",
             "embedding.provider",
             "embedding.model",
+            "embedding.api_url",
             "embedding.batch_size",
             "acp.default_agent",
+            "acp.enable_discovery",
+            "acp.session_timeout_minutes",
             "chat.model",
+            "chat.enable_markdown",
+            "cli.show_progress",
+            "cli.confirm_destructive",
             "cli.verbose",
         ];
 
         for field in &tracked_fields {
-            builder = if config_file_exists {
-                builder.file_value(field)
-            } else {
-                builder.default_value(field)
-            };
+            map.set(field, ValueSource::Default);
         }
 
-        builder.build()
+        map
     }
 
     /// Display the current configuration as JSON with source tracking
     pub fn display_as_json_with_sources(&self) -> anyhow::Result<String> {
-        let source_map = Self::build_heuristic_source_map();
+        use crate::value_source::ValueSource;
 
-        // Create a simplified output with sources
+        let source_map = self.get_source_map();
+
+        // Create a comprehensive output with sources for all tracked fields
         let mut output = serde_json::Map::new();
 
-        // Add kiln_path
-        if let Some(source) = source_map.get("kiln_path") {
+        // Helper to create a value item with source
+        let make_item = |value: serde_json::Value, source: &ValueSource| -> serde_json::Value {
             let mut item = serde_json::Map::new();
+            item.insert("value".to_string(), value);
             item.insert(
-                "value".to_string(),
+                "source".to_string(),
+                serde_json::Value::String(source.detail()),
+            );
+            item.insert(
+                "source_short".to_string(),
+                serde_json::Value::String(source.short().to_string()),
+            );
+            serde_json::Value::Object(item)
+        };
+
+        // kiln_path
+        let kiln_source = source_map.get("kiln_path").unwrap_or(&ValueSource::Default);
+        output.insert(
+            "kiln_path".to_string(),
+            make_item(
                 serde_json::Value::String(self.kiln_path.to_string_lossy().to_string()),
-            );
-            item.insert(
-                "source".to_string(),
-                serde_json::Value::String(source.detail()),
-            );
-            item.insert(
-                "source_short".to_string(),
-                serde_json::Value::String(source.short().to_string()),
-            );
-            output.insert("kiln_path".to_string(), serde_json::Value::Object(item));
-        }
+                kiln_source,
+            ),
+        );
 
-        // Add embedding section
+        // embedding section
         let mut embedding_section = serde_json::Map::new();
-
-        // provider
-        if let Some(source) = source_map.get("embedding.provider") {
-            let mut item = serde_json::Map::new();
-            item.insert(
-                "value".to_string(),
+        let provider_source = source_map
+            .get("embedding.provider")
+            .unwrap_or(&ValueSource::Default);
+        embedding_section.insert(
+            "provider".to_string(),
+            make_item(
                 serde_json::Value::String(format!("{:?}", self.embedding.provider)),
+                provider_source,
+            ),
+        );
+
+        if let Some(ref model) = self.embedding.model {
+            let model_source = source_map
+                .get("embedding.model")
+                .unwrap_or(&ValueSource::Default);
+            embedding_section.insert(
+                "model".to_string(),
+                make_item(serde_json::Value::String(model.clone()), model_source),
             );
-            item.insert(
-                "source".to_string(),
-                serde_json::Value::String(source.detail()),
-            );
-            item.insert(
-                "source_short".to_string(),
-                serde_json::Value::String(source.short().to_string()),
-            );
-            embedding_section.insert("provider".to_string(), serde_json::Value::Object(item));
         }
 
-        // model
-        if let Some(ref model) = self.embedding.model {
-            if let Some(source) = source_map.get("embedding.model") {
-                let mut item = serde_json::Map::new();
-                item.insert(
-                    "value".to_string(),
-                    serde_json::Value::String(model.clone()),
-                );
-                item.insert(
-                    "source".to_string(),
-                    serde_json::Value::String(source.detail()),
-                );
-                item.insert(
-                    "source_short".to_string(),
-                    serde_json::Value::String(source.short().to_string()),
-                );
-                embedding_section.insert("model".to_string(), serde_json::Value::Object(item));
-            }
+        if let Some(ref api_url) = self.embedding.api_url {
+            let url_source = source_map
+                .get("embedding.api_url")
+                .unwrap_or(&ValueSource::Default);
+            embedding_section.insert(
+                "api_url".to_string(),
+                make_item(serde_json::Value::String(api_url.clone()), url_source),
+            );
         }
+
+        let batch_source = source_map
+            .get("embedding.batch_size")
+            .unwrap_or(&ValueSource::Default);
+        embedding_section.insert(
+            "batch_size".to_string(),
+            make_item(
+                serde_json::Value::Number(self.embedding.batch_size.into()),
+                batch_source,
+            ),
+        );
 
         output.insert(
             "embedding".to_string(),
             serde_json::Value::Object(embedding_section),
         );
 
-        // Add CLI section
-        let mut cli_section = serde_json::Map::new();
-        if let Some(source) = source_map.get("cli.verbose") {
-            let mut item = serde_json::Map::new();
-            item.insert(
-                "value".to_string(),
-                serde_json::Value::Bool(self.cli.verbose),
+        // acp section
+        let mut acp_section = serde_json::Map::new();
+        if let Some(ref agent) = self.acp.default_agent {
+            let agent_source = source_map
+                .get("acp.default_agent")
+                .unwrap_or(&ValueSource::Default);
+            acp_section.insert(
+                "default_agent".to_string(),
+                make_item(serde_json::Value::String(agent.clone()), agent_source),
             );
-            item.insert(
-                "source".to_string(),
-                serde_json::Value::String(source.detail()),
-            );
-            item.insert(
-                "source_short".to_string(),
-                serde_json::Value::String(source.short().to_string()),
-            );
-            cli_section.insert("verbose".to_string(), serde_json::Value::Object(item));
         }
+
+        let discovery_source = source_map
+            .get("acp.enable_discovery")
+            .unwrap_or(&ValueSource::Default);
+        acp_section.insert(
+            "enable_discovery".to_string(),
+            make_item(
+                serde_json::Value::Bool(self.acp.enable_discovery),
+                discovery_source,
+            ),
+        );
+
+        let timeout_source = source_map
+            .get("acp.session_timeout_minutes")
+            .unwrap_or(&ValueSource::Default);
+        acp_section.insert(
+            "session_timeout_minutes".to_string(),
+            make_item(
+                serde_json::Value::Number(self.acp.session_timeout_minutes.into()),
+                timeout_source,
+            ),
+        );
+
+        output.insert("acp".to_string(), serde_json::Value::Object(acp_section));
+
+        // chat section
+        let mut chat_section = serde_json::Map::new();
+        if let Some(ref model) = self.chat.model {
+            let model_source = source_map
+                .get("chat.model")
+                .unwrap_or(&ValueSource::Default);
+            chat_section.insert(
+                "model".to_string(),
+                make_item(serde_json::Value::String(model.clone()), model_source),
+            );
+        }
+
+        let markdown_source = source_map
+            .get("chat.enable_markdown")
+            .unwrap_or(&ValueSource::Default);
+        chat_section.insert(
+            "enable_markdown".to_string(),
+            make_item(
+                serde_json::Value::Bool(self.chat.enable_markdown),
+                markdown_source,
+            ),
+        );
+
+        output.insert("chat".to_string(), serde_json::Value::Object(chat_section));
+
+        // cli section
+        let mut cli_section = serde_json::Map::new();
+
+        let progress_source = source_map
+            .get("cli.show_progress")
+            .unwrap_or(&ValueSource::Default);
+        cli_section.insert(
+            "show_progress".to_string(),
+            make_item(
+                serde_json::Value::Bool(self.cli.show_progress),
+                progress_source,
+            ),
+        );
+
+        let confirm_source = source_map
+            .get("cli.confirm_destructive")
+            .unwrap_or(&ValueSource::Default);
+        cli_section.insert(
+            "confirm_destructive".to_string(),
+            make_item(
+                serde_json::Value::Bool(self.cli.confirm_destructive),
+                confirm_source,
+            ),
+        );
+
+        let verbose_source = source_map
+            .get("cli.verbose")
+            .unwrap_or(&ValueSource::Default);
+        cli_section.insert(
+            "verbose".to_string(),
+            make_item(serde_json::Value::Bool(self.cli.verbose), verbose_source),
+        );
+
         output.insert("cli".to_string(), serde_json::Value::Object(cli_section));
 
         serde_json::to_string_pretty(&output)
@@ -967,16 +1231,14 @@ impl CliAppConfig {
     pub fn display_as_toml_with_sources(&self) -> anyhow::Result<String> {
         use crate::value_source::ValueSource;
 
-        let source_map = Self::build_heuristic_source_map();
+        let source_map = self.get_source_map();
 
         // Generate TOML with inline comments for sources
         let mut output = String::new();
 
         // Add header comment
-        output.push_str("# Effective Configuration with Sources (heuristic)\n");
-        output.push_str(
-            "# Sources: file, default (approximate - see `cru config show` for raw values)\n\n",
-        );
+        output.push_str("# Effective Configuration with Value Sources\n");
+        output.push_str("# Sources: file (<path>), cli, env (<var>), default\n\n");
 
         // kiln_path
         let kiln_source = source_map.get("kiln_path").unwrap_or(&ValueSource::Default);
@@ -1041,14 +1303,22 @@ impl CliAppConfig {
             ));
         }
 
+        let discovery_source = source_map
+            .get("acp.enable_discovery")
+            .unwrap_or(&ValueSource::Default);
         output.push_str(&format!(
-            "enable_discovery = {}  # from: default\n",
-            self.acp.enable_discovery
+            "enable_discovery = {}  # from: {}\n",
+            self.acp.enable_discovery,
+            discovery_source.detail()
         ));
 
+        let timeout_source = source_map
+            .get("acp.session_timeout_minutes")
+            .unwrap_or(&ValueSource::Default);
         output.push_str(&format!(
-            "session_timeout_minutes = {}  # from: default\n",
-            self.acp.session_timeout_minutes
+            "session_timeout_minutes = {}  # from: {}\n",
+            self.acp.session_timeout_minutes,
+            timeout_source.detail()
         ));
 
         // Chat section
@@ -1064,20 +1334,33 @@ impl CliAppConfig {
             ));
         }
 
+        let markdown_source = source_map
+            .get("chat.enable_markdown")
+            .unwrap_or(&ValueSource::Default);
         output.push_str(&format!(
-            "enable_markdown = {}  # from: default\n",
-            self.chat.enable_markdown
+            "enable_markdown = {}  # from: {}\n",
+            self.chat.enable_markdown,
+            markdown_source.detail()
         ));
 
         // CLI section
         output.push_str("\n[cli]\n");
+        let progress_source = source_map
+            .get("cli.show_progress")
+            .unwrap_or(&ValueSource::Default);
         output.push_str(&format!(
-            "show_progress = {}  # from: default\n",
-            self.cli.show_progress
+            "show_progress = {}  # from: {}\n",
+            self.cli.show_progress,
+            progress_source.detail()
         ));
+
+        let confirm_source = source_map
+            .get("cli.confirm_destructive")
+            .unwrap_or(&ValueSource::Default);
         output.push_str(&format!(
-            "confirm_destructive = {}  # from: default\n",
-            self.cli.confirm_destructive
+            "confirm_destructive = {}  # from: {}\n",
+            self.cli.confirm_destructive,
+            confirm_source.detail()
         ));
 
         let verbose_source = source_map
