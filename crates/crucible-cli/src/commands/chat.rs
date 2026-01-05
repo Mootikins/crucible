@@ -487,8 +487,9 @@ async fn run_deferred_chat(
         .as_knowledge_repository()
         .ok_or_else(|| anyhow::anyhow!("Knowledge repository not available in lightweight mode"))?;
 
-    // Status is complete - TUI will take over
-    status.success("Ready");
+    // Clear status line - TUI will take over with its own display
+    // Note: We don't print "Ready" since TUI's EnterAlternateScreen clears the screen
+    status.update("");
 
     // Create session configuration
     let mut session_config = ChatSessionConfig::new(initial_mode, !no_context, context_size);
