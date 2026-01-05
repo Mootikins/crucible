@@ -137,6 +137,59 @@ mod snapshots {
 }
 
 // =============================================================================
+// Gradient Popup Style Tests (neovim-inspired raised effect)
+// =============================================================================
+
+mod gradient_snapshots {
+    use super::*;
+
+    const WIDTH: u16 = 80;
+    const HEIGHT: u16 = 24;
+
+    #[test]
+    fn popup_gradient_basic() {
+        let h = Harness::new(WIDTH, HEIGHT)
+            .with_popup_items(PopupKind::Command, registries::minimal_commands())
+            .with_gradient_popup(true);
+
+        assert_snapshot!("popup_gradient_basic", h.render());
+    }
+
+    #[test]
+    fn popup_gradient_with_selection() {
+        let mut h = Harness::new(WIDTH, HEIGHT)
+            .with_popup_items(PopupKind::Command, registries::standard_commands())
+            .with_gradient_popup(true);
+
+        h.key(KeyCode::Down);
+        h.key(KeyCode::Down);
+        assert_snapshot!("popup_gradient_selected", h.render());
+    }
+
+    #[test]
+    fn popup_gradient_scrolled() {
+        let mut h = Harness::new(WIDTH, HEIGHT)
+            .with_popup_items(PopupKind::Command, registries::many_commands())
+            .with_gradient_popup(true);
+
+        for _ in 0..8 {
+            h.key(KeyCode::Down);
+        }
+        assert_snapshot!("popup_gradient_scrolled", h.render());
+    }
+
+    #[test]
+    fn popup_gradient_flush_with_input() {
+        // Verify popup sits directly above input with no gap
+        let h = Harness::new(WIDTH, HEIGHT)
+            .with_popup_items(PopupKind::Command, registries::minimal_commands())
+            .with_gradient_popup(true);
+
+        assert_snapshot!("popup_gradient_flush", h.render());
+    }
+}
+
+// =============================================================================
 // Unit Tests - PopupEffect Conversion
 // =============================================================================
 

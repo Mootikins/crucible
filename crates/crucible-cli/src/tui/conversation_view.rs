@@ -6,6 +6,7 @@ use crate::tui::components::{InputBoxWidget, PopupState, SessionHistoryWidget, S
 use crate::tui::conversation::{render_item_to_lines, ConversationState, StatusKind};
 use crate::tui::dialog::{DialogResult, DialogStack, DialogWidget};
 use crate::tui::notification::NotificationState;
+use crate::tui::widgets::GradientPopupRenderer;
 use anyhow::Result;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -106,6 +107,8 @@ pub struct ViewState {
     pub reasoning_content: String,
     /// Animation frame for reasoning ellipsis (cycles 0-3)
     pub reasoning_anim_frame: u8,
+    /// Use gradient (raised) style for popup instead of bordered
+    pub use_gradient_popup: bool,
 }
 
 impl ViewState {
@@ -127,6 +130,7 @@ impl ViewState {
             show_reasoning: false,
             reasoning_content: String::new(),
             reasoning_anim_frame: 0,
+            use_gradient_popup: true, // Enable edge-dither floating popup style
         }
     }
 
@@ -241,7 +245,8 @@ impl RatatuiView {
         // Input box
         let input_area = chunks[idx];
         let input_widget =
-            InputBoxWidget::new(&self.state.input_buffer, self.state.cursor_position);
+            InputBoxWidget::new(&self.state.input_buffer, self.state.cursor_position)
+                .dither_edges(self.state.use_gradient_popup);
         frame.render_widget(input_widget, input_area);
         idx += 1;
 
@@ -316,8 +321,15 @@ impl RatatuiView {
     /// Render popup overlay
     fn render_popup(&self, frame: &mut Frame, area: Rect) {
         if let Some(ref popup) = self.state.popup {
-            let renderer = popup.renderer();
-            renderer.render(area, frame.buffer_mut());
+            if self.state.use_gradient_popup {
+                // Gradient style: no borders, fade effect at top
+                let gradient_renderer = GradientPopupRenderer::new(popup.inner_popup());
+                gradient_renderer.render(area, frame.buffer_mut());
+            } else {
+                // Standard bordered style
+                let renderer = popup.renderer();
+                renderer.render(area, frame.buffer_mut());
+            }
         }
     }
 
