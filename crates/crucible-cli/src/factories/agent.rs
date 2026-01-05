@@ -409,6 +409,16 @@ pub async fn create_internal_agent(
             // Anthropic models don't use reasoning_content field
             Ok(Box::new(RigAgentHandle::new(agent)))
         }
+        crucible_rig::RigClient::GitHubCopilot(_) => {
+            // CopilotClient is a token manager, not a CompletionClient.
+            // It requires async to exchange OAuth tokens for API tokens.
+            // Use ACP agents with GitHub Copilot instead.
+            anyhow::bail!(
+                "GitHub Copilot is not supported for internal agents. \
+                 Use an ACP agent (e.g., claude-code) or configure an \
+                 OpenAI-compatible provider with the Copilot API endpoint."
+            )
+        }
     }
 }
 
