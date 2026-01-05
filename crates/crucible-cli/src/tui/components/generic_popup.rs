@@ -128,12 +128,13 @@ impl std::fmt::Debug for PopupState {
 impl PopupState {
     /// Create a new generic popup state
     pub fn new(kind: PopupKind, provider: Arc<dyn PopupProvider>) -> Self {
-        // Kind labels are redundant - the trigger char already indicates type
-        // (/ = command, @ = agent, : = repl, etc.)
+        // Kind labels are only needed for AgentOrFile (@) which mixes agents and files
+        // For single-type popups, the trigger char already indicates type
+        let show_kinds = matches!(kind, PopupKind::AgentOrFile);
         let config = PopupConfig::default()
             .max_visible(10)
             .filterable(true)
-            .show_kinds(false);
+            .show_kinds(show_kinds);
 
         Self {
             kind,
@@ -689,8 +690,8 @@ mod tests {
     }
 
     #[test]
-    fn generic_popup_mention_renders_without_kind_labels() {
-        // Kind labels are redundant - trigger char already disambiguates
+    fn generic_popup_agent_or_file_shows_kind_labels() {
+        // AgentOrFile popups show kind labels to distinguish agents from files
         use ratatui::buffer::Buffer;
         use ratatui::layout::Rect;
         use ratatui::widgets::Widget;
@@ -715,16 +716,98 @@ mod tests {
             }
         }
 
-        // Kind labels are no longer shown - the @ trigger char is sufficient
+        // AgentOrFile popups DO show kind labels to distinguish agents from files
         assert!(
-            !content.contains("[agent]"),
-            "Mention popup should not show [agent] label. Content: {}",
+            content.contains("[agent]"),
+            "AgentOrFile popup should show [agent] label. Content: {}",
             content
         );
-        // But should still show the agent name
+        // And should show the agent name
         assert!(
             content.contains("opencode"),
             "Mention popup should show agent name. Content: {}",
+            content
+        );
+    }
+
+    #[test]
+    fn generic_popup_command_hides_kind_labels() {
+        // Command popups don't show kind labels - trigger char / indicates type
+        use ratatui::buffer::Buffer;
+        use ratatui::layout::Rect;
+        use ratatui::widgets::Widget;
+
+        let provider = Arc::new(MockProvider::with_items(vec![PopupItem::cmd("search")
+            .desc("Search notes")
+            .with_score(100)]));
+        let mut state = PopupState::new(PopupKind::Command, provider);
+        state.update_query("");
+
+        let renderer = state.renderer();
+        let area = Rect::new(0, 0, 50, 8);
+        let mut buf = Buffer::empty(area);
+        renderer.render(area, &mut buf);
+
+        let mut content = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                if let Some(cell) = buf.cell((x, y)) {
+                    content.push_str(cell.symbol());
+                }
+            }
+        }
+
+        // Command popups should NOT show kind labels
+        assert!(
+            !content.contains("[cmd]"),
+            "Command popup should not show [cmd] label. Content: {}",
+            content
+        );
+        // But should show the command name
+        assert!(
+            content.contains("search"),
+            "Command popup should show command name. Content: {}",
+            content
+        );
+    }
+
+    #[test]
+    fn generic_popup_repl_command_hides_kind_labels() {
+        // ReplCommand popups don't show kind labels - trigger char : indicates type
+        use ratatui::buffer::Buffer;
+        use ratatui::layout::Rect;
+        use ratatui::widgets::Widget;
+
+        let provider = Arc::new(MockProvider::with_items(vec![PopupItem::repl("quit")
+            .desc("Quit the application")
+            .with_score(100)]));
+        let mut state = PopupState::new(PopupKind::ReplCommand, provider);
+        state.update_query("");
+
+        let renderer = state.renderer();
+        let area = Rect::new(0, 0, 50, 8);
+        let mut buf = Buffer::empty(area);
+        renderer.render(area, &mut buf);
+
+        let mut content = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                if let Some(cell) = buf.cell((x, y)) {
+                    content.push_str(cell.symbol());
+                }
+            }
+        }
+
+        // ReplCommand popups should NOT show kind labels
+        assert!(
+            !content.contains("[repl]") && !content.contains("[cmd]"),
+            "ReplCommand popup should not show kind labels. Content: {}",
+            content
+        );
+        // But should show the command name
+        assert!(
+            content.contains("quit"),
+            "ReplCommand popup should show command name. Content: {}",
             content
         );
     }

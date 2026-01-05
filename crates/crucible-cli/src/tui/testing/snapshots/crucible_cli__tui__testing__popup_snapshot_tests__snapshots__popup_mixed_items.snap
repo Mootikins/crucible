@@ -16,11 +16,11 @@ expression: h.render()
                                                                                 
                                                                                 
 ┌Select────────────────────────────────────────────────────────────────────────┐
-│> @ researcher Deep research and analysis                                     │
-│  @ coder Code generation and review                                          │
-│  @ writer Writing and editing                                                │
-│    src/main.rs workspace                                                     │
-│    src/lib.rs workspace                                                      │
+│> [agent] @ researcher Deep research and analysis                             │
+│  [agent] @ coder Code generation and review                                  │
+│  [agent] @ writer Writing and editing                                        │
+│  [file]   src/main.rs workspace                                              │
+│  [file]   src/lib.rs workspace                                               │
 └──────────────────────────────────────────────────────────────────────────────┘
                                                                                 
  >                                                                              
