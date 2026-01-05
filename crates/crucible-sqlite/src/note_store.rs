@@ -396,11 +396,12 @@ impl NoteStore for SqliteNoteStore {
         let existed = tokio::task::spawn_blocking(move || {
             pool.with_connection(|conn| {
                 // Check if the note exists before deletion
-                let existed = conn.query_row(
-                    "SELECT 1 FROM notes WHERE path = ?1",
-                    [&path_str],
-                    |row| row.get::<_, i32>(0),
-                ).optional().is_ok_and(|opt| opt.is_some());
+                let existed = conn
+                    .query_row("SELECT 1 FROM notes WHERE path = ?1", [&path_str], |row| {
+                        row.get::<_, i32>(0)
+                    })
+                    .optional()
+                    .is_ok_and(|opt| opt.is_some());
 
                 conn.execute("DELETE FROM notes WHERE path = ?1", [&path_str])?;
                 Ok(existed)

@@ -21,19 +21,35 @@ fn test_init_creates_directories_and_config() {
         .output()
         .expect("Failed to run init command");
 
-    assert!(output.status.success(), "Init command failed: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "Init command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let crucible_dir = temp_dir.path().join(".crucible");
 
     // Verify directories were created
-    assert!(crucible_dir.exists(), "Expected .crucible directory to be created");
-    assert!(crucible_dir.join("config.toml").exists(), "Expected config.toml to be created");
-    assert!(crucible_dir.join("sessions").exists(), "Expected sessions directory to be created");
-    assert!(crucible_dir.join("plugins").exists(), "Expected plugins directory to be created");
+    assert!(
+        crucible_dir.exists(),
+        "Expected .crucible directory to be created"
+    );
+    assert!(
+        crucible_dir.join("config.toml").exists(),
+        "Expected config.toml to be created"
+    );
+    assert!(
+        crucible_dir.join("sessions").exists(),
+        "Expected sessions directory to be created"
+    );
+    assert!(
+        crucible_dir.join("plugins").exists(),
+        "Expected plugins directory to be created"
+    );
 
     // Verify config.toml content
-    let config_content = fs::read_to_string(crucible_dir.join("config.toml"))
-        .expect("Failed to read config.toml");
+    let config_content =
+        fs::read_to_string(crucible_dir.join("config.toml")).expect("Failed to read config.toml");
     assert!(config_content.contains("[kiln]"));
     assert!(config_content.contains("[storage]"));
     assert!(config_content.contains("[llm]"));
@@ -79,7 +95,10 @@ fn test_init_with_existing_directory_errors() {
     assert!(!output2.status.success(), "Second init should have failed");
 
     let stderr = String::from_utf8_lossy(&output2.stderr);
-    assert!(stderr.contains("Kiln already initialized"), "Expected error message about existing kiln");
+    assert!(
+        stderr.contains("Kiln already initialized"),
+        "Expected error message about existing kiln"
+    );
 }
 
 #[test]
@@ -109,10 +128,22 @@ fn test_init_with_force_overwrites() {
         .output()
         .expect("Failed to run init command");
 
-    assert!(output.status.success(), "Init command with force should succeed");
+    assert!(
+        output.status.success(),
+        "Init command with force should succeed"
+    );
 
     // Verify test file was removed and directories recreated
-    assert!(!test_file.exists(), "Test file should have been removed by --force");
-    assert!(crucible_dir.exists(), "Expected .crucible directory to still exist");
-    assert!(crucible_dir.join("config.toml").exists(), "Expected config.toml to be created");
+    assert!(
+        !test_file.exists(),
+        "Test file should have been removed by --force"
+    );
+    assert!(
+        crucible_dir.exists(),
+        "Expected .crucible directory to still exist"
+    );
+    assert!(
+        crucible_dir.join("config.toml").exists(),
+        "Expected config.toml to be created"
+    );
 }

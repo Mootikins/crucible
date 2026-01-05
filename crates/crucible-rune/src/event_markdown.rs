@@ -184,11 +184,7 @@ impl EventToMarkdown for SessionEvent {
             }
 
             SessionEvent::NoteDeleted { path, existed } => {
-                format!(
-                    "**Path:** `{}`\n**Existed:** {}\n",
-                    path.display(),
-                    existed
-                )
+                format!("**Path:** `{}`\n**Existed:** {}\n", path.display(), existed)
             }
 
             SessionEvent::McpAttached { server, tool_count } => {
