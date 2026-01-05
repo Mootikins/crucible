@@ -36,6 +36,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, trace};
 
+use crucible_core::events::{NoteChangeType, SessionEvent};
 use crucible_core::parser::BlockHash;
 use crucible_core::storage::{
     Filter, NoteRecord, NoteStore, SearchResult, StorageError, StorageResult,
@@ -375,7 +376,10 @@ impl SurrealNoteStore {
 #[async_trait]
 impl NoteStore for SurrealNoteStore {
     /// Insert or update a note record
-    async fn upsert(&self, note: NoteRecord) -> StorageResult<()> {
+    async fn upsert(&self, note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
+        // First check if the note exists to determine which event to emit
+        let existed = self.get(&note.path).await?.is_some();
+
         let surreal_note = SurrealNoteRecord::from(note);
 
         let query = r#"
@@ -407,7 +411,20 @@ impl NoteStore for SurrealNoteStore {
             .await
             .map_err(|e| StorageError::Backend(format!("Failed to upsert note: {}", e)))?;
 
-        Ok(())
+        // Return appropriate event based on whether the note existed before
+        let event = if existed {
+            SessionEvent::NoteModified {
+                path: surreal_note.path.into(),
+                change_type: NoteChangeType::Content,
+            }
+        } else {
+            SessionEvent::NoteCreated {
+                path: surreal_note.path.into(),
+                title: Some(surreal_note.title),
+            }
+        };
+
+        Ok(vec![event])
     }
 
     /// Get a note record by path
@@ -436,7 +453,10 @@ impl NoteStore for SurrealNoteStore {
     }
 
     /// Delete a note record by path (idempotent)
-    async fn delete(&self, path: &str) -> StorageResult<()> {
+    async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
+        // Check if the note exists before deletion
+        let existed = self.get(path).await?.is_some();
+
         let query = "DELETE note_records WHERE path = $path";
         let params = vec![serde_json::json!({ "path": path })];
 
@@ -445,7 +465,10 @@ impl NoteStore for SurrealNoteStore {
             .await
             .map_err(|e| StorageError::Backend(format!("Failed to delete note: {}", e)))?;
 
-        Ok(())
+        Ok(SessionEvent::NoteDeleted {
+            path: path.into(),
+            existed,
+        })
     }
 
     /// List all note records
