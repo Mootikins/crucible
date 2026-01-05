@@ -42,9 +42,12 @@ mod command_popup_flow {
         let mut h = Harness::new(WIDTH, HEIGHT)
             .with_popup_items(PopupKind::Command, registries::standard_commands());
 
-        h.keys("sea");
+        // Need to type with prefix to match runner behavior
+        // Input buffer and popup query stay in sync
+        h.keys("/sea");
 
         assert_eq!(h.popup_query(), Some("sea"));
+        assert_eq!(h.input_text(), "/sea");
         assert_snapshot!("e2e_command_step2_filtered", h.render());
     }
 
