@@ -315,4 +315,4 @@ name: tdd-workflow
 ## See Also
 
 - [[Help/Workflows/Markup]] - Planned prose syntax
-- [[Help/Workflows/Sessions]] - Tracking execution state
+- [[Help/Core/Sessions]] - Tracking execution state

@@ -42,6 +42,14 @@ pub const DEFAULT_SEARCH_LIMIT: usize = 10;
 /// - `crucible_core::SessionConfig` - ACP protocol session parameters
 /// - `crucible_rune::ReactorSessionConfig` - reactor/handler execution config
 /// - `crucible_acp::TransportConfig` - transport layer settings
+///
+/// # TODO: Scratch Workspace
+///
+/// Add a `scratch_workspace` option that uses a folder in the session folder
+/// (`.crucible/sessions/<session-id>/workspace/`) instead of cwd for workspace tools.
+/// This keeps agent-generated files isolated from the kiln and user's working directory.
+/// The workspace path would be passed to tools that operate on files (read, write, edit, etc.)
+/// Note: workspace != kiln. The kiln is for knowledge storage, workspace is for agent work.
 #[derive(Debug, Clone)]
 pub struct ChatSessionConfig {
     /// Initial chat mode ID (e.g., "plan", "act", "auto")
