@@ -275,7 +275,10 @@ mod tests {
             .await
             .unwrap();
 
-        writer.append(LogEvent::system("System prompt")).await.unwrap();
+        writer
+            .append(LogEvent::system("System prompt"))
+            .await
+            .unwrap();
         writer.append(LogEvent::user("Hello")).await.unwrap();
         writer.append(LogEvent::assistant("Hi!")).await.unwrap();
 
@@ -335,7 +338,9 @@ mod tests {
         };
 
         // Reopen and continue
-        let mut writer = SessionWriter::open(&sessions_dir, id.clone()).await.unwrap();
+        let mut writer = SessionWriter::open(&sessions_dir, id.clone())
+            .await
+            .unwrap();
         assert_eq!(writer.event_count(), 2);
 
         writer.append(LogEvent::user("Third")).await.unwrap();

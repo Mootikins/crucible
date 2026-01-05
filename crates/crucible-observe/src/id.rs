@@ -4,7 +4,7 @@
 //! Example: `chat-20260104-1530-a1b2`
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::fmt;
 
 /// Session type discriminant
@@ -43,9 +43,23 @@ impl std::str::FromStr for SessionType {
 }
 
 /// A unique session identifier
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+///
+/// Validated on construction - both `parse()` and serde deserialization
+/// ensure the ID matches the expected format.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
 pub struct SessionId(String);
+
+// Custom Deserialize to validate format (prevents bypass of parse() validation)
+impl<'de> Deserialize<'de> for SessionId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        SessionId::parse(&s).map_err(serde::de::Error::custom)
+    }
+}
 
 impl SessionId {
     /// Generate a new session ID for the given type and timestamp
@@ -237,5 +251,18 @@ mod tests {
 
         let parsed: SessionId = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, id);
+    }
+
+    #[test]
+    fn test_session_id_serde_rejects_invalid() {
+        // Invalid IDs should fail deserialization (validates via parse())
+        let result: Result<SessionId, _> = serde_json::from_str("\"invalid\"");
+        assert!(result.is_err());
+
+        let result: Result<SessionId, _> = serde_json::from_str("\"../../../etc/passwd\"");
+        assert!(result.is_err());
+
+        let result: Result<SessionId, _> = serde_json::from_str("\"unknown-20260104-1530-a1b2\"");
+        assert!(result.is_err());
     }
 }

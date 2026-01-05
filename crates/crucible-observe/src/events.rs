@@ -23,16 +23,10 @@ pub struct TokenUsage {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum LogEvent {
     /// System message (prompt, context injection)
-    System {
-        ts: DateTime<Utc>,
-        content: String,
-    },
+    System { ts: DateTime<Utc>, content: String },
 
     /// User message
-    User {
-        ts: DateTime<Utc>,
-        content: String,
-    },
+    User { ts: DateTime<Utc>, content: String },
 
     /// Assistant response (final, not streaming chunks)
     Assistant {
@@ -261,11 +255,8 @@ mod tests {
 
     #[test]
     fn test_tool_call_json() {
-        let event = LogEvent::tool_call(
-            "tc_001",
-            "read_file",
-            serde_json::json!({"path": "foo.rs"}),
-        );
+        let event =
+            LogEvent::tool_call("tc_001", "read_file", serde_json::json!({"path": "foo.rs"}));
         let json = event.to_jsonl().unwrap();
 
         assert!(json.contains("\"type\":\"tool_call\""));
