@@ -195,7 +195,7 @@ mod tests {
         // Note: rename_all = "lowercase" makes canonical form "githubcopilot"
         // Aliases allow alternative spellings
         let variants = [
-            r#"{"type": "githubcopilot"}"#, // canonical lowercase form
+            r#"{"type": "githubcopilot"}"#,  // canonical lowercase form
             r#"{"type": "github-copilot"}"#, // kebab-case alias
             r#"{"type": "github_copilot"}"#, // snake_case alias
             r#"{"type": "copilot"}"#,        // short alias
