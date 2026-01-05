@@ -8,12 +8,16 @@ authors = ["Crucible Contributors"]
 
 [features]
 default = ["fennel"]
-fennel = []  # Bundle Fennel compiler (~160KB)
+# Fennel requires standard Lua (uses package.preload which Luau lacks)
+# When enabled: uses lua54. When disabled: uses luau for gradual typing.
+fennel = ["mlua/lua54"]
+luau = ["mlua/luau"]  # Use Luau (Roblox Lua with gradual types) - incompatible with fennel
 send = ["mlua/send"]  # Enable Send+Sync for multi-threaded use
 
 [dependencies]
-# Runtime: Luau (Lua with gradual types)
-mlua = { version = "0.11", features = ["luau", "vendored", "async", "serialize"] }
+# Runtime: Lua 5.4 (for Fennel) or Luau (for gradual types)
+# Feature flags control which backend is used
+mlua = { version = "0.11", features = ["vendored", "async", "serialize"] }
 
 # Static analysis: Parse Luau to extract type annotations
 full_moon = { version = "2", features = ["luau"] }

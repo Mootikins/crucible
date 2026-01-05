@@ -569,7 +569,8 @@ mod fennel_tests {
     {:name "must-be-string"
      :pre [string?]}))
 
-(fn handler [args]
+;; Use global to expose handler (Fennel scoping)
+(global handler (fn [args]
   (let [results {}]
     ;; Test passing contract
     (tset results :sum (add-positive 5 3))
@@ -581,7 +582,7 @@ mod fennel_tests {
                                             (not= nil (string.find err "Contract"))
                                             false)))
 
-    results))
+    results)))
 "#;
 
         let result = executor.execute_source(source, true, json!({})).await;
@@ -652,7 +653,8 @@ mod fennel_tests {
     {:name "bad-handler"
      :preserves [:timestamp]}))
 
-(fn handler [args]
+;; Use global to expose handler (Fennel scoping)
+(global handler (fn [args]
   (let [results {}]
     ;; Good handler should work
     (let [event {:timestamp 12345 :data "hello"}
@@ -667,7 +669,7 @@ mod fennel_tests {
       (tset results :error_has_preserved (if (not ok)
                                              (not= nil (string.find err "preserved"))
                                              false)))
-    results))
+    results)))
 "#;
 
         let result = executor.execute_source(source, true, json!({})).await;
