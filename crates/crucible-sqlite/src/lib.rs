@@ -40,6 +40,7 @@
 //! let note = store.get("notes/example.md").await?;
 //! ```
 
+pub mod adapters;
 pub mod config;
 pub mod connection;
 pub mod error;
@@ -51,6 +52,7 @@ pub mod repository;
 pub mod schema;
 
 // Re-exports
+pub use adapters::{create_sqlite_client, SqliteClientHandle};
 pub use config::SqliteConfig;
 pub use connection::SqlitePool;
 pub use error::{SqliteError, SqliteResult};
