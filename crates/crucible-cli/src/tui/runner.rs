@@ -1271,18 +1271,15 @@ impl RatatuiRunner {
             "messages" | "mes" => {
                 // Show message history popup (vim-style :messages)
                 let history = self.view.state().notifications.format_history();
-                self.view.push_dialog(crate::tui::dialog::DialogState::info(
-                    "Messages",
-                    history,
-                ));
+                self.view
+                    .push_dialog(crate::tui::dialog::DialogState::info("Messages", history));
             }
             "edit" | "e" | "view" => {
                 // Open session in $EDITOR
                 self.open_session_in_editor()?;
             }
             _ => {
-                self.view
-                    .echo_error(&format!("Unknown command: {}", name));
+                self.view.echo_error(&format!("Unknown command: {}", name));
             }
         }
 
@@ -1396,9 +1393,7 @@ impl RatatuiRunner {
         crossterm::terminal::disable_raw_mode()?;
 
         // Open editor with the temp file
-        let status = Command::new(&editor)
-            .arg(&temp_file)
-            .status();
+        let status = Command::new(&editor).arg(&temp_file).status();
 
         // Re-enter TUI mode
         crossterm::terminal::enable_raw_mode()?;
@@ -1426,11 +1421,13 @@ impl RatatuiRunner {
                     self.view.echo_message(&format!("Closed {}", editor));
                 } else {
                     let code = exit_status.code().unwrap_or(-1);
-                    self.view.echo_error(&format!("{} exited with code {}", editor, code));
+                    self.view
+                        .echo_error(&format!("{} exited with code {}", editor, code));
                 }
             }
             Err(e) => {
-                self.view.echo_error(&format!("Failed to open {}: {}", editor, e));
+                self.view
+                    .echo_error(&format!("Failed to open {}: {}", editor, e));
             }
         }
 
