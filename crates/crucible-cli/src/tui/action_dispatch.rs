@@ -24,6 +24,8 @@ pub enum PopupEffect {
     AddNoteContext { path: String },
     /// Execute a REPL command immediately
     ExecuteReplCommand { name: String },
+    /// Resume a session by ID
+    ResumeSession { session_id: String },
 }
 
 /// Convert a PopupItem to its default effect
@@ -45,6 +47,9 @@ pub fn popup_item_to_effect(item: &PopupItem) -> PopupEffect {
         PopupItem::ReplCommand { name, .. } => {
             PopupEffect::ExecuteReplCommand { name: name.clone() }
         }
+        PopupItem::Session { id, .. } => PopupEffect::ResumeSession {
+            session_id: id.clone(),
+        },
     }
 }
 
@@ -299,6 +304,20 @@ mod tests {
             effect,
             PopupEffect::ExecuteReplCommand {
                 name: "quit".into()
+            }
+        );
+    }
+
+    #[test]
+    fn test_popup_effect_session() {
+        let item = PopupItem::session("sess_123")
+            .desc("Previous conversation")
+            .with_message_count(5);
+        let effect = popup_item_to_effect(&item);
+        assert_eq!(
+            effect,
+            PopupEffect::ResumeSession {
+                session_id: "sess_123".into()
             }
         );
     }

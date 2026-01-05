@@ -66,6 +66,8 @@ pub enum PopupKind {
     AgentOrFile,
     /// REPL commands: `:quit`, `:help`, `:mode`
     ReplCommand,
+    /// Session picker: `/resume` command
+    Session,
 }
 
 // =============================================================================
@@ -140,6 +142,16 @@ pub enum PopupItem {
         description: String,
         score: i32,
     },
+    /// Session for resuming: displayed in /resume popup
+    Session {
+        /// Session ID (e.g., "chat-20260104-1530-a1b2")
+        id: String,
+        /// Human-readable description (date/time)
+        description: String,
+        /// Number of messages in the session
+        message_count: u32,
+        score: i32,
+    },
 }
 
 impl PopupItem {
@@ -206,11 +218,21 @@ impl PopupItem {
         }
     }
 
+    /// Create a new session popup item for resuming
+    pub fn session(id: impl Into<String>) -> Self {
+        PopupItem::Session {
+            id: id.into(),
+            description: String::new(),
+            message_count: 0,
+            score: 0,
+        }
+    }
+
     // =========================================================================
     // Builder methods - chain after constructor
     // =========================================================================
 
-    /// Builder: set description (for Command, Agent, Skill, ReplCommand)
+    /// Builder: set description (for Command, Agent, Skill, ReplCommand, Session)
     pub fn desc(mut self, description: impl Into<String>) -> Self {
         let d = description.into();
         match &mut self {
@@ -218,6 +240,7 @@ impl PopupItem {
             PopupItem::Agent { description, .. } => *description = d,
             PopupItem::Skill { description, .. } => *description = d,
             PopupItem::ReplCommand { description, .. } => *description = d,
+            PopupItem::Session { description, .. } => *description = d,
             PopupItem::File { .. } | PopupItem::Note { .. } => {}
         }
         self
@@ -239,6 +262,14 @@ impl PopupItem {
         self
     }
 
+    /// Builder: set message count (Session only)
+    pub fn with_message_count(mut self, count: u32) -> Self {
+        if let PopupItem::Session { message_count, .. } = &mut self {
+            *message_count = count;
+        }
+        self
+    }
+
     /// Builder: set score
     pub fn with_score(mut self, s: i32) -> Self {
         match &mut self {
@@ -248,6 +279,7 @@ impl PopupItem {
             PopupItem::Note { score, .. } => *score = s,
             PopupItem::Skill { score, .. } => *score = s,
             PopupItem::ReplCommand { score, .. } => *score = s,
+            PopupItem::Session { score, .. } => *score = s,
         }
         self
     }
@@ -260,7 +292,7 @@ impl PopupItem {
             PopupItem::File { available, .. } => *available = a,
             PopupItem::Note { available, .. } => *available = a,
             PopupItem::Skill { available, .. } => *available = a,
-            PopupItem::ReplCommand { .. } => {} // Always available
+            PopupItem::ReplCommand { .. } | PopupItem::Session { .. } => {} // Always available
         }
         self
     }
@@ -278,6 +310,7 @@ impl PopupItem {
             PopupItem::Note { path, .. } => format!("note:{}", path),
             PopupItem::Skill { name, .. } => format!("skill:{}", name),
             PopupItem::ReplCommand { name, .. } => format!(":{}", name),
+            PopupItem::Session { id, .. } => id.clone(),
         }
     }
 
@@ -298,10 +331,11 @@ impl PopupItem {
                 description
             }
             PopupItem::ReplCommand { description, .. } => description,
+            PopupItem::Session { description, .. } => description,
         }
     }
 
-    /// Token to insert when selected
+    /// Token to insert when selected (for session, returns ID for resume)
     pub fn token(&self) -> String {
         match self {
             PopupItem::Command { name, .. } => format!("/{} ", name),
@@ -310,10 +344,11 @@ impl PopupItem {
             PopupItem::Note { path, .. } => path.clone(),
             PopupItem::Skill { name, .. } => format!("skill:{} ", name),
             PopupItem::ReplCommand { name, .. } => format!(":{}", name),
+            PopupItem::Session { id, .. } => id.clone(),
         }
     }
 
-    /// Kind label for display (e.g., "cmd", "agent", "repl")
+    /// Kind label for display (e.g., "cmd", "agent", "repl", "session")
     pub fn kind_label(&self) -> &'static str {
         match self {
             PopupItem::Command { .. } => "cmd",
@@ -322,6 +357,7 @@ impl PopupItem {
             PopupItem::Note { .. } => "note",
             PopupItem::Skill { .. } => "skill",
             PopupItem::ReplCommand { .. } => "repl",
+            PopupItem::Session { .. } => "session",
         }
     }
 
@@ -334,6 +370,7 @@ impl PopupItem {
             PopupItem::Note { score, .. } => *score,
             PopupItem::Skill { score, .. } => *score,
             PopupItem::ReplCommand { score, .. } => *score,
+            PopupItem::Session { score, .. } => *score,
         }
     }
 
@@ -345,7 +382,7 @@ impl PopupItem {
             PopupItem::File { available, .. } => *available,
             PopupItem::Note { available, .. } => *available,
             PopupItem::Skill { available, .. } => *available,
-            PopupItem::ReplCommand { .. } => true, // Always available
+            PopupItem::ReplCommand { .. } | PopupItem::Session { .. } => true, // Always available
         }
     }
 
@@ -398,6 +435,11 @@ impl PopupItem {
     pub fn is_repl_command(&self) -> bool {
         matches!(self, PopupItem::ReplCommand { .. })
     }
+
+    /// Check if this is a Session variant
+    pub fn is_session(&self) -> bool {
+        matches!(self, PopupItem::Session { .. })
+    }
 }
 
 /// Legacy type alias for code that still references PopupItemKind
@@ -411,6 +453,7 @@ pub enum PopupItemKind {
     Note,
     Skill,
     ReplCommand,
+    Session,
 }
 
 impl PopupItem {
@@ -425,6 +468,7 @@ impl PopupItem {
             PopupItem::Note { .. } => PopupItemKind::Note,
             PopupItem::Skill { .. } => PopupItemKind::Skill,
             PopupItem::ReplCommand { .. } => PopupItemKind::ReplCommand,
+            PopupItem::Session { .. } => PopupItemKind::Session,
         }
     }
 }
@@ -454,6 +498,15 @@ impl From<PopupItem> for crucible_core::types::PopupEntry {
             PopupItem::ReplCommand {
                 name, description, ..
             } => (format!(":{}", name), Some(description.clone()), "repl"),
+            PopupItem::Session {
+                id,
+                description,
+                message_count,
+                ..
+            } => {
+                let desc = format!("{} ({} messages)", description, message_count);
+                (id.clone(), Some(desc), "session")
+            }
         };
 
         let mut entry = crucible_core::types::PopupEntry::new(label);

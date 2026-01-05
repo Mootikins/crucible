@@ -114,6 +114,48 @@ pub fn test_repl_commands() -> Vec<PopupItem> {
     ]
 }
 
+// =============================================================================
+// Session fixtures
+// =============================================================================
+
+/// Helper to create a session item
+pub fn session(id: impl Into<String>, description: impl Into<String>) -> PopupItem {
+    PopupItem::session(id.into()).desc(description)
+}
+
+/// Helper to create a session with message count
+pub fn session_with_count(
+    id: impl Into<String>,
+    description: impl Into<String>,
+    count: u32,
+) -> PopupItem {
+    PopupItem::session(id.into())
+        .desc(description)
+        .with_message_count(count)
+}
+
+/// Test sessions for /resume popup
+pub fn test_sessions() -> Vec<PopupItem> {
+    vec![
+        session_with_count("chat-2025-01-04-abc123", "Chat session from yesterday", 15),
+        session_with_count("chat-2025-01-03-def456", "Earlier chat session", 8),
+        session_with_count("chat-2025-01-02-ghi789", "Older chat session", 42),
+    ]
+}
+
+/// Many sessions for scroll/filter testing
+pub fn many_sessions() -> Vec<PopupItem> {
+    (0..20)
+        .map(|i| {
+            session_with_count(
+                format!("chat-2025-01-{:02}-sess{:03}", 20 - (i / 5), i),
+                format!("Session from day {}", 20 - (i / 5)),
+                (10 + i * 3) as u32,
+            )
+        })
+        .collect()
+}
+
 /// Mixed items for AgentOrFile popup testing
 pub fn mixed_agent_file_items() -> Vec<PopupItem> {
     let mut items = vec![];
@@ -206,5 +248,37 @@ mod tests {
         assert!(items.iter().any(|i| matches!(i, PopupItem::Agent { .. })));
         assert!(items.iter().any(|i| matches!(i, PopupItem::File { .. })));
         assert!(items.iter().any(|i| matches!(i, PopupItem::Note { .. })));
+    }
+
+    #[test]
+    fn test_sessions_not_empty() {
+        assert!(!test_sessions().is_empty());
+    }
+
+    #[test]
+    fn session_tokens_are_session_ids() {
+        // Session tokens are the raw session ID (used for resumption, not insertion)
+        for s in test_sessions() {
+            assert!(
+                s.token().starts_with("chat-"),
+                "Session token should be session ID starting with 'chat-', got: {}",
+                s.token()
+            );
+        }
+    }
+
+    #[test]
+    fn session_has_message_count() {
+        let s = session_with_count("test-123", "Test session", 42);
+        if let PopupItem::Session { message_count, .. } = s {
+            assert_eq!(message_count, 42);
+        } else {
+            panic!("Expected Session variant");
+        }
+    }
+
+    #[test]
+    fn many_sessions_has_expected_count() {
+        assert_eq!(many_sessions().len(), 20);
     }
 }

@@ -116,6 +116,10 @@ impl PopupProvider for StaticPopupProvider {
                     }
                 }
             }
+            PopupKind::Session => {
+                // Sessions are provided programmatically by the runner,
+                // not through the static provider
+            }
         }
         // Keep top N by score
         out.sort_by_key(|item| std::cmp::Reverse(item.score()));
@@ -505,6 +509,10 @@ impl PopupProvider for DynamicPopupProvider {
             PopupKind::ReplCommand => {
                 // REPL commands are static, just forward to inner provider
                 self.inner.read().provide(kind, query)
+            }
+            PopupKind::Session => {
+                // Sessions are provided programmatically by the runner
+                vec![]
             }
         }
     }

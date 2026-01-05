@@ -218,6 +218,7 @@ mod popup_effect_tests {
             PopupItem::note("test"),
             PopupItem::skill("test"),
             PopupItem::repl("quit"),
+            PopupItem::session("sess_123"),
         ];
 
         for item in items {
@@ -228,6 +229,7 @@ mod popup_effect_tests {
                 PopupEffect::AddFileContext { path } => assert!(!path.is_empty()),
                 PopupEffect::AddNoteContext { path } => assert!(!path.is_empty()),
                 PopupEffect::ExecuteReplCommand { name } => assert!(!name.is_empty()),
+                PopupEffect::ResumeSession { session_id } => assert!(!session_id.is_empty()),
             }
         }
     }
@@ -755,5 +757,89 @@ mod workflow_tests {
             .with_popup_items(PopupKind::Command, items);
 
         assert_snapshot!("workflow_long_descriptions", h.render());
+    }
+}
+
+// =============================================================================
+// Snapshot Tests - Session Popup (/resume command)
+// =============================================================================
+
+mod session_popup_tests {
+    use super::*;
+
+    const WIDTH: u16 = 80;
+    const HEIGHT: u16 = 24;
+
+    #[test]
+    fn popup_session_list() {
+        let h = Harness::new(WIDTH, HEIGHT)
+            .with_popup_items(PopupKind::Session, registries::test_sessions());
+
+        assert_snapshot!("popup_session_list", h.render());
+    }
+
+    #[test]
+    fn popup_session_many() {
+        let h = Harness::new(WIDTH, HEIGHT)
+            .with_popup_items(PopupKind::Session, registries::many_sessions());
+
+        assert_snapshot!("popup_session_many", h.render());
+    }
+
+    #[test]
+    fn popup_session_navigation() {
+        let mut h = Harness::new(WIDTH, HEIGHT)
+            .with_popup_items(PopupKind::Session, registries::test_sessions());
+
+        h.key(KeyCode::Down);
+        assert_snapshot!("popup_session_second", h.render());
+    }
+
+    #[test]
+    fn popup_session_gradient() {
+        let h = Harness::new(WIDTH, HEIGHT)
+            .with_popup_items(PopupKind::Session, registries::test_sessions())
+            .with_gradient_popup(true);
+
+        assert_snapshot!("popup_session_gradient", h.render());
+    }
+
+    #[test]
+    fn popup_session_over_conversation() {
+        use crate::tui::testing::fixtures::sessions;
+
+        let h = Harness::new(WIDTH, HEIGHT)
+            .with_session(sessions::basic_exchange())
+            .with_popup_items(PopupKind::Session, registries::test_sessions());
+
+        assert_snapshot!("popup_session_over_conversation", h.render());
+    }
+
+    // ==========================================================================
+    // Unit Tests - Session PopupItem
+    // ==========================================================================
+
+    #[test]
+    fn session_item_has_correct_kind() {
+        let item = registries::session("test-123", "Test session");
+        assert!(item.is_session());
+    }
+
+    #[test]
+    fn session_item_token_is_id() {
+        let item = registries::session("chat-2025-01-01-abc", "Test session");
+        assert_eq!(item.token(), "chat-2025-01-01-abc");
+    }
+
+    #[test]
+    fn session_popup_effect() {
+        let item = registries::session("chat-2025-01-01-abc", "Test session");
+        let effect = popup_item_to_effect(&item);
+        assert_eq!(
+            effect,
+            PopupEffect::ResumeSession {
+                session_id: "chat-2025-01-01-abc".into()
+            }
+        );
     }
 }

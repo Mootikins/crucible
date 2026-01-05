@@ -788,6 +788,22 @@ impl CommandHandler for NewHandler {
     }
 }
 
+/// Handler for /resume command - shows recent sessions to resume
+///
+/// This is a placeholder that tells the user to use the TUI.
+/// The actual session selection logic is handled in the TUI runner.
+pub struct ResumeHandler;
+
+#[async_trait]
+impl CommandHandler for ResumeHandler {
+    async fn execute(&self, _args: &str, _ctx: &mut dyn ChatContext) -> ChatResult<()> {
+        // In TUI mode, the runner handles this directly
+        // This handler exists for completeness in non-TUI contexts
+        println!("\nUse /resume in the TUI to browse and resume recent sessions.\n");
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

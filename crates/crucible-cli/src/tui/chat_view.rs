@@ -275,6 +275,12 @@ impl<'a> ChatView<'a> {
                     return;
                 }
             }
+            PopupKind::Session => {
+                // Session popup is opened programmatically, not by trigger.
+                // Any input closes it (return to normal mode).
+                self.popup = None;
+                return;
+            }
         };
 
         // Verify trigger is at start or after whitespace
