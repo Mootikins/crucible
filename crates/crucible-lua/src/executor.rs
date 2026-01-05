@@ -7,7 +7,7 @@ use crate::error::LuaError;
 #[cfg(feature = "fennel")]
 use crate::fennel::FennelCompiler;
 use crate::types::{LuaExecutionResult, LuaTool, ToolResult};
-use mlua::{Function, Lua, Result as LuaResult, Value};
+use mlua::{Function, Lua, LuaOptions, Result as LuaResult, StdLib, Value};
 use serde_json::Value as JsonValue;
 use std::path::Path;
 use std::time::Instant;
@@ -26,6 +26,13 @@ pub struct LuaExecutor {
 impl LuaExecutor {
     /// Create a new Lua executor
     pub fn new() -> Result<Self, LuaError> {
+        // Fennel requires both PACKAGE (for require/modules) and DEBUG (for stack traces)
+        // DEBUG is not in ALL_SAFE, so we use unsafe_new_with for Fennel support.
+        // This is safe because we're running controlled Fennel code, not arbitrary C modules.
+        #[cfg(feature = "fennel")]
+        let lua = unsafe { Lua::unsafe_new_with(StdLib::ALL_SAFE | StdLib::DEBUG, LuaOptions::default()) };
+
+        #[cfg(not(feature = "fennel"))]
         let lua = Lua::new();
 
         // Set up safe globals and Crucible API
@@ -33,13 +40,31 @@ impl LuaExecutor {
 
         // Try to load Fennel - it's optional (may not have vendor/fennel.lua)
         #[cfg(feature = "fennel")]
-        let fennel = FennelCompiler::new(&lua).ok();
+        let fennel = match FennelCompiler::new(&lua) {
+            Ok(compiler) => Some(compiler),
+            Err(e) => {
+                tracing::debug!("Fennel compiler initialization failed: {}", e);
+                None
+            }
+        };
 
         Ok(Self {
             lua,
             #[cfg(feature = "fennel")]
             fennel,
         })
+    }
+
+    /// Check if Fennel compiler is available
+    pub fn fennel_available(&self) -> bool {
+        #[cfg(feature = "fennel")]
+        {
+            self.fennel.is_some()
+        }
+        #[cfg(not(feature = "fennel"))]
+        {
+            false
+        }
     }
 
     /// Set up global functions available to scripts
@@ -337,5 +362,18 @@ mod tests {
 
         assert!(result.success);
         assert_eq!(result.content, Some(args));
+    }
+
+    #[test]
+    fn test_fennel_available() {
+        let executor = LuaExecutor::new().unwrap();
+        // Should be available when fennel feature is enabled (default)
+        #[cfg(feature = "fennel")]
+        assert!(
+            executor.fennel_available(),
+            "Fennel should be available with fennel feature"
+        );
+        #[cfg(not(feature = "fennel"))]
+        assert!(!executor.fennel_available());
     }
 }
