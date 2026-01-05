@@ -323,6 +323,30 @@ mod tests {
         }
     }
 
+    fn copilot_config_with_token() -> LlmProviderConfig {
+        LlmProviderConfig {
+            provider_type: LlmProviderType::GitHubCopilot,
+            endpoint: None,
+            default_model: Some("gpt-4o".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: Some("gho_test_oauth_token".into()),
+        }
+    }
+
+    fn copilot_config_no_token() -> LlmProviderConfig {
+        LlmProviderConfig {
+            provider_type: LlmProviderType::GitHubCopilot,
+            endpoint: None,
+            default_model: Some("gpt-4o".into()),
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+        }
+    }
+
     #[test]
     fn test_create_ollama_client_default_endpoint() {
         let config = ollama_config();
@@ -494,5 +518,37 @@ mod tests {
             client.unwrap_err(),
             RigError::MissingApiKey { .. }
         ));
+    }
+
+    #[test]
+    fn test_create_github_copilot_client_with_token() {
+        let config = copilot_config_with_token();
+        let client = create_client(&config);
+
+        assert!(client.is_ok());
+        let client = client.unwrap();
+        assert_eq!(client.provider_name(), "github-copilot");
+        assert!(client.as_github_copilot().is_some());
+    }
+
+    #[test]
+    fn test_create_github_copilot_client_missing_token() {
+        // GitHub Copilot requires an OAuth token
+        let config = copilot_config_no_token();
+        let client = create_client(&config);
+
+        assert!(client.is_err());
+        let err = client.unwrap_err();
+        assert!(matches!(err, RigError::CopilotAuthRequired));
+    }
+
+    #[test]
+    fn test_github_copilot_oauth_token_preserved() {
+        let config = copilot_config_with_token();
+        let client = create_client(&config).unwrap();
+        let copilot = client.as_github_copilot().unwrap();
+
+        // OAuth token should be preserved
+        assert_eq!(copilot.oauth_token(), "gho_test_oauth_token");
     }
 }

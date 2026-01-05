@@ -174,6 +174,42 @@ mod tests {
 
         assert_eq!(anthropic.endpoint(), "https://api.anthropic.com/v1");
         assert_eq!(anthropic.model(), "claude-3-5-sonnet-20241022");
+
+        let copilot = LlmProviderConfig {
+            provider_type: LlmProviderType::GitHubCopilot,
+            endpoint: None,
+            default_model: None,
+            temperature: None,
+            max_tokens: None,
+            timeout_secs: None,
+            api_key: None,
+        };
+
+        assert_eq!(copilot.endpoint(), "https://api.githubcopilot.com");
+        assert_eq!(copilot.model(), "gpt-4o");
+    }
+
+    #[test]
+    fn test_github_copilot_serde_aliases() {
+        // Test that various TOML formats deserialize correctly
+        // Note: rename_all = "lowercase" makes canonical form "githubcopilot"
+        // Aliases allow alternative spellings
+        let variants = [
+            r#"{"type": "githubcopilot"}"#, // canonical lowercase form
+            r#"{"type": "github-copilot"}"#, // kebab-case alias
+            r#"{"type": "github_copilot"}"#, // snake_case alias
+            r#"{"type": "copilot"}"#,        // short alias
+        ];
+
+        for json in variants {
+            let config: LlmProviderConfig = serde_json::from_str(json).unwrap();
+            assert_eq!(
+                config.provider_type,
+                LlmProviderType::GitHubCopilot,
+                "Failed to parse: {}",
+                json
+            );
+        }
     }
 
     #[test]
