@@ -33,7 +33,7 @@ cru auth copilot
 
 This starts the OAuth device flow and displays:
 
-```
+```text
 To authenticate with GitHub Copilot:
 1. Visit: https://github.com/login/device
 2. Enter code: ABCD-1234
@@ -53,7 +53,7 @@ Waiting for authorization...
 
 Once authorized, Crucible stores your OAuth token securely. The CLI confirms:
 
-```
+```text
 Authentication successful!
 Token saved to ~/.config/crucible/copilot-token
 
@@ -98,7 +98,7 @@ Typical models include:
 
 ## How It Works
 
-```
+```text
 ┌─────────────┐     ┌─────────────┐     ┌──────────────────┐
 │   Crucible  │────▶│   GitHub    │────▶│  GitHub Copilot  │
 │     CLI     │     │    OAuth    │     │       API        │
@@ -139,7 +139,7 @@ You only need to re-authenticate if:
 ### "Access denied" during authorization
 
 Your GitHub account may not have an active Copilot subscription. Check:
-https://github.com/settings/copilot
+<https://github.com/settings/copilot>
 
 ### "Token exchange failed"
 
@@ -153,7 +153,7 @@ cru auth copilot --force
 
 The API token (30-min TTL) refreshes automatically, but if issues persist:
 
-1. Check Copilot status: https://www.githubstatus.com/
+1. Check Copilot status: <https://www.githubstatus.com/>
 2. Verify subscription is active
 3. Try re-authenticating
 
@@ -162,7 +162,7 @@ The API token (30-min TTL) refreshes automatically, but if issues persist:
 - OAuth tokens are stored with user-only permissions
 - Never commit tokens to version control
 - Use `{env:VAR}` syntax in config files
-- Tokens can be revoked at: https://github.com/settings/applications
+- Tokens can be revoked at: <https://github.com/settings/applications>
 
 ## See Also
 
