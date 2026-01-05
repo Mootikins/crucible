@@ -409,6 +409,13 @@ pub async fn create_internal_agent(
             // Anthropic models don't use reasoning_content field
             Ok(Box::new(RigAgentHandle::new(agent)))
         }
+        crucible_rig::RigClient::GitHubCopilot(_) => {
+            // GitHub Copilot uses OpenAI-compatible API but requires token refresh
+            // TODO: Implement proper Rig agent integration for Copilot
+            anyhow::bail!(
+                "GitHub Copilot agent support is not yet implemented. Use a different provider for agent mode."
+            )
+        }
     }
 }
 
