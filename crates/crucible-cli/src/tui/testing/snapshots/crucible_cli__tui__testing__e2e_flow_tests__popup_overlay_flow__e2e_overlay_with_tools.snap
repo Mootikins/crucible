@@ -1,0 +1,28 @@
+---
+source: crates/crucible-cli/src/tui/testing/e2e_flow_tests.rs
+expression: h.render()
+---
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ > Read my config                                                               
+                                                                                
+ ● I'll read that for you.                                                      
+                                                                                
+ ● read_file                                                                    
+                                                                                
+ ● Your config contains a key-value pair.                                       
+                                                                                
+> [agent] @ researcher Deep research and analysis                               
+  [agent] @ coder Code generation and review                                    
+  [agent] @ writer Writing and editing                                          
+                                                                                
+                                                                                
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+ >                                                                              
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+▸ Plan │ Ready
