@@ -183,6 +183,23 @@ impl SessionLogger {
             }
         }
     }
+
+    /// List all sessions in the kiln
+    ///
+    /// Returns session IDs sorted by creation time (newest first).
+    pub async fn list_sessions(&self) -> Vec<SessionId> {
+        match crucible_observe::list_sessions(&self.sessions_dir).await {
+            Ok(mut ids) => {
+                // Reverse to get newest first (they come sorted oldest first)
+                ids.reverse();
+                ids
+            }
+            Err(e) => {
+                warn!("Failed to list sessions: {}", e);
+                Vec::new()
+            }
+        }
+    }
 }
 
 /// Load events from an existing session for resumption

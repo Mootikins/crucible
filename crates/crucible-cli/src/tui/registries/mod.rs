@@ -46,6 +46,9 @@ impl PopupProvider for CompositeRegistry {
             PopupKind::Command => self.commands.provide(kind, query),
             PopupKind::AgentOrFile => self.context.provide(kind, query),
             PopupKind::ReplCommand => self.repl.provide(kind, query),
+            // Session items are provided programmatically by the runner,
+            // not through the registry
+            PopupKind::Session => vec![],
         }
     }
 }
