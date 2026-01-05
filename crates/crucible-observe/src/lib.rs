@@ -13,11 +13,15 @@
 //! # Event Types
 //!
 //! The JSONL log captures:
+//! - `init` - Session initialization with metadata
 //! - `system` - System prompts and context injections
 //! - `user` - User messages
 //! - `assistant` - Model responses (final, not streaming)
+//! - `thinking` - Model reasoning/thinking blocks
 //! - `tool_call` - Tool invocations with args
+//! - `permission` - Allow/deny decisions for tool calls
 //! - `tool_result` - Tool outputs (may be truncated)
+//! - `summary` - Context compaction summaries
 //! - `error` - Errors during session
 //!
 //! # Example
@@ -48,7 +52,7 @@ pub mod session;
 pub mod storage;
 
 // Re-exports for convenience
-pub use events::{LogEvent, TokenUsage};
+pub use events::{LogEvent, PermissionDecision, TokenUsage};
 pub use id::{SessionId, SessionIdError, SessionType};
 pub use markdown::{render_to_markdown, RenderOptions};
 pub use session::{list_sessions, load_events, SessionError, SessionMetadata, SessionWriter};

@@ -234,6 +234,28 @@ async fn show(config: CliConfig, id: String, format: String) -> Result<()> {
                         let level = if *recoverable { "warning" } else { "error" };
                         println!("[{}] {}", level, message);
                     }
+                    LogEvent::Init {
+                        session_id, model, ..
+                    } => {
+                        let model_str = model.as_deref().unwrap_or("unknown");
+                        println!("[init] session={}, model={}", session_id, model_str);
+                    }
+                    LogEvent::Thinking { content, .. } => {
+                        println!("[thinking] {}", truncate(content, 100));
+                    }
+                    LogEvent::Permission { tool, decision, .. } => {
+                        println!("[permission] {}:{:?}", tool, decision);
+                    }
+                    LogEvent::Summary {
+                        content,
+                        messages_summarized,
+                        ..
+                    } => {
+                        let count = messages_summarized
+                            .map(|n| format!(" ({n} msgs)"))
+                            .unwrap_or_default();
+                        println!("[summary{}] {}", count, truncate(content, 100));
+                    }
                 }
             }
         }
