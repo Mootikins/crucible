@@ -695,4 +695,169 @@ mod fennel_tests {
             }
         }
     }
+
+    /// Test deftool macro generates both contracts and schemas
+    #[tokio::test]
+    async fn test_deftool_schema_generation() {
+        let executor = LuaExecutor::new().unwrap();
+
+        // Define a tool using deftool macro with schema
+        let source = r#"
+;; Load contracts module functions inline (since require won't work)
+(global __tool_schemas__ {})
+
+(fn register-tool-schema [name schema]
+  (tset __tool_schemas__ name schema))
+
+(fn schema-to-json-schema [schema]
+  (let [properties {}
+        required []]
+    (each [_ param (ipairs (or schema.params []))]
+      (tset properties param.name {:type param.type})
+      (when (and (not= param.required false) (not param.default))
+        (table.insert required param.name)))
+    {:type "object"
+     :properties properties
+     :required required}))
+
+(fn validate-tool-params [args params tool-name]
+  (each [_ param (ipairs params)]
+    (let [val (. args param.name)
+          required (if (= param.required nil) true param.required)]
+      (when (and required (= val nil) (not param.default))
+        (error (.. "Contract violation: missing required param '" param.name "'"))))))
+
+(fn apply-defaults [args params]
+  (let [result (or args {})]
+    (each [_ param (ipairs params)]
+      (when (and (= (. result param.name) nil) param.default)
+        (tset result param.name param.default)))
+    result))
+
+(fn make-tool [name schema impl]
+  (register-tool-schema name schema)
+  (fn [args]
+    (let [with-defaults (apply-defaults args (or schema.params []))]
+      (validate-tool-params with-defaults (or schema.params []) name)
+      (impl with-defaults))))
+
+;; Define the tool using our make-tool (simulating deftool macro)
+(global search (make-tool "search"
+  {:description "Search the knowledge base"
+   :params [{:name "query" :type "string" :required true :description "Search query"}
+            {:name "limit" :type "number" :required false :default 10}]
+   :returns "array"}
+  (fn [args]
+    [{:title (.. "Result for: " args.query) :score 0.95}
+     {:title "Another result" :score 0.8}])))
+
+;; Test handler: invoke tool and get schema
+(global handler (fn [_]
+  (let [result (search {:query "test"})
+        schema (. __tool_schemas__ "search")
+        json-schema (schema-to-json-schema schema)]
+    {:tool_result result
+     :schema_description schema.description
+     :schema_params_count (length schema.params)
+     :json_schema json-schema})))
+"#;
+
+        let result = executor.execute_source(source, true, json!({})).await;
+
+        match result {
+            Ok(res) => {
+                if res.success {
+                    let content = res.content.unwrap();
+                    // Verify tool executed
+                    assert!(content["tool_result"].is_array());
+                    assert_eq!(content["tool_result"][0]["title"], "Result for: test");
+
+                    // Verify schema was registered
+                    assert_eq!(content["schema_description"], "Search the knowledge base");
+                    assert_eq!(content["schema_params_count"], 2);
+
+                    // Verify JSON schema format
+                    let json_schema = &content["json_schema"];
+                    assert_eq!(json_schema["type"], "object");
+                    assert!(json_schema["properties"]["query"].is_object());
+                    assert!(json_schema["required"]
+                        .as_array()
+                        .unwrap()
+                        .contains(&json!("query")));
+                } else {
+                    panic!("Fennel execution failed: {:?}", res.error);
+                }
+            }
+            Err(e) => panic!("Test failed: {}", e),
+        }
+    }
+
+    /// Test contract validation rejects invalid params
+    #[tokio::test]
+    async fn test_deftool_contract_validation() {
+        let executor = LuaExecutor::new().unwrap();
+
+        let source = r#"
+(global __tool_schemas__ {})
+
+(fn register-tool-schema [name schema]
+  (tset __tool_schemas__ name schema))
+
+(fn validate-tool-params [args params tool-name]
+  (each [_ param (ipairs params)]
+    (let [val (. args param.name)
+          required (if (= param.required nil) true param.required)]
+      (when (and required (= val nil) (not param.default))
+        (error (.. "Contract violation: missing required param '" param.name "'"))))))
+
+(fn apply-defaults [args params]
+  (let [result (or args {})]
+    (each [_ param (ipairs params)]
+      (when (and (= (. result param.name) nil) param.default)
+        (tset result param.name param.default)))
+    result))
+
+(fn make-tool [name schema impl]
+  (register-tool-schema name schema)
+  (fn [args]
+    (let [with-defaults (apply-defaults args (or schema.params []))]
+      (validate-tool-params with-defaults (or schema.params []) name)
+      (impl with-defaults))))
+
+;; Tool with required param
+(global strict-tool (make-tool "strict"
+  {:description "Strict tool"
+   :params [{:name "required_field" :type "string" :required true}]}
+  (fn [args] args.required_field)))
+
+(global handler (fn [_]
+  (let [results {}]
+    ;; Test: valid call
+    (tset results :valid_result (strict-tool {:required_field "hello"}))
+
+    ;; Test: missing required param (should fail)
+    (let [(ok err) (pcall strict-tool {})]
+      (tset results :missing_failed (not ok))
+      (tset results :error_mentions_contract (if (not ok)
+                                                 (not= nil (string.find err "Contract"))
+                                                 false)))
+    results)))
+"#;
+
+        let result = executor.execute_source(source, true, json!({})).await;
+
+        match result {
+            Ok(res) => {
+                if res.success {
+                    let content = res.content.unwrap();
+                    assert_eq!(content["valid_result"], "hello");
+                    assert_eq!(content["missing_failed"], true);
+                    assert_eq!(content["error_mentions_contract"], true);
+                } else {
+                    panic!("Fennel execution failed: {:?}", res.error);
+                }
+            }
+            Err(e) => panic!("Test failed: {}", e),
+        }
+    }
 }
