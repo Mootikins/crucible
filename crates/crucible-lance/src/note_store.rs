@@ -30,6 +30,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
 use crate::error::{LanceError, LanceResult};
+use crucible_core::events::{NoteChangeType, SessionEvent};
 use crucible_core::parser::BlockHash;
 use crucible_core::storage::{Filter, NoteRecord, NoteStore, Op, SearchResult, StorageResult};
 
@@ -558,10 +559,22 @@ impl LanceNoteStore {
 
 #[async_trait]
 impl NoteStore for LanceNoteStore {
-    async fn upsert(&self, note: NoteRecord) -> StorageResult<()> {
+    async fn upsert(&self, note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
+        // Check if the note exists before upsert
+        let existed = self.get(&note.path).await?.is_some();
+
         // LanceDB is append-only, so we need to delete first then insert
         // This is the standard pattern for LanceDB upserts
-        self.delete(&note.path).await?;
+        // Do the low-level delete directly to avoid recursive call
+        let table_guard = self.table.read().await;
+        if let Some(table) = &*table_guard {
+            let escaped_path = escape_sql_string(&note.path);
+            let filter = format!("path = '{}'", escaped_path);
+            if let Err(e) = table.delete(&filter).await {
+                warn!("Delete warning during upsert for {}: {}", note.path, e);
+            }
+        }
+        drop(table_guard);
 
         let table = self.ensure_table().await?;
         let batch = note_to_batch(&note, &self.schema, self.embedding_dim)?;
@@ -575,7 +588,21 @@ impl NoteStore for LanceNoteStore {
             .map_err(|e| LanceError::Table(e.to_string()))?;
 
         debug!("Upserted note: {}", note.path);
-        Ok(())
+
+        // Return appropriate event based on whether the note existed before
+        let event = if existed {
+            SessionEvent::NoteModified {
+                path: note.path.into(),
+                change_type: NoteChangeType::Content,
+            }
+        } else {
+            SessionEvent::NoteCreated {
+                path: note.path.into(),
+                title: Some(note.title),
+            }
+        };
+
+        Ok(vec![event])
     }
 
     async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
@@ -612,11 +639,20 @@ impl NoteStore for LanceNoteStore {
         Ok(notes.into_iter().next())
     }
 
-    async fn delete(&self, path: &str) -> StorageResult<()> {
+    async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
+        // Check if the note exists before deletion
+        let existed = self.get(path).await?.is_some();
+
         let table_guard = self.table.read().await;
         let table = match &*table_guard {
             Some(t) => t,
-            None => return Ok(()), // Table doesn't exist, nothing to delete
+            None => {
+                // Table doesn't exist, nothing to delete
+                return Ok(SessionEvent::NoteDeleted {
+                    path: path.into(),
+                    existed: false,
+                });
+            }
         };
 
         let escaped_path = escape_sql_string(path);
@@ -629,7 +665,11 @@ impl NoteStore for LanceNoteStore {
         }
 
         debug!("Deleted note: {}", path);
-        Ok(())
+
+        Ok(SessionEvent::NoteDeleted {
+            path: path.into(),
+            existed,
+        })
     }
 
     async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
