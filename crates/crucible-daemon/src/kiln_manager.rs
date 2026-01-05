@@ -194,6 +194,7 @@ impl Default for KilnManager {
 
 /// Create a storage handle for the given database path.
 /// Uses SQLite by default, SurrealDB if SQLite feature is disabled.
+#[allow(clippy::needless_return)] // Returns needed for cfg-gated branches
 async fn create_storage_handle(db_path: &Path) -> Result<StorageHandle> {
     // SQLite is the default backend
     #[cfg(feature = "storage-sqlite")]

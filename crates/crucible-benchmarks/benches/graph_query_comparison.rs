@@ -56,7 +56,8 @@ mod sqlite_bench {
 
         // Open a second connection for the graph executor (uses tokio::sync::Mutex)
         // This is needed because SqlitePool uses parking_lot::Mutex
-        let conn = Connection::open(&db_path).expect("Failed to open connection for graph executor");
+        let conn =
+            Connection::open(&db_path).expect("Failed to open connection for graph executor");
         let graph_executor = SqliteGraphQueryExecutor::new(Arc::new(Mutex::new(conn)));
 
         SqliteFixture {
@@ -138,14 +139,10 @@ fn bench_outlinks(c: &mut Criterion) {
             let fixture = rt.block_on(sqlite_bench::setup(&dir, note_count, avg_links));
             let query = format!(r#"outlinks("{}")"#, fixture.hub_title);
 
-            group.bench_with_input(
-                BenchmarkId::new("sqlite", label),
-                &query,
-                |b, query| {
-                    b.to_async(&rt)
-                        .iter(|| async { fixture.graph_executor.execute(query).await.unwrap() });
-                },
-            );
+            group.bench_with_input(BenchmarkId::new("sqlite", label), &query, |b, query| {
+                b.to_async(&rt)
+                    .iter(|| async { fixture.graph_executor.execute(query).await.unwrap() });
+            });
         }
 
         #[cfg(feature = "surrealdb")]
@@ -154,14 +151,10 @@ fn bench_outlinks(c: &mut Criterion) {
             let fixture = rt.block_on(surreal_bench::setup(&dir, note_count, avg_links));
             let query = format!(r#"outlinks("{}")"#, fixture.hub_title);
 
-            group.bench_with_input(
-                BenchmarkId::new("surrealdb", label),
-                &query,
-                |b, query| {
-                    b.to_async(&rt)
-                        .iter(|| async { fixture.graph_executor.execute(query).await.unwrap() });
-                },
-            );
+            group.bench_with_input(BenchmarkId::new("surrealdb", label), &query, |b, query| {
+                b.to_async(&rt)
+                    .iter(|| async { fixture.graph_executor.execute(query).await.unwrap() });
+            });
         }
     }
 
@@ -182,14 +175,10 @@ fn bench_inlinks(c: &mut Criterion) {
             let fixture = rt.block_on(sqlite_bench::setup(&dir, note_count, avg_links));
             let query = format!(r#"inlinks("{}")"#, fixture.hub_title);
 
-            group.bench_with_input(
-                BenchmarkId::new("sqlite", label),
-                &query,
-                |b, query| {
-                    b.to_async(&rt)
-                        .iter(|| async { fixture.graph_executor.execute(query).await.unwrap() });
-                },
-            );
+            group.bench_with_input(BenchmarkId::new("sqlite", label), &query, |b, query| {
+                b.to_async(&rt)
+                    .iter(|| async { fixture.graph_executor.execute(query).await.unwrap() });
+            });
         }
 
         #[cfg(feature = "surrealdb")]
@@ -198,14 +187,10 @@ fn bench_inlinks(c: &mut Criterion) {
             let fixture = rt.block_on(surreal_bench::setup(&dir, note_count, avg_links));
             let query = format!(r#"inlinks("{}")"#, fixture.hub_title);
 
-            group.bench_with_input(
-                BenchmarkId::new("surrealdb", label),
-                &query,
-                |b, query| {
-                    b.to_async(&rt)
-                        .iter(|| async { fixture.graph_executor.execute(query).await.unwrap() });
-                },
-            );
+            group.bench_with_input(BenchmarkId::new("surrealdb", label), &query, |b, query| {
+                b.to_async(&rt)
+                    .iter(|| async { fixture.graph_executor.execute(query).await.unwrap() });
+            });
         }
     }
 
@@ -226,14 +211,10 @@ fn bench_neighbors(c: &mut Criterion) {
             let fixture = rt.block_on(sqlite_bench::setup(&dir, note_count, avg_links));
             let query = format!(r#"neighbors("{}")"#, fixture.hub_title);
 
-            group.bench_with_input(
-                BenchmarkId::new("sqlite", label),
-                &query,
-                |b, query| {
-                    b.to_async(&rt)
-                        .iter(|| async { fixture.graph_executor.execute(query).await.unwrap() });
-                },
-            );
+            group.bench_with_input(BenchmarkId::new("sqlite", label), &query, |b, query| {
+                b.to_async(&rt)
+                    .iter(|| async { fixture.graph_executor.execute(query).await.unwrap() });
+            });
         }
 
         #[cfg(feature = "surrealdb")]
@@ -242,14 +223,10 @@ fn bench_neighbors(c: &mut Criterion) {
             let fixture = rt.block_on(surreal_bench::setup(&dir, note_count, avg_links));
             let query = format!(r#"neighbors("{}")"#, fixture.hub_title);
 
-            group.bench_with_input(
-                BenchmarkId::new("surrealdb", label),
-                &query,
-                |b, query| {
-                    b.to_async(&rt)
-                        .iter(|| async { fixture.graph_executor.execute(query).await.unwrap() });
-                },
-            );
+            group.bench_with_input(BenchmarkId::new("surrealdb", label), &query, |b, query| {
+                b.to_async(&rt)
+                    .iter(|| async { fixture.graph_executor.execute(query).await.unwrap() });
+            });
         }
     }
 
@@ -272,14 +249,10 @@ mod sqlite_raw {
     pub async fn outlinks(conn: &Arc<Mutex<Connection>>, source_path: &str) -> Vec<String> {
         let conn = conn.lock().await;
         let mut stmt = conn
-            .prepare_cached(
-                r#"SELECT links_to FROM notes WHERE path = ?1"#,
-            )
+            .prepare_cached(r#"SELECT links_to FROM notes WHERE path = ?1"#)
             .unwrap();
 
-        let links_json: Option<String> = stmt
-            .query_row([source_path], |row| row.get(0))
-            .ok();
+        let links_json: Option<String> = stmt.query_row([source_path], |row| row.get(0)).ok();
 
         links_json
             .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
@@ -291,13 +264,9 @@ mod sqlite_raw {
     pub async fn inlinks(conn: &Arc<Mutex<Connection>>, target_path: &str) -> Vec<String> {
         let conn = conn.lock().await;
         let mut stmt = conn
-            .prepare_cached(
-                r#"SELECT source_path FROM note_links WHERE target_path = ?1"#,
-            )
+            .prepare_cached(r#"SELECT source_path FROM note_links WHERE target_path = ?1"#)
             .unwrap();
-        let rows = stmt
-            .query_map([target_path], |row| row.get(0))
-            .unwrap();
+        let rows = stmt.query_map([target_path], |row| row.get(0)).unwrap();
         rows.filter_map(|r| r.ok()).collect()
     }
 
@@ -306,13 +275,9 @@ mod sqlite_raw {
     pub async fn inlinks_like(conn: &Arc<Mutex<Connection>>, target_path: &str) -> Vec<String> {
         let conn = conn.lock().await;
         let mut stmt = conn
-            .prepare_cached(
-                r#"SELECT path FROM notes WHERE links_to LIKE '%' || ?1 || '%'"#,
-            )
+            .prepare_cached(r#"SELECT path FROM notes WHERE links_to LIKE '%' || ?1 || '%'"#)
             .unwrap();
-        let rows = stmt
-            .query_map([target_path], |row| row.get(0))
-            .unwrap();
+        let rows = stmt.query_map([target_path], |row| row.get(0)).unwrap();
         rows.filter_map(|r| r.ok()).collect()
     }
 
@@ -336,9 +301,7 @@ mod sqlite_raw {
                 "#,
             )
             .unwrap();
-        let rows = stmt
-            .query_map([source_path], |row| row.get(0))
-            .unwrap();
+        let rows = stmt.query_map([source_path], |row| row.get(0)).unwrap();
         rows.filter_map(|r| r.ok()).collect()
     }
 
@@ -367,9 +330,7 @@ mod sqlite_raw {
                 "#,
             )
             .unwrap();
-        let rows = stmt
-            .query_map([source_path], |row| row.get(0))
-            .unwrap();
+        let rows = stmt.query_map([source_path], |row| row.get(0)).unwrap();
         rows.filter_map(|r| r.ok()).collect()
     }
 }
@@ -511,8 +472,7 @@ fn bench_raw_single_hop(c: &mut Criterion) {
                 BenchmarkId::new("sqlite/outlinks", label),
                 &hub_path,
                 |b, path| {
-                    b.to_async(&rt)
-                        .iter(|| sqlite_raw::outlinks(&conn, path));
+                    b.to_async(&rt).iter(|| sqlite_raw::outlinks(&conn, path));
                 },
             );
 
@@ -524,8 +484,7 @@ fn bench_raw_single_hop(c: &mut Criterion) {
                 BenchmarkId::new("sqlite/inlinks", label),
                 &hub_path,
                 |b, path| {
-                    b.to_async(&rt)
-                        .iter(|| sqlite_raw::inlinks(&conn2, path));
+                    b.to_async(&rt).iter(|| sqlite_raw::inlinks(&conn2, path));
                 },
             );
 
@@ -579,8 +538,7 @@ fn bench_raw_single_hop(c: &mut Criterion) {
                 BenchmarkId::new("surrealdb/inlinks", label),
                 &hub_path,
                 |b, path| {
-                    b.to_async(&rt)
-                        .iter(|| surreal_raw::inlinks(&client, path));
+                    b.to_async(&rt).iter(|| surreal_raw::inlinks(&client, path));
                 },
             );
         }
@@ -605,23 +563,15 @@ fn bench_raw_multi_hop(c: &mut Criterion) {
             rusqlite::Connection::open(dir.path().join("bench.db")).unwrap(),
         ));
 
-        group.bench_with_input(
-            BenchmarkId::new("sqlite", "2_hop"),
-            &hub_path,
-            |b, path| {
-                b.to_async(&rt)
-                    .iter(|| sqlite_raw::outlinks_2hop(&conn, path));
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("sqlite", "2_hop"), &hub_path, |b, path| {
+            b.to_async(&rt)
+                .iter(|| sqlite_raw::outlinks_2hop(&conn, path));
+        });
 
-        group.bench_with_input(
-            BenchmarkId::new("sqlite", "3_hop"),
-            &hub_path,
-            |b, path| {
-                b.to_async(&rt)
-                    .iter(|| sqlite_raw::outlinks_3hop(&conn, path));
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("sqlite", "3_hop"), &hub_path, |b, path| {
+            b.to_async(&rt)
+                .iter(|| sqlite_raw::outlinks_3hop(&conn, path));
+        });
     }
 
     #[cfg(feature = "surrealdb")]
