@@ -18,10 +18,35 @@ pub struct TokenUsage {
     pub output: u32,
 }
 
+/// Permission decision for a tool call
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionDecision {
+    /// User allowed the operation
+    Allow,
+    /// User denied the operation
+    Deny,
+    /// Operation was auto-approved (e.g., allowlisted)
+    AutoAllow,
+}
+
 /// A single event in the session log
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum LogEvent {
+    /// Session initialization
+    Init {
+        ts: DateTime<Utc>,
+        /// Session ID
+        session_id: String,
+        /// Working directory
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cwd: Option<String>,
+        /// Model being used
+        #[serde(skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+    },
+
     /// System message (prompt, context injection)
     System { ts: DateTime<Utc>, content: String },
 
@@ -38,6 +63,9 @@ pub enum LogEvent {
         tokens: Option<TokenUsage>,
     },
 
+    /// Assistant thinking/reasoning (if model supports it)
+    Thinking { ts: DateTime<Utc>, content: String },
+
     /// Tool invocation
     ToolCall {
         ts: DateTime<Utc>,
@@ -46,6 +74,20 @@ pub enum LogEvent {
         name: String,
         /// Tool arguments as JSON
         args: Value,
+    },
+
+    /// Permission decision for a tool call
+    Permission {
+        ts: DateTime<Utc>,
+        /// Correlation ID matching the ToolCall
+        id: String,
+        /// Tool name
+        tool: String,
+        /// The decision made
+        decision: PermissionDecision,
+        /// Optional reason for the decision
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
     },
 
     /// Tool execution result
@@ -63,6 +105,16 @@ pub enum LogEvent {
         error: Option<String>,
     },
 
+    /// Context summary (for compaction/resume)
+    Summary {
+        ts: DateTime<Utc>,
+        /// Summarized content replacing earlier messages
+        content: String,
+        /// Number of messages summarized
+        #[serde(skip_serializing_if = "Option::is_none")]
+        messages_summarized: Option<u32>,
+    },
+
     /// Error during session
     Error {
         ts: DateTime<Utc>,
@@ -74,6 +126,30 @@ pub enum LogEvent {
 }
 
 impl LogEvent {
+    /// Create a session init event
+    pub fn init(session_id: impl Into<String>) -> Self {
+        LogEvent::Init {
+            ts: Utc::now(),
+            session_id: session_id.into(),
+            cwd: None,
+            model: None,
+        }
+    }
+
+    /// Create a session init event with details
+    pub fn init_with_details(
+        session_id: impl Into<String>,
+        cwd: Option<String>,
+        model: Option<String>,
+    ) -> Self {
+        LogEvent::Init {
+            ts: Utc::now(),
+            session_id: session_id.into(),
+            cwd,
+            model,
+        }
+    }
+
     /// Create a system event
     pub fn system(content: impl Into<String>) -> Self {
         LogEvent::System {
@@ -111,6 +187,14 @@ impl LogEvent {
             content: content.into(),
             model: Some(model.into()),
             tokens,
+        }
+    }
+
+    /// Create a thinking/reasoning event
+    pub fn thinking(content: impl Into<String>) -> Self {
+        LogEvent::Thinking {
+            ts: Utc::now(),
+            content: content.into(),
         }
     }
 
@@ -161,6 +245,55 @@ impl LogEvent {
         }
     }
 
+    /// Create a permission event
+    pub fn permission(
+        id: impl Into<String>,
+        tool: impl Into<String>,
+        decision: PermissionDecision,
+    ) -> Self {
+        LogEvent::Permission {
+            ts: Utc::now(),
+            id: id.into(),
+            tool: tool.into(),
+            decision,
+            reason: None,
+        }
+    }
+
+    /// Create a permission event with reason
+    pub fn permission_with_reason(
+        id: impl Into<String>,
+        tool: impl Into<String>,
+        decision: PermissionDecision,
+        reason: impl Into<String>,
+    ) -> Self {
+        LogEvent::Permission {
+            ts: Utc::now(),
+            id: id.into(),
+            tool: tool.into(),
+            decision,
+            reason: Some(reason.into()),
+        }
+    }
+
+    /// Create a context summary event
+    pub fn summary(content: impl Into<String>) -> Self {
+        LogEvent::Summary {
+            ts: Utc::now(),
+            content: content.into(),
+            messages_summarized: None,
+        }
+    }
+
+    /// Create a context summary event with message count
+    pub fn summary_with_count(content: impl Into<String>, messages_summarized: u32) -> Self {
+        LogEvent::Summary {
+            ts: Utc::now(),
+            content: content.into(),
+            messages_summarized: Some(messages_summarized),
+        }
+    }
+
     /// Create an error event
     pub fn error(message: impl Into<String>, recoverable: bool) -> Self {
         LogEvent::Error {
@@ -173,11 +306,15 @@ impl LogEvent {
     /// Get the timestamp of this event
     pub fn timestamp(&self) -> DateTime<Utc> {
         match self {
-            LogEvent::System { ts, .. }
+            LogEvent::Init { ts, .. }
+            | LogEvent::System { ts, .. }
             | LogEvent::User { ts, .. }
             | LogEvent::Assistant { ts, .. }
+            | LogEvent::Thinking { ts, .. }
             | LogEvent::ToolCall { ts, .. }
+            | LogEvent::Permission { ts, .. }
             | LogEvent::ToolResult { ts, .. }
+            | LogEvent::Summary { ts, .. }
             | LogEvent::Error { ts, .. } => *ts,
         }
     }
