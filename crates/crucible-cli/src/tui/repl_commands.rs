@@ -36,7 +36,7 @@ pub const REPL_COMMANDS: &[ReplCommand] = &[
     ReplCommand {
         name: "help",
         aliases: &["h"],
-        description: "Show keybindings and commands",
+        description: "Show help [:help <topic>]",
     },
     ReplCommand {
         name: "mode",
