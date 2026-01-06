@@ -84,6 +84,7 @@ crucible-rune = { workspace = true }
 
 # File system utilities
 walkdir = "2.4"
+rust-embed = { version = "8.5", features = ["include-exclude", "interpolate-folder-path"] }
 
 # Rune scripting
 # rune = { workspace = true }  # Commented out - not MVP critical
