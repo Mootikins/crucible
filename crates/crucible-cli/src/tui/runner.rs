@@ -171,6 +171,8 @@ pub struct RatatuiRunner {
     pending_popup: Option<crucible_core::interaction::PopupRequest>,
     /// Session logger for persisting chat events to JSONL files
     session_logger: Option<std::sync::Arc<SessionLogger>>,
+    /// Help documentation index (lazy-initialized on first :help command)
+    docs_index: Option<crate::tui::help::DocsIndex>,
 }
 
 impl RatatuiRunner {
@@ -210,6 +212,7 @@ impl RatatuiRunner {
             pending_interaction_id: None,
             pending_popup: None,
             session_logger: None,
+            docs_index: None,
         })
     }
 
@@ -606,8 +609,9 @@ impl RatatuiRunner {
                 // Handle REPL commands (:) - execute immediately, don't send to agent
                 if msg.starts_with(':') {
                     let cmd = msg.strip_prefix(':').unwrap_or("").trim();
-                    // Take the first word as the command name
+                    // Take the first word as the command name, rest as args
                     let cmd_name = cmd.split_whitespace().next().unwrap_or("").to_lowercase();
+                    let args = cmd.strip_prefix(&cmd_name).map(|s| s.trim()).unwrap_or("");
                     if !cmd_name.is_empty() {
                         // Add to history
                         if self.history.last() != Some(&msg) {
@@ -621,8 +625,8 @@ impl RatatuiRunner {
                         self.view.set_cursor_position(0);
                         self.popup = None;
 
-                        // Execute REPL command
-                        return self.execute_repl_command(&cmd_name);
+                        // Execute REPL command with args
+                        return self.execute_repl_command(&cmd_name, args);
                     }
                     return Ok(false);
                 }
@@ -779,7 +783,7 @@ impl RatatuiRunner {
                             self.popup = None;
                             self.view.set_input("");
                             self.view.set_cursor_position(0);
-                            return self.execute_repl_command(&name);
+                            return self.execute_repl_command(&name, "");
                         }
 
                         // For other items, insert the token
@@ -1299,10 +1303,10 @@ impl RatatuiRunner {
     }
 
     /// Execute a REPL command (vim-style system commands)
-    fn execute_repl_command(&mut self, name: &str) -> Result<bool> {
+    fn execute_repl_command(&mut self, name: &str, args: &str) -> Result<bool> {
         use crate::tui::repl_commands::lookup;
 
-        debug!(cmd = %name, "Executing REPL command");
+        debug!(cmd = %name, args = %args, "Executing REPL command");
 
         // Look up command (handles aliases)
         let Some(cmd) = lookup(name) else {
@@ -1317,8 +1321,7 @@ impl RatatuiRunner {
                 return Ok(true);
             }
             "help" => {
-                let help_text = "Keys: Shift+Tab=mode, Ctrl+C=cancel, ↑↓=scroll | Prefixes: /=commands, :=repl, @=context, !=shell";
-                self.view.set_status_text(help_text);
+                self.show_help(args)?;
             }
             "mode" => {
                 // Cycle mode (same as Shift+Tab)
@@ -1358,6 +1361,81 @@ impl RatatuiRunner {
         }
 
         Ok(false)
+    }
+
+    /// Show help documentation.
+    ///
+    /// - No args: Show topic index
+    /// - With args: Search for topic and show content
+    fn show_help(&mut self, query: &str) -> Result<()> {
+        use crate::tui::help::DocsIndex;
+
+        // Lazy-initialize docs index
+        if self.docs_index.is_none() {
+            match DocsIndex::init() {
+                Ok(index) => {
+                    self.docs_index = Some(index);
+                }
+                Err(e) => {
+                    self.view
+                        .echo_error(&format!("Failed to load help docs: {}", e));
+                    return Ok(());
+                }
+            }
+        }
+
+        let index = self.docs_index.as_mut().unwrap();
+
+        if query.is_empty() {
+            // No argument: show topic index
+            let topics = index.all_topics();
+            if topics.is_empty() {
+                self.view.echo_message("No help topics available");
+                return Ok(());
+            }
+
+            // Build index display
+            let mut content = String::from("Available help topics:\n\n");
+            for topic in topics {
+                content.push_str(&format!(
+                    "  {:30} {}\n",
+                    topic.display_name(),
+                    topic.summary
+                ));
+            }
+            content.push_str("\nUse :help <topic> to view a topic.");
+
+            self.view.push_dialog(crate::tui::dialog::DialogState::info(
+                "Help Topics",
+                content,
+            ));
+        } else {
+            // Search for topic
+            let results = index.search(query);
+
+            if results.is_empty() {
+                self.view
+                    .echo_error(&format!("No help topic found for: {}", query));
+                return Ok(());
+            }
+
+            // Clone topic data before releasing borrow from search
+            let topic = results[0].clone();
+            let title = format!("Help: {}", topic.display_name());
+
+            match index.load_content(&topic) {
+                Ok(content) => {
+                    self.view
+                        .push_dialog(crate::tui::dialog::DialogState::info(&title, content));
+                }
+                Err(e) => {
+                    self.view
+                        .echo_error(&format!("Failed to load topic '{}': {}", query, e));
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Execute a shell command via bash (respects user's aliases/functions)
