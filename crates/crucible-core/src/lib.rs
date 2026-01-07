@@ -188,11 +188,12 @@ pub use properties::{AttributeValue, PropertyMap};
 
 // Re-export interaction protocol types
 pub use interaction::{
-    ArtifactFormat, AskRequest, AskResponse, EditRequest, EditResponse, InteractionRequest,
-    InteractionResponse, InteractivePanel, PanelAction, PanelHints, PanelItem, PanelResult,
-    PanelState, PermAction, PermRequest, PermResponse, PermissionScope, PopupRequest,
-    PopupResponse, ShowRequest,
+    ArtifactFormat, AskBatch, AskBatchResponse, AskQuestion, AskRequest, AskResponse, EditRequest,
+    EditResponse, InteractionRequest, InteractionResponse, InteractivePanel, PanelAction,
+    PanelHints, PanelItem, PanelResult, PanelState, PermAction, PermRequest, PermResponse,
+    PermissionScope, PopupRequest, PopupResponse, QuestionAnswer, ShowRequest,
 };
+pub use interaction_registry::InteractionRegistry;
 
 // Re-export event system types
 pub use events::{
