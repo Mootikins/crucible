@@ -1,7 +1,7 @@
 //! Internal database server command
 //!
 //! This module implements the hidden `db-server` subcommand that runs
-//! SurrealDB as a socket server. It's not intended for direct user
+//! the database as a socket server. It's not intended for direct user
 //! invocation - it's spawned automatically when `storage.mode = "daemon"`.
 
 use std::path::{Path, PathBuf};
@@ -64,7 +64,7 @@ impl ConnectionTracker {
 /// Execute the database server
 ///
 /// Runs a Unix socket server that accepts JSON-RPC connections for
-/// SurrealDB queries. Automatically shuts down after idle_timeout
+/// database queries. Automatically shuts down after idle_timeout
 /// seconds with no active connections.
 pub async fn execute(_config: CliConfig, socket: Option<PathBuf>, idle_timeout: u64) -> Result<()> {
     let socket_path = socket.unwrap_or_else(default_socket_path);
