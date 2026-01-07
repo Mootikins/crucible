@@ -3822,6 +3822,7 @@ dependencies = [
  "chrono",
  "crucible-core",
  "crucible-daemon",
+ "crucible-sqlite",
  "libc",
  "serde",
  "serde_json",
