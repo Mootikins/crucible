@@ -430,7 +430,10 @@ async fn test_search_vectors_rpc() {
         .expect("search_vectors RPC failed");
 
     // Should succeed but return empty (no embeddings in fresh db)
-    assert!(results.is_empty(), "Fresh kiln should have no search results");
+    assert!(
+        results.is_empty(),
+        "Fresh kiln should have no search results"
+    );
 
     server.shutdown().await;
 }

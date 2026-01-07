@@ -246,7 +246,6 @@ async fn handle_request(
         "kiln.open" => handle_kiln_open(req, kiln_manager).await,
         "kiln.close" => handle_kiln_close(req, kiln_manager).await,
         "kiln.list" => handle_kiln_list(req, kiln_manager).await,
-        "query" => handle_query(req, kiln_manager).await,
         _ => Response::error(
             req.id,
             METHOD_NOT_FOUND,
@@ -291,38 +290,6 @@ async fn handle_kiln_list(req: Request, km: &Arc<KilnManager>) -> Response {
         })
         .collect();
     Response::success(req.id, list)
-}
-
-async fn handle_query(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
-        Some(p) => p,
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'kiln' parameter"),
-    };
-
-    let sql = match req.params.get("sql").and_then(|v| v.as_str()) {
-        Some(s) => s,
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'sql' parameter"),
-    };
-
-    // Get or open connection to the kiln
-    let handle = match km.get_or_open(Path::new(kiln_path)).await {
-        Ok(c) => c,
-        Err(e) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
-    };
-
-    // Execute query using the storage handle
-    match handle.query(sql, &[]).await {
-        Ok(result) => {
-            let json_result = serde_json::json!({
-                "records": result.records,
-                "total_count": result.total_count,
-                "execution_time_ms": result.execution_time_ms,
-                "has_more": result.has_more
-            });
-            Response::success(req.id, json_result)
-        }
-        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
-    }
 }
 
 /// Get the default socket path

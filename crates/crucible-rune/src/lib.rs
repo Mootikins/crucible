@@ -29,6 +29,7 @@
 //! let result = registry.execute("rune_my_tool", args).await?;
 //! ```
 
+mod ask_module;
 mod attribute_discovery;
 pub mod builtin_hooks;
 pub mod compaction;
@@ -60,7 +61,6 @@ mod panel_module;
 pub mod persistence_handler;
 mod plugin_loader;
 mod plugin_types;
-mod ask_module;
 mod popup_module;
 pub mod reactor;
 mod regex_module;
@@ -72,6 +72,10 @@ mod struct_plugin;
 pub mod tool_events;
 mod types;
 
+pub use ask_module::{
+    ask_module, ask_module_with_agent, ask_module_with_context, AgentAskContext, AskContext,
+    RuneAskBatch, RuneAskBatchResponse, RuneAskError, RuneAskQuestion, RuneQuestionAnswer,
+};
 pub use attribute_discovery::{attr_parsers, AttributeDiscovery, FromAttributes};
 pub use builtin_hooks::{
     create_event_emit_hook, create_recipe_enrichment_hook, create_test_filter_hook,
@@ -134,10 +138,6 @@ pub use persistence_handler::PersistenceHandler;
 pub use plugin_loader::PluginLoader;
 pub use plugin_types::{HookConfig, PluginManifest, RegisteredHook};
 pub use popup_module::{entry_impl as popup_entry, popup_module, RunePopupEntry};
-pub use ask_module::{
-    ask_module, ask_module_with_agent, ask_module_with_context, AgentAskContext, AskContext,
-    RuneAskBatch, RuneAskBatchResponse, RuneAskError, RuneAskQuestion, RuneQuestionAnswer,
-};
 pub use reactor::{
     BoxedReactor, Reactor, ReactorContext, ReactorError, ReactorMetadata, ReactorResult,
     ReactorSessionConfig, SessionEvent, ToolCall,
