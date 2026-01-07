@@ -16,12 +16,12 @@ expression: h.render()
                                                                                 
                                                                                 
                                                                                 
-┌Select────────────────────────────────────────────────────────────────────────┐
-│> [file]   src/main.rs workspace                                              │
-│  [file]   src/lib.rs workspace                                               │
-│  [file]   Cargo.toml workspace                                               │
-│  [file]   README.md workspace                                                │
-└──────────────────────────────────────────────────────────────────────────────┘
+                                                                                
+                                                                                
+> [file] src/main.rs workspace                                                  
+  [file] src/lib.rs workspace                                                   
+  [file] Cargo.toml workspace                                                   
+  [file] README.md workspace                                                    
                                                                                 
  > @                                                                            
                                                                                 

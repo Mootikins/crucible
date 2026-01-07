@@ -15,13 +15,13 @@ expression: h.render()
                                                                                 
                                                                                 
                                                                                 
-┌Select (11/20) ↑↓─────────────────────────────────────────────────────────────┐
-│  / command1 Description for command 1                                        │
-│  / command2 Description for command 2                                        │
-│  / command3 Description for command 3                                        │
-│  / command4 Description for command 4                                        │
-│  / command5 Description for command 5                                        │
-└──────────────────────────────────────────────────────────────────────────────┘
+                                                                                
+                                                                                
+↑  command6 Description for command 6                                           
+  command7 Description for command 7                                            
+  command8 Description for command 8                                            
+  command9 Description for command 9                                            
+> command10 Description for command 10 ↓                                        
                                                                                 
  > /                                                                            
                                                                                 

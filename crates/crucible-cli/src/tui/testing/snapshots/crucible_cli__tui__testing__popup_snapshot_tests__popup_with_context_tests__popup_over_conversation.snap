@@ -14,14 +14,14 @@ expression: h.render()
                                                                                 
                                                                                 
                                                                                 
+                                                                                
+                                                                                
  > Hello                                                                        
                                                                                 
  ● Hi! How can I help?                                                          
                                                                                 
-┌Select────────────────────────────────────────────────────────────────────────┐
-│> / search Search notes                                                       │
-│  / help Show help                                                            │
-└──────────────────────────────────────────────────────────────────────────────┘
+> search Search notes                                                           
+  help Show help                                                                
                                                                                 
  > /                                                                            
                                                                                 
