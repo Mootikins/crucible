@@ -826,8 +826,7 @@ impl RatatuiRunner {
                     self.rapid_input_buffer.push(c);
                     self.last_key_time = Some(now);
                 } else {
-                    // Normal typing - insert directly and start tracking
-                    self.rapid_input_buffer.push(c);
+                    // Normal typing - insert directly, just track time (no buffer)
                     self.last_key_time = Some(now);
 
                     // Insert the character
@@ -1340,10 +1339,14 @@ impl RatatuiRunner {
                     return true;
                 } else {
                     // Single-line rapid input: insert all accumulated characters at once
-                    let state = self.view.state_mut();
-                    let cursor_pos = state.cursor_position;
-                    state.input_buffer.insert_str(cursor_pos, &normalized);
-                    state.cursor_position += normalized.len();
+                    {
+                        let state = self.view.state_mut();
+                        let cursor_pos = state.cursor_position;
+                        state.input_buffer.insert_str(cursor_pos, &normalized);
+                        state.cursor_position += normalized.len();
+                    }
+                    // Update popup after inserting (mutable borrow released by block above)
+                    self.update_popup();
                 }
             }
         }
