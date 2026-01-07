@@ -25,18 +25,11 @@ pub mod theme {
 
     // --- Input area colors ---
 
-    /// Dither base (darker, for dither background)
-    pub const DITHER_BASE: Color = Color::Rgb(30, 30, 45); // Darker blue-gray
-
-    /// Input box / prompt line background (lighter)
-    pub const INPUT_BG: Color = Color::Rgb(50, 50, 70); // Lighter blue-gray
+    /// Input box / prompt line background
+    pub const INPUT_BG: Color = Color::Rgb(50, 50, 70); // Blue-gray
 
     /// Input box foreground (text)
     pub const INPUT_FG: Color = Color::White;
-
-    /// Dither highlight - midpoint between base and prompt for subtle effect
-    /// (halfway between DITHER_BASE and INPUT_BG)
-    pub const DITHER_HIGHLIGHT: Color = Color::Rgb(40, 40, 58);
 
     // --- Message colors ---
 
@@ -69,22 +62,16 @@ pub mod colors {
     /// Dim text (status, metadata)
     pub const DIM: Color = Color::DarkGray;
 
-    /// Main background (terminal background for dither effects)
+    /// Main background
     pub const MAIN_BG: Color = theme::MAIN_BG;
 
     // --- Input box colors ---
 
-    /// Input box background (darker)
+    /// Input box background
     pub const INPUT_BG: Color = theme::INPUT_BG;
 
     /// Input text color
     pub const INPUT_FG: Color = theme::INPUT_FG;
-
-    /// Dither highlight (lighter, for raised edge effect)
-    pub const DITHER_HIGHLIGHT: Color = theme::DITHER_HIGHLIGHT;
-
-    /// Dither base (darker, for dither background)
-    pub const DITHER_BASE: Color = theme::DITHER_BASE;
 
     /// Shell passthrough (!) background - red tint
     pub const INPUT_SHELL_BG: Color = Color::Rgb(60, 30, 30); // Dark red
