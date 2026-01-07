@@ -183,6 +183,40 @@ impl DaemonClient {
         )
         .await
     }
+
+    /// Search for similar vectors (backend-agnostic VSS)
+    ///
+    /// Returns a list of (document_id, score) pairs.
+    pub async fn search_vectors(
+        &self,
+        kiln_path: &Path,
+        vector: &[f32],
+        limit: usize,
+    ) -> Result<Vec<(String, f64)>> {
+        let result = self
+            .call(
+                "search_vectors",
+                serde_json::json!({
+                    "kiln": kiln_path.to_string_lossy(),
+                    "vector": vector,
+                    "limit": limit
+                }),
+            )
+            .await?;
+
+        let results: Vec<(String, f64)> = result
+            .as_array()
+            .unwrap_or(&vec![])
+            .iter()
+            .filter_map(|item| {
+                let doc_id = item.get("document_id")?.as_str()?.to_string();
+                let score = item.get("score")?.as_f64()?;
+                Some((doc_id, score))
+            })
+            .collect();
+
+        Ok(results)
+    }
 }
 
 #[cfg(test)]
