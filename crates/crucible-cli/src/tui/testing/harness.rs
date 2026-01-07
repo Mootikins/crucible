@@ -103,7 +103,9 @@ impl Harness {
 
     /// Builder: set popup items
     ///
-    /// Uses PopupState with PopupRenderer for proper rendering
+    /// Uses PopupState with PopupRenderer for proper rendering.
+    /// Also sets the input buffer to the trigger character (/, @, or :) so that
+    /// subsequent typing preserves the popup.
     pub fn with_popup_items(mut self, kind: PopupKind, items: Vec<PopupItem>) -> Self {
         // Create a static provider with the given items
         let provider = Arc::new(StaticItemsProvider {
@@ -118,6 +120,19 @@ impl Harness {
         // Set on the view
         self.view.set_popup(Some(popup));
         self.state.has_popup = true;
+
+        // Set input buffer to trigger character so update_popup() keeps it open
+        let trigger = match kind {
+            PopupKind::Command => "/",
+            PopupKind::AgentOrFile => "@",
+            PopupKind::ReplCommand => ":",
+        };
+        self.state.input_buffer = trigger.to_string();
+        self.state.cursor_position = trigger.len();
+
+        // Also sync to view's internal state for rendering
+        self.view.state_mut().input_buffer = trigger.to_string();
+        self.view.state_mut().cursor_position = trigger.len();
 
         self
     }
@@ -165,19 +180,23 @@ impl Harness {
             match event.code {
                 KeyCode::Char('a') => {
                     self.state.cursor_position = 0;
+                    self.sync_input_to_view();
                     return;
                 }
                 KeyCode::Char('e') => {
                     self.state.cursor_position = self.state.input_buffer.len();
+                    self.sync_input_to_view();
                     return;
                 }
                 KeyCode::Char('u') => {
                     self.state.input_buffer.drain(..self.state.cursor_position);
                     self.state.cursor_position = 0;
+                    self.sync_input_to_view();
                     return;
                 }
                 KeyCode::Char('k') => {
                     self.state.input_buffer.truncate(self.state.cursor_position);
+                    self.sync_input_to_view();
                     return;
                 }
                 KeyCode::Char('w') => {
@@ -188,6 +207,7 @@ impl Harness {
                         .input_buffer
                         .drain(new_pos..self.state.cursor_position);
                     self.state.cursor_position = new_pos;
+                    self.sync_input_to_view();
                     return;
                 }
                 _ => {}
@@ -205,6 +225,7 @@ impl Harness {
                     self.state.has_popup = false;
                     self.state.input_buffer.clear();
                     self.state.cursor_position = 0;
+                    self.sync_input_to_view();
                     return;
                 }
                 KeyCode::Up => {
@@ -225,8 +246,10 @@ impl Harness {
                             let token = item.token();
                             self.view.set_popup(None);
                             self.state.has_popup = false;
+                            // Token already includes trailing space for most items
                             self.state.input_buffer = token;
                             self.state.cursor_position = self.state.input_buffer.len();
+                            self.sync_input_to_view();
                         }
                     }
                     return;
@@ -243,6 +266,7 @@ impl Harness {
                     .input_buffer
                     .insert(self.state.cursor_position, c);
                 self.state.cursor_position += c.len_utf8();
+                self.sync_input_to_view();
                 // Update popup based on input prefix (matches runner behavior)
                 self.update_popup();
             }
@@ -255,6 +279,7 @@ impl Harness {
                         .unwrap_or(0);
                     self.state.input_buffer.remove(prev_char_boundary);
                     self.state.cursor_position = prev_char_boundary;
+                    self.sync_input_to_view();
                     // Update popup after deletion (matches runner behavior)
                     self.update_popup();
                 }
@@ -267,6 +292,7 @@ impl Harness {
                         .last()
                         .map(|(i, _)| i)
                         .unwrap_or(0);
+                    self.sync_input_to_view();
                 }
             }
             KeyCode::Right => {
@@ -277,10 +303,17 @@ impl Harness {
                         .nth(1)
                         .map(|(i, _)| self.state.cursor_position + i)
                         .unwrap_or(self.state.input_buffer.len());
+                    self.sync_input_to_view();
                 }
             }
             _ => {}
         }
+    }
+
+    /// Sync input buffer and cursor from harness state to view state
+    fn sync_input_to_view(&mut self) {
+        self.view.state_mut().input_buffer = self.state.input_buffer.clone();
+        self.view.state_mut().cursor_position = self.state.cursor_position;
     }
 
     /// Update popup based on current input (matches TuiRunner::update_popup behavior)
