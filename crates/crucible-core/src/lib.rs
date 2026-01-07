@@ -8,6 +8,7 @@ pub mod enrichment;
 pub mod events;
 pub mod hashing;
 pub mod interaction;
+pub mod interaction_registry;
 pub mod merkle;
 pub mod note;
 pub mod parser;
