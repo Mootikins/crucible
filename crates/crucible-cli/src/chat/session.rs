@@ -381,7 +381,8 @@ impl ChatSession {
         // Wire up event ring and interaction registry for interaction completion
         runner
             .with_event_ring(ring)
-            .with_interaction_registry(interaction_registry);
+            .with_interaction_registry(interaction_registry)
+            .with_kiln_context(self.core.clone());
 
         // Set up session logging to persist chat events
         runner.with_session_logger(kiln_path);

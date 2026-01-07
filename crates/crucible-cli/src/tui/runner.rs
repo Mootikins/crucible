@@ -244,6 +244,8 @@ pub struct RatatuiRunner {
     event_ring: Option<Arc<EventRing<SessionEvent>>>,
     /// Interaction registry for request-response correlation
     interaction_registry: Option<Arc<Mutex<InteractionRegistry>>>,
+    /// Kiln context for search operations
+    kiln_context: Option<Arc<crate::core_facade::KilnContext>>,
 }
 
 impl RatatuiRunner {
@@ -290,6 +292,7 @@ impl RatatuiRunner {
             last_key_time: None,
             event_ring: None,
             interaction_registry: None,
+            kiln_context: None,
         })
     }
 
@@ -325,6 +328,17 @@ impl RatatuiRunner {
         registry: Arc<Mutex<InteractionRegistry>>,
     ) -> &mut Self {
         self.interaction_registry = Some(registry);
+        self
+    }
+
+    /// Set the kiln context for search operations.
+    ///
+    /// When set, `/search` command performs semantic search directly.
+    pub fn with_kiln_context(
+        &mut self,
+        ctx: Arc<crate::core_facade::KilnContext>,
+    ) -> &mut Self {
+        self.kiln_context = Some(ctx);
         self
     }
 
@@ -1074,14 +1088,55 @@ impl RatatuiRunner {
                                     let hint =
                                         descriptor.input_hint.as_deref().unwrap_or("<query>");
                                     self.view.set_status_text(&format!(
-                                        "Usage: /search {} — or just type your search in chat",
+                                        "Usage: /search {}",
                                         hint
                                     ));
+                                } else if let Some(ctx) = &self.kiln_context {
+                                    // Perform semantic search directly
+                                    self.view.set_status_text(&format!("Searching: {}", args));
+                                    match ctx.semantic_search(args, 10).await {
+                                        Ok(results) => {
+                                            if results.is_empty() {
+                                                self.view.echo_message(&format!(
+                                                    "No results found for '{}'",
+                                                    args
+                                                ));
+                                            } else {
+                                                // Format results
+                                                let mut output = format!(
+                                                    "**Search results for '{}':**\n\n",
+                                                    args
+                                                );
+                                                for (i, result) in results.iter().enumerate() {
+                                                    output.push_str(&format!(
+                                                        "{}. **{}** ({:.0}%)\n   {}\n\n",
+                                                        i + 1,
+                                                        result.title,
+                                                        result.similarity * 100.0,
+                                                        result.snippet.lines().next().unwrap_or("")
+                                                    ));
+                                                }
+                                                self.view.echo_message(&output);
+                                            }
+                                            self.view.set_status_text(&format!(
+                                                "Found {} results",
+                                                results.len()
+                                            ));
+                                        }
+                                        Err(e) => {
+                                            self.view.echo_message(&format!(
+                                                "Search failed: {}",
+                                                e
+                                            ));
+                                            self.view.set_status_text("Search failed");
+                                        }
+                                    }
                                 } else {
+                                    // Fallback: inject into input for agent
                                     let search_prompt = format!("Search my notes for: {}", args);
                                     self.view.set_input(&search_prompt);
                                     self.view.set_cursor_position(search_prompt.len());
-                                    self.view.set_status_text("Press Enter to search");
+                                    self.view.set_status_text("Press Enter to search via agent");
                                     return Ok(false);
                                 }
                             }
