@@ -2300,6 +2300,17 @@ impl RatatuiRunner {
 
                 DialogState::select(&panel.header, choices)
             }
+            InteractionRequest::AskBatch(batch) => {
+                // TODO: Implement full AskBatchDialog widget (Task 5)
+                // For now, fall back to basic select dialog for first question
+                if let Some(q) = batch.questions.first() {
+                    let mut choices = q.choices.clone();
+                    choices.push("[Other...]".to_string());
+                    DialogState::select(&q.question, choices)
+                } else {
+                    DialogState::info("AskBatch", "No questions in batch")
+                }
+            }
         };
 
         // Store the request_id for response correlation
