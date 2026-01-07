@@ -97,8 +97,8 @@ use anyhow::Result;
 use crossterm::{
     cursor,
     event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, MouseButton, MouseEvent,
-        MouseEventKind,
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
+        EnableMouseCapture, Event, MouseButton, MouseEvent, MouseEventKind,
     },
     execute,
     terminal::{
@@ -111,6 +111,55 @@ use crucible_core::traits::chat::AgentHandle;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
 use std::time::Duration;
+
+/// Content pasted into the input area (multi-line pastes are stored separately).
+///
+/// Multi-line pastes are accumulated rather than inserted directly,
+/// showing a summary in the input area until the message is sent.
+#[derive(Debug, Clone)]
+pub enum PastedContent {
+    /// Multi-line text paste
+    Text {
+        /// The full pasted content
+        content: String,
+        /// Number of lines
+        line_count: usize,
+        /// Number of characters
+        char_count: usize,
+    },
+    // Future: Image { data: Vec<u8>, mime: String }
+}
+
+impl PastedContent {
+    /// Create a new text paste from a string
+    pub fn text(content: String) -> Self {
+        let line_count = content.lines().count().max(1);
+        let char_count = content.chars().count();
+        Self::Text {
+            content,
+            line_count,
+            char_count,
+        }
+    }
+
+    /// Get the content as a string
+    pub fn content(&self) -> &str {
+        match self {
+            Self::Text { content, .. } => content,
+        }
+    }
+
+    /// Format a summary of this paste for display
+    pub fn summary(&self) -> String {
+        match self {
+            Self::Text {
+                line_count,
+                char_count,
+                ..
+            } => format!("[{} lines, {} chars]", line_count, char_count),
+        }
+    }
+}
 
 /// TUI runner with full ratatui control and new conversation styling.
 ///
@@ -173,6 +222,8 @@ pub struct RatatuiRunner {
     session_logger: Option<std::sync::Arc<SessionLogger>>,
     /// Help documentation index (lazy-initialized on first :help command)
     docs_index: Option<crate::tui::help::DocsIndex>,
+    /// Pending multi-line pastes (accumulated, sent on Enter)
+    pending_pastes: Vec<PastedContent>,
 }
 
 impl RatatuiRunner {
@@ -213,6 +264,7 @@ impl RatatuiRunner {
             pending_popup: None,
             session_logger: None,
             docs_index: None,
+            pending_pastes: Vec::new(),
         })
     }
 
@@ -258,6 +310,14 @@ impl RatatuiRunner {
         let mut last_seen_seq = 0u64;
 
         loop {
+            // 0. Update status with paste indicator if applicable
+            if let Some(summary) = self.pending_pastes_summary() {
+                // Only update if not streaming (streaming has its own status)
+                if !self.is_streaming {
+                    self.view.set_status_text(&format!("Pending: {}", summary));
+                }
+            }
+
             // 1. Render
             {
                 let view = &self.view;
@@ -284,6 +344,9 @@ impl RatatuiRunner {
                     }
                     Event::Resize(width, height) => {
                         self.view.handle_resize(width, height)?;
+                    }
+                    Event::Paste(text) => {
+                        self.handle_paste_event(&text);
                     }
                     _ => {}
                 }
@@ -580,9 +643,32 @@ impl RatatuiRunner {
                     self.popup = None;
                 }
             }
-            InputAction::SendMessage(msg) => {
+            InputAction::SendMessage(typed_msg) => {
                 // Reset Ctrl+C tracking
                 self.ctrl_c_count = 0;
+
+                // Build final message: pending pastes + typed content
+                // Note: For shell (!) and REPL (:) commands, we use typed_msg only
+                // since pastes should be sent as chat content, not command args
+                let msg = if !self.pending_pastes.is_empty()
+                    && !typed_msg.starts_with('!')
+                    && !typed_msg.starts_with(':')
+                {
+                    let mut full_msg = String::new();
+                    for paste in self.pending_pastes.drain(..) {
+                        full_msg.push_str(paste.content());
+                        if !paste.content().ends_with('\n') {
+                            full_msg.push('\n');
+                        }
+                    }
+                    full_msg.push_str(&typed_msg);
+                    full_msg
+                } else {
+                    // Clear any pending pastes if we're running a command
+                    // (they get lost, but that's intentional for ! and : commands)
+                    self.pending_pastes.clear();
+                    typed_msg
+                };
 
                 // Handle shell passthrough (!) - execute immediately, don't send to agent
                 if msg.starts_with('!') {
@@ -957,6 +1043,8 @@ impl RatatuiRunner {
                     self.view.set_cursor_position(0);
                     self.update_popup();
                 }
+                // Also clear any pending pastes
+                self.clear_pending_pastes();
             }
             InputAction::DeleteToLineEnd => {
                 let input = self.view.input().to_string();
@@ -1101,6 +1189,86 @@ impl RatatuiRunner {
             }
             _ => {}
         }
+    }
+
+    /// Handle paste events for multi-line paste detection.
+    ///
+    /// Single-line pastes are inserted directly into the input buffer.
+    /// Multi-line pastes are stored in `pending_pastes` and a summary is shown.
+    fn handle_paste_event(&mut self, text: &str) {
+        if text.contains('\n') {
+            // Multi-line paste: store for later, show summary
+            let paste = PastedContent::text(text.to_string());
+            self.view.set_status_text(&format!("Pasted: {}", paste.summary()));
+            self.pending_pastes.push(paste);
+        } else {
+            // Single-line paste: insert directly at cursor
+            let state = self.view.state_mut();
+            let cursor_pos = state.cursor_position;
+            state.input_buffer.insert_str(cursor_pos, text);
+            state.cursor_position += text.len();
+        }
+    }
+
+    /// Get a formatted summary of all pending pastes.
+    fn pending_pastes_summary(&self) -> Option<String> {
+        if self.pending_pastes.is_empty() {
+            return None;
+        }
+
+        let total_lines: usize = self
+            .pending_pastes
+            .iter()
+            .map(|p| match p {
+                PastedContent::Text { line_count, .. } => *line_count,
+            })
+            .sum();
+
+        let total_chars: usize = self
+            .pending_pastes
+            .iter()
+            .map(|p| match p {
+                PastedContent::Text { char_count, .. } => *char_count,
+            })
+            .sum();
+
+        if self.pending_pastes.len() == 1 {
+            Some(self.pending_pastes[0].summary())
+        } else {
+            Some(format!(
+                "[{} pastes: {} lines, {} chars]",
+                self.pending_pastes.len(),
+                total_lines,
+                total_chars
+            ))
+        }
+    }
+
+    /// Clear all pending pastes (called on Ctrl+U or Esc).
+    fn clear_pending_pastes(&mut self) {
+        if !self.pending_pastes.is_empty() {
+            self.pending_pastes.clear();
+            self.view.set_status_text("Cleared pending pastes");
+        }
+    }
+
+    /// Concatenate pending pastes with input buffer for sending.
+    fn build_message_with_pastes(&mut self) -> String {
+        let mut message = String::new();
+
+        // Add all pending pastes first
+        for paste in self.pending_pastes.drain(..) {
+            message.push_str(paste.content());
+            if !paste.content().ends_with('\n') {
+                message.push('\n');
+            }
+        }
+
+        // Add the typed content
+        let typed = std::mem::take(&mut self.view.state_mut().input_buffer);
+        message.push_str(&typed);
+
+        message
     }
 
     /// Convert mouse screen coordinates to content coordinates.
@@ -1438,13 +1606,20 @@ impl RatatuiRunner {
         Ok(())
     }
 
-    /// Execute a shell command via bash (respects user's aliases/functions)
+    /// Drop to interactive shell with command shown
+    ///
+    /// Instead of running the command directly, this spawns the user's shell
+    /// and prints the command for them to run. This allows for:
+    /// - Editing the command before running
+    /// - Running sudo commands (password prompt works)
+    /// - Chaining additional commands
+    /// - Full interactive shell access
     fn execute_shell_command(&mut self, cmd: &str) -> Result<()> {
         use std::process::Command;
 
-        debug!(cmd = %cmd, "Executing shell command");
+        debug!(cmd = %cmd, "Dropping to shell");
 
-        // Temporarily exit alternate screen so user can see shell output
+        // Exit TUI
         execute!(
             std::io::stdout(),
             DisableMouseCapture,
@@ -1453,12 +1628,17 @@ impl RatatuiRunner {
         )?;
         crossterm::terminal::disable_raw_mode()?;
 
-        // Use bash -ic to get interactive shell with user's aliases/functions
-        let status = Command::new("bash").args(["-ic", cmd]).status();
+        // Print command and spawn user's shell
+        println!("$ {}", cmd);
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+        let _ = Command::new(&shell).arg("-l").status();
 
-        // Re-enter TUI mode
+        // Wait for explicit return
+        println!("\nPress Enter to return...");
+        let _ = std::io::stdin().read_line(&mut String::new());
+
+        // Re-enter TUI
         crossterm::terminal::enable_raw_mode()?;
-        // Restore mouse capture to previous state
         if self.mouse_capture_enabled {
             execute!(
                 std::io::stdout(),
@@ -1474,24 +1654,7 @@ impl RatatuiRunner {
             )?;
         }
 
-        match status {
-            Ok(exit_status) => {
-                if exit_status.success() {
-                    self.view.set_status_text(&format!("!{} [ok]", cmd));
-                } else {
-                    let code = exit_status.code().unwrap_or(-1);
-                    self.view
-                        .set_status_text(&format!("!{} [exit {}]", cmd, code));
-                }
-            }
-            Err(e) => {
-                self.view
-                    .state_mut()
-                    .notifications
-                    .push_error(format!("Failed to execute '{}': {}", cmd, e));
-            }
-        }
-
+        self.view.set_status_text("Shell session ended");
         Ok(())
     }
 
@@ -1716,7 +1879,12 @@ impl RatatuiRunner {
         // that extracts actual text content, not terminal cells
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+        execute!(
+            stdout,
+            EnterAlternateScreen,
+            EnableMouseCapture,
+            EnableBracketedPaste
+        )?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
         terminal.clear()?;
@@ -1788,6 +1956,7 @@ impl RatatuiRunner {
         execute!(
             terminal.backend_mut(),
             DisableMouseCapture,
+            DisableBracketedPaste,
             LeaveAlternateScreen,
             cursor::Show
         )?;
@@ -2296,6 +2465,178 @@ mod tests {
             // Clear it
             runner.view.set_popup(None);
             assert!(!runner.view.has_popup());
+        }
+    }
+
+    // =============================================================================
+    // PastedContent Tests
+    // =============================================================================
+
+    mod paste_tests {
+        use super::*;
+
+        #[test]
+        fn test_pasted_content_text_single_line() {
+            let paste = PastedContent::text("hello world".to_string());
+            match paste {
+                PastedContent::Text {
+                    content,
+                    line_count,
+                    char_count,
+                } => {
+                    assert_eq!(content, "hello world");
+                    assert_eq!(line_count, 1);
+                    assert_eq!(char_count, 11);
+                }
+            }
+        }
+
+        #[test]
+        fn test_pasted_content_text_multi_line() {
+            let paste = PastedContent::text("line one\nline two\nline three".to_string());
+            match paste {
+                PastedContent::Text {
+                    content,
+                    line_count,
+                    char_count,
+                } => {
+                    assert_eq!(content, "line one\nline two\nline three");
+                    assert_eq!(line_count, 3);
+                    assert_eq!(char_count, 28);
+                }
+            }
+        }
+
+        #[test]
+        fn test_pasted_content_content_accessor() {
+            let paste = PastedContent::text("test content".to_string());
+            assert_eq!(paste.content(), "test content");
+        }
+
+        #[test]
+        fn test_pasted_content_summary_single() {
+            let paste = PastedContent::text("line one\nline two".to_string());
+            assert_eq!(paste.summary(), "[2 lines, 17 chars]");
+        }
+
+        #[test]
+        fn test_pasted_content_summary_many_lines() {
+            let content = (0..10).map(|i| format!("line {}", i)).collect::<Vec<_>>().join("\n");
+            let paste = PastedContent::text(content);
+            // 10 lines
+            assert!(paste.summary().contains("10 lines"));
+        }
+
+        #[test]
+        fn test_runner_pending_pastes_initially_empty() {
+            let runner =
+                RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+            assert!(runner.pending_pastes.is_empty());
+        }
+
+        #[test]
+        fn test_runner_handle_paste_single_line_inserts() {
+            let mut runner =
+                RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+            // Single-line paste should insert directly
+            runner.handle_paste_event("hello");
+            assert!(runner.pending_pastes.is_empty());
+            assert_eq!(runner.view.input(), "hello");
+        }
+
+        #[test]
+        fn test_runner_handle_paste_multi_line_stores() {
+            let mut runner =
+                RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+            // Multi-line paste should be stored
+            runner.handle_paste_event("line one\nline two");
+            assert_eq!(runner.pending_pastes.len(), 1);
+            assert!(runner.view.input().is_empty()); // Not inserted into input
+        }
+
+        #[test]
+        fn test_runner_handle_paste_multiple_pastes() {
+            let mut runner =
+                RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+            // Multiple multi-line pastes accumulate
+            runner.handle_paste_event("first\npaste");
+            runner.handle_paste_event("second\npaste");
+            assert_eq!(runner.pending_pastes.len(), 2);
+        }
+
+        #[test]
+        fn test_runner_pending_pastes_summary_single() {
+            let mut runner =
+                RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+            runner.pending_pastes.push(PastedContent::text("a\nb".to_string()));
+            let summary = runner.pending_pastes_summary();
+            assert!(summary.is_some());
+            assert!(summary.unwrap().contains("2 lines"));
+        }
+
+        #[test]
+        fn test_runner_pending_pastes_summary_multiple() {
+            let mut runner =
+                RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+            runner.pending_pastes.push(PastedContent::text("a\nb".to_string()));
+            runner.pending_pastes.push(PastedContent::text("c\nd\ne".to_string()));
+            let summary = runner.pending_pastes_summary();
+            assert!(summary.is_some());
+            let s = summary.unwrap();
+            assert!(s.contains("2 pastes"));
+            assert!(s.contains("5 lines")); // 2 + 3
+        }
+
+        #[test]
+        fn test_runner_clear_pending_pastes() {
+            let mut runner =
+                RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+            runner.pending_pastes.push(PastedContent::text("a\nb".to_string()));
+            assert!(!runner.pending_pastes.is_empty());
+
+            runner.clear_pending_pastes();
+            assert!(runner.pending_pastes.is_empty());
+        }
+
+        #[test]
+        fn test_runner_build_message_with_pastes() {
+            let mut runner =
+                RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+            // Add a paste
+            runner.pending_pastes.push(PastedContent::text("pasted content".to_string()));
+
+            // Set typed input
+            runner.view.set_input("typed content");
+
+            // Build message
+            let msg = runner.build_message_with_pastes();
+
+            // Should have paste content followed by typed content
+            assert!(msg.starts_with("pasted content"));
+            assert!(msg.ends_with("typed content"));
+            assert!(msg.contains('\n')); // Newline separating paste from typed
+
+            // Pastes should be drained
+            assert!(runner.pending_pastes.is_empty());
+        }
+
+        #[test]
+        fn test_runner_build_message_without_pastes() {
+            let mut runner =
+                RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+            // Just typed input, no pastes
+            runner.view.set_input("only typed");
+
+            let msg = runner.build_message_with_pastes();
+            assert_eq!(msg, "only typed");
         }
     }
 }

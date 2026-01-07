@@ -1,0 +1,10 @@
+---
+source: crates/crucible-cli/src/tui/components/input_box.rs
+expression: terminal.backend()
+---
+"                                                                                "
+" > one                                                                          "
+"   two                                                                          "
+"                                                                                "
+"                                                                                "
+"                                                                                "
