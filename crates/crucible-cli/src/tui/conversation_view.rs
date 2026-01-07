@@ -71,11 +71,20 @@ pub trait ConversationView {
     /// Record an error to message history
     fn echo_error(&mut self, message: &str);
 
-    /// Scroll control
+    /// Scroll control (vertical)
     fn scroll_up(&mut self, lines: usize);
     fn scroll_down(&mut self, lines: usize);
     fn scroll_to_top(&mut self);
     fn scroll_to_bottom(&mut self);
+
+    /// Scroll control (horizontal) - for wide content like tables
+    fn scroll_left(&mut self, cols: usize);
+    fn scroll_right(&mut self, cols: usize);
+    fn scroll_to_left_edge(&mut self);
+    fn scroll_to_right_edge(&mut self);
+
+    /// Check if horizontal scrolling is available (content wider than viewport)
+    fn has_horizontal_overflow(&self) -> bool;
 }
 
 // =============================================================================
@@ -108,6 +117,13 @@ pub struct ViewState {
     pub reasoning_content: String,
     /// Animation frame for reasoning ellipsis (cycles 0-3)
     pub reasoning_anim_frame: u8,
+    /// Index of the conversation item currently focused for horizontal scroll
+    /// None means no wide content or auto-focus most recent
+    pub focused_wide_item: Option<usize>,
+    /// Horizontal scroll offset for the focused wide item
+    pub horizontal_scroll_offset: usize,
+    /// Width of the focused wide item's content (for scroll bounds)
+    pub focused_item_width: usize,
 }
 
 impl ViewState {
@@ -129,6 +145,9 @@ impl ViewState {
             show_reasoning: false,
             reasoning_content: String::new(),
             reasoning_anim_frame: 0,
+            focused_wide_item: None,
+            horizontal_scroll_offset: 0,
+            focused_item_width: 0,
         }
     }
 
@@ -275,7 +294,8 @@ impl RatatuiView {
         let conv_area = chunks[idx];
         let conv_widget = SessionHistoryWidget::new(&self.state.conversation)
             .scroll_offset(self.state.scroll_offset)
-            .viewport_height(conv_area.height);
+            .viewport_height(conv_area.height)
+            .horizontal_offset(self.state.horizontal_scroll_offset);
         frame.render_widget(conv_widget, conv_area);
         idx += 1;
 
@@ -448,6 +468,55 @@ impl RatatuiView {
             .iter()
             .map(|item| render_item_to_lines(item, content_width).len())
             .sum()
+    }
+
+    /// Update max_content_width based on current content
+    ///
+    /// Should be called after content changes to enable horizontal scrolling
+    /// for wide content (tables, code blocks).
+    /// Detect wide items and auto-focus the most recent one for horizontal scrolling.
+    ///
+    /// Scans conversation items to find those wider than viewport.
+    /// Auto-focuses the most recent (last) wide item for shift+scroll.
+    pub fn update_wide_content_focus(&mut self) {
+        let viewport_width = self.state.width as usize;
+        let content_width = viewport_width.saturating_sub(4); // Account for margins
+
+        let items = self.state.conversation.items();
+        let mut last_wide_item: Option<(usize, usize)> = None; // (index, width)
+
+        for (idx, item) in items.iter().enumerate() {
+            let lines = render_item_to_lines(item, content_width);
+            let item_max_width: usize = lines
+                .iter()
+                .map(|line| {
+                    line.spans
+                        .iter()
+                        .map(|span| span.content.chars().count())
+                        .sum()
+                })
+                .max()
+                .unwrap_or(0);
+
+            // Check if this item is wider than viewport
+            if item_max_width > viewport_width {
+                last_wide_item = Some((idx, item_max_width));
+            }
+        }
+
+        // Update focus to most recent wide item
+        if let Some((idx, width)) = last_wide_item {
+            // If focus changed, reset scroll offset
+            if self.state.focused_wide_item != Some(idx) {
+                self.state.horizontal_scroll_offset = 0;
+            }
+            self.state.focused_wide_item = Some(idx);
+            self.state.focused_item_width = width;
+        } else {
+            self.state.focused_wide_item = None;
+            self.state.focused_item_width = 0;
+            self.state.horizontal_scroll_offset = 0;
+        }
     }
 
     /// Calculate the actual conversation viewport height based on current state.
@@ -641,12 +710,14 @@ impl RatatuiView {
 impl ConversationView for RatatuiView {
     fn push_user_message(&mut self, content: &str) -> Result<()> {
         self.state.conversation.push_user_message(content);
+        self.update_wide_content_focus();
         self.scroll_to_bottom();
         Ok(())
     }
 
     fn push_assistant_message(&mut self, content: &str) -> Result<()> {
         self.state.conversation.push_assistant_message(content);
+        self.update_wide_content_focus();
         // Only auto-scroll if user was at bottom (allows reading while assistant responds)
         if self.state.at_bottom {
             self.scroll_to_bottom();
@@ -773,6 +844,44 @@ impl ConversationView for RatatuiView {
     fn scroll_to_bottom(&mut self) {
         self.state.scroll_offset = 0;
         self.state.at_bottom = true;
+    }
+
+    fn scroll_left(&mut self, cols: usize) {
+        if self.state.focused_wide_item.is_some() {
+            self.state.horizontal_scroll_offset =
+                self.state.horizontal_scroll_offset.saturating_sub(cols);
+        }
+    }
+
+    fn scroll_right(&mut self, cols: usize) {
+        if self.state.focused_wide_item.is_some() {
+            let viewport_width = self.state.width as usize;
+            let max_offset = self
+                .state
+                .focused_item_width
+                .saturating_sub(viewport_width);
+            self.state.horizontal_scroll_offset =
+                (self.state.horizontal_scroll_offset + cols).min(max_offset);
+        }
+    }
+
+    fn scroll_to_left_edge(&mut self) {
+        self.state.horizontal_scroll_offset = 0;
+    }
+
+    fn scroll_to_right_edge(&mut self) {
+        if self.state.focused_wide_item.is_some() {
+            let viewport_width = self.state.width as usize;
+            self.state.horizontal_scroll_offset = self
+                .state
+                .focused_item_width
+                .saturating_sub(viewport_width);
+        }
+    }
+
+    fn has_horizontal_overflow(&self) -> bool {
+        self.state.focused_wide_item.is_some()
+            && self.state.focused_item_width > self.state.width as usize
     }
 }
 

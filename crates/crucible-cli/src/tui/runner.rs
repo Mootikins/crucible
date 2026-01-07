@@ -1455,15 +1455,26 @@ impl RatatuiRunner {
     /// Handle mouse events for scrolling and text selection.
     fn handle_mouse_event(&mut self, mouse: &MouseEvent) {
         use crate::tui::selection::SelectionPoint;
+        use crossterm::event::KeyModifiers;
 
         match mouse.kind {
             MouseEventKind::ScrollUp => {
-                self.view.scroll_up(3);
+                // Shift+scroll = horizontal scroll left
+                if mouse.modifiers.contains(KeyModifiers::SHIFT) {
+                    self.view.scroll_left(5);
+                } else {
+                    self.view.scroll_up(3);
+                }
                 // Invalidate selection cache on scroll
                 self.selection_cache.invalidate();
             }
             MouseEventKind::ScrollDown => {
-                self.view.scroll_down(3);
+                // Shift+scroll = horizontal scroll right
+                if mouse.modifiers.contains(KeyModifiers::SHIFT) {
+                    self.view.scroll_right(5);
+                } else {
+                    self.view.scroll_down(3);
+                }
                 // Invalidate selection cache on scroll
                 self.selection_cache.invalidate();
             }
