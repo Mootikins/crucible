@@ -208,12 +208,12 @@ impl DaemonClient {
 
     /// List notes in a kiln (backend-agnostic)
     ///
-    /// Returns a list of (name, path, title, tags) tuples.
+    /// Returns a list of (name, path, title, tags, updated_at) tuples.
     pub async fn list_notes(
         &self,
         kiln_path: &Path,
         path_filter: Option<&str>,
-    ) -> Result<Vec<(String, String, Option<String>, Vec<String>)>> {
+    ) -> Result<Vec<(String, String, Option<String>, Vec<String>, Option<String>)>> {
         let mut params = serde_json::json!({
             "kiln": kiln_path.to_string_lossy()
         });
@@ -240,7 +240,11 @@ impl DaemonClient {
                             .collect()
                     })
                     .unwrap_or_default();
-                Some((name, path, title, tags))
+                let updated_at = item
+                    .get("updated_at")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                Some((name, path, title, tags, updated_at))
             })
             .collect();
 

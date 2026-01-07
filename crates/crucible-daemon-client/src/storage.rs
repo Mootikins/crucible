@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use crucible_core::database::DocumentId;
 use crucible_core::parser::ParsedNote;
 use crucible_core::traits::{KnowledgeRepository, NoteInfo, StorageClient};
@@ -142,13 +143,17 @@ impl KnowledgeRepository for DaemonStorageClient {
 
         Ok(results
             .into_iter()
-            .map(|(name, path, title, tags)| NoteInfo {
+            .map(|(name, path, title, tags, updated_at)| NoteInfo {
                 name,
                 path,
                 title,
                 tags,
                 created_at: None,
-                updated_at: None,
+                updated_at: updated_at.and_then(|s| {
+                    DateTime::parse_from_rfc3339(&s)
+                        .ok()
+                        .map(|dt| dt.with_timezone(&Utc))
+                }),
             })
             .collect())
     }
