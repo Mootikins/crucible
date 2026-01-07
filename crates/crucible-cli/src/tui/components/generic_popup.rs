@@ -74,14 +74,8 @@ impl PopupItemTrait for LegacyPopupItem {
     }
 
     fn icon(&self) -> Option<char> {
-        Some(match &self.inner {
-            PopupItem::Command { .. } => '/',
-            PopupItem::Agent { .. } => '@',
-            PopupItem::File { .. } => ' ',
-            PopupItem::Note { .. } => ' ',
-            PopupItem::Skill { .. } => ' ',
-            PopupItem::ReplCommand { .. } => ':',
-        })
+        // Don't show prefix icons - the trigger char already indicates type
+        None
     }
 
     fn is_enabled(&self) -> bool {
@@ -131,8 +125,9 @@ impl PopupState {
         // Kind labels are only needed for AgentOrFile (@) which mixes agents and files
         // For single-type popups, the trigger char already indicates type
         let show_kinds = matches!(kind, PopupKind::AgentOrFile);
+        // max_visible must match RatatuiView::MAX_POPUP_ITEMS for correct scrolling
         let config = PopupConfig::default()
-            .max_visible(10)
+            .max_visible(5)
             .filterable(true)
             .show_kinds(show_kinds);
 
@@ -686,10 +681,10 @@ mod tests {
             "Command popup should not show [cmd] label. Content: {}",
             content
         );
-        // But should still show the command (icon and name rendered separately)
+        // Should show the command name (no prefix icon now)
         assert!(
-            content.contains("/ help") || content.contains("/help"),
-            "Command popup should show command name (as '/ help' or '/help'). Content: {}",
+            content.contains("help"),
+            "Command popup should show command name. Content: {}",
             content
         );
     }

@@ -7,6 +7,8 @@ expression: h.render()
                                                                                 
                                                                                 
                                                                                 
+                                                                                
+                                                                                
  > What is Crucible?                                                            
                                                                                 
  ● Crucible is a knowledge management system that combines wikilinks with AI.   
@@ -15,13 +17,11 @@ expression: h.render()
                                                                                 
  ● Use the /search command or @ to reference files.                             
                                                                                 
-┌Select────────────────────────────────────────────────────────────────────────┐
-│> / search Search notes semantically                                          │
-│  / new Start new session                                                     │
-│  / clear Clear conversation context                                          │
-│  / help Show available commands                                              │
-│  / mode Switch session mode                                                  │
-└──────────────────────────────────────────────────────────────────────────────┘
+> search Search notes semantically                                              
+  new Start new session                                                         
+  clear Clear conversation context                                              
+  help Show available commands                                                  
+  mode Switch session mode ↓                                                    
                                                                                 
  > /                                                                            
                                                                                 
