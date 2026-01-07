@@ -224,6 +224,10 @@ pub struct RatatuiRunner {
     docs_index: Option<crate::tui::help::DocsIndex>,
     /// Pending multi-line pastes (accumulated, sent on Enter)
     pending_pastes: Vec<PastedContent>,
+    /// Buffer for rapid key input (timing-based paste detection)
+    rapid_input_buffer: String,
+    /// Timestamp of last key input (for rapid input detection)
+    last_key_time: Option<std::time::Instant>,
 }
 
 impl RatatuiRunner {
@@ -265,6 +269,8 @@ impl RatatuiRunner {
             session_logger: None,
             docs_index: None,
             pending_pastes: Vec::new(),
+            rapid_input_buffer: String::new(),
+            last_key_time: None,
         })
     }
 
@@ -346,10 +352,14 @@ impl RatatuiRunner {
                         self.view.handle_resize(width, height)?;
                     }
                     Event::Paste(text) => {
+                        tracing::debug!(len = text.len(), has_newlines = text.contains('\n'), "Event::Paste received");
                         self.handle_paste_event(&text);
                     }
                     _ => {}
                 }
+            } else {
+                // No event - check if rapid input buffer should be flushed
+                self.flush_rapid_input_if_needed();
             }
 
             // 3. Sync popup state to view for rendering
@@ -644,8 +654,30 @@ impl RatatuiRunner {
                 }
             }
             InputAction::SendMessage(typed_msg) => {
+                // Check if we're in the middle of rapid input (timing-based paste detection)
+                // If Enter comes during rapid input, treat it as a newline in the paste
+                if let Some(last_time) = self.last_key_time {
+                    let elapsed_ms =
+                        std::time::Instant::now().duration_since(last_time).as_millis() as u64;
+                    if elapsed_ms <= Self::RAPID_INPUT_THRESHOLD_MS
+                        && !self.rapid_input_buffer.is_empty()
+                    {
+                        // Still in rapid input - record newline and don't send yet
+                        self.rapid_input_buffer.push('\n');
+                        self.last_key_time = Some(std::time::Instant::now());
+                        tracing::debug!(
+                            buffer_len = self.rapid_input_buffer.len(),
+                            "Enter during rapid input - treating as newline"
+                        );
+                        return Ok(false);
+                    }
+                }
+
                 // Reset Ctrl+C tracking
                 self.ctrl_c_count = 0;
+
+                // Clear rapid input buffer (we're sending, not accumulating)
+                self.clear_rapid_input();
 
                 // Build final message: pending pastes + typed content
                 // Note: For shell (!) and REPL (:) commands, we use typed_msg only
@@ -772,6 +804,11 @@ impl RatatuiRunner {
                 self.streaming_rx = Some(rx);
             }
             InputAction::InsertChar(c) => {
+                // Record for rapid input detection (timing-based paste fallback)
+                self.record_rapid_input(c);
+
+                // Also insert normally - if this turns out to be a paste,
+                // the buffer will be cleared and replaced when we flush
                 let mut input = self.view.input().to_string();
                 let pos = self.view.cursor_position();
                 input.insert(pos, c);
@@ -1191,23 +1228,95 @@ impl RatatuiRunner {
         }
     }
 
+    /// Threshold for considering rapid key input as a paste (50ms)
+    const RAPID_INPUT_THRESHOLD_MS: u64 = 50;
+
     /// Handle paste events for multi-line paste detection.
     ///
     /// Single-line pastes are inserted directly into the input buffer.
     /// Multi-line pastes are stored in `pending_pastes` and a summary is shown.
     fn handle_paste_event(&mut self, text: &str) {
-        if text.contains('\n') {
+        // Normalize line endings: \r\n -> \n, \r -> \n
+        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+
+        if normalized.contains('\n') {
             // Multi-line paste: store for later, show summary
-            let paste = PastedContent::text(text.to_string());
+            let paste = PastedContent::text(normalized);
             self.view.set_status_text(&format!("Pasted: {}", paste.summary()));
             self.pending_pastes.push(paste);
         } else {
             // Single-line paste: insert directly at cursor
             let state = self.view.state_mut();
             let cursor_pos = state.cursor_position;
-            state.input_buffer.insert_str(cursor_pos, text);
-            state.cursor_position += text.len();
+            state.input_buffer.insert_str(cursor_pos, &normalized);
+            state.cursor_position += normalized.len();
         }
+    }
+
+    /// Check if enough time has passed since last key, flush rapid input buffer if needed.
+    /// Returns true if buffer was flushed as a multi-line paste.
+    fn flush_rapid_input_if_needed(&mut self) -> bool {
+        let now = std::time::Instant::now();
+
+        // Check if we should flush the rapid input buffer
+        if let Some(last_time) = self.last_key_time {
+            let elapsed_ms = now.duration_since(last_time).as_millis() as u64;
+
+            // If gap is larger than threshold and buffer has content
+            if elapsed_ms > Self::RAPID_INPUT_THRESHOLD_MS && !self.rapid_input_buffer.is_empty() {
+                let buffer = std::mem::take(&mut self.rapid_input_buffer);
+                self.last_key_time = None;
+
+                // Normalize and check for newlines
+                let normalized = buffer.replace("\r\n", "\n").replace('\r', "\n");
+
+                if normalized.contains('\n') {
+                    // Treat as multi-line paste
+                    // Clear the input buffer since the content was already inserted char-by-char
+                    // during rapid input and will now be stored as a pending paste instead
+                    self.view.set_input("");
+                    self.view.set_cursor_position(0);
+
+                    let paste = PastedContent::text(normalized);
+                    tracing::debug!(
+                        lines = paste.summary(),
+                        "Rapid input detected as paste (timing-based)"
+                    );
+                    self.view
+                        .set_status_text(&format!("Pasted: {}", paste.summary()));
+                    self.pending_pastes.push(paste);
+                    return true;
+                }
+                // Single-line rapid input: characters were already inserted, nothing more to do
+            }
+        }
+        false
+    }
+
+    /// Record a character for rapid input detection.
+    /// Called for printable character key events.
+    fn record_rapid_input(&mut self, ch: char) {
+        let now = std::time::Instant::now();
+
+        // Check if this is continuation of rapid input
+        if let Some(last_time) = self.last_key_time {
+            let elapsed_ms = now.duration_since(last_time).as_millis() as u64;
+
+            if elapsed_ms > Self::RAPID_INPUT_THRESHOLD_MS {
+                // Gap too large - flush any existing buffer first
+                self.flush_rapid_input_if_needed();
+            }
+        }
+
+        // Accumulate this character
+        self.rapid_input_buffer.push(ch);
+        self.last_key_time = Some(now);
+    }
+
+    /// Clear the rapid input buffer (called after processing).
+    fn clear_rapid_input(&mut self) {
+        self.rapid_input_buffer.clear();
+        self.last_key_time = None;
     }
 
     /// Get a formatted summary of all pending pastes.
