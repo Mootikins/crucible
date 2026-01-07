@@ -172,18 +172,6 @@ impl DaemonClient {
         Ok(result.as_array().cloned().unwrap_or_default())
     }
 
-    /// Execute a query against a kiln
-    pub async fn query(&self, kiln_path: &Path, sql: &str) -> Result<serde_json::Value> {
-        self.call(
-            "query",
-            serde_json::json!({
-                "kiln": kiln_path.to_string_lossy(),
-                "sql": sql
-            }),
-        )
-        .await
-    }
-
     /// Search for similar vectors (backend-agnostic VSS)
     ///
     /// Returns a list of (document_id, score) pairs.
@@ -216,6 +204,72 @@ impl DaemonClient {
             .collect();
 
         Ok(results)
+    }
+
+    /// List notes in a kiln (backend-agnostic)
+    ///
+    /// Returns a list of (name, path, title, tags) tuples.
+    pub async fn list_notes(
+        &self,
+        kiln_path: &Path,
+        path_filter: Option<&str>,
+    ) -> Result<Vec<(String, String, Option<String>, Vec<String>)>> {
+        let mut params = serde_json::json!({
+            "kiln": kiln_path.to_string_lossy()
+        });
+        if let Some(filter) = path_filter {
+            params["path_filter"] = serde_json::json!(filter);
+        }
+
+        let result = self.call("list_notes", params).await?;
+
+        let notes: Vec<_> = result
+            .as_array()
+            .unwrap_or(&vec![])
+            .iter()
+            .filter_map(|item| {
+                let name = item.get("name")?.as_str()?.to_string();
+                let path = item.get("path")?.as_str()?.to_string();
+                let title = item.get("title").and_then(|v| v.as_str()).map(String::from);
+                let tags: Vec<String> = item
+                    .get("tags")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|t| t.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                Some((name, path, title, tags))
+            })
+            .collect();
+
+        Ok(notes)
+    }
+
+    /// Get a note by name (backend-agnostic)
+    ///
+    /// Returns the note data as JSON if found, None if not found.
+    pub async fn get_note_by_name(
+        &self,
+        kiln_path: &Path,
+        name: &str,
+    ) -> Result<Option<serde_json::Value>> {
+        let result = self
+            .call(
+                "get_note_by_name",
+                serde_json::json!({
+                    "kiln": kiln_path.to_string_lossy(),
+                    "name": name
+                }),
+            )
+            .await?;
+
+        if result.is_null() {
+            Ok(None)
+        } else {
+            Ok(Some(result))
+        }
     }
 }
 
