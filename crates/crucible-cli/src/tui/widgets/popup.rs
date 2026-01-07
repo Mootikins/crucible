@@ -875,7 +875,7 @@ impl<'a, T: PopupItem> PopupRenderer<'a, T> {
 
 impl<T: PopupItem> Widget for PopupRenderer<'_, T> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        if area.width < 3 || area.height < 3 {
+        if area.width < 3 || area.height < 1 {
             return; // Too small to render anything meaningful
         }
 
@@ -888,28 +888,33 @@ impl<T: PopupItem> Widget for PopupRenderer<'_, T> {
             })
             .collect();
 
-        // Build title with optional scroll position
-        let title = self.build_title();
+        // Add scroll indicators if there are items outside viewport
+        let has_above = self.popup.has_items_above();
+        let has_below = self.popup.has_items_below();
 
-        // Add scroll indicators to title if needed
-        let scroll_hint = match (self.popup.has_items_above(), self.popup.has_items_below()) {
-            (true, true) => " ↑↓",
-            (true, false) => " ↑",
-            (false, true) => " ↓",
-            (false, false) => "",
-        };
+        // Build lines with scroll indicators
+        let mut display_lines = lines;
 
-        let full_title = format!("{}{}", title, scroll_hint);
+        // Show scroll indicator at top if items above
+        if has_above {
+            if let Some(first) = display_lines.first_mut() {
+                // Prepend ↑ to indicate more items above
+                let mut spans = vec![Span::styled("↑", self.style.scroll_indicator)];
+                spans.extend(first.spans.drain(..));
+                *first = Line::from(spans);
+            }
+        }
 
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(self.style.border)
-            .title(full_title);
+        // Show scroll indicator at bottom if items below
+        if has_below {
+            if let Some(last) = display_lines.last_mut() {
+                last.spans
+                    .push(Span::styled(" ↓", self.style.scroll_indicator));
+            }
+        }
 
-        // trim: false preserves leading spaces (selection marker padding)
-        let paragraph = Paragraph::new(lines)
-            .block(block)
-            .wrap(Wrap { trim: false });
+        // Render without border - clean inline popup style
+        let paragraph = Paragraph::new(display_lines).wrap(Wrap { trim: false });
 
         paragraph.render(area, buf);
     }

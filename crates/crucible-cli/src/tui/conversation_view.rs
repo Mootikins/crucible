@@ -222,13 +222,13 @@ impl RatatuiView {
 
     /// Render to a ratatui frame
     pub fn render_frame(&self, frame: &mut Frame) {
-        // Calculate popup height - prefer popup, fall back to old popup
+        // Calculate popup height (no border, so no +2)
         let popup_height = self
             .state
             .popup
             .as_ref()
             .filter(|p| p.filtered_count() > 0)
-            .map(|p| (p.filtered_count().min(Self::MAX_POPUP_ITEMS) + 2) as u16)
+            .map(|p| p.filtered_count().min(Self::MAX_POPUP_ITEMS) as u16)
             .unwrap_or(0);
 
         // Calculate reasoning panel height (when visible and has content)
@@ -854,10 +854,10 @@ mod tests {
             })
             .collect();
 
-        // The popup should contain "/ help" (command items have space after trigger)
+        // The popup should contain "help" (no prefix icon now)
         assert!(
-            content.contains("/ help"),
-            "Popup should render '/ help' command. Buffer content: {}",
+            content.contains("help"),
+            "Popup should render 'help' command. Buffer content: {}",
             content
         );
         // Kind labels are no longer shown - trigger char indicates type

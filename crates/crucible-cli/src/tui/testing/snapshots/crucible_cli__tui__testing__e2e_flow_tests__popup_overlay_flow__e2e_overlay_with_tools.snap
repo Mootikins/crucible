@@ -9,6 +9,8 @@ expression: h.render()
                                                                                 
                                                                                 
                                                                                 
+                                                                                
+                                                                                
  > Read my config                                                               
                                                                                 
  ● I'll read that for you.                                                      
@@ -17,11 +19,9 @@ expression: h.render()
                                                                                 
  ● Your config contains a key-value pair.                                       
                                                                                 
-┌Select────────────────────────────────────────────────────────────────────────┐
-│> [agent] @ researcher Deep research and analysis                             │
-│  [agent] @ coder Code generation and review                                  │
-│  [agent] @ writer Writing and editing                                        │
-└──────────────────────────────────────────────────────────────────────────────┘
+> [agent] researcher Deep research and analysis                                 
+  [agent] coder Code generation and review                                      
+  [agent] writer Writing and editing                                            
                                                                                 
  > @                                                                            
                                                                                 

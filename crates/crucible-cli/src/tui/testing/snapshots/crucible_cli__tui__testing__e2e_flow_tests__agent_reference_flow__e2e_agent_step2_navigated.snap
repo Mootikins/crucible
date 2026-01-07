@@ -15,13 +15,13 @@ expression: h.render()
                                                                                 
                                                                                 
                                                                                 
-┌Select────────────────────────────────────────────────────────────────────────┐
-│  [agent] @ researcher Deep research and analysis                             │
-│  [agent] @ coder Code generation and review                                  │
-│  [agent] @ writer Writing and editing                                        │
-│  [file]   src/main.rs workspace                                              │
-│> [file]   src/lib.rs workspace                                               │
-└──────────────────────────────────────────────────────────────────────────────┘
+                                                                                
+                                                                                
+  [agent] researcher Deep research and analysis                                 
+  [agent] coder Code generation and review                                      
+  [agent] writer Writing and editing                                            
+  [file] src/main.rs workspace                                                  
+> [file] src/lib.rs workspace ↓                                                 
                                                                                 
  > @                                                                            
                                                                                 

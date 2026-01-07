@@ -17,11 +17,11 @@ expression: h.render()
                                                                                 
                                                                                 
                                                                                 
-┌Select────────────────────────────────────────────────────────────────────────┐
-│> / search Search across all notes in your vault using semantic similarity    │
-│  / help Display comprehensive help for all available commands and features   │
-│  / clear Clear the current conversation history and start fresh              │
-└──────────────────────────────────────────────────────────────────────────────┘
+                                                                                
+                                                                                
+> search Search across all notes in your vault using semantic similarity        
+  help Display comprehensive help for all available commands and features       
+  clear Clear the current conversation history and start fresh                  
                                                                                 
  > /                                                                            
                                                                                 
