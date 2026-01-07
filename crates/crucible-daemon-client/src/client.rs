@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::Mutex;
+use tracing::warn;
 
 pub struct DaemonClient {
     reader: Mutex<BufReader<tokio::net::unix::OwnedReadHalf>>,
@@ -227,9 +228,24 @@ impl DaemonClient {
             .as_array()
             .unwrap_or(&vec![])
             .iter()
-            .filter_map(|item| {
-                let name = item.get("name")?.as_str()?.to_string();
-                let path = item.get("path")?.as_str()?.to_string();
+            .enumerate()
+            .filter_map(|(idx, item)| {
+                let name = item.get("name").and_then(|v| v.as_str());
+                let path = item.get("path").and_then(|v| v.as_str());
+
+                // Log warning for malformed items (helps debug API changes or data issues)
+                if name.is_none() || path.is_none() {
+                    warn!(
+                        idx,
+                        has_name = name.is_some(),
+                        has_path = path.is_some(),
+                        "Skipping malformed note record in list_notes response"
+                    );
+                    return None;
+                }
+
+                let name = name.unwrap().to_string();
+                let path = path.unwrap().to_string();
                 let title = item.get("title").and_then(|v| v.as_str()).map(String::from);
                 let tags: Vec<String> = item
                     .get("tags")
