@@ -55,6 +55,8 @@ pub fn fork_daemon(socket: &Path, idle_timeout: u64) -> Result<()> {
     );
 
     Command::new(&exe)
+        .arg("--log-level")
+        .arg("info") // Enable file logging to ~/.crucible/db-server.log
         .arg("db-server")
         .arg("--socket")
         .arg(socket)

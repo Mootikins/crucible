@@ -123,6 +123,7 @@ async fn main() -> Result<()> {
     let uses_stdio = match &cli.command {
         Some(Commands::Mcp { stdio, .. }) => *stdio,
         Some(Commands::Chat { .. }) => true,
+        Some(Commands::DbServer { .. }) => true, // Runs in background, needs file logging
         _ => false,
     };
 
@@ -134,6 +135,7 @@ async fn main() -> Result<()> {
             let log_file_name = match &cli.command {
                 Some(Commands::Mcp { .. }) => "mcp.log",
                 Some(Commands::Chat { .. }) => "chat.log",
+                Some(Commands::DbServer { .. }) => "db-server.log",
                 _ => "crucible.log",
             };
 
