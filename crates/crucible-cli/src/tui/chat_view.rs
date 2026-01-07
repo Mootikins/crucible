@@ -289,11 +289,9 @@ impl<'a> ChatView<'a> {
             let query_trimmed = query.trim_end();
             popup.update_query(query_trimmed);
 
-            // Close popup if:
-            // 1. Query ends with space (user finished typing the token)
-            // 2. AND either no matches OR there's an exact match
-            if query.ends_with(' ') || query.ends_with('\n') {
-                // Token is complete - close popup
+            // Close popup if query contains whitespace (command/mention is complete)
+            // e.g., "/search query" means "search" is complete, popup should close
+            if query.contains(' ') || query.contains('\n') {
                 self.popup = None;
             }
         }
@@ -667,6 +665,35 @@ mod tests {
         assert!(
             view.popup.is_none(),
             "Popup should close when space typed after complete token"
+        );
+    }
+
+    #[test]
+    fn test_popup_closes_when_typing_args() {
+        let mut view = ChatView::new("plan").with_popup_provider(mock_provider());
+
+        // Type "/search query" - popup should close after the space
+        for c in "/search ".chars() {
+            view.handle_event(&Event::Key(KeyEvent::new(
+                KeyCode::Char(c),
+                KeyModifiers::NONE,
+            )));
+        }
+        assert!(
+            view.popup.is_none(),
+            "Popup should close after /search<space>"
+        );
+
+        // Continue typing args - popup should stay closed
+        for c in "my query".chars() {
+            view.handle_event(&Event::Key(KeyEvent::new(
+                KeyCode::Char(c),
+                KeyModifiers::NONE,
+            )));
+        }
+        assert!(
+            view.popup.is_none(),
+            "Popup should stay closed while typing args"
         );
     }
 
