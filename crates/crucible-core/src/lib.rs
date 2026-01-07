@@ -1,3 +1,6 @@
+// Re-export uuid for downstream crates
+pub use uuid;
+
 pub mod agent;
 pub mod canvas;
 pub mod content_category;
