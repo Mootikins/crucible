@@ -10,6 +10,9 @@ use std::time::Instant;
 use tokio::sync::RwLock;
 use tracing::info;
 
+use crucible_core::storage::note_store::NoteRecord;
+use crucible_core::traits::NoteInfo;
+
 // Backend-specific imports
 #[cfg(feature = "storage-sqlite")]
 use crucible_sqlite::{adapters as sqlite_adapters, SqliteClientHandle, SqliteConfig};
@@ -32,24 +35,6 @@ pub enum StorageHandle {
 }
 
 impl StorageHandle {
-    /// Execute a query against the storage backend
-    pub async fn query(
-        &self,
-        sql: &str,
-        params: &[serde_json::Value],
-    ) -> Result<crucible_core::database::QueryResult> {
-        match self {
-            #[cfg(feature = "storage-sqlite")]
-            StorageHandle::Sqlite(client) => client.query(sql, params).await,
-
-            #[cfg(feature = "storage-surrealdb")]
-            StorageHandle::Surreal(client) => {
-                let result = client.inner().query(sql, params).await?;
-                Ok(result)
-            }
-        }
-    }
-
     /// Get the backend name for logging
     pub fn backend_name(&self) -> &'static str {
         match self {
@@ -91,6 +76,70 @@ impl StorageHandle {
                     .take(limit)
                     .map(|r| (r.document_id.0, r.score))
                     .collect())
+            }
+        }
+    }
+
+    /// List notes in the kiln - backend-agnostic
+    pub async fn list_notes(&self, path_filter: Option<&str>) -> Result<Vec<NoteInfo>> {
+        match self {
+            #[cfg(feature = "storage-sqlite")]
+            StorageHandle::Sqlite(client) => {
+                use crucible_core::storage::NoteStore;
+                let store = client.as_note_store();
+                let records = store.list().await?;
+                Ok(records
+                    .into_iter()
+                    .filter(|r| path_filter.is_none_or(|p| r.path.contains(p)))
+                    .map(|r| NoteInfo {
+                        name: std::path::Path::new(&r.path)
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or(&r.path)
+                            .to_string(),
+                        path: r.path,
+                        title: Some(r.title),
+                        tags: r.tags,
+                        created_at: None,
+                        updated_at: Some(r.updated_at),
+                    })
+                    .collect())
+            }
+
+            #[cfg(feature = "storage-surrealdb")]
+            StorageHandle::Surreal(client) => {
+                use crucible_core::traits::KnowledgeRepository;
+                let repo = client.as_knowledge_repository();
+                repo.list_notes(path_filter).await.map_err(Into::into)
+            }
+        }
+    }
+
+    /// Get a note by name - backend-agnostic
+    pub async fn get_note_by_name(&self, name: &str) -> Result<Option<NoteRecord>> {
+        match self {
+            #[cfg(feature = "storage-sqlite")]
+            StorageHandle::Sqlite(client) => {
+                use crucible_core::storage::NoteStore;
+                let store = client.as_note_store();
+                let records = store.list().await?;
+                let name_lower = name.to_lowercase();
+                Ok(records.into_iter().find(|r| {
+                    r.path.to_lowercase().contains(&name_lower)
+                        || r.title.to_lowercase().contains(&name_lower)
+                }))
+            }
+
+            #[cfg(feature = "storage-surrealdb")]
+            StorageHandle::Surreal(client) => {
+                use crucible_core::storage::NoteStore;
+                let store = client.as_note_store();
+                let records = store.list().await?;
+                let name_lower = name.to_lowercase();
+                Ok(records.into_iter().find(|r| {
+                    r.path.to_lowercase().contains(&name_lower)
+                        || r.title.to_lowercase().contains(&name_lower)
+                }))
             }
         }
     }
@@ -420,18 +469,5 @@ mod tests {
         let updated_time = updated_list[0].1;
 
         assert!(updated_time > initial_time);
-    }
-
-    #[tokio::test]
-    async fn test_query_works() {
-        let km = KilnManager::new();
-        let tmp = TempDir::new().unwrap();
-        let kiln_path = tmp.path().join("test_kiln");
-
-        let handle = km.get_or_open(&kiln_path).await.unwrap();
-
-        // Basic query
-        let result = handle.query("SELECT 1 + 1 AS result", &[]).await;
-        assert!(result.is_ok());
     }
 }

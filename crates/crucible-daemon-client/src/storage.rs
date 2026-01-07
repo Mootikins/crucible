@@ -2,7 +2,6 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use crucible_core::database::DocumentId;
 use crucible_core::parser::ParsedNote;
 use crucible_core::traits::{KnowledgeRepository, NoteInfo, StorageClient};
@@ -39,59 +38,17 @@ impl DaemonStorageClient {
 
 #[async_trait]
 impl StorageClient for DaemonStorageClient {
-    async fn query_raw(&self, sql: &str) -> Result<Value> {
-        self.client.query(&self.kiln, sql).await
+    async fn query_raw(&self, _sql: &str) -> Result<Value> {
+        anyhow::bail!(
+            "Raw SQL queries are not supported through the daemon. \
+             Use typed methods: search_vectors, list_notes, get_note_by_name"
+        )
     }
 }
 
 // =============================================================================
 // KnowledgeRepository implementation
 // =============================================================================
-
-/// Parse a record from daemon query result into NoteInfo
-fn parse_note_info(record: &Value) -> Option<NoteInfo> {
-    let path = record.get("path")?.as_str()?;
-    let name = std::path::Path::new(path)
-        .file_name()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| path.to_string());
-
-    let title = record
-        .get("title")
-        .and_then(|v| v.as_str())
-        .map(String::from);
-
-    let tags: Vec<String> = record
-        .get("tags")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|t| t.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let created_at = record
-        .get("created_at")
-        .and_then(|v| v.as_str())
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&Utc));
-
-    let updated_at = record
-        .get("updated_at")
-        .and_then(|v| v.as_str())
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&Utc));
-
-    Some(NoteInfo {
-        name,
-        path: path.to_string(),
-        title,
-        tags,
-        created_at,
-        updated_at,
-    })
-}
 
 /// Parse a record into a ParsedNote (minimal version for daemon)
 fn parse_note_from_record(record: &Value) -> Option<ParsedNote> {
@@ -162,71 +119,38 @@ fn parse_note_from_record(record: &Value) -> Option<ParsedNote> {
 #[async_trait]
 impl KnowledgeRepository for DaemonStorageClient {
     async fn get_note_by_name(&self, name: &str) -> CoreResult<Option<ParsedNote>> {
-        // Try to find by filename ending
-        let sql = r#"
-            SELECT * FROM entities
-            WHERE content_category = 'note'
-                AND string::ends_with(path, $name)
-            LIMIT 1
-        "#;
-
-        // The daemon expects the SQL as a single string - we encode params in the query
-        let escaped_name = name.replace('\'', "''");
-        let sql_with_param = sql.replace("$name", &format!("'{}'", escaped_name));
-
+        // Use the backend-agnostic get_note_by_name RPC method
         let result = self
             .client
-            .query(&self.kiln, &sql_with_param)
+            .get_note_by_name(&self.kiln, name)
             .await
             .map_err(|e| CrucibleError::DatabaseError(e.to_string()))?;
 
-        // Parse the result
-        if let Some(records) = result.get("records").and_then(|v| v.as_array()) {
-            if let Some(record) = records.first().and_then(|r| r.get("data")) {
-                return Ok(parse_note_from_record(record));
-            }
+        match result {
+            Some(data) => Ok(parse_note_from_record(&data)),
+            None => Ok(None),
         }
-
-        Ok(None)
     }
 
     async fn list_notes(&self, path_filter: Option<&str>) -> CoreResult<Vec<NoteInfo>> {
-        let sql = if let Some(path) = path_filter {
-            let escaped_path = path.replace('\'', "''");
-            format!(
-                r#"
-                SELECT path, title, tags, created_at, updated_at FROM entities
-                WHERE content_category = 'note'
-                    AND string::starts_with(path, '{}')
-                "#,
-                escaped_path
-            )
-        } else {
-            r#"
-                SELECT path, title, tags, created_at, updated_at FROM entities
-                WHERE content_category = 'note'
-            "#
-            .to_string()
-        };
-
-        let result = self
+        // Use the backend-agnostic list_notes RPC method
+        let results = self
             .client
-            .query(&self.kiln, &sql)
+            .list_notes(&self.kiln, path_filter)
             .await
             .map_err(|e| CrucibleError::DatabaseError(e.to_string()))?;
 
-        let mut notes = Vec::new();
-        if let Some(records) = result.get("records").and_then(|v| v.as_array()) {
-            for record in records {
-                if let Some(data) = record.get("data") {
-                    if let Some(info) = parse_note_info(data) {
-                        notes.push(info);
-                    }
-                }
-            }
-        }
-
-        Ok(notes)
+        Ok(results
+            .into_iter()
+            .map(|(name, path, title, tags)| NoteInfo {
+                name,
+                path,
+                title,
+                tags,
+                created_at: None,
+                updated_at: None,
+            })
+            .collect())
     }
 
     async fn search_vectors(&self, vector: Vec<f32>) -> CoreResult<Vec<SearchResult>> {
@@ -284,26 +208,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_daemon_storage_client_query_forwards_to_daemon() {
+    async fn test_daemon_storage_client_query_raw_returns_error() {
         let (_tmp, _sock_path, daemon_client) = setup_test_daemon().await;
         let kiln = PathBuf::from("/tmp/test-kiln");
 
         let storage_client = DaemonStorageClient::new(daemon_client, kiln);
 
-        // This will likely fail because the kiln doesn't exist or query fails
-        // But it proves the query goes through to the daemon
+        // Raw queries are not supported through the daemon
         let result = storage_client.query_raw("SELECT * FROM notes").await;
-
-        // Query should either fail (kiln doesn't exist) or succeed with empty results
-        // Either way, we've proven the RPC call works
-        match result {
-            Ok(_) => {
-                // Query succeeded - daemon opened kiln and executed query
-            }
-            Err(e) => {
-                // Query failed - expected since kiln doesn't exist or is empty
-                assert!(!e.to_string().is_empty(), "Error should have a message");
-            }
-        }
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("not supported through the daemon"));
     }
 }

@@ -298,6 +298,58 @@ async fn test_multiple_clients_query_same_kiln() {
     server.shutdown().await;
 }
 
+/// Test list_notes RPC method
+#[tokio::test]
+async fn test_list_notes_rpc() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("Failed to connect");
+
+    client
+        .kiln_open(kiln_dir.path())
+        .await
+        .expect("Failed to open kiln");
+
+    // List notes - should return empty for fresh kiln
+    let results = client
+        .list_notes(kiln_dir.path(), None)
+        .await
+        .expect("list_notes RPC failed");
+
+    assert!(results.is_empty(), "Fresh kiln should have no notes");
+
+    server.shutdown().await;
+}
+
+/// Test get_note_by_name RPC method
+#[tokio::test]
+async fn test_get_note_by_name_rpc() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("Failed to connect");
+
+    client
+        .kiln_open(kiln_dir.path())
+        .await
+        .expect("Failed to open kiln");
+
+    // Get non-existent note - should return None
+    let result = client
+        .get_note_by_name(kiln_dir.path(), "NonExistent")
+        .await
+        .expect("get_note_by_name RPC failed");
+
+    assert!(result.is_none(), "Non-existent note should return None");
+
+    server.shutdown().await;
+}
+
 /// Test StorageClient via DaemonStorageClient with multiple sessions
 ///
 /// This tests the full StorageClient trait implementation through the daemon,
