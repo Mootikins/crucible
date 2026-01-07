@@ -2,11 +2,10 @@
 //!
 //! Provides a trait for rendering conversation history with full ratatui control.
 
-use crate::tui::components::{InputBoxWidget, PopupState, SessionHistoryWidget, StatusBarWidget};
+use crate::tui::components::{InputBoxWidget, PopupState, SessionHistoryWidget, StatusBarWidget, DEFAULT_MAX_INPUT_LINES};
 use crate::tui::conversation::{render_item_to_lines, ConversationState, StatusKind};
 use crate::tui::dialog::{DialogResult, DialogStack, DialogWidget};
 use crate::tui::notification::NotificationState;
-use crate::tui::widgets::GradientPopupRenderer;
 use anyhow::Result;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -107,8 +106,6 @@ pub struct ViewState {
     pub reasoning_content: String,
     /// Animation frame for reasoning ellipsis (cycles 0-3)
     pub reasoning_anim_frame: u8,
-    /// Use gradient (raised) style for popup instead of bordered
-    pub use_gradient_popup: bool,
 }
 
 impl ViewState {
@@ -130,7 +127,6 @@ impl ViewState {
             show_reasoning: false,
             reasoning_content: String::new(),
             reasoning_anim_frame: 0,
-            use_gradient_popup: true, // Enable edge-dither floating popup style
         }
     }
 
@@ -145,6 +141,56 @@ impl ViewState {
             1
         } else {
             0
+        }
+    }
+
+    /// Count lines in the input buffer for dynamic height calculation
+    pub fn input_line_count(&self) -> usize {
+        if self.input_buffer.is_empty() {
+            1
+        } else {
+            self.input_buffer.lines().count().max(1)
+                + if self.input_buffer.ends_with('\n') { 1 } else { 0 }
+        }
+    }
+
+    /// Calculate the required input box height
+    ///
+    /// Returns the visible height including padding (2 lines for top/bottom).
+    pub fn input_box_height(&self) -> u16 {
+        let lines = self.input_line_count() as u16;
+        lines.min(DEFAULT_MAX_INPUT_LINES) + 2 // +2 for padding
+    }
+
+    /// Convert cursor byte offset to (line, column) position
+    ///
+    /// Returns (line_index, column_index) where both are 0-based.
+    pub fn cursor_to_line_col(&self) -> (usize, usize) {
+        let before_cursor = &self.input_buffer[..self.cursor_position.min(self.input_buffer.len())];
+        let line = before_cursor.matches('\n').count();
+        let last_newline = before_cursor.rfind('\n');
+        let col = match last_newline {
+            Some(pos) => before_cursor.len() - pos - 1,
+            None => before_cursor.len(),
+        };
+        (line, col)
+    }
+
+    /// Calculate scroll offset to keep cursor visible in input area
+    pub fn input_scroll_offset(&self) -> usize {
+        let (cursor_line, _) = self.cursor_to_line_col();
+        let visible_lines = DEFAULT_MAX_INPUT_LINES as usize;
+        let total_lines = self.input_line_count();
+
+        if total_lines <= visible_lines {
+            // No scrolling needed
+            0
+        } else if cursor_line < visible_lines.saturating_sub(1) {
+            // Cursor near top
+            0
+        } else {
+            // Scroll to keep cursor visible (prefer keeping cursor near bottom)
+            cursor_line.saturating_sub(visible_lines - 1)
         }
     }
 }
@@ -209,7 +255,7 @@ impl RatatuiView {
             constraints.push(Constraint::Length(popup_height));
         }
 
-        constraints.push(Constraint::Length(3)); // Input box
+        constraints.push(Constraint::Length(self.state.input_box_height())); // Input box (dynamic)
         constraints.push(Constraint::Length(1)); // Status bar
 
         let chunks = Layout::default()
@@ -242,11 +288,12 @@ impl RatatuiView {
             idx += 1;
         }
 
-        // Input box
+        // Input box (dynamic height with multiline support)
         let input_area = chunks[idx];
+        let input_scroll = self.state.input_scroll_offset();
         let input_widget =
             InputBoxWidget::new(&self.state.input_buffer, self.state.cursor_position)
-                .dither_edges(self.state.use_gradient_popup);
+                .scroll_offset(input_scroll);
         frame.render_widget(input_widget, input_area);
         idx += 1;
 
@@ -265,12 +312,32 @@ impl RatatuiView {
             frame.render_widget(widget, frame.area());
             // Hide cursor when dialog is active
         } else {
-            // Position cursor in input box (accounting for border and prompt)
-            // When prefix (: or !) is shown as prompt, adjust cursor position
-            let offset = self.state.input_display_offset();
-            let display_cursor = self.state.cursor_position.saturating_sub(offset);
-            let cursor_x = input_area.x + 1 + 2 + display_cursor as u16;
-            let cursor_y = input_area.y + 1;
+            // Position cursor in input box (accounting for multiline)
+            let (cursor_line, cursor_col) = self.state.cursor_to_line_col();
+            let scroll_offset = self.state.input_scroll_offset();
+            let visible_cursor_line = cursor_line.saturating_sub(scroll_offset);
+
+            // When prefix (: or !) is shown as prompt, adjust cursor column
+            let display_offset = self.state.input_display_offset();
+            let display_col = if cursor_line == 0 {
+                cursor_col.saturating_sub(display_offset)
+            } else {
+                cursor_col
+            };
+
+            // Calculate vertical centering offset (same as InputBoxWidget)
+            let content_lines = self.state.input_line_count().min(DEFAULT_MAX_INPUT_LINES as usize);
+            let content_height = content_lines as u16;
+            let start_y = if content_height < input_area.height {
+                input_area.y + (input_area.height - content_height) / 2
+            } else {
+                input_area.y
+            };
+
+            // Prompt is 3 chars (" > " or "   ")
+            let prompt_width = 3;
+            let cursor_x = input_area.x + prompt_width + display_col as u16;
+            let cursor_y = start_y + visible_cursor_line as u16;
             frame.set_cursor_position((cursor_x, cursor_y));
         }
     }
@@ -321,15 +388,8 @@ impl RatatuiView {
     /// Render popup overlay
     fn render_popup(&self, frame: &mut Frame, area: Rect) {
         if let Some(ref popup) = self.state.popup {
-            if self.state.use_gradient_popup {
-                // Gradient style: no borders, fade effect at top
-                let gradient_renderer = GradientPopupRenderer::new(popup.inner_popup());
-                gradient_renderer.render(area, frame.buffer_mut());
-            } else {
-                // Standard bordered style
-                let renderer = popup.renderer();
-                renderer.render(area, frame.buffer_mut());
-            }
+            let renderer = popup.renderer();
+            renderer.render(area, frame.buffer_mut());
         }
     }
 
@@ -384,13 +444,14 @@ impl RatatuiView {
     /// Calculate the actual conversation viewport height based on current state.
     ///
     /// This accounts for UI elements that reduce the available conversation area:
-    /// - Input box (3 lines)
+    /// - Input box (dynamic height based on line count)
     /// - Status bar (1 line)
     /// - Spacer above input (1 line)
     /// - Reasoning panel (variable, if visible and has content)
     /// - Popup (variable, if active)
     pub fn conversation_viewport_height(&self) -> usize {
-        let mut overhead: u16 = 5; // input (3) + status (1) + spacer (1)
+        let input_height = self.state.input_box_height();
+        let mut overhead: u16 = input_height + 2; // input (dynamic) + status (1) + spacer (1)
 
         // Add reasoning panel height if visible
         if self.state.show_reasoning && !self.state.reasoning_content.is_empty() {

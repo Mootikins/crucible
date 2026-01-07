@@ -377,17 +377,6 @@ mod popup_overlay_flow {
 
         assert_snapshot!("e2e_overlay_with_tools", h.render());
     }
-
-    /// Gradient popup over interleaved conversation
-    #[test]
-    fn gradient_popup_over_interleaved() {
-        let h = Harness::new(WIDTH, HEIGHT)
-            .with_session(sessions::interleaved_prose_and_tools())
-            .with_popup_items(PopupKind::Command, registries::minimal_commands())
-            .with_gradient_popup(true);
-
-        assert_snapshot!("e2e_overlay_gradient_interleaved", h.render());
-    }
 }
 
 // =============================================================================
