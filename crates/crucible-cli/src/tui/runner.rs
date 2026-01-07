@@ -343,6 +343,9 @@ impl RatatuiRunner {
                 })?;
             }
 
+            // Take popup back from view after render for event handling
+            self.take_popup_from_view();
+
             // 2. Poll events (non-blocking, ~60fps)
             if event::poll(Duration::from_millis(16))? {
                 match event::read()? {
@@ -370,9 +373,7 @@ impl RatatuiRunner {
 
             // 3. Sync popup state to view for rendering
             // PopupState handles its own item fetching via provider
-            self.view.set_popup(self.popup.take());
-            // Take and put back - the view needs ownership for rendering
-            self.popup = self.view.popup_take();
+            self.sync_popup_to_view();
 
             // 4. Poll ring buffer for session events
             self.poll_session_events(bridge, &mut last_seen_seq);
@@ -1678,6 +1679,21 @@ impl RatatuiRunner {
         }
     }
 
+    /// Sync popup from runner to view for rendering.
+    ///
+    /// Called at the end of the event loop, before the next render.
+    /// The view keeps the popup until `take_popup_from_view` is called.
+    fn sync_popup_to_view(&mut self) {
+        self.view.set_popup(self.popup.take());
+    }
+
+    /// Take popup back from view after rendering.
+    ///
+    /// Called after render, before event handling.
+    fn take_popup_from_view(&mut self) {
+        self.popup = self.view.popup_take();
+    }
+
     /// Get the view state for testing.
     pub fn view(&self) -> &RatatuiView {
         &self.view
@@ -2675,6 +2691,52 @@ mod tests {
 
             // Clear it
             runner.view.set_popup(None);
+            assert!(!runner.view.has_popup());
+        }
+
+        /// Test that validates the popup sync lifecycle matches the render loop.
+        ///
+        /// The render loop does:
+        /// 1. Render (view needs popup)
+        /// 2. Take popup back from view
+        /// 3. Handle events (modifies runner.popup)
+        /// 4. Sync popup to view (for next render)
+        ///
+        /// BUG FIX: Previously, step 4 immediately took the popup back,
+        /// meaning the view never had the popup during render.
+        #[test]
+        fn test_popup_sync_lifecycle_for_render() {
+            let mut runner =
+                RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+            // Simulate: user types "/" which creates a popup on runner.popup
+            let mut popup = PopupState::new(PopupKind::Command, mock_provider());
+            popup.update_query("");
+            runner.popup = Some(popup);
+
+            // Initially view has no popup
+            assert!(!runner.view.has_popup());
+            // Runner has the popup
+            assert!(runner.popup.is_some());
+
+            // Call the runner's sync method which should leave popup on view
+            runner.sync_popup_to_view();
+
+            // CRITICAL: View should have popup now for rendering
+            assert!(runner.view.has_popup(), "View must have popup for render - sync_popup_to_view should leave it there");
+            assert!(runner.popup.is_none(), "Runner popup should be moved to view");
+
+            // Verify popup has items (would be visible in render)
+            assert_eq!(runner.view.popup().unwrap().filtered_count(), 2);
+
+            // Step 1: Render would happen here (view.render_frame())
+            // The popup is visible because view.has_popup() is true
+
+            // Step 2: Take popup back after render for event handling
+            runner.take_popup_from_view();
+
+            // Now runner has popup again for event handling
+            assert!(runner.popup.is_some());
             assert!(!runner.view.has_popup());
         }
     }
