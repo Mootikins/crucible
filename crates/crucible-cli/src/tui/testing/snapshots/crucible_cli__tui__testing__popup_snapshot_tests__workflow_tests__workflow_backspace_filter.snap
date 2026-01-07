@@ -15,14 +15,14 @@ expression: h.render()
                                                                                 
                                                                                 
                                                                                 
-                                                                                
-                                                                                
 ┌Select────────────────────────────────────────────────────────────────────────┐
-│> [agent] @ researcher Deep research and analysis                             │
-│  [agent] @ coder Code generation and review                                  │
-│  [agent] @ writer Writing and editing                                        │
+│> / search Search notes semantically                                          │
+│  / new Start new session                                                     │
+│  / clear Clear conversation context                                          │
+│  / help Show available commands                                              │
+│  / mode Switch session mode                                                  │
 └──────────────────────────────────────────────────────────────────────────────┘
                                                                                 
- > @                                                                            
+ > /sear                                                                        
                                                                                 
 ▸ Plan │ Ready

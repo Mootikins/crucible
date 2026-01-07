@@ -2758,10 +2758,11 @@ mod tests {
             let mut runner =
                 RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
-            // Multi-line paste should be stored
+            // Multi-line paste should be stored and indicator shown
             runner.handle_paste_event("line one\nline two");
             assert_eq!(runner.pending_pastes.len(), 1);
-            assert!(runner.view.input().is_empty()); // Not inserted into input
+            // Indicator is shown in input (e.g., "[2 lines, 18 chars]")
+            assert!(runner.view.input().contains("lines"));
         }
 
         #[test]
