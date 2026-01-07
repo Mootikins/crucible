@@ -51,6 +51,8 @@ mod harness;
 #[cfg(test)]
 mod harness_tests;
 #[cfg(test)]
+mod inline_viewport_tests;
+#[cfg(test)]
 mod popup_snapshot_tests;
 mod state_builder;
 #[cfg(test)]

@@ -306,6 +306,8 @@ impl RatatuiRunner {
     /// - `Inline`: Renders at bottom of terminal, completed messages graduate to scrollback
     pub fn with_viewport_mode(&mut self, mode: ViewportMode) -> &mut Self {
         self.viewport_mode = mode;
+        // Also set on the view for rendering layout decisions
+        self.view.state_mut().viewport_mode = mode;
         self
     }
 
@@ -2271,6 +2273,7 @@ impl RatatuiRunner {
         let mut stdout = io::stdout();
 
         // Set up terminal based on viewport mode
+        tracing::info!("TUI viewport mode: {:?}", self.viewport_mode);
         let mut terminal = match self.viewport_mode {
             ViewportMode::Fullscreen => {
                 // Traditional fullscreen mode with alternate screen

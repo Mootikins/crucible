@@ -364,6 +364,16 @@ impl ConversationState {
         &self.items
     }
 
+    /// Calculate the total rendered height of all conversation items.
+    ///
+    /// Used for inline viewport mode to determine how much space the conversation needs.
+    pub fn rendered_height(&self, width: u16) -> u16 {
+        self.items
+            .iter()
+            .map(|item| render_item_to_lines(item, width as usize).len() as u16)
+            .sum()
+    }
+
     /// Get the last assistant message as markdown.
     ///
     /// Reconstructs the original markdown from StreamBlocks.

@@ -383,7 +383,11 @@ impl ChatSession {
             .with_event_ring(ring)
             .with_interaction_registry(interaction_registry)
             .with_kiln_context(self.core.clone())
-            .with_viewport_mode(self.core.config().chat.viewport_mode);
+            .with_viewport_mode({
+                let mode = self.core.config().chat.viewport_mode;
+                tracing::info!("Setting viewport mode from config: {:?}", mode);
+                mode
+            });
 
         // Set up session logging to persist chat events
         runner.with_session_logger(kiln_path);
