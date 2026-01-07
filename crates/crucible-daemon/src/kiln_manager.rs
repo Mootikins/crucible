@@ -81,6 +81,17 @@ impl StorageHandle {
     }
 
     /// List notes in the kiln - backend-agnostic
+    ///
+    /// # Arguments
+    ///
+    /// * `path_filter` - Optional substring to filter note paths (case-sensitive).
+    ///   Notes are included if their path contains this substring.
+    ///
+    /// # Returns
+    ///
+    /// A list of notes with metadata. The `name` field is extracted from the file
+    /// stem of the path (e.g., "notes/daily.md" → "daily"), falling back to the
+    /// full path if stem extraction fails.
     pub async fn list_notes(&self, path_filter: Option<&str>) -> Result<Vec<NoteInfo>> {
         match self {
             #[cfg(feature = "storage-sqlite")]
@@ -117,8 +128,14 @@ impl StorageHandle {
 
     /// Get a note by name - backend-agnostic
     ///
-    /// Note: Currently does a linear scan over all notes. For better performance
-    /// with large kilns, consider adding backend-specific indexed queries.
+    /// Performs a case-insensitive fuzzy search, returning the first note whose
+    /// path or title contains the given name.
+    ///
+    /// # Performance
+    ///
+    /// Currently does a linear scan over all notes (O(n)). For large kilns with
+    /// 10k+ notes, consider adding backend-specific indexed queries (e.g., SQL
+    /// LIKE with index, or SurrealDB string functions).
     pub async fn get_note_by_name(&self, name: &str) -> Result<Option<NoteRecord>> {
         use crucible_core::storage::NoteStore;
 
