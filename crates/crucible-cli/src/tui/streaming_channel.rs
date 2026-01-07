@@ -114,7 +114,13 @@ impl StreamingTask {
 
                         // Forward tool calls to the TUI
                         if let Some(tool_calls) = chunk.tool_calls {
+                            debug!(
+                                count = tool_calls.len(),
+                                chunk_num = chunk_count,
+                                "Forwarding tool calls from chunk"
+                            );
                             for tc in tool_calls {
+                                debug!(tool_name = %tc.name, tool_id = ?tc.id, "Sending ToolCall event");
                                 let _ = tx.send(StreamingEvent::ToolCall {
                                     id: tc.id,
                                     name: tc.name,
