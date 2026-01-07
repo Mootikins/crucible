@@ -27,9 +27,11 @@
 //! 4. **Composable** - Widgets can be nested and combined
 
 mod adapters;
+mod multiline_input;
 mod popup;
 
 pub use adapters::{AgentItem, ChoiceItem, CommandItem, FileItem, NoteItem, SkillItem};
+pub use multiline_input::{MultiLineInputState, MultiLineInputWidget};
 pub use popup::{
     FuzzyMatcher, Popup, PopupConfig, PopupItem, PopupRenderer, PopupStyle, PopupViewport,
     ViewportBounds,
