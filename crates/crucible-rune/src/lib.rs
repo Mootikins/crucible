@@ -135,8 +135,8 @@ pub use plugin_loader::PluginLoader;
 pub use plugin_types::{HookConfig, PluginManifest, RegisteredHook};
 pub use popup_module::{entry_impl as popup_entry, popup_module, RunePopupEntry};
 pub use ask_module::{
-    ask_module, ask_module_with_context, AskContext, RuneAskBatch, RuneAskBatchResponse,
-    RuneAskError, RuneAskQuestion, RuneQuestionAnswer,
+    ask_module, ask_module_with_agent, ask_module_with_context, AgentAskContext, AskContext,
+    RuneAskBatch, RuneAskBatchResponse, RuneAskError, RuneAskQuestion, RuneQuestionAnswer,
 };
 pub use reactor::{
     BoxedReactor, Reactor, ReactorContext, ReactorError, ReactorMetadata, ReactorResult,
