@@ -31,6 +31,6 @@ mod popup;
 
 pub use adapters::{AgentItem, ChoiceItem, CommandItem, FileItem, NoteItem, SkillItem};
 pub use popup::{
-    FuzzyMatcher, GradientPopupRenderer, Popup, PopupConfig, PopupItem, PopupRenderer, PopupStyle,
-    PopupViewport, ViewportBounds,
+    FuzzyMatcher, Popup, PopupConfig, PopupItem, PopupRenderer, PopupStyle, PopupViewport,
+    ViewportBounds,
 };
