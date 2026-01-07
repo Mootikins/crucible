@@ -346,3 +346,86 @@ async fn test_daemon_storage_client_multi_session() {
 
     server.shutdown().await;
 }
+
+/// Test search_vectors RPC method - backend-agnostic vector search
+///
+/// This tests that the daemon's search_vectors RPC works with the SQLite backend
+/// (the daemon default), ensuring CLI clients can perform semantic search
+/// regardless of which SQL dialect they were designed for.
+#[tokio::test]
+async fn test_search_vectors_rpc() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    let socket_path = server.socket_path.clone();
+
+    // Create a temp kiln directory
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    let client = DaemonClient::connect_to(&socket_path)
+        .await
+        .expect("Failed to connect");
+
+    // Open the kiln first
+    client
+        .kiln_open(kiln_dir.path())
+        .await
+        .expect("Failed to open kiln");
+
+    // Search with a test vector - should return empty since no data yet
+    let test_vector: Vec<f32> = vec![1.0, 0.0, 0.0];
+    let results = client
+        .search_vectors(kiln_dir.path(), &test_vector, 10)
+        .await
+        .expect("search_vectors RPC failed");
+
+    // Should succeed but return empty (no embeddings in fresh db)
+    assert!(results.is_empty(), "Fresh kiln should have no search results");
+
+    server.shutdown().await;
+}
+
+/// Test search_vectors via KnowledgeRepository trait
+///
+/// This is the full integration test that mimics how the CLI's semantic_search
+/// actually works: KilnContext -> StorageHandle::Daemon -> DaemonStorageClient -> RPC
+#[tokio::test]
+async fn test_search_vectors_via_knowledge_repository() {
+    use crucible_core::traits::KnowledgeRepository;
+    use crucible_daemon_client::DaemonStorageClient;
+    use std::sync::Arc;
+
+    let server = TestServer::start().await.expect("Failed to start server");
+    let socket_path = server.socket_path.clone();
+
+    // Create a temp kiln directory
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    let daemon_client = Arc::new(
+        DaemonClient::connect_to(&socket_path)
+            .await
+            .expect("Failed to connect"),
+    );
+
+    // Open kiln via daemon client first
+    daemon_client
+        .kiln_open(kiln_dir.path())
+        .await
+        .expect("Failed to open kiln");
+
+    // Create DaemonStorageClient which implements KnowledgeRepository
+    let storage = DaemonStorageClient::new(daemon_client, kiln_dir.path().to_path_buf());
+
+    // Use the KnowledgeRepository trait method - this is what semantic_search calls
+    let test_vector: Vec<f32> = vec![0.5, 0.5, 0.0];
+    let results = storage
+        .search_vectors(test_vector)
+        .await
+        .expect("KnowledgeRepository::search_vectors failed");
+
+    // Should succeed with empty results (no embeddings)
+    assert!(
+        results.is_empty(),
+        "Fresh kiln should have no search results via KnowledgeRepository"
+    );
+
+    server.shutdown().await;
+}
