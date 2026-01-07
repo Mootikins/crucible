@@ -137,6 +137,12 @@ impl Harness {
         self
     }
 
+    /// Builder: set viewport mode (fullscreen or inline)
+    pub fn with_viewport_mode(mut self, mode: crucible_config::ViewportMode) -> Self {
+        self.view.state_mut().viewport_mode = mode;
+        self
+    }
+
     // =========================================================================
     // Input simulation
     // =========================================================================

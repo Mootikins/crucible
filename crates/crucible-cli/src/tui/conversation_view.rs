@@ -102,6 +102,8 @@ pub struct ViewState {
     pub notifications: NotificationState,
     /// Whether to show reasoning/thinking content (Alt+T toggle)
     pub show_reasoning: bool,
+    /// Viewport mode for inline vs fullscreen rendering
+    pub viewport_mode: crucible_config::ViewportMode,
     /// Accumulated reasoning content from thinking models
     pub reasoning_content: String,
     /// Animation frame for reasoning ellipsis (cycles 0-3)
@@ -125,6 +127,7 @@ impl ViewState {
             dialog_stack: DialogStack::new(),
             notifications: NotificationState::new(),
             show_reasoning: false,
+            viewport_mode: crucible_config::ViewportMode::default(),
             reasoning_content: String::new(),
             reasoning_anim_frame: 0,
         }
@@ -241,22 +244,50 @@ impl RatatuiView {
                 0
             };
 
-        let mut constraints = vec![Constraint::Min(3)]; // Conversation area
+        // Calculate fixed heights (everything except conversation and fill)
+        let input_height = self.state.input_box_height();
+        let status_height = 1u16;
+        let spacer_height = 1u16;
+        let fixed_height = input_height + status_height + spacer_height + reasoning_height + popup_height;
+
+        // For inline mode, calculate actual conversation content height
+        let is_inline = matches!(self.state.viewport_mode, crucible_config::ViewportMode::Inline);
+        let conversation_content_height = if is_inline {
+            self.state.conversation.rendered_height(frame.area().width)
+        } else {
+            0 // Not used in fullscreen mode
+        };
+
+        let mut constraints = if is_inline {
+            // Inline mode: content at top, fill space at bottom
+            // Conversation takes only what it needs (minimum 1 line when empty)
+            let available_height = frame.area().height.saturating_sub(fixed_height);
+            let conv_height = conversation_content_height.max(1).min(available_height);
+            vec![Constraint::Length(conv_height)]
+        } else {
+            // Fullscreen mode: conversation fills remaining space
+            vec![Constraint::Min(3)]
+        };
 
         // Add reasoning panel if visible
         if reasoning_height > 0 {
             constraints.push(Constraint::Length(reasoning_height));
         }
 
-        constraints.push(Constraint::Length(1)); // Spacer above input
+        constraints.push(Constraint::Length(spacer_height)); // Spacer above input
 
         // Add popup if active
         if popup_height > 0 {
             constraints.push(Constraint::Length(popup_height));
         }
 
-        constraints.push(Constraint::Length(self.state.input_box_height())); // Input box (dynamic)
-        constraints.push(Constraint::Length(1)); // Status bar
+        constraints.push(Constraint::Length(input_height)); // Input box (dynamic)
+        constraints.push(Constraint::Length(status_height)); // Status bar
+
+        // For inline mode, add fill at the bottom to push content to top
+        if is_inline {
+            constraints.push(Constraint::Fill(1));
+        }
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
