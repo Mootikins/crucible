@@ -2,7 +2,9 @@
 //!
 //! Provides a trait for rendering conversation history with full ratatui control.
 
-use crate::tui::components::{InputBoxWidget, PopupState, SessionHistoryWidget, StatusBarWidget, DEFAULT_MAX_INPUT_LINES};
+use crate::tui::components::{
+    InputBoxWidget, PopupState, SessionHistoryWidget, StatusBarWidget, DEFAULT_MAX_INPUT_LINES,
+};
 use crate::tui::conversation::{render_item_to_lines, ConversationState, StatusKind};
 use crate::tui::dialog::{DialogResult, DialogStack, DialogWidget};
 use crate::tui::notification::NotificationState;
@@ -153,7 +155,11 @@ impl ViewState {
             1
         } else {
             self.input_buffer.lines().count().max(1)
-                + if self.input_buffer.ends_with('\n') { 1 } else { 0 }
+                + if self.input_buffer.ends_with('\n') {
+                    1
+                } else {
+                    0
+                }
         }
     }
 
@@ -226,7 +232,10 @@ impl RatatuiView {
     /// Render to a ratatui frame
     pub fn render_frame(&self, frame: &mut Frame) {
         // For inline mode, wrap everything in a visible border for debugging
-        let is_inline = matches!(self.state.viewport_mode, crucible_config::ViewportMode::Inline);
+        let is_inline = matches!(
+            self.state.viewport_mode,
+            crucible_config::ViewportMode::Inline
+        );
         let render_area = if is_inline {
             // Render a colored border around the viewport
             let border = Block::default()
@@ -263,7 +272,8 @@ impl RatatuiView {
         let input_height = self.state.input_box_height();
         let status_height = 1u16;
         let spacer_height = 1u16;
-        let fixed_height = input_height + status_height + spacer_height + reasoning_height + popup_height;
+        let fixed_height =
+            input_height + status_height + spacer_height + reasoning_height + popup_height;
 
         // For inline mode, calculate actual conversation content height
         let conversation_content_height = if is_inline {
@@ -371,7 +381,10 @@ impl RatatuiView {
             };
 
             // Calculate vertical centering offset (same as InputBoxWidget)
-            let content_lines = self.state.input_line_count().min(DEFAULT_MAX_INPUT_LINES as usize);
+            let content_lines = self
+                .state
+                .input_line_count()
+                .min(DEFAULT_MAX_INPUT_LINES as usize);
             let content_height = content_lines as u16;
             let start_y = if content_height < input_area.height {
                 input_area.y + (input_area.height - content_height) / 2

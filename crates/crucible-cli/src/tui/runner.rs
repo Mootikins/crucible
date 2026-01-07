@@ -97,8 +97,8 @@ use anyhow::Result;
 use crossterm::{
     cursor,
     event::{
-        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
-        EnableMouseCapture, Event, MouseButton, MouseEvent, MouseEventKind,
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        Event, MouseButton, MouseEvent, MouseEventKind,
     },
     execute,
     terminal::{
@@ -109,9 +109,9 @@ use crucible_core::events::{FileChangeKind, SessionEvent};
 use crucible_core::interaction::{
     AskRequest, InteractionRequest, InteractionResponse, PermRequest, ShowRequest,
 };
+use crucible_core::traits::chat::AgentHandle;
 use crucible_core::InteractionRegistry;
 use crucible_rune::EventRing;
-use crucible_core::traits::chat::AgentHandle;
 use ratatui::{backend::CrosstermBackend, Terminal, TerminalOptions, Viewport};
 use regex::Regex;
 use std::io;
@@ -349,10 +349,7 @@ impl RatatuiRunner {
     /// Set the kiln context for search operations.
     ///
     /// When set, `/search` command performs semantic search directly.
-    pub fn with_kiln_context(
-        &mut self,
-        ctx: Arc<crate::core_facade::KilnContext>,
-    ) -> &mut Self {
+    pub fn with_kiln_context(&mut self, ctx: Arc<crate::core_facade::KilnContext>) -> &mut Self {
         self.kiln_context = Some(ctx);
         self
     }
@@ -423,7 +420,11 @@ impl RatatuiRunner {
                         self.view.handle_resize(width, height)?;
                     }
                     Event::Paste(text) => {
-                        tracing::debug!(len = text.len(), has_newlines = text.contains('\n'), "Event::Paste received");
+                        tracing::debug!(
+                            len = text.len(),
+                            has_newlines = text.contains('\n'),
+                            "Event::Paste received"
+                        );
                         self.handle_paste_event(&text);
                     }
                     _ => {}
@@ -710,7 +711,8 @@ impl RatatuiRunner {
                     }
 
                     // Complete via registry for synchronous waiters
-                    if let (Some(registry), Some(ref id)) = (&self.interaction_registry, &request_id)
+                    if let (Some(registry), Some(ref id)) =
+                        (&self.interaction_registry, &request_id)
                     {
                         if let Ok(mut guard) = registry.lock() {
                             guard.complete(
@@ -793,8 +795,9 @@ impl RatatuiRunner {
                 // Check if we're in the middle of rapid input (timing-based paste detection)
                 // If Enter comes during rapid input, treat it as a newline in the paste
                 if let Some(last_time) = self.last_key_time {
-                    let elapsed_ms =
-                        std::time::Instant::now().duration_since(last_time).as_millis() as u64;
+                    let elapsed_ms = std::time::Instant::now()
+                        .duration_since(last_time)
+                        .as_millis() as u64;
                     if elapsed_ms <= Self::RAPID_INPUT_THRESHOLD_MS
                         && !self.rapid_input_buffer.is_empty()
                     {
@@ -1105,10 +1108,8 @@ impl RatatuiRunner {
                                     // Show input hint from registry if available
                                     let hint =
                                         descriptor.input_hint.as_deref().unwrap_or("<query>");
-                                    self.view.set_status_text(&format!(
-                                        "Usage: /search {}",
-                                        hint
-                                    ));
+                                    self.view
+                                        .set_status_text(&format!("Usage: /search {}", hint));
                                 } else if let Some(ctx) = &self.kiln_context {
                                     // Perform semantic search directly
                                     self.view.set_status_text(&format!("Searching: {}", args));
@@ -1142,10 +1143,8 @@ impl RatatuiRunner {
                                             ));
                                         }
                                         Err(e) => {
-                                            self.view.echo_message(&format!(
-                                                "Search failed: {}",
-                                                e
-                                            ));
+                                            self.view
+                                                .echo_message(&format!("Search failed: {}", e));
                                             self.view.set_status_text("Search failed");
                                         }
                                     }
@@ -1451,7 +1450,8 @@ impl RatatuiRunner {
             if current_input.is_empty() {
                 self.view.set_input(&indicator);
             } else {
-                self.view.set_input(&format!("{} {}", current_input, indicator));
+                self.view
+                    .set_input(&format!("{} {}", current_input, indicator));
             }
             self.view.set_cursor_position(self.view.input().len());
 
@@ -1496,7 +1496,8 @@ impl RatatuiRunner {
                     if current_input.is_empty() {
                         self.view.set_input(&indicator);
                     } else {
-                        self.view.set_input(&format!("{} {}", current_input, indicator));
+                        self.view
+                            .set_input(&format!("{} {}", current_input, indicator));
                     }
                     self.view.set_cursor_position(self.view.input().len());
 
@@ -1604,14 +1605,20 @@ impl RatatuiRunner {
     /// Delete a paste indicator from input and remove the corresponding paste.
     ///
     /// Returns the new cursor position after deletion.
-    fn delete_paste_indicator(&mut self, indicator_start: usize, indicator_end: usize, paste_idx: usize) -> usize {
+    fn delete_paste_indicator(
+        &mut self,
+        indicator_start: usize,
+        indicator_end: usize,
+        paste_idx: usize,
+    ) -> usize {
         // Remove from input
         let input = self.view.input().to_string();
         let mut new_input = String::with_capacity(input.len() - (indicator_end - indicator_start));
         new_input.push_str(&input[..indicator_start]);
 
         // Handle space before indicator (if present)
-        let trim_space_before = indicator_start > 0 && input.as_bytes().get(indicator_start.saturating_sub(1)) == Some(&b' ');
+        let trim_space_before = indicator_start > 0
+            && input.as_bytes().get(indicator_start.saturating_sub(1)) == Some(&b' ');
         let new_cursor = if trim_space_before {
             new_input.pop(); // Remove trailing space before indicator
             indicator_start - 1
@@ -2621,10 +2628,14 @@ impl RatatuiRunner {
             }
             InteractionRequest::AskBatch(batch) => {
                 // Use full AskBatchDialog for multi-question interactions
-                self.pending_ask_batch =
-                    Some(crate::tui::ask_batch_dialog::AskBatchDialogState::new(batch.clone()));
+                self.pending_ask_batch = Some(
+                    crate::tui::ask_batch_dialog::AskBatchDialogState::new(batch.clone()),
+                );
                 self.pending_interaction_id = Some(request_id.to_string());
-                debug!("AskBatch interaction request {}: showing dialog", request_id);
+                debug!(
+                    "AskBatch interaction request {}: showing dialog",
+                    request_id
+                );
                 return; // Don't push to dialog stack - AskBatch has its own rendering
             }
         };
@@ -3050,8 +3061,14 @@ mod tests {
             runner.sync_popup_to_view();
 
             // CRITICAL: View should have popup now for rendering
-            assert!(runner.view.has_popup(), "View must have popup for render - sync_popup_to_view should leave it there");
-            assert!(runner.popup.is_none(), "Runner popup should be moved to view");
+            assert!(
+                runner.view.has_popup(),
+                "View must have popup for render - sync_popup_to_view should leave it there"
+            );
+            assert!(
+                runner.popup.is_none(),
+                "Runner popup should be moved to view"
+            );
 
             // Verify popup has items (would be visible in render)
             assert_eq!(runner.view.popup().unwrap().filtered_count(), 2);
@@ -3121,7 +3138,10 @@ mod tests {
 
         #[test]
         fn test_pasted_content_summary_many_lines() {
-            let content = (0..10).map(|i| format!("line {}", i)).collect::<Vec<_>>().join("\n");
+            let content = (0..10)
+                .map(|i| format!("line {}", i))
+                .collect::<Vec<_>>()
+                .join("\n");
             let paste = PastedContent::text(content);
             // 10 lines
             assert!(paste.summary().contains("10 lines"));
@@ -3173,7 +3193,9 @@ mod tests {
             let mut runner =
                 RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
-            runner.pending_pastes.push(PastedContent::text("a\nb".to_string()));
+            runner
+                .pending_pastes
+                .push(PastedContent::text("a\nb".to_string()));
             let summary = runner.pending_pastes_summary();
             assert!(summary.is_some());
             assert!(summary.unwrap().contains("2 lines"));
@@ -3184,8 +3206,12 @@ mod tests {
             let mut runner =
                 RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
-            runner.pending_pastes.push(PastedContent::text("a\nb".to_string()));
-            runner.pending_pastes.push(PastedContent::text("c\nd\ne".to_string()));
+            runner
+                .pending_pastes
+                .push(PastedContent::text("a\nb".to_string()));
+            runner
+                .pending_pastes
+                .push(PastedContent::text("c\nd\ne".to_string()));
             let summary = runner.pending_pastes_summary();
             assert!(summary.is_some());
             let s = summary.unwrap();
@@ -3198,7 +3224,9 @@ mod tests {
             let mut runner =
                 RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
-            runner.pending_pastes.push(PastedContent::text("a\nb".to_string()));
+            runner
+                .pending_pastes
+                .push(PastedContent::text("a\nb".to_string()));
             assert!(!runner.pending_pastes.is_empty());
 
             runner.clear_pending_pastes();
@@ -3211,7 +3239,9 @@ mod tests {
                 RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
             // Add a paste
-            runner.pending_pastes.push(PastedContent::text("pasted content".to_string()));
+            runner
+                .pending_pastes
+                .push(PastedContent::text("pasted content".to_string()));
 
             // Set typed input
             runner.view.set_input("typed content");
@@ -3306,7 +3336,9 @@ mod tests {
                 RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
             runner.view.set_input("hello [2 lines, 10 chars]");
-            runner.pending_pastes.push(PastedContent::text("line1\nline2".to_string()));
+            runner
+                .pending_pastes
+                .push(PastedContent::text("line1\nline2".to_string()));
 
             // Delete the indicator (start=6, end=25, idx=0)
             let new_pos = runner.delete_paste_indicator(6, 25, 0);
@@ -3322,9 +3354,15 @@ mod tests {
             let mut runner =
                 RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
-            runner.view.set_input("[1 line, 5 chars] [3 lines, 20 chars]");
-            runner.pending_pastes.push(PastedContent::text("12345".to_string()));
-            runner.pending_pastes.push(PastedContent::text("a\nb\nc".to_string()));
+            runner
+                .view
+                .set_input("[1 line, 5 chars] [3 lines, 20 chars]");
+            runner
+                .pending_pastes
+                .push(PastedContent::text("12345".to_string()));
+            runner
+                .pending_pastes
+                .push(PastedContent::text("a\nb\nc".to_string()));
 
             // Delete the first indicator (start=0, end=17, idx=0)
             runner.delete_paste_indicator(0, 17, 0);

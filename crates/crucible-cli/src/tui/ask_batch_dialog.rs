@@ -244,7 +244,12 @@ impl Widget for AskBatchDialogWidget<'_> {
             let prefix = if is_selected { "> " } else { "  " };
             let number = format!("{}. ", i + 1);
             buf.set_string(inner.x, y, prefix, style);
-            buf.set_string(inner.x + 2, y, &number, Style::default().fg(Color::DarkGray));
+            buf.set_string(
+                inner.x + 2,
+                y,
+                &number,
+                Style::default().fg(Color::DarkGray),
+            );
             buf.set_string(inner.x + 5, y, choice, style);
         }
 
@@ -315,11 +320,8 @@ mod tests {
 
     #[test]
     fn select_first_choice() {
-        let batch = AskBatch::new().question(
-            AskQuestion::new("Test", "Pick one")
-                .choice("A")
-                .choice("B"),
-        );
+        let batch =
+            AskBatch::new().question(AskQuestion::new("Test", "Pick one").choice("A").choice("B"));
         let mut state = AskBatchDialogState::new(batch);
 
         let result = state.handle_key(key(KeyCode::Enter));
@@ -332,11 +334,8 @@ mod tests {
 
     #[test]
     fn navigate_and_select() {
-        let batch = AskBatch::new().question(
-            AskQuestion::new("Test", "Pick one")
-                .choice("A")
-                .choice("B"),
-        );
+        let batch =
+            AskBatch::new().question(AskQuestion::new("Test", "Pick one").choice("A").choice("B"));
         let mut state = AskBatchDialogState::new(batch);
 
         state.handle_key(key(KeyCode::Down));
@@ -349,8 +348,7 @@ mod tests {
 
     #[test]
     fn other_option() {
-        let batch =
-            AskBatch::new().question(AskQuestion::new("Test", "Pick one").choice("A"));
+        let batch = AskBatch::new().question(AskQuestion::new("Test", "Pick one").choice("A"));
         let mut state = AskBatchDialogState::new(batch);
 
         // Navigate to "Other"
@@ -373,8 +371,7 @@ mod tests {
 
     #[test]
     fn escape_cancels() {
-        let batch =
-            AskBatch::new().question(AskQuestion::new("Test", "Pick").choice("A"));
+        let batch = AskBatch::new().question(AskQuestion::new("Test", "Pick").choice("A"));
         let mut state = AskBatchDialogState::new(batch.clone());
 
         let result = state.handle_key(key(KeyCode::Esc));
@@ -422,8 +419,7 @@ mod tests {
 
     #[test]
     fn escape_from_other_returns_to_choices() {
-        let batch =
-            AskBatch::new().question(AskQuestion::new("Test", "Pick").choice("A"));
+        let batch = AskBatch::new().question(AskQuestion::new("Test", "Pick").choice("A"));
         let mut state = AskBatchDialogState::new(batch);
 
         // Enter "Other" mode
