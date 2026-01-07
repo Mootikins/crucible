@@ -130,6 +130,7 @@ async fn handle_request(
         "kiln.close" => handle_kiln_close(req, kiln_manager).await,
         "kiln.list" => handle_kiln_list(req, kiln_manager).await,
         "query" => handle_query(req, kiln_manager).await,
+        "search_vectors" => handle_search_vectors(req, kiln_manager).await,
         _ => Response::error(
             req.id,
             METHOD_NOT_FOUND,
@@ -207,6 +208,50 @@ async fn handle_query(req: Request, km: &Arc<KilnManager>) -> Response {
                 "has_more": result.has_more
             });
             Response::success(req.id, json_result)
+        }
+        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    }
+}
+
+async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -> Response {
+    let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'kiln' parameter"),
+    };
+
+    let vector: Vec<f32> = match req.params.get("vector").and_then(|v| v.as_array()) {
+        Some(arr) => arr
+            .iter()
+            .filter_map(|v| v.as_f64().map(|f| f as f32))
+            .collect(),
+        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'vector' parameter"),
+    };
+
+    let limit = req
+        .params
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(20) as usize;
+
+    // Get or open connection to the kiln
+    let handle = match km.get_or_open(Path::new(kiln_path)).await {
+        Ok(c) => c,
+        Err(e) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    };
+
+    // Execute vector search using the backend-agnostic method
+    match handle.search_vectors(vector, limit).await {
+        Ok(results) => {
+            let json_results: Vec<_> = results
+                .into_iter()
+                .map(|(doc_id, score)| {
+                    serde_json::json!({
+                        "document_id": doc_id,
+                        "score": score
+                    })
+                })
+                .collect();
+            Response::success(req.id, json_results)
         }
         Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
     }

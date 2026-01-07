@@ -60,6 +60,40 @@ impl StorageHandle {
             StorageHandle::Surreal(_) => "surrealdb",
         }
     }
+
+    /// Search for similar vectors - backend-agnostic VSS
+    ///
+    /// Returns (document_id, score) pairs sorted by similarity descending.
+    pub async fn search_vectors(
+        &self,
+        vector: Vec<f32>,
+        limit: usize,
+    ) -> Result<Vec<(String, f64)>> {
+        match self {
+            #[cfg(feature = "storage-sqlite")]
+            StorageHandle::Sqlite(client) => {
+                use crucible_core::storage::NoteStore;
+                let store = client.as_note_store();
+                let results = store.search(&vector, limit, None).await?;
+                Ok(results
+                    .into_iter()
+                    .map(|r| (r.note.path, r.score as f64))
+                    .collect())
+            }
+
+            #[cfg(feature = "storage-surrealdb")]
+            StorageHandle::Surreal(client) => {
+                use crucible_core::traits::KnowledgeRepository;
+                let repo = client.as_knowledge_repository();
+                let results = repo.search_vectors(vector).await?;
+                Ok(results
+                    .into_iter()
+                    .take(limit)
+                    .map(|r| (r.document_id.0, r.score))
+                    .collect())
+            }
+        }
+    }
 }
 
 // ===========================================================================

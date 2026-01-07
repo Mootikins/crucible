@@ -230,56 +230,23 @@ impl KnowledgeRepository for DaemonStorageClient {
     }
 
     async fn search_vectors(&self, vector: Vec<f32>) -> CoreResult<Vec<SearchResult>> {
-        // Format vector as JSON array for SurrealDB
-        let vector_json = serde_json::to_string(&vector)
-            .map_err(|e| CrucibleError::DatabaseError(e.to_string()))?;
-
-        let sql = format!(
-            r#"
-            SELECT
-                entity_id,
-                vector::similarity::cosine(embedding, {}) AS score
-            FROM embeddings
-            ORDER BY score DESC
-            LIMIT 20
-            "#,
-            vector_json
-        );
-
-        let result = self
+        // Use the backend-agnostic search_vectors RPC method
+        let results = self
             .client
-            .query(&self.kiln, &sql)
+            .search_vectors(&self.kiln, &vector, 20)
             .await
             .map_err(|e| CrucibleError::DatabaseError(e.to_string()))?;
 
-        let mut search_results = Vec::new();
-        if let Some(records) = result.get("records").and_then(|v| v.as_array()) {
-            for record in records {
-                if let Some(data) = record.get("data") {
-                    let score = data.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-
-                    if score < 0.5 {
-                        continue;
-                    }
-
-                    if let Some(entity_id) = data.get("entity_id").and_then(|v| v.as_str()) {
-                        let snippet = data
-                            .get("content_used")
-                            .and_then(|v| v.as_str())
-                            .map(String::from);
-
-                        search_results.push(SearchResult {
-                            document_id: DocumentId(entity_id.to_string()),
-                            score,
-                            highlights: None,
-                            snippet,
-                        });
-                    }
-                }
-            }
-        }
-
-        Ok(search_results)
+        Ok(results
+            .into_iter()
+            .filter(|(_, score)| *score >= 0.5)
+            .map(|(doc_id, score)| SearchResult {
+                document_id: DocumentId(doc_id),
+                score,
+                highlights: None,
+                snippet: None,
+            })
+            .collect())
     }
 }
 
