@@ -379,18 +379,18 @@ async fn test_daemon_storage_client_multi_session() {
     let storage1 = DaemonStorageClient::new(client1, kiln_dir.path().to_path_buf());
     let storage2 = DaemonStorageClient::new(client2, kiln_dir.path().to_path_buf());
 
-    // Both should be able to query
-    let result1 = storage1.query_raw("SELECT count() FROM notes").await;
-    let result2 = storage2.query_raw("SELECT count() FROM notes").await;
+    // Both should be able to list notes through daemon
+    let result1 = storage1.list_notes(None).await;
+    let result2 = storage2.list_notes(None).await;
 
     assert!(
         result1.is_ok(),
-        "Storage1 query failed: {:?}",
+        "Storage1 list_notes failed: {:?}",
         result1.err()
     );
     assert!(
         result2.is_ok(),
-        "Storage2 query failed: {:?}",
+        "Storage2 list_notes failed: {:?}",
         result2.err()
     );
 

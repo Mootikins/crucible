@@ -104,14 +104,14 @@ async fn test_get_storage_connects_to_daemon() {
         "Storage should be daemon-backed when daemon is running"
     );
 
-    // Verify we can actually query through it
-    let result = storage.query_raw("SELECT count() FROM notes").await;
-    assert!(result.is_ok(), "Query through daemon should work");
+    // Verify we can actually query through it using a supported method
+    let result = storage.list_notes(None).await;
+    assert!(result.is_ok(), "list_notes through daemon should work");
 
     server.shutdown().await;
 }
 
-/// Test that StorageHandle::query_raw works in daemon mode
+/// Test that StorageHandle works in daemon mode with multiple requests
 #[tokio::test]
 #[serial]
 async fn test_storage_handle_query_through_daemon() {
@@ -121,12 +121,12 @@ async fn test_storage_handle_query_through_daemon() {
     let config = create_daemon_config(kiln_dir.path().to_path_buf());
     let storage = get_storage(&config).await.expect("get_storage failed");
 
-    // Multiple queries should all work
+    // Multiple requests should all work
     for i in 0..3 {
-        let result = storage.query_raw("SELECT * FROM notes LIMIT 1").await;
+        let result = storage.list_notes(None).await;
         assert!(
             result.is_ok(),
-            "Query {} should succeed: {:?}",
+            "Request {} should succeed: {:?}",
             i,
             result.err()
         );
@@ -217,14 +217,14 @@ async fn test_multiple_storage_handles_same_daemon() {
     assert!(storage2.is_daemon());
     assert!(storage3.is_daemon());
 
-    // All should be able to query
-    let r1 = storage1.query_raw("SELECT count() FROM notes").await;
-    let r2 = storage2.query_raw("SELECT count() FROM notes").await;
-    let r3 = storage3.query_raw("SELECT count() FROM notes").await;
+    // All should be able to list notes
+    let r1 = storage1.list_notes(None).await;
+    let r2 = storage2.list_notes(None).await;
+    let r3 = storage3.list_notes(None).await;
 
-    assert!(r1.is_ok(), "storage1 query failed: {:?}", r1.err());
-    assert!(r2.is_ok(), "storage2 query failed: {:?}", r2.err());
-    assert!(r3.is_ok(), "storage3 query failed: {:?}", r3.err());
+    assert!(r1.is_ok(), "storage1 list_notes failed: {:?}", r1.err());
+    assert!(r2.is_ok(), "storage2 list_notes failed: {:?}", r2.err());
+    assert!(r3.is_ok(), "storage3 list_notes failed: {:?}", r3.err());
 
     server.shutdown().await;
 }
@@ -239,16 +239,16 @@ async fn test_concurrent_queries_through_daemon() {
     let config = create_daemon_config(kiln_dir.path().to_path_buf());
     let storage = get_storage(&config).await.expect("get_storage failed");
 
-    // Spawn multiple concurrent queries
+    // Spawn multiple concurrent requests
     let mut handles = vec![];
     for i in 0..5 {
         let s = storage.clone();
         let handle = tokio::spawn(async move {
             for j in 0..3 {
-                let result = s.query_raw("SELECT count() FROM notes").await;
+                let result = s.list_notes(None).await;
                 assert!(
                     result.is_ok(),
-                    "Query {}-{} failed: {:?}",
+                    "Request {}-{} failed: {:?}",
                     i,
                     j,
                     result.err()

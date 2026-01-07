@@ -297,6 +297,25 @@ impl StorageHandle {
         matches!(self, StorageHandle::Sqlite(_))
     }
 
+    /// List notes in the kiln (backend-agnostic)
+    ///
+    /// This provides a unified interface for listing notes regardless of storage mode.
+    /// Uses the KnowledgeRepository trait which is implemented for all storage backends.
+    pub async fn list_notes(
+        &self,
+        path_filter: Option<&str>,
+    ) -> Result<Vec<crucible_core::traits::NoteInfo>> {
+        use crucible_core::traits::KnowledgeRepository;
+
+        let repo = self.as_knowledge_repository().ok_or_else(|| {
+            anyhow::anyhow!("list_notes not supported in lightweight mode")
+        })?;
+
+        repo.list_notes(path_filter)
+            .await
+            .map_err(|e| anyhow::anyhow!("list_notes failed: {}", e))
+    }
+
     /// Get the SqliteNoteStore if in SQLite mode
     #[cfg(feature = "storage-sqlite")]
     pub fn try_sqlite_note_store(&self) -> Option<&Arc<crucible_sqlite::SqliteNoteStore>> {
