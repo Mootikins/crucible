@@ -683,14 +683,12 @@ where
                         }
 
                         // Emit final chunk
+                        // Note: Don't include tool_calls here - they were already emitted
+                        // individually via StreamedAssistantContent::ToolCall above
                         yield Ok(ChatChunk {
                             delta: String::new(),
                             done: true,
-                            tool_calls: if tool_calls.is_empty() {
-                                None
-                            } else {
-                                Some(tool_calls.clone())
-                            },
+                            tool_calls: None,
                             tool_results: None,
                             reasoning: None,
                         });
@@ -723,14 +721,12 @@ where
                     "Rig stream ended without FinalResponse - emitting done chunk"
                 );
 
+                // Note: Don't include tool_calls here - they were already emitted
+                // individually via StreamedAssistantContent::ToolCall
                 yield Ok(ChatChunk {
                     delta: String::new(),
                     done: true,
-                    tool_calls: if tool_calls.is_empty() {
-                        None
-                    } else {
-                        Some(tool_calls)
-                    },
+                    tool_calls: None,
                     tool_results: None,
                     reasoning: None,
                 });
