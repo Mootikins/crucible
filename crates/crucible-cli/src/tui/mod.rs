@@ -8,6 +8,7 @@
 
 pub mod action_dispatch;
 pub mod agent_picker;
+pub mod ask_batch_dialog;
 pub mod chat_view;
 pub mod components;
 pub mod content_block;
@@ -48,6 +49,7 @@ pub use action_dispatch::{
     PopupEffect, PopupHook, PopupHooks, RunnerEffect, ScrollEffect,
 };
 pub use agent_picker::AgentSelection;
+pub use ask_batch_dialog::{AskBatchDialogState, AskBatchDialogWidget, AskBatchResult};
 pub use chat_view::ChatView;
 pub use components::{DialogAction, FocusTarget, InteractiveWidget};
 // Note: EventResult and TuiAction have two versions:
