@@ -116,32 +116,25 @@ impl StorageHandle {
     }
 
     /// Get a note by name - backend-agnostic
+    ///
+    /// Note: Currently does a linear scan over all notes. For better performance
+    /// with large kilns, consider adding backend-specific indexed queries.
     pub async fn get_note_by_name(&self, name: &str) -> Result<Option<NoteRecord>> {
-        match self {
+        use crucible_core::storage::NoteStore;
+
+        let records = match self {
             #[cfg(feature = "storage-sqlite")]
-            StorageHandle::Sqlite(client) => {
-                use crucible_core::storage::NoteStore;
-                let store = client.as_note_store();
-                let records = store.list().await?;
-                let name_lower = name.to_lowercase();
-                Ok(records.into_iter().find(|r| {
-                    r.path.to_lowercase().contains(&name_lower)
-                        || r.title.to_lowercase().contains(&name_lower)
-                }))
-            }
+            StorageHandle::Sqlite(client) => client.as_note_store().list().await?,
 
             #[cfg(feature = "storage-surrealdb")]
-            StorageHandle::Surreal(client) => {
-                use crucible_core::storage::NoteStore;
-                let store = client.as_note_store();
-                let records = store.list().await?;
-                let name_lower = name.to_lowercase();
-                Ok(records.into_iter().find(|r| {
-                    r.path.to_lowercase().contains(&name_lower)
-                        || r.title.to_lowercase().contains(&name_lower)
-                }))
-            }
-        }
+            StorageHandle::Surreal(client) => client.as_note_store().list().await?,
+        };
+
+        let name_lower = name.to_lowercase();
+        Ok(records.into_iter().find(|r| {
+            r.path.to_lowercase().contains(&name_lower)
+                || r.title.to_lowercase().contains(&name_lower)
+        }))
     }
 }
 
