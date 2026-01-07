@@ -15,6 +15,7 @@ use tracing::debug;
 
 use crate::chat::bridge::AgentEventBridge;
 use crate::tui::selection::SelectionState;
+use crucible_config::ViewportMode;
 use ratatui::style::Color;
 
 /// Apply selection highlighting to the frame buffer.
@@ -111,7 +112,7 @@ use crucible_core::interaction::{
 use crucible_core::InteractionRegistry;
 use crucible_rune::EventRing;
 use crucible_core::traits::chat::AgentHandle;
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{backend::CrosstermBackend, Terminal, TerminalOptions, Viewport};
 use regex::Regex;
 use std::io;
 use std::sync::{Arc, LazyLock, Mutex};
@@ -246,6 +247,8 @@ pub struct RatatuiRunner {
     interaction_registry: Option<Arc<Mutex<InteractionRegistry>>>,
     /// Kiln context for search operations
     kiln_context: Option<Arc<crate::core_facade::KilnContext>>,
+    /// Viewport mode (fullscreen or inline)
+    viewport_mode: ViewportMode,
 }
 
 impl RatatuiRunner {
@@ -293,7 +296,17 @@ impl RatatuiRunner {
             event_ring: None,
             interaction_registry: None,
             kiln_context: None,
+            viewport_mode: ViewportMode::default(),
         })
+    }
+
+    /// Set the viewport mode (fullscreen or inline).
+    ///
+    /// - `Fullscreen`: Uses alternate screen buffer (default)
+    /// - `Inline`: Renders at bottom of terminal, completed messages graduate to scrollback
+    pub fn with_viewport_mode(&mut self, mode: ViewportMode) -> &mut Self {
+        self.viewport_mode = mode;
+        self
     }
 
     /// Set the session logger for persisting chat events.
@@ -620,6 +633,10 @@ impl RatatuiRunner {
                 self.view.complete_assistant_streaming();
                 // Clear reasoning buffer for next response
                 self.view.clear_reasoning();
+
+                // In inline mode, graduate completed messages to scrollback
+                // This is done after streaming completes to push the full exchange to scrollback
+                self.graduate_completed_messages(terminal)?;
             }
 
             // Handle streaming error
@@ -2252,14 +2269,40 @@ impl RatatuiRunner {
         // that extracts actual text content, not terminal cells
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        execute!(
-            stdout,
-            EnterAlternateScreen,
-            EnableMouseCapture,
-            EnableBracketedPaste
-        )?;
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
+
+        // Set up terminal based on viewport mode
+        let mut terminal = match self.viewport_mode {
+            ViewportMode::Fullscreen => {
+                // Traditional fullscreen mode with alternate screen
+                execute!(
+                    stdout,
+                    EnterAlternateScreen,
+                    EnableMouseCapture,
+                    EnableBracketedPaste
+                )?;
+                let backend = CrosstermBackend::new(stdout);
+                Terminal::new(backend)?
+            }
+            ViewportMode::Inline => {
+                // Inline mode: fixed viewport at bottom, no alternate screen
+                // Height calculation: if term_height < 30, use full height; else max(term_height/2, 30)
+                let (_, term_height) = size().unwrap_or((80, 24));
+                let viewport_height = if term_height < 30 {
+                    term_height
+                } else {
+                    (term_height / 2).max(30)
+                };
+
+                execute!(stdout, EnableMouseCapture, EnableBracketedPaste)?;
+                let backend = CrosstermBackend::new(stdout);
+                Terminal::with_options(
+                    backend,
+                    TerminalOptions {
+                        viewport: Viewport::Inline(viewport_height),
+                    },
+                )?
+            }
+        };
         terminal.clear()?;
 
         // Get initial selection (use default or discover first available ACP agent)
@@ -2324,15 +2367,28 @@ impl RatatuiRunner {
             self.render_frame(&mut terminal)?;
         }
 
-        // Cleanup
+        // Cleanup based on viewport mode
         disable_raw_mode()?;
-        execute!(
-            terminal.backend_mut(),
-            DisableMouseCapture,
-            DisableBracketedPaste,
-            LeaveAlternateScreen,
-            cursor::Show
-        )?;
+        match self.viewport_mode {
+            ViewportMode::Fullscreen => {
+                execute!(
+                    terminal.backend_mut(),
+                    DisableMouseCapture,
+                    DisableBracketedPaste,
+                    LeaveAlternateScreen,
+                    cursor::Show
+                )?;
+            }
+            ViewportMode::Inline => {
+                // Inline mode: no alternate screen to leave, just disable mouse and show cursor
+                execute!(
+                    terminal.backend_mut(),
+                    DisableMouseCapture,
+                    DisableBracketedPaste,
+                    cursor::Show
+                )?;
+            }
+        }
 
         Ok(())
     }
@@ -2359,6 +2415,120 @@ impl RatatuiRunner {
                 AskBatchDialogWidget::new(state).render(f.area(), f.buffer_mut());
             }
         })?;
+        Ok(())
+    }
+
+    /// Graduate completed conversation items to terminal scrollback (inline mode only).
+    ///
+    /// In inline viewport mode, completed message exchanges are pushed above the viewport
+    /// into the terminal's scrollback buffer. This allows users to scroll up using their
+    /// terminal's native scrollback to see previous messages.
+    ///
+    /// This method:
+    /// 1. Renders completed (non-streaming) conversation items to a buffer
+    /// 2. Uses `terminal.insert_before()` to push them to scrollback
+    /// 3. Clears graduated items from the conversation state
+    fn graduate_completed_messages(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    ) -> Result<()> {
+        use ratatui::widgets::{Paragraph, Widget};
+
+        // Only graduate in inline mode
+        if self.viewport_mode != ViewportMode::Inline {
+            return Ok(());
+        }
+
+        // Get completed items (all items before any streaming message)
+        let items = self.view.state().conversation.items();
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        // Find index of first streaming item (if any)
+        let streaming_index = items
+            .iter()
+            .position(|item| {
+                matches!(
+                    item,
+                    crate::tui::conversation::ConversationItem::AssistantMessage {
+                        is_streaming: true,
+                        ..
+                    }
+                )
+            })
+            .unwrap_or(items.len());
+
+        // Only graduate if there are completed items
+        if streaming_index == 0 {
+            return Ok(());
+        }
+
+        // Render completed items to lines
+        let mut graduated_lines: Vec<ratatui::text::Line> = Vec::new();
+
+        for item in items.iter().take(streaming_index) {
+            match item {
+                crate::tui::conversation::ConversationItem::UserMessage { content } => {
+                    // Render user message with "You: " prefix
+                    graduated_lines.push(ratatui::text::Line::from(""));
+                    graduated_lines.push(ratatui::text::Line::styled(
+                        format!("You: {}", content),
+                        ratatui::style::Style::default().fg(ratatui::style::Color::Cyan),
+                    ));
+                }
+                crate::tui::conversation::ConversationItem::AssistantMessage {
+                    blocks,
+                    is_streaming: false,
+                } => {
+                    // Render assistant message
+                    graduated_lines.push(ratatui::text::Line::from(""));
+                    graduated_lines.push(ratatui::text::Line::styled(
+                        "Assistant:",
+                        ratatui::style::Style::default().fg(ratatui::style::Color::Green),
+                    ));
+                    for block in blocks {
+                        let text = block.text();
+                        for line in text.lines() {
+                            graduated_lines
+                                .push(ratatui::text::Line::from(String::from(line)));
+                        }
+                    }
+                }
+                crate::tui::conversation::ConversationItem::ToolCall(tool) => {
+                    // Render tool call summary
+                    let status_str = match &tool.status {
+                        crate::tui::conversation::ToolStatus::Running => "running",
+                        crate::tui::conversation::ToolStatus::Complete { .. } => "done",
+                        crate::tui::conversation::ToolStatus::Error { .. } => "error",
+                    };
+                    graduated_lines.push(ratatui::text::Line::styled(
+                        format!("  [{}] {} ({})", status_str, tool.name, status_str),
+                        ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
+                    ));
+                }
+                _ => {}
+            }
+        }
+
+        if graduated_lines.is_empty() {
+            return Ok(());
+        }
+
+        // Insert graduated content above viewport
+        let height = graduated_lines.len() as u16;
+        terminal.insert_before(height, |buf| {
+            let area = buf.area;
+            let paragraph = Paragraph::new(graduated_lines.clone());
+            paragraph.render(area, buf);
+        })?;
+
+        // Remove graduated items from conversation
+        self.view
+            .state_mut()
+            .conversation
+            .remove_first_n(streaming_index);
+
         Ok(())
     }
 
