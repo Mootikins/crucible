@@ -636,9 +636,8 @@ impl RatatuiRunner {
                 // Clear reasoning buffer for next response
                 self.view.clear_reasoning();
 
-                // In inline mode, graduate completed messages to scrollback
-                // This is done after streaming completes to push the full exchange to scrollback
-                self.graduate_completed_messages(terminal)?;
+                // Graduate messages that overflow the viewport to scrollback
+                self.graduate_overflow_messages(terminal)?;
             }
 
             // Handle streaming error
@@ -2421,20 +2420,21 @@ impl RatatuiRunner {
         Ok(())
     }
 
-    /// Graduate completed conversation items to terminal scrollback (inline mode only).
+    /// Graduate overflow messages to terminal scrollback (inline mode only).
     ///
-    /// In inline viewport mode, completed message exchanges are pushed above the viewport
-    /// into the terminal's scrollback buffer. This allows users to scroll up using their
-    /// terminal's native scrollback to see previous messages.
+    /// In inline viewport mode, when conversation content exceeds the viewport height,
+    /// oldest messages are pushed above the viewport into the terminal's scrollback buffer.
+    /// This allows users to scroll up using terminal's native scrollback to see history.
     ///
     /// This method:
-    /// 1. Renders completed (non-streaming) conversation items to a buffer
-    /// 2. Uses `terminal.insert_before()` to push them to scrollback
-    /// 3. Clears graduated items from the conversation state
-    fn graduate_completed_messages(
+    /// 1. Calculates total rendered height vs available viewport
+    /// 2. Graduates oldest complete items until content fits
+    /// 3. Uses same rendering as TUI for consistent styling
+    fn graduate_overflow_messages(
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
+        use crate::tui::conversation::render_item_to_lines;
         use ratatui::widgets::{Paragraph, Widget};
 
         // Only graduate in inline mode
@@ -2442,76 +2442,67 @@ impl RatatuiRunner {
             return Ok(());
         }
 
-        // Get completed items (all items before any streaming message)
-        let items = self.view.state().conversation.items();
+        let state = self.view.state();
+        let items = state.conversation.items();
         if items.is_empty() {
             return Ok(());
         }
 
-        // Find index of first streaming item (if any)
-        let streaming_index = items
-            .iter()
-            .position(|item| {
-                matches!(
-                    item,
-                    crate::tui::conversation::ConversationItem::AssistantMessage {
-                        is_streaming: true,
-                        ..
-                    }
-                )
-            })
-            .unwrap_or(items.len());
+        // Calculate available height for conversation
+        // Account for: border (2), input box (3), status bar (1), spacer (1)
+        let terminal_height = terminal.size()?.height;
+        let fixed_overhead = 2 + state.input_box_height() + 1 + 1; // border + input + status + spacer
+        let available_height = terminal_height.saturating_sub(fixed_overhead) as usize;
 
-        // Only graduate if there are completed items
-        if streaming_index == 0 {
+        // Calculate current content height and find graduation point
+        let width = terminal.size()?.width.saturating_sub(2) as usize; // Account for borders
+        let mut total_height = 0usize;
+        let mut heights: Vec<usize> = Vec::new();
+
+        for item in items {
+            let item_height = render_item_to_lines(item, width).len();
+            heights.push(item_height);
+            total_height += item_height;
+        }
+
+        // Only graduate if we exceed the viewport
+        if total_height <= available_height {
             return Ok(());
         }
 
-        // Render completed items to lines
-        let mut graduated_lines: Vec<ratatui::text::Line> = Vec::new();
+        // Find how many items to graduate (oldest first, but not streaming items)
+        let mut graduate_count = 0;
+        let mut graduated_height = 0usize;
 
-        for item in items.iter().take(streaming_index) {
-            match item {
-                crate::tui::conversation::ConversationItem::UserMessage { content } => {
-                    // Render user message with "You: " prefix
-                    graduated_lines.push(ratatui::text::Line::from(""));
-                    graduated_lines.push(ratatui::text::Line::styled(
-                        format!("You: {}", content),
-                        ratatui::style::Style::default().fg(ratatui::style::Color::Cyan),
-                    ));
-                }
+        for (i, item) in items.iter().enumerate() {
+            // Don't graduate streaming items
+            if matches!(
+                item,
                 crate::tui::conversation::ConversationItem::AssistantMessage {
-                    blocks,
-                    is_streaming: false,
-                } => {
-                    // Render assistant message
-                    graduated_lines.push(ratatui::text::Line::from(""));
-                    graduated_lines.push(ratatui::text::Line::styled(
-                        "Assistant:",
-                        ratatui::style::Style::default().fg(ratatui::style::Color::Green),
-                    ));
-                    for block in blocks {
-                        let text = block.text();
-                        for line in text.lines() {
-                            graduated_lines
-                                .push(ratatui::text::Line::from(String::from(line)));
-                        }
-                    }
+                    is_streaming: true,
+                    ..
                 }
-                crate::tui::conversation::ConversationItem::ToolCall(tool) => {
-                    // Render tool call summary
-                    let status_str = match &tool.status {
-                        crate::tui::conversation::ToolStatus::Running => "running",
-                        crate::tui::conversation::ToolStatus::Complete { .. } => "done",
-                        crate::tui::conversation::ToolStatus::Error { .. } => "error",
-                    };
-                    graduated_lines.push(ratatui::text::Line::styled(
-                        format!("  [{}] {} ({})", status_str, tool.name, status_str),
-                        ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
-                    ));
-                }
-                _ => {}
+            ) {
+                break;
             }
+
+            let remaining_height = total_height - graduated_height - heights[i];
+            if remaining_height <= available_height {
+                break;
+            }
+
+            graduate_count += 1;
+            graduated_height += heights[i];
+        }
+
+        if graduate_count == 0 {
+            return Ok(());
+        }
+
+        // Render items to graduate using same styling as TUI
+        let mut graduated_lines: Vec<ratatui::text::Line> = Vec::new();
+        for item in items.iter().take(graduate_count) {
+            graduated_lines.extend(render_item_to_lines(item, width));
         }
 
         if graduated_lines.is_empty() {
@@ -2526,11 +2517,12 @@ impl RatatuiRunner {
             paragraph.render(area, buf);
         })?;
 
-        // Remove graduated items from conversation
+        // Remove graduated items from conversation (drop borrow first)
+        let _ = state;
         self.view
             .state_mut()
             .conversation
-            .remove_first_n(streaming_index);
+            .remove_first_n(graduate_count);
 
         Ok(())
     }
