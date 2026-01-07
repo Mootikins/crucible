@@ -15,6 +15,33 @@ pub enum LlmProvider {
     Anthropic,
 }
 
+/// Viewport mode for the TUI
+///
+/// Controls how the TUI renders in the terminal:
+/// - `Fullscreen`: Uses alternate screen buffer (default, traditional TUI behavior)
+/// - `Inline`: Renders at bottom of terminal, completed messages graduate to scrollback
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ViewportMode {
+    /// Use alternate screen buffer (full terminal control)
+    ///
+    /// The TUI takes over the entire terminal. When exiting, the terminal
+    /// returns to its previous state and the conversation is not visible
+    /// in scrollback.
+    #[default]
+    Fullscreen,
+    /// Render inline at bottom of terminal
+    ///
+    /// The TUI renders as a fixed-height viewport at the bottom of the terminal.
+    /// Completed messages graduate to terminal scrollback, making them visible
+    /// after the TUI exits and accessible via terminal scroll.
+    ///
+    /// Height calculation:
+    /// - If terminal height < 30: use full terminal height
+    /// - Otherwise: max(terminal_height / 2, 30)
+    Inline,
+}
+
 /// Agent type preference for chat
 ///
 /// Controls whether to prefer external ACP agents or Crucible's built-in agents.
@@ -59,6 +86,12 @@ pub struct ChatConfig {
     /// When disabled, all models get standard prompts and all tools.
     #[serde(default = "default_true")]
     pub size_aware_prompts: bool,
+    /// Viewport mode for TUI rendering
+    ///
+    /// - `fullscreen` (default): Traditional TUI with alternate screen
+    /// - `inline`: Fixed viewport at bottom, messages graduate to scrollback
+    #[serde(default)]
+    pub viewport_mode: ViewportMode,
 }
 
 fn default_true() -> bool {
@@ -77,6 +110,7 @@ impl Default for ChatConfig {
             max_tokens: None,
             timeout_secs: None,
             size_aware_prompts: true,
+            viewport_mode: ViewportMode::default(),
         }
     }
 }
@@ -149,5 +183,38 @@ mod tests {
         "#;
         let config: ChatConfig = toml::from_str(toml).unwrap();
         assert!(config.size_aware_prompts);
+    }
+
+    #[test]
+    fn test_viewport_mode_default_is_fullscreen() {
+        let config = ChatConfig::default();
+        assert_eq!(config.viewport_mode, ViewportMode::Fullscreen);
+    }
+
+    #[test]
+    fn test_viewport_mode_deserialize_inline() {
+        let toml = r#"
+            viewport_mode = "inline"
+        "#;
+        let config: ChatConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.viewport_mode, ViewportMode::Inline);
+    }
+
+    #[test]
+    fn test_viewport_mode_deserialize_fullscreen() {
+        let toml = r#"
+            viewport_mode = "fullscreen"
+        "#;
+        let config: ChatConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.viewport_mode, ViewportMode::Fullscreen);
+    }
+
+    #[test]
+    fn test_viewport_mode_missing_defaults_to_fullscreen() {
+        let toml = r#"
+            model = "test-model"
+        "#;
+        let config: ChatConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.viewport_mode, ViewportMode::Fullscreen);
     }
 }

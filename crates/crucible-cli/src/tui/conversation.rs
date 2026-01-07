@@ -401,6 +401,17 @@ impl ConversationState {
         self.items.clear();
     }
 
+    /// Remove the first N items from the conversation.
+    ///
+    /// Used by inline viewport mode to graduate completed messages to scrollback.
+    pub fn remove_first_n(&mut self, n: usize) {
+        if n >= self.items.len() {
+            self.items.clear();
+        } else {
+            self.items.drain(0..n);
+        }
+    }
+
     /// Serialize the conversation to markdown format.
     ///
     /// Produces human-readable markdown with role prefixes:
@@ -1552,5 +1563,42 @@ mod tests {
         let md = state.to_markdown();
 
         assert!(md.contains("**Tool:** `calculator` - 4"));
+    }
+
+    #[test]
+    fn test_remove_first_n_removes_items() {
+        let mut state = ConversationState::new();
+        state.push_user_message("First");
+        state.push_user_message("Second");
+        state.push_user_message("Third");
+        assert_eq!(state.items().len(), 3);
+
+        state.remove_first_n(2);
+        assert_eq!(state.items().len(), 1);
+        if let ConversationItem::UserMessage { content } = &state.items()[0] {
+            assert_eq!(content, "Third");
+        } else {
+            panic!("Expected user message");
+        }
+    }
+
+    #[test]
+    fn test_remove_first_n_clears_if_exceeds_length() {
+        let mut state = ConversationState::new();
+        state.push_user_message("Only");
+        assert_eq!(state.items().len(), 1);
+
+        state.remove_first_n(5);
+        assert!(state.items().is_empty());
+    }
+
+    #[test]
+    fn test_remove_first_n_zero_is_noop() {
+        let mut state = ConversationState::new();
+        state.push_user_message("First");
+        state.push_user_message("Second");
+
+        state.remove_first_n(0);
+        assert_eq!(state.items().len(), 2);
     }
 }

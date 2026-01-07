@@ -2223,6 +2223,7 @@ allowed_tools = ["search_*"]
                 max_tokens: Some(4096),
                 timeout_secs: Some(60),
                 size_aware_prompts: true,
+                viewport_mode: crate::components::ViewportMode::default(),
             }),
             ..Config::default()
         };
