@@ -266,17 +266,15 @@ async fn test_multiple_clients_query_same_kiln() {
                 .await
                 .unwrap_or_else(|_| panic!("Client {} failed to connect", i));
 
-            // Each client queries the kiln
+            // Each client lists notes in the kiln
             // Note: This will return an empty result since we haven't indexed anything,
-            // but it verifies the query RPC works across multiple sessions
-            let result = client
-                .query(&kiln_path, "SELECT * FROM notes LIMIT 1")
-                .await;
+            // but it verifies the RPC works across multiple sessions
+            let result = client.list_notes(&kiln_path, None).await;
 
             // Query should succeed (even if empty results)
             assert!(
                 result.is_ok(),
-                "Client {} query failed: {:?}",
+                "Client {} list_notes failed: {:?}",
                 i,
                 result.err()
             );
