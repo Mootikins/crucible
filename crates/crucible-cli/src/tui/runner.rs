@@ -68,11 +68,9 @@ fn apply_selection_highlight(
 
             if x < area.x + area.width && y < area.y + area.height {
                 if let Some(cell) = buffer.cell_mut((x, y)) {
-                    // Invert colors for selection highlight by swapping fg/bg
-                    let orig_fg = cell.fg;
-                    let orig_bg = cell.bg;
-                    cell.set_fg(orig_bg);
-                    cell.set_bg(orig_fg);
+                    // Use explicit high-contrast colors for selection
+                    cell.set_bg(Color::White);
+                    cell.set_fg(Color::Black);
                 }
             }
         }
@@ -810,17 +808,29 @@ impl RatatuiRunner {
                 self.streaming_rx = Some(rx);
             }
             InputAction::InsertChar(c) => {
-                // Record for rapid input detection (timing-based paste fallback)
-                self.record_rapid_input(c);
+                // Check if we're in rapid input mode (potential paste)
+                let now = std::time::Instant::now();
+                let in_rapid_input = self.last_key_time.is_some_and(|last| {
+                    now.duration_since(last).as_millis() as u64 <= Self::RAPID_INPUT_THRESHOLD_MS
+                });
 
-                // Also insert normally - if this turns out to be a paste,
-                // the buffer will be cleared and replaced when we flush
-                let mut input = self.view.input().to_string();
-                let pos = self.view.cursor_position();
-                input.insert(pos, c);
-                self.view.set_input(&input);
-                self.view.set_cursor_position(pos + c.len_utf8());
-                self.update_popup();
+                if in_rapid_input || !self.rapid_input_buffer.is_empty() {
+                    // Accumulate in rapid input buffer, don't insert yet
+                    self.rapid_input_buffer.push(c);
+                    self.last_key_time = Some(now);
+                } else {
+                    // Normal typing - insert directly and start tracking
+                    self.rapid_input_buffer.push(c);
+                    self.last_key_time = Some(now);
+
+                    // Insert the character
+                    let mut input = self.view.input().to_string();
+                    let pos = self.view.cursor_position();
+                    input.insert(pos, c);
+                    self.view.set_input(&input);
+                    self.view.set_cursor_position(pos + c.len_utf8());
+                    self.update_popup();
+                }
             }
             InputAction::DeleteChar => {
                 let input = self.view.input().to_string();
@@ -1240,15 +1250,25 @@ impl RatatuiRunner {
     /// Handle paste events for multi-line paste detection.
     ///
     /// Single-line pastes are inserted directly into the input buffer.
-    /// Multi-line pastes are stored in `pending_pastes` and a summary is shown.
+    /// Multi-line pastes are stored in `pending_pastes` and indicator shown in input.
     fn handle_paste_event(&mut self, text: &str) {
         // Normalize line endings: \r\n -> \n, \r -> \n
         let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
 
         if normalized.contains('\n') {
-            // Multi-line paste: store for later, show summary
+            // Multi-line paste: store and show indicator in input box
             let paste = PastedContent::text(normalized);
-            self.view.set_status_text(&format!("Pasted: {}", paste.summary()));
+
+            // Show paste indicator in input box
+            let indicator = paste.summary();
+            let current_input = self.view.input().to_string();
+            if current_input.is_empty() {
+                self.view.set_input(&indicator);
+            } else {
+                self.view.set_input(&format!("{} {}", current_input, indicator));
+            }
+            self.view.set_cursor_position(self.view.input().len());
+
             self.pending_pastes.push(paste);
         } else {
             // Single-line paste: insert directly at cursor
@@ -1277,23 +1297,32 @@ impl RatatuiRunner {
                 let normalized = buffer.replace("\r\n", "\n").replace('\r', "\n");
 
                 if normalized.contains('\n') {
-                    // Treat as multi-line paste
-                    // Clear the input buffer since the content was already inserted char-by-char
-                    // during rapid input and will now be stored as a pending paste instead
-                    self.view.set_input("");
-                    self.view.set_cursor_position(0);
-
+                    // Treat as multi-line paste - show indicator in input box
                     let paste = PastedContent::text(normalized);
                     tracing::debug!(
                         lines = paste.summary(),
                         "Rapid input detected as paste (timing-based)"
                     );
-                    self.view
-                        .set_status_text(&format!("Pasted: {}", paste.summary()));
+
+                    // Show paste indicator in input box
+                    let indicator = paste.summary();
+                    let current_input = self.view.input().to_string();
+                    if current_input.is_empty() {
+                        self.view.set_input(&indicator);
+                    } else {
+                        self.view.set_input(&format!("{} {}", current_input, indicator));
+                    }
+                    self.view.set_cursor_position(self.view.input().len());
+
                     self.pending_pastes.push(paste);
                     return true;
+                } else {
+                    // Single-line rapid input: insert all accumulated characters at once
+                    let state = self.view.state_mut();
+                    let cursor_pos = state.cursor_position;
+                    state.input_buffer.insert_str(cursor_pos, &normalized);
+                    state.cursor_position += normalized.len();
                 }
-                // Single-line rapid input: characters were already inserted, nothing more to do
             }
         }
         false
@@ -1748,10 +1777,6 @@ impl RatatuiRunner {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
         let _ = Command::new(&shell).arg("-l").status();
 
-        // Wait for explicit return
-        println!("\nPress Enter to return...");
-        let _ = std::io::stdin().read_line(&mut String::new());
-
         // Re-enter TUI
         crossterm::terminal::enable_raw_mode()?;
         if self.mouse_capture_enabled {
@@ -1769,6 +1794,8 @@ impl RatatuiRunner {
             )?;
         }
 
+        // Ensure chat history is visible after returning
+        self.view.scroll_to_bottom();
         self.view.set_status_text("Shell session ended");
         Ok(())
     }
