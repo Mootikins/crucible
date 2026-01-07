@@ -129,8 +129,9 @@ async fn handle_request(
         "kiln.open" => handle_kiln_open(req, kiln_manager).await,
         "kiln.close" => handle_kiln_close(req, kiln_manager).await,
         "kiln.list" => handle_kiln_list(req, kiln_manager).await,
-        "query" => handle_query(req, kiln_manager).await,
         "search_vectors" => handle_search_vectors(req, kiln_manager).await,
+        "list_notes" => handle_list_notes(req, kiln_manager).await,
+        "get_note_by_name" => handle_get_note_by_name(req, kiln_manager).await,
         _ => Response::error(
             req.id,
             METHOD_NOT_FOUND,
@@ -177,42 +178,6 @@ async fn handle_kiln_list(req: Request, km: &Arc<KilnManager>) -> Response {
     Response::success(req.id, list)
 }
 
-async fn handle_query(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
-        Some(p) => p,
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'kiln' parameter"),
-    };
-
-    let sql = match req.params.get("sql").and_then(|v| v.as_str()) {
-        Some(s) => s,
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'sql' parameter"),
-    };
-
-    // Get or open connection to the kiln
-    let handle = match km.get_or_open(Path::new(kiln_path)).await {
-        Ok(c) => c,
-        Err(e) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
-    };
-
-    // Execute query using the storage handle
-    // Query accepts params array, but we'll pass empty for now
-    // Could extend the RPC protocol to accept params in the future
-    match handle.query(sql, &[]).await {
-        Ok(result) => {
-            // Convert QueryResult to JSON
-            // QueryResult has records (Vec<Record>), each Record is a HashMap<String, serde_json::Value>
-            let json_result = serde_json::json!({
-                "records": result.records,
-                "total_count": result.total_count,
-                "execution_time_ms": result.execution_time_ms,
-                "has_more": result.has_more
-            });
-            Response::success(req.id, json_result)
-        }
-        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
-    }
-}
-
 async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -> Response {
     let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
         Some(p) => p,
@@ -253,6 +218,71 @@ async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -> Response 
                 .collect();
             Response::success(req.id, json_results)
         }
+        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    }
+}
+
+async fn handle_list_notes(req: Request, km: &Arc<KilnManager>) -> Response {
+    let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'kiln' parameter"),
+    };
+
+    let path_filter = req.params.get("path_filter").and_then(|v| v.as_str());
+
+    let handle = match km.get_or_open(Path::new(kiln_path)).await {
+        Ok(c) => c,
+        Err(e) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    };
+
+    match handle.list_notes(path_filter).await {
+        Ok(notes) => {
+            let json_notes: Vec<_> = notes
+                .into_iter()
+                .map(|n| {
+                    serde_json::json!({
+                        "name": n.name,
+                        "path": n.path,
+                        "title": n.title,
+                        "tags": n.tags,
+                        "updated_at": n.updated_at.map(|t| t.to_rfc3339())
+                    })
+                })
+                .collect();
+            Response::success(req.id, json_notes)
+        }
+        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    }
+}
+
+async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>) -> Response {
+    let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'kiln' parameter"),
+    };
+
+    let name = match req.params.get("name").and_then(|v| v.as_str()) {
+        Some(n) => n,
+        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'name' parameter"),
+    };
+
+    let handle = match km.get_or_open(Path::new(kiln_path)).await {
+        Ok(c) => c,
+        Err(e) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    };
+
+    match handle.get_note_by_name(name).await {
+        Ok(Some(note)) => Response::success(
+            req.id,
+            serde_json::json!({
+                "path": note.path,
+                "title": note.title,
+                "tags": note.tags,
+                "links_to": note.links_to,
+                "content_hash": note.content_hash.to_string()
+            }),
+        ),
+        Ok(None) => Response::success(req.id, serde_json::Value::Null),
         Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
     }
 }
@@ -377,64 +407,6 @@ mod tests {
         let response = String::from_utf8_lossy(&buf[..n]);
 
         assert!(response.contains("\"result\":[]")); // Empty array initially
-
-        let _ = shutdown_handle.send(());
-        let _ = server_task.await;
-    }
-
-    #[tokio::test]
-    async fn test_query_missing_kiln_param() {
-        let tmp = TempDir::new().unwrap();
-        let sock_path = tmp.path().join("test.sock");
-
-        let server = Server::bind(&sock_path).await.unwrap();
-        let shutdown_handle = server.shutdown_handle();
-        let server_task = tokio::spawn(async move { server.run().await });
-
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        let mut client = UnixStream::connect(&sock_path).await.unwrap();
-        // Missing kiln parameter
-        client
-            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"query\",\"params\":{\"sql\":\"SELECT * FROM notes\"}}\n")
-            .await
-            .unwrap();
-
-        let mut buf = vec![0u8; 1024];
-        let n = client.read(&mut buf).await.unwrap();
-        let response = String::from_utf8_lossy(&buf[..n]);
-
-        assert!(response.contains("error"));
-        assert!(response.contains("kiln")); // Error message should mention missing kiln
-
-        let _ = shutdown_handle.send(());
-        let _ = server_task.await;
-    }
-
-    #[tokio::test]
-    async fn test_query_missing_sql_param() {
-        let tmp = TempDir::new().unwrap();
-        let sock_path = tmp.path().join("test.sock");
-
-        let server = Server::bind(&sock_path).await.unwrap();
-        let shutdown_handle = server.shutdown_handle();
-        let server_task = tokio::spawn(async move { server.run().await });
-
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        let mut client = UnixStream::connect(&sock_path).await.unwrap();
-        // Missing sql parameter
-        client
-            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"query\",\"params\":{\"kiln\":\"/tmp/test\"}}\n")
-            .await
-            .unwrap();
-
-        let mut buf = vec![0u8; 1024];
-        let n = client.read(&mut buf).await.unwrap();
-        let response = String::from_utf8_lossy(&buf[..n]);
-
-        assert!(response.contains("error"));
-        assert!(response.contains("sql")); // Error message should mention missing sql
 
         let _ = shutdown_handle.send(());
         let _ = server_task.await;
