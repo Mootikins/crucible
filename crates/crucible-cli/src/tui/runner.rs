@@ -224,6 +224,8 @@ pub struct RatatuiRunner {
     pending_interaction_id: Option<String>,
     /// Pending popup request (for handling "Other" selections)
     pending_popup: Option<crucible_core::interaction::PopupRequest>,
+    /// Pending AskBatch dialog state (for multi-question interactions)
+    pending_ask_batch: Option<crate::tui::ask_batch_dialog::AskBatchDialogState>,
     /// Session logger for persisting chat events to JSONL files
     session_logger: Option<std::sync::Arc<SessionLogger>>,
     /// Help documentation index (lazy-initialized on first :help command)
@@ -272,6 +274,7 @@ impl RatatuiRunner {
             selection_cache: crate::tui::selection::SelectableContentCache::new(),
             pending_interaction_id: None,
             pending_popup: None,
+            pending_ask_batch: None,
             session_logger: None,
             docs_index: None,
             pending_pastes: Vec::new(),
@@ -624,6 +627,30 @@ impl RatatuiRunner {
         if self.view.has_dialog() {
             if let Some(result) = self.view.handle_dialog_key(*key) {
                 self.handle_dialog_result(result)?;
+            }
+            return Ok(false);
+        }
+
+        // AskBatch dialog takes priority over other input
+        if let Some(ref mut ask_batch) = self.pending_ask_batch {
+            use crate::tui::ask_batch_dialog::AskBatchResult;
+            match ask_batch.handle_key(*key) {
+                AskBatchResult::Complete(response) => {
+                    // Response is ready - in future, send via registry
+                    let _response =
+                        crucible_core::interaction::InteractionResponse::AskBatch(response);
+                    self.view.set_status_text("Questions answered");
+                    self.pending_ask_batch = None;
+                    self.pending_interaction_id = None;
+                }
+                AskBatchResult::Cancelled(_uuid) => {
+                    self.view.set_status_text("Questions cancelled");
+                    self.pending_ask_batch = None;
+                    self.pending_interaction_id = None;
+                }
+                AskBatchResult::Pending => {
+                    // Still in dialog, just consumed the key
+                }
             }
             return Ok(false);
         }
@@ -2200,10 +2227,18 @@ impl RatatuiRunner {
         let selection = &self.selection;
         let scroll_offset = view.state().scroll_offset;
         let conv_height = view.conversation_viewport_height();
+        let ask_batch_state = self.pending_ask_batch.as_ref();
 
         terminal.draw(|f| {
             view.render_frame(f);
             apply_selection_highlight(f, selection, scroll_offset, conv_height);
+
+            // Render AskBatch dialog overlay if active
+            if let Some(state) = ask_batch_state {
+                use crate::tui::ask_batch_dialog::AskBatchDialogWidget;
+                use ratatui::widgets::Widget;
+                AskBatchDialogWidget::new(state).render(f.area(), f.buffer_mut());
+            }
         })?;
         Ok(())
     }
@@ -2301,15 +2336,12 @@ impl RatatuiRunner {
                 DialogState::select(&panel.header, choices)
             }
             InteractionRequest::AskBatch(batch) => {
-                // TODO: Implement full AskBatchDialog widget (Task 5)
-                // For now, fall back to basic select dialog for first question
-                if let Some(q) = batch.questions.first() {
-                    let mut choices = q.choices.clone();
-                    choices.push("[Other...]".to_string());
-                    DialogState::select(&q.question, choices)
-                } else {
-                    DialogState::info("AskBatch", "No questions in batch")
-                }
+                // Use full AskBatchDialog for multi-question interactions
+                self.pending_ask_batch =
+                    Some(crate::tui::ask_batch_dialog::AskBatchDialogState::new(batch.clone()));
+                self.pending_interaction_id = Some(request_id.to_string());
+                debug!("AskBatch interaction request {}: showing dialog", request_id);
+                return; // Don't push to dialog stack - AskBatch has its own rendering
             }
         };
 
