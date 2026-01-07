@@ -186,15 +186,19 @@ impl<'a> ChatView<'a> {
         // Check for popup triggers before passing to input
         if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
             if let KeyCode::Char(c) = key.code {
+                // Close popup on space (command/mention is complete)
+                // For @ mentions, we'll eventually support @"quoted paths"
+                if c == ' ' && self.popup.is_some() {
+                    self.popup = None;
+                }
+
                 // First, let input handle the character
                 let input_result = self.input.handle_key(key);
 
-                // Then check if we should trigger a popup
-                self.check_popup_trigger(c);
-
-                // Update existing popup based on new input content
-                // (closes popup if query contains whitespace)
-                self.update_popup_from_input();
+                // Then check if we should trigger a popup (only if not space)
+                if c != ' ' {
+                    self.check_popup_trigger(c);
+                }
 
                 return input_result;
             }
