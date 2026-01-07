@@ -18,11 +18,11 @@ expression: h.render()
                                                                                 
                                                                                 
 ┌Select────────────────────────────────────────────────────────────────────────┐
-│> [agent] @ researcher Deep research and analysis                             │
-│  [agent] @ coder Code generation and review                                  │
-│  [agent] @ writer Writing and editing                                        │
+│> / search Search across all notes in your vault using semantic similarity    │
+│  / help Display comprehensive help for all available commands and features   │
+│  / clear Clear the current conversation history and start fresh              │
 └──────────────────────────────────────────────────────────────────────────────┘
                                                                                 
- > @                                                                            
+ > /                                                                            
                                                                                 
 ▸ Plan │ Ready

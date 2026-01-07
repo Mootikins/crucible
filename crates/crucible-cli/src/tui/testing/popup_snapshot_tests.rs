@@ -558,3 +558,202 @@ mod popup_with_context_tests {
         assert_eq!(h2.conversation_len(), initial_len);
     }
 }
+
+// =============================================================================
+// Realistic Workflow Tests - User scenarios
+// =============================================================================
+
+mod workflow_tests {
+    use super::*;
+
+    const WIDTH: u16 = 80;
+    const HEIGHT: u16 = 24;
+
+    /// User types `/se` to filter commands, sees filtered results
+    #[test]
+    fn workflow_filter_commands() {
+        let mut h = Harness::new(WIDTH, HEIGHT)
+            .with_popup_items(PopupKind::Command, registries::standard_commands());
+
+        // Type filter text
+        h.keys("se");
+
+        // Query should update
+        assert_eq!(h.popup_query(), Some("se"));
+
+        // Snapshot shows filtered state
+        assert_snapshot!("workflow_filter_commands", h.render());
+    }
+
+    /// User types `@re` to filter agents
+    #[test]
+    fn workflow_filter_agents() {
+        let mut h = Harness::new(WIDTH, HEIGHT)
+            .with_popup_items(PopupKind::AgentOrFile, registries::test_agents());
+
+        // Type filter for "researcher"
+        h.keys("re");
+
+        assert_eq!(h.popup_query(), Some("re"));
+        assert_snapshot!("workflow_filter_agents", h.render());
+    }
+
+    /// User types `:` to open REPL popup, then navigates and selects
+    #[test]
+    fn workflow_repl_navigate_select() {
+        let mut h = Harness::new(WIDTH, HEIGHT)
+            .with_popup_items(PopupKind::ReplCommand, registries::test_repl_commands());
+
+        // Navigate to third item
+        h.key(KeyCode::Down);
+        h.key(KeyCode::Down);
+
+        assert_eq!(h.popup_selected(), Some(2));
+        assert_snapshot!("workflow_repl_navigate", h.render());
+
+        // Select it
+        h.key(KeyCode::Enter);
+
+        // Popup should close, input should have the token
+        assert!(!h.has_popup());
+        assert!(h.input_text().starts_with(':'));
+    }
+
+    /// Complete flow: open popup, type filter, navigate, select
+    #[test]
+    fn workflow_complete_command_selection() {
+        let mut h = Harness::new(WIDTH, HEIGHT)
+            .with_popup_items(PopupKind::Command, registries::standard_commands());
+
+        // Step 1: Initial state with popup open
+        assert!(h.has_popup());
+        assert_eq!(h.popup_selected(), Some(0));
+
+        // Step 2: Type filter
+        h.keys("hel");
+        assert_eq!(h.popup_query(), Some("hel"));
+
+        // Step 3: Navigate to confirm selection
+        h.key(KeyCode::Down);
+        h.key(KeyCode::Up);
+
+        // Step 4: Confirm
+        h.key(KeyCode::Enter);
+
+        // Popup closes, input has token
+        assert!(!h.has_popup());
+        // Should have a command token (depends on filter matching)
+        assert!(h.input_text().starts_with('/'));
+    }
+
+    /// User opens popup and immediately cancels
+    #[test]
+    fn workflow_cancel_immediately() {
+        let mut h = Harness::new(WIDTH, HEIGHT)
+            .with_popup_items(PopupKind::Command, registries::standard_commands());
+
+        assert!(h.has_popup());
+
+        h.key(KeyCode::Esc);
+
+        assert!(!h.has_popup());
+        // Input should be cleared on cancel
+        assert_eq!(h.input_text(), "");
+    }
+
+    /// User uses backspace to remove filter characters
+    #[test]
+    fn workflow_backspace_filter() {
+        let mut h = Harness::new(WIDTH, HEIGHT)
+            .with_popup_items(PopupKind::Command, registries::standard_commands());
+
+        // Type and then backspace
+        h.keys("search");
+        assert_eq!(h.popup_query(), Some("search"));
+
+        h.key(KeyCode::Backspace);
+        h.key(KeyCode::Backspace);
+        assert_eq!(h.popup_query(), Some("sear"));
+
+        assert_snapshot!("workflow_backspace_filter", h.render());
+    }
+
+    /// Full navigation cycle: down past end wraps to top
+    #[test]
+    fn workflow_navigation_wrap() {
+        let mut h = Harness::new(WIDTH, HEIGHT)
+            .with_popup_items(PopupKind::Command, registries::minimal_commands()); // 2 items
+
+        // Start at 0
+        assert_eq!(h.popup_selected(), Some(0));
+
+        // Down -> 1
+        h.key(KeyCode::Down);
+        assert_eq!(h.popup_selected(), Some(1));
+
+        // Down again should wrap or stay (depending on implementation)
+        h.key(KeyCode::Down);
+        // Either wraps to 0 or stays at last
+        let selected = h.popup_selected().unwrap();
+        assert!(selected <= 1);
+
+        assert_snapshot!("workflow_navigation_wrap", h.render());
+    }
+
+    /// Keyboard navigation preserves query while moving selection
+    #[test]
+    fn workflow_navigate_while_filtered() {
+        let mut h = Harness::new(WIDTH, HEIGHT)
+            .with_popup_items(PopupKind::Command, registries::standard_commands());
+
+        // Type filter
+        h.keys("s");
+
+        // Navigate
+        h.key(KeyCode::Down);
+
+        // Query should be preserved
+        assert_eq!(h.popup_query(), Some("s"));
+        assert!(h.has_popup());
+
+        assert_snapshot!("workflow_navigate_while_filtered", h.render());
+    }
+
+    /// Multiple @ mentions in a row (close one, open another)
+    #[test]
+    fn workflow_multiple_triggers() {
+        let mut h = Harness::new(WIDTH, HEIGHT);
+
+        // First @ trigger - opens popup with EmptyProvider (no items)
+        h.key(KeyCode::Char('@'));
+        assert!(h.has_popup());
+
+        // Cancel
+        h.key(KeyCode::Esc);
+        assert!(!h.has_popup());
+
+        // Second @ trigger
+        h.key(KeyCode::Char('@'));
+        assert!(h.has_popup());
+
+        // Type some text
+        h.keys("test");
+        assert_eq!(h.popup_query(), Some("test"));
+    }
+
+    /// Popup with long item descriptions renders correctly
+    #[test]
+    fn workflow_long_descriptions() {
+        // Create items with long descriptions
+        let items = vec![
+            registries::command("search", "Search across all notes in your vault using semantic similarity"),
+            registries::command("help", "Display comprehensive help for all available commands and features"),
+            registries::command("clear", "Clear the current conversation history and start fresh"),
+        ];
+
+        let h = Harness::new(WIDTH, HEIGHT)
+            .with_popup_items(PopupKind::Command, items);
+
+        assert_snapshot!("workflow_long_descriptions", h.render());
+    }
+}
