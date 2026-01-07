@@ -349,6 +349,7 @@ impl EventToMarkdown for SessionEvent {
             } => {
                 let response_summary = match response {
                     crucible_core::InteractionResponse::Ask(_) => "Ask response",
+                    crucible_core::InteractionResponse::AskBatch(_) => "AskBatch response",
                     crucible_core::InteractionResponse::Edit(_) => "Edit response",
                     crucible_core::InteractionResponse::Permission(_) => "Permission response",
                     crucible_core::InteractionResponse::Popup(_) => "Popup response",
