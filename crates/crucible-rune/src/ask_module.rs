@@ -352,9 +352,9 @@ impl AskContext {
             InteractionResponse::AskBatch(batch_response) => {
                 Ok(RuneAskBatchResponse::from_core(batch_response))
             }
-            InteractionResponse::Cancelled => {
-                Ok(RuneAskBatchResponse::from_core(AskBatchResponse::cancelled(id)))
-            }
+            InteractionResponse::Cancelled => Ok(RuneAskBatchResponse::from_core(
+                AskBatchResponse::cancelled(id),
+            )),
             _ => Err(RuneAskError::new(format!(
                 "Unexpected response type: {:?}",
                 response
@@ -486,11 +486,9 @@ impl AgentAskContext {
         let backend = self.backend.clone();
         let core_batch = batch.into_core();
 
-        rt.block_on(async move {
-            Self::ask_agent_async(&backend, core_batch).await
-        })
-        .map(RuneAskBatchResponse::from_core)
-        .map_err(|e| RuneAskError::new(e))
+        rt.block_on(async move { Self::ask_agent_async(&backend, core_batch).await })
+            .map(RuneAskBatchResponse::from_core)
+            .map_err(|e| RuneAskError::new(e))
     }
 
     /// Async implementation of ask_agent
@@ -501,7 +499,8 @@ impl AgentAskContext {
         let prompt = Self::format_batch_prompt(&batch);
         let system_prompt = Self::system_prompt();
 
-        let request = BackendCompletionRequest::new(system_prompt, vec![ContextMessage::user(prompt)]);
+        let request =
+            BackendCompletionRequest::new(system_prompt, vec![ContextMessage::user(prompt)]);
 
         let response = backend
             .complete(request)
@@ -513,11 +512,18 @@ impl AgentAskContext {
 
     /// Format the batch as a structured prompt for the LLM.
     fn format_batch_prompt(batch: &AskBatch) -> String {
-        let mut prompt = String::from("Please answer the following questions by selecting from the provided choices.\n\n");
+        let mut prompt = String::from(
+            "Please answer the following questions by selecting from the provided choices.\n\n",
+        );
         prompt.push_str("For each question, respond with ONLY the choice number (0-indexed) or \"other: <your text>\" if none fit.\n\n");
 
         for (i, q) in batch.questions.iter().enumerate() {
-            prompt.push_str(&format!("Question {}: {} ({})\n", i + 1, q.question, q.header));
+            prompt.push_str(&format!(
+                "Question {}: {} ({})\n",
+                i + 1,
+                q.question,
+                q.header
+            ));
             for (j, choice) in q.choices.iter().enumerate() {
                 prompt.push_str(&format!("  {}: {}\n", j, choice));
             }
@@ -529,7 +535,8 @@ impl AgentAskContext {
         prompt.push_str("{\n");
         prompt.push_str("  \"answers\": [\n");
         prompt.push_str("    {\"selected\": [0], \"other\": null},  // for first question\n");
-        prompt.push_str("    {\"selected\": [], \"other\": \"custom answer\"}  // if using other\n");
+        prompt
+            .push_str("    {\"selected\": [], \"other\": \"custom answer\"}  // if using other\n");
         prompt.push_str("  ]\n");
         prompt.push_str("}\n");
         prompt.push_str("```\n");
@@ -543,7 +550,7 @@ impl AgentAskContext {
             "You are a helpful assistant answering multiple-choice questions. \
              Respond ONLY with valid JSON containing your answers. \
              Select the most appropriate choice for each question. \
-             If no choice fits, use the 'other' field with your custom answer."
+             If no choice fits, use the 'other' field with your custom answer.",
         )
     }
 
@@ -553,8 +560,8 @@ impl AgentAskContext {
         let json_str = Self::extract_json(content)?;
 
         // Parse the JSON
-        let parsed: serde_json::Value = serde_json::from_str(&json_str)
-            .map_err(|e| format!("Invalid JSON response: {}", e))?;
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json_str).map_err(|e| format!("Invalid JSON response: {}", e))?;
 
         let answers = parsed
             .get("answers")
@@ -578,15 +585,13 @@ impl AgentAskContext {
                 })
                 .unwrap_or_default();
 
-            let other: Option<String> = answer
-                .get("other")
-                .and_then(|o| {
-                    if o.is_null() {
-                        None
-                    } else {
-                        o.as_str().map(|s| s.to_string())
-                    }
-                });
+            let other: Option<String> = answer.get("other").and_then(|o| {
+                if o.is_null() {
+                    None
+                } else {
+                    o.as_str().map(|s| s.to_string())
+                }
+            });
 
             let qa = if let Some(text) = other {
                 if selected.is_empty() {
@@ -663,9 +668,7 @@ impl AgentAskContext {
 /// let backend: Arc<dyn CompletionBackend> = /* create backend */;
 /// let module = ask_module_with_agent(backend).unwrap();
 /// ```
-pub fn ask_module_with_agent(
-    backend: Arc<dyn CompletionBackend>,
-) -> Result<Module, ContextError> {
+pub fn ask_module_with_agent(backend: Arc<dyn CompletionBackend>) -> Result<Module, ContextError> {
     let mut module = Module::with_crate_item("crucible", ["ask"])?;
 
     // Register types (same as ask_module)
@@ -908,7 +911,9 @@ mod tests {
     fn test_ask_batch_response() {
         let mut response = AskBatchResponse::new(crucible_core::uuid::Uuid::new_v4());
         response.answers.push(QuestionAnswer::choice(0));
-        response.answers.push(QuestionAnswer::other("Custom".to_string()));
+        response
+            .answers
+            .push(QuestionAnswer::other("Custom".to_string()));
 
         let rune_response = RuneAskBatchResponse::from_core(response);
 
@@ -1013,15 +1018,16 @@ mod tests {
 
     #[test]
     fn test_extract_json_with_surrounding_text() {
-        let content = r#"The answer is {"answers": [{"selected": [0], "other": null}]} and that's it."#;
+        let content =
+            r#"The answer is {"answers": [{"selected": [0], "other": null}]} and that's it."#;
         let result = AgentAskContext::extract_json(content);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_parse_response_single_choice() {
-        let batch = AskBatch::new()
-            .question(AskQuestion::new("Q1", "First?").choice("A").choice("B"));
+        let batch =
+            AskBatch::new().question(AskQuestion::new("Q1", "First?").choice("A").choice("B"));
 
         let content = r#"{"answers": [{"selected": [0], "other": null}]}"#;
         let result = AgentAskContext::parse_response(content, batch);
@@ -1035,8 +1041,8 @@ mod tests {
 
     #[test]
     fn test_parse_response_with_other() {
-        let batch = AskBatch::new()
-            .question(AskQuestion::new("Q1", "First?").choice("A").choice("B"));
+        let batch =
+            AskBatch::new().question(AskQuestion::new("Q1", "First?").choice("A").choice("B"));
 
         let content = r#"{"answers": [{"selected": [], "other": "custom answer"}]}"#;
         let result = AgentAskContext::parse_response(content, batch);
@@ -1050,8 +1056,12 @@ mod tests {
 
     #[test]
     fn test_parse_response_multi_select() {
-        let batch = AskBatch::new()
-            .question(AskQuestion::new("Q1", "First?").choice("A").choice("B").choice("C"));
+        let batch = AskBatch::new().question(
+            AskQuestion::new("Q1", "First?")
+                .choice("A")
+                .choice("B")
+                .choice("C"),
+        );
 
         let content = r#"{"answers": [{"selected": [0, 2], "other": null}]}"#;
         let result = AgentAskContext::parse_response(content, batch);
@@ -1082,8 +1092,11 @@ mod tests {
 
     #[test]
     fn test_format_batch_prompt() {
-        let batch = AskBatch::new()
-            .question(AskQuestion::new("Auth", "Method?").choice("OAuth").choice("JWT"));
+        let batch = AskBatch::new().question(
+            AskQuestion::new("Auth", "Method?")
+                .choice("OAuth")
+                .choice("JWT"),
+        );
 
         let prompt = AgentAskContext::format_batch_prompt(&batch);
 

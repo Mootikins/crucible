@@ -748,13 +748,21 @@ mod workflow_tests {
     fn workflow_long_descriptions() {
         // Create items with long descriptions
         let items = vec![
-            registries::command("search", "Search across all notes in your vault using semantic similarity"),
-            registries::command("help", "Display comprehensive help for all available commands and features"),
-            registries::command("clear", "Clear the current conversation history and start fresh"),
+            registries::command(
+                "search",
+                "Search across all notes in your vault using semantic similarity",
+            ),
+            registries::command(
+                "help",
+                "Display comprehensive help for all available commands and features",
+            ),
+            registries::command(
+                "clear",
+                "Clear the current conversation history and start fresh",
+            ),
         ];
 
-        let h = Harness::new(WIDTH, HEIGHT)
-            .with_popup_items(PopupKind::Command, items);
+        let h = Harness::new(WIDTH, HEIGHT).with_popup_items(PopupKind::Command, items);
 
         assert_snapshot!("workflow_long_descriptions", h.render());
     }

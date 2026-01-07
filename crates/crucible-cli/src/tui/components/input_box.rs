@@ -97,8 +97,7 @@ impl<'a> InputBoxWidget<'a> {
         if self.buffer.is_empty() {
             1
         } else {
-            self.buffer.lines().count().max(1)
-                + if self.buffer.ends_with('\n') { 1 } else { 0 }
+            self.buffer.lines().count().max(1) + if self.buffer.ends_with('\n') { 1 } else { 0 }
         }
     }
 
@@ -430,11 +429,7 @@ mod tests {
         }
 
         /// Render multiline widget with specified parameters
-        fn render_multiline(
-            buffer: &str,
-            cursor_pos: usize,
-            height: u16,
-        ) -> Terminal<TestBackend> {
+        fn render_multiline(buffer: &str, cursor_pos: usize, height: u16) -> Terminal<TestBackend> {
             let mut terminal = multiline_terminal(height);
             terminal
                 .draw(|f| {
@@ -524,7 +519,10 @@ mod tests {
         #[test]
         fn required_height_capped_at_max() {
             // 15 lines should be capped at DEFAULT_MAX_INPUT_LINES (10)
-            let content = (0..15).map(|i| format!("line {}", i)).collect::<Vec<_>>().join("\n");
+            let content = (0..15)
+                .map(|i| format!("line {}", i))
+                .collect::<Vec<_>>()
+                .join("\n");
             let widget = InputBoxWidget::new(&content, 0);
             assert_eq!(widget.required_height(), DEFAULT_MAX_INPUT_LINES + 2);
         }

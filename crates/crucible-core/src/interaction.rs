@@ -1226,8 +1226,7 @@ mod tests {
 
     #[test]
     fn interaction_request_from_ask_batch() {
-        let batch =
-            AskBatch::new().question(AskQuestion::new("Test", "Question?").choice("A"));
+        let batch = AskBatch::new().question(AskQuestion::new("Test", "Question?").choice("A"));
         let req: InteractionRequest = batch.into();
 
         assert!(matches!(req, InteractionRequest::AskBatch(_)));
@@ -1237,16 +1236,20 @@ mod tests {
 
     #[test]
     fn interaction_response_from_ask_batch() {
-        let resp: InteractionResponse =
-            AskBatchResponse::new(uuid::Uuid::new_v4()).answer(QuestionAnswer::choice(0)).into();
+        let resp: InteractionResponse = AskBatchResponse::new(uuid::Uuid::new_v4())
+            .answer(QuestionAnswer::choice(0))
+            .into();
 
         assert!(matches!(resp, InteractionResponse::AskBatch(_)));
     }
 
     #[test]
     fn ask_batch_serialization() {
-        let batch = AskBatch::new()
-            .question(AskQuestion::new("Test", "Question?").choice("A").choice("B"));
+        let batch = AskBatch::new().question(
+            AskQuestion::new("Test", "Question?")
+                .choice("A")
+                .choice("B"),
+        );
         let json = serde_json::to_string(&batch).unwrap();
         let restored: AskBatch = serde_json::from_str(&json).unwrap();
 
