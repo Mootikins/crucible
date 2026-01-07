@@ -42,6 +42,8 @@ pub struct SessionHistoryWidget<'a> {
     scroll_offset: usize,
     viewport_height: u16,
     viewport_width: u16,
+    /// Horizontal scroll offset for wide content (tables, code blocks)
+    horizontal_offset: usize,
 }
 
 impl<'a> SessionHistoryWidget<'a> {
@@ -52,6 +54,7 @@ impl<'a> SessionHistoryWidget<'a> {
             scroll_offset: 0,
             viewport_height: 0,
             viewport_width: 80, // Default width for tests
+            horizontal_offset: 0,
         }
     }
 
@@ -73,6 +76,12 @@ impl<'a> SessionHistoryWidget<'a> {
     /// Defaults to 80 if not set.
     pub fn viewport_width(mut self, width: u16) -> Self {
         self.viewport_width = width;
+        self
+    }
+
+    /// Set the horizontal scroll offset (for wide content)
+    pub fn horizontal_offset(mut self, offset: usize) -> Self {
+        self.horizontal_offset = offset;
         self
     }
 
@@ -159,6 +168,25 @@ impl<'a> SessionHistoryWidget<'a> {
             .sum()
     }
 
+    /// Calculate the maximum content width across all lines
+    ///
+    /// Used for horizontal scroll bounds. Returns the width of the widest line
+    /// in the rendered content.
+    pub fn max_content_width(&self, render_width: usize) -> usize {
+        let lines = self.render_to_lines(render_width);
+        lines
+            .iter()
+            .map(|line| {
+                // Calculate actual displayed width of the line
+                line.spans
+                    .iter()
+                    .map(|span| span.content.chars().count())
+                    .sum()
+            })
+            .max()
+            .unwrap_or(0)
+    }
+
     /// Scroll up by the given number of lines
     pub fn scroll_up(&mut self, lines: usize) {
         self.scroll_offset = self.scroll_offset.saturating_add(lines);
@@ -206,6 +234,9 @@ impl Widget for SessionHistoryWidget<'_> {
             return;
         }
 
+        // Horizontal scroll offset (clamped to u16 for Paragraph::scroll)
+        let h_scroll = self.horizontal_offset.min(u16::MAX as usize) as u16;
+
         // Calculate the scroll position
         // scroll_offset = 0 means at bottom (newest content visible)
         // scroll_offset = N means N lines scrolled up from bottom
@@ -220,7 +251,8 @@ impl Widget for SessionHistoryWidget<'_> {
                 height: content_height as u16,
             };
             // No Wrap needed - termimad pre-wraps at word boundaries
-            let paragraph = Paragraph::new(lines);
+            // Apply horizontal scroll (vertical is 0 since content fits)
+            let paragraph = Paragraph::new(lines).scroll((0, h_scroll));
             paragraph.render(offset_area, buf);
         } else {
             // Content exceeds viewport - apply scroll
@@ -233,7 +265,8 @@ impl Widget for SessionHistoryWidget<'_> {
             let top_scroll = max_scroll - effective_scroll;
 
             // No Wrap needed - termimad pre-wraps at word boundaries
-            let paragraph = Paragraph::new(lines).scroll((top_scroll as u16, 0));
+            // Apply both vertical and horizontal scroll
+            let paragraph = Paragraph::new(lines).scroll((top_scroll as u16, h_scroll));
             paragraph.render(area, buf);
         }
     }
