@@ -108,7 +108,9 @@ use crucible_core::events::{FileChangeKind, SessionEvent};
 use crucible_core::interaction::{AskRequest, InteractionRequest, PermRequest, ShowRequest};
 use crucible_core::traits::chat::AgentHandle;
 use ratatui::{backend::CrosstermBackend, Terminal};
+use regex::Regex;
 use std::io;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 /// Content pasted into the input area (multi-line pastes are stored separately).
@@ -159,6 +161,11 @@ impl PastedContent {
         }
     }
 }
+
+/// Regex to match paste indicator patterns like `[2 lines, 45 chars]`
+static PASTE_INDICATOR_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\[\d+ lines?, \d+ chars?\]").expect("paste indicator regex should compile")
+});
 
 /// TUI runner with full ratatui control and new conversation styling.
 ///
@@ -836,14 +843,22 @@ impl RatatuiRunner {
                 let input = self.view.input().to_string();
                 let pos = self.view.cursor_position();
                 if pos > 0 {
-                    let prev = input[..pos]
-                        .char_indices()
-                        .next_back()
-                        .map(|(i, _)| i)
-                        .unwrap_or(0);
-                    let new_input = format!("{}{}", &input[..prev], &input[pos..]);
-                    self.view.set_input(&new_input);
-                    self.view.set_cursor_position(prev);
+                    // Check if we're deleting into a paste indicator
+                    if let Some((start, end, idx)) = self.find_paste_indicator_at(&input, pos) {
+                        // Delete entire indicator and corresponding paste
+                        let new_pos = self.delete_paste_indicator(start, end, idx);
+                        self.view.set_cursor_position(new_pos);
+                    } else {
+                        // Normal single-character delete
+                        let prev = input[..pos]
+                            .char_indices()
+                            .next_back()
+                            .map(|(i, _)| i)
+                            .unwrap_or(0);
+                        let new_input = format!("{}{}", &input[..prev], &input[pos..]);
+                        self.view.set_input(&new_input);
+                        self.view.set_cursor_position(prev);
+                    }
                     self.update_popup();
                 }
             }
@@ -1078,12 +1093,19 @@ impl RatatuiRunner {
                 let input = self.view.input().to_string();
                 let cursor = self.view.cursor_position();
                 if cursor > 0 {
-                    let before = &input[..cursor];
-                    let word_start = find_word_start_backward(before);
-                    let mut new_input = input.clone();
-                    new_input.drain(word_start..cursor);
-                    self.view.set_input(&new_input);
-                    self.view.set_cursor_position(word_start);
+                    // Check if we're deleting into a paste indicator
+                    if let Some((start, end, idx)) = self.find_paste_indicator_at(&input, cursor) {
+                        // Delete entire indicator and corresponding paste
+                        let new_pos = self.delete_paste_indicator(start, end, idx);
+                        self.view.set_cursor_position(new_pos);
+                    } else {
+                        let before = &input[..cursor];
+                        let word_start = find_word_start_backward(before);
+                        let mut new_input = input.clone();
+                        new_input.drain(word_start..cursor);
+                        self.view.set_input(&new_input);
+                        self.view.set_cursor_position(word_start);
+                    }
                     self.update_popup();
                 }
             }
@@ -1394,6 +1416,50 @@ impl RatatuiRunner {
             self.pending_pastes.clear();
             self.view.set_status_text("Cleared pending pastes");
         }
+    }
+
+    /// Find paste indicator containing or immediately after the given byte position.
+    ///
+    /// Returns `Some((start_byte, end_byte, index))` if the position is at the end of
+    /// an indicator (would delete into it) or inside one. The index corresponds to
+    /// the Nth indicator in the input (0-indexed), which maps to `pending_pastes[index]`.
+    fn find_paste_indicator_at(&self, input: &str, pos: usize) -> Option<(usize, usize, usize)> {
+        for (idx, mat) in PASTE_INDICATOR_RE.find_iter(input).enumerate() {
+            // Check if cursor is inside the indicator or just after it (about to delete into it)
+            if pos > mat.start() && pos <= mat.end() {
+                return Some((mat.start(), mat.end(), idx));
+            }
+        }
+        None
+    }
+
+    /// Delete a paste indicator from input and remove the corresponding paste.
+    ///
+    /// Returns the new cursor position after deletion.
+    fn delete_paste_indicator(&mut self, indicator_start: usize, indicator_end: usize, paste_idx: usize) -> usize {
+        // Remove from input
+        let input = self.view.input().to_string();
+        let mut new_input = String::with_capacity(input.len() - (indicator_end - indicator_start));
+        new_input.push_str(&input[..indicator_start]);
+
+        // Handle space before indicator (if present)
+        let trim_space_before = indicator_start > 0 && input.as_bytes().get(indicator_start.saturating_sub(1)) == Some(&b' ');
+        let new_cursor = if trim_space_before {
+            new_input.pop(); // Remove trailing space before indicator
+            indicator_start - 1
+        } else {
+            indicator_start
+        };
+
+        new_input.push_str(&input[indicator_end..]);
+        self.view.set_input(&new_input);
+
+        // Remove corresponding paste (if index is valid)
+        if paste_idx < self.pending_pastes.len() {
+            self.pending_pastes.remove(paste_idx);
+        }
+
+        new_cursor
     }
 
     /// Concatenate pending pastes with input buffer for sending.
@@ -2779,6 +2845,100 @@ mod tests {
 
             let msg = runner.build_message_with_pastes();
             assert_eq!(msg, "only typed");
+        }
+
+        #[test]
+        fn test_find_paste_indicator_at_end() {
+            let runner =
+                RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+            let input = "hello [2 lines, 10 chars]";
+            // Cursor at end (position 25) - inside indicator
+            let result = runner.find_paste_indicator_at(input, 25);
+            assert!(result.is_some());
+            let (start, end, idx) = result.unwrap();
+            assert_eq!(start, 6); // After "hello "
+            assert_eq!(end, 25);
+            assert_eq!(idx, 0);
+        }
+
+        #[test]
+        fn test_find_paste_indicator_at_middle() {
+            let runner =
+                RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+            let input = "[5 lines, 100 chars]";
+            // Cursor in middle of indicator (position 10)
+            let result = runner.find_paste_indicator_at(input, 10);
+            assert!(result.is_some());
+            let (start, end, idx) = result.unwrap();
+            assert_eq!(start, 0);
+            assert_eq!(end, 20);
+            assert_eq!(idx, 0);
+        }
+
+        #[test]
+        fn test_find_paste_indicator_not_in_indicator() {
+            let runner =
+                RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+            let input = "hello world";
+            let result = runner.find_paste_indicator_at(input, 5);
+            assert!(result.is_none());
+        }
+
+        #[test]
+        fn test_find_paste_indicator_multiple_indicators() {
+            let runner =
+                RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+            let input = "[1 line, 5 chars] text [3 lines, 20 chars]";
+            // First indicator is at 0..17
+            // Second indicator is at 23..42
+
+            // Cursor in first indicator
+            let result = runner.find_paste_indicator_at(input, 10);
+            assert!(result.is_some());
+            assert_eq!(result.unwrap().2, 0); // First indicator
+
+            // Cursor in second indicator
+            let result = runner.find_paste_indicator_at(input, 30);
+            assert!(result.is_some());
+            assert_eq!(result.unwrap().2, 1); // Second indicator
+        }
+
+        #[test]
+        fn test_delete_paste_indicator() {
+            let mut runner =
+                RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+            runner.view.set_input("hello [2 lines, 10 chars]");
+            runner.pending_pastes.push(PastedContent::text("line1\nline2".to_string()));
+
+            // Delete the indicator (start=6, end=25, idx=0)
+            let new_pos = runner.delete_paste_indicator(6, 25, 0);
+
+            // Should remove indicator and trailing space
+            assert_eq!(runner.view.input(), "hello");
+            assert_eq!(new_pos, 5); // After "hello" without space
+            assert!(runner.pending_pastes.is_empty());
+        }
+
+        #[test]
+        fn test_delete_paste_indicator_preserves_other_pastes() {
+            let mut runner =
+                RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
+
+            runner.view.set_input("[1 line, 5 chars] [3 lines, 20 chars]");
+            runner.pending_pastes.push(PastedContent::text("12345".to_string()));
+            runner.pending_pastes.push(PastedContent::text("a\nb\nc".to_string()));
+
+            // Delete the first indicator (start=0, end=17, idx=0)
+            runner.delete_paste_indicator(0, 17, 0);
+
+            // Should remove first paste, keep second
+            assert_eq!(runner.pending_pastes.len(), 1);
+            assert!(runner.pending_pastes[0].content().contains('\n'));
         }
     }
 }
