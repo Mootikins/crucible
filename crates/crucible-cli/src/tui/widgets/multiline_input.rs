@@ -190,7 +190,9 @@ impl MultiLineInputState {
         let mut offset = 0;
         for (i, line) in lines.iter().enumerate() {
             let line_len = line.len();
-            if offset + line_len >= self.cursor && (i == lines.len() - 1 || offset + line_len >= self.cursor) {
+            if offset + line_len >= self.cursor
+                && (i == lines.len() - 1 || offset + line_len >= self.cursor)
+            {
                 current_line = i;
                 col = self.cursor - offset;
                 break;

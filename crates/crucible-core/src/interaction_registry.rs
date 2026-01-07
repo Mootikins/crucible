@@ -115,10 +115,7 @@ mod tests {
         let unknown_id = Uuid::new_v4();
         let response = AskBatchResponse::cancelled(unknown_id);
 
-        assert!(!registry.complete(
-            unknown_id,
-            InteractionResponse::AskBatch(response)
-        ));
+        assert!(!registry.complete(unknown_id, InteractionResponse::AskBatch(response)));
     }
 
     #[tokio::test]
