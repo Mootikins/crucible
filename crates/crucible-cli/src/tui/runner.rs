@@ -15,7 +15,7 @@ use tracing::debug;
 
 use crate::chat::bridge::AgentEventBridge;
 use crate::tui::selection::SelectionState;
-use ratatui::style::{Color, Modifier};
+use ratatui::style::Color;
 
 /// Apply selection highlighting to the frame buffer.
 ///
@@ -68,10 +68,11 @@ fn apply_selection_highlight(
 
             if x < area.x + area.width && y < area.y + area.height {
                 if let Some(cell) = buffer.cell_mut((x, y)) {
-                    // Invert colors for selection highlight
-                    cell.set_bg(Color::White);
-                    cell.set_fg(Color::Black);
-                    cell.modifier.insert(Modifier::REVERSED);
+                    // Invert colors for selection highlight by swapping fg/bg
+                    let orig_fg = cell.fg;
+                    let orig_bg = cell.bg;
+                    cell.set_fg(orig_bg);
+                    cell.set_bg(orig_fg);
                 }
             }
         }
@@ -450,6 +451,11 @@ impl RatatuiRunner {
                         }
                         StreamingEvent::ToolCall { id, name, args } => {
                             // Display tool call in the TUI with arguments
+                            tracing::debug!(
+                                tool_id = ?id,
+                                tool_name = %name,
+                                "StreamingEvent::ToolCall received - pushing to view"
+                            );
                             self.view.push_tool_running(&name, args.clone());
                             self.view.set_status_text(&format!("Running: {}", name));
 
