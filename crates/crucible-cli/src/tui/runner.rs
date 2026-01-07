@@ -1132,12 +1132,11 @@ impl RatatuiRunner {
                                         }
                                     }
                                 } else {
-                                    // Fallback: inject into input for agent
-                                    let search_prompt = format!("Search my notes for: {}", args);
-                                    self.view.set_input(&search_prompt);
-                                    self.view.set_cursor_position(search_prompt.len());
-                                    self.view.set_status_text("Press Enter to search via agent");
-                                    return Ok(false);
+                                    // No kiln context - show error
+                                    self.view.echo_message(
+                                        "Search unavailable: kiln context not initialized",
+                                    );
+                                    self.view.set_status_text("Search unavailable");
                                 }
                             }
                             "context" => {
