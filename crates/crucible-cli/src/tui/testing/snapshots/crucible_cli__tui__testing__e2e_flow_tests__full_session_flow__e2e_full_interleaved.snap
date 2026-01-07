@@ -22,7 +22,7 @@ expression: h.render()
                                                                                 
  ● This project uses tokio for async runtime and clap for CLI parsing.          
                                                                                 
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                                                                                
  >                                                                              
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                                                                                
 ▸ Plan │ Ready

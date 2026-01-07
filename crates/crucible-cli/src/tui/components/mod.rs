@@ -52,7 +52,7 @@ use ratatui::widgets::Widget;
 pub use dialog::DialogWidget;
 pub use dialog_state::{DialogResult, DialogState};
 pub use generic_popup::{LegacyPopupItem, PopupState};
-pub use input_box::InputBoxWidget;
+pub use input_box::{InputBoxWidget, DEFAULT_MAX_INPUT_LINES};
 pub use input_state::InputState;
 pub use layer_stack::LayerStack;
 pub use session_history::SessionHistoryWidget;

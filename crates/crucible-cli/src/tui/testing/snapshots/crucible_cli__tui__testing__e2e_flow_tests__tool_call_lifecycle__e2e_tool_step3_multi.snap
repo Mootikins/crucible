@@ -22,7 +22,7 @@ expression: h.render()
  ● read_file(path="src/main.rs", limit=50) → fn main() { ... }                  
  ✗ grep(pattern="[invalid") → Invalid regex pattern                             
                                                                                 
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                                                                                
  >                                                                              
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                                                                                
 ▸ Plan │ Ready

@@ -17,12 +17,12 @@ expression: h.render()
                                                                                 
                                                                                 
                                                                                 
->   commit Create git commit                                                    
-    prime Load project context                                                  
-    ultra-think Deep analysis mode                                              
+┌Select────────────────────────────────────────────────────────────────────────┐
+│>   commit Create git commit                                                  │
+│    prime Load project context                                                │
+│    ultra-think Deep analysis mode                                            │
+└──────────────────────────────────────────────────────────────────────────────┘
                                                                                 
-                                                                                
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
  >                                                                              
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                                                                                
 ▸ Plan │ Ready

@@ -17,12 +17,12 @@ expression: h.render()
                                                                                 
  ● Your config contains a key-value pair.                                       
                                                                                 
-> [agent] @ researcher Deep research and analysis                               
-  [agent] @ coder Code generation and review                                    
-  [agent] @ writer Writing and editing                                          
+┌Select────────────────────────────────────────────────────────────────────────┐
+│> [agent] @ researcher Deep research and analysis                             │
+│  [agent] @ coder Code generation and review                                  │
+│  [agent] @ writer Writing and editing                                        │
+└──────────────────────────────────────────────────────────────────────────────┘
                                                                                 
-                                                                                
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
  >                                                                              
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                                                                                
 ▸ Plan │ Ready

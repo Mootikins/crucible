@@ -1,46 +1,53 @@
 //! Input box widget for text entry
 //!
-//! This widget provides a simple text input field with cursor support,
+//! This widget provides a multiline text input field with cursor support,
 //! suitable for command-line style input at the bottom of the TUI.
+//!
+//! ## Multiline Support
+//!
+//! - Ctrl+J inserts newlines into the buffer
+//! - Input box grows based on line count up to `max_height`
+//! - When content exceeds `max_height`, scrolling is enabled
+//! - Cursor navigates across lines properly
 
 use crate::tui::{
     components::{InteractiveWidget, WidgetEventResult},
-    styles::{colors, presets},
+    styles::presets,
 };
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::Event;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Style},
     text::{Line, Span},
     widgets::{Paragraph, Widget},
 };
 
-/// Dither character for edge effect (creates "raised" look)
-/// Options: '▓' (75%), '▒' (50%), '░' (25% - sparsest)
-const DITHER_CHAR: char = '░';
+/// Default maximum visible lines for multiline input
+pub const DEFAULT_MAX_INPUT_LINES: u16 = 10;
 
-/// Widget that renders an input box with cursor support
+/// Widget that renders a multiline input box with cursor support
 ///
 /// # State
 ///
-/// - `buffer`: The current input text
-/// - `cursor_position`: Character offset of the cursor (0 = before first char)
-/// - `prompt`: Text to display before the input (e.g., " > ")
+/// - `buffer`: The current input text (may contain newlines)
+/// - `cursor_position`: Byte offset of the cursor (0 = before first char)
+/// - `prompt`: Text to display before the first line (e.g., " > ")
 /// - `focused`: Whether the widget has focus (affects styling)
+/// - `scroll_offset`: First visible line when content exceeds max_height
+/// - `max_height`: Maximum visible lines (default 10)
 ///
 /// # Rendering
 ///
-/// The input is displayed with the prompt on the left and the text buffer on the right.
+/// The input is displayed with the prompt on the first line and content below.
 /// When the cursor is at the end, a space is added to show the cursor position.
-/// The content is centered vertically within the allocated area.
+/// Content scrolls within the input area when it exceeds max_height lines.
 pub struct InputBoxWidget<'a> {
     buffer: &'a str,
     cursor_position: usize,
     prompt: &'a str,
     focused: bool,
-    /// Whether to render dither on top/bottom rows (creates "raised" effect)
-    use_dither_edges: bool,
+    scroll_offset: usize,
+    max_height: u16,
 }
 
 impl<'a> InputBoxWidget<'a> {
@@ -49,14 +56,15 @@ impl<'a> InputBoxWidget<'a> {
     /// # Arguments
     ///
     /// * `buffer` - The current input text
-    /// * `cursor_position` - Character offset of cursor within buffer
+    /// * `cursor_position` - Byte offset of cursor within buffer
     pub fn new(buffer: &'a str, cursor_position: usize) -> Self {
         Self {
             buffer,
             cursor_position,
             prompt: " > ",
             focused: true,
-            use_dither_edges: false,
+            scroll_offset: 0,
+            max_height: DEFAULT_MAX_INPUT_LINES,
         }
     }
 
@@ -72,10 +80,65 @@ impl<'a> InputBoxWidget<'a> {
         self
     }
 
-    /// Enable dither edges on top/bottom rows (creates "raised" floating effect)
-    pub fn dither_edges(mut self, enabled: bool) -> Self {
-        self.use_dither_edges = enabled;
+    /// Set scroll offset for multiline content
+    pub fn scroll_offset(mut self, offset: usize) -> Self {
+        self.scroll_offset = offset;
         self
+    }
+
+    /// Set maximum visible height in lines
+    pub fn max_height(mut self, height: u16) -> Self {
+        self.max_height = height;
+        self
+    }
+
+    /// Count the number of lines in the buffer
+    pub fn line_count(&self) -> usize {
+        if self.buffer.is_empty() {
+            1
+        } else {
+            self.buffer.lines().count().max(1)
+                + if self.buffer.ends_with('\n') { 1 } else { 0 }
+        }
+    }
+
+    /// Calculate the required height for displaying this input
+    ///
+    /// Returns the minimum of line_count and max_height, plus padding for borders.
+    pub fn required_height(&self) -> u16 {
+        let lines = self.line_count() as u16;
+        lines.min(self.max_height) + 2 // +2 for top/bottom padding
+    }
+
+    /// Convert byte offset to (line, column) position
+    ///
+    /// Returns (line_index, column_index) where both are 0-based.
+    pub fn cursor_to_line_col(&self) -> (usize, usize) {
+        let before_cursor = &self.buffer[..self.cursor_position.min(self.buffer.len())];
+        let line = before_cursor.matches('\n').count();
+        let last_newline = before_cursor.rfind('\n');
+        let col = match last_newline {
+            Some(pos) => before_cursor.len() - pos - 1,
+            None => before_cursor.len(),
+        };
+        (line, col)
+    }
+
+    /// Calculate required scroll offset to keep cursor visible
+    pub fn scroll_to_cursor(&self) -> usize {
+        let (cursor_line, _) = self.cursor_to_line_col();
+        let visible_lines = self.max_height as usize;
+
+        if cursor_line < self.scroll_offset {
+            // Cursor above visible area
+            cursor_line
+        } else if cursor_line >= self.scroll_offset + visible_lines {
+            // Cursor below visible area
+            cursor_line.saturating_sub(visible_lines - 1)
+        } else {
+            // Cursor is visible
+            self.scroll_offset
+        }
     }
 }
 
@@ -96,61 +159,73 @@ impl Widget for InputBoxWidget<'_> {
             (presets::input_box(), self.prompt, self.buffer)
         };
 
-        // Fill entire area with input box background (creates "raised" look)
+        // Fill entire area with input box background
         buf.set_style(area, style);
 
-        // Render dither on top and bottom rows if enabled
-        // Dither: FG = prompt BG (lighter), BG = darker base
-        // Creates "raised" effect transitioning from dark edges to lighter prompt
-        if self.use_dither_edges && area.height >= 3 {
-            // Dither colors match current mode (FG = prompt BG)
-            let (dither_fg, dither_bg) = if !self.focused {
-                (colors::DIM, colors::DITHER_BASE)
-            } else if trimmed.starts_with('!') {
-                // Shell mode: red-tinted
-                (colors::INPUT_SHELL_BG, Color::Rgb(40, 20, 20))
-            } else if trimmed.starts_with(':') {
-                // REPL mode: green-tinted
-                (colors::INPUT_REPL_BG, Color::Rgb(20, 35, 20))
+        // Split content into lines
+        let content_lines: Vec<&str> = if content.is_empty() {
+            vec![""]
+        } else {
+            let mut lines: Vec<&str> = content.split('\n').collect();
+            // If content ends with newline, add empty line
+            if content.ends_with('\n') && !lines.last().map(|s| s.is_empty()).unwrap_or(true) {
+                lines.push("");
+            }
+            lines
+        };
+
+        let total_lines = content_lines.len();
+        let visible_lines = (self.max_height as usize).min(total_lines);
+
+        // Calculate scroll offset to keep cursor visible
+        let effective_scroll = self.scroll_to_cursor();
+
+        // Build lines for rendering
+        let mut render_lines: Vec<Line> = Vec::with_capacity(visible_lines);
+
+        for (i, line_content) in content_lines
+            .iter()
+            .enumerate()
+            .skip(effective_scroll)
+            .take(visible_lines)
+        {
+            let prefix = if i == 0 {
+                // First line of content gets the prompt
+                Span::raw(display_prompt)
             } else {
-                // Normal mode: blue-tinted
-                (colors::INPUT_BG, colors::DITHER_BASE)
+                // Continuation lines get padding to align
+                Span::raw("   ") // 3 spaces to match " > "
             };
-            let dither_style = Style::default().fg(dither_fg).bg(dither_bg);
-            let dither_line = DITHER_CHAR.to_string().repeat(area.width as usize);
 
-            // Top row dither
-            buf.set_string(area.x, area.y, &dither_line, dither_style);
+            // Add space at end of last line if cursor is at end
+            let line_text = if i == total_lines - 1 && self.cursor_position >= self.buffer.len() {
+                format!("{} ", line_content)
+            } else {
+                (*line_content).to_string()
+            };
 
-            // Bottom row dither
-            let bottom_y = area.y + area.height - 1;
-            buf.set_string(area.x, bottom_y, &dither_line, dither_style);
+            render_lines.push(Line::from(vec![prefix, Span::raw(line_text)]));
         }
 
-        // Render content with cursor, centered vertically
-        // Add space at end if cursor is at the end (shows cursor position)
-        let content_with_cursor = if self.cursor_position >= self.buffer.len() {
-            format!("{} ", content)
+        // Calculate vertical centering if we have fewer lines than area height
+        let content_height = render_lines.len() as u16;
+        let start_y = if content_height < area.height {
+            area.y + (area.height - content_height) / 2
         } else {
-            content.to_string()
+            area.y
         };
 
-        let line = Line::from(vec![
-            Span::raw(display_prompt),
-            Span::raw(content_with_cursor),
-        ]);
-
-        // Center vertically in the area
-        let middle_row = area.y + area.height / 2;
-        let centered_area = Rect {
-            x: area.x,
-            y: middle_row,
-            width: area.width,
-            height: 1,
-        };
-
-        let paragraph = Paragraph::new(line).style(style);
-        paragraph.render(centered_area, buf);
+        // Render each line
+        for (i, line) in render_lines.into_iter().enumerate() {
+            let line_area = Rect {
+                x: area.x,
+                y: start_y + i as u16,
+                width: area.width,
+                height: 1,
+            };
+            let paragraph = Paragraph::new(line).style(style);
+            paragraph.render(line_area, buf);
+        }
     }
 }
 
@@ -338,6 +413,152 @@ mod tests {
             // / prefix should use default style (not special)
             let terminal = render_widget("/search test", 12, true);
             assert_snapshot!("input_box_slash_prefix", terminal.backend());
+        }
+    }
+
+    // =============================================================================
+    // Multiline Tests
+    // =============================================================================
+
+    mod multiline_tests {
+        use super::*;
+        use insta::assert_snapshot;
+
+        /// Helper to create a terminal for multiline tests
+        fn multiline_terminal(height: u16) -> Terminal<TestBackend> {
+            Terminal::new(TestBackend::new(80, height)).unwrap()
+        }
+
+        /// Render multiline widget with specified parameters
+        fn render_multiline(
+            buffer: &str,
+            cursor_pos: usize,
+            height: u16,
+        ) -> Terminal<TestBackend> {
+            let mut terminal = multiline_terminal(height);
+            terminal
+                .draw(|f| {
+                    let widget = InputBoxWidget::new(buffer, cursor_pos);
+                    f.render_widget(widget, f.area());
+                })
+                .unwrap();
+            terminal
+        }
+
+        #[test]
+        fn line_count_empty() {
+            let widget = InputBoxWidget::new("", 0);
+            assert_eq!(widget.line_count(), 1);
+        }
+
+        #[test]
+        fn line_count_single_line() {
+            let widget = InputBoxWidget::new("hello world", 0);
+            assert_eq!(widget.line_count(), 1);
+        }
+
+        #[test]
+        fn line_count_two_lines() {
+            let widget = InputBoxWidget::new("line one\nline two", 0);
+            assert_eq!(widget.line_count(), 2);
+        }
+
+        #[test]
+        fn line_count_trailing_newline() {
+            let widget = InputBoxWidget::new("line one\n", 0);
+            assert_eq!(widget.line_count(), 2);
+        }
+
+        #[test]
+        fn line_count_multiple_lines() {
+            let widget = InputBoxWidget::new("one\ntwo\nthree\nfour\nfive", 0);
+            assert_eq!(widget.line_count(), 5);
+        }
+
+        #[test]
+        fn cursor_to_line_col_first_line() {
+            let widget = InputBoxWidget::new("hello\nworld", 3);
+            let (line, col) = widget.cursor_to_line_col();
+            assert_eq!(line, 0);
+            assert_eq!(col, 3);
+        }
+
+        #[test]
+        fn cursor_to_line_col_second_line() {
+            // "hello\nworld" - cursor at position 8 (after "wo")
+            let widget = InputBoxWidget::new("hello\nworld", 8);
+            let (line, col) = widget.cursor_to_line_col();
+            assert_eq!(line, 1);
+            assert_eq!(col, 2); // "wo" is 2 chars
+        }
+
+        #[test]
+        fn cursor_to_line_col_at_newline() {
+            // Cursor right after newline
+            let widget = InputBoxWidget::new("hello\nworld", 6);
+            let (line, col) = widget.cursor_to_line_col();
+            assert_eq!(line, 1);
+            assert_eq!(col, 0);
+        }
+
+        #[test]
+        fn cursor_to_line_col_end_of_buffer() {
+            let widget = InputBoxWidget::new("hello\nworld", 11);
+            let (line, col) = widget.cursor_to_line_col();
+            assert_eq!(line, 1);
+            assert_eq!(col, 5);
+        }
+
+        #[test]
+        fn required_height_single_line() {
+            let widget = InputBoxWidget::new("hello", 0);
+            assert_eq!(widget.required_height(), 3); // 1 line + 2 padding
+        }
+
+        #[test]
+        fn required_height_three_lines() {
+            let widget = InputBoxWidget::new("one\ntwo\nthree", 0);
+            assert_eq!(widget.required_height(), 5); // 3 lines + 2 padding
+        }
+
+        #[test]
+        fn required_height_capped_at_max() {
+            // 15 lines should be capped at DEFAULT_MAX_INPUT_LINES (10)
+            let content = (0..15).map(|i| format!("line {}", i)).collect::<Vec<_>>().join("\n");
+            let widget = InputBoxWidget::new(&content, 0);
+            assert_eq!(widget.required_height(), DEFAULT_MAX_INPUT_LINES + 2);
+        }
+
+        #[test]
+        fn multiline_two_lines() {
+            let terminal = render_multiline("line one\nline two", 0, 5);
+            assert_snapshot!("input_box_multiline_two_lines", terminal.backend());
+        }
+
+        #[test]
+        fn multiline_three_lines() {
+            let terminal = render_multiline("one\ntwo\nthree", 0, 6);
+            assert_snapshot!("input_box_multiline_three_lines", terminal.backend());
+        }
+
+        #[test]
+        fn multiline_cursor_on_second_line() {
+            // Cursor on "two" (position 4+4=8, "one\ntwo" -> "one\nt" is 5 chars, +2 more = 7)
+            let terminal = render_multiline("one\ntwo\nthree", 6, 6);
+            assert_snapshot!("input_box_multiline_cursor_second", terminal.backend());
+        }
+
+        #[test]
+        fn multiline_cursor_at_end() {
+            // Cursor at the very end
+            let terminal = render_multiline("one\ntwo\nthree", 13, 6);
+            assert_snapshot!("input_box_multiline_cursor_end", terminal.backend());
+        }
+
+        #[test]
+        fn multiline_with_trailing_newline() {
+            let terminal = render_multiline("one\ntwo\n", 8, 6);
+            assert_snapshot!("input_box_multiline_trailing_newline", terminal.backend());
         }
     }
 }
