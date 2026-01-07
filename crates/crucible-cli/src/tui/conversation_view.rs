@@ -225,6 +225,21 @@ impl RatatuiView {
 
     /// Render to a ratatui frame
     pub fn render_frame(&self, frame: &mut Frame) {
+        // For inline mode, wrap everything in a visible border for debugging
+        let is_inline = matches!(self.state.viewport_mode, crucible_config::ViewportMode::Inline);
+        let render_area = if is_inline {
+            // Render a colored border around the viewport
+            let border = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title(" Viewport ");
+            let inner = border.inner(frame.area());
+            frame.render_widget(border, frame.area());
+            inner
+        } else {
+            frame.area()
+        };
+
         // Calculate popup height (no border, so no +2)
         let popup_height = self
             .state
@@ -251,9 +266,8 @@ impl RatatuiView {
         let fixed_height = input_height + status_height + spacer_height + reasoning_height + popup_height;
 
         // For inline mode, calculate actual conversation content height
-        let is_inline = matches!(self.state.viewport_mode, crucible_config::ViewportMode::Inline);
         let conversation_content_height = if is_inline {
-            self.state.conversation.rendered_height(frame.area().width)
+            self.state.conversation.rendered_height(render_area.width)
         } else {
             0 // Not used in fullscreen mode
         };
@@ -261,7 +275,7 @@ impl RatatuiView {
         let mut constraints = if is_inline {
             // Inline mode: content at top, fill space at bottom
             // Conversation takes only what it needs (minimum 1 line when empty)
-            let available_height = frame.area().height.saturating_sub(fixed_height);
+            let available_height = render_area.height.saturating_sub(fixed_height);
             let conv_height = conversation_content_height.max(1).min(available_height);
             vec![Constraint::Length(conv_height)]
         } else {
@@ -292,7 +306,7 @@ impl RatatuiView {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints(constraints)
-            .split(frame.area());
+            .split(render_area);
 
         let mut idx = 0;
 
