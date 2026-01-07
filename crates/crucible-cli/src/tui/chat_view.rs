@@ -192,11 +192,20 @@ impl<'a> ChatView<'a> {
                 // Then check if we should trigger a popup
                 self.check_popup_trigger(c);
 
+                // Update existing popup based on new input content
+                // (closes popup if query contains whitespace)
+                self.update_popup_from_input();
+
                 return input_result;
             }
         }
 
-        self.input.handle_key(key)
+        let result = self.input.handle_key(key);
+
+        // Update popup after any input change (backspace, etc.)
+        self.update_popup_from_input();
+
+        result
     }
 
     /// Check if a character should trigger a popup
@@ -274,9 +283,19 @@ impl<'a> ChatView<'a> {
             }
         }
 
-        // Update query
+        // Update query first to get filtered results
         if let Some(popup) = &mut self.popup {
-            popup.update_query(query);
+            // Extract the part before any trailing space
+            let query_trimmed = query.trim_end();
+            popup.update_query(query_trimmed);
+
+            // Close popup if:
+            // 1. Query ends with space (user finished typing the token)
+            // 2. AND either no matches OR there's an exact match
+            if query.ends_with(' ') || query.ends_with('\n') {
+                // Token is complete - close popup
+                self.popup = None;
+            }
         }
     }
 
@@ -618,6 +637,37 @@ mod tests {
         view.update_popup_from_input();
 
         assert!(view.popup.is_none());
+    }
+
+    #[test]
+    fn test_space_after_command_closes_popup() {
+        let mut view = ChatView::new("plan").with_popup_provider(mock_provider());
+
+        // Type "/" to open popup
+        view.handle_event(&Event::Key(KeyEvent::new(
+            KeyCode::Char('/'),
+            KeyModifiers::NONE,
+        )));
+        assert!(view.popup.is_some(), "Popup should open on /");
+
+        // Type "help"
+        for c in "help".chars() {
+            view.handle_event(&Event::Key(KeyEvent::new(
+                KeyCode::Char(c),
+                KeyModifiers::NONE,
+            )));
+        }
+        assert!(view.popup.is_some(), "Popup should stay open while typing");
+
+        // Type space - should close popup (command is complete)
+        view.handle_event(&Event::Key(KeyEvent::new(
+            KeyCode::Char(' '),
+            KeyModifiers::NONE,
+        )));
+        assert!(
+            view.popup.is_none(),
+            "Popup should close when space typed after complete token"
+        );
     }
 
     #[test]
