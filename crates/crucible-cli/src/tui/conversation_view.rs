@@ -2,7 +2,9 @@
 //!
 //! Provides a trait for rendering conversation history with full ratatui control.
 
-use crate::tui::components::{InputBoxWidget, PopupState, SessionHistoryWidget, StatusBarWidget, DEFAULT_MAX_INPUT_LINES};
+use crate::tui::components::{
+    InputBoxWidget, PopupState, SessionHistoryWidget, StatusBarWidget, DEFAULT_MAX_INPUT_LINES,
+};
 use crate::tui::conversation::{render_item_to_lines, ConversationState, StatusKind};
 use crate::tui::dialog::{DialogResult, DialogStack, DialogWidget};
 use crate::tui::notification::NotificationState;
@@ -150,7 +152,11 @@ impl ViewState {
             1
         } else {
             self.input_buffer.lines().count().max(1)
-                + if self.input_buffer.ends_with('\n') { 1 } else { 0 }
+                + if self.input_buffer.ends_with('\n') {
+                    1
+                } else {
+                    0
+                }
         }
     }
 
@@ -326,7 +332,10 @@ impl RatatuiView {
             };
 
             // Calculate vertical centering offset (same as InputBoxWidget)
-            let content_lines = self.state.input_line_count().min(DEFAULT_MAX_INPUT_LINES as usize);
+            let content_lines = self
+                .state
+                .input_line_count()
+                .min(DEFAULT_MAX_INPUT_LINES as usize);
             let content_height = content_lines as u16;
             let start_y = if content_height < input_area.height {
                 input_area.y + (input_area.height - content_height) / 2
