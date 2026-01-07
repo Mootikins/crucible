@@ -40,6 +40,7 @@
 pub mod dialog;
 pub mod dialog_state;
 pub mod generic_popup;
+pub mod horizontal_scroll;
 pub mod input_box;
 pub mod input_state;
 pub mod layer_stack;
@@ -52,6 +53,7 @@ use ratatui::widgets::Widget;
 pub use dialog::DialogWidget;
 pub use dialog_state::{DialogResult, DialogState};
 pub use generic_popup::{LegacyPopupItem, PopupState};
+pub use horizontal_scroll::{HorizontalScrollState, HorizontalScrollWidget};
 pub use input_box::{InputBoxWidget, DEFAULT_MAX_INPUT_LINES};
 pub use input_state::InputState;
 pub use layer_stack::LayerStack;
