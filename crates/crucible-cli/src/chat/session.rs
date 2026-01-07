@@ -362,7 +362,12 @@ impl ChatSession {
 
         // Create event bridge
         let ring = session.ring().clone();
-        let bridge = AgentEventBridge::new(session.handle(), ring);
+        let bridge = AgentEventBridge::new(session.handle(), ring.clone());
+
+        // Create interaction registry for request-response correlation
+        let interaction_registry = std::sync::Arc::new(std::sync::Mutex::new(
+            crucible_core::InteractionRegistry::new(),
+        ));
 
         // Create and run TUI with factory
         let registry = std::sync::Arc::new(self.command_registry.clone());
@@ -372,6 +377,11 @@ impl ChatSession {
             popup_provider.clone(),
             registry,
         )?;
+
+        // Wire up event ring and interaction registry for interaction completion
+        runner
+            .with_event_ring(ring)
+            .with_interaction_registry(interaction_registry);
 
         // Set up session logging to persist chat events
         runner.with_session_logger(kiln_path);

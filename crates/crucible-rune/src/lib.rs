@@ -60,6 +60,7 @@ mod panel_module;
 pub mod persistence_handler;
 mod plugin_loader;
 mod plugin_types;
+mod ask_module;
 mod popup_module;
 pub mod reactor;
 mod regex_module;
@@ -133,6 +134,10 @@ pub use persistence_handler::PersistenceHandler;
 pub use plugin_loader::PluginLoader;
 pub use plugin_types::{HookConfig, PluginManifest, RegisteredHook};
 pub use popup_module::{entry_impl as popup_entry, popup_module, RunePopupEntry};
+pub use ask_module::{
+    ask_module, ask_module_with_context, AskContext, RuneAskBatch, RuneAskBatchResponse,
+    RuneAskError, RuneAskQuestion, RuneQuestionAnswer,
+};
 pub use reactor::{
     BoxedReactor, Reactor, ReactorContext, ReactorError, ReactorMetadata, ReactorResult,
     ReactorSessionConfig, SessionEvent, ToolCall,

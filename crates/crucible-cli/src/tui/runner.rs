@@ -105,12 +105,16 @@ use crossterm::{
     },
 };
 use crucible_core::events::{FileChangeKind, SessionEvent};
-use crucible_core::interaction::{AskRequest, InteractionRequest, PermRequest, ShowRequest};
+use crucible_core::interaction::{
+    AskRequest, InteractionRequest, InteractionResponse, PermRequest, ShowRequest,
+};
+use crucible_core::InteractionRegistry;
+use crucible_rune::EventRing;
 use crucible_core::traits::chat::AgentHandle;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use regex::Regex;
 use std::io;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 /// Content pasted into the input area (multi-line pastes are stored separately).
@@ -236,6 +240,10 @@ pub struct RatatuiRunner {
     rapid_input_buffer: String,
     /// Timestamp of last key input (for rapid input detection)
     last_key_time: Option<std::time::Instant>,
+    /// Event ring for emitting interaction completion events
+    event_ring: Option<Arc<EventRing<SessionEvent>>>,
+    /// Interaction registry for request-response correlation
+    interaction_registry: Option<Arc<Mutex<InteractionRegistry>>>,
 }
 
 impl RatatuiRunner {
@@ -280,6 +288,8 @@ impl RatatuiRunner {
             pending_pastes: Vec::new(),
             rapid_input_buffer: String::new(),
             last_key_time: None,
+            event_ring: None,
+            interaction_registry: None,
         })
     }
 
@@ -295,6 +305,26 @@ impl RatatuiRunner {
     /// restart via `/new` command (which will show the picker).
     pub fn with_default_selection(&mut self, selection: AgentSelection) -> &mut Self {
         self.default_selection = Some(selection);
+        self
+    }
+
+    /// Set the event ring for emitting interaction completion events.
+    ///
+    /// When set, the runner will emit `InteractionCompleted` events when
+    /// dialogs are completed or cancelled.
+    pub fn with_event_ring(&mut self, ring: Arc<EventRing<SessionEvent>>) -> &mut Self {
+        self.event_ring = Some(ring);
+        self
+    }
+
+    /// Set the interaction registry for request-response correlation.
+    ///
+    /// When set, scripts can block on interaction responses using the registry.
+    pub fn with_interaction_registry(
+        &mut self,
+        registry: Arc<Mutex<InteractionRegistry>>,
+    ) -> &mut Self {
+        self.interaction_registry = Some(registry);
         self
     }
 
@@ -636,17 +666,52 @@ impl RatatuiRunner {
             use crate::tui::ask_batch_dialog::AskBatchResult;
             match ask_batch.handle_key(*key) {
                 AskBatchResult::Complete(response) => {
-                    // Response is ready - in future, send via registry
-                    let _response =
-                        crucible_core::interaction::InteractionResponse::AskBatch(response);
+                    let request_id = self.pending_interaction_id.take();
+                    let interaction_response = InteractionResponse::AskBatch(response);
+
+                    // Emit InteractionCompleted event for event listeners
+                    if let (Some(ring), Some(ref id)) = (&self.event_ring, &request_id) {
+                        ring.push(SessionEvent::InteractionCompleted {
+                            request_id: id.clone(),
+                            response: interaction_response.clone(),
+                        });
+                    }
+
+                    // Complete via registry for synchronous waiters
+                    if let (Some(registry), Some(ref id)) = (&self.interaction_registry, &request_id)
+                    {
+                        if let Ok(mut guard) = registry.lock() {
+                            guard.complete(
+                                id.parse().unwrap_or_default(),
+                                interaction_response.clone(),
+                            );
+                        }
+                    }
+
                     self.view.set_status_text("Questions answered");
                     self.pending_ask_batch = None;
-                    self.pending_interaction_id = None;
                 }
-                AskBatchResult::Cancelled(_uuid) => {
+                AskBatchResult::Cancelled(uuid) => {
+                    let request_id = self.pending_interaction_id.take();
+                    let interaction_response = InteractionResponse::Cancelled;
+
+                    // Emit InteractionCompleted event for event listeners
+                    if let (Some(ring), Some(ref id)) = (&self.event_ring, &request_id) {
+                        ring.push(SessionEvent::InteractionCompleted {
+                            request_id: id.clone(),
+                            response: interaction_response.clone(),
+                        });
+                    }
+
+                    // Cancel via registry for synchronous waiters
+                    if let Some(registry) = &self.interaction_registry {
+                        if let Ok(mut guard) = registry.lock() {
+                            guard.cancel(uuid);
+                        }
+                    }
+
                     self.view.set_status_text("Questions cancelled");
                     self.pending_ask_batch = None;
-                    self.pending_interaction_id = None;
                 }
                 AskBatchResult::Pending => {
                     // Still in dialog, just consumed the key
