@@ -47,6 +47,8 @@ pub mod widgets;
 
 #[cfg(test)]
 mod conversation_ordering_tests;
+#[cfg(test)]
+mod selection_bug_reproduction;
 
 pub use action_dispatch::{
     dispatch, popup_item_to_effect, ContextResolver, DefaultContextResolver, DialogEffect,
