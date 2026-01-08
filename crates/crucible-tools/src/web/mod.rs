@@ -15,10 +15,11 @@
 
 mod cache;
 mod config;
+mod fetch;
 
 pub use cache::FetchCache;
 pub use config::WebTools;
+pub use fetch::{create_client, fetch_and_convert, FetchError};
 
-// Modules to be added:
-// mod fetch;
+// To be added:
 // mod search;
