@@ -805,18 +805,18 @@ impl RatatuiRunner {
             InputAction::SendMessage(typed_msg) => {
                 // Check if we're in the middle of rapid input (timing-based paste detection)
                 // If Enter comes during rapid input, treat it as a newline in the paste
-                if let Some(last_time) = self.last_key_time {
+                if let Some(last_time) = self.input_mode_manager.last_key_time() {
                     let elapsed_ms = std::time::Instant::now()
                         .duration_since(last_time)
                         .as_millis() as u64;
                     if elapsed_ms <= Self::RAPID_INPUT_THRESHOLD_MS
-                        && !self.rapid_input_buffer.is_empty()
+                        && !self.input_mode_manager.rapid_buffer().is_empty()
                     {
                         // Still in rapid input - record newline and don't send yet
-                        self.rapid_input_buffer.push('\n');
-                        self.last_key_time = Some(std::time::Instant::now());
+                        self.input_mode_manager.push_char('\n');
+                        self.input_mode_manager.set_last_key_time(std::time::Instant::now());
                         tracing::debug!(
-                            buffer_len = self.rapid_input_buffer.len(),
+                            buffer_len = self.input_mode_manager.rapid_buffer().len(),
                             "Enter during rapid input - treating as newline"
                         );
                         return Ok(false);
@@ -953,17 +953,17 @@ impl RatatuiRunner {
             InputAction::InsertChar(c) => {
                 // Check if we're in rapid input mode (potential paste)
                 let now = std::time::Instant::now();
-                let in_rapid_input = self.last_key_time.is_some_and(|last| {
+                let in_rapid_input = self.input_mode_manager.last_key_time().is_some_and(|last| {
                     now.duration_since(last).as_millis() as u64 <= Self::RAPID_INPUT_THRESHOLD_MS
                 });
 
-                if in_rapid_input || !self.rapid_input_buffer.is_empty() {
+                if in_rapid_input || !self.input_mode_manager.rapid_buffer().is_empty() {
                     // Accumulate in rapid input buffer, don't insert yet
-                    self.rapid_input_buffer.push(c);
-                    self.last_key_time = Some(now);
+                    self.input_mode_manager.push_char(c);
+                    self.input_mode_manager.set_last_key_time(now);
                 } else {
                     // Normal typing - insert directly, just track time (no buffer)
-                    self.last_key_time = Some(now);
+                    self.input_mode_manager.set_last_key_time(now);
 
                     // Insert the character
                     let mut input = self.view.input().to_string();
@@ -1532,13 +1532,14 @@ impl RatatuiRunner {
         let now = std::time::Instant::now();
 
         // Check if we should flush the rapid input buffer
-        if let Some(last_time) = self.last_key_time {
+        if let Some(last_time) = self.input_mode_manager.last_key_time() {
             let elapsed_ms = now.duration_since(last_time).as_millis() as u64;
 
             // If gap is larger than threshold and buffer has content
-            if elapsed_ms > Self::RAPID_INPUT_THRESHOLD_MS && !self.rapid_input_buffer.is_empty() {
-                let buffer = std::mem::take(&mut self.rapid_input_buffer);
-                self.last_key_time = None;
+            if elapsed_ms > Self::RAPID_INPUT_THRESHOLD_MS && !self.input_mode_manager.rapid_buffer().is_empty() {
+                let buffer = self.input_mode_manager.rapid_buffer().to_string();
+                self.input_mode_manager.clear_rapid_buffer();
+                self.input_mode_manager.clear_last_key_time();
 
                 // Normalize and check for newlines
                 let normalized = buffer.replace("\r\n", "\n").replace('\r', "\n");
@@ -1586,7 +1587,7 @@ impl RatatuiRunner {
         let now = std::time::Instant::now();
 
         // Check if this is continuation of rapid input
-        if let Some(last_time) = self.last_key_time {
+        if let Some(last_time) = self.input_mode_manager.last_key_time() {
             let elapsed_ms = now.duration_since(last_time).as_millis() as u64;
 
             if elapsed_ms > Self::RAPID_INPUT_THRESHOLD_MS {
@@ -1596,14 +1597,14 @@ impl RatatuiRunner {
         }
 
         // Accumulate this character
-        self.rapid_input_buffer.push(ch);
-        self.last_key_time = Some(now);
+        self.input_mode_manager.push_char(ch);
+        self.input_mode_manager.set_last_key_time(now);
     }
 
     /// Clear the rapid input buffer (called after processing).
     fn clear_rapid_input(&mut self) {
-        self.rapid_input_buffer.clear();
-        self.last_key_time = None;
+        self.input_mode_manager.clear_rapid_buffer();
+        self.input_mode_manager.clear_last_key_time();
     }
 
     /// Get a formatted summary of all pending pastes.
