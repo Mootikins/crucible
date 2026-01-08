@@ -16,10 +16,9 @@
 mod cache;
 mod config;
 mod fetch;
+mod search;
 
 pub use cache::FetchCache;
-pub use config::WebTools;
+pub use config::{WebTools, WebToolsError};
 pub use fetch::{create_client, fetch_and_convert, FetchError};
-
-// To be added:
-// mod search;
+pub use search::{SearchError, SearchResult, SearxngProvider, WebSearchProvider};
