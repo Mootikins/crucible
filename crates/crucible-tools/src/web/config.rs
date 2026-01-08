@@ -2,28 +2,40 @@
 
 use super::cache::FetchCache;
 use super::fetch::{create_client, fetch_and_convert, FetchError};
+use super::search::{SearchError, SearchResult, SearxngProvider, WebSearchProvider};
 use crucible_config::WebToolsConfig;
 use reqwest::Client;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
 /// Errors from web tools operations
 #[derive(Error, Debug)]
 pub enum WebToolsError {
+    /// Web tools are disabled in configuration
     #[error("Web tools are not enabled in configuration")]
     Disabled,
 
+    /// Error during fetch operation
     #[error("Fetch error: {0}")]
     Fetch(#[from] FetchError),
+
+    /// Error during search operation
+    #[error("Search error: {0}")]
+    Search(#[from] SearchError),
+
+    /// Search provider not supported or not configured
+    #[error("Search provider '{0}' not supported")]
+    UnsupportedProvider(String),
 }
 
 /// Web tools container
 ///
-/// Holds configuration, HTTP client, and cache. Provides fetch/search operations.
+/// Holds configuration, HTTP client, cache, and search provider.
 pub struct WebTools {
     config: WebToolsConfig,
     client: Client,
     cache: Mutex<FetchCache>,
+    search_provider: Option<Arc<dyn WebSearchProvider>>,
 }
 
 impl WebTools {
@@ -34,10 +46,24 @@ impl WebTools {
             100, // Max 100 cached entries
         );
 
+        let client = create_client();
+
+        // Initialize search provider if configured
+        let search_provider: Option<Arc<dyn WebSearchProvider>> =
+            if config.search.provider == "searxng" {
+                config.search.searxng.as_ref().map(|searxng_config| {
+                    Arc::new(SearxngProvider::new(client.clone(), searxng_config.clone()))
+                        as Arc<dyn WebSearchProvider>
+                })
+            } else {
+                None
+            };
+
         Self {
             config: config.clone(),
-            client: create_client(),
+            client,
             cache: Mutex::new(cache),
+            search_provider,
         }
     }
 
@@ -98,6 +124,31 @@ impl WebTools {
 
         Ok(content)
     }
+
+    /// Search the web using configured provider
+    ///
+    /// # Arguments
+    /// * `query` - Search query
+    /// * `limit` - Maximum number of results (uses config default if None)
+    pub async fn search(
+        &self,
+        query: &str,
+        limit: Option<u32>,
+    ) -> Result<Vec<SearchResult>, WebToolsError> {
+        if !self.config.enabled {
+            return Err(WebToolsError::Disabled);
+        }
+
+        let provider = self
+            .search_provider
+            .as_ref()
+            .ok_or_else(|| WebToolsError::UnsupportedProvider(self.config.search.provider.clone()))?;
+
+        let limit = limit.unwrap_or(self.config.search.limit_default);
+        let results = provider.search(query, limit).await?;
+
+        Ok(results)
+    }
 }
 
 // Can't derive Clone due to Mutex, but we can implement it
@@ -110,6 +161,7 @@ impl Clone for WebTools {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_config::{FetchConfig, SearchConfig, SearxngConfig};
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -117,6 +169,22 @@ mod tests {
         WebToolsConfig {
             enabled: true,
             ..Default::default()
+        }
+    }
+
+    fn enabled_config_with_searxng(url: String) -> WebToolsConfig {
+        WebToolsConfig {
+            enabled: true,
+            fetch: FetchConfig::default(),
+            search: SearchConfig {
+                provider: "searxng".to_string(),
+                limit_default: 10,
+                searxng: Some(SearxngConfig {
+                    url,
+                    auth_user: None,
+                    auth_password: None,
+                }),
+            },
         }
     }
 
@@ -178,5 +246,52 @@ mod tests {
             .unwrap();
 
         // Mock expectation will verify only 1 request was made
+    }
+
+    #[tokio::test]
+    async fn test_search_disabled_returns_error() {
+        let config = WebToolsConfig::default();
+        let tools = WebTools::new(&config);
+
+        let result = tools.search("test", None).await;
+        assert!(matches!(result, Err(WebToolsError::Disabled)));
+    }
+
+    #[tokio::test]
+    async fn test_search_returns_results() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/search"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string(
+                    r#"{"results": [{"title": "Test", "url": "https://example.com", "content": "desc"}]}"#,
+                ),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let tools = WebTools::new(&enabled_config_with_searxng(mock_server.uri()));
+        let results = tools.search("test", Some(10)).await.unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Test");
+    }
+
+    #[tokio::test]
+    async fn test_search_uses_default_limit() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/search"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"results": []}"#))
+            .mount(&mock_server)
+            .await;
+
+        let config = enabled_config_with_searxng(mock_server.uri());
+        let tools = WebTools::new(&config);
+
+        let results = tools.search("test", None).await.unwrap();
+        assert!(results.is_empty());
     }
 }
