@@ -10,12 +10,14 @@ pub mod action_dispatch;
 pub mod agent_picker;
 pub mod ask_batch_dialog;
 pub mod chat_view;
+pub mod constants;
 pub mod components;
 pub mod content_block;
 pub mod conversation;
 pub mod conversation_view;
 pub mod dialog;
 pub mod event_result;
+pub mod geometry;
 pub mod help;
 pub mod help_assets;
 pub mod input;
@@ -62,8 +64,10 @@ pub use components::InteractiveWidget;
 // - components::{EventResult, TuiAction} - widget-level events (legacy)
 // - event_result::{EventResult, TuiAction} - unified event system (new)
 // Using the new unified versions as the default export:
+pub use constants::{UiConstants, CONTENT_MARGIN, DIALOG_PADDING, DIALOG_BORDER_HEIGHT, BUTTON_WIDTH, BUTTON_GAP};
 pub use content_block::{ParseEvent, StreamBlock};
 pub use dialog::{DialogResult, DialogStack, DialogState, DialogWidget};
+pub use geometry::PopupGeometry;
 pub use event_result::{DialogResult as UiDialogResult, EventResult, FocusTarget, ScrollDirection, TuiAction};
 pub use help::{DocsIndex, HelpTopic};
 pub use input::{map_key_event, InputAction};
