@@ -186,11 +186,17 @@ async fn main() -> Result<()> {
     // when needed, and the Arc-wrapped SurrealClient ensures cheap cloning.
 
     // Process any pending files on startup using integrated blocking processing
-    // Skip for REPL mode or when explicitly disabled
+    // Skip for REPL mode, db-server (needs fast startup), or when explicitly disabled
     match &cli.command {
         None => {
             // Chat mode - process files in background like other commands
             debug!("No command specified, will use chat mode");
+        }
+        Some(Commands::DbServer { .. }) => {
+            // db-server must start quickly - it's forked by ensure_daemon() which
+            // waits with a timeout for the socket to become available. File processing
+            // would delay socket binding and cause connection timeouts.
+            debug!("db-server mode - skipping file processing for fast startup");
         }
         _ => {
             if cli.no_process {
