@@ -72,7 +72,7 @@ test-utils = []
 tokio = { workspace = true, features = ["test-util", "full"] }
 tracing-subscriber = { workspace = true }
 tempfile = "3.24"
-serial_test = "3.2"
+serial_test = "3.3"
 
 # Dev-kiln validation tests
 walkdir = "2.4"
