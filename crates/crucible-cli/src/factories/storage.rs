@@ -307,9 +307,9 @@ impl StorageHandle {
     ) -> Result<Vec<crucible_core::traits::NoteInfo>> {
         use crucible_core::traits::KnowledgeRepository;
 
-        let repo = self.as_knowledge_repository().ok_or_else(|| {
-            anyhow::anyhow!("list_notes not supported in lightweight mode")
-        })?;
+        let repo = self
+            .as_knowledge_repository()
+            .ok_or_else(|| anyhow::anyhow!("list_notes not supported in lightweight mode"))?;
 
         repo.list_notes(path_filter)
             .await
