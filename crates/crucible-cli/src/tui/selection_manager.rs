@@ -2,59 +2,56 @@
 //!
 //! Manages text selection, clipboard operations, and mouse mode.
 
+use crate::tui::selection::{SelectionState, SelectableContentCache};
+
 /// Manages text selection state
-#[derive(Debug, Clone, Default)]
+#[derive(Debug)]
 pub struct SelectionManager {
-    /// Start position of selection (byte offset)
-    pub selection_start: Option<usize>,
-    /// End position of selection (byte offset)
-    pub selection_end: Option<usize>,
+    /// Selection state
+    pub selection: SelectionState,
     /// Clipboard content
     pub clipboard: Option<String>,
     /// Whether mouse mode is active
     pub mouse_mode: bool,
+    /// Content cache for text extraction
+    pub selection_cache: SelectableContentCache,
+}
+
+impl Default for SelectionManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SelectionManager {
     pub fn new() -> Self {
         Self {
-            selection_start: None,
-            selection_end: None,
+            selection: SelectionState::new(),
             clipboard: None,
-            mouse_mode: false,
+            mouse_mode: true, // Enable by default for scroll support
+            selection_cache: SelectableContentCache::new(),
         }
     }
 
-    /// Start a new selection
-    pub fn start_selection(&mut self, pos: usize) {
-        self.selection_start = Some(pos);
-        self.selection_end = Some(pos);
+    /// Check if mouse mode is enabled
+    pub fn is_mouse_capture_enabled(&self) -> bool {
+        self.mouse_mode
     }
 
-    /// Update selection end position
-    pub fn update_selection(&mut self, pos: usize) {
-        self.selection_end = Some(pos);
+    /// Set mouse mode
+    pub fn set_mouse_mode(&mut self, enabled: bool) {
+        self.mouse_mode = enabled;
     }
 
-    /// Clear the selection
-    pub fn clear_selection(&mut self) {
-        self.selection_start = None;
-        self.selection_end = None;
+    /// Toggle mouse mode
+    pub fn toggle_mouse_mode(&mut self) -> bool {
+        self.mouse_mode = !self.mouse_mode;
+        self.mouse_mode
     }
 
-    /// Check if there's an active selection
-    pub fn has_selection(&self) -> bool {
-        self.selection_start.is_some() && self.selection_end.is_some()
-    }
-
-    /// Get the selected range (start, end)
-    pub fn selection_range(&self) -> Option<(usize, usize)> {
-        if let (Some(start), Some(end)) = (self.selection_start, self.selection_end) {
-            let (s, e) = if start < end { (start, end) } else { (end, start) };
-            Some((s, e))
-        } else {
-            None
-        }
+    /// Invalidate the selection cache
+    pub fn invalidate_cache(&mut self) {
+        self.selection_cache.invalidate();
     }
 
     /// Copy text to clipboard
@@ -67,14 +64,34 @@ impl SelectionManager {
         self.clipboard.as_deref()
     }
 
-    /// Set mouse mode
-    pub fn set_mouse_mode(&mut self, enabled: bool) {
-        self.mouse_mode = enabled;
+    // Delegate methods to SelectionState
+    /// Start a new selection (delegates to SelectionState)
+    pub fn start_selection(&mut self, point: crate::tui::selection::SelectionPoint) {
+        self.selection.start(point);
     }
 
-    /// Toggle mouse mode
-    pub fn toggle_mouse_mode(&mut self) -> bool {
-        self.mouse_mode = !self.mouse_mode;
-        self.mouse_mode
+    /// Update selection (delegates to SelectionState)
+    pub fn update_selection(&mut self, point: crate::tui::selection::SelectionPoint) {
+        self.selection.update(point);
+    }
+
+    /// Complete selection (delegates to SelectionState)
+    pub fn complete_selection(&mut self) {
+        self.selection.complete();
+    }
+
+    /// Check if selection has a range (delegates to SelectionState)
+    pub fn has_selection(&self) -> bool {
+        self.selection.has_selection()
+    }
+
+    /// Get selection range (delegates to SelectionState)
+    pub fn selection_range(&self) -> Option<(crate::tui::selection::SelectionPoint, crate::tui::selection::SelectionPoint)> {
+        self.selection.range()
+    }
+
+    /// Clear selection (delegates to SelectionState)
+    pub fn clear_selection(&mut self) {
+        self.selection.clear();
     }
 }

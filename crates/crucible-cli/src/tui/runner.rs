@@ -409,7 +409,7 @@ impl RatatuiRunner {
             // 1. Render
             {
                 let view = &self.view;
-                let selection = &self.selection;
+                let selection = &self.selection_manager.selection;
                 let scroll_offset = view.state().scroll_offset;
                 let conv_height = view.conversation_viewport_height();
 
@@ -1434,9 +1434,9 @@ impl RatatuiRunner {
             InputAction::ToggleMouseCapture => {
                 // Toggle mouse capture (allows terminal text selection when disabled)
                 use std::io::Write;
-                self.mouse_capture_enabled = !self.mouse_capture_enabled;
+                self.selection_manager.toggle_mouse_mode();
                 let mut stdout = io::stdout();
-                if self.mouse_capture_enabled {
+                if self.selection_manager.is_mouse_capture_enabled() {
                     let _ = execute!(stdout, EnableMouseCapture);
                     let _ = stdout.flush();
                     self.view
@@ -1481,7 +1481,7 @@ impl RatatuiRunner {
                     self.view.scroll_up(3);
                 }
                 // Invalidate selection cache on scroll
-                self.selection_cache.invalidate();
+                self.selection_manager.invalidate_cache();
             }
             MouseEventKind::ScrollDown => {
                 // Shift+scroll = horizontal scroll right
@@ -1491,24 +1491,24 @@ impl RatatuiRunner {
                     self.view.scroll_down(3);
                 }
                 // Invalidate selection cache on scroll
-                self.selection_cache.invalidate();
+                self.selection_manager.invalidate_cache();
             }
             MouseEventKind::Down(MouseButton::Left) => {
                 // Start selection at mouse position
                 if let Some(point) = self.mouse_to_content_point(mouse.column, mouse.row) {
-                    self.selection.start(point);
+                    self.selection_manager.start_selection(point);
                 }
             }
             MouseEventKind::Drag(MouseButton::Left) => {
                 // Update selection during drag
                 if let Some(point) = self.mouse_to_content_point(mouse.column, mouse.row) {
-                    self.selection.update(point);
+                    self.selection_manager.update_selection(point);
                 }
             }
             MouseEventKind::Up(MouseButton::Left) => {
                 // Complete selection and copy to clipboard
-                self.selection.complete();
-                if self.selection.has_selection() {
+                self.selection_manager.complete_selection();
+                if self.selection_manager.has_selection() {
                     self.copy_selection_to_clipboard();
                 }
             }
@@ -1781,19 +1781,19 @@ impl RatatuiRunner {
     fn copy_selection_to_clipboard(&mut self) {
         use base64::Engine;
 
-        let Some((start, end)) = self.selection.range() else {
+        let Some((start, end)) = self.selection_manager.selection_range() else {
             return;
         };
 
         // Rebuild cache if needed (width changed or cache is empty)
         let width = self.view.state().width;
-        if self.selection_cache.needs_rebuild(width) {
+        if self.selection_manager.selection_cache.needs_rebuild(width) {
             let cache_data = self.view.build_selection_cache();
-            self.selection_cache.update(cache_data, width);
+            self.selection_manager.selection_cache.update(cache_data, width);
         }
 
         // Extract text from selection cache
-        let text = self.selection_cache.extract_text(start, end);
+        let text = self.selection_manager.selection_cache.extract_text(start, end);
 
         if text.is_empty() {
             self.view.set_status_text("No text selected");
@@ -1817,7 +1817,7 @@ impl RatatuiRunner {
         }
 
         // Clear selection after copy
-        self.selection.clear();
+        self.selection_manager.clear_selection();
     }
 
     /// Poll session events from the ring buffer.
@@ -2122,7 +2122,7 @@ impl RatatuiRunner {
 
         // Re-enter TUI
         crossterm::terminal::enable_raw_mode()?;
-        if self.mouse_capture_enabled {
+        if self.selection_manager.is_mouse_capture_enabled() {
             execute!(
                 std::io::stdout(),
                 crossterm::terminal::EnterAlternateScreen,
@@ -2197,7 +2197,7 @@ impl RatatuiRunner {
 
         // Re-enter TUI mode
         crossterm::terminal::enable_raw_mode()?;
-        if self.mouse_capture_enabled {
+        if self.selection_manager.is_mouse_capture_enabled() {
             execute!(
                 std::io::stdout(),
                 crossterm::terminal::EnterAlternateScreen,
