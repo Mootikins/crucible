@@ -7,10 +7,14 @@
 // See state/types/popup.rs and state/types/context.rs for new location
 
 pub mod types;
+pub mod actions;
 
 // Re-export types from types/ submodules for backward compatibility
 pub use self::types::popup::*;
 pub use self::types::context::*;
+
+// Re-export action executor
+pub use actions::ActionExecutor;
 
 use crate::tui::conversation_view::ViewState;
 use crate::tui::notification::NotificationState;
@@ -428,177 +432,10 @@ impl TuiState {
     /// Input-related actions (InsertChar, DeleteChar, MoveCursor, etc.) are now
     /// handled directly by the runner/harness which has access to ViewState.
     /// This method only handles actions that affect non-view state.
+    ///
+    /// This method delegates to ActionExecutor for cleaner separation of concerns.
     pub fn execute_action(&mut self, action: crate::tui::InputAction) -> Option<String> {
-        match action {
-            InputAction::SendMessage(msg) => {
-                // Return message to send - caller is responsible for clearing input
-                self.status_error = None;
-                Some(msg)
-            }
-            InputAction::CycleMode => {
-                let new_mode_id = cycle_mode_id(&self.view.mode_id);
-                self.view.mode_id = new_mode_id.to_string();
-                self.mode_name =
-                    crucible_core::traits::chat::mode_display_name(new_mode_id).to_string();
-                None
-            }
-            InputAction::Exit => {
-                self.should_exit = true;
-                None
-            }
-            InputAction::Cancel => {
-                // Track Ctrl+C for double-press detection
-                // Also clear input buffer and reset cursor
-                self.ctrl_c_count += 1;
-                self.last_ctrl_c = Some(Instant::now());
-                self.view.input_buffer.clear();
-                self.view.cursor_position = 0;
-                None
-            }
-            InputAction::ToggleReasoning => {
-                self.view.show_reasoning = !self.view.show_reasoning;
-                None
-            }
-            InputAction::ExecuteSlashCommand(_cmd) => {
-                // TODO: Slash command execution
-                None
-            }
-            // All input-related actions now handled by ViewState/runner:
-            // - InsertNewline, InsertChar, DeleteChar
-            // - MoveCursorLeft, MoveCursorRight, MoveCursorToStart, MoveCursorToEnd
-            // - MoveWordBackward, MoveWordForward
-            // - DeleteWordBackward, DeleteToLineStart, DeleteToLineEnd
-            // - TransposeChars
-            // - MovePopupSelection, ConfirmPopup
-            // - Scroll actions (handled by view)
-            InputAction::InsertNewline => {
-                self.view.input_buffer.push('\n');
-                None
-            }
-            InputAction::InsertChar(c) => {
-                self.view.input_buffer.insert(self.view.cursor_position, c);
-                self.view.cursor_position += 1;
-                None
-            }
-            InputAction::DeleteChar => {
-                if self.view.cursor_position < self.view.input_buffer.len() {
-                    self.view.input_buffer.remove(self.view.cursor_position);
-                }
-                None
-            }
-            InputAction::MoveCursorLeft => {
-                if self.view.cursor_position > 0 {
-                    self.view.cursor_position -= 1;
-                }
-                None
-            }
-            InputAction::MoveCursorRight => {
-                if self.view.cursor_position < self.view.input_buffer.len() {
-                    self.view.cursor_position += 1;
-                }
-                None
-            }
-            InputAction::MovePopupSelection(_) | InputAction::ConfirmPopup => {
-                // Handled by runner
-                None
-            }
-            InputAction::DeleteWordBackward => {
-                // Find word boundary and delete
-                let before = &self.view.input_buffer[..self.view.cursor_position];
-                if let Some(pos) = before.rfind(char::is_whitespace) {
-                    let delete_from = pos + 1;
-                    let delete_to = self.view.cursor_position;
-                    self.view.input_buffer.replace_range(delete_from..delete_to, "");
-                    self.view.cursor_position = delete_from;
-                } else {
-                    self.view.input_buffer.clear();
-                    self.view.cursor_position = 0;
-                }
-                None
-            }
-            InputAction::DeleteToLineStart => {
-                self.view.input_buffer = self.view.input_buffer[self.view.cursor_position..].to_string();
-                self.view.cursor_position = 0;
-                None
-            }
-            InputAction::DeleteToLineEnd => {
-                self.view.input_buffer.truncate(self.view.cursor_position);
-                None
-            }
-            InputAction::MoveCursorToStart => {
-                self.view.cursor_position = 0;
-                None
-            }
-            InputAction::MoveCursorToEnd => {
-                self.view.cursor_position = self.view.input_buffer.len();
-                None
-            }
-            InputAction::MoveWordBackward => {
-                let before = &self.view.input_buffer[..self.view.cursor_position];
-                // Find the last space, then move to start of word after it
-                if let Some(space_pos) = before.rfind(char::is_whitespace) {
-                    // Find start of word after the space
-                    let after_space = &self.view.input_buffer[space_pos..];
-                    let word_start = after_space.find(|c: char| !c.is_whitespace()).unwrap_or(0);
-                    self.view.cursor_position = space_pos + word_start;
-                } else {
-                    self.view.cursor_position = 0;
-                }
-                None
-            }
-            InputAction::MoveWordForward => {
-                let after = &self.view.input_buffer[self.view.cursor_position..];
-                if let Some(pos) = after.find(char::is_whitespace) {
-                    self.view.cursor_position += pos + 1;
-                    // Skip additional whitespace
-                    while self.view.cursor_position < self.view.input_buffer.len()
-                        && self.view.input_buffer[self.view.cursor_position..].starts_with(char::is_whitespace)
-                    {
-                        self.view.cursor_position += 1;
-                    }
-                } else {
-                    self.view.cursor_position = self.view.input_buffer.len();
-                }
-                None
-            }
-            InputAction::TransposeChars => {
-                if self.view.cursor_position > 0 {
-                    let mut chars: Vec<char> = self.view.input_buffer.chars().collect();
-                    let len = chars.len();
-                    let i = self.view.cursor_position;
-
-                    if i == 0 {
-                        // Can't transpose at start
-                    } else if i == len {
-                        // At end: swap last two characters
-                        if len >= 2 {
-                            chars.swap(len - 2, len - 1);
-                            self.view.input_buffer = chars.into_iter().collect();
-                            // Cursor stays at end
-                        }
-                    } else if i < len {
-                        // In middle: swap character before cursor with cursor
-                        chars.swap(i - 1, i);
-                        self.view.input_buffer = chars.into_iter().collect();
-                        self.view.cursor_position += 1;
-                    }
-                }
-                None
-            }
-            InputAction::ScrollUp
-            | InputAction::ScrollDown
-            | InputAction::PageUp
-            | InputAction::PageDown
-            | InputAction::HalfPageUp
-            | InputAction::HalfPageDown
-            | InputAction::ScrollToTop
-            | InputAction::ScrollToBottom
-            | InputAction::HistoryPrev
-            | InputAction::HistoryNext
-            | InputAction::ToggleMouseCapture
-            | InputAction::CopyMarkdown
-            | InputAction::None => None,
-        }
+        ActionExecutor::execute_action(self, action)
     }
 
     /// Poll events from the ring buffer and process them.
