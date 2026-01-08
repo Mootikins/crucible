@@ -5,6 +5,7 @@ use super::fetch::{create_client, fetch_and_convert, FetchError};
 use super::search::{SearchError, SearchResult, SearxngProvider, WebSearchProvider};
 use crucible_config::WebToolsConfig;
 use reqwest::Client;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
@@ -26,16 +27,23 @@ pub enum WebToolsError {
     /// Search provider not supported or not configured
     #[error("Search provider '{0}' not supported")]
     UnsupportedProvider(String),
+
+    /// I/O error (e.g., saving artifact)
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 /// Web tools container
 ///
 /// Holds configuration, HTTP client, cache, and search provider.
+/// Optionally has access to session context for saving artifacts.
 pub struct WebTools {
     config: WebToolsConfig,
     client: Client,
     cache: Mutex<FetchCache>,
     search_provider: Option<Arc<dyn WebSearchProvider>>,
+    /// Session directory for saving fetched content as artifacts
+    session_dir: Option<PathBuf>,
 }
 
 impl WebTools {
@@ -65,7 +73,17 @@ impl WebTools {
             client,
             cache: Mutex::new(cache),
             search_provider,
+            session_dir: None,
         }
+    }
+
+    /// Set the session directory for saving fetched content as artifacts
+    ///
+    /// When set, `web_fetch` will save content to `<session_dir>/artifacts/fetched/`
+    #[must_use]
+    pub fn with_session_dir(mut self, session_dir: PathBuf) -> Self {
+        self.session_dir = Some(session_dir);
+        self
     }
 
     /// Check if web tools are enabled
@@ -119,7 +137,10 @@ impl WebTools {
         // TODO: If summarize=true and summarize_model is configured,
         // send content + prompt to LLM and return summary instead
 
-        // TODO: Option to save markdown to session folder
+        // Save to session artifacts if session_dir is set
+        if let Some(ref session_dir) = self.session_dir {
+            self.save_fetch_artifact(session_dir, url, &content)?;
+        }
 
         // Cache the result
         {
@@ -128,6 +149,30 @@ impl WebTools {
         }
 
         Ok(content)
+    }
+
+    /// Save fetched content as a session artifact
+    #[allow(clippy::unused_self)] // Method kept on self for future extensibility
+    fn save_fetch_artifact(
+        &self,
+        session_dir: &std::path::Path,
+        url: &str,
+        content: &str,
+    ) -> Result<(), WebToolsError> {
+        use std::fs;
+
+        // Create artifacts/fetched directory
+        let artifacts_dir = session_dir.join("artifacts").join("fetched");
+        fs::create_dir_all(&artifacts_dir)?;
+
+        // Generate filename from URL (sanitize for filesystem)
+        let filename = url_to_filename(url);
+        let filepath = artifacts_dir.join(format!("{filename}.md"));
+
+        // Write content
+        fs::write(&filepath, content)?;
+
+        Ok(())
     }
 
     /// Search the web using configured provider
@@ -163,6 +208,27 @@ impl WebTools {
 impl Clone for WebTools {
     fn clone(&self) -> Self {
         Self::new(&self.config)
+    }
+}
+
+/// Convert URL to a filesystem-safe filename
+///
+/// Extracts the hostname and path, replacing unsafe characters with underscores.
+fn url_to_filename(url: &str) -> String {
+    // Try to parse as URL, fall back to sanitizing the whole string
+    if let Ok(parsed) = url::Url::parse(url) {
+        let host = parsed.host_str().unwrap_or("unknown");
+        let path = parsed.path().trim_matches('/');
+        if path.is_empty() {
+            host.to_string()
+        } else {
+            format!("{host}_{}", path.replace('/', "_"))
+        }
+    } else {
+        // Fallback: just sanitize the string
+        url.chars()
+            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .collect()
     }
 }
 
@@ -301,5 +367,62 @@ mod tests {
 
         let results = tools.search("test", None).await.unwrap();
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_url_to_filename_simple() {
+        assert_eq!(url_to_filename("https://example.com"), "example.com");
+        assert_eq!(
+            url_to_filename("https://example.com/path/to/page"),
+            "example.com_path_to_page"
+        );
+        assert_eq!(
+            url_to_filename("https://docs.rust-lang.org/book/"),
+            "docs.rust-lang.org_book"
+        );
+    }
+
+    #[test]
+    fn test_url_to_filename_invalid_url() {
+        // Invalid URLs get sanitized
+        let result = url_to_filename("not a valid url");
+        assert!(result.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-'));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_saves_artifact_when_session_dir_set() {
+        use tempfile::TempDir;
+
+        let mock_server = MockServer::start().await;
+        let temp_dir = TempDir::new().unwrap();
+
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/plain")
+                    .set_body_string("Test content"),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let tools = WebTools::new(&enabled_config())
+            .with_session_dir(temp_dir.path().to_path_buf());
+
+        let _ = tools.fetch(&mock_server.uri(), "test", false).await.unwrap();
+
+        // Check artifact was saved
+        let artifacts_dir = temp_dir.path().join("artifacts").join("fetched");
+        assert!(artifacts_dir.exists());
+
+        // Should have created a file with the hostname
+        let entries: Vec<_> = std::fs::read_dir(&artifacts_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .collect();
+        assert_eq!(entries.len(), 1);
+
+        let content = std::fs::read_to_string(entries[0].path()).unwrap();
+        assert_eq!(content, "Test content");
     }
 }
