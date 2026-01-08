@@ -46,7 +46,7 @@ use crate::notes::{
 };
 use crate::search::{PropertySearchParams, SemanticSearchParams, TextSearchParams};
 
-/// Parameters for web_fetch tool
+/// Parameters for `web_fetch` tool
 #[derive(Deserialize, JsonSchema)]
 pub struct WebFetchParams {
     /// URL to fetch
@@ -58,7 +58,7 @@ pub struct WebFetchParams {
     summarize: Option<bool>,
 }
 
-/// Parameters for web_search tool
+/// Parameters for `web_search` tool
 #[derive(Deserialize, JsonSchema)]
 pub struct WebSearchParams {
     /// Search query

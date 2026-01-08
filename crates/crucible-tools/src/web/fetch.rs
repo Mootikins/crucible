@@ -30,6 +30,9 @@ pub enum FetchError {
 }
 
 /// Fetch a URL and convert HTML to markdown
+///
+/// # Errors
+/// Returns error if HTTP request fails, times out, or content exceeds size limit.
 pub async fn fetch_and_convert(
     client: &Client,
     url: &str,
@@ -53,16 +56,15 @@ pub async fn fetch_and_convert(
 
     let body = response.text().await?;
 
-    // Check size
-    let size_kb = (body.len() / 1024) as u32;
+    // Check size (saturate to u32::MAX for extremely large content)
+    let size_kb = u32::try_from(body.len() / 1024).unwrap_or(u32::MAX);
     if size_kb > max_content_kb {
         // Truncate instead of error
         let max_bytes = (max_content_kb as usize) * 1024;
         let truncated = body.chars().take(max_bytes).collect::<String>();
         let markdown = html_to_markdown(&truncated, &content_type);
         return Ok(format!(
-            "{}\n\n[Content truncated - exceeded {} KB limit]",
-            markdown, max_content_kb
+            "{markdown}\n\n[Content truncated - exceeded {max_content_kb} KB limit]"
         ));
     }
 
@@ -93,6 +95,10 @@ fn html_to_markdown(content: &str, content_type: &str) -> String {
 }
 
 /// Create an HTTP client with default settings
+///
+/// # Panics
+/// Panics if the HTTP client builder fails to build (should not happen with default settings).
+#[must_use]
 pub fn create_client() -> Client {
     Client::builder()
         .redirect(reqwest::redirect::Policy::limited(10))

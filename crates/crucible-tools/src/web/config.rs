@@ -1,4 +1,4 @@
-//! WebTools initialization and main interface
+//! `WebTools` initialization and main interface
 
 use super::cache::FetchCache;
 use super::fetch::{create_client, fetch_and_convert, FetchError};
@@ -39,7 +39,8 @@ pub struct WebTools {
 }
 
 impl WebTools {
-    /// Create new WebTools from configuration
+    /// Create new `WebTools` from configuration
+    #[must_use]
     pub fn new(config: &WebToolsConfig) -> Self {
         let cache = FetchCache::new(
             config.fetch.cache_ttl_secs,
@@ -68,6 +69,7 @@ impl WebTools {
     }
 
     /// Check if web tools are enabled
+    #[must_use]
     pub fn is_enabled(&self) -> bool {
         self.config.enabled
     }
@@ -82,7 +84,10 @@ impl WebTools {
     /// * `_summarize` - Whether to summarize with LLM (not yet implemented)
     ///
     /// # Errors
-    /// Returns error if web tools disabled or fetch fails
+    /// Returns error if web tools disabled or fetch fails.
+    ///
+    /// # Panics
+    /// Panics if the internal cache mutex is poisoned.
     pub async fn fetch(
         &self,
         url: &str,
@@ -130,6 +135,9 @@ impl WebTools {
     /// # Arguments
     /// * `query` - Search query
     /// * `limit` - Maximum number of results (uses config default if None)
+    ///
+    /// # Errors
+    /// Returns error if web tools disabled, search provider not configured, or search fails.
     pub async fn search(
         &self,
         query: &str,
