@@ -25,6 +25,7 @@ pub mod interaction;
 pub mod keymap;
 pub mod markdown;
 pub mod notification;
+pub mod paste_handler;
 pub mod popup;
 pub mod registries;
 pub mod render;

@@ -80,6 +80,7 @@ use crate::chat::slash_registry::SlashCommandRegistry;
 use crate::session_logger::SessionLogger;
 use crate::tui::agent_picker::AgentSelection;
 use crate::tui::notification::NotificationLevel;
+use crate::tui::paste_handler::{build_indicator_delete, build_message_with_pastes, PasteHandler, PastedContent};
 use crate::tui::streaming_channel::{
     create_streaming_channel, StreamingEvent, StreamingReceiver, StreamingTask,
 };
@@ -117,61 +118,6 @@ use regex::Regex;
 use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-
-/// Content pasted into the input area (multi-line pastes are stored separately).
-///
-/// Multi-line pastes are accumulated rather than inserted directly,
-/// showing a summary in the input area until the message is sent.
-#[derive(Debug, Clone)]
-pub enum PastedContent {
-    /// Multi-line text paste
-    Text {
-        /// The full pasted content
-        content: String,
-        /// Number of lines
-        line_count: usize,
-        /// Number of characters
-        char_count: usize,
-    },
-    // Future: Image { data: Vec<u8>, mime: String }
-}
-
-impl PastedContent {
-    /// Create a new text paste from a string
-    pub fn text(content: String) -> Self {
-        use crate::tui::scroll_utils::LineCount;
-        let line_count = LineCount::count(&content);
-        let char_count = content.chars().count();
-        Self::Text {
-            content,
-            line_count,
-            char_count,
-        }
-    }
-
-    /// Get the content as a string
-    pub fn content(&self) -> &str {
-        match self {
-            Self::Text { content, .. } => content,
-        }
-    }
-
-    /// Format a summary of this paste for display
-    pub fn summary(&self) -> String {
-        match self {
-            Self::Text {
-                line_count,
-                char_count,
-                ..
-            } => format!("[{} lines, {} chars]", line_count, char_count),
-        }
-    }
-}
-
-/// Regex to match paste indicator patterns like `[2 lines, 45 chars]`
-static PASTE_INDICATOR_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"\[\d+ lines?, \d+ chars?\]").expect("paste indicator regex should compile")
-});
 
 /// TUI runner with full ratatui control and new conversation styling.
 ///
@@ -221,7 +167,7 @@ pub struct RatatuiRunner {
     /// Help documentation index (lazy-initialized on first :help command)
     docs_index: Option<crate::tui::help::DocsIndex>,
     /// Pending multi-line pastes (accumulated, sent on Enter)
-    pending_pastes: Vec<PastedContent>,
+    paste_handler: PasteHandler,
     /// Event ring for emitting interaction completion events
     event_ring: Option<Arc<EventRing<SessionEvent>>>,
     /// Interaction registry for request-response correlation
@@ -275,7 +221,7 @@ impl RatatuiRunner {
             pending_ask_batch: None,
             session_logger: None,
             docs_index: None,
-            pending_pastes: Vec::new(),
+            paste_handler: PasteHandler::new(),
             event_ring: None,
             interaction_registry: None,
             kiln_context: None,
@@ -802,23 +748,15 @@ impl RatatuiRunner {
                 // Build final message: pending pastes + typed content
                 // Note: For shell (!) and REPL (:) commands, we use typed_msg only
                 // since pastes should be sent as chat content, not command args
-                let msg = if !self.pending_pastes.is_empty()
+                let msg = if !self.paste_handler.is_empty()
                     && !typed_msg.starts_with('!')
                     && !typed_msg.starts_with(':')
                 {
-                    let mut full_msg = String::new();
-                    for paste in self.pending_pastes.drain(..) {
-                        full_msg.push_str(paste.content());
-                        if !paste.content().ends_with('\n') {
-                            full_msg.push('\n');
-                        }
-                    }
-                    full_msg.push_str(&typed_msg);
-                    full_msg
+                    build_message_with_pastes(&mut self.paste_handler.pending_pastes, typed_msg)
                 } else {
                     // Clear any pending pastes if we're running a command
                     // (they get lost, but that's intentional for ! and : commands)
-                    self.pending_pastes.clear();
+                    self.paste_handler.clear();
                     typed_msg
                 };
 
@@ -1486,7 +1424,7 @@ impl RatatuiRunner {
             }
             self.view.set_cursor_position(self.view.input().len());
 
-            self.pending_pastes.push(paste);
+            self.paste_handler.push(paste);
         } else {
             // Single-line paste: insert directly at cursor
             let state = self.view.state_mut();
@@ -1533,7 +1471,7 @@ impl RatatuiRunner {
                     }
                     self.view.set_cursor_position(self.view.input().len());
 
-                    self.pending_pastes.push(paste);
+                    self.paste_handler.push(paste);
                     return true;
                 } else {
                     // Single-line rapid input: insert all accumulated characters at once
@@ -1579,42 +1517,12 @@ impl RatatuiRunner {
 
     /// Get a formatted summary of all pending pastes.
     fn pending_pastes_summary(&self) -> Option<String> {
-        if self.pending_pastes.is_empty() {
-            return None;
-        }
-
-        let total_lines: usize = self
-            .pending_pastes
-            .iter()
-            .map(|p| match p {
-                PastedContent::Text { line_count, .. } => *line_count,
-            })
-            .sum();
-
-        let total_chars: usize = self
-            .pending_pastes
-            .iter()
-            .map(|p| match p {
-                PastedContent::Text { char_count, .. } => *char_count,
-            })
-            .sum();
-
-        if self.pending_pastes.len() == 1 {
-            Some(self.pending_pastes[0].summary())
-        } else {
-            Some(format!(
-                "[{} pastes: {} lines, {} chars]",
-                self.pending_pastes.len(),
-                total_lines,
-                total_chars
-            ))
-        }
+        self.paste_handler.summary()
     }
 
     /// Clear all pending pastes (called on Ctrl+U or Esc).
     fn clear_pending_pastes(&mut self) {
-        if !self.pending_pastes.is_empty() {
-            self.pending_pastes.clear();
+        if self.paste_handler.clear() {
             self.view.set_status_text("Cleared pending pastes");
         }
     }
@@ -1623,15 +1531,9 @@ impl RatatuiRunner {
     ///
     /// Returns `Some((start_byte, end_byte, index))` if the position is at the end of
     /// an indicator (would delete into it) or inside one. The index corresponds to
-    /// the Nth indicator in the input (0-indexed), which maps to `pending_pastes[index]`.
+    /// the Nth indicator in the input (0-indexed), which maps to `paste_handler[index]`.
     fn find_paste_indicator_at(&self, input: &str, pos: usize) -> Option<(usize, usize, usize)> {
-        for (idx, mat) in PASTE_INDICATOR_RE.find_iter(input).enumerate() {
-            // Check if cursor is inside the indicator or just after it (about to delete into it)
-            if pos > mat.start() && pos <= mat.end() {
-                return Some((mat.start(), mat.end(), idx));
-            }
-        }
-        None
+        self.paste_handler.find_indicator_at(input, pos)
     }
 
     /// Delete a paste indicator from input and remove the corresponding paste.
@@ -1643,49 +1545,21 @@ impl RatatuiRunner {
         indicator_end: usize,
         paste_idx: usize,
     ) -> usize {
-        // Remove from input
+        // Build the delete operation
         let input = self.view.input().to_string();
-        let mut new_input = String::with_capacity(input.len() - (indicator_end - indicator_start));
-        new_input.push_str(&input[..indicator_start]);
-
-        // Handle space before indicator (if present)
-        let trim_space_before = indicator_start > 0
-            && input.as_bytes().get(indicator_start.saturating_sub(1)) == Some(&b' ');
-        let new_cursor = if trim_space_before {
-            new_input.pop(); // Remove trailing space before indicator
-            indicator_start - 1
-        } else {
-            indicator_start
-        };
-
-        new_input.push_str(&input[indicator_end..]);
-        self.view.set_input(&new_input);
+        let result = build_indicator_delete(&input, indicator_start, indicator_end);
+        self.view.set_input(&result.new_input);
 
         // Remove corresponding paste (if index is valid)
-        if paste_idx < self.pending_pastes.len() {
-            self.pending_pastes.remove(paste_idx);
-        }
+        self.paste_handler.remove(paste_idx);
 
-        new_cursor
+        result.new_cursor
     }
 
     /// Concatenate pending pastes with input buffer for sending.
     fn build_message_with_pastes(&mut self) -> String {
-        let mut message = String::new();
-
-        // Add all pending pastes first
-        for paste in self.pending_pastes.drain(..) {
-            message.push_str(paste.content());
-            if !paste.content().ends_with('\n') {
-                message.push('\n');
-            }
-        }
-
-        // Add the typed content
         let typed = std::mem::take(&mut self.view.state_mut().input_buffer);
-        message.push_str(&typed);
-
-        message
+        build_message_with_pastes(&mut self.paste_handler.pending_pastes, typed)
     }
 
     /// Convert mouse screen coordinates to content coordinates.
@@ -3116,7 +2990,7 @@ mod tests {
         fn test_runner_pending_pastes_initially_empty() {
             let runner =
                 RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
-            assert!(runner.pending_pastes.is_empty());
+            assert!(runner.paste_handler.pending_pastes.is_empty());
         }
 
         #[test]
@@ -3126,7 +3000,7 @@ mod tests {
 
             // Single-line paste should insert directly
             runner.handle_paste_event("hello");
-            assert!(runner.pending_pastes.is_empty());
+            assert!(runner.paste_handler.pending_pastes.is_empty());
             assert_eq!(runner.view.input(), "hello");
         }
 
@@ -3137,7 +3011,7 @@ mod tests {
 
             // Multi-line paste should be stored and indicator shown
             runner.handle_paste_event("line one\nline two");
-            assert_eq!(runner.pending_pastes.len(), 1);
+            assert_eq!(runner.paste_handler.pending_pastes.len(), 1);
             // Indicator is shown in input (e.g., "[2 lines, 18 chars]")
             assert!(runner.view.input().contains("lines"));
         }
@@ -3150,7 +3024,7 @@ mod tests {
             // Multiple multi-line pastes accumulate
             runner.handle_paste_event("first\npaste");
             runner.handle_paste_event("second\npaste");
-            assert_eq!(runner.pending_pastes.len(), 2);
+            assert_eq!(runner.paste_handler.pending_pastes.len(), 2);
         }
 
         #[test]
@@ -3159,9 +3033,9 @@ mod tests {
                 RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
             runner
-                .pending_pastes
+                .paste_handler.pending_pastes
                 .push(PastedContent::text("a\nb".to_string()));
-            let summary = runner.pending_pastes_summary();
+            let summary = runner.paste_handler.summary();
             assert!(summary.is_some());
             assert!(summary.unwrap().contains("2 lines"));
         }
@@ -3172,12 +3046,12 @@ mod tests {
                 RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
             runner
-                .pending_pastes
+                .paste_handler.pending_pastes
                 .push(PastedContent::text("a\nb".to_string()));
             runner
-                .pending_pastes
+                .paste_handler.pending_pastes
                 .push(PastedContent::text("c\nd\ne".to_string()));
-            let summary = runner.pending_pastes_summary();
+            let summary = runner.paste_handler.summary();
             assert!(summary.is_some());
             let s = summary.unwrap();
             assert!(s.contains("2 pastes"));
@@ -3190,12 +3064,12 @@ mod tests {
                 RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
             runner
-                .pending_pastes
+                .paste_handler.pending_pastes
                 .push(PastedContent::text("a\nb".to_string()));
-            assert!(!runner.pending_pastes.is_empty());
+            assert!(!runner.paste_handler.pending_pastes.is_empty());
 
             runner.clear_pending_pastes();
-            assert!(runner.pending_pastes.is_empty());
+            assert!(runner.paste_handler.pending_pastes.is_empty());
         }
 
         #[test]
@@ -3205,7 +3079,7 @@ mod tests {
 
             // Add a paste
             runner
-                .pending_pastes
+                .paste_handler.pending_pastes
                 .push(PastedContent::text("pasted content".to_string()));
 
             // Set typed input
@@ -3220,7 +3094,7 @@ mod tests {
             assert!(msg.contains('\n')); // Newline separating paste from typed
 
             // Pastes should be drained
-            assert!(runner.pending_pastes.is_empty());
+            assert!(runner.paste_handler.pending_pastes.is_empty());
         }
 
         #[test]
@@ -3302,7 +3176,7 @@ mod tests {
 
             runner.view.set_input("hello [2 lines, 10 chars]");
             runner
-                .pending_pastes
+                .paste_handler.pending_pastes
                 .push(PastedContent::text("line1\nline2".to_string()));
 
             // Delete the indicator (start=6, end=25, idx=0)
@@ -3311,7 +3185,7 @@ mod tests {
             // Should remove indicator and trailing space
             assert_eq!(runner.view.input(), "hello");
             assert_eq!(new_pos, 5); // After "hello" without space
-            assert!(runner.pending_pastes.is_empty());
+            assert!(runner.paste_handler.pending_pastes.is_empty());
         }
 
         #[test]
@@ -3323,18 +3197,18 @@ mod tests {
                 .view
                 .set_input("[1 line, 5 chars] [3 lines, 20 chars]");
             runner
-                .pending_pastes
+                .paste_handler.pending_pastes
                 .push(PastedContent::text("12345".to_string()));
             runner
-                .pending_pastes
+                .paste_handler.pending_pastes
                 .push(PastedContent::text("a\nb\nc".to_string()));
 
             // Delete the first indicator (start=0, end=17, idx=0)
             runner.delete_paste_indicator(0, 17, 0);
 
             // Should remove first paste, keep second
-            assert_eq!(runner.pending_pastes.len(), 1);
-            assert!(runner.pending_pastes[0].content().contains('\n'));
+            assert_eq!(runner.paste_handler.pending_pastes.len(), 1);
+            assert!(runner.paste_handler.pending_pastes[0].content().contains('\n'));
         }
     }
 }
