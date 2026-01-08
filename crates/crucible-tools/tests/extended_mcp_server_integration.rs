@@ -70,7 +70,7 @@ fn create_mocks() -> (Arc<dyn KnowledgeRepository>, Arc<dyn EmbeddingProvider>) 
 }
 
 // =============================================================================
-// Kiln tool tests (baseline 12 tools)
+// Kiln tool tests (baseline 14 tools)
 // =============================================================================
 
 #[tokio::test]
@@ -85,7 +85,7 @@ async fn test_kiln_tools_always_present() {
     );
 
     let tools = server.list_all_tools().await;
-    assert_eq!(tools.len(), 12, "Should have exactly 12 kiln tools");
+    assert_eq!(tools.len(), 14, "Should have exactly 14 kiln tools");
 
     // Verify all expected tool names
     let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
@@ -188,8 +188,8 @@ pub fn add(a, b) {
     let tools = server.list_all_tools().await;
     let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
 
-    // Should have 12 kiln + 2 rune tools
-    assert_eq!(tools.len(), 14, "Should have 12 kiln + 2 rune tools");
+    // Should have 14 kiln + 2 rune tools
+    assert_eq!(tools.len(), 16, "Should have 14 kiln + 2 rune tools");
 
     // Rune tools have rune_ prefix
     assert!(tool_names.contains(&"rune_greet"));
@@ -302,8 +302,8 @@ pub fn tool_b() {}
     let tools = server.list_all_tools().await;
     let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
 
-    // Should have: 12 kiln + 1 legacy + 2 modern = 15
-    assert_eq!(tools.len(), 15);
+    // Should have: 14 kiln + 1 legacy + 2 modern = 17
+    assert_eq!(tools.len(), 17);
 
     assert!(tool_names.contains(&"rune_legacy"));
     assert!(tool_names.contains(&"rune_tool_a"));
@@ -356,8 +356,8 @@ async fn test_multiple_rune_directories() {
     let tools = server.list_all_tools().await;
     let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
 
-    // 12 kiln + 2 rune (one from each directory)
-    assert_eq!(tools.len(), 14);
+    // 14 kiln + 2 rune (one from each directory)
+    assert_eq!(tools.len(), 16);
     assert!(tool_names.contains(&"rune_global_tool"));
     assert!(tool_names.contains(&"rune_kiln_tool"));
 }
@@ -468,8 +468,8 @@ async fn test_rune_refresh_discovers_new_tools() {
     .await
     .unwrap();
 
-    // Initial count: 12 kiln + 1 rune
-    assert_eq!(server.tool_count().await, 13);
+    // Initial count: 14 kiln + 1 rune
+    assert_eq!(server.tool_count().await, 15);
 
     // Add another tool
     fs::write(
@@ -482,8 +482,8 @@ async fn test_rune_refresh_discovers_new_tools() {
     let new_count = server.refresh_rune().await.unwrap();
     assert_eq!(new_count, 2, "Should now have 2 rune tools");
 
-    // Total should be 12 kiln + 2 rune
-    assert_eq!(server.tool_count().await, 14);
+    // Total should be 14 kiln + 2 rune
+    assert_eq!(server.tool_count().await, 16);
 }
 
 // =============================================================================
@@ -512,8 +512,8 @@ async fn test_nonexistent_rune_directory_handled() {
     .await
     .unwrap();
 
-    // Should still have 12 kiln tools, 0 rune
-    assert_eq!(server.tool_count().await, 12);
+    // Should still have 14 kiln tools, 0 rune
+    assert_eq!(server.tool_count().await, 14);
 }
 
 #[tokio::test]
@@ -540,8 +540,8 @@ async fn test_empty_rune_directory_handled() {
     .await
     .unwrap();
 
-    // Should still have 12 kiln tools, 0 rune
-    assert_eq!(server.tool_count().await, 12);
+    // Should still have 14 kiln tools, 0 rune
+    assert_eq!(server.tool_count().await, 14);
 }
 
 // =============================================================================
@@ -593,8 +593,8 @@ async fn test_recursive_rune_discovery() {
     let tools = server.list_all_tools().await;
     let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
 
-    // 12 kiln + 3 rune (recursive)
-    assert_eq!(tools.len(), 15, "Should discover tools in subdirectories");
+    // 14 kiln + 3 rune (recursive)
+    assert_eq!(tools.len(), 17, "Should discover tools in subdirectories");
     assert!(tool_names.contains(&"rune_root"));
     assert!(tool_names.contains(&"rune_note_tool"));
     assert!(tool_names.contains(&"rune_util_tool"));
