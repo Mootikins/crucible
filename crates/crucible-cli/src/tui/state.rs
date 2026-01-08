@@ -3,6 +3,9 @@
 //!
 //! Contains TuiState struct and related types for managing UI state.
 
+// Note: Types are being migrated to state/types/ module
+// See state/types/popup.rs and state/types/context.rs for new location
+
 use crate::tui::conversation_view::ViewState;
 use crate::tui::notification::NotificationState;
 use crate::tui::streaming::StreamingBuffer;
