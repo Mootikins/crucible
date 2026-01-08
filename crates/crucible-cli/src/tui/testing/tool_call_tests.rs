@@ -4,7 +4,7 @@
 //! including running, complete, and error states.
 
 use super::fixtures::sessions;
-use super::Harness;
+use super::{Harness, TEST_HEIGHT, TEST_WIDTH};
 use crate::tui::conversation::{
     render_item_to_lines, ConversationItem, ConversationState, ToolCallDisplay, ToolStatus,
 };
@@ -20,15 +20,12 @@ mod snapshots {
     use crate::tui::components::SessionHistoryWidget;
     use ratatui::widgets::Widget;
 
-    const WIDTH: u16 = 80;
-    const HEIGHT: u16 = 24;
-
     fn render_conversation(state: &ConversationState) -> String {
-        let backend = TestBackend::new(WIDTH, HEIGHT);
+        let backend = TestBackend::new(TEST_WIDTH, TEST_HEIGHT);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal
             .draw(|f| {
-                let widget = SessionHistoryWidget::new(state).viewport_height(HEIGHT);
+                let widget = SessionHistoryWidget::new(state).viewport_height(TEST_HEIGHT);
                 f.render_widget(widget, f.area());
             })
             .unwrap();
