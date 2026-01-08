@@ -7,6 +7,7 @@
 
 use crate::tui::streaming::StreamingBuffer;
 use crate::tui::StreamBlock;
+use crate::tui::streaming_parser::StreamingParser;
 use tokio::sync::mpsc::Receiver;
 
 // Import StreamingEvent if it exists
@@ -22,6 +23,8 @@ pub struct StreamingManager {
     pending_chunks: Vec<String>,
     /// Whether we're currently streaming
     is_streaming: bool,
+    /// Streaming parser for markdown parsing
+    parser: Option<StreamingParser>,
 }
 
 impl StreamingManager {
@@ -31,6 +34,7 @@ impl StreamingManager {
             buffer: None,
             pending_chunks: Vec::new(),
             is_streaming: false,
+            parser: None,
         }
     }
 
@@ -39,11 +43,19 @@ impl StreamingManager {
         self.buffer = Some(buffer);
         self.is_streaming = true;
         self.pending_chunks.clear();
+        // Don't create parser yet - it's created when needed
+    }
+
+    /// Start streaming with parser
+    pub fn start_streaming_with_parser(&mut self, buffer: StreamingBuffer) {
+        self.start_streaming(buffer);
+        self.parser = Some(StreamingParser::new());
     }
 
     /// Stop streaming and return the buffer
     pub fn stop_streaming(&mut self) -> Option<StreamingBuffer> {
         self.is_streaming = false;
+        self.parser = None; // Clear parser when stopping
         self.buffer.take()
     }
 
@@ -87,6 +99,30 @@ impl StreamingManager {
         } else {
             String::new()
         }
+    }
+
+    // =========================================================================
+    // Parser methods
+    // =========================================================================
+
+    /// Get mutable reference to parser
+    pub fn parser_mut(&mut self) -> Option<&mut StreamingParser> {
+        self.parser.as_mut()
+    }
+
+    /// Get reference to parser
+    pub fn parser(&self) -> Option<&StreamingParser> {
+        self.parser.as_ref()
+    }
+
+    /// Clear the parser
+    pub fn clear_parser(&mut self) {
+        self.parser = None;
+    }
+
+    /// Check if parser exists
+    pub fn has_parser(&self) -> bool {
+        self.parser.is_some()
     }
 }
 
