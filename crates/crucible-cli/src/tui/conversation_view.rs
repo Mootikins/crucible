@@ -423,11 +423,8 @@ impl RatatuiView {
                 .input_visual_line_count(input_width)
                 .min(DEFAULT_MAX_INPUT_LINES as usize);
             let content_height = content_lines as u16;
-            let start_y = if content_height < input_area.height {
-                input_area.y + (input_area.height - content_height) / 2
-            } else {
-                input_area.y
-            };
+            use crate::tui::geometry::PopupGeometry;
+            let start_y = PopupGeometry::center_vertically_if_fits(input_area, content_height);
 
             // Prompt is 3 chars (" > " or "   ")
             let prompt_width = 3;
@@ -439,8 +436,9 @@ impl RatatuiView {
 
     /// Render the reasoning/thinking panel
     fn render_reasoning_panel(&self, frame: &mut Frame, area: ratatui::layout::Rect) {
+        use crate::tui::constants::BORDER_HEIGHT_TOTAL;
         // Truncate content to fit in available height (minus borders)
-        let max_lines = (area.height.saturating_sub(2)) as usize;
+        let max_lines = (area.height.saturating_sub(BORDER_HEIGHT_TOTAL)) as usize;
         let content: String = self
             .state
             .reasoning_content
@@ -527,7 +525,8 @@ impl RatatuiView {
     fn content_height(&self) -> usize {
         // Content width minus prefix (" · " = 3 chars) and right margin (1 char)
         // Must match ConversationWidget::render
-        let content_width = (self.state.width as usize).saturating_sub(4);
+        use crate::tui::constants::UiConstants;
+        let content_width = UiConstants::content_width(self.state.width);
         self.state
             .conversation
             .items()
@@ -545,8 +544,9 @@ impl RatatuiView {
     /// Scans conversation items to find those wider than viewport.
     /// Auto-focuses the most recent (last) wide item for shift+scroll.
     pub fn update_wide_content_focus(&mut self) {
+        use crate::tui::constants::UiConstants;
         let viewport_width = self.state.width as usize;
-        let content_width = viewport_width.saturating_sub(4); // Account for margins
+        let content_width = UiConstants::content_width(self.state.width); // Account for margins
 
         let items = self.state.conversation.items();
         let mut last_wide_item: Option<(usize, usize)> = None; // (index, width)
@@ -618,9 +618,9 @@ impl RatatuiView {
     ///
     /// Returns the width available for the conversation area.
     /// Used to ensure selection cache matches actual rendered output.
-    pub fn conversation_viewport_width(&self) -> usize {
+    pub fn conversation_viewport_width(&self) -> u16 {
         // Conversation uses full terminal width (no side panels)
-        self.state.width as usize
+        self.state.width
     }
 
     /// Build selection cache data for text extraction.
@@ -639,7 +639,8 @@ impl RatatuiView {
         let conv_width = self.conversation_viewport_width();
 
         // Content width must match what's used in render (area.width - 4 for margins)
-        let content_width = conv_width.saturating_sub(4);
+        use crate::tui::constants::UiConstants;
+        let content_width = UiConstants::content_width(conv_width);
 
         let widget = SessionHistoryWidget::new(&self.state.conversation);
         let (_lines, cache_info) = widget.render_to_lines_with_cache(content_width);

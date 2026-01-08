@@ -835,8 +835,9 @@ impl<'a> ConversationWidget<'a> {
 
 impl Widget for ConversationWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
+        use crate::tui::constants::UiConstants;
         // Content width minus prefix (" ● " = 3 chars) and right margin (1 char)
-        let content_width = (area.width as usize).saturating_sub(4);
+        let content_width = UiConstants::content_width(area.width);
         let lines = self.render_to_lines(content_width);
         let content_height = lines.len();
         let viewport_height = area.height as usize;
@@ -926,7 +927,8 @@ impl Widget for InputBoxWidget<'_> {
         let line = Line::from(vec![Span::raw(" > "), Span::raw(content_with_cursor)]);
 
         // Center vertically in the area
-        let middle_row = area.y + area.height / 2;
+        use crate::tui::geometry::PopupGeometry;
+        let middle_row = PopupGeometry::center_vertically(area, 1);
         let centered_area = Rect {
             x: area.x,
             y: middle_row,
