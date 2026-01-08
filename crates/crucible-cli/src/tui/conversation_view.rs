@@ -324,7 +324,8 @@ impl RatatuiView {
         let reasoning_height =
             if self.state.show_reasoning && !self.state.reasoning_content.is_empty() {
                 // Count lines in reasoning content (min 3 for border + header + 1 line)
-                let content_lines = self.state.reasoning_content.lines().count() as u16;
+                use crate::tui::scroll_utils::LineCount;
+                let content_lines = LineCount::count(self.state.reasoning_content.as_str()) as u16;
                 (content_lines + 2).min(Self::MAX_REASONING_HEIGHT) // +2 for borders
             } else {
                 0
@@ -599,7 +600,8 @@ impl RatatuiView {
 
         // Add reasoning panel height if visible
         if self.state.show_reasoning && !self.state.reasoning_content.is_empty() {
-            let content_lines = self.state.reasoning_content.lines().count() as u16;
+            use crate::tui::scroll_utils::LineCount;
+            let content_lines = LineCount::count(self.state.reasoning_content.as_str()) as u16;
             overhead += (content_lines + 2).min(Self::MAX_REASONING_HEIGHT);
         }
 
@@ -910,11 +912,15 @@ impl ConversationView for RatatuiView {
     }
 
     fn scroll_up(&mut self, lines: usize) {
+        use crate::tui::scroll_utils::ScrollUtils;
         self.state.scroll_offset = self.state.scroll_offset.saturating_add(lines);
         // Clamp to content bounds using actual conversation viewport height
         let viewport_height = self.conversation_viewport_height();
-        let max_scroll = self.content_height().saturating_sub(viewport_height);
-        self.state.scroll_offset = self.state.scroll_offset.min(max_scroll);
+        self.state.scroll_offset = ScrollUtils::clamp_scroll(
+            self.state.scroll_offset,
+            self.content_height(),
+            viewport_height,
+        );
         self.state.at_bottom = false; // User scrolled up
     }
 
@@ -939,18 +945,28 @@ impl ConversationView for RatatuiView {
     }
 
     fn scroll_left(&mut self, cols: usize) {
+        use crate::tui::scroll_utils::ScrollUtils;
         if self.state.focused_wide_item.is_some() {
-            self.state.horizontal_scroll_offset =
-                self.state.horizontal_scroll_offset.saturating_sub(cols);
+            let viewport_width = self.state.width as usize;
+            self.state.horizontal_scroll_offset = ScrollUtils::scroll_horizontal(
+                self.state.horizontal_scroll_offset,
+                -(cols as isize),
+                self.state.focused_item_width,
+                viewport_width,
+            );
         }
     }
 
     fn scroll_right(&mut self, cols: usize) {
+        use crate::tui::scroll_utils::ScrollUtils;
         if self.state.focused_wide_item.is_some() {
             let viewport_width = self.state.width as usize;
-            let max_offset = self.state.focused_item_width.saturating_sub(viewport_width);
-            self.state.horizontal_scroll_offset =
-                (self.state.horizontal_scroll_offset + cols).min(max_offset);
+            self.state.horizontal_scroll_offset = ScrollUtils::scroll_horizontal(
+                self.state.horizontal_scroll_offset,
+                cols as isize,
+                self.state.focused_item_width,
+                viewport_width,
+            );
         }
     }
 
