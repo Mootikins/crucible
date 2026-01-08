@@ -191,8 +191,6 @@ pub struct RatatuiRunner {
     spinner_frame: usize,
     /// Animation frame counter for timing (60fps loop)
     animation_frame: usize,
-    /// Track if we're currently streaming
-    is_streaming: bool,
     /// Track Ctrl+C for double-press exit
     ctrl_c_count: u8,
     last_ctrl_c: Option<std::time::Instant>,
@@ -202,14 +200,6 @@ pub struct RatatuiRunner {
     streaming_task: Option<tokio::task::JoinHandle<()>>,
     /// Channel receiver for streaming events
     streaming_rx: Option<StreamingReceiver>,
-    /// Streaming parser for incremental markdown parsing
-    streaming_parser: Option<StreamingParser>,
-    /// Command history (most recent last)
-    history: Vec<String>,
-    /// Current position in history (None = not browsing history)
-    history_index: Option<usize>,
-    /// Saved input when entering history mode
-    history_saved_input: String,
     /// Current agent name (for display in /agent command)
     current_agent: Option<String>,
     /// Command registry for slash command lookup
@@ -220,12 +210,6 @@ pub struct RatatuiRunner {
     supports_restart: bool,
     /// Pre-selected agent for first iteration (skips picker, still allows /new)
     default_selection: Option<AgentSelection>,
-    /// Mouse capture state (when disabled, allows terminal text selection)
-    mouse_capture_enabled: bool,
-    /// Text selection state for mouse-based selection
-    selection: crate::tui::selection::SelectionState,
-    /// Content cache for selection text extraction
-    selection_cache: crate::tui::selection::SelectableContentCache,
     /// Pending interaction request ID (for response correlation)
     pending_interaction_id: Option<String>,
     /// Pending popup request (for handling "Other" selections)
@@ -238,10 +222,6 @@ pub struct RatatuiRunner {
     docs_index: Option<crate::tui::help::DocsIndex>,
     /// Pending multi-line pastes (accumulated, sent on Enter)
     pending_pastes: Vec<PastedContent>,
-    /// Buffer for rapid key input (timing-based paste detection)
-    rapid_input_buffer: String,
-    /// Timestamp of last key input (for rapid input detection)
-    last_key_time: Option<std::time::Instant>,
     /// Event ring for emitting interaction completion events
     event_ring: Option<Arc<EventRing<SessionEvent>>>,
     /// Interaction registry for request-response correlation
@@ -252,7 +232,7 @@ pub struct RatatuiRunner {
     resume_session_id: Option<String>,
 
     // =============================================================================
-    // Manager fields (Sprint 3 - being integrated gradually)
+    // Manager fields (Sprint 3 - fully integrated)
     // =============================================================================
     /// Streaming subsystem manager
     streaming_manager: crate::tui::streaming_manager::StreamingManager,
@@ -280,32 +260,22 @@ impl RatatuiRunner {
             prev_token_count: 0,
             spinner_frame: 0,
             animation_frame: 0,
-            is_streaming: false,
             ctrl_c_count: 0,
             last_ctrl_c: None,
             popup: None,
             streaming_task: None,
             streaming_rx: None,
-            streaming_parser: None,
-            history: Vec::new(),
-            history_index: None,
-            history_saved_input: String::new(),
             current_agent: None,
             command_registry,
             restart_requested: false,
             supports_restart: false, // Set to true when using run_with_factory
             default_selection: None,
-            mouse_capture_enabled: true, // Enable by default for scroll support
-            selection: crate::tui::selection::SelectionState::new(),
-            selection_cache: crate::tui::selection::SelectableContentCache::new(),
             pending_interaction_id: None,
             pending_popup: None,
             pending_ask_batch: None,
             session_logger: None,
             docs_index: None,
             pending_pastes: Vec::new(),
-            rapid_input_buffer: String::new(),
-            last_key_time: None,
             event_ring: None,
             interaction_registry: None,
             kiln_context: None,
@@ -2443,7 +2413,7 @@ impl RatatuiRunner {
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
         let view = &self.view;
-        let selection = &self.selection;
+        let selection = &self.selection_manager.selection;
         let scroll_offset = view.state().scroll_offset;
         let conv_height = view.conversation_viewport_height();
         let ask_batch_state = self.pending_ask_batch.as_ref();
