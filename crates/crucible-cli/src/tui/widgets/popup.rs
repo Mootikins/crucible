@@ -900,7 +900,7 @@ impl<T: PopupItem> Widget for PopupRenderer<'_, T> {
             if let Some(first) = display_lines.first_mut() {
                 // Prepend ↑ to indicate more items above
                 let mut spans = vec![Span::styled("↑", self.style.scroll_indicator)];
-                spans.extend(first.spans.drain(..));
+                spans.append(&mut first.spans);
                 *first = Line::from(spans);
             }
         }

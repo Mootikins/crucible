@@ -126,6 +126,7 @@ impl Harness {
             PopupKind::Command => "/",
             PopupKind::AgentOrFile => "@",
             PopupKind::ReplCommand => ":",
+            PopupKind::Session => "/resume", // Session popup is triggered by /resume command
         };
         self.state.input_buffer = trigger.to_string();
         self.state.cursor_position = trigger.len();

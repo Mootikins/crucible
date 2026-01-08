@@ -111,10 +111,11 @@ use crucible_core::interaction::{
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::InteractionRegistry;
 use crucible_rune::EventRing;
+use once_cell::sync::Lazy;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use regex::Regex;
 use std::io;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// Content pasted into the input area (multi-line pastes are stored separately).
@@ -167,7 +168,7 @@ impl PastedContent {
 }
 
 /// Regex to match paste indicator patterns like `[2 lines, 45 chars]`
-static PASTE_INDICATOR_RE: LazyLock<Regex> = LazyLock::new(|| {
+static PASTE_INDICATOR_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"\[\d+ lines?, \d+ chars?\]").expect("paste indicator regex should compile")
 });
 
