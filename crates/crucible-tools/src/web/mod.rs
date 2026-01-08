@@ -13,11 +13,12 @@
 //! enabled = true
 //! ```
 
+mod cache;
 mod config;
 
+pub use cache::FetchCache;
 pub use config::WebTools;
 
 // Modules to be added:
-// mod cache;
 // mod fetch;
 // mod search;
