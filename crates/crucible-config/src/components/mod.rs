@@ -12,6 +12,7 @@ pub mod gateway;
 pub mod hooks;
 pub mod llm;
 pub mod storage;
+pub mod web_tools;
 
 // New unified provider configuration
 pub mod backend;
@@ -29,6 +30,7 @@ pub use gateway::*;
 pub use hooks::*;
 pub use llm::*;
 pub use storage::*;
+pub use web_tools::*;
 
 // Re-export unified provider types
 pub use backend::BackendType;
