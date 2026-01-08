@@ -614,15 +614,33 @@ impl RatatuiView {
         (self.state.height as usize).saturating_sub(overhead as usize)
     }
 
+    /// Calculate the conversation area width (for rendering and selection cache)
+    ///
+    /// Returns the width available for the conversation area.
+    /// Used to ensure selection cache matches actual rendered output.
+    pub fn conversation_viewport_width(&self) -> usize {
+        // Conversation uses full terminal width (no side panels)
+        self.state.width as usize
+    }
+
     /// Build selection cache data for text extraction.
     ///
     /// Returns cache info for all rendered lines in the conversation.
     /// Call this after content changes or when the selection cache needs rebuilding.
+    ///
+    /// CRITICAL: The content width used here MUST match what's used in actual rendering,
+    /// otherwise the cache indices won't align with what the user sees on screen.
+    /// We use conversation_viewport_height() to get the actual rendered area dimensions.
     pub fn build_selection_cache(&self) -> Vec<crate::tui::selection::RenderedLineInfo> {
         use crate::tui::components::SessionHistoryWidget;
 
-        // Content width must match what's used in render
-        let content_width = (self.state.width as usize).saturating_sub(4);
+        // Use the ACTUAL conversation area width, not the full terminal width
+        // The conversation area is narrower due to status bar, input box, etc.
+        let conv_width = self.conversation_viewport_width();
+
+        // Content width must match what's used in render (area.width - 4 for margins)
+        let content_width = conv_width.saturating_sub(4);
+
         let widget = SessionHistoryWidget::new(&self.state.conversation);
         let (_lines, cache_info) = widget.render_to_lines_with_cache(content_width);
         cache_info
