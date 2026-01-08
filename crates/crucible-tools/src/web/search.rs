@@ -41,14 +41,15 @@ pub trait WebSearchProvider: Send + Sync {
     async fn search(&self, query: &str, limit: u32) -> Result<Vec<SearchResult>, SearchError>;
 }
 
-/// SearXNG search provider
+/// `SearXNG` search provider
 pub struct SearxngProvider {
     client: Client,
     config: SearxngConfig,
 }
 
 impl SearxngProvider {
-    /// Create a new SearXNG provider
+    /// Create a new `SearXNG` provider
+    #[must_use]
     pub fn new(client: Client, config: SearxngConfig) -> Self {
         Self { client, config }
     }
@@ -88,7 +89,7 @@ impl WebSearchProvider for SearxngProvider {
     }
 }
 
-/// SearXNG JSON response structure
+/// `SearXNG` JSON response structure
 #[derive(Debug, Deserialize)]
 struct SearxngResponse {
     results: Vec<SearxngResult>,
