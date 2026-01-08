@@ -41,13 +41,24 @@ impl HorizontalScrollState {
 
     /// Scroll left by the given amount
     pub fn scroll_left(&mut self, amount: usize) {
-        self.offset = self.offset.saturating_sub(amount);
+        use crate::tui::scroll_utils::ScrollUtils;
+        self.offset = ScrollUtils::scroll_horizontal(
+            self.offset,
+            -(amount as isize),
+            self.content_width,
+            self.content_width, // Will be clamped when called with viewport
+        );
     }
 
     /// Scroll right by the given amount
     pub fn scroll_right(&mut self, amount: usize, viewport_width: usize) {
-        let max_offset = self.content_width.saturating_sub(viewport_width);
-        self.offset = (self.offset + amount).min(max_offset);
+        use crate::tui::scroll_utils::ScrollUtils;
+        self.offset = ScrollUtils::scroll_horizontal(
+            self.offset,
+            amount as isize,
+            self.content_width,
+            viewport_width,
+        );
     }
 
     /// Scroll to the beginning

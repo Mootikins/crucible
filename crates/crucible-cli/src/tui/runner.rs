@@ -139,7 +139,8 @@ pub enum PastedContent {
 impl PastedContent {
     /// Create a new text paste from a string
     pub fn text(content: String) -> Self {
-        let line_count = content.lines().count().max(1);
+        use crate::tui::scroll_utils::LineCount;
+        let line_count = LineCount::count(&content);
         let char_count = content.chars().count();
         Self::Text {
             content,
