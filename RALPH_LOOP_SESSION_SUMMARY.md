@@ -1,4 +1,4 @@
-# Ralph Loop Session Summary - Sprint 2 In Progress
+# Ralph Loop Session Summary - Sprint 2 BLOCKED
 
 **Branch:** `feat/ui-improvements`
 **Iteration:** Current session
@@ -7,42 +7,40 @@
 
 ---
 
-## Status: 🔄 Sprint 2 In Progress (Task 2.1 Partially Complete)
+## Status: 🚫 Sprint 2 BLOCKED on Type Conflicts
 
 ### Sprint 1: COMPLETE ✅
-Three utility modules created, 15+ files updated, 1288 tests passing. See previous commits.
+Three utility modules created, 15+ files updated, 1288 tests passing. See commits 7c90d3d5, 5a5541c7, b228d460, 34ecab00.
 
 ---
 
-### Sprint 2 Progress (Current Session)
+### Sprint 2: BLOCKED ⚠️
 
-**Task 2.1: Extract Data Types - PARTIALLY COMPLETE**
+**Task 2.1: Extract Data Types - BLOCKED on type name conflicts**
 
-**What's Done:**
+**What Was Attempted:**
 - ✅ Created `state/types/popup.rs` (450 lines) with PopupItem, PopupKind
 - ✅ Created `state/types/context.rs` (23 lines) with ContextAttachment, ContextKind
 - ✅ Created `state/types/mod.rs` for re-exports
-- ✅ Added migration comment to state.rs
-- ✅ All 103 state tests passing
-- ✅ Git commit: 72e80fe6
+- ✅ Added trait impl: `impl crate::tui::widgets::PopupItem for PopupItem`
+- ✅ Updated imports in 10+ files
+- ❌ Hit blocking issue: Type name conflicts
 
-**What's Remaining (Task 2.1 completion):**
-- ⏸️ Remove old definitions from state.rs (lines 62-156 for PopupKind, PopupItem, ContextKind, ContextAttachment)
-- ⏸️ Update imports in affected files:
-  - `runner.rs` (line 2956)
-  - `conversation_view.rs` (lines 783, 1104)
-  - `popup.rs` (line 1)
-  - `testing/popup_snapshot_tests.rs` (line 9)
-  - Any other files using `use crate::tui::state::{PopupItem, ...}`
+**The Problem:**
+Both old and new locations define `PopupKind`, `PopupItem` etc., causing compiler ambiguity when code uses just `PopupKind`.
 
-**Next Steps:**
-1. Update imports to `use crate::tui::state::types::{PopupItem, PopupKind, ContextAttachment, ContextKind}`
-2. Remove old type definitions from state.rs
-3. Run tests to verify
-4. Commit Task 2.1 completion
-5. Move to Task 2.2 (Extract action handlers)
+**Solution:**
+See `RALPH_LOOP_BLOCKING_ISSUE.md` for detailed analysis and recommended solution (Option A: use pub use re-exports).
 
-**Estimated Time to Complete Task 2.1:** 15-20 minutes
+**Next Steps (when session resumes):**
+1. Read RALPH_LOOP_BLOCKING_ISSUE.md for full context
+2. Restore stash: `git stash pop`
+3. Implement Option A: pub use re-exports in state.rs
+4. Remove old definitions (lines 62-156, 420-454, 536-595)
+5. Test and commit Task 2.1 completion
+6. Move to Task 2.2 (Extract action handlers)
+
+**Estimated Time to Unblock:** 15-20 minutes
 
 ---
 
