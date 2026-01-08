@@ -857,11 +857,10 @@ impl RatatuiRunner {
                     let cmd = msg.strip_prefix('!').unwrap_or("").trim();
                     if !cmd.is_empty() {
                         // Add to history
-                        if self.history.last() != Some(&msg) {
-                            self.history.push(msg.clone());
+                        if self.history_manager.last() != Some(msg.as_str()) {
+                            self.history_manager.push(msg.clone());
                         }
-                        self.history_index = None;
-                        self.history_saved_input.clear();
+                        self.history_manager.reset();
 
                         // Clear input
                         self.view.set_input("");
@@ -882,11 +881,10 @@ impl RatatuiRunner {
                     let args = cmd.strip_prefix(&cmd_name).map(|s| s.trim()).unwrap_or("");
                     if !cmd_name.is_empty() {
                         // Add to history
-                        if self.history.last() != Some(&msg) {
-                            self.history.push(msg.clone());
+                        if self.history_manager.last() != Some(msg.as_str()) {
+                            self.history_manager.push(msg.clone());
                         }
-                        self.history_index = None;
-                        self.history_saved_input.clear();
+                        self.history_manager.reset();
 
                         // Clear input
                         self.view.set_input("");
@@ -900,11 +898,10 @@ impl RatatuiRunner {
                 }
 
                 // Add to history (avoid duplicates for repeated commands)
-                if self.history.last() != Some(&msg) {
-                    self.history.push(msg.clone());
+                if self.history_manager.last() != Some(msg.as_str()) {
+                    self.history_manager.push(msg.clone());
                 }
-                self.history_index = None;
-                self.history_saved_input.clear();
+                self.history_manager.reset();
 
                 // Clear input IMMEDIATELY (before any async work)
                 self.view.set_input("");
@@ -1292,39 +1289,16 @@ impl RatatuiRunner {
                 self.view.set_popup(None);
             }
             InputAction::HistoryPrev => {
-                if !self.history.is_empty() {
-                    let new_index = match self.history_index {
-                        None => {
-                            // Entering history mode - save current input
-                            self.history_saved_input = self.view.input().to_string();
-                            self.history.len() - 1
-                        }
-                        Some(0) => 0, // Already at oldest
-                        Some(i) => i - 1,
-                    };
-                    self.history_index = Some(new_index);
-                    if let Some(cmd) = self.history.get(new_index) {
-                        self.view.set_input(cmd);
-                        self.view.set_cursor_position(cmd.len());
-                    }
+                let current_input = self.view.input();
+                if let Some(cmd) = self.history_manager.prev(current_input) {
+                    self.view.set_input(cmd);
+                    self.view.set_cursor_position(cmd.len());
                 }
             }
             InputAction::HistoryNext => {
-                if let Some(current) = self.history_index {
-                    if current + 1 >= self.history.len() {
-                        // Exiting history mode - restore saved input
-                        self.history_index = None;
-                        self.view.set_input(&self.history_saved_input);
-                        self.view
-                            .set_cursor_position(self.history_saved_input.len());
-                    } else {
-                        let new_index = current + 1;
-                        self.history_index = Some(new_index);
-                        if let Some(cmd) = self.history.get(new_index) {
-                            self.view.set_input(cmd);
-                            self.view.set_cursor_position(cmd.len());
-                        }
-                    }
+                if let Some(cmd) = self.history_manager.next() {
+                    self.view.set_input(cmd);
+                    self.view.set_cursor_position(cmd.len());
                 }
             }
             // Readline-style editing (emacs mode)
