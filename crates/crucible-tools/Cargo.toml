@@ -64,7 +64,7 @@ pathdiff = "0.2"
 url = "2.5"
 
 # HTML to Markdown conversion
-htmd = "0.1"
+htmd = "0.5"
 
 # Validation
 validator = { version = "0.20", features = ["derive"] }
