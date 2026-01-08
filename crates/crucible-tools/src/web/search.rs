@@ -71,7 +71,7 @@ impl WebSearchProvider for SearxngProvider {
             request = request.basic_auth(user, Some(pass));
         }
 
-        let response = request.send().await?;
+        let response = request.send().await?.error_for_status()?;
         let body: SearxngResponse = response.json().await?;
 
         let results: Vec<SearchResult> = body
