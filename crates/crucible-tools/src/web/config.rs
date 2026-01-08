@@ -207,7 +207,9 @@ impl WebTools {
 // Can't derive Clone due to Mutex, but we can implement it
 impl Clone for WebTools {
     fn clone(&self) -> Self {
-        Self::new(&self.config)
+        let mut cloned = Self::new(&self.config);
+        cloned.session_dir.clone_from(&self.session_dir);
+        cloned
     }
 }
 
@@ -418,7 +420,7 @@ mod tests {
         // Should have created a file with the hostname
         let entries: Vec<_> = std::fs::read_dir(&artifacts_dir)
             .unwrap()
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .collect();
         assert_eq!(entries.len(), 1);
 
