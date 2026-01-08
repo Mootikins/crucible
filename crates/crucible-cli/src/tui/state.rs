@@ -8,6 +8,7 @@
 
 pub mod types;
 pub mod actions;
+pub mod navigation;
 
 // Re-export types from types/ submodules for backward compatibility
 pub use self::types::popup::*;
@@ -15,6 +16,9 @@ pub use self::types::context::*;
 
 // Re-export action executor
 pub use actions::ActionExecutor;
+
+// Re-export navigation utilities
+pub use navigation::{find_word_start_backward, find_word_start_forward};
 
 use crate::tui::conversation_view::ViewState;
 use crate::tui::notification::NotificationState;
@@ -28,47 +32,7 @@ use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use std::time::Instant;
 
-// =============================================================================
-// Word boundary helpers for readline-style editing
-// =============================================================================
-
-/// Find the byte position of the start of the previous word.
-/// Skips trailing whitespace, then finds where the word begins.
-pub(crate) fn find_word_start_backward(s: &str) -> usize {
-    let mut chars = s.char_indices().rev().peekable();
-
-    // Skip trailing whitespace
-    while chars.peek().is_some_and(|(_, c)| c.is_whitespace()) {
-        chars.next();
-    }
-
-    // Skip word characters
-    while chars.peek().is_some_and(|(_, c)| !c.is_whitespace()) {
-        chars.next();
-    }
-
-    // Return position after the whitespace (start of the word we skipped)
-    chars.next().map(|(i, c)| i + c.len_utf8()).unwrap_or(0)
-}
-
-/// Find the byte offset to the start of the next word.
-/// Skips current word, then whitespace.
-pub(crate) fn find_word_start_forward(s: &str) -> usize {
-    let mut chars = s.char_indices().peekable();
-
-    // Skip current word
-    while chars.peek().is_some_and(|(_, c)| !c.is_whitespace()) {
-        chars.next();
-    }
-
-    // Skip whitespace
-    while chars.peek().is_some_and(|(_, c)| c.is_whitespace()) {
-        chars.next();
-    }
-
-    chars.peek().map(|(i, _)| *i).unwrap_or(s.len())
-}
-
+// Word boundary helpers moved to state/navigation.rs
 // MessageRole imported from crucible_core::traits
 // PopupKind, ContextKind, ContextAttachment now in state/types/
 
