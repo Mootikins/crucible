@@ -63,6 +63,9 @@ urlencoding = { workspace = true }
 pathdiff = "0.2"
 url = "2.5"
 
+# HTML to Markdown conversion
+htmd = "0.1"
+
 # Validation
 validator = { version = "0.20", features = ["derive"] }
 
