@@ -3,7 +3,7 @@
 use crate::components::{
     AcpConfig, ChatConfig, CliConfig, ContextConfig, DiscoveryPathsConfig, EmbeddingConfig,
     EmbeddingProviderType, GatewayConfig, HooksConfig, LlmConfig, LlmProvider, LlmProviderType,
-    ProvidersConfig, StorageConfig,
+    ProvidersConfig, StorageConfig, WebToolsConfig,
 };
 use crate::includes::IncludeConfig;
 use crate::{EnrichmentConfig, ProfileConfig};
@@ -176,6 +176,10 @@ pub struct Config {
     #[serde(default)]
     pub gateway: Option<GatewayConfig>,
 
+    /// Web tools configuration (fetch and search).
+    #[serde(default)]
+    pub web_tools: Option<WebToolsConfig>,
+
     /// Hooks configuration.
     #[serde(default)]
     pub hooks: Option<HooksConfig>,
@@ -206,6 +210,7 @@ impl Default for Config {
             logging: None,
             discovery: None,
             gateway: None,
+            web_tools: None,
             hooks: None,
             context: None,
             custom: HashMap::new(),
@@ -380,6 +385,11 @@ impl Config {
     /// Get the effective gateway configuration.
     pub fn gateway_config(&self) -> Option<&GatewayConfig> {
         self.gateway.as_ref()
+    }
+
+    /// Get the effective web tools configuration.
+    pub fn web_tools_config(&self) -> Option<&WebToolsConfig> {
+        self.web_tools.as_ref()
     }
 
     /// Get the effective hooks configuration.
