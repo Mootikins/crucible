@@ -16,7 +16,7 @@
 //! Web tools provide internet access for agents:
 //!
 //! - `web_fetch` - Fetch URL, convert HTML to markdown, optionally summarize with LLM
-//! - `web_search` - Search the web via SearXNG (configurable backend)
+//! - `web_search` - Search the web via `SearXNG` (configurable backend)
 //!
 //! Enable in config:
 //!
