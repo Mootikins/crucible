@@ -11,7 +11,7 @@ tags:
 
 Crucible tools and scripts operate within three orthogonal scopes that define where data lives and what it means:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │ Kiln - Permanent knowledge storage                          │
 │ "What you know"                                             │
@@ -66,7 +66,7 @@ See [[Help/Core/Sessions]] for details.
 
 Sessions can store **artifacts** - files generated or fetched during the session:
 
-```
+```text
 <kiln>/sessions/<workspace>/<timestamp>/
 ├── log.md           # Conversation/execution log
 └── artifacts/       # Generated/fetched content
@@ -106,7 +106,7 @@ Workspace isolation options:
 
 When a tool or script runs, it may have access to any combination of scopes:
 
-```
+```text
 User message
      │
      ▼
