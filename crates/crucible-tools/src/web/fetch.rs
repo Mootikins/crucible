@@ -10,23 +10,6 @@ pub enum FetchError {
     /// HTTP request failed
     #[error("HTTP request failed: {0}")]
     Request(#[from] reqwest::Error),
-
-    /// Request timed out
-    #[error("Request timeout after {0} seconds")]
-    Timeout(u64),
-
-    /// Content exceeded size limit
-    #[error("Content too large: {size_kb} KB (max: {max_kb} KB)")]
-    ContentTooLarge {
-        /// Actual content size in KB
-        size_kb: u32,
-        /// Maximum allowed size in KB
-        max_kb: u32,
-    },
-
-    /// Invalid URL provided
-    #[error("Invalid URL: {0}")]
-    InvalidUrl(String),
 }
 
 /// Fetch a URL and convert HTML to markdown
@@ -59,10 +42,13 @@ pub async fn fetch_and_convert(
     // Check size (saturate to u32::MAX for extremely large content)
     let size_kb = u32::try_from(body.len() / 1024).unwrap_or(u32::MAX);
     if size_kb > max_content_kb {
-        // Truncate instead of error
+        // Truncate at a valid UTF-8 boundary
         let max_bytes = (max_content_kb as usize) * 1024;
-        let truncated = body.chars().take(max_bytes).collect::<String>();
-        let markdown = html_to_markdown(&truncated, &content_type);
+        let truncated = match body.char_indices().take_while(|(i, _)| *i < max_bytes).last() {
+            Some((i, c)) => &body[..i + c.len_utf8()],
+            None => "",
+        };
+        let markdown = html_to_markdown(truncated, &content_type);
         return Ok(format!(
             "{markdown}\n\n[Content truncated - exceeded {max_content_kb} KB limit]"
         ));
