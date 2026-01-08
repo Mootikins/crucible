@@ -234,7 +234,7 @@ use crate::tui::notification::NotificationLevel;
 use crate::tui::paste_handler::{build_indicator_delete, build_message_with_pastes, PasteHandler, PastedContent};
 use crate::tui::session_commands;
 use crate::tui::streaming_channel::{
-    create_streaming_channel, StreamingEvent, StreamingReceiver, StreamingTask,
+    create_streaming_channel, StreamingEvent, StreamingTask,
 };
 
 use crate::tui::components::generic_popup::PopupState;
@@ -298,10 +298,6 @@ pub struct RatatuiRunner {
     last_ctrl_c: Option<std::time::Instant>,
     /// Popup state (consolidated - uses generic popup with provider)
     popup: Option<PopupState>,
-    /// Background streaming task
-    streaming_task: Option<tokio::task::JoinHandle<()>>,
-    /// Channel receiver for streaming events
-    streaming_rx: Option<StreamingReceiver>,
     /// Current agent name (for display in /agent command)
     current_agent: Option<String>,
     /// Command registry for slash command lookup
@@ -373,8 +369,6 @@ impl RatatuiRunner {
             ctrl_c_count: 0,
             last_ctrl_c: None,
             popup: None,
-            streaming_task: None,
-            streaming_rx: None,
             current_agent: None,
             command_registry,
             restart_requested: false,
@@ -493,7 +487,7 @@ impl RatatuiRunner {
             // 1. Render
             {
                 let view = &self.view;
-                let selection = &self.selection_manager.selection;
+                let selection = self.selection_manager.selection();
                 let scroll_offset = view.state().scroll_offset;
                 let conv_height = view.conversation_viewport_height();
 
@@ -543,80 +537,88 @@ impl RatatuiRunner {
             self.poll_session_events(bridge, &mut last_seen_seq);
 
             // 5. Poll streaming channel (non-blocking)
+            // Collect events first to avoid borrow conflicts with streaming_manager
             let mut pending_parse_events = Vec::new();
             let mut streaming_complete = false;
             let mut streaming_error = None;
+            let collected_events: Vec<_> = {
+                if let Some(rx) = self.streaming_manager.rx_mut() {
+                    std::iter::from_fn(|| rx.try_recv().ok()).collect()
+                } else {
+                    Vec::new()
+                }
+            };
 
-            if let Some(rx) = &mut self.streaming_rx {
-                while let Ok(event) = rx.try_recv() {
-                    match event {
-                        StreamingEvent::Delta { text, seq: _ } => {
-                            self.prev_token_count = self.token_count;
-                            self.token_count += 1;
-                            self.spinner_frame = self.spinner_frame.wrapping_add(1);
-                            self.view.set_status(StatusKind::Generating {
-                                token_count: self.token_count,
-                                prev_token_count: self.prev_token_count,
-                                spinner_frame: self.spinner_frame,
-                            });
+            // Now process collected events (streaming_manager borrow is released)
+            for event in collected_events {
+                match event {
+                    StreamingEvent::Delta { text, seq: _ } => {
+                        self.prev_token_count = self.token_count;
+                        self.token_count += 1;
+                        self.spinner_frame = self.spinner_frame.wrapping_add(1);
+                        self.view.set_status(StatusKind::Generating {
+                            token_count: self.token_count,
+                            prev_token_count: self.prev_token_count,
+                            spinner_frame: self.spinner_frame,
+                        });
 
-                            // Feed delta through parser
-                            if let Some(parser) = self.streaming_manager.parser_mut() {
-                                let parse_events = parser.feed(&text);
-                                pending_parse_events.extend(parse_events);
-                            }
-
-                            // Accumulate assistant chunk for session logging
-                            if let Some(logger) = &self.session_logger {
-                                let logger = logger.clone();
-                                let text_clone = text.clone();
-                                tokio::spawn(async move {
-                                    logger.accumulate_assistant_chunk(&text_clone).await;
-                                });
-                            }
-
-                            bridge.ring.push(SessionEvent::TextDelta {
-                                delta: text,
-                                seq: self.token_count as u64,
-                            });
+                        // Feed delta through parser
+                        if let Some(parser) = self.streaming_manager.parser_mut() {
+                            let parse_events = parser.feed(&text);
+                            pending_parse_events.extend(parse_events);
                         }
-                        StreamingEvent::Done { full_response } => {
-                            self.streaming_manager.stop_streaming();
-                            self.view.clear_status();
-                            debug!(response_len = full_response.len(), "Streaming complete");
 
-                            // Finalize parser (already cleared by stop_streaming, but we had a reference)
-                            // Parser is now managed by StreamingManager
-
-                            streaming_complete = true;
-
-                            // Flush accumulated assistant message to session log
-                            if let Some(logger) = &self.session_logger {
-                                let logger = logger.clone();
-                                let model = self.current_agent.clone();
-                                tokio::spawn(async move {
-                                    logger.flush_assistant_message(model.as_deref()).await;
-                                });
-                            }
-
-                            bridge.ring.push(SessionEvent::AgentResponded {
-                                content: full_response,
-                                tool_calls: vec![],
+                        // Accumulate assistant chunk for session logging
+                        if let Some(logger) = &self.session_logger {
+                            let logger = logger.clone();
+                            let text_clone = text.clone();
+                            tokio::spawn(async move {
+                                logger.accumulate_assistant_chunk(&text_clone).await;
                             });
                         }
-                        StreamingEvent::Error { message } => {
-                            self.streaming_manager.stop_streaming();
-                            // Log error to session
-                            if let Some(logger) = &self.session_logger {
-                                let logger = logger.clone();
-                                let msg = message.clone();
-                                tokio::spawn(async move {
-                                    logger.log_error(&msg, true).await;
-                                });
-                            }
-                            streaming_error = Some(message);
+
+                        bridge.ring.push(SessionEvent::TextDelta {
+                            delta: text,
+                            seq: self.token_count as u64,
+                        });
+                    }
+                    StreamingEvent::Done { full_response } => {
+                        self.streaming_manager.stop_streaming();
+                        self.view.clear_status();
+                        debug!(response_len = full_response.len(), "Streaming complete");
+
+                        // Finalize parser (already cleared by stop_streaming, but we had a reference)
+                        // Parser is now managed by StreamingManager
+
+                        streaming_complete = true;
+
+                        // Flush accumulated assistant message to session log
+                        if let Some(logger) = &self.session_logger {
+                            let logger = logger.clone();
+                            let model = self.current_agent.clone();
+                            tokio::spawn(async move {
+                                logger.flush_assistant_message(model.as_deref()).await;
+                            });
                         }
-                        StreamingEvent::ToolCall { id, name, args } => {
+
+                        bridge.ring.push(SessionEvent::AgentResponded {
+                            content: full_response,
+                            tool_calls: vec![],
+                        });
+                    }
+                    StreamingEvent::Error { message } => {
+                        self.streaming_manager.stop_streaming();
+                        // Log error to session
+                        if let Some(logger) = &self.session_logger {
+                            let logger = logger.clone();
+                            let msg = message.clone();
+                            tokio::spawn(async move {
+                                logger.log_error(&msg, true).await;
+                            });
+                        }
+                        streaming_error = Some(message);
+                    }
+                    StreamingEvent::ToolCall { id, name, args } => {
                             // Display tool call in the TUI with arguments
                             tracing::debug!(
                                 tool_id = ?id,
@@ -704,11 +706,10 @@ impl RatatuiRunner {
                             self.view.append_reasoning(&text);
                             self.view.tick_reasoning_animation();
 
-                            // Push reasoning to session using AgentThinking event
-                            bridge
-                                .ring
-                                .push(SessionEvent::AgentThinking { thought: text });
-                        }
+                        // Push reasoning to session using AgentThinking event
+                        bridge
+                            .ring
+                            .push(SessionEvent::AgentThinking { thought: text });
                     }
                 }
             }
@@ -744,11 +745,10 @@ impl RatatuiRunner {
             }
 
             // 6. Poll streaming task for completion (cleanup)
-            if let Some(task) = &mut self.streaming_task {
-                if task.is_finished() {
-                    let task = self.streaming_task.take().unwrap();
+            if self.streaming_manager.is_task_finished() {
+                if let Some(task) = self.streaming_manager.take_task() {
                     let _ = task.await; // Just cleanup, events already processed
-                    self.streaming_rx = None;
+                    self.streaming_manager.clear_task_and_receiver();
                 }
             }
 
@@ -764,10 +764,10 @@ impl RatatuiRunner {
         }
 
         // Ensure streaming task completes before exiting
-        if let Some(task) = self.streaming_task.take() {
+        if let Some(task) = self.streaming_manager.take_task() {
             let _ = task.await;
         }
-        self.streaming_rx = None;
+        self.streaming_manager.clear_task_and_receiver();
 
         Ok(())
     }
@@ -1027,8 +1027,7 @@ impl RatatuiRunner {
                 let stream = agent.send_message_stream(msg.clone());
                 let task = StreamingTask::spawn(tx, stream);
 
-                self.streaming_task = Some(task);
-                self.streaming_rx = Some(rx);
+                self.streaming_manager.set_task_and_receiver(task, rx);
             }
             InputAction::InsertChar(c) => {
                 // Check if we're in rapid input mode (potential paste)
@@ -1782,13 +1781,13 @@ impl RatatuiRunner {
 
         // Rebuild cache if needed (width changed or cache is empty)
         let width = self.view.state().width;
-        if self.selection_manager.selection_cache.needs_rebuild(width) {
+        if self.selection_manager.cache_needs_rebuild(width) {
             let cache_data = self.view.build_selection_cache();
-            self.selection_manager.selection_cache.update(cache_data, width);
+            self.selection_manager.update_cache(cache_data, width);
         }
 
         // Extract text from selection cache
-        let text = self.selection_manager.selection_cache.extract_text(start, end);
+        let text = self.selection_manager.extract_text(start, end);
 
         if text.is_empty() {
             self.view.set_status_text("No text selected");
@@ -2375,7 +2374,7 @@ impl RatatuiRunner {
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
         let view = &self.view;
-        let selection = &self.selection_manager.selection;
+        let selection = self.selection_manager.selection();
         let scroll_offset = view.state().scroll_offset;
         let conv_height = view.conversation_viewport_height();
         let ask_batch_state = self.pending_ask_batch.as_ref();
