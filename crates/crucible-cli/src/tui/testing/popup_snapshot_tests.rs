@@ -4,7 +4,7 @@
 //! including command popups, agent/file popups, and popup effects.
 
 use super::fixtures::registries;
-use super::Harness;
+use super::{Harness, TEST_HEIGHT, TEST_WIDTH};
 use crate::tui::action_dispatch::{popup_item_to_effect, PopupEffect, PopupHook, PopupHooks};
 use crate::tui::state::types::{PopupItem, PopupKind};
 use crossterm::event::KeyCode;
@@ -17,12 +17,9 @@ use insta::assert_snapshot;
 mod snapshots {
     use super::*;
 
-    const WIDTH: u16 = 80;
-    const HEIGHT: u16 = 24;
-
     #[test]
     fn popup_command_open() {
-        let h = Harness::new(WIDTH, HEIGHT)
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::standard_commands());
 
         assert_snapshot!("popup_command_open", h.render());
@@ -30,7 +27,7 @@ mod snapshots {
 
     #[test]
     fn popup_command_minimal() {
-        let h = Harness::new(WIDTH, HEIGHT)
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::minimal_commands());
 
         assert_snapshot!("popup_command_minimal", h.render());
@@ -38,7 +35,7 @@ mod snapshots {
 
     #[test]
     fn popup_agent_list() {
-        let h = Harness::new(WIDTH, HEIGHT)
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::AgentOrFile, registries::test_agents());
 
         assert_snapshot!("popup_agent_list", h.render());
@@ -46,7 +43,7 @@ mod snapshots {
 
     #[test]
     fn popup_file_list() {
-        let h = Harness::new(WIDTH, HEIGHT)
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::AgentOrFile, registries::test_files());
 
         assert_snapshot!("popup_file_list", h.render());
@@ -54,7 +51,7 @@ mod snapshots {
 
     #[test]
     fn popup_note_list() {
-        let h = Harness::new(WIDTH, HEIGHT)
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::AgentOrFile, registries::test_notes());
 
         assert_snapshot!("popup_note_list", h.render());
@@ -62,7 +59,7 @@ mod snapshots {
 
     #[test]
     fn popup_skills_list() {
-        let h = Harness::new(WIDTH, HEIGHT)
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::test_skills());
 
         assert_snapshot!("popup_skills_list", h.render());
@@ -70,7 +67,7 @@ mod snapshots {
 
     #[test]
     fn popup_repl_commands() {
-        let h = Harness::new(WIDTH, HEIGHT)
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::ReplCommand, registries::test_repl_commands());
 
         assert_snapshot!("popup_repl_commands", h.render());
@@ -78,7 +75,7 @@ mod snapshots {
 
     #[test]
     fn popup_mixed_items() {
-        let h = Harness::new(WIDTH, HEIGHT)
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::AgentOrFile, registries::mixed_agent_file_items());
 
         assert_snapshot!("popup_mixed_items", h.render());
@@ -86,7 +83,7 @@ mod snapshots {
 
     #[test]
     fn popup_navigation_second_item() {
-        let mut h = Harness::new(WIDTH, HEIGHT)
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::standard_commands());
 
         h.key(KeyCode::Down);
@@ -95,7 +92,7 @@ mod snapshots {
 
     #[test]
     fn popup_navigation_third_item() {
-        let mut h = Harness::new(WIDTH, HEIGHT)
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::standard_commands());
 
         h.key(KeyCode::Down);
@@ -105,7 +102,7 @@ mod snapshots {
 
     #[test]
     fn popup_navigation_wrap_to_top() {
-        let mut h = Harness::new(WIDTH, HEIGHT)
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::minimal_commands());
 
         // Go down past last item, should wrap (or stay at last)
@@ -117,7 +114,7 @@ mod snapshots {
 
     #[test]
     fn popup_with_scroll() {
-        let h = Harness::new(WIDTH, HEIGHT)
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::many_commands());
 
         assert_snapshot!("popup_many_commands", h.render());
@@ -125,7 +122,7 @@ mod snapshots {
 
     #[test]
     fn popup_scrolled_down() {
-        let mut h = Harness::new(WIDTH, HEIGHT)
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::many_commands());
 
         // Navigate down several items to trigger scrolling
@@ -568,13 +565,10 @@ mod popup_with_context_tests {
 mod workflow_tests {
     use super::*;
 
-    const WIDTH: u16 = 80;
-    const HEIGHT: u16 = 24;
-
     /// User types `/se` to filter commands, sees filtered results
     #[test]
     fn workflow_filter_commands() {
-        let mut h = Harness::new(WIDTH, HEIGHT)
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::standard_commands());
 
         // Type filter text
@@ -590,7 +584,7 @@ mod workflow_tests {
     /// User types `@re` to filter agents
     #[test]
     fn workflow_filter_agents() {
-        let mut h = Harness::new(WIDTH, HEIGHT)
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::AgentOrFile, registries::test_agents());
 
         // Type filter for "researcher"
@@ -603,7 +597,7 @@ mod workflow_tests {
     /// User types `:` to open REPL popup, then navigates and selects
     #[test]
     fn workflow_repl_navigate_select() {
-        let mut h = Harness::new(WIDTH, HEIGHT)
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::ReplCommand, registries::test_repl_commands());
 
         // Navigate to third item
@@ -624,7 +618,7 @@ mod workflow_tests {
     /// Complete flow: open popup, type filter, navigate, select
     #[test]
     fn workflow_complete_command_selection() {
-        let mut h = Harness::new(WIDTH, HEIGHT)
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::standard_commands());
 
         // Step 1: Initial state with popup open
@@ -651,7 +645,7 @@ mod workflow_tests {
     /// User opens popup and immediately cancels
     #[test]
     fn workflow_cancel_immediately() {
-        let mut h = Harness::new(WIDTH, HEIGHT)
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::standard_commands());
 
         assert!(h.has_popup());
@@ -666,7 +660,7 @@ mod workflow_tests {
     /// User uses backspace to remove filter characters
     #[test]
     fn workflow_backspace_filter() {
-        let mut h = Harness::new(WIDTH, HEIGHT)
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::standard_commands());
 
         // Type and then backspace
@@ -683,7 +677,7 @@ mod workflow_tests {
     /// Full navigation cycle: down past end wraps to top
     #[test]
     fn workflow_navigation_wrap() {
-        let mut h = Harness::new(WIDTH, HEIGHT)
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::minimal_commands()); // 2 items
 
         // Start at 0
@@ -705,7 +699,7 @@ mod workflow_tests {
     /// Keyboard navigation preserves query while moving selection
     #[test]
     fn workflow_navigate_while_filtered() {
-        let mut h = Harness::new(WIDTH, HEIGHT)
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::standard_commands());
 
         // Type filter
@@ -724,7 +718,7 @@ mod workflow_tests {
     /// Multiple @ mentions in a row (close one, open another)
     #[test]
     fn workflow_multiple_triggers() {
-        let mut h = Harness::new(WIDTH, HEIGHT);
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT);
 
         // First @ trigger - opens popup with EmptyProvider (no items)
         h.key(KeyCode::Char('@'));
@@ -762,7 +756,7 @@ mod workflow_tests {
             ),
         ];
 
-        let h = Harness::new(WIDTH, HEIGHT).with_popup_items(PopupKind::Command, items);
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_popup_items(PopupKind::Command, items);
 
         assert_snapshot!("workflow_long_descriptions", h.render());
     }
@@ -775,12 +769,9 @@ mod workflow_tests {
 mod session_popup_tests {
     use super::*;
 
-    const WIDTH: u16 = 80;
-    const HEIGHT: u16 = 24;
-
     #[test]
     fn popup_session_list() {
-        let h = Harness::new(WIDTH, HEIGHT)
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Session, registries::test_sessions());
 
         assert_snapshot!("popup_session_list", h.render());
@@ -788,7 +779,7 @@ mod session_popup_tests {
 
     #[test]
     fn popup_session_many() {
-        let h = Harness::new(WIDTH, HEIGHT)
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Session, registries::many_sessions());
 
         assert_snapshot!("popup_session_many", h.render());
@@ -796,7 +787,7 @@ mod session_popup_tests {
 
     #[test]
     fn popup_session_navigation() {
-        let mut h = Harness::new(WIDTH, HEIGHT)
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Session, registries::test_sessions());
 
         h.key(KeyCode::Down);
@@ -807,7 +798,7 @@ mod session_popup_tests {
     fn popup_session_over_conversation() {
         use crate::tui::testing::fixtures::sessions;
 
-        let h = Harness::new(WIDTH, HEIGHT)
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_session(sessions::basic_exchange())
             .with_popup_items(PopupKind::Session, registries::test_sessions());
 
