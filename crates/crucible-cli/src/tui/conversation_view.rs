@@ -738,8 +738,9 @@ impl RatatuiView {
     fn route_event_via_layer_stack(
         &mut self,
         event: &crossterm::event::Event,
-    ) -> crate::tui::components::WidgetEventResult {
-        use crate::tui::components::{FocusTarget, LayerStack};
+    ) -> crate::tui::event_result::EventResult {
+        use crate::tui::components::LayerStack;
+        use crate::tui::event_result::FocusTarget;
 
         // Determine current focus based on active layers
         let focus = if self.state.dialog_stack.current().is_some() {

@@ -173,6 +173,8 @@ pub enum ScrollEffect {
     ToTop,
     /// Scroll to bottom
     ToBottom,
+    /// Scroll to specific position
+    ToPosition(usize),
 }
 
 /// Dialog result effects
@@ -193,7 +195,7 @@ pub enum DialogEffect {
 /// This is the central translation point that keeps the runner
 /// from needing to understand the details of TuiAction.
 pub fn dispatch(action: TuiAction) -> RunnerEffect {
-    use crate::tui::event_result::ScrollAction;
+    use crate::tui::event_result::ScrollDirection;
 
     match action {
         TuiAction::Exit => RunnerEffect::Exit,
@@ -202,34 +204,66 @@ pub fn dispatch(action: TuiAction) -> RunnerEffect {
         TuiAction::ExecuteCommand(cmd) => RunnerEffect::ExecuteCommand(cmd),
         TuiAction::CycleMode => RunnerEffect::CycleMode,
 
-        TuiAction::Scroll(scroll) => {
-            let effect = match scroll {
-                ScrollAction::Up(n) => ScrollEffect::Up(n),
-                ScrollAction::Down(n) => ScrollEffect::Down(n),
-                ScrollAction::PageUp => ScrollEffect::Up(10),
-                ScrollAction::PageDown => ScrollEffect::Down(10),
-                ScrollAction::HalfPageUp => ScrollEffect::Up(5),
-                ScrollAction::HalfPageDown => ScrollEffect::Down(5),
-                ScrollAction::ToTop => ScrollEffect::ToTop,
-                ScrollAction::ToBottom => ScrollEffect::ToBottom,
+        TuiAction::ScrollLines(lines) => {
+            let effect = if lines > 0 {
+                ScrollEffect::Down(lines as usize)
+            } else {
+                ScrollEffect::Up((-lines) as usize)
             };
             RunnerEffect::Scroll(effect)
         }
 
+        TuiAction::ScrollTo(pos) => {
+            let effect = if pos == 0 {
+                ScrollEffect::ToTop
+            } else if pos == usize::MAX {
+                ScrollEffect::ToBottom
+            } else {
+                ScrollEffect::ToPosition(pos)
+            };
+            RunnerEffect::Scroll(effect)
+        }
+
+        TuiAction::ScrollPage(dir) => {
+            let effect = match dir {
+                ScrollDirection::Up => ScrollEffect::Up(10),
+                ScrollDirection::Down => ScrollEffect::Down(10),
+            };
+            RunnerEffect::Scroll(effect)
+        }
+
+        TuiAction::ConfirmPopup(idx) => {
+            // This is handled by the popup system, convert to Render for now
+            RunnerEffect::Render
+        }
+
+        TuiAction::DismissPopup => RunnerEffect::Render,
+
         TuiAction::PopupConfirm(item) => RunnerEffect::ApplyPopupSelection(item),
         TuiAction::PopupClose => RunnerEffect::Render,
+
+        TuiAction::CloseDialog(result) => {
+            let effect = match result {
+                crate::tui::event_result::DialogResult::Confirm => DialogEffect::Confirmed,
+                crate::tui::event_result::DialogResult::Cancel => DialogEffect::Cancelled,
+                crate::tui::event_result::DialogResult::Select(idx) => DialogEffect::Selected(idx),
+            };
+            RunnerEffect::DialogResult(effect)
+        }
 
         TuiAction::DialogConfirm => RunnerEffect::DialogResult(DialogEffect::Confirmed),
         TuiAction::DialogCancel => RunnerEffect::DialogResult(DialogEffect::Cancelled),
         TuiAction::DialogSelect(idx) => RunnerEffect::DialogResult(DialogEffect::Selected(idx)),
         TuiAction::DialogDismiss => RunnerEffect::DialogResult(DialogEffect::Dismissed),
+
+        TuiAction::RequestFocus(_) => RunnerEffect::Render,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::event_result::ScrollAction;
+    use crate::tui::event_result::ScrollDirection;
     use crate::tui::state::PopupItem;
 
     // ==========================================================================
@@ -427,49 +461,37 @@ mod tests {
 
     #[test]
     fn test_dispatch_scroll_up() {
-        let effect = dispatch(TuiAction::Scroll(ScrollAction::Up(3)));
+        let effect = dispatch(TuiAction::ScrollLines(-3));
         assert_eq!(effect, RunnerEffect::Scroll(ScrollEffect::Up(3)));
     }
 
     #[test]
     fn test_dispatch_scroll_down() {
-        let effect = dispatch(TuiAction::Scroll(ScrollAction::Down(5)));
+        let effect = dispatch(TuiAction::ScrollLines(5));
         assert_eq!(effect, RunnerEffect::Scroll(ScrollEffect::Down(5)));
     }
 
     #[test]
     fn test_dispatch_scroll_page_up() {
-        let effect = dispatch(TuiAction::Scroll(ScrollAction::PageUp));
+        let effect = dispatch(TuiAction::ScrollPage(ScrollDirection::Up));
         assert_eq!(effect, RunnerEffect::Scroll(ScrollEffect::Up(10)));
     }
 
     #[test]
     fn test_dispatch_scroll_page_down() {
-        let effect = dispatch(TuiAction::Scroll(ScrollAction::PageDown));
+        let effect = dispatch(TuiAction::ScrollPage(ScrollDirection::Down));
         assert_eq!(effect, RunnerEffect::Scroll(ScrollEffect::Down(10)));
     }
 
     #[test]
-    fn test_dispatch_scroll_half_page_up() {
-        let effect = dispatch(TuiAction::Scroll(ScrollAction::HalfPageUp));
-        assert_eq!(effect, RunnerEffect::Scroll(ScrollEffect::Up(5)));
-    }
-
-    #[test]
-    fn test_dispatch_scroll_half_page_down() {
-        let effect = dispatch(TuiAction::Scroll(ScrollAction::HalfPageDown));
-        assert_eq!(effect, RunnerEffect::Scroll(ScrollEffect::Down(5)));
-    }
-
-    #[test]
     fn test_dispatch_scroll_to_top() {
-        let effect = dispatch(TuiAction::Scroll(ScrollAction::ToTop));
+        let effect = dispatch(TuiAction::ScrollTo(0));
         assert_eq!(effect, RunnerEffect::Scroll(ScrollEffect::ToTop));
     }
 
     #[test]
     fn test_dispatch_scroll_to_bottom() {
-        let effect = dispatch(TuiAction::Scroll(ScrollAction::ToBottom));
+        let effect = dispatch(TuiAction::ScrollTo(usize::MAX));
         assert_eq!(effect, RunnerEffect::Scroll(ScrollEffect::ToBottom));
     }
 

@@ -12,7 +12,8 @@
 //! - Long lines are visually wrapped (word-aware wrapping)
 
 use crate::tui::{
-    components::{InteractiveWidget, WidgetEventResult},
+    components::InteractiveWidget,
+    event_result::EventResult,
     styles::presets,
 };
 use crossterm::event::Event;
@@ -364,11 +365,11 @@ fn wrap_line(line: &str, width: usize) -> Vec<String> {
 }
 
 impl InteractiveWidget for InputBoxWidget<'_> {
-    fn handle_event(&mut self, _event: &Event) -> WidgetEventResult {
+    fn handle_event(&mut self, _event: &Event) -> EventResult {
         // Input box is managed by the runner/view layer
         // This widget is display-only - actual editing happens at a higher level
         // The runner maintains the buffer and cursor state and passes them here
-        WidgetEventResult::Ignored
+        EventResult::Ignored
     }
 
     fn focusable(&self) -> bool {

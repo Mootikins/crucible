@@ -47,78 +47,19 @@ pub mod layer_stack;
 pub mod session_history;
 pub mod status_bar;
 
+use crate::tui::event_result::EventResult;
 use crossterm::event::Event;
 use ratatui::widgets::Widget;
 
 pub use dialog::DialogWidget;
 pub use dialog_state::{DialogResult, DialogState};
-pub use generic_popup::{LegacyPopupItem, PopupState};
+pub use generic_popup::PopupState;
 pub use horizontal_scroll::{HorizontalScrollState, HorizontalScrollWidget};
 pub use input_box::{InputBoxWidget, DEFAULT_MAX_INPUT_LINES};
 pub use input_state::InputState;
 pub use layer_stack::LayerStack;
 pub use session_history::SessionHistoryWidget;
 pub use status_bar::StatusBarWidget;
-
-/// Result of handling an input event (widget-level)
-///
-/// Note: For the unified event system, see `crate::tui::event_result::EventResult`.
-/// This type is used by the `InteractiveWidget` trait for widget-internal events.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WidgetEventResult {
-    /// Event was consumed, stop propagation to other widgets
-    Consumed,
-    /// Event was not handled, continue propagation
-    Ignored,
-    /// Event produced an action for the runner to handle
-    Action(WidgetAction),
-}
-
-/// Actions that widgets can request from the runner (widget-level)
-///
-/// Note: For the unified action system, see `crate::tui::event_result::TuiAction`.
-/// This type is used by the `InteractiveWidget` trait for widget-internal actions.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WidgetAction {
-    /// Scroll the conversation by the given number of lines (positive = down)
-    Scroll(isize),
-    /// Scroll to absolute position (0 = top, usize::MAX = bottom)
-    ScrollTo(usize),
-    /// Confirm popup selection with the selected item index
-    ConfirmPopup(usize),
-    /// Dismiss the current popup
-    DismissPopup,
-    /// Cycle through session modes (plan -> act -> auto)
-    CycleMode,
-    /// Request focus change to a different widget
-    RequestFocus(FocusTarget),
-    /// Close the current dialog with a result
-    CloseDialog(DialogAction),
-}
-
-/// Target for focus changes
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FocusTarget {
-    /// Main input box
-    Input,
-    /// Conversation/history area
-    History,
-    /// Active popup (if any)
-    Popup,
-    /// Active dialog (if any)
-    Dialog,
-}
-
-/// Actions for dialog responses
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DialogAction {
-    /// User confirmed the dialog
-    Confirm,
-    /// User cancelled the dialog
-    Cancel,
-    /// User selected an item (for select dialogs)
-    Select(usize),
-}
 
 /// Extension trait for widgets that handle input events
 ///
@@ -136,16 +77,16 @@ pub enum DialogAction {
 pub trait InteractiveWidget: Widget {
     /// Handle an input event
     ///
-    /// Returns a `WidgetEventResult` indicating how the event was processed:
+    /// Returns an `EventResult` indicating how the event was processed:
     /// - `Consumed` if the widget handled the event
     /// - `Ignored` if the event should propagate to other widgets
-    /// - `Action(WidgetAction)` if the widget needs the runner to do something
+    /// - `Action(TuiAction)` if the widget needs the runner to do something
     ///
     /// # Default
     ///
-    /// Returns `WidgetEventResult::Ignored` (event not handled).
-    fn handle_event(&mut self, _event: &Event) -> WidgetEventResult {
-        WidgetEventResult::Ignored
+    /// Returns `EventResult::Ignored` (event not handled).
+    fn handle_event(&mut self, _event: &Event) -> EventResult {
+        EventResult::Ignored
     }
 
     /// Whether this widget can receive focus
@@ -166,29 +107,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn widget_event_result_equality() {
-        assert_eq!(WidgetEventResult::Consumed, WidgetEventResult::Consumed);
-        assert_eq!(WidgetEventResult::Ignored, WidgetEventResult::Ignored);
-        assert_ne!(WidgetEventResult::Consumed, WidgetEventResult::Ignored);
-    }
+    fn interactive_widget_default_implementation() {
+        // Test that a default widget returns Ignored
+        struct TestWidget;
+        impl Widget for TestWidget {
+            fn render(self, _area: ratatui::layout::Rect, _buf: &mut ratatui::buffer::Buffer) {}
+        }
+        impl InteractiveWidget for TestWidget {}
 
-    #[test]
-    fn widget_action_scroll() {
-        let action = WidgetAction::Scroll(5);
-        assert_eq!(action, WidgetAction::Scroll(5));
-        assert_ne!(action, WidgetAction::Scroll(-5));
-    }
+        let mut widget = TestWidget;
+        let event = Event::Key(crossterm::event::KeyEvent {
+            code: crossterm::event::KeyCode::Char('a'),
+            modifiers: crossterm::event::KeyModifiers::NONE,
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::empty(),
+        });
 
-    #[test]
-    fn focus_target_variants() {
-        assert_ne!(FocusTarget::Input, FocusTarget::History);
-        assert_ne!(FocusTarget::Popup, FocusTarget::Dialog);
-    }
-
-    #[test]
-    fn dialog_action_variants() {
-        assert_eq!(DialogAction::Confirm, DialogAction::Confirm);
-        assert_eq!(DialogAction::Select(0), DialogAction::Select(0));
-        assert_ne!(DialogAction::Select(0), DialogAction::Select(1));
+        assert_eq!(widget.handle_event(&event), EventResult::Ignored);
+        assert!(!widget.focusable());
     }
 }

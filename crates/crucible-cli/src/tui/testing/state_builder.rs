@@ -89,8 +89,8 @@ impl TestStateBuilder {
     /// Build the TuiState
     pub fn build(self) -> TuiState {
         let mut state = TuiState::new(&self.mode_id);
-        state.input_buffer = self.input_buffer;
-        state.cursor_position = self.cursor_position;
+        *state.input_mut() = self.input_buffer;
+        state.set_cursor(self.cursor_position);
         state.status_error = self.status_error;
 
         if let Some(content) = self.streaming_content {
@@ -111,15 +111,15 @@ mod tests {
     #[test]
     fn test_builder_basic() {
         let state = TestStateBuilder::new("plan").build();
-        assert_eq!(state.mode_id, "plan");
-        assert_eq!(state.input_buffer, "");
+        assert_eq!(state.mode_id(), "plan");
+        assert_eq!(state.input(), "");
     }
 
     #[test]
     fn test_builder_with_input() {
         let state = TestStateBuilder::new("act").with_input("/help").build();
-        assert_eq!(state.input_buffer, "/help");
-        assert_eq!(state.cursor_position, 5);
+        assert_eq!(state.input(), "/help");
+        assert_eq!(state.cursor(), 5);
     }
 
     #[test]
