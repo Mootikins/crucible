@@ -86,4 +86,14 @@ impl HistoryManager {
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
+
+    /// Get the last entry (for deduplication check)
+    pub fn last(&self) -> Option<&str> {
+        self.entries.last().map(|s| s.as_str())
+    }
+
+    /// Get entry by index
+    pub fn get(&self, index: usize) -> Option<&str> {
+        self.entries.get(index).map(|s| s.as_str())
+    }
 }
