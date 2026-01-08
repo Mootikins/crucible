@@ -12,7 +12,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::tui::event_result::{EventResult, TuiAction};
 use crate::tui::popup::PopupProvider;
-use crate::tui::state::{PopupItem, PopupKind};
+use crate::tui::state::types::{PopupItem, PopupKind};
 use crate::tui::widgets::{Popup, PopupConfig, PopupRenderer};
 
 // =============================================================================

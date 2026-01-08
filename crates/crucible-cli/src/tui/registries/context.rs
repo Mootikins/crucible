@@ -3,7 +3,7 @@
 //! Handles `@agent` mentions, file references, and `[[note]]` links.
 
 use crate::tui::popup::PopupProvider;
-use crate::tui::state::{PopupItem, PopupKind};
+use crate::tui::state::types::{PopupItem, PopupKind};
 use nucleo::pattern::{CaseMatching, Normalization};
 use nucleo::{Config, Matcher, Utf32String};
 

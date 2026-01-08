@@ -6,7 +6,7 @@
 use super::fixtures::registries;
 use super::Harness;
 use crate::tui::action_dispatch::{popup_item_to_effect, PopupEffect, PopupHook, PopupHooks};
-use crate::tui::state::{PopupItem, PopupKind};
+use crate::tui::state::types::{PopupItem, PopupKind};
 use crossterm::event::KeyCode;
 use insta::assert_snapshot;
 

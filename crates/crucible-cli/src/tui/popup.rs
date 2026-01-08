@@ -1,4 +1,4 @@
-use crate::tui::state::{PopupItem, PopupKind};
+use crate::tui::state::types::{PopupItem, PopupKind};
 use crucible_core::traits::chat::CommandDescriptor;
 use nucleo::pattern::{CaseMatching, Normalization};
 use nucleo::{Config, Matcher, Nucleo, Utf32String};

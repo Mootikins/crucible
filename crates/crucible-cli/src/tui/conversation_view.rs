@@ -992,7 +992,7 @@ impl ConversationView for RatatuiView {
 mod tests {
     use super::*;
     use crate::tui::components::PopupState;
-    use crate::tui::state::{PopupItem, PopupItemKind, PopupKind};
+    use crate::tui::state::types::{PopupItem, PopupItemKind, PopupKind};
     use ratatui::{backend::TestBackend, Terminal};
     use std::sync::Arc;
     #[allow(unused_imports)]
@@ -1313,7 +1313,7 @@ mod tests {
         use super::*;
         use crate::tui::components::PopupState;
         use crate::tui::popup::PopupProvider;
-        use crate::tui::state::{PopupItem, PopupKind};
+        use crate::tui::state::types::{PopupItem, PopupKind};
         use std::sync::Arc;
 
         /// Mock provider for tests
