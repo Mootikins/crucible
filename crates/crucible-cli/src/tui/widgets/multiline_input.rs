@@ -52,11 +52,8 @@ impl MultiLineInputState {
     pub fn handle_key(&mut self, key: KeyEvent) -> bool {
         match key.code {
             KeyCode::Char(c) => {
-                // Ctrl+Enter or Shift+Enter for newline
-                if c == '\n'
-                    || (key.modifiers.contains(KeyModifiers::CONTROL) && c == 'j')
-                    || (key.modifiers.contains(KeyModifiers::SHIFT) && c == '\n')
-                {
+                // Enter or Ctrl+J for newline
+                if c == '\n' || (key.modifiers.contains(KeyModifiers::CONTROL) && c == 'j') {
                     self.buffer.insert(self.cursor, '\n');
                     self.cursor += 1;
                 } else if key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -190,9 +187,7 @@ impl MultiLineInputState {
         let mut offset = 0;
         for (i, line) in lines.iter().enumerate() {
             let line_len = line.len();
-            if offset + line_len >= self.cursor
-                && (i == lines.len() - 1 || offset + line_len >= self.cursor)
-            {
+            if offset + line_len >= self.cursor {
                 current_line = i;
                 col = self.cursor - offset;
                 break;
