@@ -34,6 +34,7 @@ pub mod runner;
 pub mod scroll_utils;
 pub mod scrollback_runner;
 pub mod selection;
+pub mod session_commands;
 pub mod history_manager;
 pub mod input_mode_manager;
 pub mod selection_manager;
