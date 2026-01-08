@@ -29,6 +29,28 @@ use tracing::{debug, info, warn};
 use crate::openai_reasoning::{self, ReasoningChunk};
 use crate::xml_tool_parser;
 
+/// Check if a tool name represents a write operation
+///
+/// Write operations should be blocked in plan mode.
+fn is_write_tool_name(tool_name: &str) -> bool {
+    // Workspace write operations
+    if tool_name == "write_file" || tool_name == "edit_file" {
+        return true;
+    }
+
+    // Kiln write operations (if any)
+    if tool_name.starts_with("create_") || tool_name.starts_with("delete_") {
+        return true;
+    }
+
+    // Bash/shell execution (can write files)
+    if tool_name == "bash" {
+        return true;
+    }
+
+    false
+}
+
 /// Rig-based agent handle implementing `AgentHandle` trait.
 ///
 /// This provides a bridge between Rig's agent abstraction and Crucible's
@@ -364,6 +386,7 @@ where
         let agent = Arc::clone(&self.agent);
         let history = Arc::clone(&self.chat_history);
         let max_depth = self.max_tool_depth;
+        let current_mode_id = self.current_mode_id.clone();
 
         Box::pin(async_stream::stream! {
             // Get current history
@@ -440,22 +463,50 @@ where
                                         for parsed_tc in &parse_result.tool_calls {
                                             let args_json: serde_json::Value = serde_json::to_value(&parsed_tc.arguments)
                                                 .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-                                            let chat_tc = ChatToolCall {
-                                                name: parsed_tc.name.clone(),
-                                                arguments: Some(args_json),
-                                                id: Some(format!("xml-{}", uuid::Uuid::new_v4())),
-                                            };
 
-                                            // Track for history
-                                            tool_calls.push(chat_tc.clone());
+                                            // Check if this is a write operation in plan mode
+                                            let is_write = is_write_tool_name(&parsed_tc.name);
+                                            if is_write && current_mode_id == "plan" {
+                                                // Block write operations in plan mode
+                                                let error_msg = format!(
+                                                    "Tool '{}' is blocked in plan mode. Switch to act mode to perform write operations.",
+                                                    parsed_tc.name
+                                                );
+                                                warn!(tool = %parsed_tc.name, "Blocking XML write tool in plan mode");
 
-                                            yield Ok(ChatChunk {
-                                                delta: String::new(),
-                                                done: false,
-                                                tool_calls: Some(vec![chat_tc]),
-                                                tool_results: None,
-                                                reasoning: None,
-                                            });
+                                                // Emit error message instead of tool call
+                                                yield Ok(ChatChunk {
+                                                    delta: error_msg.clone(),
+                                                    done: false,
+                                                    tool_calls: None,
+                                                    tool_results: None,
+                                                    reasoning: None,
+                                                });
+
+                                                // Still track for history
+                                                tool_calls.push(ChatToolCall {
+                                                    name: parsed_tc.name.clone(),
+                                                    arguments: Some(args_json),
+                                                    id: Some(format!("xml-{}", uuid::Uuid::new_v4())),
+                                                });
+                                            } else {
+                                                let chat_tc = ChatToolCall {
+                                                    name: parsed_tc.name.clone(),
+                                                    arguments: Some(args_json),
+                                                    id: Some(format!("xml-{}", uuid::Uuid::new_v4())),
+                                                };
+
+                                                // Track for history
+                                                tool_calls.push(chat_tc.clone());
+
+                                                yield Ok(ChatChunk {
+                                                    delta: String::new(),
+                                                    done: false,
+                                                    tool_calls: Some(vec![chat_tc]),
+                                                    tool_results: None,
+                                                    reasoning: None,
+                                                });
+                                            }
                                         }
 
                                         // Update accumulated text to cleaned version
@@ -523,29 +574,57 @@ where
                             StreamedAssistantContent::ToolCall(tc) => {
                                 debug!(tool = %tc.function.name, "Rig tool call");
 
-                                // Track Rig's tool call for history building
-                                rig_tool_calls.push(tc.clone());
+                                // Check if this is a write operation in plan mode
+                                let is_write_tool = is_write_tool_name(&tc.function.name);
+                                if is_write_tool && current_mode_id == "plan" {
+                                    // Block write operations in plan mode
+                                    let error_msg = format!(
+                                        "Tool '{}' is blocked in plan mode. Switch to act mode to perform write operations.",
+                                        tc.function.name
+                                    );
+                                    warn!(tool = %tc.function.name, "Blocking write tool in plan mode");
 
-                                // Accumulate tool call info for history
-                                tool_calls.push(ChatToolCall {
-                                    name: tc.function.name.clone(),
-                                    arguments: Some(tc.function.arguments.clone()),
-                                    id: tc.call_id.clone(),
-                                });
+                                    // Emit error message instead of tool call
+                                    yield Ok(ChatChunk {
+                                        delta: error_msg.clone(),
+                                        done: false,
+                                        tool_calls: None,
+                                        tool_results: None,
+                                        reasoning: None,
+                                    });
 
-                                // Emit tool call immediately via tool_calls field
-                                // (not as text delta - TUI handles tool display separately)
-                                yield Ok(ChatChunk {
-                                    delta: String::new(),
-                                    done: false,
-                                    tool_calls: Some(vec![ChatToolCall {
+                                    // Still track for history
+                                    rig_tool_calls.push(tc.clone());
+                                    tool_calls.push(ChatToolCall {
                                         name: tc.function.name.clone(),
                                         arguments: Some(tc.function.arguments.clone()),
                                         id: tc.call_id.clone(),
-                                    }]),
-                                    tool_results: None,
-                                    reasoning: None,
-                                });
+                                    });
+                                } else {
+                                    // Track Rig's tool call for history building
+                                    rig_tool_calls.push(tc.clone());
+
+                                    // Accumulate tool call info for history
+                                    tool_calls.push(ChatToolCall {
+                                        name: tc.function.name.clone(),
+                                        arguments: Some(tc.function.arguments.clone()),
+                                        id: tc.call_id.clone(),
+                                    });
+
+                                    // Emit tool call immediately via tool_calls field
+                                    // (not as text delta - TUI handles tool display separately)
+                                    yield Ok(ChatChunk {
+                                        delta: String::new(),
+                                        done: false,
+                                        tool_calls: Some(vec![ChatToolCall {
+                                            name: tc.function.name.clone(),
+                                            arguments: Some(tc.function.arguments.clone()),
+                                            id: tc.call_id.clone(),
+                                        }]),
+                                        tool_results: None,
+                                        reasoning: None,
+                                    });
+                                }
                             }
                             StreamedAssistantContent::Reasoning(r) => {
                                 // Emit complete reasoning block

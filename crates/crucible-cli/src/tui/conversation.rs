@@ -490,25 +490,39 @@ pub fn render_item_to_lines(item: &ConversationItem, width: usize) -> Vec<Line<'
     }
 }
 
-fn render_user_message(content: &str, _width: usize) -> Vec<Line<'static>> {
+fn render_user_message(content: &str, width: usize) -> Vec<Line<'static>> {
     // User messages: inverted style with > prefix
-    // Note: User input is typically short, no wrapping applied
+    // Note: User input can be long, apply word wrapping using markdown renderer
     let mut lines = Vec::new();
 
     // Add blank line before user message for spacing
     lines.push(Line::from(""));
 
-    for (i, line) in content.lines().enumerate() {
-        let prefix = if i == 0 {
-            format!(" {} ", indicators::USER_PREFIX)
+    // Use markdown renderer for word wrapping (same as assistant messages)
+    let wrap_width = if width > 0 { Some(width) } else { None };
+    let ansi_output = MARKDOWN_RENDERER.render_with_width(content, wrap_width);
+
+    let rendered_lines = match ansi_output.into_text() {
+        Ok(text) => text.lines,
+        Err(_) => {
+            // Fallback to plain lines on error
+            content.lines().map(|l| Line::from(l.to_string())).collect()
+        }
+    };
+
+    // Add prefix to each line
+    let mut first_line = true;
+    for line in rendered_lines.iter() {
+        let prefix = if first_line {
+            first_line = false;
+            " > ".to_string()  // space + > + space (3 chars)
         } else {
-            "   ".to_string() // Continuation indent
+            "   ".to_string()  // 3-space indent for continuation
         };
 
-        lines.push(Line::from(vec![
-            Span::styled(prefix, presets::user_prefix()),
-            Span::styled(format!("{} ", line), presets::user_message()),
-        ]));
+        let mut spans = vec![Span::styled(prefix, presets::user_prefix())];
+        spans.extend(line.spans.iter().cloned());
+        lines.push(Line::from(spans));
     }
 
     lines
