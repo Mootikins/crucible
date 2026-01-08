@@ -1,26 +1,32 @@
 //! Streaming subsystem manager
 //!
 //! Manages streaming content from LLM providers, including:
+//! - Background streaming task and channel receiver
 //! - Receiving streaming events from agent
 //! - Parsing markdown chunks into structured blocks
 //! - Managing pending chunks awaiting processing
+//!
+//! This consolidates all streaming-related state that was previously split
+//! between RatatuiRunner fields and this manager.
 
 use crate::tui::streaming::StreamingBuffer;
-use crate::tui::StreamBlock;
+use crate::tui::streaming_channel::StreamingReceiver;
 use crate::tui::streaming_parser::StreamingParser;
-use tokio::sync::mpsc::Receiver;
-
-// Import StreamingEvent if it exists
-// use crate::tui::streaming_channel::StreamingEvent;
 
 /// Manages streaming content from LLM
+///
+/// Owns all streaming-related state:
+/// - `task`: Background tokio task receiving from LLM stream
+/// - `rx`: Channel receiver for streaming events
+/// - `buffer`: Accumulated streaming content
+/// - `parser`: Markdown parser for structured block extraction
 pub struct StreamingManager {
-    /// Receives streaming events from agent
-    // rx: Option<Receiver<StreamingEvent>>,
+    /// Background streaming task handle
+    task: Option<tokio::task::JoinHandle<()>>,
+    /// Channel receiver for streaming events
+    rx: Option<StreamingReceiver>,
     /// Buffered streaming content
     buffer: Option<StreamingBuffer>,
-    /// Pending chunks awaiting processing
-    pending_chunks: Vec<String>,
     /// Whether we're currently streaming
     is_streaming: bool,
     /// Streaming parser for markdown parsing
@@ -30,20 +36,64 @@ pub struct StreamingManager {
 impl StreamingManager {
     pub fn new() -> Self {
         Self {
-            // rx: None,
+            task: None,
+            rx: None,
             buffer: None,
-            pending_chunks: Vec::new(),
             is_streaming: false,
             parser: None,
         }
     }
 
+    // =========================================================================
+    // Task and channel methods
+    // =========================================================================
+
+    /// Set the streaming task and receiver channel
+    ///
+    /// Called when starting a new LLM streaming request.
+    pub fn set_task_and_receiver(
+        &mut self,
+        task: tokio::task::JoinHandle<()>,
+        rx: StreamingReceiver,
+    ) {
+        self.task = Some(task);
+        self.rx = Some(rx);
+    }
+
+    /// Get mutable reference to the receiver for polling
+    pub fn rx_mut(&mut self) -> Option<&mut StreamingReceiver> {
+        self.rx.as_mut()
+    }
+
+    /// Take the task handle (for checking completion)
+    pub fn take_task(&mut self) -> Option<tokio::task::JoinHandle<()>> {
+        self.task.take()
+    }
+
+    /// Check if task is finished
+    pub fn is_task_finished(&self) -> bool {
+        self.task.as_ref().is_some_and(|t| t.is_finished())
+    }
+
+    /// Clear task and receiver (called when streaming completes)
+    pub fn clear_task_and_receiver(&mut self) {
+        self.task = None;
+        self.rx = None;
+    }
+
+    /// Check if we have an active receiver
+    pub fn has_receiver(&self) -> bool {
+        self.rx.is_some()
+    }
+
+    // =========================================================================
+    // Buffer management
+    // =========================================================================
+
     /// Start streaming with a new buffer
     pub fn start_streaming(&mut self, buffer: StreamingBuffer) {
         self.buffer = Some(buffer);
         self.is_streaming = true;
-        self.pending_chunks.clear();
-        // Don't create parser yet - it's created when needed
     }
 
     /// Start streaming with parser
@@ -53,6 +103,9 @@ impl StreamingManager {
     }
 
     /// Stop streaming and return the buffer
+    ///
+    /// Note: This does NOT clear task/receiver - call `clear_task_and_receiver()`
+    /// separately when the streaming task completes.
     pub fn stop_streaming(&mut self) -> Option<StreamingBuffer> {
         self.is_streaming = false;
         self.parser = None; // Clear parser when stopping

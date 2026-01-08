@@ -199,7 +199,12 @@ pub struct TuiState {
     /// ViewState owns ALL view-related fields (input, cursor, popup, conversation, etc.)
     pub view: ViewState,
 
-    /// Non-view concerns owned by TuiState:
+    /// Streaming buffer for EventRing-based streaming (used by `poll_events()`).
+    ///
+    /// NOTE: This is separate from `StreamingManager` in `RatatuiRunner`, which handles
+    /// channel-based streaming from the LLM. This field is used by the `poll_events()`
+    /// method that consumes from the EventRing, primarily for test fixtures and legacy
+    /// rendering paths (widget.rs, render.rs).
     pub streaming: Option<StreamingBuffer>,
     pub mode_name: String,
     pub pending_tools: Vec<ToolCallInfo>,

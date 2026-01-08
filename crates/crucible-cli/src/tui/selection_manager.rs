@@ -1,20 +1,30 @@
 //! Selection subsystem manager
 //!
 //! Manages text selection, clipboard operations, and mouse mode.
+//!
+//! All fields are private; use the provided accessor methods.
 
-use crate::tui::selection::{SelectionState, SelectableContentCache};
+use crate::tui::selection::{
+    RenderedLineInfo, SelectableContentCache, SelectionPoint, SelectionState,
+};
 
 /// Manages text selection state
+///
+/// Owns all selection-related state:
+/// - `selection`: Current selection range/state
+/// - `clipboard`: Copied text content
+/// - `mouse_mode`: Whether mouse capture is enabled
+/// - `selection_cache`: Cached content for text extraction
 #[derive(Debug)]
 pub struct SelectionManager {
-    /// Selection state
-    pub selection: SelectionState,
-    /// Clipboard content
-    pub clipboard: Option<String>,
-    /// Whether mouse mode is active
-    pub mouse_mode: bool,
-    /// Content cache for text extraction
-    pub selection_cache: SelectableContentCache,
+    /// Selection state (private - use accessor methods)
+    selection: SelectionState,
+    /// Clipboard content (private - use accessor methods)
+    clipboard: Option<String>,
+    /// Whether mouse mode is active (private - use accessor methods)
+    mouse_mode: bool,
+    /// Content cache for text extraction (private - use accessor methods)
+    selection_cache: SelectableContentCache,
 }
 
 impl Default for SelectionManager {
@@ -66,12 +76,12 @@ impl SelectionManager {
 
     // Delegate methods to SelectionState
     /// Start a new selection (delegates to SelectionState)
-    pub fn start_selection(&mut self, point: crate::tui::selection::SelectionPoint) {
+    pub fn start_selection(&mut self, point: SelectionPoint) {
         self.selection.start(point);
     }
 
     /// Update selection (delegates to SelectionState)
-    pub fn update_selection(&mut self, point: crate::tui::selection::SelectionPoint) {
+    pub fn update_selection(&mut self, point: SelectionPoint) {
         self.selection.update(point);
     }
 
@@ -86,12 +96,42 @@ impl SelectionManager {
     }
 
     /// Get selection range (delegates to SelectionState)
-    pub fn selection_range(&self) -> Option<(crate::tui::selection::SelectionPoint, crate::tui::selection::SelectionPoint)> {
+    pub fn selection_range(&self) -> Option<(SelectionPoint, SelectionPoint)> {
         self.selection.range()
     }
 
     /// Clear selection (delegates to SelectionState)
     pub fn clear_selection(&mut self) {
         self.selection.clear();
+    }
+
+    // =========================================================================
+    // Selection state accessor
+    // =========================================================================
+
+    /// Get reference to selection state (for rendering)
+    ///
+    /// Used by `apply_selection_highlight` which needs the full state.
+    pub fn selection(&self) -> &SelectionState {
+        &self.selection
+    }
+
+    // =========================================================================
+    // Cache delegation methods
+    // =========================================================================
+
+    /// Check if the selection cache needs rebuilding
+    pub fn cache_needs_rebuild(&self, width: u16) -> bool {
+        self.selection_cache.needs_rebuild(width)
+    }
+
+    /// Update the selection cache with new content data
+    pub fn update_cache(&mut self, cache_data: Vec<RenderedLineInfo>, width: u16) {
+        self.selection_cache.update(cache_data, width);
+    }
+
+    /// Extract text from the selection cache for the given range
+    pub fn extract_text(&self, start: SelectionPoint, end: SelectionPoint) -> String {
+        self.selection_cache.extract_text(start, end)
     }
 }
