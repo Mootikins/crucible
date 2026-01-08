@@ -48,7 +48,7 @@ impl HistoryManager {
     }
 
     /// Navigate to next entry
-    pub fn next(&mut self) -> Option<&str> {
+    pub fn next_entry(&mut self) -> Option<&str> {
         if self.index < self.entries.len() {
             self.index += 1;
             if self.index < self.entries.len() {
