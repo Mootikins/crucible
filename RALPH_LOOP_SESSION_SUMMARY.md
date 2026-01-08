@@ -1,13 +1,50 @@
-# Ralph Loop Session Summary - Sprint 1 COMPLETE
+# Ralph Loop Session Summary - Sprint 2 In Progress
 
 **Branch:** `feat/ui-improvements`
 **Iteration:** Current session
 **Date:** 2026-01-08
-**Prompt:** "TUI Architecture Improvement - implement phases 1, 2, 4 in parallel, then phase 3. Worktree: feat/ui-improvements. Plan: .worktrees/feat/ui-improvements/TUI_ARCHITECTURE_PLAN.md"
+**Prompt:** "continue with the given plan"
 
 ---
 
-## Status: ✅ Sprint 1 COMPLETE
+## Status: 🔄 Sprint 2 In Progress (Task 2.1 Partially Complete)
+
+### Sprint 1: COMPLETE ✅
+Three utility modules created, 15+ files updated, 1288 tests passing. See previous commits.
+
+---
+
+### Sprint 2 Progress (Current Session)
+
+**Task 2.1: Extract Data Types - PARTIALLY COMPLETE**
+
+**What's Done:**
+- ✅ Created `state/types/popup.rs` (450 lines) with PopupItem, PopupKind
+- ✅ Created `state/types/context.rs` (23 lines) with ContextAttachment, ContextKind
+- ✅ Created `state/types/mod.rs` for re-exports
+- ✅ Added migration comment to state.rs
+- ✅ All 103 state tests passing
+- ✅ Git commit: 72e80fe6
+
+**What's Remaining (Task 2.1 completion):**
+- ⏸️ Remove old definitions from state.rs (lines 62-156 for PopupKind, PopupItem, ContextKind, ContextAttachment)
+- ⏸️ Update imports in affected files:
+  - `runner.rs` (line 2956)
+  - `conversation_view.rs` (lines 783, 1104)
+  - `popup.rs` (line 1)
+  - `testing/popup_snapshot_tests.rs` (line 9)
+  - Any other files using `use crate::tui::state::{PopupItem, ...}`
+
+**Next Steps:**
+1. Update imports to `use crate::tui::state::types::{PopupItem, PopupKind, ContextAttachment, ContextKind}`
+2. Remove old type definitions from state.rs
+3. Run tests to verify
+4. Commit Task 2.1 completion
+5. Move to Task 2.2 (Extract action handlers)
+
+**Estimated Time to Complete Task 2.1:** 15-20 minutes
+
+---
 
 ### What Was Accomplished
 
