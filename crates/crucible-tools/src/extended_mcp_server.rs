@@ -1,7 +1,7 @@
 //! Extended MCP Server with Rune tools
 //!
 //! This server combines:
-//! - **`CrucibleMcpServer`** (12 tools): Note, Search, and Kiln operations
+//! - **`CrucibleMcpServer`** (14 tools): Note, Search, Kiln, and Web operations
 //! - **`RuneTools`** (dynamic): Scripts from configured plugins/ directories
 //! - **`StructPlugins`** (dynamic): Struct-based plugins like `just.rn`
 //!
@@ -52,7 +52,7 @@ use tracing::{debug, info, warn};
 ///
 /// Struct-based plugins (e.g., `just.rn`) provide tools that integrate with file watching.
 pub struct ExtendedMcpServer {
-    /// Core Crucible MCP server with 12 kiln tools
+    /// Core Crucible MCP server with 14 kiln tools
     kiln_server: CrucibleMcpServer,
     /// Rune script registry (hook-based plugins with `#[tool]` attribute)
     rune_registry: Arc<RuneToolRegistry>,
@@ -1024,9 +1024,9 @@ mod tests {
         .await
         .unwrap();
 
-        // Should have at least the 12 kiln tools
+        // Should have at least the 14 kiln tools
         let count = server.tool_count().await;
-        assert!(count >= 12);
+        assert!(count >= 14);
     }
 
     #[tokio::test]
@@ -1042,7 +1042,7 @@ mod tests {
         );
 
         let tools = server.list_all_tools().await;
-        assert_eq!(tools.len(), 12); // 12 kiln tools
+        assert_eq!(tools.len(), 14); // 14 kiln tools (including 2 web tools)
     }
 
     #[test]
