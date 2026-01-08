@@ -2965,7 +2965,7 @@ mod tests {
         use super::*;
         use crate::tui::components::generic_popup::PopupState;
         use crate::tui::popup::PopupProvider;
-        use crate::tui::state::{PopupItem, PopupItemKind, PopupKind};
+        use crate::tui::state::types::{PopupItem, PopupItemKind, PopupKind};
         use std::sync::Arc;
 
         /// Mock provider for tests

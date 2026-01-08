@@ -12,7 +12,7 @@ pub use context::ContextRegistry;
 pub use repl::ReplCommandRegistry;
 
 use crate::tui::popup::PopupProvider;
-use crate::tui::state::{PopupItem, PopupKind};
+use crate::tui::state::types::{PopupItem, PopupKind};
 
 /// Composite registry that delegates to specialized registries
 ///
