@@ -66,24 +66,38 @@ impl ActionExecutor {
             }
             InputAction::InsertChar(c) => {
                 state.view.input_buffer.insert(state.view.cursor_position, c);
-                state.view.cursor_position += 1;
+                state.view.cursor_position += c.len_utf8();
                 None
             }
             InputAction::DeleteChar => {
                 if state.view.cursor_position < state.view.input_buffer.len() {
-                    state.view.input_buffer.remove(state.view.cursor_position);
+                    // Find the end of the current character (for UTF-8 support)
+                    let char_end = state.view.input_buffer[state.view.cursor_position..]
+                        .char_indices()
+                        .nth(1)
+                        .map(|(i, _)| state.view.cursor_position + i)
+                        .unwrap_or(state.view.input_buffer.len());
+                    state.view.input_buffer.replace_range(state.view.cursor_position..char_end, "");
                 }
                 None
             }
             InputAction::MoveCursorLeft => {
                 if state.view.cursor_position > 0 {
-                    state.view.cursor_position -= 1;
+                    state.view.cursor_position = state.view.input_buffer[..state.view.cursor_position]
+                        .char_indices()
+                        .next_back()
+                        .map(|(i, _)| i)
+                        .unwrap_or(0);
                 }
                 None
             }
             InputAction::MoveCursorRight => {
                 if state.view.cursor_position < state.view.input_buffer.len() {
-                    state.view.cursor_position += 1;
+                    state.view.cursor_position = state.view.input_buffer[state.view.cursor_position..]
+                        .char_indices()
+                        .nth(1)
+                        .map(|(i, _)| state.view.cursor_position + i)
+                        .unwrap_or(state.view.input_buffer.len());
                 }
                 None
             }
@@ -137,13 +151,21 @@ impl ActionExecutor {
             }
             InputAction::MoveWordForward => {
                 let after = &state.view.input_buffer[state.view.cursor_position..];
-                if let Some(pos) = after.find(char::is_whitespace) {
-                    state.view.cursor_position += pos + 1;
+                // Find first whitespace
+                if let Some((ws_offset, ws_char)) = after.char_indices().find(|(_, c)| c.is_whitespace()) {
+                    // Move past the whitespace character
+                    state.view.cursor_position += ws_offset + ws_char.len_utf8();
                     // Skip additional whitespace
-                    while state.view.cursor_position < state.view.input_buffer.len()
-                        && state.view.input_buffer[state.view.cursor_position..].starts_with(char::is_whitespace)
-                    {
-                        state.view.cursor_position += 1;
+                    while state.view.cursor_position < state.view.input_buffer.len() {
+                        if let Some(c) = state.view.input_buffer[state.view.cursor_position..].chars().next() {
+                            if c.is_whitespace() {
+                                state.view.cursor_position += c.len_utf8();
+                            } else {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
                     }
                 } else {
                     state.view.cursor_position = state.view.input_buffer.len();
@@ -151,26 +173,35 @@ impl ActionExecutor {
                 None
             }
             InputAction::TransposeChars => {
-                if state.view.cursor_position > 0 {
-                    let mut chars: Vec<char> = state.view.input_buffer.chars().collect();
-                    let len = chars.len();
-                    let i = state.view.cursor_position;
+                let len = state.view.input_buffer.chars().count();
+                if len >= 2 && state.view.cursor_position > 0 {
+                    let chars: Vec<char> = state.view.input_buffer.chars().collect();
+                    // Convert byte position to character position
+                    let char_pos = state.view.input_buffer[..state.view.cursor_position].chars().count();
 
-                    if i == 0 {
-                        // Can't transpose at start
-                    } else if i == len {
+                    let (i, j) = if char_pos >= len {
                         // At end: swap last two characters
-                        if len >= 2 {
-                            chars.swap(len - 2, len - 1);
-                            state.view.input_buffer = chars.into_iter().collect();
-                            // Cursor stays at end
-                        }
-                    } else if i < len {
+                        (len - 2, len - 1)
+                    } else {
                         // In middle: swap character before cursor with cursor
-                        chars.swap(i - 1, i);
-                        state.view.input_buffer = chars.into_iter().collect();
-                        state.view.cursor_position += 1;
-                    }
+                        (char_pos - 1, char_pos)
+                    };
+
+                    let mut new_chars = chars;
+                    new_chars.swap(i, j);
+                    state.view.input_buffer = new_chars.into_iter().collect();
+
+                    // Calculate new cursor position (byte index after swapped char)
+                    let new_cursor = if char_pos < len {
+                        state.view.input_buffer
+                            .char_indices()
+                            .nth(char_pos + 1)
+                            .map(|(idx, _)| idx)
+                            .unwrap_or(state.view.input_buffer.len())
+                    } else {
+                        state.view.input_buffer.len()
+                    };
+                    state.view.cursor_position = new_cursor;
                 }
                 None
             }
