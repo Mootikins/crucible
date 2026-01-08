@@ -190,10 +190,11 @@ impl<'a> SessionHistoryWidget<'a> {
 
     /// Scroll up by the given number of lines
     pub fn scroll_up(&mut self, lines: usize) {
+        use crate::tui::constants::UiConstants;
         self.scroll_offset = self.scroll_offset.saturating_add(lines);
         // Clamp to content bounds if viewport_height is set
         if self.viewport_height > 0 {
-            let content_width = (self.viewport_width as usize).saturating_sub(4); // Width minus margins
+            let content_width = UiConstants::content_width(self.viewport_width);
             let max_scroll = self
                 .content_height(content_width)
                 .saturating_sub(self.viewport_height as usize);
@@ -208,8 +209,9 @@ impl<'a> SessionHistoryWidget<'a> {
 
     /// Scroll to top of content
     pub fn scroll_to_top(&mut self) {
+        use crate::tui::constants::UiConstants;
         if self.viewport_height > 0 {
-            let content_width = (self.viewport_width as usize).saturating_sub(4);
+            let content_width = UiConstants::content_width(self.viewport_width);
             let max_scroll = self
                 .content_height(content_width)
                 .saturating_sub(self.viewport_height as usize);
@@ -225,8 +227,9 @@ impl<'a> SessionHistoryWidget<'a> {
 
 impl Widget for SessionHistoryWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
+        use crate::tui::constants::UiConstants;
         // Content width minus prefix (" ● " = 3 chars) and right margin (1 char)
-        let content_width = (area.width as usize).saturating_sub(4);
+        let content_width = UiConstants::content_width(area.width);
         let lines = self.render_to_lines(content_width);
         let content_height = lines.len();
         let viewport_height = area.height as usize;

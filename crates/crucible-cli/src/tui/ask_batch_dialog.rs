@@ -274,11 +274,12 @@ impl Widget for AskBatchDialogWidget<'_> {
 
         // "Other" input area if active
         if self.state.other_selected {
+            use crate::tui::constants::UiConstants;
             let input_y = other_y + 2;
             let input_area = Rect {
                 x: inner.x + 2,
                 y: input_y,
-                width: inner.width.saturating_sub(4),
+                width: UiConstants::dialog_text_width(inner.width),
                 height: 3,
             };
 
@@ -304,7 +305,8 @@ impl Widget for AskBatchDialogWidget<'_> {
             "[↑↓] Navigate  [Enter] Select  [Esc] Cancel"
         };
         let hint_y = inner.y + inner.height - 1;
-        let hint_x = inner.x + (inner.width.saturating_sub(hint.len() as u16)) / 2;
+        use crate::tui::geometry::PopupGeometry;
+        let hint_x = PopupGeometry::center_text_horizontally(inner, hint.len() as u16);
         buf.set_string(hint_x, hint_y, hint, Style::default().fg(Color::DarkGray));
     }
 }
