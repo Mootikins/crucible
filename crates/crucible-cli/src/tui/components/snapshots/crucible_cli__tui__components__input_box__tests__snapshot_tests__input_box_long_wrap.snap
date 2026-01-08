@@ -2,6 +2,6 @@
 source: crates/crucible-cli/src/tui/components/input_box.rs
 expression: terminal.backend()
 ---
-"                                                                                "
 " > This is a very long input that exceeds the typical width and should handle wr"
+"   apping gracefully without breaking the layout                                "
 "                                                                                "

@@ -125,15 +125,20 @@ impl Widget for HorizontalScrollWidget<'_> {
         let has_overflow = self.state.has_overflow(viewport_width);
 
         // Reserve space for indicators if showing and content overflows
-        let (content_area, left_indicator, right_indicator) = if self.show_indicators && has_overflow
-        {
-            let left = Rect::new(area.x, area.y, 1, area.height);
-            let right = Rect::new(area.x + area.width - 1, area.y, 1, area.height);
-            let content = Rect::new(area.x + 1, area.y, area.width.saturating_sub(2), area.height);
-            (content, Some(left), Some(right))
-        } else {
-            (area, None, None)
-        };
+        let (content_area, left_indicator, right_indicator) =
+            if self.show_indicators && has_overflow {
+                let left = Rect::new(area.x, area.y, 1, area.height);
+                let right = Rect::new(area.x + area.width - 1, area.y, 1, area.height);
+                let content = Rect::new(
+                    area.x + 1,
+                    area.y,
+                    area.width.saturating_sub(2),
+                    area.height,
+                );
+                (content, Some(left), Some(right))
+            } else {
+                (area, None, None)
+            };
 
         let content_width = content_area.width as usize;
 

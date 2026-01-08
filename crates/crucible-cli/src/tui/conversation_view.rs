@@ -165,18 +165,36 @@ impl ViewState {
         }
     }
 
-    /// Count lines in the input buffer for dynamic height calculation
+    /// Count logical lines in the input buffer (not accounting for wrapping)
     pub fn input_line_count(&self) -> usize {
+        self.input_visual_line_count(self.width)
+    }
+
+    /// Count visual lines after wrapping for the given width
+    pub fn input_visual_line_count(&self, wrap_width: u16) -> usize {
         if self.input_buffer.is_empty() {
-            1
-        } else {
-            self.input_buffer.lines().count().max(1)
-                + if self.input_buffer.ends_with('\n') {
-                    1
-                } else {
-                    0
-                }
+            return 1;
         }
+
+        // Content width is wrap_width minus 3 for prompt
+        let content_width = (wrap_width as usize).saturating_sub(3).max(10);
+        let mut visual_lines = 0;
+
+        for line in self.input_buffer.split('\n') {
+            if line.is_empty() {
+                visual_lines += 1;
+            } else {
+                let char_count = line.chars().count();
+                visual_lines += char_count.div_ceil(content_width);
+            }
+        }
+
+        // Handle trailing newline
+        if self.input_buffer.ends_with('\n') {
+            visual_lines += 1;
+        }
+
+        visual_lines.max(1)
     }
 
     /// Calculate the required input box height
@@ -187,25 +205,71 @@ impl ViewState {
         lines.min(DEFAULT_MAX_INPUT_LINES) + 2 // +2 for padding
     }
 
-    /// Convert cursor byte offset to (line, column) position
+    /// Convert cursor byte offset to visual (line, column) with wrapping
     ///
-    /// Returns (line_index, column_index) where both are 0-based.
+    /// Returns (visual_line_index, visual_column) where both are 0-based.
     pub fn cursor_to_line_col(&self) -> (usize, usize) {
-        let before_cursor = &self.input_buffer[..self.cursor_position.min(self.input_buffer.len())];
-        let line = before_cursor.matches('\n').count();
-        let last_newline = before_cursor.rfind('\n');
-        let col = match last_newline {
-            Some(pos) => before_cursor.len() - pos - 1,
-            None => before_cursor.len(),
-        };
-        (line, col)
+        self.cursor_to_visual_line_col(self.width)
+    }
+
+    /// Convert cursor byte offset to visual (line, column) for the given width
+    pub fn cursor_to_visual_line_col(&self, wrap_width: u16) -> (usize, usize) {
+        let content_width = (wrap_width as usize).saturating_sub(3).max(10);
+        let cursor_pos = self.cursor_position.min(self.input_buffer.len());
+
+        let mut visual_line = 0;
+        let lines: Vec<&str> = self.input_buffer.split('\n').collect();
+        let mut bytes_processed = 0;
+
+        for (logical_line_idx, line) in lines.iter().enumerate() {
+            let line_start = bytes_processed;
+            let line_end = line_start + line.len();
+
+            // Check if cursor is on this logical line
+            if cursor_pos <= line_end || logical_line_idx == lines.len() - 1 {
+                // Cursor is on this logical line
+                let cursor_offset_in_line = cursor_pos.saturating_sub(line_start);
+
+                // Count characters before cursor (handle UTF-8)
+                let chars_before_cursor: usize = line
+                    .chars()
+                    .take(cursor_offset_in_line)
+                    .count()
+                    .min(line.chars().count());
+
+                // Calculate which visual line within this logical line
+                let visual_line_in_block = chars_before_cursor / content_width;
+                let visual_col = chars_before_cursor % content_width;
+
+                return (visual_line + visual_line_in_block, visual_col);
+            }
+
+            // Calculate visual lines for this logical line
+            let char_count = line.chars().count();
+            if char_count == 0 {
+                visual_line += 1;
+            } else {
+                visual_line += char_count.div_ceil(content_width);
+            }
+
+            // +1 for the newline character
+            bytes_processed = line_end + 1;
+        }
+
+        // Fallback
+        (visual_line, 0)
     }
 
     /// Calculate scroll offset to keep cursor visible in input area
     pub fn input_scroll_offset(&self) -> usize {
-        let (cursor_line, _) = self.cursor_to_line_col();
+        self.input_visual_scroll_offset(self.width)
+    }
+
+    /// Calculate scroll offset for the given width
+    pub fn input_visual_scroll_offset(&self, wrap_width: u16) -> usize {
+        let (cursor_line, _) = self.cursor_to_visual_line_col(wrap_width);
         let visible_lines = DEFAULT_MAX_INPUT_LINES as usize;
-        let total_lines = self.input_line_count();
+        let total_lines = self.input_visual_line_count(wrap_width);
 
         if total_lines <= visible_lines {
             // No scrolling needed
@@ -314,12 +378,14 @@ impl RatatuiView {
             idx += 1;
         }
 
-        // Input box (dynamic height with multiline support)
+        // Input box (dynamic height with multiline support and text wrapping)
         let input_area = chunks[idx];
-        let input_scroll = self.state.input_scroll_offset();
+        let input_width = input_area.width;
+        let input_scroll = self.state.input_visual_scroll_offset(input_width);
         let input_widget =
             InputBoxWidget::new(&self.state.input_buffer, self.state.cursor_position)
-                .scroll_offset(input_scroll);
+                .scroll_offset(input_scroll)
+                .wrap_width(input_width);
         frame.render_widget(input_widget, input_area);
         idx += 1;
 
@@ -338,12 +404,12 @@ impl RatatuiView {
             frame.render_widget(widget, frame.area());
             // Hide cursor when dialog is active
         } else {
-            // Position cursor in input box (accounting for multiline)
-            let (cursor_line, cursor_col) = self.state.cursor_to_line_col();
-            let scroll_offset = self.state.input_scroll_offset();
+            // Position cursor in input box (accounting for visual wrapping)
+            let (cursor_line, cursor_col) = self.state.cursor_to_visual_line_col(input_width);
+            let scroll_offset = self.state.input_visual_scroll_offset(input_width);
             let visible_cursor_line = cursor_line.saturating_sub(scroll_offset);
 
-            // When prefix (: or !) is shown as prompt, adjust cursor column
+            // When prefix (: or !) is shown as prompt, adjust cursor column on first visual line
             let display_offset = self.state.input_display_offset();
             let display_col = if cursor_line == 0 {
                 cursor_col.saturating_sub(display_offset)
@@ -354,7 +420,7 @@ impl RatatuiView {
             // Calculate vertical centering offset (same as InputBoxWidget)
             let content_lines = self
                 .state
-                .input_line_count()
+                .input_visual_line_count(input_width)
                 .min(DEFAULT_MAX_INPUT_LINES as usize);
             let content_height = content_lines as u16;
             let start_y = if content_height < input_area.height {
@@ -570,6 +636,8 @@ impl RatatuiView {
     /// Append content blocks to the streaming assistant message
     pub fn append_streaming_blocks(&mut self, blocks: Vec<crate::tui::StreamBlock>) {
         self.state.conversation.append_streaming_blocks(blocks);
+        // Check for wide content (code blocks, tables)
+        self.update_wide_content_focus();
         // Only auto-scroll if user was at bottom (allows reading while streaming)
         if self.state.at_bottom {
             self.scroll_to_bottom();
@@ -735,18 +803,22 @@ impl ConversationView for RatatuiView {
 
     fn push_tool_running(&mut self, name: &str, args: serde_json::Value) {
         self.state.conversation.push_tool_running(name, args);
+        self.update_wide_content_focus();
     }
 
     fn update_tool_output(&mut self, name: &str, output: &str) {
         self.state.conversation.update_tool_output(name, output);
+        self.update_wide_content_focus();
     }
 
     fn complete_tool(&mut self, name: &str, summary: Option<String>) {
         self.state.conversation.complete_tool(name, summary);
+        self.update_wide_content_focus();
     }
 
     fn error_tool(&mut self, name: &str, message: &str) {
         self.state.conversation.error_tool(name, message);
+        self.update_wide_content_focus();
     }
 
     fn render(&mut self) -> Result<()> {
@@ -856,10 +928,7 @@ impl ConversationView for RatatuiView {
     fn scroll_right(&mut self, cols: usize) {
         if self.state.focused_wide_item.is_some() {
             let viewport_width = self.state.width as usize;
-            let max_offset = self
-                .state
-                .focused_item_width
-                .saturating_sub(viewport_width);
+            let max_offset = self.state.focused_item_width.saturating_sub(viewport_width);
             self.state.horizontal_scroll_offset =
                 (self.state.horizontal_scroll_offset + cols).min(max_offset);
         }
@@ -872,10 +941,8 @@ impl ConversationView for RatatuiView {
     fn scroll_to_right_edge(&mut self) {
         if self.state.focused_wide_item.is_some() {
             let viewport_width = self.state.width as usize;
-            self.state.horizontal_scroll_offset = self
-                .state
-                .focused_item_width
-                .saturating_sub(viewport_width);
+            self.state.horizontal_scroll_offset =
+                self.state.focused_item_width.saturating_sub(viewport_width);
         }
     }
 
