@@ -1,6 +1,6 @@
 //! Integration tests for CrucibleMcpServer tool exposure
 //!
-//! These tests verify that the MCP server correctly exposes all 12 Crucible tools
+//! These tests verify that the MCP server correctly exposes all 14 Crucible tools
 //! and that they can be listed and called via the MCP protocol.
 
 use crucible_core::enrichment::EmbeddingProvider;
@@ -74,6 +74,9 @@ const EXPECTED_TOOLS: &[&str] = &[
     "get_kiln_info",
     "get_kiln_roots",
     "get_kiln_stats",
+    // Web tools (2)
+    "web_fetch",
+    "web_search",
 ];
 
 fn create_test_server() -> CrucibleMcpServer {
@@ -88,15 +91,15 @@ fn create_test_server() -> CrucibleMcpServer {
     )
 }
 
-/// Test that CrucibleMcpServer exposes exactly 12 tools
+/// Test that CrucibleMcpServer exposes exactly 14 tools
 #[tokio::test]
-async fn test_mcp_server_exposes_12_tools() {
+async fn test_mcp_server_exposes_14_tools() {
     let server = create_test_server();
 
     let tool_count = server.tool_count();
     assert_eq!(
-        tool_count, 12,
-        "Should expose exactly 12 tools, got {}",
+        tool_count, 14,
+        "Should expose exactly 14 tools, got {}",
         tool_count
     );
 }
@@ -173,12 +176,12 @@ async fn test_server_info_metadata() {
     assert!(info.server_info.title.is_some());
     assert_eq!(info.server_info.title.unwrap(), "Crucible MCP Server");
 
-    // Verify instructions mention 12 tools
+    // Verify instructions mention 14 tools
     assert!(info.instructions.is_some());
     let instructions = info.instructions.unwrap();
     assert!(
-        instructions.contains("12 tools"),
-        "Instructions should mention 12 tools"
+        instructions.contains("14 tools"),
+        "Instructions should mention 14 tools"
     );
 
     // Verify tools capability is advertised
