@@ -371,11 +371,11 @@ impl DialogWidget<'_> {
         message_para.render(msg_area, buf);
 
         // Buttons
+        use crate::tui::constants::{BUTTON_WIDTH, BUTTON_GAP};
+        use crate::tui::geometry::PopupGeometry;
         let button_y = inner.y + inner.height - 2;
-        let btn_width = 10u16;
-        let gap = 4u16;
-        let total_width = btn_width * 2 + gap;
-        let start_x = inner.x + (inner.width.saturating_sub(total_width)) / 2;
+        let total_width = BUTTON_WIDTH * 2 + BUTTON_GAP;
+        let start_x = PopupGeometry::center_horizontally(inner, total_width);
 
         // Confirm button
         let confirm_style = if focused_button == 0 {
@@ -400,7 +400,7 @@ impl DialogWidget<'_> {
         };
         let cancel_btn = format!("[{}]", cancel_label);
         buf.set_string(
-            start_x + btn_width + gap,
+            start_x + BUTTON_WIDTH + BUTTON_GAP,
             button_y,
             &cancel_btn,
             cancel_style,
@@ -456,7 +456,8 @@ impl DialogWidget<'_> {
 
         // Hint at bottom
         let hint = "[Press Enter or Esc to close]";
-        let hint_x = inner.x + (inner.width.saturating_sub(hint.len() as u16)) / 2;
+        use crate::tui::geometry::PopupGeometry;
+        let hint_x = PopupGeometry::center_text_horizontally(inner, hint.len() as u16);
         if inner.height > 0 {
             buf.set_string(
                 hint_x,
@@ -504,7 +505,7 @@ impl DialogWidget<'_> {
         let input_area = Rect {
             x: inner.x + 1,
             y: input_y,
-            width: inner.width.saturating_sub(2),
+            width: crate::tui::constants::UiConstants::dialog_width(inner.width),
             height: 1,
         };
 
@@ -552,7 +553,8 @@ impl DialogWidget<'_> {
 
         // Hint at bottom
         let hint = "[Enter to submit, Esc to cancel]";
-        let hint_x = inner.x + (inner.width.saturating_sub(hint.len() as u16)) / 2;
+        use crate::tui::geometry::PopupGeometry;
+        let hint_x = PopupGeometry::center_text_horizontally(inner, hint.len() as u16);
         if inner.height > 2 {
             buf.set_string(
                 hint_x,

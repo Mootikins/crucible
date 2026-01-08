@@ -132,7 +132,7 @@ impl Widget for HorizontalScrollWidget<'_> {
                 let content = Rect::new(
                     area.x + 1,
                     area.y,
-                    area.width.saturating_sub(2),
+                    crate::tui::constants::UiConstants::dialog_width(area.width),
                     area.height,
                 );
                 (content, Some(left), Some(right))

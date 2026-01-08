@@ -312,11 +312,8 @@ impl Widget for InputBoxWidget<'_> {
 
         // Calculate vertical centering if we have fewer lines than area height
         let content_height = visible_lines as u16;
-        let start_y = if content_height < area.height {
-            area.y + (area.height - content_height) / 2
-        } else {
-            area.y
-        };
+        use crate::tui::geometry::PopupGeometry;
+        let start_y = PopupGeometry::center_vertically_if_fits(area, content_height);
 
         // Render visible lines with scroll offset
         for (i, line) in render_lines
