@@ -90,7 +90,7 @@ use crate::tui::conversation_view::{ConversationView, RatatuiView};
 use crate::tui::state::{find_word_start_backward, find_word_start_forward, PopupKind};
 use crate::tui::{
     map_key_event, DialogState, DynamicPopupProvider, InputAction, ParseEvent, PopupProvider,
-    StreamBlock, StreamingParser, TuiState,
+    StreamBlock, StreamingBuffer, StreamingParser, TuiState,
 };
 use anyhow::Result;
 use crossterm::{
@@ -401,7 +401,7 @@ impl RatatuiRunner {
             // 0. Update status with paste indicator if applicable
             if let Some(summary) = self.pending_pastes_summary() {
                 // Only update if not streaming (streaming has its own status)
-                if !self.is_streaming {
+                if !self.streaming_manager.is_streaming() {
                     self.view.set_status_text(&format!("Pending: {}", summary));
                 }
             }
@@ -477,7 +477,7 @@ impl RatatuiRunner {
                             });
 
                             // Feed delta through parser
-                            if let Some(parser) = &mut self.streaming_parser {
+                            if let Some(parser) = self.streaming_manager.parser_mut() {
                                 let parse_events = parser.feed(&text);
                                 pending_parse_events.extend(parse_events);
                             }
@@ -497,15 +497,12 @@ impl RatatuiRunner {
                             });
                         }
                         StreamingEvent::Done { full_response } => {
-                            self.is_streaming = false;
+                            self.streaming_manager.stop_streaming();
                             self.view.clear_status();
                             debug!(response_len = full_response.len(), "Streaming complete");
 
-                            // Finalize parser
-                            if let Some(parser) = &mut self.streaming_parser {
-                                let parse_events = parser.finalize();
-                                pending_parse_events.extend(parse_events);
-                            }
+                            // Finalize parser (already cleared by stop_streaming, but we had a reference)
+                            // Parser is now managed by StreamingManager
 
                             streaming_complete = true;
 
@@ -524,7 +521,7 @@ impl RatatuiRunner {
                             });
                         }
                         StreamingEvent::Error { message } => {
-                            self.is_streaming = false;
+                            self.streaming_manager.stop_streaming();
                             // Log error to session
                             if let Some(logger) = &self.session_logger {
                                 let logger = logger.clone();
@@ -634,8 +631,8 @@ impl RatatuiRunner {
 
             // Flush partial content for progressive display (even without newlines)
             // This is done after processing all available deltas but before applying events
-            if self.is_streaming && !streaming_complete {
-                if let Some(parser) = &mut self.streaming_parser {
+            if self.streaming_manager.is_streaming() && !streaming_complete {
+                if let Some(parser) = self.streaming_manager.parser_mut() {
                     if let Some(partial_event) = parser.flush_partial() {
                         pending_parse_events.push(partial_event);
                     }
@@ -649,7 +646,7 @@ impl RatatuiRunner {
 
             // Handle streaming completion
             if streaming_complete {
-                self.streaming_parser = None;
+                self.streaming_manager.clear_parser();
                 self.view.complete_assistant_streaming();
                 // Clear reasoning buffer for next response
                 self.view.clear_reasoning();
@@ -659,7 +656,7 @@ impl RatatuiRunner {
             if let Some(message) = streaming_error {
                 self.view.clear_status();
                 self.view.echo_error(&format!("Error: {}", message));
-                self.streaming_parser = None;
+                self.streaming_manager.clear_parser();
             }
 
             // 6. Poll streaming task for completion (cleanup)
@@ -674,7 +671,7 @@ impl RatatuiRunner {
             // 7. Animate spinner during thinking phase (before tokens arrive)
             // The loop runs at ~60fps (16ms). Animate spinner every ~6 frames (~100ms).
             self.animation_frame = self.animation_frame.wrapping_add(1);
-            if self.is_streaming && self.token_count == 0 && self.animation_frame % 6 == 0 {
+            if self.streaming_manager.is_streaming() && self.token_count == 0 && self.animation_frame % 6 == 0 {
                 self.spinner_frame = self.spinner_frame.wrapping_add(1);
                 self.view.set_status(StatusKind::Thinking {
                     spinner_frame: self.spinner_frame,
@@ -782,9 +779,9 @@ impl RatatuiRunner {
                 return Ok(true);
             }
             InputAction::Cancel => {
-                if self.is_streaming {
+                if self.streaming_manager.is_streaming() {
                     // Cancel streaming
-                    self.is_streaming = false;
+                    self.streaming_manager.stop_streaming();
                     self.view.clear_status();
                     self.view.set_status_text("Cancelled");
                 } else {
@@ -928,7 +925,7 @@ impl RatatuiRunner {
                 }
 
                 // Set thinking status
-                self.is_streaming = true;
+                self.streaming_manager.start_streaming_with_parser(StreamingBuffer::new());
                 self.token_count = 0;
                 self.prev_token_count = 0;
                 self.spinner_frame = 0;
@@ -937,7 +934,7 @@ impl RatatuiRunner {
                 self.view.set_status_text("Thinking");
 
                 // Initialize streaming parser and start streaming message in view
-                self.streaming_parser = Some(StreamingParser::new());
+                // (parser is now created by start_streaming_with_parser)
                 self.view.start_assistant_streaming();
 
                 // Emit user message to ring
@@ -1855,7 +1852,7 @@ impl RatatuiRunner {
                 } => {
                     // Streaming complete - message already built via streaming channel
                     // Don't add another message here to avoid duplicates
-                    self.is_streaming = false;
+                    self.streaming_manager.stop_streaming();
                     self.view.clear_status();
                     self.view.set_status_text("Ready");
                 }
