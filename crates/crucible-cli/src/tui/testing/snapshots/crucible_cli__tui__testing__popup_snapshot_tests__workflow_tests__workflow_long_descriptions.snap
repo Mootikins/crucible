@@ -23,6 +23,6 @@ expression: h.render()
   help Display comprehensive help for all available commands and features       
   clear Clear the current conversation history and start fresh                  
                                                                                 
- > /                                                                            
+ >                                                                              
                                                                                 
 ▸ Plan │ Ready

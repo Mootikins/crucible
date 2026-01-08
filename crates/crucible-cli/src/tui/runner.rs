@@ -752,11 +752,11 @@ impl RatatuiRunner {
 
         // Build a minimal TuiState for key mapping (we'll migrate away from this)
         let mut temp_state = TuiState::new(self.view.mode_id());
-        temp_state.input_buffer = self.view.input().to_string();
-        temp_state.cursor_position = self.view.cursor_position();
+        *temp_state.input_mut() = self.view.input().to_string();
+        temp_state.set_cursor(self.view.cursor_position());
         temp_state.ctrl_c_count = self.ctrl_c_count;
         temp_state.last_ctrl_c = self.last_ctrl_c;
-        temp_state.has_popup = self.popup.is_some(); // Needed for Up/Down to navigate popup
+        // temp_state.has_popup is now computed from popup state
         let action = map_key_event(key, &temp_state);
 
         match action {
@@ -2790,13 +2790,13 @@ mod tests {
     #[test]
     fn test_cancel_not_streaming_clears_input() {
         let mut state = TuiState::new("plan");
-        state.input_buffer = "some text".to_string();
-        state.cursor_position = 9;
+        *state.input_mut() = "some text".to_string();
+        state.set_cursor(9);
 
         state.execute_action(InputAction::Cancel);
 
-        assert!(state.input_buffer.is_empty());
-        assert_eq!(state.cursor_position, 0);
+        assert!(state.input().is_empty());
+        assert_eq!(state.cursor(), 0);
     }
 
     #[test]

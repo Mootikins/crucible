@@ -71,14 +71,14 @@ fn render_streaming(frame: &mut Frame, area: Rect, state: &TuiState) {
 }
 
 fn render_input(frame: &mut Frame, area: Rect, state: &TuiState) {
-    let mode_str = match state.mode_id.as_str() {
+    let mode_str = match state.mode_id() {
         "plan" => "[Plan]",
         "act" => "[Act]",
         "auto" => "[Auto]",
         _ => "[Unknown]",
     };
 
-    let mode_style = match state.mode_id.as_str() {
+    let mode_style = match state.mode_id() {
         "plan" => Style::default().fg(Color::Cyan),
         "act" => Style::default().fg(Color::Yellow),
         "auto" => Style::default().fg(Color::Red),
@@ -88,7 +88,7 @@ fn render_input(frame: &mut Frame, area: Rect, state: &TuiState) {
     let input_line = Line::from(vec![
         Span::styled(mode_str, mode_style),
         Span::raw(" > "),
-        Span::raw(&state.input_buffer),
+        Span::raw(state.input()),
     ]);
 
     let input =
@@ -97,17 +97,17 @@ fn render_input(frame: &mut Frame, area: Rect, state: &TuiState) {
     frame.render_widget(input, area);
 
     // Position cursor
-    let cursor_x = area.x + mode_str.len() as u16 + 4 + state.cursor_position as u16;
+    let cursor_x = area.x + mode_str.len() as u16 + 4 + state.cursor() as u16;
     let cursor_y = area.y + 1;
     frame.set_cursor_position((cursor_x, cursor_y));
 }
 
 fn render_status(frame: &mut Frame, area: Rect, state: &TuiState) {
-    let mode_str = match state.mode_id.as_str() {
+    let mode_str = match state.mode_id() {
         "plan" => "Plan",
         "act" => "Act",
         "auto" => "Auto",
-        _ => &state.mode_name,
+        _ => &state.mode_name, // mode_name is still a field on TuiState
     };
 
     // Check for status error first - display prominently in red

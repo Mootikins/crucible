@@ -3,6 +3,7 @@
 //!
 //! Contains TuiState struct and related types for managing UI state.
 
+use crate::tui::conversation_view::ViewState;
 use crate::tui::notification::NotificationState;
 use crate::tui::streaming::StreamingBuffer;
 use crate::tui::InputAction;
@@ -523,6 +524,71 @@ impl From<PopupItem> for crucible_core::types::PopupEntry {
     }
 }
 
+// =============================================================================
+// PopupItemTrait implementation for PopupItem
+// =============================================================================
+
+/// Implement the generic popup widget trait directly on PopupItem
+///
+/// This allows PopupItem to work seamlessly with the generic Popup<T> widget
+/// without requiring a wrapper.
+impl crate::tui::widgets::PopupItem for PopupItem {
+    fn match_text(&self) -> &str {
+        // For matching, use the identifier directly
+        match self {
+            PopupItem::Command { name, .. } => name,
+            PopupItem::Agent { id, .. } => id,
+            PopupItem::File { path, .. } => path,
+            PopupItem::Note { path, .. } => path,
+            PopupItem::Skill { name, .. } => name,
+            PopupItem::ReplCommand { name, .. } => name,
+            PopupItem::Session { id, .. } => id,
+        }
+    }
+
+    fn label(&self) -> &str {
+        // For label, return match_text
+        self.match_text()
+    }
+
+    fn description(&self) -> Option<&str> {
+        let subtitle = self.subtitle();
+        if subtitle.is_empty() {
+            None
+        } else {
+            Some(subtitle)
+        }
+    }
+
+    fn kind_label(&self) -> Option<&str> {
+        // Call the enum's own kind_label() method
+        match self {
+            PopupItem::Command { .. } => Some("cmd"),
+            PopupItem::Agent { .. } => Some("agent"),
+            PopupItem::File { .. } => Some("file"),
+            PopupItem::Note { .. } => Some("note"),
+            PopupItem::Skill { .. } => Some("skill"),
+            PopupItem::ReplCommand { .. } => Some("repl"),
+            PopupItem::Session { .. } => Some("session"),
+        }
+    }
+
+    fn icon(&self) -> Option<char> {
+        // Don't show prefix icons - the trigger char already indicates type
+        None
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.is_available()
+    }
+
+    fn token(&self) -> &str {
+        // token() method allocates, but we need &str - use match_text
+        // This is a known limitation
+        self.match_text()
+    }
+}
+
 /// A message formatted for display
 #[derive(Debug, Clone)]
 pub struct DisplayMessage {
@@ -677,10 +743,11 @@ fn truncate_string_safe(s: &str, max_chars: usize) -> String {
 }
 
 pub struct TuiState {
-    pub input_buffer: String,
-    pub cursor_position: usize,
+    /// ViewState owns ALL view-related fields (input, cursor, popup, conversation, etc.)
+    pub view: ViewState,
+
+    /// Non-view concerns owned by TuiState:
     pub streaming: Option<StreamingBuffer>,
-    pub mode_id: String,
     pub mode_name: String,
     pub pending_tools: Vec<ToolCallInfo>,
     pub last_seen_seq: u64,
@@ -688,15 +755,9 @@ pub struct TuiState {
     pub ctrl_c_count: u8,
     pub last_ctrl_c: Option<Instant>,
     pub status_error: Option<String>,
-    // Whether a popup is currently active (used by input handler)
-    pub has_popup: bool,
-    // Notification state for file watch events
-    pub notifications: NotificationState,
     /// Context attachments pending for the next message (files, notes)
     pub pending_context: Vec<ContextAttachment>,
-    /// Whether to show reasoning/thinking content (Alt+T toggle)
-    pub show_reasoning: bool,
-    /// Accumulated reasoning from the current response
+    /// Accumulated reasoning from the current response (kept separate from ViewState)
     pub accumulated_reasoning: String,
     #[allow(clippy::type_complexity)] // Complex callback type, not worth a type alias
     output_fn: Option<Box<dyn Fn(&str) + Send + Sync>>,
@@ -706,11 +767,12 @@ impl TuiState {
     pub fn new(mode_id: impl Into<String>) -> Self {
         let mode_id = mode_id.into();
         let mode_name = crucible_core::traits::chat::mode_display_name(&mode_id).to_string();
+        // Create ViewState with default dimensions (will be resized by runner)
+        let view = ViewState::new(&mode_id, 80, 24);
+
         Self {
-            input_buffer: String::new(),
-            cursor_position: 0,
+            view,
             streaming: None,
-            mode_id,
             mode_name,
             pending_tools: Vec::new(),
             last_seen_seq: 0,
@@ -718,10 +780,7 @@ impl TuiState {
             ctrl_c_count: 0,
             last_ctrl_c: None,
             status_error: None,
-            has_popup: false,
-            notifications: NotificationState::new(),
             pending_context: Vec::new(),
-            show_reasoning: false,
             accumulated_reasoning: String::new(),
             output_fn: None,
         }
@@ -733,11 +792,12 @@ impl TuiState {
     ) -> Self {
         let mode_id = mode_id.into();
         let mode_name = crucible_core::traits::chat::mode_display_name(&mode_id).to_string();
+        // Create ViewState with default dimensions (will be resized by runner)
+        let view = ViewState::new(&mode_id, 80, 24);
+
         Self {
-            input_buffer: String::new(),
-            cursor_position: 0,
+            view,
             streaming: None,
-            mode_id,
             mode_name,
             pending_tools: Vec::new(),
             last_seen_seq: 0,
@@ -745,13 +805,74 @@ impl TuiState {
             ctrl_c_count: 0,
             last_ctrl_c: None,
             status_error: None,
-            has_popup: false,
-            notifications: NotificationState::new(),
             pending_context: Vec::new(),
-            show_reasoning: false,
             accumulated_reasoning: String::new(),
             output_fn: Some(Box::new(output_fn)),
         }
+    }
+
+    // =========================================================================
+    // Accessor Methods - delegate to ViewState
+    // =========================================================================
+
+    /// Get the input buffer text
+    pub fn input(&self) -> &str {
+        &self.view.input_buffer
+    }
+
+    /// Get mutable reference to input buffer
+    pub fn input_mut(&mut self) -> &mut String {
+        &mut self.view.input_buffer
+    }
+
+    /// Get cursor position
+    pub fn cursor(&self) -> usize {
+        self.view.cursor_position
+    }
+
+    /// Set cursor position
+    pub fn set_cursor(&mut self, pos: usize) {
+        self.view.cursor_position = pos;
+    }
+
+    /// Check if popup is currently shown
+    pub fn has_popup(&self) -> bool {
+        self.view.popup.is_some()
+    }
+
+    /// Get the current popup state
+    pub fn popup(&self) -> Option<&crate::tui::components::generic_popup::PopupState> {
+        self.view.popup.as_ref()
+    }
+
+    /// Get mutable reference to popup state
+    pub fn popup_mut(&mut self) -> Option<&mut crate::tui::components::generic_popup::PopupState> {
+        self.view.popup.as_mut()
+    }
+
+    /// Get mode_id
+    pub fn mode_id(&self) -> &str {
+        &self.view.mode_id
+    }
+
+    /// Get show_reasoning flag
+    pub fn show_reasoning(&self) -> bool {
+        self.view.show_reasoning
+    }
+
+    /// Set show_reasoning flag
+    pub fn set_show_reasoning(&mut self, value: bool) {
+        self.view.show_reasoning = value;
+    }
+
+    /// Get notifications
+    pub fn notifications(&self) -> &NotificationState {
+        &self.view.notifications
+    }
+
+    /// Get mutable notifications
+    pub fn notifications_mut(&mut self) -> &mut NotificationState {
+        &mut self.view.notifications
     }
 
     // =========================================================================
@@ -813,77 +934,25 @@ impl TuiState {
     }
 
     pub fn set_mode_dynamic(&mut self, mode_id: String, mode_name: String) {
-        self.mode_id = mode_id.clone();
+        self.view.mode_id = mode_id.clone();
         self.mode_name = mode_name;
     }
 
+    /// Execute a non-view action (input-related actions moved to ViewState)
+    ///
+    /// Input-related actions (InsertChar, DeleteChar, MoveCursor, etc.) are now
+    /// handled directly by the runner/harness which has access to ViewState.
+    /// This method only handles actions that affect non-view state.
     pub fn execute_action(&mut self, action: crate::tui::InputAction) -> Option<String> {
         match action {
             InputAction::SendMessage(msg) => {
-                self.has_popup = false;
-                self.input_buffer.clear();
-                self.cursor_position = 0;
+                // Return message to send - caller is responsible for clearing input
                 self.status_error = None;
                 Some(msg)
             }
-            InputAction::InsertNewline => {
-                self.input_buffer.insert(self.cursor_position, '\n');
-                self.cursor_position += 1;
-                None
-            }
-            InputAction::InsertChar(c) => {
-                self.input_buffer.insert(self.cursor_position, c);
-                self.cursor_position += c.len_utf8();
-                self.update_popup_on_edit();
-                None
-            }
-            InputAction::DeleteChar => {
-                if self.cursor_position > 0 {
-                    let prev_boundary = self.input_buffer[..self.cursor_position]
-                        .char_indices()
-                        .next_back()
-                        .map(|(i, _)| i)
-                        .unwrap_or(0);
-                    self.input_buffer.remove(prev_boundary);
-                    self.cursor_position = prev_boundary;
-                    self.update_popup_on_edit();
-                }
-                None
-            }
-            InputAction::MoveCursorLeft => {
-                if self.cursor_position > 0 {
-                    self.cursor_position = self.input_buffer[..self.cursor_position]
-                        .char_indices()
-                        .next_back()
-                        .map(|(i, _)| i)
-                        .unwrap_or(0);
-                }
-                None
-            }
-            InputAction::MoveCursorRight => {
-                if self.cursor_position < self.input_buffer.len() {
-                    self.cursor_position = self.input_buffer[self.cursor_position..]
-                        .char_indices()
-                        .nth(1)
-                        .map(|(i, _)| self.cursor_position + i)
-                        .unwrap_or(self.input_buffer.len());
-                    self.update_popup_on_edit();
-                }
-                None
-            }
-            InputAction::MovePopupSelection(_delta) => {
-                // Popup selection is now managed by runner which owns the popup
-                None
-            }
-            InputAction::ConfirmPopup => {
-                // The actual resolution of popup items is handled externally in the runner
-                // where data sources are available. Here we just signal that a popup confirm
-                // occurred when a popup is present.
-                None
-            }
             InputAction::CycleMode => {
-                let new_mode_id = cycle_mode_id(&self.mode_id);
-                self.mode_id = new_mode_id.to_string();
+                let new_mode_id = cycle_mode_id(&self.view.mode_id);
+                self.view.mode_id = new_mode_id.to_string();
                 self.mode_name =
                     crucible_core::traits::chat::mode_display_name(new_mode_id).to_string();
                 None
@@ -893,100 +962,142 @@ impl TuiState {
                 None
             }
             InputAction::Cancel => {
-                self.input_buffer.clear();
-                self.cursor_position = 0;
                 // Track Ctrl+C for double-press detection
+                // Also clear input buffer and reset cursor
                 self.ctrl_c_count += 1;
                 self.last_ctrl_c = Some(Instant::now());
-                self.has_popup = false;
+                self.view.input_buffer.clear();
+                self.view.cursor_position = 0;
+                None
+            }
+            InputAction::ToggleReasoning => {
+                self.view.show_reasoning = !self.view.show_reasoning;
                 None
             }
             InputAction::ExecuteSlashCommand(_cmd) => {
                 // TODO: Slash command execution
                 None
             }
-            // Readline-style editing (emacs mode)
+            // All input-related actions now handled by ViewState/runner:
+            // - InsertNewline, InsertChar, DeleteChar
+            // - MoveCursorLeft, MoveCursorRight, MoveCursorToStart, MoveCursorToEnd
+            // - MoveWordBackward, MoveWordForward
+            // - DeleteWordBackward, DeleteToLineStart, DeleteToLineEnd
+            // - TransposeChars
+            // - MovePopupSelection, ConfirmPopup
+            // - Scroll actions (handled by view)
+            InputAction::InsertNewline => {
+                self.view.input_buffer.push('\n');
+                None
+            }
+            InputAction::InsertChar(c) => {
+                self.view.input_buffer.insert(self.view.cursor_position, c);
+                self.view.cursor_position += 1;
+                None
+            }
+            InputAction::DeleteChar => {
+                if self.view.cursor_position < self.view.input_buffer.len() {
+                    self.view.input_buffer.remove(self.view.cursor_position);
+                }
+                None
+            }
+            InputAction::MoveCursorLeft => {
+                if self.view.cursor_position > 0 {
+                    self.view.cursor_position -= 1;
+                }
+                None
+            }
+            InputAction::MoveCursorRight => {
+                if self.view.cursor_position < self.view.input_buffer.len() {
+                    self.view.cursor_position += 1;
+                }
+                None
+            }
+            InputAction::MovePopupSelection(_) | InputAction::ConfirmPopup => {
+                // Handled by runner
+                None
+            }
             InputAction::DeleteWordBackward => {
-                if self.cursor_position > 0 {
-                    let before = &self.input_buffer[..self.cursor_position];
-                    let word_start = find_word_start_backward(before);
-                    self.input_buffer.drain(word_start..self.cursor_position);
-                    self.cursor_position = word_start;
-                    self.update_popup_on_edit();
+                // Find word boundary and delete
+                let before = &self.view.input_buffer[..self.view.cursor_position];
+                if let Some(pos) = before.rfind(char::is_whitespace) {
+                    let delete_from = pos + 1;
+                    let delete_to = self.view.cursor_position;
+                    self.view.input_buffer.replace_range(delete_from..delete_to, "");
+                    self.view.cursor_position = delete_from;
+                } else {
+                    self.view.input_buffer.clear();
+                    self.view.cursor_position = 0;
                 }
                 None
             }
             InputAction::DeleteToLineStart => {
-                if self.cursor_position > 0 {
-                    self.input_buffer.drain(..self.cursor_position);
-                    self.cursor_position = 0;
-                    self.update_popup_on_edit();
-                }
+                self.view.input_buffer = self.view.input_buffer[self.view.cursor_position..].to_string();
+                self.view.cursor_position = 0;
                 None
             }
             InputAction::DeleteToLineEnd => {
-                if self.cursor_position < self.input_buffer.len() {
-                    self.input_buffer.truncate(self.cursor_position);
-                    self.update_popup_on_edit();
-                }
+                self.view.input_buffer.truncate(self.view.cursor_position);
                 None
             }
             InputAction::MoveCursorToStart => {
-                self.cursor_position = 0;
+                self.view.cursor_position = 0;
                 None
             }
             InputAction::MoveCursorToEnd => {
-                self.cursor_position = self.input_buffer.len();
+                self.view.cursor_position = self.view.input_buffer.len();
                 None
             }
             InputAction::MoveWordBackward => {
-                if self.cursor_position > 0 {
-                    let before = &self.input_buffer[..self.cursor_position];
-                    self.cursor_position = find_word_start_backward(before);
+                let before = &self.view.input_buffer[..self.view.cursor_position];
+                // Find the last space, then move to start of word after it
+                if let Some(space_pos) = before.rfind(char::is_whitespace) {
+                    // Find start of word after the space
+                    let after_space = &self.view.input_buffer[space_pos..];
+                    let word_start = after_space.find(|c: char| !c.is_whitespace()).unwrap_or(0);
+                    self.view.cursor_position = space_pos + word_start;
+                } else {
+                    self.view.cursor_position = 0;
                 }
                 None
             }
             InputAction::MoveWordForward => {
-                if self.cursor_position < self.input_buffer.len() {
-                    let after = &self.input_buffer[self.cursor_position..];
-                    self.cursor_position += find_word_start_forward(after);
+                let after = &self.view.input_buffer[self.view.cursor_position..];
+                if let Some(pos) = after.find(char::is_whitespace) {
+                    self.view.cursor_position += pos + 1;
+                    // Skip additional whitespace
+                    while self.view.cursor_position < self.view.input_buffer.len()
+                        && self.view.input_buffer[self.view.cursor_position..].starts_with(char::is_whitespace)
+                    {
+                        self.view.cursor_position += 1;
+                    }
+                } else {
+                    self.view.cursor_position = self.view.input_buffer.len();
                 }
                 None
             }
             InputAction::TransposeChars => {
-                // Swap the character before cursor with the one at cursor
-                // If at end, swap the two chars before cursor
-                let len = self.input_buffer.chars().count();
-                if len >= 2 && self.cursor_position > 0 {
-                    let chars: Vec<char> = self.input_buffer.chars().collect();
-                    let char_pos = self.input_buffer[..self.cursor_position].chars().count();
+                if self.view.cursor_position > 0 {
+                    let mut chars: Vec<char> = self.view.input_buffer.chars().collect();
+                    let len = chars.len();
+                    let i = self.view.cursor_position;
 
-                    let (i, j) = if char_pos >= len {
-                        // At end: swap last two chars
-                        (len - 2, len - 1)
-                    } else {
-                        // Swap char before cursor with char at cursor
-                        (char_pos - 1, char_pos)
-                    };
-
-                    let mut new_chars = chars.clone();
-                    new_chars.swap(i, j);
-                    self.input_buffer = new_chars.into_iter().collect();
-
-                    // Move cursor forward (or stay at end)
-                    if char_pos < len {
-                        self.cursor_position = self
-                            .input_buffer
-                            .char_indices()
-                            .nth(char_pos + 1)
-                            .map(|(idx, _)| idx)
-                            .unwrap_or(self.input_buffer.len());
+                    if i == 0 {
+                        // Can't transpose at start
+                    } else if i == len {
+                        // At end: swap last two characters
+                        if len >= 2 {
+                            chars.swap(len - 2, len - 1);
+                            self.view.input_buffer = chars.into_iter().collect();
+                            // Cursor stays at end
+                        }
+                    } else if i < len {
+                        // In middle: swap character before cursor with cursor
+                        chars.swap(i - 1, i);
+                        self.view.input_buffer = chars.into_iter().collect();
+                        self.view.cursor_position += 1;
                     }
                 }
-                None
-            }
-            InputAction::ToggleReasoning => {
-                self.show_reasoning = !self.show_reasoning;
                 None
             }
             InputAction::ScrollUp
@@ -1073,37 +1184,10 @@ impl TuiState {
 
         finalized_content
     }
-
-    fn detect_popup_trigger(&self) -> Option<PopupKind> {
-        let trimmed = self.input_buffer.trim_start();
-        if trimmed.starts_with('/') {
-            Some(PopupKind::Command)
-        } else if trimmed.starts_with('@') {
-            Some(PopupKind::AgentOrFile)
-        } else {
-            None
-        }
-    }
-
-    fn current_query(&self) -> String {
-        let trimmed = self.input_buffer.trim_start();
-        if let Some(rest) = trimmed.strip_prefix('/') {
-            rest.to_string()
-        } else if let Some(rest) = trimmed.strip_prefix('@') {
-            rest.to_string()
-        } else {
-            String::new()
-        }
-    }
-
-    /// Update popup state based on current input buffer and cursor
-    ///
-    /// This just signals whether a popup should be shown via `has_popup`.
-    /// The actual popup creation and management is done by the runner.
-    fn update_popup_on_edit(&mut self) {
-        self.has_popup = self.detect_popup_trigger().is_some();
-    }
 }
+
+// Popup trigger detection methods removed - these are now handled by the runner/harness
+// which has access to ViewState (where input_buffer and cursor_position live).
 
 fn format_tool_call(name: Option<&str>, args: &JsonValue) -> String {
     format!(
@@ -1130,27 +1214,27 @@ mod tests {
     #[test]
     fn test_tui_state_new() {
         let s = TuiState::new("plan");
-        assert_eq!(s.mode_id, "plan");
-        assert_eq!(s.mode_id, "plan");
+        assert_eq!(s.mode_id(), "plan");
+        assert_eq!(s.mode_id(), "plan");
         assert_eq!(s.mode_name, "Plan");
     }
 
     #[test]
     fn test_tui_state_mode_id_name() {
-        assert_eq!(TuiState::new("plan").mode_id, "plan");
-        assert_eq!(TuiState::new("act").mode_id, "act");
-        assert_eq!(TuiState::new("auto").mode_id, "auto");
+        assert_eq!(TuiState::new("plan").mode_id(), "plan");
+        assert_eq!(TuiState::new("act").mode_id(), "act");
+        assert_eq!(TuiState::new("auto").mode_id(), "auto");
     }
 
     #[test]
     fn test_set_mode_dynamic() {
         let mut s = TuiState::new("plan");
         s.set_mode_dynamic("act".into(), "Act".into());
-        assert_eq!(s.mode_id, "act");
+        assert_eq!(s.mode_id(), "act");
         assert_eq!(s.mode_name, "Act");
         // Unknown mode ID still updates the display strings
         s.set_mode_dynamic("custom".into(), "Custom".into());
-        assert_eq!(s.mode_id, "custom");
+        assert_eq!(s.mode_id(), "custom");
         assert_eq!(s.mode_name, "Custom");
     }
 
@@ -1158,7 +1242,7 @@ mod tests {
     fn test_execute_action_cycle_mode() {
         let mut s = TuiState::new("plan");
         s.execute_action(InputAction::CycleMode);
-        assert_eq!(s.mode_id, "act");
+        assert_eq!(s.mode_id(), "act");
         assert_eq!(s.mode_name, "Act");
     }
 
@@ -1189,8 +1273,8 @@ mod tests {
         let mut s = TuiState::new("auto");
         // From Auto -> Plan (wraps around)
         s.execute_action(InputAction::CycleMode);
-        assert_eq!(s.mode_id, "plan");
-        assert_eq!(s.mode_id, "plan");
+        assert_eq!(s.mode_id(), "plan");
+        assert_eq!(s.mode_id(), "plan");
         assert_eq!(s.mode_name, "Plan");
     }
 
@@ -1200,42 +1284,25 @@ mod tests {
 
         // Cycle Plan -> Act
         s.execute_action(InputAction::CycleMode);
-        assert_eq!(s.mode_id, "act");
-        assert_eq!(s.mode_id, "act");
+        assert_eq!(s.mode_id(), "act");
+        assert_eq!(s.mode_id(), "act");
         assert_eq!(s.mode_name, "Act");
 
         // Cycle Act -> Auto
         s.execute_action(InputAction::CycleMode);
-        assert_eq!(s.mode_id, "auto");
-        assert_eq!(s.mode_id, "auto");
+        assert_eq!(s.mode_id(), "auto");
+        assert_eq!(s.mode_id(), "auto");
         assert_eq!(s.mode_name, "Auto");
 
         // Cycle Auto -> Plan (wraps)
         s.execute_action(InputAction::CycleMode);
-        assert_eq!(s.mode_id, "plan");
-        assert_eq!(s.mode_id, "plan");
+        assert_eq!(s.mode_id(), "plan");
+        assert_eq!(s.mode_id(), "plan");
         assert_eq!(s.mode_name, "Plan");
     }
 
-    #[test]
-    fn test_popup_trigger_detection() {
-        let mut s = TuiState::new("plan");
-
-        // Command trigger
-        s.input_buffer = "/search".into();
-        s.update_popup_on_edit();
-        assert!(s.has_popup);
-
-        // Agent/File trigger
-        s.input_buffer = "@dev".into();
-        s.update_popup_on_edit();
-        assert!(s.has_popup);
-
-        // No trigger
-        s.input_buffer = "hello".into();
-        s.update_popup_on_edit();
-        assert!(!s.has_popup);
-    }
+    // NOTE: Popup trigger detection removed - this is now handled by the runner
+    // which has access to ViewState and checks for trigger characters.
 
     // NOTE: Popup selection and viewport tests moved to generic_popup.rs
     // The new PopupState handles selection wrapping and viewport management internally.
@@ -1243,7 +1310,7 @@ mod tests {
     #[test]
     fn test_tui_state_has_notifications() {
         let state = TuiState::new("plan");
-        assert!(state.notifications.is_empty());
+        assert!(state.notifications().is_empty());
     }
 
     // =========================================================================
@@ -1253,96 +1320,96 @@ mod tests {
     #[test]
     fn test_delete_word_backward() {
         let mut s = TuiState::new("plan");
-        s.input_buffer = "hello world".into();
-        s.cursor_position = 11; // at end
+        *s.input_mut() = "hello world".into();
+        s.set_cursor(11); // at end
         s.execute_action(InputAction::DeleteWordBackward);
-        assert_eq!(s.input_buffer, "hello ");
-        assert_eq!(s.cursor_position, 6);
+        assert_eq!(s.input(), "hello ");
+        assert_eq!(s.cursor(), 6);
     }
 
     #[test]
     fn test_delete_word_backward_multiple_spaces() {
         let mut s = TuiState::new("plan");
-        s.input_buffer = "hello   world".into();
-        s.cursor_position = 13;
+        *s.input_mut() = "hello   world".into();
+        s.set_cursor( 13);
         s.execute_action(InputAction::DeleteWordBackward);
-        assert_eq!(s.input_buffer, "hello   ");
-        assert_eq!(s.cursor_position, 8);
+        assert_eq!(s.input(), "hello   ");
+        assert_eq!(s.cursor(), 8);
     }
 
     #[test]
     fn test_delete_to_line_start() {
         let mut s = TuiState::new("plan");
-        s.input_buffer = "hello world".into();
-        s.cursor_position = 6;
+        *s.input_mut() = "hello world".into();
+        s.set_cursor( 6);
         s.execute_action(InputAction::DeleteToLineStart);
-        assert_eq!(s.input_buffer, "world");
-        assert_eq!(s.cursor_position, 0);
+        assert_eq!(s.input(), "world");
+        assert_eq!(s.cursor(), 0);
     }
 
     #[test]
     fn test_delete_to_line_end() {
         let mut s = TuiState::new("plan");
-        s.input_buffer = "hello world".into();
-        s.cursor_position = 5;
+        *s.input_mut() = "hello world".into();
+        s.set_cursor( 5);
         s.execute_action(InputAction::DeleteToLineEnd);
-        assert_eq!(s.input_buffer, "hello");
-        assert_eq!(s.cursor_position, 5);
+        assert_eq!(s.input(), "hello");
+        assert_eq!(s.cursor(), 5);
     }
 
     #[test]
     fn test_move_cursor_to_start() {
         let mut s = TuiState::new("plan");
-        s.input_buffer = "hello world".into();
-        s.cursor_position = 6;
+        *s.input_mut() = "hello world".into();
+        s.set_cursor( 6);
         s.execute_action(InputAction::MoveCursorToStart);
-        assert_eq!(s.cursor_position, 0);
+        assert_eq!(s.cursor(), 0);
     }
 
     #[test]
     fn test_move_cursor_to_end() {
         let mut s = TuiState::new("plan");
-        s.input_buffer = "hello world".into();
-        s.cursor_position = 0;
+        *s.input_mut() = "hello world".into();
+        s.set_cursor( 0);
         s.execute_action(InputAction::MoveCursorToEnd);
-        assert_eq!(s.cursor_position, 11);
+        assert_eq!(s.cursor(), 11);
     }
 
     #[test]
     fn test_move_word_backward() {
         let mut s = TuiState::new("plan");
-        s.input_buffer = "hello world".into();
-        s.cursor_position = 11;
+        *s.input_mut() = "hello world".into();
+        s.set_cursor( 11);
         s.execute_action(InputAction::MoveWordBackward);
-        assert_eq!(s.cursor_position, 6); // After space, at "world"
+        assert_eq!(s.cursor(), 6); // After space, at "world"
     }
 
     #[test]
     fn test_move_word_forward() {
         let mut s = TuiState::new("plan");
-        s.input_buffer = "hello world foo".into();
-        s.cursor_position = 0;
+        *s.input_mut() = "hello world foo".into();
+        s.set_cursor( 0);
         s.execute_action(InputAction::MoveWordForward);
-        assert_eq!(s.cursor_position, 6); // After "hello ", at "world"
+        assert_eq!(s.cursor(), 6); // After "hello ", at "world"
     }
 
     #[test]
     fn test_transpose_chars_middle() {
         let mut s = TuiState::new("plan");
-        s.input_buffer = "abcd".into();
-        s.cursor_position = 2; // Between b and c
+        *s.input_mut() = "abcd".into();
+        s.set_cursor(2); // Between b and c
         s.execute_action(InputAction::TransposeChars);
-        assert_eq!(s.input_buffer, "acbd");
-        assert_eq!(s.cursor_position, 3); // Cursor moves forward
+        assert_eq!(s.input(), "acbd");
+        assert_eq!(s.cursor(), 3); // Cursor moves forward
     }
 
     #[test]
     fn test_transpose_chars_at_end() {
         let mut s = TuiState::new("plan");
-        s.input_buffer = "abcd".into();
-        s.cursor_position = 4; // At end
+        *s.input_mut() = "abcd".into();
+        s.set_cursor(4); // At end
         s.execute_action(InputAction::TransposeChars);
-        assert_eq!(s.input_buffer, "abdc"); // Swaps last two
+        assert_eq!(s.input(), "abdc"); // Swaps last two
     }
 
     // =========================================================================
@@ -1478,7 +1545,7 @@ mod tests {
     fn test_show_reasoning_default_false() {
         // Reasoning should be hidden by default
         let state = TuiState::new("plan");
-        assert!(!state.show_reasoning);
+        assert!(!state.show_reasoning());
     }
 
     #[test]
@@ -1491,13 +1558,13 @@ mod tests {
     #[test]
     fn test_toggle_reasoning_flips_state() {
         let mut state = TuiState::new("plan");
-        assert!(!state.show_reasoning);
+        assert!(!state.show_reasoning());
 
         state.execute_action(InputAction::ToggleReasoning);
-        assert!(state.show_reasoning);
+        assert!(state.show_reasoning());
 
         state.execute_action(InputAction::ToggleReasoning);
-        assert!(!state.show_reasoning);
+        assert!(!state.show_reasoning());
     }
 
     #[test]
