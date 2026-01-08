@@ -16,6 +16,48 @@
 
 ---
 
+## Progress Tracking
+
+**Last Updated:** 2026-01-08 (Sprint 1 COMPLETE)
+
+### Sprint Status
+
+| Sprint | Status | Completion | Lines Reduced | Tests Passing |
+|--------|--------|------------|---------------|---------------|
+| **Sprint 1** | ✅ COMPLETE | 100% | DRY: 8→0 | 1271 → 1288 |
+| **Sprint 2** | ⏸️ Pending | 0% | Target: ~1,000 | TBD |
+| **Sprint 3** | ⏸️ Pending | 0% | Target: ~2,500 | TBD |
+
+### Sprint 1 Accomplishments ✅
+
+**Completed:** 2026-01-08
+
+**Files Created:**
+1. `tui/constants.rs` (103 lines) - UI spacing constants and helpers
+2. `tui/geometry.rs` (176 lines) - Popup centering and alignment
+3. `tui/scroll_utils.rs` (392 lines) - Scroll calculations and line counting
+
+**Files Updated:** 15+
+- Applied constants to eliminate magic numbers
+- Applied geometry helpers for consistent centering
+- Applied scroll utilities for bound calculations
+
+**DRY Violations Eliminated:**
+- ✅ `saturating_sub(4)` → `UiConstants::content_width()` (7 occurrences)
+- ✅ `saturating_sub(2)` → `UiConstants::dialog_width()` (4 occurrences)
+- ✅ Manual centering → `PopupGeometry` helpers (6 occurrences)
+- ✅ Scroll clamping → `ScrollUtils::clamp_scroll()` (5 occurrences)
+- ✅ Line counting → `LineCount::count()` (4 occurrences)
+
+**Test Results:**
+- Before: 1271 tests passing
+- After: 1288 tests passing (+17 tests)
+- 0 failures, 0 compilation errors
+
+**Git Commits:** 4 commits documenting all changes
+
+---
+
 ## Phase 1: HIGH Priority Refactoring
 
 ### 1.1 Break Up `runner.rs` God Class (CRITICAL)
@@ -393,7 +435,78 @@ pub struct LayoutCalculator {
 
 ---
 
-## Next Steps
+## Ralph Loop Continuation Plan
+
+**Current Status:** Sprint 1 COMPLETE ✅
+**Next Sprint:** Sprint 2 (Medium Priority - MEDIUM RISK)
+**Alternative:** Sprint 3 (High Priority - HIGH RISK)
+
+### Sprint 2: Start HERE Next ⬅️
+
+**Goal:** Split `state.rs` (1,686 lines) into manageable modules
+
+**Tasks:**
+1. Extract data types to `state/types/`
+   - `state/types/popup.rs` - PopupItem, PopupKind
+   - `state/types/context.rs` - ContextAttachment, ContextKind
+2. Extract action handlers to `state/actions.rs`
+   - Move `execute_action()` logic
+   - Create ActionExecutor struct
+3. Extract navigation to `state/navigation/`
+   - Move `find_word_start_backward/forward`
+   - Create HistoryNavigator
+
+**Expected Impact:**
+- Reduce `state.rs` from 1,686 → ~600 lines
+- Improve separation of concerns
+- Medium risk (well-defined boundaries)
+
+**Estimated Files to Modify:**
+- `state.rs` (main)
+- Files importing from state.rs (update imports)
+
+### Sprint 3: Alternative High-Value Path
+
+**Goal:** Break up `runner.rs` (3,380 lines) by integrating existing managers
+
+**Key Insight:** Manager structs already exist! They just need integration:
+- ✅ `StreamingManager` - created, not integrated
+- ✅ `SelectionManager` - created, not integrated
+- ✅ `HistoryManager` - created, not integrated
+- ✅ `InputModeManager` - created, not integrated
+
+**Tasks:**
+1. Add manager fields to `RatatuiRunner`
+2. Delegate responsibilities to managers
+3. Remove duplicated code from runner
+4. Extract EventLoop for event handling
+5. Extract PopupManager for popup lifecycle
+
+**Expected Impact:**
+- Reduce `runner.rs` from 3,380 → ~800 lines
+- Integrate 4 existing managers
+- High risk (affects entire event loop)
+
+### Recommendation for Ralph Loop
+
+**START WITH:** Sprint 2 (Split state.rs)
+- **Reason:** Medium risk, clear boundaries, builds on Sprint 1 success
+- **If blocked:** Move to Sprint 3 (managers already exist, just need wiring)
+
+**DO NOT:**
+- Skip tests - run after every extraction
+- Create large commits - commit frequently
+- Ignore compilation errors - fix immediately
+
+**SUCCESS CRITERIA:**
+- All tests passing
+- No compilation warnings
+- Clear commit messages
+- Updated documentation
+
+---
+
+## Next Steps (Legacy - Use Section Above Instead)
 
 Choose your adventure:
 
