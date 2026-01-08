@@ -250,6 +250,18 @@ pub struct RatatuiRunner {
     kiln_context: Option<Arc<crate::core_facade::KilnContext>>,
     /// Session ID to resume from (loads existing conversation history)
     resume_session_id: Option<String>,
+
+    // =============================================================================
+    // Manager fields (Sprint 3 - being integrated gradually)
+    // =============================================================================
+    /// Streaming subsystem manager
+    streaming_manager: crate::tui::streaming_manager::StreamingManager,
+    /// Selection subsystem manager
+    selection_manager: crate::tui::selection_manager::SelectionManager,
+    /// History subsystem manager
+    history_manager: crate::tui::history_manager::HistoryManager,
+    /// Input mode subsystem manager
+    input_mode_manager: crate::tui::input_mode_manager::InputModeManager,
 }
 
 impl RatatuiRunner {
@@ -298,6 +310,11 @@ impl RatatuiRunner {
             interaction_registry: None,
             kiln_context: None,
             resume_session_id: None,
+            // Initialize managers (Sprint 3)
+            streaming_manager: crate::tui::streaming_manager::StreamingManager::new(),
+            selection_manager: crate::tui::selection_manager::SelectionManager::new(),
+            history_manager: crate::tui::history_manager::HistoryManager::new(),
+            input_mode_manager: crate::tui::input_mode_manager::InputModeManager::new(),
         })
     }
 
