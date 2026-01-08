@@ -368,3 +368,118 @@ impl PopupItem {
 /// # Deprecated
 /// Use `PopupItem` directly instead.
 pub type PopupItemKind = PopupItem;
+
+/// Implement the generic popup widget trait directly on PopupItem
+///
+/// This allows PopupItem to work seamlessly with the generic Popup<T> widget
+/// without requiring a wrapper.
+impl crate::tui::widgets::PopupItem for PopupItem {
+    fn match_text(&self) -> &str {
+        // For matching, use the identifier directly
+        match self {
+            PopupItem::Command { name, .. } => name,
+            PopupItem::Agent { id, .. } => id,
+            PopupItem::File { path, .. } => path,
+            PopupItem::Note { path, .. } => path,
+            PopupItem::Skill { name, .. } => name,
+            PopupItem::ReplCommand { name, .. } => name,
+            PopupItem::Session { id, .. } => id,
+        }
+    }
+
+    fn label(&self) -> &str {
+        // For label, return match_text
+        self.match_text()
+    }
+
+    fn description(&self) -> Option<&str> {
+        let subtitle = self.subtitle();
+        if subtitle.is_empty() {
+            None
+        } else {
+            Some(subtitle)
+        }
+    }
+
+    fn kind_label(&self) -> Option<&str> {
+        // Call the enum's own kind_label() method
+        match self {
+            PopupItem::Command { .. } => Some("cmd"),
+            PopupItem::Agent { .. } => Some("agent"),
+            PopupItem::File { .. } => Some("file"),
+            PopupItem::Note { .. } => Some("note"),
+            PopupItem::Skill { .. } => Some("skill"),
+            PopupItem::ReplCommand { .. } => Some("repl"),
+            PopupItem::Session { .. } => Some("session"),
+        }
+    }
+
+    fn icon(&self) -> Option<char> {
+        // Don't show prefix icons - the trigger char already indicates type
+        None
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.is_available()
+    }
+
+    fn token(&self) -> &str {
+        // token() method allocates, but we need &str - use match_text
+        // This is a known limitation
+        self.match_text()
+    }
+}
+
+// =============================================================================
+// From implementation for PopupEntry
+// =============================================================================
+
+impl From<PopupItem> for crucible_core::types::PopupEntry {
+    fn from(item: PopupItem) -> Self {
+        use serde_json::json;
+
+        let (label, description, kind) = match &item {
+            PopupItem::Command {
+                name, description, ..
+            } => (format!("/{}", name), Some(description.clone()), "command"),
+            PopupItem::Agent {
+                id, description, ..
+            } => (format!("@{}", id), Some(description.clone()), "agent"),
+            PopupItem::File { path, .. } => (path.clone(), None, "file"),
+            PopupItem::Note { path, .. } => (path.clone(), None, "note"),
+            PopupItem::Skill {
+                name,
+                description,
+                scope,
+                ..
+            } => {
+                let desc = format!("{} ({})", description, scope);
+                (format!("skill:{}", name), Some(desc), "skill")
+            }
+            PopupItem::ReplCommand {
+                name, description, ..
+            } => (format!(":{}", name), Some(description.clone()), "repl"),
+            PopupItem::Session {
+                id,
+                description,
+                message_count,
+                ..
+            } => {
+                let desc = if description.is_empty() {
+                    format!("{} messages", message_count)
+                } else {
+                    format!("{} ({} messages)", description, message_count)
+                };
+                (id.clone(), Some(desc), "session")
+            }
+        };
+
+        let mut entry = crucible_core::types::PopupEntry::new(label);
+        if let Some(desc) = description {
+            if !desc.is_empty() {
+                entry = entry.with_description(desc);
+            }
+        }
+        entry.with_data(json!({ "kind": kind }))
+    }
+}
