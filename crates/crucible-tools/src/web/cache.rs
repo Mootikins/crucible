@@ -17,6 +17,7 @@ struct CacheEntry {
 
 impl FetchCache {
     /// Create a new cache with specified TTL and max entries
+    #[must_use]
     pub fn new(ttl_secs: u64, max_entries: usize) -> Self {
         Self {
             entries: HashMap::new(),
@@ -26,6 +27,7 @@ impl FetchCache {
     }
 
     /// Get cached content if present and not expired
+    #[must_use]
     pub fn get(&self, url: &str) -> Option<&str> {
         self.entries.get(url).and_then(|entry| {
             if entry.fetched_at.elapsed() < self.ttl {
@@ -58,11 +60,13 @@ impl FetchCache {
     }
 
     /// Get number of entries in cache
+    #[must_use]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
     /// Check if cache is empty
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }

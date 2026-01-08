@@ -2,7 +2,7 @@
 //!
 //! Provides two MCP tools:
 //! - `web_fetch` - Fetch URL, convert HTML to markdown, optionally summarize
-//! - `web_search` - Search the web via configurable provider (SearXNG)
+//! - `web_search` - Search the web via configurable provider (`SearXNG`)
 //!
 //! ## Configuration
 //!
