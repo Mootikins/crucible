@@ -15,14 +15,14 @@ expression: h.render()
                                                                                 
                                                                                 
                                                                                 
-> ⟳ chat-2025-01-20-sess000 Session from day 20                                 
-  ⟳ chat-2025-01-20-sess001 Session from day 20                                 
-  ⟳ chat-2025-01-20-sess002 Session from day 20                                 
-  ⟳ chat-2025-01-20-sess003 Session from day 20                                 
-  ⟳ chat-2025-01-20-sess004 Session from day 20                                 
-  ⟳ chat-2025-01-19-sess005 Session from day 19                                 
-  ⟳ chat-2025-01-19-sess006 Session from day 19                                 
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
- >                                                                              
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                                                                                
+                                                                                
+> chat-2025-01-20-sess000 Session from day 20                                   
+  chat-2025-01-20-sess001 Session from day 20                                   
+  chat-2025-01-20-sess002 Session from day 20                                   
+  chat-2025-01-20-sess003 Session from day 20                                   
+  chat-2025-01-20-sess004 Session from day 20 ↓                                 
+                                                                                
+ > /resume                                                                      
+                                                                                
 ▸ Plan │ Ready

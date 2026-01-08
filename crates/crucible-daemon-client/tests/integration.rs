@@ -554,9 +554,15 @@ async fn test_list_notes_with_data() {
     assert_eq!(results.len(), 3, "Expected 3 notes");
 
     // Check that names are extracted from paths
-    let names: Vec<_> = results.iter().map(|(name, _, _, _, _)| name.as_str()).collect();
+    let names: Vec<_> = results
+        .iter()
+        .map(|(name, _, _, _, _)| name.as_str())
+        .collect();
     assert!(names.contains(&"daily"), "Should have 'daily' note");
-    assert!(names.contains(&"rust-project"), "Should have 'rust-project' note");
+    assert!(
+        names.contains(&"rust-project"),
+        "Should have 'rust-project' note"
+    );
     assert!(names.contains(&"api-docs"), "Should have 'api-docs' note");
 
     server.shutdown().await;

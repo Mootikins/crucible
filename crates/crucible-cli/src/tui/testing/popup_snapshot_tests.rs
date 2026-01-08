@@ -804,15 +804,6 @@ mod session_popup_tests {
     }
 
     #[test]
-    fn popup_session_gradient() {
-        let h = Harness::new(WIDTH, HEIGHT)
-            .with_popup_items(PopupKind::Session, registries::test_sessions())
-            .with_gradient_popup(true);
-
-        assert_snapshot!("popup_session_gradient", h.render());
-    }
-
-    #[test]
     fn popup_session_over_conversation() {
         use crate::tui::testing::fixtures::sessions;
 

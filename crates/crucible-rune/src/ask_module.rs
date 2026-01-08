@@ -488,7 +488,7 @@ impl AgentAskContext {
 
         rt.block_on(async move { Self::ask_agent_async(&backend, core_batch).await })
             .map(RuneAskBatchResponse::from_core)
-            .map_err(|e| RuneAskError::new(e))
+            .map_err(RuneAskError::new)
     }
 
     /// Async implementation of ask_agent
