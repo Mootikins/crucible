@@ -30,9 +30,13 @@ pub mod repl_commands;
 pub mod runner;
 pub mod scrollback_runner;
 pub mod selection;
+pub mod history_manager;
+pub mod input_mode_manager;
+pub mod selection_manager;
 pub mod state;
 pub mod streaming;
 pub mod streaming_channel;
+pub mod streaming_manager;
 pub mod streaming_parser;
 pub mod styles;
 #[cfg(any(test, feature = "test-utils"))]
@@ -51,14 +55,14 @@ pub use action_dispatch::{
 pub use agent_picker::AgentSelection;
 pub use ask_batch_dialog::{AskBatchDialogState, AskBatchDialogWidget, AskBatchResult};
 pub use chat_view::ChatView;
-pub use components::{DialogAction, FocusTarget, InteractiveWidget};
+pub use components::InteractiveWidget;
 // Note: EventResult and TuiAction have two versions:
 // - components::{EventResult, TuiAction} - widget-level events (legacy)
 // - event_result::{EventResult, TuiAction} - unified event system (new)
 // Using the new unified versions as the default export:
 pub use content_block::{ParseEvent, StreamBlock};
 pub use dialog::{DialogResult, DialogStack, DialogState, DialogWidget};
-pub use event_result::{EventResult, ScrollAction, TuiAction};
+pub use event_result::{DialogResult as UiDialogResult, EventResult, FocusTarget, ScrollDirection, TuiAction};
 pub use help::{DocsIndex, HelpTopic};
 pub use input::{map_key_event, InputAction};
 pub use markdown::MarkdownRenderer;

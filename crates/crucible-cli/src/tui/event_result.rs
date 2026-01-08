@@ -10,6 +10,8 @@ use crate::tui::state::PopupItem;
 pub enum EventResult {
     /// Event was not handled by this component
     Ignored,
+    /// Event was handled and consumed, stop propagation
+    Consumed,
     /// Event was handled, no visual change needed
     Handled,
     /// Event was handled, UI needs repaint
@@ -21,22 +23,33 @@ pub enum EventResult {
 /// Actions that bubble up from event handling to the runner
 #[derive(Debug, Clone, PartialEq)]
 pub enum TuiAction {
+    // === Scroll actions (from WidgetAction) ===
+    /// Scroll the conversation by the given number of lines (positive = down)
+    ScrollLines(isize),
+    /// Scroll to absolute position (0 = top, usize::MAX = bottom)
+    ScrollTo(usize),
+    /// Scroll with page navigation
+    ScrollPage(ScrollDirection),
+
+    // === Input actions ===
     /// Send a message to the agent
     SendMessage(String),
     /// Execute a slash command
     ExecuteCommand(String),
-    /// Cycle through modes (plan/act/auto)
-    CycleMode,
-    /// Cancel current operation (single Ctrl+C)
-    Cancel,
-    /// Exit the application
-    Exit,
-    /// Scroll the conversation
-    Scroll(ScrollAction),
-    /// Popup confirmed with selection
+
+    // === Popup actions (from WidgetAction) ===
+    /// Confirm popup selection with the selected item index
+    ConfirmPopup(usize),
+    /// Dismiss the current popup
+    DismissPopup,
+    /// Popup confirmed with selection (with resolved item)
     PopupConfirm(PopupItem),
     /// Popup closed without selection
     PopupClose,
+
+    // === Dialog actions (from WidgetAction) ===
+    /// Close the current dialog with a result
+    CloseDialog(DialogResult),
     /// Dialog confirmed
     DialogConfirm,
     /// Dialog cancelled
@@ -45,31 +58,63 @@ pub enum TuiAction {
     DialogSelect(usize),
     /// Dialog dismissed (info only)
     DialogDismiss,
+
+    // === Mode/focus actions (from WidgetAction) ===
+    /// Cycle through session modes (plan -> act -> auto)
+    CycleMode,
+    /// Request focus change to a different widget
+    RequestFocus(FocusTarget),
+
+    // === Control actions ===
+    /// Cancel current operation (single Ctrl+C)
+    Cancel,
+    /// Exit the application
+    Exit,
 }
 
-/// Scroll actions for conversation navigation
+/// Direction for page scrolling
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScrollAction {
-    Up(usize),
-    Down(usize),
-    PageUp,
-    PageDown,
-    HalfPageUp,
-    HalfPageDown,
-    ToTop,
-    ToBottom,
+pub enum ScrollDirection {
+    Up,
+    Down,
+}
+
+/// Target for focus changes
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FocusTarget {
+    /// Main input box
+    Input,
+    /// Conversation/history area
+    History,
+    /// Active popup (if any)
+    Popup,
+    /// Active dialog (if any)
+    Dialog,
+}
+
+/// Result of closing a dialog
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DialogResult {
+    /// User confirmed the dialog
+    Confirm,
+    /// User cancelled the dialog
+    Cancel,
+    /// User selected an item (for select dialogs)
+    Select(usize),
 }
 
 impl EventResult {
     /// Combine two results, preferring the more significant one.
     ///
-    /// Priority order: Action > NeedsRender > Handled > Ignored
+    /// Priority order: Action > NeedsRender > Consumed > Handled > Ignored
     pub fn or(self, other: EventResult) -> EventResult {
         match (&self, &other) {
             (EventResult::Action(_), _) => self,
             (_, EventResult::Action(_)) => other,
             (EventResult::NeedsRender, _) => self,
             (_, EventResult::NeedsRender) => other,
+            (EventResult::Consumed, _) => self,
+            (_, EventResult::Consumed) => other,
             (EventResult::Handled, _) => self,
             (_, EventResult::Handled) => other,
             _ => EventResult::Ignored,
@@ -88,11 +133,13 @@ mod tests {
     #[test]
     fn test_event_result_variants_exist() {
         let ignored = EventResult::Ignored;
+        let consumed = EventResult::Consumed;
         let handled = EventResult::Handled;
         let needs_render = EventResult::NeedsRender;
         let action = EventResult::Action(TuiAction::Exit);
 
         assert!(matches!(ignored, EventResult::Ignored));
+        assert!(matches!(consumed, EventResult::Consumed));
         assert!(matches!(handled, EventResult::Handled));
         assert!(matches!(needs_render, EventResult::NeedsRender));
         assert!(matches!(action, EventResult::Action(TuiAction::Exit)));
@@ -108,6 +155,10 @@ mod tests {
 
         assert!(matches!(
             EventResult::Ignored.or(action.clone()),
+            EventResult::Action(_)
+        ));
+        assert!(matches!(
+            EventResult::Consumed.or(action.clone()),
             EventResult::Action(_)
         ));
         assert!(matches!(
@@ -129,6 +180,10 @@ mod tests {
             EventResult::Action(TuiAction::Cancel)
         ));
         assert!(matches!(
+            action.clone().or(EventResult::Consumed),
+            EventResult::Action(TuiAction::Cancel)
+        ));
+        assert!(matches!(
             action.clone().or(EventResult::Handled),
             EventResult::Action(TuiAction::Cancel)
         ));
@@ -139,7 +194,11 @@ mod tests {
     }
 
     #[test]
-    fn test_or_needs_render_wins_over_handled_and_ignored() {
+    fn test_or_needs_render_wins_over_consumed_handled_and_ignored() {
+        assert!(matches!(
+            EventResult::Consumed.or(EventResult::NeedsRender),
+            EventResult::NeedsRender
+        ));
         assert!(matches!(
             EventResult::Handled.or(EventResult::NeedsRender),
             EventResult::NeedsRender
@@ -155,6 +214,26 @@ mod tests {
         assert!(matches!(
             EventResult::NeedsRender.or(EventResult::Ignored),
             EventResult::NeedsRender
+        ));
+    }
+
+    #[test]
+    fn test_or_consumed_wins_over_handled_and_ignored() {
+        assert!(matches!(
+            EventResult::Handled.or(EventResult::Consumed),
+            EventResult::Consumed
+        ));
+        assert!(matches!(
+            EventResult::Consumed.or(EventResult::Handled),
+            EventResult::Consumed
+        ));
+        assert!(matches!(
+            EventResult::Ignored.or(EventResult::Consumed),
+            EventResult::Consumed
+        ));
+        assert!(matches!(
+            EventResult::Consumed.or(EventResult::Ignored),
+            EventResult::Consumed
         ));
     }
 
@@ -202,35 +281,24 @@ mod tests {
 
     #[test]
     fn test_tui_action_scroll_variants() {
-        let up = TuiAction::Scroll(ScrollAction::Up(3));
-        let down = TuiAction::Scroll(ScrollAction::Down(5));
-        let page_up = TuiAction::Scroll(ScrollAction::PageUp);
-        let page_down = TuiAction::Scroll(ScrollAction::PageDown);
-        let half_up = TuiAction::Scroll(ScrollAction::HalfPageUp);
-        let half_down = TuiAction::Scroll(ScrollAction::HalfPageDown);
-        let to_top = TuiAction::Scroll(ScrollAction::ToTop);
-        let to_bottom = TuiAction::Scroll(ScrollAction::ToBottom);
+        let lines = TuiAction::ScrollLines(5);
+        let to = TuiAction::ScrollTo(100);
+        let page_up = TuiAction::ScrollPage(ScrollDirection::Up);
+        let page_down = TuiAction::ScrollPage(ScrollDirection::Down);
 
-        assert!(matches!(up, TuiAction::Scroll(ScrollAction::Up(3))));
-        assert!(matches!(down, TuiAction::Scroll(ScrollAction::Down(5))));
-        assert!(matches!(page_up, TuiAction::Scroll(ScrollAction::PageUp)));
-        assert!(matches!(
-            page_down,
-            TuiAction::Scroll(ScrollAction::PageDown)
-        ));
-        assert!(matches!(
-            half_up,
-            TuiAction::Scroll(ScrollAction::HalfPageUp)
-        ));
-        assert!(matches!(
-            half_down,
-            TuiAction::Scroll(ScrollAction::HalfPageDown)
-        ));
-        assert!(matches!(to_top, TuiAction::Scroll(ScrollAction::ToTop)));
-        assert!(matches!(
-            to_bottom,
-            TuiAction::Scroll(ScrollAction::ToBottom)
-        ));
+        assert!(matches!(lines, TuiAction::ScrollLines(5)));
+        assert!(matches!(to, TuiAction::ScrollTo(100)));
+        assert!(matches!(page_up, TuiAction::ScrollPage(ScrollDirection::Up)));
+        assert!(matches!(page_down, TuiAction::ScrollPage(ScrollDirection::Down)));
+    }
+
+    #[test]
+    fn test_tui_action_popup_variants() {
+        let confirm = TuiAction::ConfirmPopup(0);
+        let dismiss = TuiAction::DismissPopup;
+
+        assert!(matches!(confirm, TuiAction::ConfirmPopup(0)));
+        assert!(matches!(dismiss, TuiAction::DismissPopup));
     }
 
     #[test]
@@ -244,8 +312,32 @@ mod tests {
     }
 
     #[test]
+    fn test_tui_action_close_dialog() {
+        let confirm = TuiAction::CloseDialog(DialogResult::Confirm);
+        let cancel = TuiAction::CloseDialog(DialogResult::Cancel);
+        let select = TuiAction::CloseDialog(DialogResult::Select(1));
+
+        assert!(matches!(confirm, TuiAction::CloseDialog(DialogResult::Confirm)));
+        assert!(matches!(cancel, TuiAction::CloseDialog(DialogResult::Cancel)));
+        assert!(matches!(select, TuiAction::CloseDialog(DialogResult::Select(1))));
+    }
+
+    #[test]
     fn test_tui_action_popup_close() {
         assert!(matches!(TuiAction::PopupClose, TuiAction::PopupClose));
+    }
+
+    #[test]
+    fn test_tui_action_focus_target() {
+        let input = TuiAction::RequestFocus(FocusTarget::Input);
+        let history = TuiAction::RequestFocus(FocusTarget::History);
+        let popup = TuiAction::RequestFocus(FocusTarget::Popup);
+        let dialog = TuiAction::RequestFocus(FocusTarget::Dialog);
+
+        assert!(matches!(input, TuiAction::RequestFocus(FocusTarget::Input)));
+        assert!(matches!(history, TuiAction::RequestFocus(FocusTarget::History)));
+        assert!(matches!(popup, TuiAction::RequestFocus(FocusTarget::Popup)));
+        assert!(matches!(dialog, TuiAction::RequestFocus(FocusTarget::Dialog)));
     }
 
     #[test]
@@ -256,22 +348,40 @@ mod tests {
     }
 
     // ==========================================================================
-    // ScrollAction tests
+    // ScrollDirection tests
     // ==========================================================================
 
     #[test]
-    fn test_scroll_action_copy() {
-        let scroll = ScrollAction::Up(5);
-        let copy = scroll;
-        assert_eq!(scroll, copy);
+    fn test_scroll_direction_copy() {
+        let dir = ScrollDirection::Up;
+        let copy = dir;
+        assert_eq!(dir, copy);
     }
 
     #[test]
-    fn test_scroll_action_eq() {
-        assert_eq!(ScrollAction::Up(3), ScrollAction::Up(3));
-        assert_ne!(ScrollAction::Up(3), ScrollAction::Up(5));
-        assert_ne!(ScrollAction::Up(3), ScrollAction::Down(3));
-        assert_eq!(ScrollAction::PageUp, ScrollAction::PageUp);
-        assert_ne!(ScrollAction::PageUp, ScrollAction::PageDown);
+    fn test_scroll_direction_eq() {
+        assert_eq!(ScrollDirection::Up, ScrollDirection::Up);
+        assert_ne!(ScrollDirection::Up, ScrollDirection::Down);
+    }
+
+    // ==========================================================================
+    // FocusTarget tests
+    // ==========================================================================
+
+    #[test]
+    fn test_focus_target_variants() {
+        assert_ne!(FocusTarget::Input, FocusTarget::History);
+        assert_ne!(FocusTarget::Popup, FocusTarget::Dialog);
+    }
+
+    // ==========================================================================
+    // DialogResult tests
+    // ==========================================================================
+
+    #[test]
+    fn test_dialog_result_variants() {
+        assert_eq!(DialogResult::Confirm, DialogResult::Confirm);
+        assert_eq!(DialogResult::Select(0), DialogResult::Select(0));
+        assert_ne!(DialogResult::Select(0), DialogResult::Select(1));
     }
 }

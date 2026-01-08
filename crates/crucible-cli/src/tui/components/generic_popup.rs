@@ -13,82 +13,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::tui::event_result::{EventResult, TuiAction};
 use crate::tui::popup::PopupProvider;
 use crate::tui::state::{PopupItem, PopupKind};
-use crate::tui::widgets::{Popup, PopupConfig, PopupItem as PopupItemTrait, PopupRenderer};
-
-// =============================================================================
-// LegacyPopupItem - Wrapper to implement PopupItem trait for existing PopupItem
-// =============================================================================
-
-/// Wrapper around the legacy `PopupItem` that implements the generic `PopupItem` trait
-#[derive(Clone, Debug)]
-pub struct LegacyPopupItem {
-    inner: PopupItem,
-}
-
-impl LegacyPopupItem {
-    /// Create from a legacy PopupItem
-    pub fn from_legacy(item: PopupItem) -> Self {
-        Self { inner: item }
-    }
-
-    /// Get the inner legacy PopupItem
-    pub fn inner(&self) -> &PopupItem {
-        &self.inner
-    }
-
-    /// Convert back to legacy PopupItem
-    pub fn into_inner(self) -> PopupItem {
-        self.inner
-    }
-}
-
-impl PopupItemTrait for LegacyPopupItem {
-    fn match_text(&self) -> &str {
-        // For matching, we need a stable reference - use the name/id/path directly
-        match &self.inner {
-            PopupItem::Command { name, .. } => name,
-            PopupItem::Agent { id, .. } => id,
-            PopupItem::File { path, .. } => path,
-            PopupItem::Note { path, .. } => path,
-            PopupItem::Skill { name, .. } => name,
-            PopupItem::ReplCommand { name, .. } => name,
-            PopupItem::Session { id, .. } => id,
-        }
-    }
-
-    fn label(&self) -> &str {
-        // For label, return match_text - the title() method allocates
-        self.match_text()
-    }
-
-    fn description(&self) -> Option<&str> {
-        let subtitle = self.inner.subtitle();
-        if subtitle.is_empty() {
-            None
-        } else {
-            Some(subtitle)
-        }
-    }
-
-    fn kind_label(&self) -> Option<&str> {
-        Some(self.inner.kind_label())
-    }
-
-    fn icon(&self) -> Option<char> {
-        // Don't show prefix icons - the trigger char already indicates type
-        None
-    }
-
-    fn is_enabled(&self) -> bool {
-        self.inner.is_available()
-    }
-
-    fn token(&self) -> &str {
-        // token() method allocates, but we need &str - use match_text with prefix
-        // This is a known limitation of the wrapper pattern
-        self.match_text()
-    }
-}
+use crate::tui::widgets::{Popup, PopupConfig, PopupRenderer};
 
 // =============================================================================
 // PopupState
@@ -104,7 +29,7 @@ pub struct PopupState {
     /// Provider query (for refresh)
     provider_query: String,
     /// Inner generic popup
-    popup: Popup<LegacyPopupItem>,
+    popup: Popup<PopupItem>,
     /// Provider for fetching items
     provider: Arc<dyn PopupProvider>,
 }
@@ -155,13 +80,9 @@ impl PopupState {
         self.popup.query()
     }
 
-    /// Get the items (as legacy PopupItems)
+    /// Get the items (as PopupItems)
     pub fn items(&self) -> Vec<&PopupItem> {
-        self.popup
-            .all_items()
-            .iter()
-            .map(|item| item.inner())
-            .collect()
+        self.popup.all_items().iter().collect()
     }
 
     /// Get the filtered count
@@ -176,7 +97,7 @@ impl PopupState {
 
     /// Get the selected item
     pub fn selected_item(&self) -> Option<&PopupItem> {
-        self.popup.selected_item().map(|item| item.inner())
+        self.popup.selected_item()
     }
 
     /// Get the argument hint for the selected item (if any)
@@ -197,20 +118,12 @@ impl PopupState {
     pub fn update_query(&mut self, query: &str) {
         self.provider_query = query.to_string();
         let items = self.provider.provide(self.kind, query);
-        let wrapped: Vec<LegacyPopupItem> = items
-            .into_iter()
-            .map(LegacyPopupItem::from_legacy)
-            .collect();
-        self.popup.set_items(wrapped);
+        self.popup.set_items(items);
     }
 
     /// Set items directly (bypasses provider, useful for programmatic popups)
     pub fn set_items(&mut self, items: Vec<PopupItem>) {
-        let wrapped: Vec<LegacyPopupItem> = items
-            .into_iter()
-            .map(LegacyPopupItem::from_legacy)
-            .collect();
-        self.popup.set_items(wrapped);
+        self.popup.set_items(items);
     }
 
     /// Set the filter query (for fuzzy filtering within current items)
@@ -232,12 +145,12 @@ impl PopupState {
     }
 
     /// Get a renderer for the popup
-    pub fn renderer(&self) -> PopupRenderer<'_, LegacyPopupItem> {
+    pub fn renderer(&self) -> PopupRenderer<'_, PopupItem> {
         PopupRenderer::new(&self.popup)
     }
 
     /// Get reference to the inner generic popup (for alternative renderers)
-    pub fn inner_popup(&self) -> &Popup<LegacyPopupItem> {
+    pub fn inner_popup(&self) -> &Popup<PopupItem> {
         &self.popup
     }
 
@@ -281,7 +194,7 @@ impl PopupState {
             // Selection: Tab or Enter confirms
             (KeyCode::Tab, KeyModifiers::NONE) | (KeyCode::Enter, KeyModifiers::NONE) => {
                 if let Some(item) = self.popup.selected_item() {
-                    EventResult::Action(TuiAction::PopupConfirm(item.inner().clone()))
+                    EventResult::Action(TuiAction::PopupConfirm(item.clone()))
                 } else {
                     EventResult::Action(TuiAction::PopupClose)
                 }

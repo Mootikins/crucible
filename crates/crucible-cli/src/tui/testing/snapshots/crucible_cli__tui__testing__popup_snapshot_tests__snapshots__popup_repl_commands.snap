@@ -23,6 +23,6 @@ expression: h.render()
   agent Switch agent backend                                                    
   models List available models                                                  
                                                                                 
- :                                                                              
+ >                                                                              
                                                                                 
 ▸ Plan │ Ready

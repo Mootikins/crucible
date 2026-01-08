@@ -119,7 +119,7 @@ impl Harness {
 
         // Set on the view
         self.view.set_popup(Some(popup));
-        self.state.has_popup = true;
+        self.sync_popup_to_state(); // Sync to state's view
 
         // Set input buffer to trigger character so update_popup() keeps it open
         let trigger = match kind {
@@ -128,12 +128,8 @@ impl Harness {
             PopupKind::ReplCommand => ":",
             PopupKind::Session => "/resume", // Session popup is triggered by /resume command
         };
-        self.state.input_buffer = trigger.to_string();
-        self.state.cursor_position = trigger.len();
-
-        // Also sync to view's internal state for rendering
-        self.view.state_mut().input_buffer = trigger.to_string();
-        self.view.state_mut().cursor_position = trigger.len();
+        *self.state.input_mut() = trigger.to_string();
+        self.state.set_cursor(trigger.len());
 
         self
     }
@@ -162,8 +158,12 @@ impl Harness {
     pub fn key_alt(&mut self, c: char) {
         self.key_with_modifiers(KeyCode::Char(c), KeyModifiers::ALT);
         // Handle Alt+T for reasoning toggle
+        // Note: show_reasoning is now accessed via a method
+        // The actual toggle will be handled by InputAction::ToggleReasoning
+        // This manual toggle may need to be removed or updated
         if c == 't' {
-            self.state.show_reasoning = !self.state.show_reasoning;
+            // self.state.show_reasoning = !self.state.show_reasoning; // No longer directly accessible
+            // The toggle will be handled through the action system
         }
     }
 
@@ -176,39 +176,45 @@ impl Harness {
 
     /// Handle a key event (internal)
     fn handle_key_event(&mut self, event: KeyEvent) {
+        // Handle Alt+T for reasoning toggle
+        if event.modifiers.contains(KeyModifiers::ALT) {
+            if let KeyCode::Char('t') = event.code {
+                self.state.set_show_reasoning(!self.state.show_reasoning());
+                return;
+            }
+        }
+
         // Handle Ctrl modifiers first
         if event.modifiers.contains(KeyModifiers::CONTROL) {
             match event.code {
                 KeyCode::Char('a') => {
-                    self.state.cursor_position = 0;
-                    self.sync_input_to_view();
+                    self.state.set_cursor(0);
                     return;
                 }
                 KeyCode::Char('e') => {
-                    self.state.cursor_position = self.state.input_buffer.len();
-                    self.sync_input_to_view();
+                    self.state.set_cursor(self.state.input().len());
                     return;
                 }
                 KeyCode::Char('u') => {
-                    self.state.input_buffer.drain(..self.state.cursor_position);
-                    self.state.cursor_position = 0;
-                    self.sync_input_to_view();
+                    let cursor_pos = self.state.cursor();
+                    self.state.input_mut().drain(..cursor_pos);
+                    self.state.set_cursor(0);
                     return;
                 }
                 KeyCode::Char('k') => {
-                    self.state.input_buffer.truncate(self.state.cursor_position);
-                    self.sync_input_to_view();
+                    let cursor_pos = self.state.cursor();
+                    self.state.input_mut().truncate(cursor_pos);
                     return;
                 }
                 KeyCode::Char('w') => {
+                    let cursor_pos = self.state.cursor();
                     let new_pos = crate::tui::state::find_word_start_backward(
-                        &self.state.input_buffer[..self.state.cursor_position],
+                        &self.state.input()[..cursor_pos],
                     );
                     self.state
-                        .input_buffer
-                        .drain(new_pos..self.state.cursor_position);
-                    self.state.cursor_position = new_pos;
-                    self.sync_input_to_view();
+                        .input_mut()
+                        .drain(new_pos..cursor_pos);
+                    self.state.set_cursor(new_pos);
                     return;
                 }
                 _ => {}
@@ -218,27 +224,28 @@ impl Harness {
         // Handle popup navigation (Esc, Up, Down, Enter) - these don't modify input
         // Char and Backspace fall through to normal handling which updates input_buffer
         // and then update_popup() derives the query from input (matches runner behavior)
-        if self.state.has_popup {
+        if self.state.has_popup() {
             match event.code {
                 KeyCode::Esc => {
                     // Matches runner Cancel behavior: clear input AND close popup
                     self.view.set_popup(None);
-                    self.state.has_popup = false;
-                    self.state.input_buffer.clear();
-                    self.state.cursor_position = 0;
-                    self.sync_input_to_view();
+                    self.sync_popup_to_state(); // Sync popup state
+                    self.state.input_mut().clear();
+                    self.state.set_cursor(0);
                     return;
                 }
                 KeyCode::Up => {
                     if let Some(popup) = self.view.popup_mut() {
                         popup.move_selection(-1);
                     }
+                    self.sync_popup_to_state();
                     return;
                 }
                 KeyCode::Down => {
                     if let Some(popup) = self.view.popup_mut() {
                         popup.move_selection(1);
                     }
+                    self.sync_popup_to_state();
                     return;
                 }
                 KeyCode::Enter => {
@@ -246,11 +253,10 @@ impl Harness {
                         if let Some(item) = popup.selected_item() {
                             let token = item.token();
                             self.view.set_popup(None);
-                            self.state.has_popup = false;
+                            self.sync_popup_to_state(); // Sync popup state
                             // Token already includes trailing space for most items
-                            self.state.input_buffer = token;
-                            self.state.cursor_position = self.state.input_buffer.len();
-                            self.sync_input_to_view();
+                            *self.state.input_mut() = token;
+                            self.state.set_cursor(self.state.input().len());
                         }
                     }
                     return;
@@ -263,63 +269,56 @@ impl Harness {
         // Normal input handling
         match event.code {
             KeyCode::Char(c) => {
+                let cursor_pos = self.state.cursor();
                 self.state
-                    .input_buffer
-                    .insert(self.state.cursor_position, c);
-                self.state.cursor_position += c.len_utf8();
-                self.sync_input_to_view();
+                    .input_mut()
+                    .insert(cursor_pos, c);
+                self.state.set_cursor(cursor_pos + c.len_utf8());
                 // Update popup based on input prefix (matches runner behavior)
                 self.update_popup();
             }
             KeyCode::Backspace => {
-                if self.state.cursor_position > 0 {
-                    let prev_char_boundary = self.state.input_buffer[..self.state.cursor_position]
+                if self.state.cursor() > 0 {
+                    let prev_char_boundary = self.state.input()[..self.state.cursor()]
                         .char_indices()
                         .last()
                         .map(|(i, _)| i)
                         .unwrap_or(0);
-                    self.state.input_buffer.remove(prev_char_boundary);
-                    self.state.cursor_position = prev_char_boundary;
-                    self.sync_input_to_view();
+                    self.state.input_mut().remove(prev_char_boundary);
+                    self.state.set_cursor(prev_char_boundary);
                     // Update popup after deletion (matches runner behavior)
                     self.update_popup();
                 }
             }
             KeyCode::Left => {
-                if self.state.cursor_position > 0 {
-                    self.state.cursor_position = self.state.input_buffer
-                        [..self.state.cursor_position]
-                        .char_indices()
-                        .last()
-                        .map(|(i, _)| i)
-                        .unwrap_or(0);
-                    self.sync_input_to_view();
+                if self.state.cursor() > 0 {
+                    self.state.set_cursor(
+                        self.state.input()[..self.state.cursor()]
+                            .char_indices()
+                            .last()
+                            .map(|(i, _)| i)
+                            .unwrap_or(0),
+                    );
                 }
             }
             KeyCode::Right => {
-                if self.state.cursor_position < self.state.input_buffer.len() {
-                    self.state.cursor_position = self.state.input_buffer
-                        [self.state.cursor_position..]
-                        .char_indices()
-                        .nth(1)
-                        .map(|(i, _)| self.state.cursor_position + i)
-                        .unwrap_or(self.state.input_buffer.len());
-                    self.sync_input_to_view();
+                if self.state.cursor() < self.state.input().len() {
+                    self.state.set_cursor(
+                        self.state.input()[self.state.cursor()..]
+                            .char_indices()
+                            .nth(1)
+                            .map(|(i, _)| self.state.cursor() + i)
+                            .unwrap_or(self.state.input().len()),
+                    );
                 }
             }
             _ => {}
         }
     }
 
-    /// Sync input buffer and cursor from harness state to view state
-    fn sync_input_to_view(&mut self) {
-        self.view.state_mut().input_buffer = self.state.input_buffer.clone();
-        self.view.state_mut().cursor_position = self.state.cursor_position;
-    }
-
     /// Update popup based on current input (matches TuiRunner::update_popup behavior)
     fn update_popup(&mut self) {
-        let trimmed = self.state.input_buffer.trim_start();
+        let trimmed = self.state.input().trim_start();
 
         // Detect popup trigger prefix and corresponding kind
         let trigger = [
@@ -333,18 +332,47 @@ impl Harness {
         if let Some((prefix, kind)) = trigger {
             let query = trimmed.strip_prefix(prefix).unwrap_or("").to_string();
             // Create popup if needed (wrong kind or none)
-            if !self.state.has_popup || self.view.popup().map(|p| p.kind()) != Some(kind) {
+            if !self.state.has_popup() || self.view.popup().map(|p| p.kind()) != Some(kind) {
                 let popup =
                     PopupState::new(kind, Arc::new(EmptyProvider) as Arc<dyn PopupProvider>);
                 self.view.set_popup(Some(popup));
-                self.state.has_popup = true;
+                self.sync_popup_to_state();
             }
             if let Some(popup) = self.view.popup_mut() {
                 popup.update_query(&query);
+                // Sync after updating query
+                self.sync_popup_to_state();
             }
         } else {
             self.view.set_popup(None);
-            self.state.has_popup = false;
+            self.sync_popup_to_state();
+        }
+    }
+
+    /// Sync popup state from view to state
+    /// This is needed because the harness has two separate ViewState objects
+    fn sync_popup_to_state(&mut self) {
+        // Sync popup by using EmptyProvider and maintaining query/selection state
+        if let Some(view_popup) = self.view.popup() {
+            let kind = view_popup.kind();
+            let query = view_popup.query();
+
+            // Use EmptyProvider for both ViewStates in the harness
+            let provider = Arc::new(EmptyProvider) as Arc<dyn PopupProvider>;
+
+            // Create new popup and sync its state
+            let mut new_popup = PopupState::new(kind, provider);
+            new_popup.update_query(query);
+
+            // Sync selection by moving from 0 to current index
+            let current_idx = view_popup.selected_index();
+            if current_idx > 0 {
+                new_popup.move_selection(current_idx as isize);
+            }
+
+            self.state.view.popup = Some(new_popup);
+        } else {
+            self.state.view.popup = None;
         }
     }
 
@@ -433,12 +461,12 @@ impl Harness {
 
     /// Get current input text
     pub fn input_text(&self) -> &str {
-        &self.state.input_buffer
+        self.state.input()
     }
 
     /// Get cursor position
     pub fn cursor_position(&self) -> usize {
-        self.state.cursor_position
+        self.state.cursor()
     }
 
     /// Get current popup state
@@ -483,7 +511,7 @@ impl Harness {
 
     /// Check if reasoning display is enabled
     pub fn show_reasoning(&self) -> bool {
-        self.state.show_reasoning
+        self.state.show_reasoning()
     }
 
     /// Get accumulated reasoning text
@@ -517,10 +545,10 @@ impl Harness {
 
     /// Render just the input area as a string
     pub fn render_input(&self) -> String {
-        let cursor_marker = if self.state.cursor_position == self.state.input_buffer.len() {
-            format!("{}|", self.state.input_buffer)
+        let cursor_marker = if self.state.cursor() == self.state.input().len() {
+            format!("{}|", self.state.input())
         } else {
-            let (before, after) = self.state.input_buffer.split_at(self.state.cursor_position);
+            let (before, after) = self.state.input().split_at(self.state.cursor());
             format!("{}|{}", before, after)
         };
         cursor_marker
