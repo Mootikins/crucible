@@ -9,7 +9,7 @@
 //! 3. Snapshot the result to verify visual correctness
 
 use super::fixtures::{events, registries, sessions};
-use super::Harness;
+use super::{Harness, TEST_HEIGHT, TEST_WIDTH};
 use crate::tui::state::PopupKind;
 use crossterm::event::KeyCode;
 use insta::assert_snapshot;
@@ -21,15 +21,12 @@ use insta::assert_snapshot;
 mod command_popup_flow {
     use super::*;
 
-    const WIDTH: u16 = 80;
-    const HEIGHT: u16 = 24;
-
     /// User types `/` to open command popup, sees it appear
     #[test]
     fn step1_slash_opens_popup() {
         // with_popup_items pre-populates the popup but doesn't set input_buffer
         // This simulates the popup already being open with commands loaded
-        let h = Harness::new(WIDTH, HEIGHT)
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::standard_commands());
 
         assert!(h.has_popup());
@@ -39,7 +36,7 @@ mod command_popup_flow {
     /// User types search query to filter commands
     #[test]
     fn step2_filter_commands() {
-        let mut h = Harness::new(WIDTH, HEIGHT)
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::standard_commands());
 
         // with_popup_items sets "/" in input, so we just type the filter text
@@ -53,7 +50,7 @@ mod command_popup_flow {
     /// User navigates down to second item
     #[test]
     fn step3_navigate_selection() {
-        let mut h = Harness::new(WIDTH, HEIGHT)
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::standard_commands());
 
         h.key(KeyCode::Down);
@@ -66,7 +63,7 @@ mod command_popup_flow {
     /// User presses Enter to select and insert command
     #[test]
     fn step4_select_command() {
-        let mut h = Harness::new(WIDTH, HEIGHT)
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::minimal_commands());
 
         h.key(KeyCode::Down); // Select "help"
@@ -80,7 +77,7 @@ mod command_popup_flow {
     /// User presses Escape to cancel popup
     #[test]
     fn alternate_escape_cancels() {
-        let mut h = Harness::new(WIDTH, HEIGHT)
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::standard_commands());
 
         h.key(KeyCode::Esc);
@@ -97,14 +94,11 @@ mod command_popup_flow {
 mod agent_reference_flow {
     use super::*;
 
-    const WIDTH: u16 = 80;
-    const HEIGHT: u16 = 24;
-
     /// User types `@` to open agent/file popup
     #[test]
     fn step1_at_opens_popup() {
         // with_popup_items pre-populates the popup for testing
-        let h = Harness::new(WIDTH, HEIGHT)
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::AgentOrFile, registries::mixed_agent_file_items());
 
         assert!(h.has_popup());
@@ -114,7 +108,7 @@ mod agent_reference_flow {
     /// User navigates through mixed agents/files/notes
     #[test]
     fn step2_navigate_mixed_items() {
-        let mut h = Harness::new(WIDTH, HEIGHT)
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::AgentOrFile, registries::mixed_agent_file_items());
 
         // Navigate past agents into files section
@@ -129,7 +123,7 @@ mod agent_reference_flow {
     /// User selects an agent
     #[test]
     fn step3_select_agent() {
-        let mut h = Harness::new(WIDTH, HEIGHT)
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::AgentOrFile, registries::test_agents());
 
         h.key(KeyCode::Down); // Select second agent (coder)
@@ -148,13 +142,10 @@ mod agent_reference_flow {
 mod streaming_response_flow {
     use super::*;
 
-    const WIDTH: u16 = 80;
-    const HEIGHT: u16 = 24;
-
     /// Initial state with user message, assistant starts responding
     #[test]
     fn step1_initial_response() {
-        let mut h = Harness::new(WIDTH, HEIGHT).with_session(sessions::basic_exchange());
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::basic_exchange());
 
         // Inject start of streaming response
         h.events(vec![events::streaming_chunks("I understand")[0].clone()]);
@@ -165,7 +156,7 @@ mod streaming_response_flow {
     /// Response streams in word by word
     #[test]
     fn step2_streaming_progress() {
-        let mut h = Harness::new(WIDTH, HEIGHT).with_session(sessions::basic_exchange());
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::basic_exchange());
 
         // Inject partial streaming
         let chunks = events::streaming_chunks("I can help you with that request.");
@@ -179,7 +170,7 @@ mod streaming_response_flow {
     /// Response completes
     #[test]
     fn step3_streaming_complete() {
-        let mut h = Harness::new(WIDTH, HEIGHT).with_session(sessions::basic_exchange());
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::basic_exchange());
 
         // Inject complete streaming response
         h.events(events::streaming_chunks(
@@ -192,7 +183,7 @@ mod streaming_response_flow {
     /// Error during streaming
     #[test]
     fn error_during_stream() {
-        let mut h = Harness::new(WIDTH, HEIGHT).with_session(sessions::basic_exchange());
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::basic_exchange());
 
         // Inject error during streaming
         h.events(events::streaming_error(
@@ -212,13 +203,10 @@ mod streaming_response_flow {
 mod tool_call_lifecycle {
     use super::*;
 
-    const WIDTH: u16 = 80;
-    const HEIGHT: u16 = 24;
-
     /// Tool call starts running
     #[test]
     fn step1_tool_running() {
-        let mut h = Harness::new(WIDTH, HEIGHT).with_session(sessions::basic_exchange());
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::basic_exchange());
 
         // Inject tool call event
         h.event(events::tool_call_with_args(
@@ -232,7 +220,7 @@ mod tool_call_lifecycle {
     /// Tool call completes
     #[test]
     fn step2_tool_complete() {
-        let mut h = Harness::new(WIDTH, HEIGHT).with_session(sessions::basic_exchange());
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::basic_exchange());
 
         // Inject full tool lifecycle
         h.events(events::tool_lifecycle(
@@ -247,7 +235,7 @@ mod tool_call_lifecycle {
     /// Multiple tools in sequence
     #[test]
     fn step3_multi_tool_sequence() {
-        let mut h = Harness::new(WIDTH, HEIGHT).with_session(sessions::basic_exchange());
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::basic_exchange());
 
         // Inject multi-tool sequence
         h.events(events::multi_tool_sequence());
@@ -258,7 +246,7 @@ mod tool_call_lifecycle {
     /// Tool call with error
     #[test]
     fn tool_error_handling() {
-        let mut h = Harness::new(WIDTH, HEIGHT).with_session(sessions::basic_exchange());
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::basic_exchange());
 
         // Inject tool call then error
         h.event(events::tool_call_event("read_file"));
@@ -278,13 +266,10 @@ mod tool_call_lifecycle {
 mod input_editing_flow {
     use super::*;
 
-    const WIDTH: u16 = 80;
-    const HEIGHT: u16 = 24;
-
     /// Type a message, cursor at end
     #[test]
     fn step1_type_message() {
-        let mut h = Harness::new(WIDTH, HEIGHT);
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT);
 
         h.keys("Hello, how are you?");
 
@@ -296,7 +281,7 @@ mod input_editing_flow {
     /// Move cursor to start with Ctrl+A
     #[test]
     fn step2_cursor_to_start() {
-        let mut h = Harness::new(WIDTH, HEIGHT);
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT);
 
         h.keys("Hello world");
         h.key_ctrl('a');
@@ -308,7 +293,7 @@ mod input_editing_flow {
     /// Delete word with Ctrl+W
     #[test]
     fn step3_delete_word() {
-        let mut h = Harness::new(WIDTH, HEIGHT);
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT);
 
         h.keys("one two three");
         h.key_ctrl('w');
@@ -320,7 +305,7 @@ mod input_editing_flow {
     /// Clear line with Ctrl+U
     #[test]
     fn step4_clear_line() {
-        let mut h = Harness::new(WIDTH, HEIGHT);
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT);
 
         h.keys("This will be cleared");
         h.key_ctrl('u');
@@ -332,7 +317,7 @@ mod input_editing_flow {
     /// Navigate and insert in middle
     #[test]
     fn step5_insert_in_middle() {
-        let mut h = Harness::new(WIDTH, HEIGHT);
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT);
 
         h.keys("Hello world");
         h.key(KeyCode::Left);
@@ -354,13 +339,10 @@ mod input_editing_flow {
 mod popup_overlay_flow {
     use super::*;
 
-    const WIDTH: u16 = 80;
-    const HEIGHT: u16 = 24;
-
     /// Popup appears over existing conversation
     #[test]
     fn popup_over_multi_turn() {
-        let h = Harness::new(WIDTH, HEIGHT)
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_session(sessions::multi_turn())
             .with_popup_items(PopupKind::Command, registries::standard_commands());
 
@@ -370,7 +352,7 @@ mod popup_overlay_flow {
     /// Popup over conversation with tool calls
     #[test]
     fn popup_over_tool_calls() {
-        let h = Harness::new(WIDTH, HEIGHT)
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_session(sessions::with_tool_calls())
             .with_popup_items(PopupKind::AgentOrFile, registries::test_agents());
 
@@ -385,20 +367,17 @@ mod popup_overlay_flow {
 mod full_session_flow {
     use super::*;
 
-    const WIDTH: u16 = 80;
-    const HEIGHT: u16 = 24;
-
-    /// Complete flow: type command → get response → ask follow-up
+    /// Complete flow: type command -> get response -> ask follow-up
     #[test]
     fn complete_interaction() {
-        let mut h = Harness::new(WIDTH, HEIGHT);
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT);
 
         // Step 1: User types a message
         h.keys("What is Rust?");
         assert_snapshot!("e2e_full_step1_typed", h.render());
 
         // Step 2: Clear input (simulating submit) and add to session
-        h = Harness::new(WIDTH, HEIGHT).with_session(vec![
+        h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(vec![
             sessions::user("What is Rust?"),
             sessions::assistant(
                 "Rust is a systems programming language focused on safety and performance.",
@@ -414,7 +393,7 @@ mod full_session_flow {
     /// Session with multiple tool uses
     #[test]
     fn session_with_tools() {
-        let h = Harness::new(WIDTH, HEIGHT).with_session(sessions::interleaved_prose_and_tools());
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::interleaved_prose_and_tools());
 
         assert_snapshot!("e2e_full_interleaved", h.render());
     }
@@ -422,7 +401,7 @@ mod full_session_flow {
     /// Long session with scrolling
     #[test]
     fn long_session_scroll() {
-        let h = Harness::new(WIDTH, HEIGHT).with_session(sessions::long_conversation());
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::long_conversation());
 
         // Should show recent messages, not the beginning
         assert_snapshot!("e2e_full_long_scroll", h.render());
