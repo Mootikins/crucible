@@ -81,6 +81,7 @@ use crate::session_logger::SessionLogger;
 use crate::tui::agent_picker::AgentSelection;
 use crate::tui::notification::NotificationLevel;
 use crate::tui::paste_handler::{build_indicator_delete, build_message_with_pastes, PasteHandler, PastedContent};
+use crate::tui::session_commands;
 use crate::tui::streaming_channel::{
     create_streaming_channel, StreamingEvent, StreamingReceiver, StreamingTask,
 };
@@ -1921,40 +1922,8 @@ impl RatatuiRunner {
     /// - Chaining additional commands
     /// - Full interactive shell access
     fn execute_shell_command(&mut self, cmd: &str) -> Result<()> {
-        use std::process::Command;
-
-        debug!(cmd = %cmd, "Dropping to shell");
-
-        // Exit TUI
-        execute!(
-            std::io::stdout(),
-            DisableMouseCapture,
-            crossterm::terminal::LeaveAlternateScreen,
-            crossterm::cursor::Show
-        )?;
-        crossterm::terminal::disable_raw_mode()?;
-
-        // Print command and spawn user's shell
-        println!("$ {}", cmd);
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-        let _ = Command::new(&shell).arg("-l").status();
-
-        // Re-enter TUI
-        crossterm::terminal::enable_raw_mode()?;
-        if self.selection_manager.is_mouse_capture_enabled() {
-            execute!(
-                std::io::stdout(),
-                crossterm::terminal::EnterAlternateScreen,
-                EnableMouseCapture,
-                crossterm::cursor::Hide
-            )?;
-        } else {
-            execute!(
-                std::io::stdout(),
-                crossterm::terminal::EnterAlternateScreen,
-                crossterm::cursor::Hide
-            )?;
-        }
+        let mouse_enabled = self.selection_manager.is_mouse_capture_enabled();
+        session_commands::drop_to_shell(cmd, mouse_enabled)?;
 
         // Ensure chat history is visible after returning
         self.view.scroll_to_bottom();
@@ -1967,14 +1936,6 @@ impl RatatuiRunner {
     /// Serializes the conversation to a temp markdown file, opens in the user's
     /// preferred editor, and waits for the editor to close.
     fn open_session_in_editor(&mut self) -> Result<()> {
-        use std::io::Write;
-        use std::process::Command;
-
-        // Get editor from environment (prefer $VISUAL, fallback to $EDITOR, then vi)
-        let editor = std::env::var("VISUAL")
-            .or_else(|_| std::env::var("EDITOR"))
-            .unwrap_or_else(|_| "vi".to_string());
-
         // Check if conversation is empty
         if self.view.state().conversation.items().is_empty() {
             self.view.echo_message("No conversation to view");
@@ -1983,72 +1944,12 @@ impl RatatuiRunner {
 
         // Serialize conversation to markdown
         let markdown = self.view.state().conversation.to_markdown();
+        let mouse_enabled = self.selection_manager.is_mouse_capture_enabled();
 
-        // Create temp file
-        let temp_dir = std::env::temp_dir();
-        let temp_file = temp_dir.join(format!(
-            "crucible-session-{}.md",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs()
-        ));
+        let editor = session_commands::get_editor();
+        let _temp_file = session_commands::open_session_in_editor(&markdown, mouse_enabled)?;
 
-        // Write markdown to temp file
-        let mut file = std::fs::File::create(&temp_file)?;
-        file.write_all(markdown.as_bytes())?;
-        file.sync_all()?;
-        drop(file);
-
-        debug!(editor = %editor, path = %temp_file.display(), "Opening session in editor");
-
-        // Temporarily exit alternate screen so user can see editor
-        execute!(
-            std::io::stdout(),
-            DisableMouseCapture,
-            crossterm::terminal::LeaveAlternateScreen,
-            crossterm::cursor::Show
-        )?;
-        crossterm::terminal::disable_raw_mode()?;
-
-        // Open editor with the temp file
-        let status = Command::new(&editor).arg(&temp_file).status();
-
-        // Re-enter TUI mode
-        crossterm::terminal::enable_raw_mode()?;
-        if self.selection_manager.is_mouse_capture_enabled() {
-            execute!(
-                std::io::stdout(),
-                crossterm::terminal::EnterAlternateScreen,
-                EnableMouseCapture,
-                crossterm::cursor::Hide
-            )?;
-        } else {
-            execute!(
-                std::io::stdout(),
-                crossterm::terminal::EnterAlternateScreen,
-                crossterm::cursor::Hide
-            )?;
-        }
-
-        // Clean up temp file (best effort)
-        let _ = std::fs::remove_file(&temp_file);
-
-        match status {
-            Ok(exit_status) => {
-                if exit_status.success() {
-                    self.view.echo_message(&format!("Closed {}", editor));
-                } else {
-                    let code = exit_status.code().unwrap_or(-1);
-                    self.view
-                        .echo_error(&format!("{} exited with code {}", editor, code));
-                }
-            }
-            Err(e) => {
-                self.view
-                    .echo_error(&format!("Failed to open {}: {}", editor, e));
-            }
-        }
+        self.view.echo_message(&format!("Closed {}", editor));
 
         Ok(())
     }
