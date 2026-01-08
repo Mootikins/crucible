@@ -232,7 +232,7 @@ pub fn dispatch(action: TuiAction) -> RunnerEffect {
             RunnerEffect::Scroll(effect)
         }
 
-        TuiAction::ConfirmPopup(idx) => {
+        TuiAction::ConfirmPopup(_idx) => {
             // This is handled by the popup system, convert to Render for now
             RunnerEffect::Render
         }

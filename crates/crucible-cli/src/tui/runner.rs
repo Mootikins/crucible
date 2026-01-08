@@ -1266,7 +1266,7 @@ impl RatatuiRunner {
                 }
             }
             InputAction::HistoryNext => {
-                if let Some(cmd) = self.history_manager.next() {
+                if let Some(cmd) = self.history_manager.next_entry() {
                     self.view.set_input(cmd);
                     self.view.set_cursor_position(cmd.len());
                 }
