@@ -26,13 +26,17 @@
 
 #![allow(missing_docs)]
 
+use crate::web::WebTools;
 use crate::{KilnTools, NoteTools, SearchTools};
+use crucible_config::WebToolsConfig;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::storage::NoteStore;
 use crucible_core::traits::KnowledgeRepository;
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{model::CallToolResult, tool, tool_handler, tool_router, ServerHandler};
+use schemars::JsonSchema;
+use serde::Deserialize;
 use std::sync::Arc;
 
 // Re-export parameter types from individual modules
@@ -42,17 +46,41 @@ use crate::notes::{
 };
 use crate::search::{PropertySearchParams, SemanticSearchParams, TextSearchParams};
 
+/// Parameters for web_fetch tool
+#[derive(Deserialize, JsonSchema)]
+pub struct WebFetchParams {
+    /// URL to fetch
+    url: String,
+    /// Question or instruction about the page content
+    prompt: String,
+    /// If true, use configured LLM to summarize (default: false)
+    #[serde(default)]
+    summarize: Option<bool>,
+}
+
+/// Parameters for web_search tool
+#[derive(Deserialize, JsonSchema)]
+pub struct WebSearchParams {
+    /// Search query
+    query: String,
+    /// Maximum results to return (default: 10)
+    #[serde(default)]
+    limit: Option<u32>,
+}
+
 /// Unified MCP server exposing all Crucible tools
 ///
-/// This server aggregates tools from three categories:
+/// This server aggregates tools from four categories:
 /// - **`NoteTools`** (6 tools): CRUD operations on notes
 /// - **`SearchTools`** (3 tools): Semantic, text, and property search
 /// - **`KilnTools`** (3 tools): Kiln metadata and statistics
+/// - **`WebTools`** (2 tools, optional): Web fetch and search
 #[derive(Clone)]
 pub struct CrucibleMcpServer {
     note_tools: NoteTools,
     search_tools: SearchTools,
     kiln_tools: KilnTools,
+    web_tools: Option<WebTools>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -73,8 +101,21 @@ impl CrucibleMcpServer {
             note_tools: NoteTools::new(kiln_path.clone()),
             search_tools: SearchTools::new(kiln_path.clone(), knowledge_repo, embedding_provider),
             kiln_tools: KilnTools::new(kiln_path),
+            web_tools: None,
             tool_router: Self::tool_router(),
         }
+    }
+
+    /// Enable web tools with the provided configuration
+    ///
+    /// Web tools are disabled by default. Call this method to enable
+    /// `web_fetch` and `web_search` tools.
+    #[must_use]
+    pub fn with_web_tools(mut self, config: &WebToolsConfig) -> Self {
+        if config.enabled {
+            self.web_tools = Some(WebTools::new(config));
+        }
+        self
     }
 
     /// Create a new MCP server with `NoteStore` for optimized operations
@@ -105,6 +146,7 @@ impl CrucibleMcpServer {
                 note_store,
             ),
             kiln_tools: KilnTools::new(kiln_path),
+            web_tools: None,
             tool_router: Self::tool_router(),
         }
     }
@@ -125,7 +167,7 @@ impl CrucibleMcpServer {
     ///
     /// # Returns
     ///
-    /// The count of available tools (expected: 12)
+    /// The count of available tools (expected: 14)
     #[must_use]
     pub fn tool_count(&self) -> usize {
         self.tool_router.list_all().len()
@@ -229,6 +271,55 @@ impl CrucibleMcpServer {
     pub async fn get_kiln_stats(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         self.kiln_tools.get_kiln_stats().await
     }
+
+    // ===== Web Tools (2) =====
+
+    #[tool(description = "Fetch a URL and convert HTML to markdown. Returns cached content if available.")]
+    pub async fn web_fetch(
+        &self,
+        params: Parameters<WebFetchParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let web_tools = self.web_tools.as_ref().ok_or_else(|| {
+            rmcp::ErrorData::invalid_params(
+                "Web tools are not enabled. Set web_tools.enabled = true in config.",
+                None,
+            )
+        })?;
+
+        let result = web_tools
+            .fetch(&params.url, &params.prompt, params.summarize.unwrap_or(false))
+            .await
+            .map_err(|e| rmcp::ErrorData::internal_error(format!("Fetch failed: {e}"), None))?;
+
+        Ok(CallToolResult::success(vec![rmcp::model::Content::text(
+            result,
+        )]))
+    }
+
+    #[tool(description = "Search the web using configured search provider (SearXNG by default)")]
+    pub async fn web_search(
+        &self,
+        params: Parameters<WebSearchParams>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        let params = params.0;
+        let web_tools = self.web_tools.as_ref().ok_or_else(|| {
+            rmcp::ErrorData::invalid_params(
+                "Web tools are not enabled. Set web_tools.enabled = true in config.",
+                None,
+            )
+        })?;
+
+        let results = web_tools
+            .search(&params.query, params.limit)
+            .await
+            .map_err(|e| rmcp::ErrorData::internal_error(format!("Search failed: {e}"), None))?;
+
+        let json = serde_json::to_string_pretty(&results).unwrap_or_else(|_| "[]".to_string());
+        Ok(CallToolResult::success(vec![rmcp::model::Content::text(
+            json,
+        )]))
+    }
 }
 
 // ===== ServerHandler Implementation =====
@@ -252,7 +343,7 @@ impl ServerHandler for CrucibleMcpServer {
                 icons: None,
                 website_url: None,
             },
-            instructions: Some("Crucible MCP server exposing 12 tools for knowledge management: 6 note operations, 3 search capabilities, and 3 kiln metadata functions.".into()),
+            instructions: Some("Crucible MCP server exposing 14 tools for knowledge management: 6 note operations, 3 search capabilities, 3 kiln metadata functions, and 2 web tools.".into()),
         }
     }
 }
