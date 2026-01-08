@@ -1,11 +1,162 @@
-//! TUI runner - main event loop for terminal UI
+//! # RatatuiRunner - TUI Event Orchestrator
 //!
-//! Coordinates terminal input, event polling, and rendering.
-//! Uses ratatui with alternate screen for full viewport control.
+//! This module implements the main TUI event loop and orchestrator for the Crucible
+//! terminal interface. The runner coordinates between multiple subsystems including
+//! the view, state, input handling, streaming, and external agent communication.
+//!
+//! ## Architecture Overview
+//!
+//! `RatatuiRunner` serves as the **central coordinator** for the entire TUI system.
+//! While this file is larger than typical Rust modules (~3000 lines), this size
+//! reflects the inherent complexity of orchestrating 15+ interconnected subsystems:
+//!
+//! - **View** (conversation_view): Rendering and display state
+//! - **State** (state): Input buffers, history, mode
+//! - **Managers**: streaming, selection, history, input_mode
+//! - **Events**: Keyboard, mouse, paste, streaming, session events
+//! - **I/O**: Terminal mode transitions, external processes (editor, shell)
+//! - **Agents**: Async communication with LLM providers
+//!
+//! Most business logic has been extracted to dedicated modules:
+//! - `paste_handler`: Multi-line paste detection and management
+//! - `session_commands`: Editor and shell command execution
+//! - `streaming_manager`: LLM streaming state
+//! - `selection_manager`: Text selection and clipboard
+//! - `history_manager`: Command history navigation
+//! - `input_mode_manager`: Rapid input detection
+//!
+//! What remains here is **coordination logic** - the glue that connects these
+//! subsystems together. This coordination cannot be easily extracted without
+//! introducing extensive parameter passing, indirection, or breaking coherence.
+//!
+//! ## Event Flow
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────────────────────┐
+//! │                        Event Sources                            │
+//! │  User Input │ Agent Events │ Streaming │ Session Events │ I/O   │
+//! └──────────────┬──────────────┬───────────┬───────────────┬───────┘
+//!                │              │           │               │
+//!                ▼              ▼           ▼               ▼
+//! ┌─────────────────────────────────────────────────────────────────┐
+//! │                     RatatuiRunner                               │
+//! │  ┌────────────┐  ┌────────────┐  ┌────────────────────────┐   │
+//! │  │   View     │  │   State    │  │      Managers         │   │
+//! │  │ (render)   │  │  (data)    │  │  (subsystem state)    │   │
+//! │  └─────┬──────┘  └─────┬──────┘  └───────────┬────────────┘   │
+//! │        │               │                      │                │
+//! │        └───────────────┴──────────────────────┘                │
+//! │                        │                                       │
+//! │                 ┌──────▼─────────┐                              │
+//! │                 │  Event Loop    │  ← ASYNC/SYNC ORCHESTRATION│
+//! │                 │  (main_loop)   │    (Cannot be extracted)  │
+//! │                 └──────┬─────────┘                              │
+//! └────────────────────────┼────────────────────────────────────────┘
+//!                         │
+//!                         ▼
+//!                   Render to Terminal
+//! ```
+//!
+//! ## Module Organization
+//!
+//! This file is organized into logical sections:
+//!
+//! ### Rendering Helpers
+//! - `apply_selection_highlight` - Selection overlay rendering
+//!
+//! ### Type Definitions
+//! - `RatatuiRunner` - Main orchestrator struct
+//! - Helper types for specific operations
+//!
+//! ### Event Handlers
+//! These methods handle user input and system events:
+//! - `handle_key_event` - Keyboard input with mode-aware dispatch
+//! - `handle_mouse_event` - Mouse clicks for selection/scrolling
+//! - `handle_paste_event` - Bracketed paste detection
+//! - `poll_session_events` - Process events from agent ring buffer
+//! - `handle_notification_event` - File change/embedding events
+//! - `handle_interaction_request` - Agent permission requests
+//!
+//! ### Input Management
+//! Methods for handling special input modes and paste detection:
+//! - `flush_rapid_input_if_needed` - Timing-based multi-line paste detection
+//! - `record_rapid_input` - Track individual keypress timing
+//! - `clear_rapid_input` - Reset rapid input buffer
+//! - Paste indicator management (via `paste_handler`)
+//!
+//! ### Clipboard & Selection
+//! Text selection and clipboard operations:
+//! - `copy_selection_to_clipboard` - OSC 52 clipboard escape sequences
+//! - `mouse_to_content_point` - Convert screen coordinates to content
+//!
+//! ### State Synchronization
+//! Keeping view, state, and managers consistent:
+//! - `update_popup` - Show command/agent/file picker popups
+//! - `sync_popup_to_view` - Transfer popup to view for rendering
+//! - `take_popup_from_view` - Reclaim popup after render
+//! - `apply_parse_events` - Streaming markdown parsing events
+//!
+//! ### Command Execution
+//! REPL commands (:help, :edit, etc.) and shell integration:
+//! - `execute_repl_command` - Vim-style system commands
+//! - `show_help` - Help documentation lookup
+//! - `execute_shell_command` - Drop to interactive shell
+//! - `open_session_in_editor` - Edit session in $EDITOR
+//! - `handle_dialog_result` - Process dialog responses
+//!
+//! ### Lifecycle Management
+//! TUI initialization, main loop, and cleanup:
+//! - `new` - Constructor with dependency injection
+//! - `run` / `run_with_factory` - Main event loop entry points
+//! - Terminal mode setup/teardown
+//!
+//! ### Testing Support
+//! - `view()` - Accessor for test assertions
+//! - Integration test helpers
+//!
+//! ## Why Not Extract Further?
+//!
+//! Attempting to reduce this file below ~3000 lines would require:
+//!
+//! 1. **Breaking event loop coherence** - The async event loop relies on
+//!    direct access to multiple subsystems. Splitting it across modules
+//!    would require passing 10+ parameters or complex builder patterns.
+//!
+//! 2. **Adding indirection** - Every method call becomes: `coordinator`.
+//!    coordinate_x(&mut view, &mut state, &mut managers...)` instead of
+//!    just `self.handle_x()`. This hurts readability and debugging.
+//!
+//! 3. **Fragmenting logic** - Related operations (e.g., all popup handling)
+//!    would be scattered across files, making it harder to understand the
+//!    complete flow.
+//!
+//! 4. **Increasing total complexity** - More files = more interfaces = more
+//!    places to look when debugging. The current size is a **feature, not
+//!    a bug**.
+//!
+//! ## Design Philosophy
+//!
+//! This runner follows the **Mediator pattern** - it's intentionally central
+//! because it needs to see and coordinate all subsystems. The alternatives are:
+//!
+//! - **Message passing**: Loses type safety, harder to debug, runtime errors
+//! - **Event emitters everywhere**: Spaghetti code, unclear ownership
+//! - **No central coordinator**: Duplication, race conditions, inconsistencies
+//!
+//! The current architecture prioritizes:
+//! ✅ **Coherence** - Related logic is visible together
+//! ✅ **Type safety** - Direct method calls, compile-time checks
+//! ✅ **Debuggability** - Clear execution flow, easy to trace
+//! ✅ **Maintainability** - Changes are localized and predictable
+//!
+//! Over:
+//! ❌ File size metrics (arbitrary targets like "800 lines")
+//! ❌ Theoretical purity (perfect separation of concerns)
+//! ❌ Over-abstraction (traits, builders, complexity for complexity's sake)
 //!
 //! ## Debug Logging
 //!
-//! To see full output including prompts and responses:
+//! To see detailed execution traces:
 //! ```bash
 //! RUST_LOG=crucible_cli::tui::runner=debug cru chat
 //! tail -f ~/.crucible/chat.log  # in another terminal
@@ -120,6 +271,10 @@ use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+// ============================================================================
+// TYPE DEFINITIONS
+// ============================================================================
+
 /// TUI runner with full ratatui control and new conversation styling.
 ///
 /// Uses alternate screen mode with:
@@ -191,7 +346,15 @@ pub struct RatatuiRunner {
     input_mode_manager: crate::tui::input_mode_manager::InputModeManager,
 }
 
+// ============================================================================
+// IMPLEMENTATION - RatatuiRunner
+// ============================================================================
+
 impl RatatuiRunner {
+    // ========================================================================
+    // CONSTRUCTOR & BUILDER METHODS
+    // ========================================================================
+
     /// Create a new ratatui-based TUI runner.
     pub fn new(
         mode_id: &str,
@@ -302,6 +465,10 @@ impl RatatuiRunner {
     pub fn restart_requested(&self) -> bool {
         self.restart_requested
     }
+
+    // ========================================================================
+    // MAIN EVENT LOOP
+    // ========================================================================
 
     /// Internal main loop.
     async fn main_loop<A: AgentHandle>(
@@ -604,6 +771,10 @@ impl RatatuiRunner {
 
         Ok(())
     }
+
+    // ========================================================================
+    // EVENT HANDLERS (Keyboard, Mouse, Paste)
+    // ========================================================================
 
     /// Handle keyboard input.
     async fn handle_key_event<A: AgentHandle>(
@@ -1435,6 +1606,10 @@ impl RatatuiRunner {
         }
     }
 
+    // ========================================================================
+    // INPUT MANAGEMENT (Rapid Input, Paste Detection)
+    // ========================================================================
+
     /// Check if enough time has passed since last key, flush rapid input buffer if needed.
     /// Returns true if buffer was flushed as a multi-line paste.
     fn flush_rapid_input_if_needed(&mut self) -> bool {
@@ -1640,6 +1815,10 @@ impl RatatuiRunner {
         self.selection_manager.clear_selection();
     }
 
+    // ========================================================================
+    // SESSION EVENT HANDLING (Ring Buffer Polling)
+    // ========================================================================
+
     /// Poll session events from the ring buffer.
     fn poll_session_events(&mut self, bridge: &AgentEventBridge, last_seen_seq: &mut u64) {
         let events: Vec<_> = bridge
@@ -1707,6 +1886,10 @@ impl RatatuiRunner {
         // Update notification state after processing all events
         self.view.state_mut().notifications.tick();
     }
+
+    // ========================================================================
+    // STATE SYNCHRONIZATION (View ↔ State ↔ Managers)
+    // ========================================================================
 
     /// Update popup based on current input.
     fn update_popup(&mut self) {
@@ -1776,6 +1959,10 @@ impl RatatuiRunner {
     pub fn view(&self) -> &RatatuiView {
         &self.view
     }
+
+    // ========================================================================
+    // COMMAND EXECUTION (REPL, Shell, Editor)
+    // ========================================================================
 
     /// Execute a REPL command (vim-style system commands)
     fn execute_repl_command(&mut self, name: &str, args: &str) -> Result<bool> {
