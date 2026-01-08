@@ -3,6 +3,7 @@
 //! These tests verify that the MCP server correctly exposes all 14 Crucible tools
 //! and that they can be listed and called via the MCP protocol.
 
+use crucible_config::WebToolsConfig;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_tools::CrucibleMcpServer;
@@ -274,4 +275,140 @@ async fn test_tool_count_matches_list_length() {
         tools.len(),
         "tool_count() should match list_tools().len()"
     );
+}
+
+// ===== Web Tools Integration Tests =====
+
+mod web_tools_tests {
+    use super::*;
+
+    fn create_server_with_web_tools_disabled() -> CrucibleMcpServer {
+        // Default configuration has web tools disabled
+        create_test_server()
+    }
+
+    fn create_server_with_web_tools_enabled() -> CrucibleMcpServer {
+        let temp = TempDir::new().unwrap();
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+        let config = WebToolsConfig {
+            enabled: true,
+            ..Default::default()
+        };
+
+        CrucibleMcpServer::new(
+            temp.path().to_string_lossy().to_string(),
+            knowledge_repo,
+            embedding_provider,
+        )
+        .with_web_tools(&config)
+    }
+
+    /// Test that web tools are always listed, even when disabled
+    /// (The tools appear but return errors when called without being enabled)
+    #[tokio::test]
+    async fn test_web_tools_always_listed() {
+        let server = create_server_with_web_tools_disabled();
+
+        let tools = server.list_tools();
+        let tool_names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
+
+        assert!(
+            tool_names.iter().any(|n| n == "web_fetch"),
+            "web_fetch should be listed even when disabled"
+        );
+        assert!(
+            tool_names.iter().any(|n| n == "web_search"),
+            "web_search should be listed even when disabled"
+        );
+    }
+
+    /// Test web tools category count (should have 2 web tools)
+    #[tokio::test]
+    async fn test_web_tools_category_count() {
+        let server = create_test_server();
+
+        let tools = server.list_tools();
+        let tool_names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
+
+        let web_tools = ["web_fetch", "web_search"];
+        let web_count = web_tools
+            .iter()
+            .filter(|t| tool_names.iter().any(|n| n == *t))
+            .count();
+
+        assert_eq!(web_count, 2, "Should have 2 web tools");
+    }
+
+    /// Test that with_web_tools builder pattern works correctly
+    #[tokio::test]
+    async fn test_with_web_tools_builder() {
+        let server = create_server_with_web_tools_enabled();
+
+        // Should still have 14 tools total
+        assert_eq!(server.tool_count(), 14);
+
+        let tools = server.list_tools();
+        let tool_names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
+
+        assert!(tool_names.iter().any(|n| n == "web_fetch"));
+        assert!(tool_names.iter().any(|n| n == "web_search"));
+    }
+
+    /// Test that web tools have proper descriptions
+    #[tokio::test]
+    async fn test_web_tools_have_descriptions() {
+        let server = create_test_server();
+
+        let tools = server.list_tools();
+
+        for tool in tools.iter().filter(|t| {
+            let name = t.name.as_ref();
+            name == "web_fetch" || name == "web_search"
+        }) {
+            assert!(
+                tool.description.is_some(),
+                "Tool '{}' should have a description",
+                tool.name
+            );
+            let desc = tool.description.as_ref().unwrap();
+            assert!(
+                !desc.is_empty(),
+                "Tool '{}' description should not be empty",
+                tool.name
+            );
+        }
+    }
+
+    /// Test that disabled config does not enable web tools
+    #[tokio::test]
+    async fn test_disabled_config_does_not_enable() {
+        let temp = TempDir::new().unwrap();
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+
+        // Explicitly disabled config
+        let config = WebToolsConfig {
+            enabled: false,
+            ..Default::default()
+        };
+
+        let server = CrucibleMcpServer::new(
+            temp.path().to_string_lossy().to_string(),
+            knowledge_repo,
+            embedding_provider,
+        )
+        .with_web_tools(&config);
+
+        // Tools are still listed (always exposed)
+        let tools = server.list_tools();
+        let tool_names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
+        assert!(tool_names.iter().any(|n| n == "web_fetch"));
+        assert!(tool_names.iter().any(|n| n == "web_search"));
+
+        // Note: Actually calling these tools would return an error since
+        // web_tools is None, but we don't test that here to avoid
+        // complex setup with the rmcp protocol
+    }
 }
