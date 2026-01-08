@@ -1,6 +1,6 @@
 //! Crucible Tools - MCP-compatible tools for knowledge management
 //!
-//! This crate provides 10 focused tools for the Crucible knowledge management system,
+//! This crate provides focused tools for the Crucible knowledge management system,
 //! designed following SOLID principles and MCP (Model Context Protocol) compatibility.
 //!
 //! ## Tool Categories
@@ -8,7 +8,22 @@
 //! - **`NoteTools`** (6): `create_note`, `read_note`, `read_metadata`, `update_note`, `delete_note`, `list_notes`
 //! - **`SearchTools`** (3): `semantic_search`, `text_search`, `property_search`
 //! - **`KilnTools`** (3): `get_kiln_info`, `get_kiln_roots`, `get_kiln_stats`
-//! - **`CrucibleMcpServer`** (12): Unified MCP server exposing all tools via stdio transport
+//! - **`WebTools`** (2): `web_fetch`, `web_search` (disabled by default)
+//! - **`CrucibleMcpServer`**: Unified MCP server exposing all tools via stdio transport
+//!
+//! ## Web Tools
+//!
+//! Web tools provide internet access for agents:
+//!
+//! - `web_fetch` - Fetch URL, convert HTML to markdown, optionally summarize with LLM
+//! - `web_search` - Search the web via SearXNG (configurable backend)
+//!
+//! Enable in config:
+//!
+//! ```toml
+//! [web_tools]
+//! enabled = true
+//! ```
 //!
 //! ## Architecture
 //!
@@ -90,8 +105,9 @@ pub fn library_info() -> LibraryInfo {
             "note_tools".to_string(),
             "search_tools".to_string(),
             "kiln_tools".to_string(),
+            "web_tools".to_string(),
             "filesystem_based".to_string(),
-            "10_focused_tools".to_string(),
+            "14_focused_tools".to_string(),
             "solid_principles".to_string(),
         ],
     }

@@ -535,6 +535,43 @@ verbose = false
 # # suffix = "_filtered"  # Add suffix to tool names (for debugging)
 
 # =============================================================================
+# [web_tools] - Web Tools Configuration (Optional)
+# =============================================================================
+# Configure web access tools for agents
+#
+# Web tools are DISABLED by default for security. Enable them explicitly
+# when you want agents to access the internet.
+#
+# Available tools:
+# - web_fetch: Fetch URL content, convert HTML to markdown, optionally summarize
+# - web_search: Search the web via SearXNG backend
+#
+# See Help/Tools/web.md for full documentation
+
+# [web_tools]
+# # Master switch - must be true for any web tool to work
+# enabled = false
+#
+# # Fetch tool configuration
+# [web_tools.fetch]
+# cache_ttl_secs = 900        # Cache responses for 15 minutes
+# max_content_kb = 100        # Truncate content larger than 100KB
+# user_agent = "Crucible/1.0"
+# timeout_secs = 30
+# # summarize_model = "claude-3-haiku"  # Optional: LLM model for summarization
+#
+# # Search tool configuration
+# [web_tools.search]
+# provider = "searxng"        # Search backend (currently only searxng supported)
+# limit_default = 10          # Default number of results
+#
+# # SearXNG backend configuration
+# [web_tools.search.searxng]
+# url = "https://searx.be"    # Public instance (or self-host for reliability)
+# # auth_user = "admin"       # For password-protected instances
+# # auth_password = "secret"
+
+# =============================================================================
 # [enrichment] - Enrichment Pipeline Configuration (Advanced)
 # =============================================================================
 # Advanced configuration for the enrichment pipeline
