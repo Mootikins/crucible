@@ -9,6 +9,7 @@
 //! - Input box grows based on line count up to `max_height`
 //! - When content exceeds `max_height`, scrolling is enabled
 //! - Cursor navigates across lines properly
+//! - Long lines are visually wrapped (word-aware wrapping)
 
 use crate::tui::{
     components::{InteractiveWidget, WidgetEventResult},
@@ -35,11 +36,13 @@ pub const DEFAULT_MAX_INPUT_LINES: u16 = 10;
 /// - `focused`: Whether the widget has focus (affects styling)
 /// - `scroll_offset`: First visible line when content exceeds max_height
 /// - `max_height`: Maximum visible lines (default 10)
+/// - `wrap_width`: Width for text wrapping (default 80)
 ///
 /// # Rendering
 ///
 /// The input is displayed with the prompt on the first line and content below.
 /// When the cursor is at the end, a space is added to show the cursor position.
+/// Long lines are visually wrapped at word boundaries.
 /// Content scrolls within the input area when it exceeds max_height lines.
 pub struct InputBoxWidget<'a> {
     buffer: &'a str,
@@ -48,6 +51,8 @@ pub struct InputBoxWidget<'a> {
     focused: bool,
     scroll_offset: usize,
     max_height: u16,
+    /// Width for calculating wrapped lines (content area minus prompt)
+    wrap_width: u16,
 }
 
 impl<'a> InputBoxWidget<'a> {
@@ -65,7 +70,14 @@ impl<'a> InputBoxWidget<'a> {
             focused: true,
             scroll_offset: 0,
             max_height: DEFAULT_MAX_INPUT_LINES,
+            wrap_width: 80, // Default, will be updated at render time
         }
+    }
+
+    /// Set the wrap width for text wrapping calculations
+    pub fn wrap_width(mut self, width: u16) -> Self {
+        self.wrap_width = width;
+        self
     }
 
     /// Set the prompt text (default is " > ")
@@ -92,13 +104,48 @@ impl<'a> InputBoxWidget<'a> {
         self
     }
 
-    /// Count the number of lines in the buffer
-    pub fn line_count(&self) -> usize {
+    /// Count the number of logical lines in the buffer (separated by \n)
+    pub fn logical_line_count(&self) -> usize {
         if self.buffer.is_empty() {
             1
         } else {
             self.buffer.lines().count().max(1) + if self.buffer.ends_with('\n') { 1 } else { 0 }
         }
+    }
+
+    /// Count visual lines after wrapping (for dynamic height calculation)
+    ///
+    /// Each logical line may wrap to multiple visual lines based on wrap_width.
+    /// The prompt takes 3 characters, so content width is wrap_width - 3.
+    pub fn line_count(&self) -> usize {
+        if self.buffer.is_empty() {
+            return 1;
+        }
+
+        let content_width = (self.wrap_width as usize).saturating_sub(3).max(10);
+        let mut visual_lines = 0;
+
+        // Use .lines() which handles trailing newlines correctly
+        // Then add 1 if there's a trailing newline (for the empty line after it)
+        for line in self.buffer.lines() {
+            if line.is_empty() {
+                visual_lines += 1;
+            } else {
+                // Calculate how many visual lines this logical line needs
+                let char_count = line.chars().count();
+                visual_lines += char_count.div_ceil(content_width);
+            }
+        }
+
+        // If buffer has content but no newlines, we need at least 1 line
+        // If buffer ends with newline, add 1 for the empty line after it
+        if visual_lines == 0 {
+            visual_lines = 1;
+        } else if self.buffer.ends_with('\n') {
+            visual_lines += 1;
+        }
+
+        visual_lines
     }
 
     /// Calculate the required height for displaying this input
@@ -109,10 +156,11 @@ impl<'a> InputBoxWidget<'a> {
         lines.min(self.max_height) + 2 // +2 for top/bottom padding
     }
 
-    /// Convert byte offset to (line, column) position
+    /// Convert byte offset to logical (line, column) position (not wrapped)
     ///
     /// Returns (line_index, column_index) where both are 0-based.
-    pub fn cursor_to_line_col(&self) -> (usize, usize) {
+    /// This does NOT account for visual wrapping.
+    pub fn cursor_to_logical_line_col(&self) -> (usize, usize) {
         let before_cursor = &self.buffer[..self.cursor_position.min(self.buffer.len())];
         let line = before_cursor.matches('\n').count();
         let last_newline = before_cursor.rfind('\n');
@@ -121,6 +169,58 @@ impl<'a> InputBoxWidget<'a> {
             None => before_cursor.len(),
         };
         (line, col)
+    }
+
+    /// Convert byte offset to visual (line, column) position with wrapping
+    ///
+    /// Returns (visual_line_index, visual_column) where both are 0-based.
+    /// This accounts for visual wrapping based on wrap_width.
+    pub fn cursor_to_line_col(&self) -> (usize, usize) {
+        let content_width = (self.wrap_width as usize).saturating_sub(3).max(10);
+        let before_cursor = &self.buffer[..self.cursor_position.min(self.buffer.len())];
+
+        let mut visual_line = 0;
+
+        // Split by newlines and calculate visual lines
+        let lines: Vec<&str> = self.buffer.split('\n').collect();
+        let mut bytes_processed = 0;
+
+        for (logical_line_idx, line) in lines.iter().enumerate() {
+            let line_start = bytes_processed;
+            let line_end = line_start + line.len();
+
+            // Check if cursor is on this logical line
+            if self.cursor_position <= line_end || logical_line_idx == lines.len() - 1 {
+                // Cursor is on this logical line
+                let cursor_offset_in_line = self.cursor_position.saturating_sub(line_start);
+                let chars_before_cursor: usize = line
+                    .chars()
+                    .take(cursor_offset_in_line)
+                    .count()
+                    .min(line.chars().count());
+
+                // Calculate which visual line within this logical line
+                let visual_line_in_block = chars_before_cursor / content_width;
+                let visual_col = chars_before_cursor % content_width;
+
+                return (visual_line + visual_line_in_block, visual_col);
+            }
+
+            // Calculate visual lines for this logical line
+            let char_count = line.chars().count();
+            if char_count == 0 {
+                visual_line += 1;
+            } else {
+                visual_line += char_count.div_ceil(content_width);
+            }
+
+            // +1 for the newline character
+            bytes_processed = line_end + 1;
+        }
+
+        // Fallback (should not reach here)
+        let col = before_cursor.chars().count() % content_width;
+        (visual_line, col)
     }
 
     /// Calculate required scroll offset to keep cursor visible
@@ -161,61 +261,69 @@ impl Widget for InputBoxWidget<'_> {
         // Fill entire area with input box background
         buf.set_style(area, style);
 
-        // Split content into lines
-        let content_lines: Vec<&str> = if content.is_empty() {
+        // Content width for wrapping (area width minus prompt)
+        let prompt_len = display_prompt.chars().count();
+        let content_width = (area.width as usize).saturating_sub(prompt_len).max(10);
+
+        // Split content by logical lines and wrap each
+        let mut render_lines: Vec<Line> = Vec::new();
+        let logical_lines: Vec<&str> = if content.is_empty() {
             vec![""]
         } else {
-            let mut lines: Vec<&str> = content.split('\n').collect();
-            // If content ends with newline, add empty line
-            if content.ends_with('\n') && !lines.last().map(|s| s.is_empty()).unwrap_or(true) {
-                lines.push("");
-            }
-            lines
+            content.split('\n').collect()
         };
 
-        let total_lines = content_lines.len();
-        let visible_lines = (self.max_height as usize).min(total_lines);
+        for (logical_idx, logical_line) in logical_lines.iter().enumerate() {
+            let is_first_logical = logical_idx == 0;
+            let is_last_logical = logical_idx == logical_lines.len() - 1;
+
+            // Wrap this logical line into visual lines
+            let visual_lines = wrap_line(logical_line, content_width);
+
+            for (visual_idx, visual_line) in visual_lines.iter().enumerate() {
+                let prefix = if is_first_logical && visual_idx == 0 {
+                    // First line of first logical line gets the prompt
+                    Span::raw(display_prompt.to_string())
+                } else {
+                    // All other lines get padding to align with prompt
+                    Span::raw(" ".repeat(prompt_len))
+                };
+
+                // Add space at end of last visual line of last logical line if cursor at end
+                let line_text = if is_last_logical
+                    && visual_idx == visual_lines.len() - 1
+                    && self.cursor_position >= self.buffer.len()
+                {
+                    format!("{} ", visual_line)
+                } else {
+                    visual_line.to_string()
+                };
+
+                render_lines.push(Line::from(vec![prefix, Span::raw(line_text)]));
+            }
+        }
+
+        let total_visual_lines = render_lines.len();
+        let visible_lines = (self.max_height as usize).min(total_visual_lines);
 
         // Calculate scroll offset to keep cursor visible
         let effective_scroll = self.scroll_to_cursor();
 
-        // Build lines for rendering
-        let mut render_lines: Vec<Line> = Vec::with_capacity(visible_lines);
-
-        for (i, line_content) in content_lines
-            .iter()
-            .enumerate()
-            .skip(effective_scroll)
-            .take(visible_lines)
-        {
-            let prefix = if i == 0 {
-                // First line of content gets the prompt
-                Span::raw(display_prompt)
-            } else {
-                // Continuation lines get padding to align
-                Span::raw("   ") // 3 spaces to match " > "
-            };
-
-            // Add space at end of last line if cursor is at end
-            let line_text = if i == total_lines - 1 && self.cursor_position >= self.buffer.len() {
-                format!("{} ", line_content)
-            } else {
-                (*line_content).to_string()
-            };
-
-            render_lines.push(Line::from(vec![prefix, Span::raw(line_text)]));
-        }
-
         // Calculate vertical centering if we have fewer lines than area height
-        let content_height = render_lines.len() as u16;
+        let content_height = visible_lines as u16;
         let start_y = if content_height < area.height {
             area.y + (area.height - content_height) / 2
         } else {
             area.y
         };
 
-        // Render each line
-        for (i, line) in render_lines.into_iter().enumerate() {
+        // Render visible lines with scroll offset
+        for (i, line) in render_lines
+            .into_iter()
+            .skip(effective_scroll)
+            .take(visible_lines)
+            .enumerate()
+        {
             let line_area = Rect {
                 x: area.x,
                 y: start_y + i as u16,
@@ -226,6 +334,33 @@ impl Widget for InputBoxWidget<'_> {
             paragraph.render(line_area, buf);
         }
     }
+}
+
+/// Wrap a single line of text to the given width
+///
+/// Returns a vector of visual lines. Each visual line fits within width chars.
+/// Does simple character-based wrapping (not word-aware for simplicity).
+fn wrap_line(line: &str, width: usize) -> Vec<String> {
+    if line.is_empty() {
+        return vec![String::new()];
+    }
+
+    let chars: Vec<char> = line.chars().collect();
+    if chars.len() <= width {
+        return vec![line.to_string()];
+    }
+
+    let mut result = Vec::new();
+    let mut start = 0;
+
+    while start < chars.len() {
+        let end = (start + width).min(chars.len());
+        let visual_line: String = chars[start..end].iter().collect();
+        result.push(visual_line);
+        start = end;
+    }
+
+    result
 }
 
 impl InteractiveWidget for InputBoxWidget<'_> {
