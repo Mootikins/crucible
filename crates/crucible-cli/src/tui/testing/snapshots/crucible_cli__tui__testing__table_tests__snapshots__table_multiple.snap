@@ -1,0 +1,28 @@
+---
+source: crates/crucible-cli/src/tui/testing/table_tests.rs
+expression: h.render()
+---
+                                                                                
+                                                                                
+ > Compare languages and their features                                         
+                                                                                
+ ● Here are two comparisons:                                                    
+                                                                                
+   Type Systems:                                                                
+                                                                                
+   │Language│Type System│                                                       
+   ├────────┼───────────┤                                                       
+   │Rust    │Static     │                                                       
+   │Python  │Dynamic    │                                                       
+                                                                                
+   Concurrency:                                                                 
+                                                                                
+   │Language│  Model  │                                                         
+   ├────────┼─────────┤                                                         
+   │Rust    │Ownership│                                                         
+   │Go      │CSP      │                                                         
+                                                                                
+                                                                                
+ >                                                                              
+                                                                                
+▸ Plan │ Ready

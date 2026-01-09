@@ -1,0 +1,24 @@
+---
+source: crates/crucible-cli/src/tui/testing/resize_tests.rs
+expression: h.render()
+---
+ > Message 42                                                                   
+                                                                                
+ ● Response 43                                                                  
+                                                                                
+ > Message 44                                                                   
+                                                                                
+ ● Response 45                                                                  
+                                                                                
+ > Message 46                                                                   
+                                                                                
+ ● Response 47                                                                  
+                                                                                
+ > Message 48                                                                   
+                                                                                
+ ● Response 49                                                                  
+                                                                                
+                                                                                
+ >                                                                              
+                                                                                
+▸ Plan │ Ready

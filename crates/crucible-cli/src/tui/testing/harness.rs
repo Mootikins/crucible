@@ -102,6 +102,16 @@ impl Harness {
         self
     }
 
+    /// Resize the terminal viewport
+    ///
+    /// Updates dimensions and notifies the view of the resize.
+    pub fn resize(&mut self, width: u16, height: u16) {
+        self.width = width;
+        self.height = height;
+        // Update view dimensions
+        let _ = self.view.handle_resize(width, height);
+    }
+
     /// Builder: set popup items
     ///
     /// Uses PopupState with PopupRenderer for proper rendering.
