@@ -2,14 +2,18 @@
 
 use crate::kiln_manager::KilnManager;
 use crate::protocol::{
-    Request, Response, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND, PARSE_ERROR,
+    Request, Response, SessionEventMessage, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND,
+    PARSE_ERROR,
 };
+use crate::session_manager::SessionManager;
+use crate::subscription::{ClientId, SubscriptionManager};
 use anyhow::Result;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::unix::OwnedWriteHalf;
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, Mutex};
 use tracing::{error, info, warn};
 
 /// Daemon server that listens on a Unix socket
@@ -17,6 +21,9 @@ pub struct Server {
     listener: UnixListener,
     shutdown_tx: broadcast::Sender<()>,
     kiln_manager: Arc<KilnManager>,
+    session_manager: Arc<SessionManager>,
+    subscription_manager: Arc<SubscriptionManager>,
+    event_tx: broadcast::Sender<SessionEventMessage>,
 }
 
 impl Server {
@@ -34,12 +41,16 @@ impl Server {
 
         let listener = UnixListener::bind(path)?;
         let (shutdown_tx, _) = broadcast::channel(1);
+        let (event_tx, _) = broadcast::channel(1024);
 
         info!("Daemon listening on {:?}", path);
         Ok(Self {
             listener,
             shutdown_tx,
             kiln_manager: Arc::new(KilnManager::new()),
+            session_manager: Arc::new(SessionManager::new()),
+            subscription_manager: Arc::new(SubscriptionManager::new()),
+            event_tx,
         })
     }
 
@@ -47,6 +58,13 @@ impl Server {
     #[allow(dead_code)]
     pub fn shutdown_handle(&self) -> broadcast::Sender<()> {
         self.shutdown_tx.clone()
+    }
+
+    /// Get a clone of the event broadcast sender.
+    ///
+    /// Used to send session events to all subscribed clients.
+    pub fn event_sender(&self) -> broadcast::Sender<SessionEventMessage> {
+        self.event_tx.clone()
     }
 
     /// Run the server until shutdown
@@ -60,8 +78,11 @@ impl Server {
                         Ok((stream, _)) => {
                             let shutdown_tx = self.shutdown_tx.clone();
                             let km = self.kiln_manager.clone();
+                            let sm = self.session_manager.clone();
+                            let sub_m = self.subscription_manager.clone();
+                            let event_rx = self.event_tx.subscribe();
                             tokio::spawn(async move {
-                                if let Err(e) = handle_client(stream, shutdown_tx, km).await {
+                                if let Err(e) = handle_client(stream, shutdown_tx, km, sm, sub_m, event_rx).await {
                                     error!("Client error: {}", e);
                                 }
                             });
@@ -86,11 +107,33 @@ async fn handle_client(
     stream: UnixStream,
     shutdown_tx: broadcast::Sender<()>,
     kiln_manager: Arc<KilnManager>,
+    session_manager: Arc<SessionManager>,
+    subscription_manager: Arc<SubscriptionManager>,
+    mut event_rx: broadcast::Receiver<SessionEventMessage>,
 ) -> Result<()> {
-    let (reader, mut writer) = stream.into_split();
+    let client_id = ClientId::new();
+    let (reader, writer) = stream.into_split();
+    let writer: Arc<Mutex<OwnedWriteHalf>> = Arc::new(Mutex::new(writer));
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
 
+    // Spawn event forwarding task
+    let writer_clone = writer.clone();
+    let sub_manager = subscription_manager.clone();
+    let event_task = tokio::spawn(async move {
+        while let Ok(event) = event_rx.recv().await {
+            if sub_manager.is_subscribed(client_id, &event.session_id) {
+                if let Ok(json) = event.to_json_line() {
+                    let mut w = writer_clone.lock().await;
+                    if w.write_all(json.as_bytes()).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+
+    // Main request loop
     loop {
         line.clear();
         let n = reader.read_line(&mut line).await?;
@@ -99,7 +142,17 @@ async fn handle_client(
         }
 
         let response = match serde_json::from_str::<Request>(&line) {
-            Ok(req) => handle_request(req, &shutdown_tx, &kiln_manager).await,
+            Ok(req) => {
+                handle_request(
+                    req,
+                    client_id,
+                    &shutdown_tx,
+                    &kiln_manager,
+                    &session_manager,
+                    &subscription_manager,
+                )
+                .await
+            }
             Err(e) => {
                 warn!("Parse error: {}", e);
                 Response::error(None, PARSE_ERROR, e.to_string())
@@ -108,16 +161,25 @@ async fn handle_client(
 
         let mut output = serde_json::to_string(&response)?;
         output.push('\n');
-        writer.write_all(output.as_bytes()).await?;
+
+        let mut w = writer.lock().await;
+        w.write_all(output.as_bytes()).await?;
     }
+
+    // Cleanup
+    event_task.abort();
+    subscription_manager.remove_client(client_id);
 
     Ok(())
 }
 
 async fn handle_request(
     req: Request,
+    client_id: ClientId,
     shutdown_tx: &broadcast::Sender<()>,
     kiln_manager: &Arc<KilnManager>,
+    session_manager: &Arc<SessionManager>,
+    subscription_manager: &Arc<SubscriptionManager>,
 ) -> Response {
     tracing::debug!("RPC request: method={:?}, id={:?}", req.method, req.id);
     match req.method.as_str() {
@@ -141,6 +203,18 @@ async fn handle_request(
         // Pipeline RPC methods
         "process_file" => handle_process_file(req, kiln_manager).await,
         "process_batch" => handle_process_batch(req, kiln_manager).await,
+        // Session RPC methods
+        "session.create" => handle_session_create(req, session_manager).await,
+        "session.list" => handle_session_list(req, session_manager).await,
+        "session.get" => handle_session_get(req, session_manager).await,
+        "session.pause" => handle_session_pause(req, session_manager).await,
+        "session.resume" => handle_session_resume(req, session_manager).await,
+        "session.end" => handle_session_end(req, session_manager).await,
+        // Subscription RPC methods
+        "session.subscribe" => handle_session_subscribe(req, client_id, subscription_manager).await,
+        "session.unsubscribe" => {
+            handle_session_unsubscribe(req, client_id, subscription_manager).await
+        }
         _ => {
             tracing::warn!("Unknown RPC method: {:?}", req.method);
             Response::error(
@@ -484,6 +558,304 @@ async fn handle_process_batch(req: Request, km: &Arc<KilnManager>) -> Response {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Session RPC handlers
+// ─────────────────────────────────────────────────────────────────────────────
+
+use crucible_core::session::{SessionState, SessionType};
+use std::path::PathBuf;
+
+async fn handle_session_create(req: Request, sm: &Arc<SessionManager>) -> Response {
+    // Parse session type
+    let session_type_str = req
+        .params
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("chat");
+
+    let session_type = match session_type_str {
+        "chat" => SessionType::Chat,
+        "agent" => SessionType::Agent,
+        "workflow" => SessionType::Workflow,
+        _ => {
+            return Response::error(
+                req.id,
+                INVALID_PARAMS,
+                format!("Invalid session type: {}", session_type_str),
+            );
+        }
+    };
+
+    // Parse kiln path (required)
+    let kiln = match req.params.get("kiln").and_then(|v| v.as_str()) {
+        Some(p) => PathBuf::from(p),
+        None => {
+            return Response::error(req.id, INVALID_PARAMS, "kiln path required");
+        }
+    };
+
+    // Parse optional workspace
+    let workspace = req
+        .params
+        .get("workspace")
+        .and_then(|v| v.as_str())
+        .map(PathBuf::from);
+
+    // Parse optional connected kilns
+    let connected_kilns: Vec<PathBuf> = req
+        .params
+        .get("connect_kilns")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(PathBuf::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let session = sm.create_session(session_type, kiln, workspace, connected_kilns);
+
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "session_id": session.id,
+            "type": session.session_type.as_prefix(),
+            "kiln": session.kiln,
+            "workspace": session.workspace,
+            "state": format!("{}", session.state),
+        }),
+    )
+}
+
+async fn handle_session_list(req: Request, sm: &Arc<SessionManager>) -> Response {
+    // Parse optional filters
+    let kiln = req
+        .params
+        .get("kiln")
+        .and_then(|v| v.as_str())
+        .map(PathBuf::from);
+    let workspace = req
+        .params
+        .get("workspace")
+        .and_then(|v| v.as_str())
+        .map(PathBuf::from);
+    let session_type = req
+        .params
+        .get("type")
+        .and_then(|v| v.as_str())
+        .and_then(|s| match s {
+            "chat" => Some(SessionType::Chat),
+            "agent" => Some(SessionType::Agent),
+            "workflow" => Some(SessionType::Workflow),
+            _ => None,
+        });
+    let state = req
+        .params
+        .get("state")
+        .and_then(|v| v.as_str())
+        .and_then(|s| match s {
+            "active" => Some(SessionState::Active),
+            "paused" => Some(SessionState::Paused),
+            "compacting" => Some(SessionState::Compacting),
+            "ended" => Some(SessionState::Ended),
+            _ => None,
+        });
+
+    let sessions = sm.list_sessions_filtered(
+        kiln.as_ref(),
+        workspace.as_ref(),
+        session_type,
+        state,
+    );
+
+    let sessions_json: Vec<_> = sessions
+        .iter()
+        .map(|s| {
+            serde_json::json!({
+                "session_id": s.id,
+                "type": s.session_type.as_prefix(),
+                "kiln": s.kiln,
+                "workspace": s.workspace,
+                "state": format!("{}", s.state),
+                "started_at": s.started_at.to_rfc3339(),
+                "title": s.title,
+            })
+        })
+        .collect();
+
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "sessions": sessions_json,
+            "total": sessions_json.len(),
+        }),
+    )
+}
+
+async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -> Response {
+    let session_id = match req.params.get("session_id").and_then(|v| v.as_str()) {
+        Some(id) => id,
+        None => return Response::error(req.id, INVALID_PARAMS, "session_id required"),
+    };
+
+    match sm.get_session(session_id) {
+        Some(session) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session.id,
+                "type": session.session_type.as_prefix(),
+                "kiln": session.kiln,
+                "workspace": session.workspace,
+                "connected_kilns": session.connected_kilns,
+                "state": format!("{}", session.state),
+                "started_at": session.started_at.to_rfc3339(),
+                "title": session.title,
+                "continued_from": session.continued_from,
+            }),
+        ),
+        None => Response::error(
+            req.id,
+            INVALID_PARAMS,
+            format!("Session not found: {}", session_id),
+        ),
+    }
+}
+
+async fn handle_session_pause(req: Request, sm: &Arc<SessionManager>) -> Response {
+    let session_id = match req.params.get("session_id").and_then(|v| v.as_str()) {
+        Some(id) => id,
+        None => return Response::error(req.id, INVALID_PARAMS, "session_id required"),
+    };
+
+    match sm.pause_session(session_id) {
+        Ok(previous_state) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "previous_state": format!("{}", previous_state),
+                "state": "paused",
+            }),
+        ),
+        Err(e) => {
+            let msg = e.to_string();
+            Response::error(req.id, INVALID_PARAMS, msg)
+        }
+    }
+}
+
+async fn handle_session_resume(req: Request, sm: &Arc<SessionManager>) -> Response {
+    let session_id = match req.params.get("session_id").and_then(|v| v.as_str()) {
+        Some(id) => id,
+        None => return Response::error(req.id, INVALID_PARAMS, "session_id required"),
+    };
+
+    match sm.resume_session(session_id) {
+        Ok(previous_state) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "previous_state": format!("{}", previous_state),
+                "state": "active",
+            }),
+        ),
+        Err(e) => {
+            let msg = e.to_string();
+            Response::error(req.id, INVALID_PARAMS, msg)
+        }
+    }
+}
+
+async fn handle_session_end(req: Request, sm: &Arc<SessionManager>) -> Response {
+    let session_id = match req.params.get("session_id").and_then(|v| v.as_str()) {
+        Some(id) => id,
+        None => return Response::error(req.id, INVALID_PARAMS, "session_id required"),
+    };
+
+    match sm.end_session(session_id) {
+        Ok(session) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session.id,
+                "state": "ended",
+                "kiln": session.kiln,
+            }),
+        ),
+        Err(e) => {
+            let msg = e.to_string();
+            Response::error(req.id, INVALID_PARAMS, msg)
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Subscription RPC handlers
+// ─────────────────────────────────────────────────────────────────────────────
+
+async fn handle_session_subscribe(
+    req: Request,
+    client_id: ClientId,
+    sm: &Arc<SubscriptionManager>,
+) -> Response {
+    let session_ids: Vec<String> = match req.params.get("session_ids") {
+        Some(v) => match v.as_array() {
+            Some(arr) => arr
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect(),
+            None => {
+                return Response::error(req.id, INVALID_PARAMS, "session_ids must be an array")
+            }
+        },
+        None => return Response::error(req.id, INVALID_PARAMS, "session_ids required"),
+    };
+
+    for session_id in &session_ids {
+        if session_id == "*" {
+            sm.subscribe_all(client_id);
+        } else {
+            sm.subscribe(client_id, session_id);
+        }
+    }
+
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "subscribed": session_ids,
+            "client_id": client_id.as_u64(),
+        }),
+    )
+}
+
+async fn handle_session_unsubscribe(
+    req: Request,
+    client_id: ClientId,
+    sm: &Arc<SubscriptionManager>,
+) -> Response {
+    let session_ids: Vec<String> = match req.params.get("session_ids") {
+        Some(v) => match v.as_array() {
+            Some(arr) => arr
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect(),
+            None => {
+                return Response::error(req.id, INVALID_PARAMS, "session_ids must be an array")
+            }
+        },
+        None => return Response::error(req.id, INVALID_PARAMS, "session_ids required"),
+    };
+
+    for session_id in &session_ids {
+        sm.unsubscribe(client_id, session_id);
+    }
+
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "unsubscribed": session_ids,
+        }),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -753,6 +1125,340 @@ mod tests {
         let response = String::from_utf8_lossy(&buf[..n]);
 
         assert!(response.contains("\"result\":\"pong\""));
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_server_has_event_broadcast() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let event_tx = server.event_sender();
+
+        // Subscribe a receiver so send() succeeds
+        let mut rx = event_tx.subscribe();
+
+        // Should be able to send events
+        let event = SessionEventMessage::text_delta("test-session", "hello");
+        assert!(event_tx.send(event).is_ok());
+
+        // Verify the event was received
+        let received = rx.recv().await.unwrap();
+        assert_eq!(received.session_id, "test-session");
+        assert_eq!(received.event, "text_delta");
+    }
+
+    #[tokio::test]
+    async fn test_session_subscribe_rpc() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(server.run());
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.subscribe\",\"params\":{\"session_ids\":[\"chat-test\"]}}\n")
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 1024];
+        let n = client.read(&mut buf).await.unwrap();
+        let response = String::from_utf8_lossy(&buf[..n]);
+
+        assert!(response.contains("\"subscribed\""));
+        assert!(response.contains("chat-test"));
+        assert!(response.contains("\"client_id\""));
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_session_subscribe_multiple_sessions() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(server.run());
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.subscribe\",\"params\":{\"session_ids\":[\"session-1\",\"session-2\",\"session-3\"]}}\n")
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 1024];
+        let n = client.read(&mut buf).await.unwrap();
+        let response = String::from_utf8_lossy(&buf[..n]);
+
+        assert!(response.contains("\"subscribed\""));
+        assert!(response.contains("session-1"));
+        assert!(response.contains("session-2"));
+        assert!(response.contains("session-3"));
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_session_subscribe_wildcard() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(server.run());
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.subscribe\",\"params\":{\"session_ids\":[\"*\"]}}\n")
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 1024];
+        let n = client.read(&mut buf).await.unwrap();
+        let response = String::from_utf8_lossy(&buf[..n]);
+
+        assert!(response.contains("\"subscribed\""));
+        assert!(response.contains("\"*\""));
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_session_subscribe_missing_session_ids() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(server.run());
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.subscribe\",\"params\":{}}\n")
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 1024];
+        let n = client.read(&mut buf).await.unwrap();
+        let response = String::from_utf8_lossy(&buf[..n]);
+
+        assert!(response.contains("error"));
+        assert!(response.contains("-32602")); // INVALID_PARAMS
+        assert!(response.contains("session_ids required"));
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_session_subscribe_invalid_session_ids_type() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(server.run());
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        // session_ids is a string, not an array
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.subscribe\",\"params\":{\"session_ids\":\"not-an-array\"}}\n")
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 1024];
+        let n = client.read(&mut buf).await.unwrap();
+        let response = String::from_utf8_lossy(&buf[..n]);
+
+        assert!(response.contains("error"));
+        assert!(response.contains("-32602")); // INVALID_PARAMS
+        assert!(response.contains("must be an array"));
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_session_unsubscribe_rpc() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(server.run());
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+
+        // First subscribe
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.subscribe\",\"params\":{\"session_ids\":[\"chat-test\"]}}\n")
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 1024];
+        let _ = client.read(&mut buf).await.unwrap();
+
+        // Then unsubscribe
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session.unsubscribe\",\"params\":{\"session_ids\":[\"chat-test\"]}}\n")
+            .await
+            .unwrap();
+
+        buf.fill(0);
+        let n = client.read(&mut buf).await.unwrap();
+        let response = String::from_utf8_lossy(&buf[..n]);
+
+        assert!(response.contains("\"unsubscribed\""));
+        assert!(response.contains("chat-test"));
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_session_unsubscribe_missing_session_ids() {
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(server.run());
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.unsubscribe\",\"params\":{}}\n")
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 1024];
+        let n = client.read(&mut buf).await.unwrap();
+        let response = String::from_utf8_lossy(&buf[..n]);
+
+        assert!(response.contains("error"));
+        assert!(response.contains("-32602")); // INVALID_PARAMS
+        assert!(response.contains("session_ids required"));
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_event_broadcast_to_subscriber() {
+        use std::time::Duration;
+
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let event_tx = server.event_sender();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(server.run());
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+
+        // Subscribe to a session
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.subscribe\",\"params\":{\"session_ids\":[\"chat-test\"]}}\n")
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 4096];
+        let _ = client.read(&mut buf).await.unwrap(); // consume subscription response
+
+        // Send event through broadcast channel
+        let event = SessionEventMessage::text_delta("chat-test", "hello world");
+        event_tx.send(event).unwrap();
+
+        // Client should receive the event
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        buf.fill(0);
+        let n = tokio::time::timeout(Duration::from_millis(500), client.read(&mut buf))
+            .await
+            .expect("timeout waiting for event")
+            .unwrap();
+
+        let received = String::from_utf8_lossy(&buf[..n]);
+        assert!(
+            received.contains("\"type\":\"event\""),
+            "Response: {}",
+            received
+        );
+        assert!(
+            received.contains("\"session_id\":\"chat-test\""),
+            "Response: {}",
+            received
+        );
+        assert!(received.contains("hello world"), "Response: {}", received);
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_event_not_sent_to_non_subscriber() {
+        use std::time::Duration;
+
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let event_tx = server.event_sender();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(server.run());
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+
+        // Subscribe to session "other-session"
+        client
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.subscribe\",\"params\":{\"session_ids\":[\"other-session\"]}}\n")
+            .await
+            .unwrap();
+
+        let mut buf = vec![0u8; 4096];
+        let _ = client.read(&mut buf).await.unwrap(); // consume subscription response
+
+        // Send event for "chat-test" (different session)
+        let event = SessionEventMessage::text_delta("chat-test", "should not receive");
+        event_tx.send(event).unwrap();
+
+        // Client should NOT receive the event (timeout expected)
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        buf.fill(0);
+        let result =
+            tokio::time::timeout(Duration::from_millis(100), client.read(&mut buf)).await;
+        assert!(
+            result.is_err(),
+            "Should timeout - client shouldn't receive unsubscribed events"
+        );
 
         let _ = shutdown_handle.send(());
         let _ = server_task.await;

@@ -29,6 +29,9 @@ tempfile = { workspace = true }
 # Enhanced async runtime
 tokio = { workspace = true, features = ["full", "tracing"] }
 
+# Random ID generation
+rand = { workspace = true }
+
 # ACP schema types for mode/command definitions
 agent-client-protocol-schema = "0.10.5"
 

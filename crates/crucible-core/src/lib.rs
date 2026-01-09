@@ -19,6 +19,7 @@ pub mod processing;
 pub mod prompts;
 pub mod properties;
 pub mod serde_md;
+pub mod session;
 pub mod storage;
 pub mod test_support;
 pub mod traits;
@@ -194,6 +195,9 @@ pub use interaction::{
     PermissionScope, PopupRequest, PopupResponse, QuestionAnswer, ShowRequest,
 };
 pub use interaction_registry::InteractionRegistry;
+
+// Re-export session types (daemon session management)
+pub use session::{Session, SessionState, SessionSummary, SessionType};
 
 // Re-export event system types
 pub use events::{
