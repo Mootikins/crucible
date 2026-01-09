@@ -6,13 +6,13 @@
 // Note: Types are being migrated to state/types/ module
 // See state/types/popup.rs and state/types/context.rs for new location
 
-pub mod types;
 pub mod actions;
 pub mod navigation;
+pub mod types;
 
 // Re-export types from types/ submodules for backward compatibility
-pub use self::types::popup::*;
 pub use self::types::context::*;
+pub use self::types::popup::*;
 
 // Re-export action executor
 pub use actions::ActionExecutor;
@@ -622,7 +622,7 @@ mod tests {
     fn test_delete_word_backward_multiple_spaces() {
         let mut s = TuiState::new("plan");
         *s.input_mut() = "hello   world".into();
-        s.set_cursor( 13);
+        s.set_cursor(13);
         s.execute_action(InputAction::DeleteWordBackward);
         assert_eq!(s.input(), "hello   ");
         assert_eq!(s.cursor(), 8);
@@ -632,7 +632,7 @@ mod tests {
     fn test_delete_to_line_start() {
         let mut s = TuiState::new("plan");
         *s.input_mut() = "hello world".into();
-        s.set_cursor( 6);
+        s.set_cursor(6);
         s.execute_action(InputAction::DeleteToLineStart);
         assert_eq!(s.input(), "world");
         assert_eq!(s.cursor(), 0);
@@ -642,7 +642,7 @@ mod tests {
     fn test_delete_to_line_end() {
         let mut s = TuiState::new("plan");
         *s.input_mut() = "hello world".into();
-        s.set_cursor( 5);
+        s.set_cursor(5);
         s.execute_action(InputAction::DeleteToLineEnd);
         assert_eq!(s.input(), "hello");
         assert_eq!(s.cursor(), 5);
@@ -652,7 +652,7 @@ mod tests {
     fn test_move_cursor_to_start() {
         let mut s = TuiState::new("plan");
         *s.input_mut() = "hello world".into();
-        s.set_cursor( 6);
+        s.set_cursor(6);
         s.execute_action(InputAction::MoveCursorToStart);
         assert_eq!(s.cursor(), 0);
     }
@@ -661,7 +661,7 @@ mod tests {
     fn test_move_cursor_to_end() {
         let mut s = TuiState::new("plan");
         *s.input_mut() = "hello world".into();
-        s.set_cursor( 0);
+        s.set_cursor(0);
         s.execute_action(InputAction::MoveCursorToEnd);
         assert_eq!(s.cursor(), 11);
     }
@@ -670,7 +670,7 @@ mod tests {
     fn test_move_word_backward() {
         let mut s = TuiState::new("plan");
         *s.input_mut() = "hello world".into();
-        s.set_cursor( 11);
+        s.set_cursor(11);
         s.execute_action(InputAction::MoveWordBackward);
         assert_eq!(s.cursor(), 6); // After space, at "world"
     }
@@ -679,7 +679,7 @@ mod tests {
     fn test_move_word_forward() {
         let mut s = TuiState::new("plan");
         *s.input_mut() = "hello world foo".into();
-        s.set_cursor( 0);
+        s.set_cursor(0);
         s.execute_action(InputAction::MoveWordForward);
         assert_eq!(s.cursor(), 6); // After "hello ", at "world"
     }

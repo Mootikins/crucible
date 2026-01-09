@@ -371,7 +371,10 @@ mod tests {
         assert_eq!(LineCount::count_max("", 5), 1);
         assert_eq!(LineCount::count_max("line1", 5), 1);
         assert_eq!(LineCount::count_max("line1\nline2", 5), 2);
-        assert_eq!(LineCount::count_max("line1\nline2\nline3\nline4\nline5", 5), 5);
+        assert_eq!(
+            LineCount::count_max("line1\nline2\nline3\nline4\nline5", 5),
+            5
+        );
         assert_eq!(
             LineCount::count_max("line1\nline2\nline3\nline4\nline5\nline6", 5),
             5

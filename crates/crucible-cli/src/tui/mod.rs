@@ -10,8 +10,8 @@ pub mod action_dispatch;
 pub mod agent_picker;
 pub mod ask_batch_dialog;
 pub mod chat_view;
-pub mod constants;
 pub mod components;
+pub mod constants;
 pub mod content_block;
 pub mod conversation;
 pub mod conversation_view;
@@ -20,7 +20,9 @@ pub mod event_result;
 pub mod geometry;
 pub mod help;
 pub mod help_assets;
+pub mod history_manager;
 pub mod input;
+pub mod input_mode_manager;
 pub mod interaction;
 pub mod keymap;
 pub mod markdown;
@@ -34,10 +36,8 @@ pub mod runner;
 pub mod scroll_utils;
 pub mod scrollback_runner;
 pub mod selection;
-pub mod session_commands;
-pub mod history_manager;
-pub mod input_mode_manager;
 pub mod selection_manager;
+pub mod session_commands;
 pub mod state;
 pub mod streaming;
 pub mod streaming_channel;
@@ -67,10 +67,14 @@ pub use components::InteractiveWidget;
 // - components::{EventResult, TuiAction} - widget-level events (legacy)
 // - event_result::{EventResult, TuiAction} - unified event system (new)
 // Using the new unified versions as the default export:
-pub use constants::{UiConstants, CONTENT_MARGIN, DIALOG_PADDING, DIALOG_BORDER_HEIGHT, BUTTON_WIDTH, BUTTON_GAP};
+pub use constants::{
+    UiConstants, BUTTON_GAP, BUTTON_WIDTH, CONTENT_MARGIN, DIALOG_BORDER_HEIGHT, DIALOG_PADDING,
+};
 pub use content_block::{ParseEvent, StreamBlock};
 pub use dialog::{DialogResult, DialogStack, DialogState, DialogWidget};
-pub use event_result::{DialogResult as UiDialogResult, EventResult, FocusTarget, ScrollDirection, TuiAction};
+pub use event_result::{
+    DialogResult as UiDialogResult, EventResult, FocusTarget, ScrollDirection, TuiAction,
+};
 pub use geometry::PopupGeometry;
 pub use help::{DocsIndex, HelpTopic};
 pub use input::{map_key_event, InputAction};

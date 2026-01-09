@@ -16,63 +16,63 @@ fn test_selection_bug_reproduction() {
     let mut view = RatatuiView::new("plan", 80, 24);
 
     // User's prompt
-    view.state_mut().conversation.push_user_message(
-        "Please explain how the enchanted yoyo works and its history"
-    );
+    view.state_mut()
+        .conversation
+        .push_user_message("Please explain how the enchanted yoyo works and its history");
 
     // Assistant's response with multiple paragraphs
     view.state_mut().conversation.start_assistant_streaming();
 
     // Paragraph 1 (user wants to select this)
-    view.state_mut().conversation.append_streaming_blocks(vec![
-        crate::tui::StreamBlock::prose(
+    view.state_mut()
+        .conversation
+        .append_streaming_blocks(vec![crate::tui::StreamBlock::prose(
             "Word of the enchanted yoyo spread through the village, drawing \
-             the attention of travelers and scholars alike."
-        ),
-    ]);
+             the attention of travelers and scholars alike.",
+        )]);
 
     // Paragraph 2 (user wants to select this too)
-    view.state_mut().conversation.append_streaming_blocks(vec![
-        crate::tui::StreamBlock::prose(
+    view.state_mut()
+        .conversation
+        .append_streaming_blocks(vec![crate::tui::StreamBlock::prose(
             "Some claimed it was a gift from the forest spirits, others whispered \
              it was a relic of an ancient civilization. But Elara knew the truth: \
-             the yoyo was a bridge between her imagination and the world around her."
-        ),
-    ]);
+             the yoyo was a bridge between her imagination and the world around her.",
+        )]);
 
     // Paragraph 3 (middle of response - NOT selected)
-    view.state_mut().conversation.append_streaming_blocks(vec![
-        crate::tui::StreamBlock::prose(
+    view.state_mut()
+        .conversation
+        .append_streaming_blocks(vec![crate::tui::StreamBlock::prose(
             "Every morning, she would practice in the meadow, the wooden toy \
-             dancing at the end of its string, responding to her slightest movement."
-        ),
-    ]);
+             dancing at the end of its string, responding to her slightest movement.",
+        )]);
 
     // Paragraph 4 (middle of response - NOT selected)
-    view.state_mut().conversation.append_streaming_blocks(vec![
-        crate::tui::StreamBlock::prose(
+    view.state_mut()
+        .conversation
+        .append_streaming_blocks(vec![crate::tui::StreamBlock::prose(
             "The villagers would watch from afar, some with curiosity, others \
              with skepticism. They didn't understand the deep connection forming \
-             between girl and toy."
-        ),
-    ]);
+             between girl and toy.",
+        )]);
 
     // Paragraph 5 (near end - this is what gets copied instead!)
-    view.state_mut().conversation.append_streaming_blocks(vec![
-        crate::tui::StreamBlock::prose(
+    view.state_mut()
+        .conversation
+        .append_streaming_blocks(vec![crate::tui::StreamBlock::prose(
             "What the villagers didn't know was that the yoyo had chosen Elara, \
              not the other way around. It had been waiting for centuries for \
-             someone with enough imagination to wield it properly."
-        ),
-    ]);
+             someone with enough imagination to wield it properly.",
+        )]);
 
     // Paragraph 6 (last paragraph)
-    view.state_mut().conversation.append_streaming_blocks(vec![
-        crate::tui::StreamBlock::prose(
+    view.state_mut()
+        .conversation
+        .append_streaming_blocks(vec![crate::tui::StreamBlock::prose(
             "And so, the adventures of Elara and her enchanted yoyo had only \
-             just begun."
-        ),
-    ]);
+             just begun.",
+        )]);
 
     view.state_mut().conversation.complete_streaming();
 
@@ -90,10 +90,13 @@ fn test_selection_bug_reproduction() {
 
     // User selects their prompt (should be near line 1) and paragraph 2 (line ~4-5)
     // Let's say they select lines 1 through 5
-    let selection_start = SelectionPoint::new(1, 0);  // User prompt line
-    let selection_end = SelectionPoint::new(5, 50);   // Middle of paragraph 2
+    let selection_start = SelectionPoint::new(1, 0); // User prompt line
+    let selection_end = SelectionPoint::new(5, 50); // Middle of paragraph 2
 
-    println!("Selection range: {} to {}", selection_start.line, selection_end.line);
+    println!(
+        "Selection range: {} to {}",
+        selection_start.line, selection_end.line
+    );
 
     // Build cache and extract selected text
     let mut cache = SelectableContentCache::new();
@@ -116,7 +119,10 @@ fn test_selection_bug_reproduction() {
     println!("Contains user prompt keyword: {}", has_prompt);
     println!("Contains paragraph 1: {}", has_paragraph1);
     println!("Contains paragraph 2: {}", has_paragraph2);
-    println!("Contains WRONG paragraph (villagers): {}", has_wrong_paragraph);
+    println!(
+        "Contains WRONG paragraph (villagers): {}",
+        has_wrong_paragraph
+    );
 
     // The bug would be if has_wrong_paragraph is true
     // This means we extracted text from much later in the response
@@ -136,14 +142,16 @@ fn test_selection_cache_alignment() {
     // Test that cache indices match what we expect from rendering
     let mut view = RatatuiView::new("plan", 80, 24);
 
-    view.state_mut().conversation.push_user_message("Test prompt");
+    view.state_mut()
+        .conversation
+        .push_user_message("Test prompt");
     view.state_mut().conversation.start_assistant_streaming();
-    view.state_mut().conversation.append_streaming_blocks(vec![
-        crate::tui::StreamBlock::prose("Line 1 of response"),
-    ]);
-    view.state_mut().conversation.append_streaming_blocks(vec![
-        crate::tui::StreamBlock::prose("Line 2 of response"),
-    ]);
+    view.state_mut()
+        .conversation
+        .append_streaming_blocks(vec![crate::tui::StreamBlock::prose("Line 1 of response")]);
+    view.state_mut()
+        .conversation
+        .append_streaming_blocks(vec![crate::tui::StreamBlock::prose("Line 2 of response")]);
     view.state_mut().conversation.complete_streaming();
 
     let cache = view.build_selection_cache();
@@ -172,7 +180,7 @@ fn test_selection_cache_alignment() {
 fn test_width_mismatch_bug() {
     // Test the hypothesis: cache is built with state.width but rendering
     // uses area.width (smaller due to status/input areas)
-    let mut view = RatatuiView::new("plan", 50, 24);  // Narrow terminal
+    let mut view = RatatuiView::new("plan", 50, 24); // Narrow terminal
 
     // Add a long line that will wrap differently at different widths
     view.state_mut().conversation.push_user_message(
@@ -206,9 +214,12 @@ fn test_width_mismatch_bug() {
 
     // This test documents the potential bug: if cache is built with one width
     // but rendering uses another, the indices will be misaligned
-    let has_mismatch = cache_from_state.len() > 8;  // Arbitrary check
+    let has_mismatch = cache_from_state.len() > 8; // Arbitrary check
     if has_mismatch {
-        println!("\n⚠️  Width mismatch detected - cache has {} lines", cache_from_state.len());
+        println!(
+            "\n⚠️  Width mismatch detected - cache has {} lines",
+            cache_from_state.len()
+        );
         println!("This could cause selection misalignment if rendering uses different width");
     }
 }

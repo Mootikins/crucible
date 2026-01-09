@@ -10,7 +10,9 @@ use crossterm::{
     cursor,
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
-    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{
+        self, disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    },
 };
 use tracing::debug;
 
@@ -47,7 +49,10 @@ pub fn get_editor() -> String {
 ///
 /// # Returns
 /// Result indicating whether the user saved or aborted
-pub fn open_file_in_editor(file_path: &std::path::Path, mouse_mode_enabled: bool) -> Result<EditorResult> {
+pub fn open_file_in_editor(
+    file_path: &std::path::Path,
+    mouse_mode_enabled: bool,
+) -> Result<EditorResult> {
     let editor = get_editor();
 
     debug!(editor = %editor, path = %file_path.display(), "Opening file in editor");
@@ -62,9 +67,7 @@ pub fn open_file_in_editor(file_path: &std::path::Path, mouse_mode_enabled: bool
     terminal::disable_raw_mode()?;
 
     // Open editor with the file
-    let status = std::process::Command::new(&editor)
-        .arg(file_path)
-        .status();
+    let status = std::process::Command::new(&editor).arg(file_path).status();
 
     // Re-enter TUI mode
     terminal::enable_raw_mode()?;
@@ -76,11 +79,7 @@ pub fn open_file_in_editor(file_path: &std::path::Path, mouse_mode_enabled: bool
             cursor::Hide
         )?;
     } else {
-        execute!(
-            std::io::stdout(),
-            EnterAlternateScreen,
-            cursor::Hide
-        )?;
+        execute!(std::io::stdout(), EnterAlternateScreen, cursor::Hide)?;
     }
 
     match status {
@@ -131,7 +130,10 @@ pub fn create_temp_file(content: &str, prefix: &str) -> Result<std::path::PathBu
 ///
 /// # Returns
 /// Result containing the path to the temp file if successful
-pub fn open_session_in_editor(markdown: &str, mouse_mode_enabled: bool) -> Result<std::path::PathBuf> {
+pub fn open_session_in_editor(
+    markdown: &str,
+    mouse_mode_enabled: bool,
+) -> Result<std::path::PathBuf> {
     let temp_file = create_temp_file(markdown, "crucible-session")?;
 
     match open_file_in_editor(&temp_file, mouse_mode_enabled)? {
@@ -195,11 +197,7 @@ pub fn drop_to_shell(command: &str, mouse_mode_enabled: bool) -> Result<()> {
             cursor::Hide
         )?;
     } else {
-        execute!(
-            std::io::stdout(),
-            EnterAlternateScreen,
-            cursor::Hide
-        )?;
+        execute!(std::io::stdout(), EnterAlternateScreen, cursor::Hide)?;
     }
 
     match status {

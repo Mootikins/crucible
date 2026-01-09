@@ -155,7 +155,7 @@ impl DialogWidget<'_> {
         message_para.render(msg_area, buf);
 
         // Buttons
-        use crate::tui::constants::{BUTTON_WIDTH, BUTTON_GAP};
+        use crate::tui::constants::{BUTTON_GAP, BUTTON_WIDTH};
         use crate::tui::geometry::PopupGeometry;
         let button_y = inner.y + inner.height - 2;
         let total_width = BUTTON_WIDTH * 2 + BUTTON_GAP;

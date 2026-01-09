@@ -11,11 +11,7 @@
 //! - Cursor navigates across lines properly
 //! - Long lines are visually wrapped (word-aware wrapping)
 
-use crate::tui::{
-    components::InteractiveWidget,
-    event_result::EventResult,
-    styles::presets,
-};
+use crate::tui::{components::InteractiveWidget, event_result::EventResult, styles::presets};
 use crossterm::event::Event;
 use ratatui::{
     buffer::Buffer,

@@ -46,7 +46,7 @@
 //! let result = stack.route_event(&event);
 //! ```
 
-use super::{InteractiveWidget};
+use super::InteractiveWidget;
 use crate::tui::event_result::{EventResult, FocusTarget};
 use crossterm::event::Event;
 

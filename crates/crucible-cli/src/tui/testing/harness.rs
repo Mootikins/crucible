@@ -212,9 +212,7 @@ impl Harness {
                     let new_pos = crate::tui::state::find_word_start_backward(
                         &self.state.input()[..cursor_pos],
                     );
-                    self.state
-                        .input_mut()
-                        .drain(new_pos..cursor_pos);
+                    self.state.input_mut().drain(new_pos..cursor_pos);
                     self.state.set_cursor(new_pos);
                     return;
                 }
@@ -255,7 +253,7 @@ impl Harness {
                             let token = item.token();
                             self.view.set_popup(None);
                             self.sync_popup_to_state(); // Sync popup state
-                            // Token already includes trailing space for most items
+                                                        // Token already includes trailing space for most items
                             *self.state.input_mut() = token;
                             self.state.set_cursor(self.state.input().len());
                         }
@@ -271,9 +269,7 @@ impl Harness {
         match event.code {
             KeyCode::Char(c) => {
                 let cursor_pos = self.state.cursor();
-                self.state
-                    .input_mut()
-                    .insert(cursor_pos, c);
+                self.state.input_mut().insert(cursor_pos, c);
                 self.state.set_cursor(cursor_pos + c.len_utf8());
                 // Update popup based on input prefix (matches runner behavior)
                 self.update_popup();

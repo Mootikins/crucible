@@ -125,7 +125,9 @@ impl SessionManager {
         limit: Option<usize>,
         offset: Option<usize>,
     ) -> Result<Vec<serde_json::Value>, SessionError> {
-        self.storage.load_events(session_id, kiln, limit, offset).await
+        self.storage
+            .load_events(session_id, kiln, limit, offset)
+            .await
     }
 
     /// Count total events for a session.

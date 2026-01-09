@@ -525,7 +525,10 @@ impl DaemonClient {
             )
             .await?;
 
-        let processed = result.get("processed").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+        let processed = result
+            .get("processed")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
         let skipped = result.get("skipped").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
 
         let errors: Vec<(String, String)> = result
@@ -567,9 +570,10 @@ impl DaemonClient {
         }
 
         if !connect_kilns.is_empty() {
-            params["connect_kilns"] = serde_json::json!(
-                connect_kilns.iter().map(|p| p.to_string_lossy()).collect::<Vec<_>>()
-            );
+            params["connect_kilns"] = serde_json::json!(connect_kilns
+                .iter()
+                .map(|p| p.to_string_lossy())
+                .collect::<Vec<_>>());
         }
 
         self.call("session.create", params).await
@@ -860,11 +864,8 @@ mod tests {
         // and can be polled without blocking indefinitely.
 
         // Try to receive with timeout (should timeout since no events yet)
-        let result = tokio::time::timeout(
-            std::time::Duration::from_millis(100),
-            event_rx.recv(),
-        )
-        .await;
+        let result =
+            tokio::time::timeout(std::time::Duration::from_millis(100), event_rx.recv()).await;
 
         // Timeout expected since no events have been sent
         assert!(result.is_err(), "Expected timeout, got event");

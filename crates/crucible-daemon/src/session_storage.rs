@@ -146,12 +146,7 @@ impl SessionStorage for FileSessionStorage {
             .await
             .map_err(|e| SessionError::IoError(e.to_string()))?
         {
-            if entry
-                .file_type()
-                .await
-                .map(|t| t.is_dir())
-                .unwrap_or(false)
-            {
+            if entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false) {
                 let session_id = entry.file_name().to_string_lossy().to_string();
                 if let Ok(session) = self.load(&session_id, kiln).await {
                     summaries.push(SessionSummary::from(&session));
