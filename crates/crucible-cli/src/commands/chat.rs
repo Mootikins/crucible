@@ -5,6 +5,7 @@
 //! Supports toggleable plan (read-only) and act (write-enabled) modes.
 
 use anyhow::Result;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
@@ -19,6 +20,45 @@ use crucible_core::traits::chat::{is_read_only, mode_display_name};
 use crucible_pipeline::NotePipeline;
 use crucible_watch::traits::{DebounceConfig, HandlerConfig, WatchConfig};
 use crucible_watch::{EventFilter, WatchMode};
+
+/// Determine which kiln to save sessions to.
+///
+/// - Single kiln: use it automatically
+/// - Multiple kilns: use primary (first) kiln (future: config.kilns support)
+/// - No kilns/invalid path: return None (sessions won't be saved)
+///
+/// Currently Crucible supports a single kiln_path. This function is designed
+/// to support future multi-kiln configurations where multiple kilns can be
+/// attached to a workspace.
+fn select_session_kiln(config: &CliConfig) -> Option<PathBuf> {
+    let kiln_path = &config.kiln_path;
+
+    // Check if the kiln path exists and is a directory
+    if !kiln_path.exists() {
+        warn!(
+            "Kiln path does not exist: {} - sessions will not be saved",
+            kiln_path.display()
+        );
+        return None;
+    }
+
+    if !kiln_path.is_dir() {
+        warn!(
+            "Kiln path is not a directory: {} - sessions will not be saved",
+            kiln_path.display()
+        );
+        return None;
+    }
+
+    // Future: when config.kilns is available, use first kiln as primary
+    // if config.kilns.is_empty() {
+    //     warn!("No kilns configured - sessions will not be saved");
+    //     return None;
+    // }
+    // Some(config.kilns[0].path.clone())
+
+    Some(kiln_path.clone())
+}
 
 /// Execute the chat command
 ///
@@ -505,6 +545,11 @@ async fn run_deferred_chat(
 
     // Create session configuration
     let mut session_config = ChatSessionConfig::new(initial_mode, !no_context, context_size);
+
+    // Set up session logging to appropriate kiln
+    if let Some(kiln_path) = select_session_kiln(&config) {
+        session_config = session_config.with_session_kiln(kiln_path);
+    }
 
     // Set preselected agent if provided (skips picker first time, allows /new restart)
     if let Some(selection) = preselected_agent {
