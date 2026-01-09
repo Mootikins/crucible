@@ -14,21 +14,32 @@
 //! cargo bench -p crucible-storage-tests --features surrealdb
 //! ```
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+#[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
+use criterion::BenchmarkId;
+#[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
 use crucible_core::parser::BlockHash;
-use crucible_core::storage::{NoteRecord, NoteStore};
+#[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
+use crucible_core::storage::NoteStore;
+#[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
+use crucible_core::storage::NoteRecord;
+#[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
 use rand::Rng;
+#[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
 use tempfile::TempDir;
 
+#[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
 const EMBEDDING_DIM: usize = 384; // Small model dimensions for faster benchmarks
 
 /// Generate a random embedding vector
+#[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
 fn random_embedding(dim: usize) -> Vec<f32> {
     let mut rng = rand::rng();
     (0..dim).map(|_| rng.random::<f32>()).collect()
 }
 
 /// Generate test note records
+#[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
 fn generate_notes(count: usize) -> Vec<NoteRecord> {
     (0..count)
         .map(|i| {
@@ -119,12 +130,15 @@ mod surreal_bench {
 // Benchmark Functions
 // =============================================================================
 
+#[allow(unused_variables, unused_mut)]
 fn bench_upsert(c: &mut Criterion) {
+    #[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("upsert");
 
     for count in [10, 100, 500] {
         group.throughput(Throughput::Elements(count as u64));
+        #[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
         let notes = generate_notes(count);
 
         #[cfg(feature = "sqlite")]
@@ -169,10 +183,13 @@ fn bench_upsert(c: &mut Criterion) {
     group.finish();
 }
 
+#[allow(unused_variables, unused_mut)]
 fn bench_get(c: &mut Criterion) {
+    #[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("get");
 
+    #[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
     let notes = generate_notes(100);
 
     #[cfg(feature = "sqlite")]
@@ -235,11 +252,14 @@ fn bench_get(c: &mut Criterion) {
     group.finish();
 }
 
+#[allow(unused_variables, unused_mut)]
 fn bench_list(c: &mut Criterion) {
+    #[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("list");
 
     for count in [100, 500, 1000] {
+        #[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
         let notes = generate_notes(count);
 
         #[cfg(feature = "sqlite")]
@@ -296,11 +316,15 @@ fn bench_list(c: &mut Criterion) {
     group.finish();
 }
 
+#[allow(unused_variables, unused_mut)]
 fn bench_vector_search(c: &mut Criterion) {
+    #[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("vector_search");
 
+    #[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
     let notes = generate_notes(500);
+    #[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
     let query_embedding = random_embedding(EMBEDDING_DIM);
 
     #[cfg(feature = "sqlite")]
