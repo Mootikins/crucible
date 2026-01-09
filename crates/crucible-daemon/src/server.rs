@@ -42,12 +42,16 @@ mod subscription_stub {
     pub struct SubscriptionManager;
 
     impl SubscriptionManager {
-        pub fn new() -> Self { Self }
+        pub fn new() -> Self {
+            Self
+        }
         pub fn subscribe(&self, _: ClientId, _: &str) {}
         pub fn subscribe_all(&self, _: ClientId) {}
         pub fn unsubscribe(&self, _: ClientId, _: &str) {}
         pub fn remove_client(&self, _: ClientId) {}
-        pub fn is_subscribed(&self, _: ClientId, _: &str) -> bool { false }
+        pub fn is_subscribed(&self, _: ClientId, _: &str) -> bool {
+            false
+        }
     }
 
     impl Default for SubscriptionManager {
@@ -57,10 +61,10 @@ mod subscription_stub {
     }
 }
 
-#[cfg(not(feature = "subscriptions"))]
-use subscription_stub::{ClientId, SubscriptionManager};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+#[cfg(not(feature = "subscriptions"))]
+use subscription_stub::{ClientId, SubscriptionManager};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::unix::OwnedWriteHalf;
 use tokio::net::{UnixListener, UnixStream};
@@ -1340,7 +1344,7 @@ mod tests {
 
         assert!(response.contains("error"));
         assert!(response.contains("-32602")); // INVALID_PARAMS
-        // Macro produces "Missing or invalid 'session_ids' parameter" for wrong type
+                                              // Macro produces "Missing or invalid 'session_ids' parameter" for wrong type
         assert!(response.contains("'session_ids'"));
 
         let _ = shutdown_handle.send(());

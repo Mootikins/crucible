@@ -2240,8 +2240,7 @@ impl RatatuiRunner {
 
                 // Resume the session
                 if let Err(e) = self.resume_session_from_id(session_id.as_str()).await {
-                    self.view
-                        .echo_error(&format!("Failed to resume: {}", e));
+                    self.view.echo_error(&format!("Failed to resume: {}", e));
                 } else {
                     self.view
                         .echo_message(&format!("Resumed session: {}", session_id));

@@ -1247,13 +1247,9 @@ impl SessionEvent {
                 let schema_len = schema.as_ref().map(|s| s.to_string().len()).unwrap_or(0);
                 Some(format!("{}: {:?}, schema_len={}", name, source, schema_len))
             }
-            Self::FileChanged { path, kind } => {
-                Some(format!("{}: {:?}", path.display(), kind))
-            }
+            Self::FileChanged { path, kind } => Some(format!("{}: {:?}", path.display(), kind)),
             Self::FileDeleted { path } => Some(path.display().to_string()),
-            Self::FileMoved { from, to } => {
-                Some(format!("{} -> {}", from.display(), to.display()))
-            }
+            Self::FileMoved { from, to } => Some(format!("{} -> {}", from.display(), to.display())),
             Self::EntityStored {
                 entity_id,
                 entity_type,
@@ -1276,9 +1272,7 @@ impl SessionEvent {
                 to_id,
                 relation_type,
             } => Some(format!("{} -> {} ({})", from_id, to_id, relation_type)),
-            Self::TagAssociated { entity_id, tag } => {
-                Some(format!("{}#{}", entity_id, tag))
-            }
+            Self::TagAssociated { entity_id, tag } => Some(format!("{}#{}", entity_id, tag)),
             Self::EmbeddingRequested {
                 entity_id,
                 priority,
@@ -1369,9 +1363,7 @@ impl SessionEvent {
             Self::TextDelta { delta, .. } => delta.len(),
             // Note events (small metadata)
             Self::NoteParsed { .. } => 50,
-            Self::NoteCreated { title, .. } => {
-                title.as_ref().map(|t| t.len()).unwrap_or(0) + 50
-            }
+            Self::NoteCreated { title, .. } => title.as_ref().map(|t| t.len()).unwrap_or(0) + 50,
             Self::NoteModified { .. } => 50,
             Self::NoteDeleted { .. } => 50,
             // MCP/Tool events
@@ -1399,9 +1391,7 @@ impl SessionEvent {
             Self::PreToolCall { name, .. } => name.len() + 50,
             Self::PreParse { .. } => 50,
             Self::PreLlmCall { prompt, .. } => prompt.len(),
-            Self::AwaitingInput { context, .. } => {
-                context.as_ref().map_or(20, |c| c.len() + 20)
-            }
+            Self::AwaitingInput { context, .. } => context.as_ref().map_or(20, |c| c.len() + 20),
             // Interaction events
             Self::InteractionRequested { .. } => 100, // Request metadata
             Self::InteractionCompleted { .. } => 50,  // Response metadata

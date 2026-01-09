@@ -46,6 +46,8 @@ pub mod streaming_parser;
 pub mod styles;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod testing;
+pub mod theme;
+pub mod ratatui_markdown;
 pub mod viewport;
 pub mod widget;
 pub mod widgets;
@@ -93,6 +95,7 @@ pub use streaming_channel::{
     StreamingTask,
 };
 pub use streaming_parser::StreamingParser;
+pub use theme::{MarkdownElement, MarkdownTheme, ThemeLoadError};
 pub use widget::{
     ansi, calculate_heights, calculate_position, format_help_command, mode_color, mode_icon,
     move_to_widget, render_help_text, render_input_area, render_separator, render_status_line,

@@ -9,7 +9,6 @@ use crate::tui::{
     markdown::MarkdownRenderer,
     styles::{indicators, presets},
 };
-use ansi_to_tui::IntoText;
 use once_cell::sync::Lazy;
 use ratatui::{
     buffer::Buffer,
@@ -498,17 +497,9 @@ fn render_user_message(content: &str, width: usize) -> Vec<Line<'static>> {
     // Add blank line before user message for spacing
     lines.push(Line::from(""));
 
-    // Use markdown renderer for word wrapping (same as assistant messages)
-    let wrap_width = if width > 0 { Some(width) } else { None };
-    let ansi_output = MARKDOWN_RENDERER.render_with_width(content, wrap_width);
-
-    let rendered_lines = match ansi_output.into_text() {
-        Ok(text) => text.lines,
-        Err(_) => {
-            // Fallback to plain lines on error
-            content.lines().map(|l| Line::from(l.to_string())).collect()
-        }
-    };
+    // Use render_lines() for word wrapping (same as assistant messages)
+    let effective_width = if width > 0 { width } else { 80 };
+    let rendered_lines = MARKDOWN_RENDERER.render_lines(content, effective_width);
 
     // Add prefix to each line
     let mut first_line = true;
@@ -620,16 +611,9 @@ fn add_assistant_prefix(line: Line<'static>, first_content_line: &mut bool) -> L
 
 /// Helper to render markdown text with word-aware wrapping
 fn render_markdown_text(content: &str, width: usize) -> Vec<Line<'static>> {
-    // Use width for word-aware wrapping (0 = no wrap)
-    let wrap_width = if width > 0 { Some(width) } else { None };
-    let ansi_output = MARKDOWN_RENDERER.render_with_width(content, wrap_width);
-    match ansi_output.into_text() {
-        Ok(text) => text.lines,
-        Err(_) => {
-            // Fallback to plain text on ANSI parse error
-            content.lines().map(|l| Line::from(l.to_string())).collect()
-        }
-    }
+    // Use width for word-aware wrapping (0 = no wrap, use default)
+    let effective_width = if width > 0 { width } else { 80 };
+    MARKDOWN_RENDERER.render_lines(content, effective_width)
 }
 
 /// Helper to render a code block with optional language (no wrapping)
@@ -859,7 +843,7 @@ impl Widget for ConversationWidget<'_> {
                 width: area.width,
                 height: content_height as u16,
             };
-            // No Wrap needed - termimad pre-wraps at word boundaries
+            // No Wrap needed - ratatui markdown renderer pre-wraps at word boundaries
             let paragraph = Paragraph::new(lines);
             paragraph.render(offset_area, buf);
         } else {
@@ -872,7 +856,7 @@ impl Widget for ConversationWidget<'_> {
             // Convert bottom-relative to top-relative scroll
             let top_scroll = max_scroll - effective_scroll;
 
-            // No Wrap needed - termimad pre-wraps at word boundaries
+            // No Wrap needed - ratatui markdown renderer pre-wraps at word boundaries
             let paragraph = Paragraph::new(lines).scroll((top_scroll as u16, 0));
             paragraph.render(area, buf);
         }
