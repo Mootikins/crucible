@@ -45,6 +45,8 @@
 //! ```
 
 #[cfg(test)]
+mod code_block_tests;
+#[cfg(test)]
 mod e2e_flow_tests;
 pub mod fixtures;
 mod harness;
