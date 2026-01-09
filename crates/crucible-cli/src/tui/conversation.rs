@@ -17,6 +17,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Paragraph, Widget},
 };
+use std::cell::RefCell;
 
 // =============================================================================
 // Static Instances
@@ -90,15 +91,131 @@ pub enum ToolStatus {
 }
 
 // =============================================================================
+// Render Cache
+// =============================================================================
+
+/// Cached rendered lines for a single conversation item
+#[derive(Debug, Clone)]
+struct CachedLines {
+    /// Width the lines were rendered at
+    width: usize,
+    /// The rendered lines
+    lines: Vec<Line<'static>>,
+}
+
+/// Per-item render cache with dirty tracking
+///
+/// Caches rendered lines for each conversation item to avoid
+/// re-parsing markdown on every frame. Automatically invalidates
+/// when content changes or terminal width changes.
+#[derive(Debug, Default)]
+pub struct RenderCache {
+    /// Cached lines per item index
+    items: Vec<Option<CachedLines>>,
+    /// Last known terminal width
+    last_width: usize,
+    /// Global dirty flag - if true, at least one item needs re-render
+    dirty: bool,
+}
+
+impl RenderCache {
+    /// Create a new empty cache
+    pub fn new() -> Self {
+        Self {
+            items: Vec::new(),
+            last_width: 0,
+            dirty: true, // Start dirty to ensure first render
+        }
+    }
+
+    /// Check if any items need re-rendering
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    /// Mark the cache as clean (call after render)
+    pub fn mark_clean(&mut self) {
+        self.dirty = false;
+    }
+
+    /// Mark a specific item as dirty (invalidate its cache)
+    pub fn invalidate_item(&mut self, index: usize) {
+        if index < self.items.len() {
+            self.items[index] = None;
+        }
+        self.dirty = true;
+    }
+
+    /// Invalidate all items (e.g., on width change)
+    pub fn invalidate_all(&mut self) {
+        for item in &mut self.items {
+            *item = None;
+        }
+        self.dirty = true;
+    }
+
+    /// Check width and invalidate all if changed
+    pub fn check_width(&mut self, width: usize) {
+        if self.last_width != width {
+            self.last_width = width;
+            self.invalidate_all();
+        }
+    }
+
+    /// Ensure cache has capacity for the given number of items
+    fn ensure_capacity(&mut self, count: usize) {
+        if self.items.len() < count {
+            self.items.resize_with(count, || None);
+        }
+    }
+
+    /// Get cached lines for an item, or None if not cached
+    pub fn get(&self, index: usize, width: usize) -> Option<&Vec<Line<'static>>> {
+        self.items.get(index).and_then(|cached| {
+            cached
+                .as_ref()
+                .filter(|c| c.width == width)
+                .map(|c| &c.lines)
+        })
+    }
+
+    /// Store rendered lines for an item
+    pub fn store(&mut self, index: usize, width: usize, lines: Vec<Line<'static>>) {
+        self.ensure_capacity(index + 1);
+        self.items[index] = Some(CachedLines { width, lines });
+    }
+
+    /// Called when an item is added
+    pub fn on_item_added(&mut self) {
+        self.items.push(None);
+        self.dirty = true;
+    }
+
+    /// Called when items are cleared
+    pub fn on_clear(&mut self) {
+        self.items.clear();
+        self.dirty = true;
+    }
+}
+
+// =============================================================================
 // Conversation State
 // =============================================================================
 
 /// Holds the conversation history for rendering
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ConversationState {
     items: Vec<ConversationItem>,
     /// Maximum output lines to show per tool
     max_tool_output_lines: usize,
+    /// Per-item render cache (RefCell for interior mutability during render)
+    cache: RefCell<RenderCache>,
+}
+
+impl Default for ConversationState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ConversationState {
@@ -106,6 +223,7 @@ impl ConversationState {
         Self {
             items: Vec::new(),
             max_tool_output_lines: 3,
+            cache: RefCell::new(RenderCache::new()),
         }
     }
 
@@ -114,14 +232,69 @@ impl ConversationState {
         self
     }
 
+    /// Check if cache is dirty (any items need re-render)
+    pub fn is_dirty(&self) -> bool {
+        self.cache.borrow().is_dirty()
+    }
+
+    /// Mark cache as clean after render
+    pub fn mark_clean(&self) {
+        self.cache.borrow_mut().mark_clean();
+    }
+
+    /// Invalidate all cached lines (e.g., on resize)
+    pub fn invalidate_all(&self) {
+        self.cache.borrow_mut().invalidate_all();
+    }
+
+    /// Check width and invalidate if changed
+    pub fn check_width(&self, width: usize) {
+        self.cache.borrow_mut().check_width(width);
+    }
+
+    /// Get cached lines for an item, or None if not cached
+    pub fn get_cached(&self, index: usize, width: usize) -> Option<Vec<Line<'static>>> {
+        self.cache.borrow().get(index, width).cloned()
+    }
+
+    /// Store rendered lines for an item
+    pub fn store_cached(&self, index: usize, width: usize, lines: Vec<Line<'static>>) {
+        self.cache.borrow_mut().store(index, width, lines);
+    }
+
+    /// Find the index of the currently streaming assistant message
+    fn streaming_item_index(&self) -> Option<usize> {
+        self.items.iter().position(|item| {
+            matches!(
+                item,
+                ConversationItem::AssistantMessage {
+                    is_streaming: true,
+                    ..
+                }
+            )
+        })
+    }
+
+    /// Find the index of the most recent tool call with the given name
+    fn tool_index(&self, name: &str) -> Option<usize> {
+        self.items.iter().rposition(|item| {
+            matches!(
+                item,
+                ConversationItem::ToolCall(tool) if tool.name == name && matches!(tool.status, ToolStatus::Running)
+            )
+        })
+    }
+
     pub fn push(&mut self, item: ConversationItem) {
         self.items.push(item);
+        self.cache.borrow_mut().on_item_added();
     }
 
     pub fn push_user_message(&mut self, content: impl Into<String>) {
         self.items.push(ConversationItem::UserMessage {
             content: content.into(),
         });
+        self.cache.borrow_mut().on_item_added();
     }
 
     pub fn push_assistant_message(&mut self, content: impl Into<String>) {
@@ -149,6 +322,7 @@ impl ConversationState {
             blocks,
             is_streaming: false,
         });
+        self.cache.borrow_mut().on_item_added();
     }
 
     /// Start streaming an assistant message (creates empty blocks list)
@@ -156,15 +330,7 @@ impl ConversationState {
     /// If already streaming, does nothing to prevent duplicate messages.
     pub fn start_assistant_streaming(&mut self) {
         // Guard: Don't start a new streaming message if one is already active
-        if self.items.iter().any(|item| {
-            matches!(
-                item,
-                ConversationItem::AssistantMessage {
-                    is_streaming: true,
-                    ..
-                }
-            )
-        }) {
+        if self.streaming_item_index().is_some() {
             return;
         }
 
@@ -172,49 +338,36 @@ impl ConversationState {
             blocks: Vec::new(),
             is_streaming: true,
         });
+        self.cache.borrow_mut().on_item_added();
     }
 
     /// Append blocks to the most recent streaming assistant message
     pub fn append_streaming_blocks(&mut self, new_blocks: Vec<StreamBlock>) {
-        for item in self.items.iter_mut().rev() {
-            if let ConversationItem::AssistantMessage {
-                blocks,
-                is_streaming,
-            } = item
-            {
-                if *is_streaming {
-                    blocks.extend(new_blocks);
-                    return;
-                }
+        if let Some(idx) = self.streaming_item_index() {
+            if let ConversationItem::AssistantMessage { blocks, .. } = &mut self.items[idx] {
+                blocks.extend(new_blocks);
+                self.cache.borrow_mut().invalidate_item(idx);
             }
         }
     }
 
     /// Mark the most recent streaming assistant message as complete
     pub fn complete_streaming(&mut self) {
-        for item in self.items.iter_mut().rev() {
-            if let ConversationItem::AssistantMessage { is_streaming, .. } = item {
-                if *is_streaming {
-                    *is_streaming = false;
-                    return;
-                }
+        if let Some(idx) = self.streaming_item_index() {
+            if let ConversationItem::AssistantMessage { is_streaming, .. } = &mut self.items[idx] {
+                *is_streaming = false;
+                self.cache.borrow_mut().invalidate_item(idx);
             }
         }
     }
 
     /// Append content to the last block of the streaming assistant message
     pub fn append_to_last_block(&mut self, content: &str) {
-        for item in self.items.iter_mut().rev() {
-            if let ConversationItem::AssistantMessage {
-                blocks,
-                is_streaming,
-            } = item
-            {
-                if *is_streaming {
-                    if let Some(last_block) = blocks.last_mut() {
-                        last_block.append(content);
-                    }
-                    return;
+        if let Some(idx) = self.streaming_item_index() {
+            if let ConversationItem::AssistantMessage { blocks, .. } = &mut self.items[idx] {
+                if let Some(last_block) = blocks.last_mut() {
+                    last_block.append(content);
+                    self.cache.borrow_mut().invalidate_item(idx);
                 }
             }
         }
@@ -222,17 +375,11 @@ impl ConversationState {
 
     /// Mark the last block of the streaming assistant message as complete
     pub fn complete_last_block(&mut self) {
-        for item in self.items.iter_mut().rev() {
-            if let ConversationItem::AssistantMessage {
-                blocks,
-                is_streaming,
-            } = item
-            {
-                if *is_streaming {
-                    if let Some(last_block) = blocks.last_mut() {
-                        last_block.complete();
-                    }
-                    return;
+        if let Some(idx) = self.streaming_item_index() {
+            if let ConversationItem::AssistantMessage { blocks, .. } = &mut self.items[idx] {
+                if let Some(last_block) = blocks.last_mut() {
+                    last_block.complete();
+                    self.cache.borrow_mut().invalidate_item(idx);
                 }
             }
         }
@@ -245,24 +392,20 @@ impl ConversationState {
     /// the case where a tool call interrupted streaming - subsequent prose should
     /// go into a new message to maintain chronological order.
     pub fn append_or_create_prose(&mut self, text: &str) {
-        for item in self.items.iter_mut().rev() {
-            if let ConversationItem::AssistantMessage {
-                blocks,
-                is_streaming,
-            } = item
-            {
-                if *is_streaming {
-                    // Check if last block is an incomplete prose block
-                    if let Some(last_block) = blocks.last_mut() {
-                        if last_block.is_prose() && !last_block.is_complete() {
-                            last_block.append(text);
-                            return;
-                        }
+        if let Some(idx) = self.streaming_item_index() {
+            if let ConversationItem::AssistantMessage { blocks, .. } = &mut self.items[idx] {
+                // Check if last block is an incomplete prose block
+                if let Some(last_block) = blocks.last_mut() {
+                    if last_block.is_prose() && !last_block.is_complete() {
+                        last_block.append(text);
+                        self.cache.borrow_mut().invalidate_item(idx);
+                        return;
                     }
-                    // Create new prose block
-                    blocks.push(StreamBlock::prose_partial(text));
-                    return;
                 }
+                // Create new prose block
+                blocks.push(StreamBlock::prose_partial(text));
+                self.cache.borrow_mut().invalidate_item(idx);
+                return;
             }
         }
 
@@ -272,15 +415,30 @@ impl ConversationState {
     }
 
     pub fn set_status(&mut self, status: StatusKind) {
-        // Remove any existing status
+        // Remove any existing status - indices shift, so invalidate all
+        let had_status = self
+            .items
+            .iter()
+            .any(|item| matches!(item, ConversationItem::Status(_)));
         self.items
             .retain(|item| !matches!(item, ConversationItem::Status(_)));
+        if had_status {
+            self.cache.borrow_mut().invalidate_all();
+        }
         self.items.push(ConversationItem::Status(status));
+        self.cache.borrow_mut().on_item_added();
     }
 
     pub fn clear_status(&mut self) {
+        let had_status = self
+            .items
+            .iter()
+            .any(|item| matches!(item, ConversationItem::Status(_)));
         self.items
             .retain(|item| !matches!(item, ConversationItem::Status(_)));
+        if had_status {
+            self.cache.borrow_mut().invalidate_all();
+        }
     }
 
     pub fn push_tool_running(&mut self, name: impl Into<String>, args: serde_json::Value) {
@@ -297,10 +455,12 @@ impl ConversationState {
             status: ToolStatus::Running,
             output_lines: Vec::new(),
         }));
+        self.cache.borrow_mut().on_item_added();
 
         // Re-add status at end (if there was one)
         if let Some(s) = status {
             self.items.push(s);
+            self.cache.borrow_mut().on_item_added();
         }
     }
 
@@ -310,51 +470,48 @@ impl ConversationState {
             .items
             .iter()
             .position(|item| matches!(item, ConversationItem::Status(_)));
-        pos.map(|idx| self.items.remove(idx))
+        pos.map(|idx| {
+            // Removing shifts indices, invalidate all
+            self.cache.borrow_mut().invalidate_all();
+            self.items.remove(idx)
+        })
     }
 
     pub fn update_tool_output(&mut self, name: &str, output: &str) {
-        // Find the most recent tool with this name and update it
-        for item in self.items.iter_mut().rev() {
-            if let ConversationItem::ToolCall(tool) = item {
-                if tool.name == name && matches!(tool.status, ToolStatus::Running) {
-                    // Truncate to last N lines
-                    let lines: Vec<String> = output
-                        .lines()
-                        .rev()
-                        .take(self.max_tool_output_lines)
-                        .map(|s| s.to_string())
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                        .rev()
-                        .collect();
-                    tool.output_lines = lines;
-                    return;
-                }
+        if let Some(idx) = self.tool_index(name) {
+            if let ConversationItem::ToolCall(tool) = &mut self.items[idx] {
+                // Truncate to last N lines
+                let lines: Vec<String> = output
+                    .lines()
+                    .rev()
+                    .take(self.max_tool_output_lines)
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                tool.output_lines = lines;
+                self.cache.borrow_mut().invalidate_item(idx);
             }
         }
     }
 
     pub fn complete_tool(&mut self, name: &str, summary: Option<String>) {
-        for item in self.items.iter_mut().rev() {
-            if let ConversationItem::ToolCall(tool) = item {
-                if tool.name == name && matches!(tool.status, ToolStatus::Running) {
-                    tool.status = ToolStatus::Complete { summary };
-                    return;
-                }
+        if let Some(idx) = self.tool_index(name) {
+            if let ConversationItem::ToolCall(tool) = &mut self.items[idx] {
+                tool.status = ToolStatus::Complete { summary };
+                self.cache.borrow_mut().invalidate_item(idx);
             }
         }
     }
 
     pub fn error_tool(&mut self, name: &str, message: impl Into<String>) {
-        for item in self.items.iter_mut().rev() {
-            if let ConversationItem::ToolCall(tool) = item {
-                if tool.name == name && matches!(tool.status, ToolStatus::Running) {
-                    tool.status = ToolStatus::Error {
-                        message: message.into(),
-                    };
-                    return;
-                }
+        if let Some(idx) = self.tool_index(name) {
+            if let ConversationItem::ToolCall(tool) = &mut self.items[idx] {
+                tool.status = ToolStatus::Error {
+                    message: message.into(),
+                };
+                self.cache.borrow_mut().invalidate_item(idx);
             }
         }
     }
@@ -398,6 +555,7 @@ impl ConversationState {
 
     pub fn clear(&mut self) {
         self.items.clear();
+        self.cache.borrow_mut().on_clear();
     }
 
     /// Serialize the conversation to markdown format.

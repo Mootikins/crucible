@@ -88,9 +88,12 @@ impl<'a> SessionHistoryWidget<'a> {
 
     /// Render conversation items to lines with context-aware spacing.
     ///
-    /// Tool calls no longer include their own leading blank line, so we add spacing
-    /// here - but skip it between consecutive tool calls to group them visually.
+    /// Uses per-item caching to avoid re-parsing markdown on every frame.
+    /// Streaming items are never cached since they change frequently.
     fn render_to_lines(&self, width: usize) -> Vec<Line<'static>> {
+        // Check if width changed - invalidates all caches
+        self.state.check_width(width);
+
         let mut all_lines = Vec::new();
         let items = self.state.items();
 
@@ -105,7 +108,29 @@ impl<'a> SessionHistoryWidget<'a> {
                 }
             }
 
-            all_lines.extend(render_item_to_lines(item, width));
+            // Check if this item is streaming (don't cache streaming content)
+            let is_streaming = matches!(
+                item,
+                ConversationItem::AssistantMessage {
+                    is_streaming: true,
+                    ..
+                } | ConversationItem::Status(_)
+            );
+
+            // Try to get from cache (skip for streaming items)
+            if !is_streaming {
+                if let Some(cached_lines) = self.state.get_cached(i, width) {
+                    all_lines.extend(cached_lines);
+                    continue;
+                }
+            }
+
+            // Render fresh and cache (unless streaming)
+            let item_lines = render_item_to_lines(item, width);
+            if !is_streaming {
+                self.state.store_cached(i, width, item_lines.clone());
+            }
+            all_lines.extend(item_lines);
         }
 
         all_lines
@@ -114,10 +139,14 @@ impl<'a> SessionHistoryWidget<'a> {
     /// Render conversation items to lines and build selection cache info.
     ///
     /// Returns both the display lines and cache data for text extraction.
+    /// Uses per-item caching to avoid re-parsing markdown.
     pub fn render_to_lines_with_cache(
         &self,
         width: usize,
     ) -> (Vec<Line<'static>>, Vec<RenderedLineInfo>) {
+        // Check if width changed - invalidates all caches
+        self.state.check_width(width);
+
         let mut all_lines = Vec::new();
         let mut cache_info = Vec::new();
         let items = self.state.items();
@@ -142,7 +171,28 @@ impl<'a> SessionHistoryWidget<'a> {
             }
 
             let is_code = matches!(item, ConversationItem::ToolCall(_));
-            let item_lines = render_item_to_lines(item, width);
+
+            // Check if this item is streaming (don't cache streaming content)
+            let is_streaming = matches!(
+                item,
+                ConversationItem::AssistantMessage {
+                    is_streaming: true,
+                    ..
+                } | ConversationItem::Status(_)
+            );
+
+            // Try to get from cache (skip for streaming items)
+            let item_lines = if !is_streaming {
+                if let Some(cached) = self.state.get_cached(item_index, width) {
+                    cached
+                } else {
+                    let lines = render_item_to_lines(item, width);
+                    self.state.store_cached(item_index, width, lines.clone());
+                    lines
+                }
+            } else {
+                render_item_to_lines(item, width)
+            };
 
             for line in &item_lines {
                 // Extract plain text from the Line's spans
@@ -161,11 +211,38 @@ impl<'a> SessionHistoryWidget<'a> {
     }
 
     /// Calculate total content height
+    ///
+    /// Uses cached lines where available.
     fn content_height(&self, width: usize) -> usize {
-        self.state
-            .items()
+        // Check if width changed
+        self.state.check_width(width);
+
+        let items = self.state.items();
+        items
             .iter()
-            .map(|item| render_item_to_lines(item, width).len())
+            .enumerate()
+            .map(|(i, item)| {
+                // Check if streaming - don't use cache for streaming
+                let is_streaming = matches!(
+                    item,
+                    ConversationItem::AssistantMessage {
+                        is_streaming: true,
+                        ..
+                    } | ConversationItem::Status(_)
+                );
+
+                if !is_streaming {
+                    if let Some(cached) = self.state.get_cached(i, width) {
+                        return cached.len();
+                    }
+                }
+
+                let lines = render_item_to_lines(item, width);
+                if !is_streaming {
+                    self.state.store_cached(i, width, lines.clone());
+                }
+                lines.len()
+            })
             .sum()
     }
 
