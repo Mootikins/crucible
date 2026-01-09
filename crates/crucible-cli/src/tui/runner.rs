@@ -2415,6 +2415,12 @@ impl RatatuiRunner {
         }
 
         // Cleanup
+
+        // Flush session logger before exiting
+        if let Some(logger) = &self.session_logger {
+            logger.finish().await;
+        }
+
         disable_raw_mode()?;
         execute!(
             terminal.backend_mut(),
@@ -3068,6 +3074,48 @@ mod tests {
             assert!(runner.popup.is_some());
             assert!(!runner.view.has_popup());
         }
+    }
+
+    // =============================================================================
+    // Session Logger Tests
+    // =============================================================================
+
+    #[tokio::test]
+    async fn test_session_logger_flushed_on_exit() {
+        use crate::session_logger::SessionLogger;
+        use std::sync::Arc;
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let logger = Arc::new(SessionLogger::new(tmp.path().to_path_buf()));
+
+        // Log a message (creates session)
+        logger.log_user_message("Test message").await;
+
+        // Get session ID before we check files
+        let session_id = logger.session_id().await.expect("Session should exist");
+
+        // Flush the logger (simulating exit)
+        logger.finish().await;
+
+        // Verify session file exists and contains the message
+        let session_dir = tmp
+            .path()
+            .join(".crucible")
+            .join("sessions")
+            .join(session_id.as_str());
+        let jsonl_path = session_dir.join("session.jsonl");
+
+        assert!(
+            jsonl_path.exists(),
+            "Session JSONL should exist after finish()"
+        );
+
+        let content = std::fs::read_to_string(&jsonl_path).unwrap();
+        assert!(
+            content.contains("Test message"),
+            "Session should contain logged message"
+        );
     }
 
     // =============================================================================
