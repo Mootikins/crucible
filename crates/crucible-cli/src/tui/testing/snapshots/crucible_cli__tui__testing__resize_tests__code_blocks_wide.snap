@@ -1,0 +1,28 @@
+---
+source: crates/crucible-cli/src/tui/testing/resize_tests.rs
+expression: h.render()
+---
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ > Show me some code                                                            
+                                                                                
+ ● Here's an example:                                                           
+   fn main() {                                                                  
+       println!("Hello");                                                       
+   }                                                                            
+   This prints Hello.                                                           
+                                                                                
+                                                                                
+ >                                                                              
+                                                                                
+▸ Plan │ Ready

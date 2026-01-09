@@ -54,7 +54,11 @@ mod harness;
 mod harness_tests;
 #[cfg(test)]
 mod popup_snapshot_tests;
+#[cfg(test)]
+mod resize_tests;
 mod state_builder;
+#[cfg(test)]
+mod table_tests;
 #[cfg(test)]
 mod tool_call_tests;
 

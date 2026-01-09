@@ -304,6 +304,74 @@ pub fn with_inline_code() -> Vec<ConversationItem> {
     ]
 }
 
+// =============================================================================
+// Table Scenarios
+// =============================================================================
+
+/// Session with a simple markdown table in assistant response
+pub fn with_table() -> Vec<ConversationItem> {
+    vec![
+        user("Show me a comparison"),
+        assistant(
+            "Here's a comparison:\n\n\
+             | Feature | Rust | Go |\n\
+             |---------|------|----|\n\
+             | Memory | Safe | GC |\n\
+             | Speed | Fast | Fast |",
+        ),
+    ]
+}
+
+/// Session with a wider table that may need truncation
+pub fn with_wide_table() -> Vec<ConversationItem> {
+    vec![
+        user("Show packages"),
+        assistant(
+            "Here are the packages:\n\n\
+             | Package | Description | Version | License |\n\
+             |---------|-------------|---------|----------|\n\
+             | serde | Serialization framework | 1.0.195 | MIT/Apache-2.0 |\n\
+             | tokio | Async runtime for Rust | 1.35.1 | MIT |\n\
+             | clap | Command line parser | 4.4.12 | MIT/Apache-2.0 |",
+        ),
+    ]
+}
+
+/// Session with multiple tables in one response
+pub fn with_multiple_tables() -> Vec<ConversationItem> {
+    vec![
+        user("Compare languages and their features"),
+        assistant(
+            "Here are two comparisons:\n\n\
+             **Type Systems:**\n\n\
+             | Language | Type System |\n\
+             |----------|-------------|\n\
+             | Rust | Static |\n\
+             | Python | Dynamic |\n\n\
+             **Concurrency:**\n\n\
+             | Language | Model |\n\
+             |----------|-------|\n\
+             | Rust | Ownership |\n\
+             | Go | CSP |",
+        ),
+    ]
+}
+
+/// Session with a table mixed with prose and code
+pub fn with_table_and_code() -> Vec<ConversationItem> {
+    vec![
+        user("Explain the struct and show options"),
+        assistant_blocks(vec![
+            StreamBlock::prose("The struct has these fields:\n\n| Field | Type | Default |\n|-------|------|--------|\n| name | String | \"\" |\n| count | u32 | 0 |\n\nHere's how to use it:"),
+            StreamBlock::code(
+                Some("rust".to_string()),
+                "let item = Item {\n    name: \"test\".into(),\n    count: 42,\n};",
+            ),
+            StreamBlock::prose("This creates an Item with custom values."),
+        ]),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,0 +1,28 @@
+---
+source: crates/crucible-cli/src/tui/testing/table_tests.rs
+expression: h.render()
+---
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+ > Show packages                                  
+                                                  
+ ● Here are the packages:                         
+                                                  
+   │Packag│   Description    │Version│ License  │ 
+   │  e   │                  │       │          │ 
+   ├──────┼──────────────────┼───────┼──────────┤ 
+   │serde │Serialization     │1.0.195│MIT/Apache│ 
+   │      │framework         │       │-2.0      │ 
+   │tokio │Async runtime for │1.35.1 │MIT       │ 
+   │      │Rust              │       │          │ 
+   │clap  │Command line      │4.4.12 │MIT/Apache│ 
+   │      │parser            │       │-2.0      │ 
+                                                  
+                                                  
+ >                                                
+                                                  
+▸ Plan │ Ready
