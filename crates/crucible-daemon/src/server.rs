@@ -119,6 +119,7 @@ async fn handle_request(
     shutdown_tx: &broadcast::Sender<()>,
     kiln_manager: &Arc<KilnManager>,
 ) -> Response {
+    tracing::debug!("RPC request: method={:?}, id={:?}", req.method, req.id);
     match req.method.as_str() {
         "ping" => Response::success(req.id, "pong"),
         "shutdown" => {
@@ -132,11 +133,22 @@ async fn handle_request(
         "search_vectors" => handle_search_vectors(req, kiln_manager).await,
         "list_notes" => handle_list_notes(req, kiln_manager).await,
         "get_note_by_name" => handle_get_note_by_name(req, kiln_manager).await,
-        _ => Response::error(
-            req.id,
-            METHOD_NOT_FOUND,
-            format!("Unknown method: {}", req.method),
-        ),
+        // NoteStore RPC methods
+        "note.upsert" => handle_note_upsert(req, kiln_manager).await,
+        "note.get" => handle_note_get(req, kiln_manager).await,
+        "note.delete" => handle_note_delete(req, kiln_manager).await,
+        "note.list" => handle_note_list(req, kiln_manager).await,
+        // Pipeline RPC methods
+        "process_file" => handle_process_file(req, kiln_manager).await,
+        "process_batch" => handle_process_batch(req, kiln_manager).await,
+        _ => {
+            tracing::warn!("Unknown RPC method: {:?}", req.method);
+            Response::error(
+                req.id,
+                METHOD_NOT_FOUND,
+                format!("Unknown method: {}", req.method),
+            )
+        }
     }
 }
 
@@ -283,6 +295,191 @@ async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>) -> Respons
             }),
         ),
         Ok(None) => Response::success(req.id, serde_json::Value::Null),
+        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    }
+}
+
+// =============================================================================
+// NoteStore RPC Handlers
+// =============================================================================
+
+async fn handle_note_upsert(req: Request, km: &Arc<KilnManager>) -> Response {
+    use crucible_core::storage::{NoteRecord, NoteStore};
+
+    let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'kiln' parameter"),
+    };
+
+    let note_json = match req.params.get("note") {
+        Some(n) => n,
+        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'note' parameter"),
+    };
+
+    let note: NoteRecord = match serde_json::from_value(note_json.clone()) {
+        Ok(n) => n,
+        Err(e) => {
+            return Response::error(
+                req.id,
+                INVALID_PARAMS,
+                format!("Invalid note record: {}", e),
+            )
+        }
+    };
+
+    let handle = match km.get_or_open(Path::new(kiln_path)).await {
+        Ok(c) => c,
+        Err(e) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    };
+
+    let note_store = handle.as_note_store();
+    match note_store.upsert(note).await {
+        Ok(events) => Response::success(
+            req.id,
+            serde_json::json!({
+                "status": "ok",
+                "events_count": events.len()
+            }),
+        ),
+        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    }
+}
+
+async fn handle_note_get(req: Request, km: &Arc<KilnManager>) -> Response {
+    use crucible_core::storage::NoteStore;
+
+    let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'kiln' parameter"),
+    };
+
+    let path = match req.params.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'path' parameter"),
+    };
+
+    let handle = match km.get_or_open(Path::new(kiln_path)).await {
+        Ok(c) => c,
+        Err(e) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    };
+
+    let note_store = handle.as_note_store();
+    match note_store.get(path).await {
+        Ok(Some(note)) => match serde_json::to_value(&note) {
+            Ok(v) => Response::success(req.id, v),
+            Err(e) => Response::error(req.id, INTERNAL_ERROR, format!("Serialization error: {}", e)),
+        },
+        Ok(None) => Response::success(req.id, serde_json::Value::Null),
+        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    }
+}
+
+async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> Response {
+    use crucible_core::storage::NoteStore;
+
+    let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'kiln' parameter"),
+    };
+
+    let path = match req.params.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'path' parameter"),
+    };
+
+    let handle = match km.get_or_open(Path::new(kiln_path)).await {
+        Ok(c) => c,
+        Err(e) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    };
+
+    let note_store = handle.as_note_store();
+    match note_store.delete(path).await {
+        Ok(_event) => Response::success(req.id, serde_json::json!({"status": "ok"})),
+        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    }
+}
+
+async fn handle_note_list(req: Request, km: &Arc<KilnManager>) -> Response {
+    use crucible_core::storage::NoteStore;
+
+    let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'kiln' parameter"),
+    };
+
+    let handle = match km.get_or_open(Path::new(kiln_path)).await {
+        Ok(c) => c,
+        Err(e) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    };
+
+    let note_store = handle.as_note_store();
+    match note_store.list().await {
+        Ok(notes) => match serde_json::to_value(&notes) {
+            Ok(v) => Response::success(req.id, v),
+            Err(e) => Response::error(req.id, INTERNAL_ERROR, format!("Serialization error: {}", e)),
+        },
+        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    }
+}
+
+// =============================================================================
+// Pipeline RPC Handlers
+// =============================================================================
+
+async fn handle_process_file(req: Request, km: &Arc<KilnManager>) -> Response {
+    let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'kiln' parameter"),
+    };
+
+    let file_path = match req.params.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'path' parameter"),
+    };
+
+    match km
+        .process_file(Path::new(kiln_path), Path::new(file_path))
+        .await
+    {
+        Ok(processed) => Response::success(
+            req.id,
+            serde_json::json!({
+                "status": if processed { "processed" } else { "skipped" },
+                "path": file_path
+            }),
+        ),
+        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    }
+}
+
+async fn handle_process_batch(req: Request, km: &Arc<KilnManager>) -> Response {
+    let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'kiln' parameter"),
+    };
+
+    let paths: Vec<std::path::PathBuf> = match req.params.get("paths") {
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|v| v.as_str().map(std::path::PathBuf::from))
+            .collect(),
+        _ => return Response::error(req.id, INVALID_PARAMS, "Missing or invalid 'paths' array"),
+    };
+
+    match km.process_batch(Path::new(kiln_path), &paths).await {
+        Ok((processed, skipped, errors)) => Response::success(
+            req.id,
+            serde_json::json!({
+                "processed": processed,
+                "skipped": skipped,
+                "errors": errors.iter().map(|(p, e)| {
+                    serde_json::json!({
+                        "path": p.to_string_lossy(),
+                        "error": e
+                    })
+                }).collect::<Vec<_>>()
+            }),
+        ),
         Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
     }
 }

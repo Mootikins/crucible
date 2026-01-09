@@ -6,19 +6,22 @@
 use anyhow::Result;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
 use tracing::info;
 
+use crucible_core::processing::InMemoryChangeDetectionStore;
 use crucible_core::storage::note_store::NoteRecord;
 use crucible_core::traits::NoteInfo;
+use crucible_pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
 
 // Backend-specific imports
 #[cfg(feature = "storage-sqlite")]
 use crucible_sqlite::{adapters as sqlite_adapters, SqliteClientHandle, SqliteConfig};
 
 #[cfg(feature = "storage-surrealdb")]
-use crucible_surrealdb::{adapters as surreal_adapters, SurrealClientHandle, SurrealDbConfig};
+use crucible_surrealdb::{adapters as surreal_adapters, adapters::SurrealClientHandle, SurrealDbConfig};
 
 // ===========================================================================
 // Backend Abstraction
@@ -46,6 +49,17 @@ impl StorageHandle {
         }
     }
 
+    /// Get a NoteStore trait object for this storage backend
+    pub fn as_note_store(&self) -> std::sync::Arc<dyn crucible_core::storage::NoteStore> {
+        match self {
+            #[cfg(feature = "storage-sqlite")]
+            StorageHandle::Sqlite(client) => client.as_note_store(),
+
+            #[cfg(feature = "storage-surrealdb")]
+            StorageHandle::Surreal(client) => client.as_note_store(),
+        }
+    }
+
     /// Search for similar vectors - backend-agnostic VSS
     ///
     /// Returns (document_id, score) pairs sorted by similarity descending.
@@ -68,14 +82,15 @@ impl StorageHandle {
 
             #[cfg(feature = "storage-surrealdb")]
             StorageHandle::Surreal(client) => {
-                use crucible_core::traits::KnowledgeRepository;
+                use crucible_core::database::SearchResult;
                 let repo = client.as_knowledge_repository();
-                let results = repo.search_vectors(vector).await?;
-                Ok(results
+                let results: Vec<SearchResult> = repo.search_vectors(vector).await?;
+                let pairs: Vec<(String, f64)> = results
                     .into_iter()
                     .take(limit)
                     .map(|r| (r.document_id.0, r.score))
-                    .collect())
+                    .collect();
+                Ok(pairs)
             }
         }
     }
@@ -119,9 +134,9 @@ impl StorageHandle {
 
             #[cfg(feature = "storage-surrealdb")]
             StorageHandle::Surreal(client) => {
-                use crucible_core::traits::KnowledgeRepository;
                 let repo = client.as_knowledge_repository();
-                repo.list_notes(path_filter).await.map_err(Into::into)
+                let notes: Vec<NoteInfo> = repo.list_notes(path_filter).await?;
+                Ok(notes)
             }
         }
     }
@@ -139,7 +154,7 @@ impl StorageHandle {
     pub async fn get_note_by_name(&self, name: &str) -> Result<Option<NoteRecord>> {
         use crucible_core::storage::NoteStore;
 
-        let records = match self {
+        let records: Vec<NoteRecord> = match self {
             #[cfg(feature = "storage-sqlite")]
             StorageHandle::Sqlite(client) => client.as_note_store().list().await?,
 
@@ -162,6 +177,7 @@ impl StorageHandle {
 /// Connection to a single kiln
 pub struct KilnConnection {
     pub handle: StorageHandle,
+    pub pipeline: NotePipeline,
     pub last_access: Instant,
 }
 
@@ -190,7 +206,12 @@ impl KilnManager {
             }
         }
 
-        let db_path = canonical.join(".crucible").join("kiln.db");
+        // Use backend-specific database names so SQLite and SurrealDB can coexist
+        #[cfg(feature = "storage-sqlite")]
+        let db_path = canonical.join(".crucible").join("crucible-sqlite.db");
+
+        #[cfg(all(feature = "storage-surrealdb", not(feature = "storage-sqlite")))]
+        let db_path = canonical.join(".crucible").join("crucible-surreal.db");
         info!("Opening kiln at {:?}", db_path);
 
         let handle = create_storage_handle(&db_path).await?;
@@ -200,11 +221,16 @@ impl KilnManager {
             db_path
         );
 
+        // Create pipeline for this kiln
+        let pipeline = create_pipeline(&handle)?;
+        info!("Pipeline created for kiln at {:?}", canonical);
+
         let mut conns = self.connections.write().await;
         conns.insert(
             canonical,
             KilnConnection {
                 handle,
+                pipeline,
                 last_access: Instant::now(),
             },
         );
@@ -249,6 +275,80 @@ impl KilnManager {
         }
     }
 
+    /// Process a file through the kiln's pipeline
+    ///
+    /// Opens the kiln if not already open, then processes the file.
+    /// Returns Ok(true) if file was processed, Ok(false) if skipped (unchanged).
+    pub async fn process_file(&self, kiln_path: &Path, file_path: &Path) -> Result<bool> {
+        // Ensure kiln is open
+        self.open(kiln_path).await?;
+
+        let canonical = kiln_path
+            .canonicalize()
+            .unwrap_or_else(|_| kiln_path.to_path_buf());
+
+        let mut conns = self.connections.write().await;
+        let conn = conns
+            .get_mut(&canonical)
+            .ok_or_else(|| anyhow::anyhow!("Kiln not found after opening"))?;
+
+        conn.last_access = Instant::now();
+
+        // Process file through pipeline
+        use crucible_pipeline::ProcessingResult;
+        match conn.pipeline.process(file_path).await {
+            Ok(ProcessingResult::Success { .. }) => Ok(true),
+            Ok(ProcessingResult::Skipped) => Ok(false),
+            Ok(ProcessingResult::NoChanges) => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Process multiple files through the kiln's pipeline
+    ///
+    /// Returns (processed_count, skipped_count, errors)
+    pub async fn process_batch(
+        &self,
+        kiln_path: &Path,
+        file_paths: &[PathBuf],
+    ) -> Result<(usize, usize, Vec<(PathBuf, String)>)> {
+        use crucible_pipeline::ProcessingResult;
+
+        // Ensure kiln is open
+        self.open(kiln_path).await?;
+
+        let canonical = kiln_path
+            .canonicalize()
+            .unwrap_or_else(|_| kiln_path.to_path_buf());
+
+        let mut conns = self.connections.write().await;
+        let conn = conns
+            .get_mut(&canonical)
+            .ok_or_else(|| anyhow::anyhow!("Kiln not found after opening"))?;
+
+        conn.last_access = Instant::now();
+
+        let mut processed = 0;
+        let mut skipped = 0;
+        let mut errors = Vec::new();
+
+        for path in file_paths {
+            match conn.pipeline.process(path).await {
+                Ok(ProcessingResult::Success { .. }) => {
+                    processed += 1;
+                }
+                Ok(ProcessingResult::Skipped) | Ok(ProcessingResult::NoChanges) => {
+                    skipped += 1;
+                }
+                Err(e) => {
+                    errors.push((path.clone(), e.to_string()));
+                }
+            }
+        }
+
+        Ok((processed, skipped, errors))
+    }
+
     /// Get handle for a kiln, opening if needed
     pub async fn get_or_open(&self, kiln_path: &Path) -> Result<StorageHandle> {
         let canonical = kiln_path
@@ -284,6 +384,40 @@ impl Default for KilnManager {
 // ===========================================================================
 // Backend Factory
 // ===========================================================================
+
+/// Create a NotePipeline for daemon-side file processing
+///
+/// Creates a pipeline with:
+/// - In-memory change detection
+/// - Enrichment disabled (parsing only for now - embeddings can be added later)
+/// - NoteStore from the storage handle
+///
+/// This allows the daemon to process files without requiring embedding configuration.
+fn create_pipeline(handle: &StorageHandle) -> Result<NotePipeline> {
+    // Change detection (in-memory)
+    let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
+
+    // Enrichment service with embeddings disabled
+    // TODO: Add embedding support with daemon configuration
+    let enrichment_service = crucible_enrichment::create_default_enrichment_service(None)?;
+
+    // Get NoteStore from handle
+    let note_store = handle.as_note_store();
+
+    // Pipeline configuration - skip enrichment for now (parsing only)
+    let config = NotePipelineConfig {
+        parser: ParserBackend::default(),
+        skip_enrichment: true, // No embeddings until daemon has embedding config
+        force_reprocess: false,
+    };
+
+    Ok(NotePipeline::with_config(
+        change_detector,
+        enrichment_service,
+        note_store,
+        config,
+    ))
+}
 
 /// Create a storage handle for the given database path.
 /// Uses SQLite by default, SurrealDB if SQLite feature is disabled.
