@@ -2,6 +2,9 @@
 //!
 //! Reduces boilerplate in server.rs handlers by providing macros for
 //! extracting and validating JSON-RPC parameters.
+//!
+//! These macros are for internal use within the crucible-daemon crate.
+//! They are made available to sibling modules via `#[macro_use]` in lib.rs.
 
 /// Extract a required string parameter from a request.
 ///
@@ -90,6 +93,12 @@ macro_rules! require_array_param {
         }
     };
 }
+
+// Re-export macros for use in sibling modules
+pub(crate) use optional_str_param;
+pub(crate) use optional_u64_param;
+pub(crate) use require_array_param;
+pub(crate) use require_str_param;
 
 #[cfg(test)]
 mod tests {

@@ -1,6 +1,7 @@
 mod kiln_manager;
 mod lifecycle;
 mod protocol;
+mod rpc_helpers;
 mod server;
 mod session_manager;
 mod session_storage;
