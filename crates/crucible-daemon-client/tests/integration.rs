@@ -499,7 +499,7 @@ async fn create_seeded_kiln() -> TempDir {
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
     let db_dir = kiln_dir.path().join(".crucible");
     std::fs::create_dir_all(&db_dir).expect("Failed to create .crucible dir");
-    let db_path = db_dir.join("kiln.db");
+    let db_path = db_dir.join("crucible-sqlite.db");
 
     // Create SQLite database with notes
     let config = SqliteConfig::new(&db_path);
