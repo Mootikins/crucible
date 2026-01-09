@@ -266,18 +266,33 @@ async fn show(config: CliConfig, id: String, format: String) -> Result<()> {
     Ok(())
 }
 
-/// Resume a previous session (placeholder - actual resumption happens in chat)
-async fn resume(_config: CliConfig, id: String) -> Result<()> {
-    // For now, just validate the session exists and print instructions
-    // Full resumption will be implemented when chat integration is done
+/// Resume a previous session
+async fn resume(config: CliConfig, id: String) -> Result<()> {
+    // Validate session exists before launching chat
     let session_id = SessionId::parse(&id)?;
+    let sessions_path = sessions_dir(&config);
+    let session_dir = sessions_path.join(session_id.as_str());
 
-    println!("To resume session {}, run:", session_id);
-    println!("  cru chat --resume {}", session_id);
-    println!();
-    println!("Note: Session resumption is not yet fully implemented.");
+    if !session_dir.exists() {
+        return Err(anyhow!("Session not found: {}", id));
+    }
 
-    Ok(())
+    // Launch chat with resume flag
+    crate::commands::chat::execute(
+        config,
+        None,   // agent_name - use default
+        None,   // query - interactive mode
+        false,  // read_only
+        false,  // no_context
+        false,  // no_process
+        None,   // context_size
+        false,  // use_internal
+        None,   // provider_key
+        16384,  // max_context_tokens
+        vec![], // env_overrides
+        Some(id), // resume_session_id
+    )
+    .await
 }
 
 /// Export session to markdown
