@@ -31,7 +31,10 @@ tracing = "0.1"
 # Hashing
 blake3 = "1.5"
 
+# Time and serialization (for NoteRecord)
+chrono = { version = "0.4", features = ["serde"] }
+serde_json = "1.0"
+
 [dev-dependencies]
 # Testing
 tempfile = "3.24"
-chrono = "0.4"
