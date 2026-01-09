@@ -8,8 +8,55 @@ use crate::protocol::{
 use crate::rpc_helpers::{optional_str_param, optional_u64_param, require_array_param, require_str_param};
 use crate::session_manager::SessionManager;
 use crate::session_storage::{FileSessionStorage, SessionStorage};
-use crate::subscription::{ClientId, SubscriptionManager};
 use anyhow::Result;
+
+#[cfg(feature = "subscriptions")]
+use crate::subscription::{ClientId, SubscriptionManager};
+
+#[cfg(not(feature = "subscriptions"))]
+mod subscription_stub {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct ClientId(u64);
+
+    impl ClientId {
+        pub fn new() -> Self {
+            static COUNTER: AtomicU64 = AtomicU64::new(0);
+            Self(COUNTER.fetch_add(1, Ordering::SeqCst))
+        }
+
+        pub fn as_u64(self) -> u64 {
+            self.0
+        }
+    }
+
+    impl Default for ClientId {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    pub struct SubscriptionManager;
+
+    impl SubscriptionManager {
+        pub fn new() -> Self { Self }
+        pub fn subscribe(&self, _: ClientId, _: &str) {}
+        pub fn subscribe_all(&self, _: ClientId) {}
+        pub fn unsubscribe(&self, _: ClientId, _: &str) {}
+        pub fn remove_client(&self, _: ClientId) {}
+        pub fn is_subscribed(&self, _: ClientId, _: &str) -> bool { false }
+    }
+
+    impl Default for SubscriptionManager {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+}
+
+#[cfg(not(feature = "subscriptions"))]
+use subscription_stub::{ClientId, SubscriptionManager};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -1367,6 +1414,7 @@ mod tests {
         let _ = server_task.await;
     }
 
+    #[cfg(feature = "subscriptions")]
     #[tokio::test]
     async fn test_event_broadcast_to_subscriber() {
         use std::time::Duration;
@@ -1422,6 +1470,7 @@ mod tests {
         let _ = server_task.await;
     }
 
+    #[cfg(feature = "subscriptions")]
     #[tokio::test]
     async fn test_event_not_sent_to_non_subscriber() {
         use std::time::Duration;
