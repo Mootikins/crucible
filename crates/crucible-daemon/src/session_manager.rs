@@ -163,10 +163,10 @@ impl SessionManager {
         sessions
             .values()
             .filter(|s| {
-                kiln.map_or(true, |k| &s.kiln == k)
-                    && workspace.map_or(true, |w| &s.workspace == w)
-                    && session_type.map_or(true, |t| s.session_type == t)
-                    && state.map_or(true, |st| s.state == st)
+                kiln.is_none_or(|k| &s.kiln == k)
+                    && workspace.is_none_or(|w| &s.workspace == w)
+                    && session_type.is_none_or(|t| s.session_type == t)
+                    && state.is_none_or(|st| s.state == st)
             })
             .map(SessionSummary::from)
             .collect()

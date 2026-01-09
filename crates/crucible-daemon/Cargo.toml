@@ -5,7 +5,7 @@ edition.workspace = true
 description = "Crucible session daemon"
 
 [[bin]]
-name = "cru-daemon"
+name = "cru-server"
 path = "src/main.rs"
 
 [dependencies]
