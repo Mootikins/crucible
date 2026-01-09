@@ -990,7 +990,7 @@ impl RatatuiRunner {
                         self.popup = None;
 
                         // Execute REPL command with args
-                        return self.execute_repl_command(&cmd_name, args);
+                        return self.execute_repl_command(&cmd_name, args).await;
                     }
                     return Ok(false);
                 }
@@ -1170,7 +1170,7 @@ impl RatatuiRunner {
                             self.popup = None;
                             self.view.set_input("");
                             self.view.set_cursor_position(0);
-                            return self.execute_repl_command(&name, "");
+                            return self.execute_repl_command(&name, "").await;
                         }
 
                         // Handle Session items - resume the selected session
@@ -2023,7 +2023,7 @@ impl RatatuiRunner {
     // ========================================================================
 
     /// Execute a REPL command (vim-style system commands)
-    fn execute_repl_command(&mut self, name: &str, args: &str) -> Result<bool> {
+    async fn execute_repl_command(&mut self, name: &str, args: &str) -> Result<bool> {
         use crate::tui::repl_commands::lookup;
 
         debug!(cmd = %name, args = %args, "Executing REPL command");
@@ -2074,6 +2074,10 @@ impl RatatuiRunner {
             "edit" | "e" | "view" => {
                 // Open session in $EDITOR
                 self.open_session_in_editor()?;
+            }
+            "resume" | "res" => {
+                // :resume [id] - resume a previous session
+                self.handle_resume_command(args).await?;
             }
             _ => {
                 self.view.echo_error(&format!("Unknown command: {}", name));
@@ -2195,6 +2199,70 @@ impl RatatuiRunner {
         let _temp_file = session_commands::open_session_in_editor(&markdown, mouse_enabled)?;
 
         self.view.echo_message(&format!("Closed {}", editor));
+
+        Ok(())
+    }
+
+    /// Handle the `:resume` command
+    ///
+    /// - No args: Show recent sessions list
+    /// - With ID: Resume the specified session
+    async fn handle_resume_command(&mut self, args: &str) -> Result<()> {
+        use crucible_observe::SessionId;
+
+        if let Some(logger) = &self.session_logger {
+            let sessions = logger.list_sessions().await;
+
+            if sessions.is_empty() {
+                self.view.echo_error("No previous sessions found");
+                return Ok(());
+            }
+
+            // If ID provided, use it; otherwise show picker
+            let args = args.trim();
+            if !args.is_empty() {
+                // Parse and resume the specified session
+                let session_id = match SessionId::parse(args) {
+                    Ok(id) => id,
+                    Err(_) => {
+                        self.view
+                            .echo_error(&format!("Invalid session ID: {}", args));
+                        return Ok(());
+                    }
+                };
+
+                // Verify session exists
+                if !sessions.iter().any(|s| s.as_str() == session_id.as_str()) {
+                    self.view
+                        .echo_error(&format!("Session not found: {}", args));
+                    return Ok(());
+                }
+
+                // Resume the session
+                if let Err(e) = self.resume_session_from_id(session_id.as_str()).await {
+                    self.view
+                        .echo_error(&format!("Failed to resume: {}", e));
+                } else {
+                    self.view
+                        .echo_message(&format!("Resumed session: {}", session_id));
+                }
+            } else {
+                // Show recent sessions (first 10, matching /resume popup)
+                let recent: Vec<_> = sessions.iter().take(10).collect();
+                let mut content = String::from("Recent sessions:\n\n");
+                for (i, id) in recent.iter().enumerate() {
+                    content.push_str(&format!("  {}. {}\n", i + 1, id.as_str()));
+                }
+                content.push_str("\nUse :resume <id> to resume a specific session");
+
+                self.view.push_dialog(crate::tui::dialog::DialogState::info(
+                    "Previous Sessions",
+                    content,
+                ));
+            }
+        } else {
+            self.view.echo_error("Session logging not configured");
+        }
 
         Ok(())
     }
