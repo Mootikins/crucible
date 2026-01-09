@@ -14,15 +14,15 @@
 //! cargo bench -p crucible-storage-tests --features surrealdb
 //! ```
 
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 #[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
 use criterion::BenchmarkId;
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 #[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
 use crucible_core::parser::BlockHash;
 #[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
-use crucible_core::storage::NoteStore;
-#[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
 use crucible_core::storage::NoteRecord;
+#[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
+use crucible_core::storage::NoteStore;
 #[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]
 use rand::Rng;
 #[cfg(any(feature = "sqlite", feature = "lance", feature = "surrealdb"))]

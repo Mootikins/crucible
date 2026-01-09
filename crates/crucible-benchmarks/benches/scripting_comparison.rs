@@ -7,9 +7,9 @@
 //! cargo bench -p crucible-benchmarks --features rune,steel,lua -- scripting
 //! ```
 
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 #[cfg(any(feature = "rune", feature = "steel", feature = "lua"))]
 use criterion::BenchmarkId;
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 #[cfg(any(feature = "rune", feature = "steel", feature = "lua"))]
 use serde_json::json;
 

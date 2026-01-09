@@ -453,8 +453,8 @@ async fn daemon_list(
     };
 
     println!(
-        "{:<40} {:<10} {:<10} {}",
-        "SESSION_ID", "TYPE", "STATE", "STARTED"
+        "{:<40} {:<10} {:<10} STARTED",
+        "SESSION_ID", "TYPE", "STATE"
     );
     println!("{}", "-".repeat(80));
 

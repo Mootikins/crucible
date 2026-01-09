@@ -7,9 +7,9 @@
 //! cargo bench -p crucible-benchmarks --features sqlite,surrealdb -- resource
 //! ```
 
-use criterion::{criterion_group, criterion_main, Criterion};
 #[cfg(any(feature = "sqlite", feature = "surrealdb"))]
 use criterion::BenchmarkId;
+use criterion::{criterion_group, criterion_main, Criterion};
 #[cfg(any(feature = "sqlite", feature = "surrealdb"))]
 use crucible_benchmarks::fixtures::{generate_graph, seeds, sizes};
 #[cfg(any(feature = "sqlite", feature = "surrealdb"))]
@@ -36,7 +36,10 @@ fn get_rss_bytes() -> Option<usize> {
     Some(rss_pages * page_size)
 }
 
-#[cfg(all(not(target_os = "linux"), any(feature = "sqlite", feature = "surrealdb")))]
+#[cfg(all(
+    not(target_os = "linux"),
+    any(feature = "sqlite", feature = "surrealdb")
+))]
 fn get_rss_bytes() -> Option<usize> {
     None // Memory measurement not supported on this platform
 }
