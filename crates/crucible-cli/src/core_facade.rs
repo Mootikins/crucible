@@ -115,23 +115,44 @@ impl KilnContext {
     ) -> Result<Vec<SemanticSearchResult>> {
         use crucible_core::traits::KnowledgeRepository;
 
+        tracing::debug!("semantic_search called with query={:?}, limit={}", query, limit);
+
         // Get embedding config from composite config and convert to provider config
         let embedding_config = self.config.embedding.to_provider_config();
+        tracing::debug!("embedding config: {:?}", embedding_config);
 
         // Create embedding provider using factory function
-        let provider = crucible_llm::embeddings::create_provider(embedding_config).await?;
+        let provider = crucible_llm::embeddings::create_provider(embedding_config)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to create embedding provider: {}", e);
+                e
+            })?;
 
         // Generate embedding for query
-        let query_response = provider.embed(query).await?;
+        tracing::debug!("Generating query embedding...");
+        let query_response = provider.embed(query).await.map_err(|e| {
+            tracing::error!("Failed to generate query embedding: {}", e);
+            e
+        })?;
         let query_embedding = query_response.embedding;
+        tracing::debug!("Query embedding generated, dimensions={}", query_embedding.len());
 
         // Use KnowledgeRepository trait for search (works with both embedded and daemon)
         let knowledge_repo = self
             .storage_handle
             .as_knowledge_repository()
-            .ok_or_else(|| anyhow!("Semantic search not supported in lightweight mode"))?;
+            .ok_or_else(|| {
+                tracing::error!("Knowledge repository not available (lightweight mode)");
+                anyhow!("Semantic search not supported in lightweight mode")
+            })?;
 
-        let results = knowledge_repo.search_vectors(query_embedding).await?;
+        tracing::debug!("Searching vectors...");
+        let results = knowledge_repo.search_vectors(query_embedding).await.map_err(|e| {
+            tracing::error!("Vector search failed: {}", e);
+            e
+        })?;
+        tracing::debug!("Vector search returned {} raw results", results.len());
 
         // Convert to facade result type, respecting limit
         Ok(results

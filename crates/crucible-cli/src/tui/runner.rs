@@ -1254,17 +1254,17 @@ impl RatatuiRunner {
                                             ));
                                         }
                                         Err(e) => {
+                                            tracing::error!("Search command failed: {}", e);
                                             self.view
-                                                .echo_message(&format!("Search failed: {}", e));
-                                            self.view.set_status_text("Search failed");
+                                                .echo_error(&format!("Search failed: {}", e));
                                         }
                                     }
                                 } else {
                                     // No kiln context - show error
-                                    self.view.echo_message(
+                                    tracing::warn!("Search command: kiln context not initialized");
+                                    self.view.echo_error(
                                         "Search unavailable: kiln context not initialized",
                                     );
-                                    self.view.set_status_text("Search unavailable");
                                 }
                             }
                             "context" => {

@@ -7,7 +7,7 @@ use tracing_subscriber::prelude::*; // For SubscriberExt trait
 use crucible_cli::{
     cli::{Cli, Commands},
     commands, config, factories,
-    sync::quick_sync_check,
+    sync::{quick_sync_check, SyncStatus},
 };
 
 /// Process files with change detection on startup
@@ -23,17 +23,27 @@ use crucible_cli::{
 ///
 /// Success or an error describing what failed
 async fn process_files_with_change_detection(config: &crate::config::CliConfig) -> Result<()> {
-    // Step 1: Create storage client
-    let storage_client = factories::create_surrealdb_storage(config).await?;
-    debug!("Created SurrealDB storage client");
+    // Step 1: Get storage handle (backend-agnostic)
+    let storage_handle = factories::get_storage(config).await?;
+    debug!("Created storage handle");
 
-    // Step 2: Initialize schema
-    factories::initialize_surrealdb_schema(&storage_client).await?;
-    debug!("Initialized SurrealDB schema");
+    // Step 2: Get NoteStore for processing
+    let note_store = storage_handle
+        .note_store()
+        .ok_or_else(|| anyhow::anyhow!("Storage mode does not support NoteStore"))?;
 
     // Step 3: Run quick sync check to find files needing processing
     let kiln_path = &config.kiln_path;
-    let sync_status = quick_sync_check(&storage_client, kiln_path).await?;
+
+    // For embedded SurrealDB mode, we can use the quick_sync_check
+    // For other modes, we skip this optimization and process all files
+    let sync_status = if let Some(surreal) = storage_handle.try_embedded() {
+        quick_sync_check(surreal, kiln_path).await?
+    } else {
+        // Create a minimal sync status that processes all markdown files
+        debug!("Non-embedded mode: skipping quick_sync_check, will process all files");
+        SyncStatus::all_new(kiln_path)?
+    };
 
     debug!(
         "Sync check complete: {} fresh, {} stale, {} new, {} deleted",
@@ -48,8 +58,8 @@ async fn process_files_with_change_detection(config: &crate::config::CliConfig) 
         let pending = sync_status.pending_count();
         info!("Processing {} files...", pending);
 
-        // Create pipeline for processing
-        let pipeline = factories::create_pipeline(storage_client, config, false).await?;
+        // Create pipeline for processing (backend-agnostic)
+        let pipeline = factories::create_pipeline(note_store, config, false).await?;
 
         // Process each file
         let files_to_process = sync_status.files_to_process();

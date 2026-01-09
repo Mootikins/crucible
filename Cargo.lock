@@ -3801,6 +3801,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crucible-core",
+ "crucible-enrichment",
+ "crucible-pipeline",
  "crucible-sqlite",
  "crucible-surrealdb",
  "dirs 6.0.0",
@@ -3985,6 +3987,7 @@ dependencies = [
  "chrono",
  "crucible-core",
  "crucible-parser",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.17",
  "tokio",

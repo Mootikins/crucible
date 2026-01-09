@@ -954,14 +954,17 @@ impl CliAppConfig {
         info!("  cli.verbose: {}", self.cli.verbose);
     }
 
-    /// Get database path (always derived from kiln path)
+    /// Get database path for SurrealDB (always derived from kiln path)
+    ///
+    /// Note: This returns the SurrealDB-specific path. SQLite uses a different
+    /// path (`crucible-sqlite.db`) computed in the storage factory.
     pub fn database_path(&self) -> std::path::PathBuf {
         // Only use PID suffix in test mode to prevent RocksDB lock collisions
         let db_name = if std::env::var("CRUCIBLE_TEST_MODE").is_ok() {
             let pid = std::process::id();
-            format!("kiln-{}.db", pid)
+            format!("crucible-surreal-{}.db", pid)
         } else {
-            "kiln.db".to_string()
+            "crucible-surreal.db".to_string()
         };
         self.kiln_path.join(".crucible").join(db_name)
     }

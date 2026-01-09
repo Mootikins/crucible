@@ -43,6 +43,35 @@ impl SyncStatus {
         files.extend(self.new_files.iter().cloned());
         files
     }
+
+    /// Create a SyncStatus treating all markdown files in a directory as new.
+    ///
+    /// Used when quick_sync_check is not available (e.g., non-embedded backends).
+    /// This ensures all files get processed on first run.
+    pub fn all_new(kiln_path: &Path) -> Result<Self> {
+        let start = std::time::Instant::now();
+        let mut new_files = Vec::new();
+
+        for entry in WalkDir::new(kiln_path)
+            .follow_links(false)
+            .into_iter()
+            .filter_entry(|e| !is_excluded_dir(e.path()))
+            .filter_map(|e| e.ok())
+        {
+            let entry_path = entry.path();
+            if entry_path.is_file() && is_markdown_file(entry_path) {
+                new_files.push(entry_path.to_path_buf());
+            }
+        }
+
+        Ok(Self {
+            fresh_count: 0,
+            stale_files: vec![],
+            new_files,
+            deleted_files: vec![],
+            check_duration: start.elapsed(),
+        })
+    }
 }
 
 /// Stored file metadata from the database
