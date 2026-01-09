@@ -2414,13 +2414,16 @@ impl RatatuiRunner {
             self.render_frame(&mut terminal)?;
         }
 
-        // Cleanup
-
-        // Flush session logger before exiting
-        if let Some(logger) = &self.session_logger {
+        // Flush session logger before terminal cleanup
+        let saved_session_id = if let Some(logger) = &self.session_logger {
+            let id = logger.session_id().await;
             logger.finish().await;
-        }
+            id
+        } else {
+            None
+        };
 
+        // Cleanup terminal
         disable_raw_mode()?;
         execute!(
             terminal.backend_mut(),
@@ -2429,6 +2432,12 @@ impl RatatuiRunner {
             LeaveAlternateScreen,
             cursor::Show
         )?;
+
+        // Report saved session (after leaving alternate screen so user sees it)
+        if let Some(session_id) = saved_session_id {
+            println!("Session saved: {}", session_id);
+            println!("Resume with: cru session resume {}", session_id);
+        }
 
         Ok(())
     }
