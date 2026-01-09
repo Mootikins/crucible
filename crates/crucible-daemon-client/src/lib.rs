@@ -12,7 +12,7 @@ pub mod lifecycle;
 mod storage;
 
 pub use client::DaemonClient;
-pub use storage::DaemonStorageClient;
+pub use storage::{DaemonNoteStore, DaemonStorageClient};
 
 // Legacy re-exports for backwards compatibility
 pub use crucible_daemon::{

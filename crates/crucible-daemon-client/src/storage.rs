@@ -4,9 +4,13 @@ use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use crucible_core::database::DocumentId;
-use crucible_core::parser::ParsedNote;
+use crucible_core::events::SessionEvent;
+use crucible_core::parser::{BlockHash, ParsedNote};
+use crucible_core::storage::{
+    NoteRecord, NoteStore, SearchResult as StorageSearchResult, StorageError, StorageResult,
+};
 use crucible_core::traits::{KnowledgeRepository, NoteInfo, StorageClient};
-use crucible_core::types::SearchResult;
+use crucible_core::types::SearchResult as KnowledgeSearchResult;
 use crucible_core::{CrucibleError, Result as CoreResult};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -158,7 +162,7 @@ impl KnowledgeRepository for DaemonStorageClient {
             .collect())
     }
 
-    async fn search_vectors(&self, vector: Vec<f32>) -> CoreResult<Vec<SearchResult>> {
+    async fn search_vectors(&self, vector: Vec<f32>) -> CoreResult<Vec<KnowledgeSearchResult>> {
         // Use the backend-agnostic search_vectors RPC method
         let results = self
             .client
@@ -169,13 +173,119 @@ impl KnowledgeRepository for DaemonStorageClient {
         Ok(results
             .into_iter()
             .filter(|(_, score)| *score >= 0.5)
-            .map(|(doc_id, score)| SearchResult {
+            .map(|(doc_id, score)| KnowledgeSearchResult {
                 document_id: DocumentId(doc_id),
                 score,
                 highlights: None,
                 snippet: None,
             })
             .collect())
+    }
+}
+
+// =============================================================================
+// DaemonNoteStore - NoteStore trait implementation via RPC
+// =============================================================================
+
+/// NoteStore implementation that delegates to daemon via RPC
+///
+/// This allows the CLI to use the NoteStore trait uniformly across
+/// embedded and daemon modes.
+pub struct DaemonNoteStore {
+    client: Arc<DaemonStorageClient>,
+}
+
+impl DaemonNoteStore {
+    /// Create a new DaemonNoteStore wrapping a DaemonStorageClient
+    pub fn new(client: Arc<DaemonStorageClient>) -> Self {
+        Self { client }
+    }
+}
+
+#[async_trait]
+impl NoteStore for DaemonNoteStore {
+    async fn upsert(&self, note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
+        let note_path = PathBuf::from(&note.path);
+        let note_title = Some(note.title.clone());
+
+        self.client
+            .client
+            .note_upsert(self.client.kiln_path(), &note)
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        // Return a single event indicating the note was created/updated
+        Ok(vec![SessionEvent::NoteCreated {
+            path: note_path,
+            title: note_title,
+        }])
+    }
+
+    async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
+        self.client
+            .client
+            .note_get(self.client.kiln_path(), path)
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))
+    }
+
+    async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
+        // Check if note exists before deleting
+        let existed = self.get(path).await?.is_some();
+
+        self.client
+            .client
+            .note_delete(self.client.kiln_path(), path)
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        Ok(SessionEvent::NoteDeleted {
+            path: PathBuf::from(path),
+            existed,
+        })
+    }
+
+    async fn list(&self) -> StorageResult<Vec<NoteRecord>> {
+        self.client
+            .client
+            .note_list(self.client.kiln_path())
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))
+    }
+
+    async fn get_by_hash(&self, hash: &BlockHash) -> StorageResult<Option<NoteRecord>> {
+        // Not yet implemented via RPC - would need new endpoint
+        // For now, do a linear scan (inefficient but correct)
+        let notes = self.list().await?;
+        Ok(notes.into_iter().find(|n| &n.content_hash == hash))
+    }
+
+    async fn search(
+        &self,
+        query_embedding: &[f32],
+        limit: usize,
+        _filter: Option<crucible_core::storage::Filter>,
+    ) -> StorageResult<Vec<StorageSearchResult>> {
+        // Use existing search_vectors RPC
+        let results = self
+            .client
+            .client
+            .search_vectors(self.client.kiln_path(), query_embedding, limit)
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        // Convert to StorageSearchResult - we need to fetch the full NoteRecord for each hit
+        let mut hits = Vec::with_capacity(results.len());
+        for (doc_id, score) in results {
+            if let Ok(Some(note)) = self.get(&doc_id).await {
+                hits.push(StorageSearchResult {
+                    note,
+                    score: score as f32,
+                });
+            }
+        }
+
+        Ok(hits)
     }
 }
 

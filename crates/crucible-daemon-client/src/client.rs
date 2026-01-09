@@ -291,6 +291,152 @@ impl DaemonClient {
             Ok(Some(result))
         }
     }
+
+    // =========================================================================
+    // NoteStore RPC Methods
+    // =========================================================================
+
+    /// Upsert a note record via daemon RPC
+    ///
+    /// Sends the note record to the daemon for storage.
+    pub async fn note_upsert(
+        &self,
+        kiln_path: &Path,
+        note: &crucible_core::storage::NoteRecord,
+    ) -> Result<()> {
+        self.call(
+            "note.upsert",
+            serde_json::json!({
+                "kiln": kiln_path.to_string_lossy(),
+                "note": note
+            }),
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Get a note by path via daemon RPC
+    pub async fn note_get(
+        &self,
+        kiln_path: &Path,
+        path: &str,
+    ) -> Result<Option<crucible_core::storage::NoteRecord>> {
+        let result = self
+            .call(
+                "note.get",
+                serde_json::json!({
+                    "kiln": kiln_path.to_string_lossy(),
+                    "path": path
+                }),
+            )
+            .await?;
+
+        if result.is_null() {
+            Ok(None)
+        } else {
+            let note: crucible_core::storage::NoteRecord = serde_json::from_value(result)?;
+            Ok(Some(note))
+        }
+    }
+
+    /// Delete a note by path via daemon RPC
+    pub async fn note_delete(&self, kiln_path: &Path, path: &str) -> Result<()> {
+        self.call(
+            "note.delete",
+            serde_json::json!({
+                "kiln": kiln_path.to_string_lossy(),
+                "path": path
+            }),
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// List all notes via daemon RPC
+    pub async fn note_list(
+        &self,
+        kiln_path: &Path,
+    ) -> Result<Vec<crucible_core::storage::NoteRecord>> {
+        let result = self
+            .call(
+                "note.list",
+                serde_json::json!({
+                    "kiln": kiln_path.to_string_lossy()
+                }),
+            )
+            .await?;
+
+        let notes: Vec<crucible_core::storage::NoteRecord> = serde_json::from_value(result)?;
+        Ok(notes)
+    }
+
+    // =========================================================================
+    // Pipeline RPC Methods
+    // =========================================================================
+
+    /// Process a single file through the daemon's pipeline
+    ///
+    /// Returns true if the file was processed, false if skipped (unchanged).
+    pub async fn process_file(&self, kiln_path: &Path, file_path: &Path) -> Result<bool> {
+        let result = self
+            .call(
+                "process_file",
+                serde_json::json!({
+                    "kiln": kiln_path.to_string_lossy(),
+                    "path": file_path.to_string_lossy()
+                }),
+            )
+            .await?;
+
+        let status = result
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        Ok(status == "processed")
+    }
+
+    /// Process multiple files through the daemon's pipeline
+    ///
+    /// Returns (processed_count, skipped_count, errors)
+    pub async fn process_batch(
+        &self,
+        kiln_path: &Path,
+        file_paths: &[PathBuf],
+    ) -> Result<(usize, usize, Vec<(String, String)>)> {
+        let paths: Vec<String> = file_paths
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
+
+        let result = self
+            .call(
+                "process_batch",
+                serde_json::json!({
+                    "kiln": kiln_path.to_string_lossy(),
+                    "paths": paths
+                }),
+            )
+            .await?;
+
+        let processed = result.get("processed").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+        let skipped = result.get("skipped").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+
+        let errors: Vec<(String, String)> = result
+            .get("errors")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|e| {
+                        let path = e.get("path")?.as_str()?.to_string();
+                        let error = e.get("error")?.as_str()?.to_string();
+                        Some((path, error))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        Ok((processed, skipped, errors))
+    }
 }
 
 #[cfg(test)]
