@@ -5,22 +5,22 @@ expression: h.render()
                                                   
                                                   
                                                   
-                                                  
-                                                  
-                                                  
  > Show packages                                  
                                                   
  ● Here are the packages:                         
                                                   
-   │Packag│   Description    │Version│ License  │ 
-   │  e   │                  │       │          │ 
-   ├──────┼──────────────────┼───────┼──────────┤ 
-   │serde │Serialization     │1.0.195│MIT/Apache│ 
-   │      │framework         │       │-2.0      │ 
-   │tokio │Async runtime for │1.35.1 │MIT       │ 
-   │      │Rust              │       │          │ 
-   │clap  │Command line      │4.4.12 │MIT/Apache│ 
-   │      │parser            │       │-2.0      │ 
+   ┌─────────┬───────────────┬─────────┬───────── 
+   │ Package │ Description   │ Version │ License  
+   ├─────────┼───────────────┼─────────┼───────── 
+   │ serde   │ Serialization │ 1.0.195 │ MIT/Apac 
+   │         │ framework     │         │          
+   ├─────────┼───────────────┼─────────┼───────── 
+   │ tokio   │ Async runtime │ 1.35.1  │ MIT      
+   │         │ for Rust      │         │          
+   ├─────────┼───────────────┼─────────┼───────── 
+   │ clap    │ Command line  │ 4.4.12  │ MIT/Apac 
+   │         │ parser        │         │          
+   └─────────┴───────────────┴─────────┴───────── 
                                                   
                                                   
  >                                                
