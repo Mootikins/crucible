@@ -68,6 +68,8 @@ pub struct ChatSessionConfig {
     pub resume_session_id: Option<String>,
     /// Kiln path for session storage (if None, uses core config kiln_path)
     pub session_kiln_path: Option<std::path::PathBuf>,
+    /// Use fullscreen mode (alternate screen) instead of inline viewport
+    pub fullscreen: bool,
 }
 
 impl Default for ChatSessionConfig {
@@ -81,6 +83,7 @@ impl Default for ChatSessionConfig {
             default_selection: None,
             resume_session_id: None,
             session_kiln_path: None,
+            fullscreen: false, // Default to inline mode
         }
     }
 }
@@ -101,6 +104,7 @@ impl ChatSessionConfig {
             default_selection: None,
             resume_session_id: None,
             session_kiln_path: None,
+            fullscreen: false, // Default to inline mode
         }
     }
 
@@ -140,6 +144,16 @@ impl ChatSessionConfig {
     /// to the kiln_path from the core config.
     pub fn with_session_kiln(mut self, kiln_path: std::path::PathBuf) -> Self {
         self.session_kiln_path = Some(kiln_path);
+        self
+    }
+
+    /// Use fullscreen mode (alternate screen) instead of inline viewport.
+    ///
+    /// By default, the TUI uses inline mode which preserves native terminal
+    /// scrollback for completed messages. Fullscreen mode uses the alternate
+    /// screen buffer like traditional TUIs.
+    pub fn with_fullscreen(mut self, fullscreen: bool) -> Self {
+        self.fullscreen = fullscreen;
         self
     }
 
@@ -407,6 +421,11 @@ impl ChatSession {
             popup_provider.clone(),
             registry,
         )?;
+
+        // Configure viewport mode (inline by default, fullscreen optional)
+        if self.config.fullscreen {
+            runner.with_fullscreen_mode();
+        }
 
         // Wire up event ring and interaction registry for interaction completion
         runner
