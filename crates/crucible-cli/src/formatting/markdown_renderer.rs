@@ -362,8 +362,8 @@ fn render_table(node: &Node) -> String {
         output.push_str(&format!("{}\n", mid_border));
     }
 
-    // Render body rows
-    for row in &body_rows {
+    // Render body rows with separators between them
+    for (idx, row) in body_rows.iter().enumerate() {
         let mut cells: Vec<String> = Vec::new();
         for (i, cell) in row.iter().enumerate() {
             let width = col_widths.get(i).copied().unwrap_or(3);
@@ -378,6 +378,19 @@ fn render_table(node: &Node) -> String {
 
         let row_content = cells.join(" │ ");
         output.push_str(&format!("│ {} │\n", row_content));
+
+        // Add separator between data rows (but not after the last one)
+        if idx < body_rows.len() - 1 {
+            let mid_border = format!(
+                "├{}┤",
+                col_widths
+                    .iter()
+                    .map(|w| "─".repeat(*w + 2))
+                    .collect::<Vec<_>>()
+                    .join("┼")
+            );
+            output.push_str(&format!("{}\n", mid_border));
+        }
     }
 
     // Build bottom border: └───┴───┘
@@ -503,5 +516,42 @@ mod tests {
         assert!(result.contains("Header2"));
         assert!(result.contains("Data1"));
         assert!(result.contains("Data2"));
+    }
+
+    #[test]
+    fn test_render_table_multi_row_with_separators() {
+        let input = r#"| Feature | Rust | Go |
+|---------|------|-----|
+| Memory | Safe | GC |
+| Speed | Fast | Fast |"#;
+        let result = render_markdown(input);
+
+        // Print for debugging
+        eprintln!("Table output:\n{}", result);
+
+        // Should have top border
+        assert!(result.contains("┌"), "Should have top-left corner");
+        assert!(result.contains("┐"), "Should have top-right corner");
+
+        // Should have bottom border
+        assert!(result.contains("└"), "Should have bottom-left corner");
+        assert!(result.contains("┘"), "Should have bottom-right corner");
+
+        // Should have separator between data rows (├───┼───┤)
+        // Count occurrences of ├ - should be at least 2 (one after header, one between rows)
+        let left_t_count = result.matches('├').count();
+        assert!(
+            left_t_count >= 2,
+            "Should have at least 2 row separators (got {})",
+            left_t_count
+        );
+
+        // Should have cross junctions (┼) in separators
+        let cross_count = result.matches('┼').count();
+        assert!(
+            cross_count >= 4,
+            "Should have at least 4 cross junctions (got {})",
+            cross_count
+        );
     }
 }
