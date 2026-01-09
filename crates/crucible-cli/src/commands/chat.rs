@@ -212,9 +212,9 @@ pub async fn execute(
             ));
 
             // Create pipeline for background processing
-            let note_store = storage_handle
-                .note_store()
-                .ok_or_else(|| anyhow::anyhow!("Storage mode does not support background indexing"))?;
+            let note_store = storage_handle.note_store().ok_or_else(|| {
+                anyhow::anyhow!("Storage mode does not support background indexing")
+            })?;
             let pipeline = factories::create_pipeline(note_store, &config, false).await?;
 
             let files_to_process = sync_status.files_to_process();

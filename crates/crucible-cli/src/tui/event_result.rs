@@ -288,8 +288,14 @@ mod tests {
 
         assert!(matches!(lines, TuiAction::ScrollLines(5)));
         assert!(matches!(to, TuiAction::ScrollTo(100)));
-        assert!(matches!(page_up, TuiAction::ScrollPage(ScrollDirection::Up)));
-        assert!(matches!(page_down, TuiAction::ScrollPage(ScrollDirection::Down)));
+        assert!(matches!(
+            page_up,
+            TuiAction::ScrollPage(ScrollDirection::Up)
+        ));
+        assert!(matches!(
+            page_down,
+            TuiAction::ScrollPage(ScrollDirection::Down)
+        ));
     }
 
     #[test]
@@ -317,9 +323,18 @@ mod tests {
         let cancel = TuiAction::CloseDialog(DialogResult::Cancel);
         let select = TuiAction::CloseDialog(DialogResult::Select(1));
 
-        assert!(matches!(confirm, TuiAction::CloseDialog(DialogResult::Confirm)));
-        assert!(matches!(cancel, TuiAction::CloseDialog(DialogResult::Cancel)));
-        assert!(matches!(select, TuiAction::CloseDialog(DialogResult::Select(1))));
+        assert!(matches!(
+            confirm,
+            TuiAction::CloseDialog(DialogResult::Confirm)
+        ));
+        assert!(matches!(
+            cancel,
+            TuiAction::CloseDialog(DialogResult::Cancel)
+        ));
+        assert!(matches!(
+            select,
+            TuiAction::CloseDialog(DialogResult::Select(1))
+        ));
     }
 
     #[test]
@@ -335,9 +350,15 @@ mod tests {
         let dialog = TuiAction::RequestFocus(FocusTarget::Dialog);
 
         assert!(matches!(input, TuiAction::RequestFocus(FocusTarget::Input)));
-        assert!(matches!(history, TuiAction::RequestFocus(FocusTarget::History)));
+        assert!(matches!(
+            history,
+            TuiAction::RequestFocus(FocusTarget::History)
+        ));
         assert!(matches!(popup, TuiAction::RequestFocus(FocusTarget::Popup)));
-        assert!(matches!(dialog, TuiAction::RequestFocus(FocusTarget::Dialog)));
+        assert!(matches!(
+            dialog,
+            TuiAction::RequestFocus(FocusTarget::Dialog)
+        ));
     }
 
     #[test]

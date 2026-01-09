@@ -2,8 +2,8 @@
 //!
 //! Handles InputAction dispatch and state mutations.
 
-use crate::tui::InputAction;
 use crate::tui::state::TuiState;
+use crate::tui::InputAction;
 use crucible_core::traits::chat::cycle_mode_id;
 
 /// Executes input actions against TuiState
@@ -65,7 +65,10 @@ impl ActionExecutor {
                 None
             }
             InputAction::InsertChar(c) => {
-                state.view.input_buffer.insert(state.view.cursor_position, c);
+                state
+                    .view
+                    .input_buffer
+                    .insert(state.view.cursor_position, c);
                 state.view.cursor_position += c.len_utf8();
                 None
             }
@@ -77,13 +80,17 @@ impl ActionExecutor {
                         .nth(1)
                         .map(|(i, _)| state.view.cursor_position + i)
                         .unwrap_or(state.view.input_buffer.len());
-                    state.view.input_buffer.replace_range(state.view.cursor_position..char_end, "");
+                    state
+                        .view
+                        .input_buffer
+                        .replace_range(state.view.cursor_position..char_end, "");
                 }
                 None
             }
             InputAction::MoveCursorLeft => {
                 if state.view.cursor_position > 0 {
-                    state.view.cursor_position = state.view.input_buffer[..state.view.cursor_position]
+                    state.view.cursor_position = state.view.input_buffer
+                        [..state.view.cursor_position]
                         .char_indices()
                         .next_back()
                         .map(|(i, _)| i)
@@ -93,7 +100,8 @@ impl ActionExecutor {
             }
             InputAction::MoveCursorRight => {
                 if state.view.cursor_position < state.view.input_buffer.len() {
-                    state.view.cursor_position = state.view.input_buffer[state.view.cursor_position..]
+                    state.view.cursor_position = state.view.input_buffer
+                        [state.view.cursor_position..]
                         .char_indices()
                         .nth(1)
                         .map(|(i, _)| state.view.cursor_position + i)
@@ -111,7 +119,10 @@ impl ActionExecutor {
                 if let Some(pos) = before.rfind(char::is_whitespace) {
                     let delete_from = pos + 1;
                     let delete_to = state.view.cursor_position;
-                    state.view.input_buffer.replace_range(delete_from..delete_to, "");
+                    state
+                        .view
+                        .input_buffer
+                        .replace_range(delete_from..delete_to, "");
                     state.view.cursor_position = delete_from;
                 } else {
                     state.view.input_buffer.clear();
@@ -120,7 +131,8 @@ impl ActionExecutor {
                 None
             }
             InputAction::DeleteToLineStart => {
-                state.view.input_buffer = state.view.input_buffer[state.view.cursor_position..].to_string();
+                state.view.input_buffer =
+                    state.view.input_buffer[state.view.cursor_position..].to_string();
                 state.view.cursor_position = 0;
                 None
             }
@@ -152,12 +164,17 @@ impl ActionExecutor {
             InputAction::MoveWordForward => {
                 let after = &state.view.input_buffer[state.view.cursor_position..];
                 // Find first whitespace
-                if let Some((ws_offset, ws_char)) = after.char_indices().find(|(_, c)| c.is_whitespace()) {
+                if let Some((ws_offset, ws_char)) =
+                    after.char_indices().find(|(_, c)| c.is_whitespace())
+                {
                     // Move past the whitespace character
                     state.view.cursor_position += ws_offset + ws_char.len_utf8();
                     // Skip additional whitespace
                     while state.view.cursor_position < state.view.input_buffer.len() {
-                        if let Some(c) = state.view.input_buffer[state.view.cursor_position..].chars().next() {
+                        if let Some(c) = state.view.input_buffer[state.view.cursor_position..]
+                            .chars()
+                            .next()
+                        {
                             if c.is_whitespace() {
                                 state.view.cursor_position += c.len_utf8();
                             } else {
@@ -177,7 +194,9 @@ impl ActionExecutor {
                 if len >= 2 && state.view.cursor_position > 0 {
                     let chars: Vec<char> = state.view.input_buffer.chars().collect();
                     // Convert byte position to character position
-                    let char_pos = state.view.input_buffer[..state.view.cursor_position].chars().count();
+                    let char_pos = state.view.input_buffer[..state.view.cursor_position]
+                        .chars()
+                        .count();
 
                     let (i, j) = if char_pos >= len {
                         // At end: swap last two characters
@@ -193,7 +212,9 @@ impl ActionExecutor {
 
                     // Calculate new cursor position (byte index after swapped char)
                     let new_cursor = if char_pos < len {
-                        state.view.input_buffer
+                        state
+                            .view
+                            .input_buffer
                             .char_indices()
                             .nth(char_pos + 1)
                             .map(|(idx, _)| idx)

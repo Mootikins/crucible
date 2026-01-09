@@ -393,7 +393,8 @@ mod full_session_flow {
     /// Session with multiple tool uses
     #[test]
     fn session_with_tools() {
-        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::interleaved_prose_and_tools());
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
+            .with_session(sessions::interleaved_prose_and_tools());
 
         assert_snapshot!("e2e_full_interleaved", h.render());
     }

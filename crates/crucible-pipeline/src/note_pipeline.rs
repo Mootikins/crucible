@@ -222,12 +222,7 @@ impl NotePipeline {
             .upsert(note_record)
             .await
             .map_err(|e| anyhow::anyhow!("Storage error: {}", e))
-            .with_context(|| {
-                format!(
-                    "Phase 4: Failed to store note for '{}'",
-                    path.display()
-                )
-            })?;
+            .with_context(|| format!("Phase 4: Failed to store note for '{}'", path.display()))?;
 
         // Update file state tracking
         self.update_file_state(path).await.with_context(|| {
@@ -332,8 +327,8 @@ impl NotePipeline {
         let parsed = &enriched.parsed;
 
         // Use content hash from parsed note (BLAKE3 hash of file content)
-        let content_hash = BlockHash::from_hex(&parsed.content_hash)
-            .unwrap_or_else(|_| BlockHash::zero());
+        let content_hash =
+            BlockHash::from_hex(&parsed.content_hash).unwrap_or_else(|_| BlockHash::zero());
 
         // Get embedding: use first block embedding or average if multiple
         let embedding = if enriched.embeddings.is_empty() {
@@ -359,11 +354,7 @@ impl NotePipeline {
         };
 
         // Extract links from wikilinks
-        let links_to: Vec<String> = parsed
-            .wikilinks
-            .iter()
-            .map(|w| w.target.clone())
-            .collect();
+        let links_to: Vec<String> = parsed.wikilinks.iter().map(|w| w.target.clone()).collect();
 
         // Extract tags (Tag.name is the string value)
         let tags: Vec<String> = parsed.tags.iter().map(|t| t.name.clone()).collect();

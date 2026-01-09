@@ -217,7 +217,8 @@ impl<'a> SessionHistoryWidget<'a> {
         if self.viewport_height > 0 {
             let content_width = UiConstants::content_width(self.viewport_width);
             let content_height = self.content_height(content_width);
-            self.scroll_offset = ScrollUtils::max_scroll(content_height, self.viewport_height as usize);
+            self.scroll_offset =
+                ScrollUtils::max_scroll(content_height, self.viewport_height as usize);
         }
     }
 
@@ -266,11 +267,8 @@ impl Widget for SessionHistoryWidget<'_> {
             // scroll_offset = N: show lines from (content - viewport - N) to (content - N)
             use crate::tui::scroll_utils::ScrollUtils;
             let max_scroll = ScrollUtils::max_scroll(content_height, viewport_height);
-            let effective_scroll = ScrollUtils::effective_scroll(
-                self.scroll_offset,
-                content_height,
-                viewport_height,
-            );
+            let effective_scroll =
+                ScrollUtils::effective_scroll(self.scroll_offset, content_height, viewport_height);
 
             // Convert bottom-relative to top-relative scroll
             let top_scroll = max_scroll - effective_scroll;
