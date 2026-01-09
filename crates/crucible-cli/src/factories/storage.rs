@@ -15,7 +15,7 @@ use crucible_config::StorageMode;
 use crucible_core::enrichment::{EnrichedNote, EnrichedNoteStore};
 use crucible_core::storage::NoteStore;
 use crucible_core::traits::StorageClient;
-use crucible_daemon_client::{lifecycle, DaemonClient, DaemonStorageClient};
+use crucible_daemon_client::{lifecycle, DaemonClient, DaemonNoteStore, DaemonStorageClient};
 use crucible_surrealdb::{adapters, SurrealDbConfig};
 use once_cell::sync::Lazy;
 use std::collections::{hash_map::Entry, HashMap};
@@ -297,6 +297,16 @@ impl StorageHandle {
         matches!(self, StorageHandle::Sqlite(_))
     }
 
+    /// Get the DaemonStorageClient if in daemon mode
+    ///
+    /// Returns `Some(&Arc<DaemonStorageClient>)` if running in daemon mode, `None` otherwise.
+    pub fn as_daemon_client(&self) -> Option<&Arc<DaemonStorageClient>> {
+        match self {
+            StorageHandle::Daemon(c) => Some(c),
+            _ => None,
+        }
+    }
+
     /// List notes in the kiln (backend-agnostic)
     ///
     /// This provides a unified interface for listing notes regardless of storage mode.
@@ -337,8 +347,12 @@ impl StorageHandle {
 
     /// Get NoteStore trait object (if available)
     ///
-    /// Returns `Some` for embedded and lightweight modes, `None` for daemon mode.
-    /// Daemon mode will need RPC wrapper (future work).
+    /// Returns `Some` for all storage modes. Each mode provides its own
+    /// implementation:
+    /// - Embedded: Direct SurrealDB access
+    /// - Daemon: RPC wrapper via DaemonNoteStore
+    /// - Lightweight: LanceDB-backed store
+    /// - SQLite: Direct SQLite access
     ///
     /// # Examples
     ///
@@ -354,7 +368,9 @@ impl StorageHandle {
     pub fn note_store(&self) -> Option<Arc<dyn NoteStore>> {
         match self {
             StorageHandle::Embedded(h) => Some(h.as_note_store()),
-            StorageHandle::Daemon(_) => None, // TODO: DaemonNoteStoreClient
+            StorageHandle::Daemon(c) => {
+                Some(Arc::new(DaemonNoteStore::new(Arc::clone(c))))
+            }
             StorageHandle::Lightweight(store) => Some(Arc::clone(store) as Arc<dyn NoteStore>),
             #[cfg(feature = "storage-sqlite")]
             StorageHandle::Sqlite(store) => Some(Arc::clone(store) as Arc<dyn NoteStore>),
@@ -508,6 +524,9 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
             let client = DaemonClient::connect_to(&socket).await?;
             let kiln_path = config.kiln_path.clone();
 
+            // Open the kiln in the daemon (required before any queries)
+            client.kiln_open(&kiln_path).await?;
+
             Ok(StorageHandle::Daemon(Arc::new(DaemonStorageClient::new(
                 Arc::new(client),
                 kiln_path,
@@ -525,7 +544,7 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
             #[cfg(feature = "storage-sqlite")]
             {
                 info!("Using SQLite storage mode (experimental)");
-                let sqlite_path = config.kiln_path.join(".crucible").join("crucible.db");
+                let sqlite_path = config.kiln_path.join(".crucible").join("crucible-sqlite.db");
                 let sqlite_config =
                     crucible_sqlite::SqliteConfig::new(sqlite_path.to_string_lossy().as_ref());
                 let pool = crucible_sqlite::SqlitePool::new(sqlite_config)
@@ -599,7 +618,7 @@ mod tests {
         // Create temp kiln with database directory
         let temp_dir = TempDir::new().unwrap();
         let kiln_path = temp_dir.path().to_path_buf();
-        let db_dir = kiln_path.join(".crucible").join("kiln.db");
+        let db_dir = kiln_path.join(".crucible").join("crucible-surreal.db");
         std::fs::create_dir_all(&db_dir).unwrap();
 
         let lock_path = db_dir.join("LOCK");
