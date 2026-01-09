@@ -861,6 +861,578 @@ impl SessionEvent {
             _ => Priority::Normal,
         }
     }
+
+    /// Get the PascalCase type name of this event.
+    ///
+    /// Returns a human-readable type name suitable for logging and display.
+    /// Unlike `event_type()` which returns snake_case identifiers, this method
+    /// returns PascalCase names matching the enum variant names.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use crucible_core::events::SessionEvent;
+    /// use serde_json::Value as JsonValue;
+    ///
+    /// let event = SessionEvent::ToolCalled {
+    ///     name: "search".into(),
+    ///     args: JsonValue::Null,
+    /// };
+    /// assert_eq!(event.type_name(), "ToolCalled");
+    /// ```
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Self::MessageReceived { .. } => "MessageReceived",
+            Self::AgentResponded { .. } => "AgentResponded",
+            Self::AgentThinking { .. } => "AgentThinking",
+            Self::ToolCalled { .. } => "ToolCalled",
+            Self::ToolCompleted { .. } => "ToolCompleted",
+            Self::SessionStarted { .. } => "SessionStarted",
+            Self::SessionCompacted { .. } => "SessionCompacted",
+            Self::SessionEnded { .. } => "SessionEnded",
+            Self::SubagentSpawned { .. } => "SubagentSpawned",
+            Self::SubagentCompleted { .. } => "SubagentCompleted",
+            Self::SubagentFailed { .. } => "SubagentFailed",
+            Self::TextDelta { .. } => "TextDelta",
+            Self::NoteParsed { .. } => "NoteParsed",
+            Self::NoteCreated { .. } => "NoteCreated",
+            Self::NoteModified { .. } => "NoteModified",
+            Self::NoteDeleted { .. } => "NoteDeleted",
+            Self::McpAttached { .. } => "McpAttached",
+            Self::ToolDiscovered { .. } => "ToolDiscovered",
+            Self::Custom { .. } => "Custom",
+            Self::FileChanged { .. } => "FileChanged",
+            Self::FileDeleted { .. } => "FileDeleted",
+            Self::FileMoved { .. } => "FileMoved",
+            Self::EntityStored { .. } => "EntityStored",
+            Self::EntityDeleted { .. } => "EntityDeleted",
+            Self::BlocksUpdated { .. } => "BlocksUpdated",
+            Self::RelationStored { .. } => "RelationStored",
+            Self::RelationDeleted { .. } => "RelationDeleted",
+            Self::TagAssociated { .. } => "TagAssociated",
+            Self::EmbeddingRequested { .. } => "EmbeddingRequested",
+            Self::EmbeddingStored { .. } => "EmbeddingStored",
+            Self::EmbeddingFailed { .. } => "EmbeddingFailed",
+            Self::EmbeddingBatchComplete { .. } => "EmbeddingBatchComplete",
+            Self::PreToolCall { .. } => "PreToolCall",
+            Self::PreParse { .. } => "PreParse",
+            Self::PreLlmCall { .. } => "PreLlmCall",
+            Self::AwaitingInput { .. } => "AwaitingInput",
+            Self::InteractionRequested { .. } => "InteractionRequested",
+            Self::InteractionCompleted { .. } => "InteractionCompleted",
+            Self::SessionStateChanged { .. } => "SessionStateChanged",
+            Self::SessionPaused { .. } => "SessionPaused",
+            Self::SessionResumed { .. } => "SessionResumed",
+            Self::TerminalOutput { .. } => "TerminalOutput",
+        }
+    }
+
+    /// Get a summary of this event's content.
+    ///
+    /// Returns a concise string describing the event's key fields, suitable for
+    /// logging and debugging. The summary is truncated to `max_len` characters.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_len` - Maximum length for any individual string field in the summary
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use crucible_core::events::SessionEvent;
+    /// use serde_json::Value as JsonValue;
+    ///
+    /// let event = SessionEvent::ToolCalled {
+    ///     name: "search".into(),
+    ///     args: JsonValue::String("query".into()),
+    /// };
+    /// let summary = event.summary(100);
+    /// assert!(summary.contains("tool=search"));
+    /// ```
+    pub fn summary(&self, max_len: usize) -> String {
+        match self {
+            Self::MessageReceived {
+                content,
+                participant_id,
+            } => {
+                format!("from={}, content_len={}", participant_id, content.len())
+            }
+            Self::AgentResponded {
+                content,
+                tool_calls,
+            } => {
+                format!(
+                    "content_len={}, tool_calls={}",
+                    content.len(),
+                    tool_calls.len()
+                )
+            }
+            Self::AgentThinking { thought } => {
+                format!("thought_len={}", thought.len())
+            }
+            Self::ToolCalled { name, args } => {
+                format!("tool={}, args_size={}", name, args.to_string().len())
+            }
+            Self::ToolCompleted {
+                name,
+                result,
+                error,
+            } => {
+                format!(
+                    "tool={}, result_len={}, error={}",
+                    name,
+                    result.len(),
+                    error.is_some()
+                )
+            }
+            Self::SessionStarted { config } => {
+                format!("session_id={}", config.session_id)
+            }
+            Self::SessionCompacted { summary, new_file } => {
+                format!(
+                    "summary_len={}, new_file={}",
+                    summary.len(),
+                    new_file.display()
+                )
+            }
+            Self::SessionEnded { reason } => {
+                format!("reason={}", truncate(reason, max_len))
+            }
+            Self::SubagentSpawned { id, prompt } => {
+                format!("id={}, prompt_len={}", id, prompt.len())
+            }
+            Self::SubagentCompleted { id, result } => {
+                format!("id={}, result_len={}", id, result.len())
+            }
+            Self::SubagentFailed { id, error } => {
+                format!("id={}, error={}", id, truncate(error, max_len))
+            }
+            Self::TextDelta { delta, seq } => {
+                format!("seq={}, delta_len={}", seq, delta.len())
+            }
+            Self::NoteParsed {
+                path,
+                block_count,
+                payload,
+            } => {
+                let payload_str = if payload.is_some() {
+                    ", has_payload"
+                } else {
+                    ""
+                };
+                format!(
+                    "path={}, blocks={}{}",
+                    path.display(),
+                    block_count,
+                    payload_str
+                )
+            }
+            Self::NoteCreated { path, title } => {
+                let title_str = title.as_deref().unwrap_or("(none)");
+                format!(
+                    "path={}, title={}",
+                    path.display(),
+                    truncate(title_str, max_len)
+                )
+            }
+            Self::NoteModified { path, change_type } => {
+                format!("path={}, change={:?}", path.display(), change_type)
+            }
+            Self::NoteDeleted { path, existed } => {
+                format!("path={}, existed={}", path.display(), existed)
+            }
+            Self::McpAttached { server, tool_count } => {
+                format!("server={}, tools={}", server, tool_count)
+            }
+            Self::ToolDiscovered { name, source, .. } => {
+                format!("name={}, source={:?}", name, source)
+            }
+            Self::Custom { name, payload } => {
+                format!("name={}, payload_size={}", name, payload.to_string().len())
+            }
+            Self::FileChanged { path, kind } => {
+                format!("path={}, kind={:?}", path.display(), kind)
+            }
+            Self::FileDeleted { path } => {
+                format!("path={}", path.display())
+            }
+            Self::FileMoved { from, to } => {
+                format!("from={}, to={}", from.display(), to.display())
+            }
+            Self::EntityStored {
+                entity_id,
+                entity_type,
+            } => {
+                format!("entity_id={}, type={:?}", entity_id, entity_type)
+            }
+            Self::EntityDeleted {
+                entity_id,
+                entity_type,
+            } => {
+                format!("entity_id={}, type={:?}", entity_id, entity_type)
+            }
+            Self::BlocksUpdated {
+                entity_id,
+                block_count,
+            } => {
+                format!("entity_id={}, blocks={}", entity_id, block_count)
+            }
+            Self::RelationStored {
+                from_id,
+                to_id,
+                relation_type,
+            } => {
+                format!("from={}, to={}, type={}", from_id, to_id, relation_type)
+            }
+            Self::RelationDeleted {
+                from_id,
+                to_id,
+                relation_type,
+            } => {
+                format!("from={}, to={}, type={}", from_id, to_id, relation_type)
+            }
+            Self::TagAssociated { entity_id, tag } => {
+                format!("entity_id={}, tag={}", entity_id, tag)
+            }
+            Self::EmbeddingRequested {
+                entity_id,
+                priority,
+                ..
+            } => {
+                format!("entity_id={}, priority={:?}", entity_id, priority)
+            }
+            Self::EmbeddingStored {
+                entity_id,
+                dimensions,
+                ..
+            } => {
+                format!("entity_id={}, dims={}", entity_id, dimensions)
+            }
+            Self::EmbeddingFailed {
+                entity_id, error, ..
+            } => {
+                format!(
+                    "entity_id={}, error={}",
+                    entity_id,
+                    truncate(error, max_len)
+                )
+            }
+            Self::EmbeddingBatchComplete {
+                entity_id,
+                count,
+                duration_ms,
+            } => {
+                format!(
+                    "entity_id={}, count={}, duration={}ms",
+                    entity_id, count, duration_ms
+                )
+            }
+            Self::PreToolCall { name, args } => {
+                format!("tool={}, args_size={}", name, args.to_string().len())
+            }
+            Self::PreParse { path } => {
+                format!("path={}", path.display())
+            }
+            Self::PreLlmCall { prompt, model } => {
+                format!("model={}, prompt_len={}", model, prompt.len())
+            }
+            Self::AwaitingInput {
+                input_type,
+                context,
+            } => {
+                format!(
+                    "type={}, context={}",
+                    input_type,
+                    context.as_deref().unwrap_or("(none)")
+                )
+            }
+            Self::InteractionRequested {
+                request_id,
+                request,
+            } => {
+                format!("id={}, kind={}", request_id, request.kind())
+            }
+            Self::InteractionCompleted { request_id, .. } => {
+                format!("id={}", request_id)
+            }
+            Self::SessionStateChanged {
+                session_id,
+                state,
+                previous_state,
+            } => {
+                let prev = previous_state
+                    .as_ref()
+                    .map(|s| format!("{:?}", s))
+                    .unwrap_or_else(|| "(none)".to_string());
+                format!("session={}, state={:?}, prev={}", session_id, state, prev)
+            }
+            Self::SessionPaused { session_id } => {
+                format!("session={}", session_id)
+            }
+            Self::SessionResumed { session_id } => {
+                format!("session={}", session_id)
+            }
+            Self::TerminalOutput {
+                session_id,
+                stream,
+                content_base64,
+            } => {
+                format!(
+                    "session={}, stream={:?}, content_len={}",
+                    session_id,
+                    stream,
+                    content_base64.len()
+                )
+            }
+        }
+    }
+
+    /// Get the detailed payload content of this event.
+    ///
+    /// Returns the main content or data associated with this event, truncated to
+    /// `max_len` characters. Returns `None` for events that have no meaningful
+    /// payload content.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_len` - Maximum length for the returned string
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use crucible_core::events::SessionEvent;
+    ///
+    /// let event = SessionEvent::MessageReceived {
+    ///     content: "Hello, world!".into(),
+    ///     participant_id: "user".into(),
+    /// };
+    /// let payload = event.payload(100);
+    /// assert_eq!(payload, Some("Hello, world!".to_string()));
+    /// ```
+    pub fn payload(&self, max_len: usize) -> Option<String> {
+        let payload = match self {
+            Self::MessageReceived { content, .. } => Some(content.clone()),
+            Self::AgentResponded { content, .. } => Some(content.clone()),
+            Self::AgentThinking { thought } => Some(thought.clone()),
+            Self::ToolCalled { args, .. } => Some(args.to_string()),
+            Self::ToolCompleted { result, .. } => Some(result.clone()),
+            Self::SessionCompacted { summary, .. } => Some(summary.clone()),
+            Self::SessionEnded { reason } => Some(reason.clone()),
+            Self::SubagentSpawned { prompt, .. } => Some(prompt.clone()),
+            Self::SubagentCompleted { result, .. } => Some(result.clone()),
+            Self::SubagentFailed { error, .. } => Some(error.clone()),
+            Self::Custom { payload, .. } => Some(payload.to_string()),
+            Self::SessionStarted { .. } => None,
+            Self::TextDelta { delta, .. } => Some(delta.clone()),
+            Self::NoteParsed { path, .. } => Some(path.display().to_string()),
+            Self::NoteCreated { path, title } => Some(format!(
+                "{}: {}",
+                path.display(),
+                title.as_deref().unwrap_or("(none)")
+            )),
+            Self::NoteModified { path, change_type } => {
+                Some(format!("{}: {:?}", path.display(), change_type))
+            }
+            Self::NoteDeleted { path, existed } => {
+                Some(format!("{}: existed={}", path.display(), existed))
+            }
+            Self::McpAttached { server, tool_count } => {
+                Some(format!("{}: {} tools", server, tool_count))
+            }
+            Self::ToolDiscovered {
+                name,
+                source,
+                schema,
+            } => {
+                let schema_len = schema.as_ref().map(|s| s.to_string().len()).unwrap_or(0);
+                Some(format!("{}: {:?}, schema_len={}", name, source, schema_len))
+            }
+            Self::FileChanged { path, kind } => {
+                Some(format!("{}: {:?}", path.display(), kind))
+            }
+            Self::FileDeleted { path } => Some(path.display().to_string()),
+            Self::FileMoved { from, to } => {
+                Some(format!("{} -> {}", from.display(), to.display()))
+            }
+            Self::EntityStored {
+                entity_id,
+                entity_type,
+            } => Some(format!("{}: {:?}", entity_id, entity_type)),
+            Self::EntityDeleted {
+                entity_id,
+                entity_type,
+            } => Some(format!("{}: {:?}", entity_id, entity_type)),
+            Self::BlocksUpdated {
+                entity_id,
+                block_count,
+            } => Some(format!("{}: {} blocks", entity_id, block_count)),
+            Self::RelationStored {
+                from_id,
+                to_id,
+                relation_type,
+            } => Some(format!("{} -> {} ({})", from_id, to_id, relation_type)),
+            Self::RelationDeleted {
+                from_id,
+                to_id,
+                relation_type,
+            } => Some(format!("{} -> {} ({})", from_id, to_id, relation_type)),
+            Self::TagAssociated { entity_id, tag } => {
+                Some(format!("{}#{}", entity_id, tag))
+            }
+            Self::EmbeddingRequested {
+                entity_id,
+                priority,
+                ..
+            } => Some(format!("{}: {:?}", entity_id, priority)),
+            Self::EmbeddingStored {
+                entity_id,
+                dimensions,
+                model,
+                ..
+            } => Some(format!(
+                "{}: {} dims, model={}",
+                entity_id, dimensions, model
+            )),
+            Self::EmbeddingFailed {
+                entity_id, error, ..
+            } => Some(format!("{}: {}", entity_id, error)),
+            Self::EmbeddingBatchComplete {
+                entity_id,
+                count,
+                duration_ms,
+            } => Some(format!(
+                "{}: {} embeddings in {}ms",
+                entity_id, count, duration_ms
+            )),
+            Self::PreToolCall { args, .. } => Some(args.to_string()),
+            Self::PreParse { path } => Some(path.display().to_string()),
+            Self::PreLlmCall { prompt, .. } => Some(prompt.clone()),
+            Self::AwaitingInput { context, .. } => context.clone(),
+            Self::InteractionRequested { .. } => None,
+            Self::InteractionCompleted { .. } => None,
+            Self::SessionStateChanged {
+                session_id,
+                state,
+                previous_state,
+            } => Some(format!(
+                "session={}, state={:?}, previous={:?}",
+                session_id, state, previous_state
+            )),
+            Self::SessionPaused { session_id } => Some(format!("session={}", session_id)),
+            Self::SessionResumed { session_id } => Some(format!("session={}", session_id)),
+            Self::TerminalOutput { content_base64, .. } => Some(content_base64.clone()),
+        };
+
+        payload.map(|p| truncate(&p, max_len).to_string())
+    }
+
+    /// Estimate the number of tokens in this event.
+    ///
+    /// This is a simple heuristic - real implementations should use a proper
+    /// tokenizer like tiktoken. The estimate uses a rough approximation of
+    /// ~4 characters per token for English text, plus a fixed overhead for
+    /// event structure.
+    ///
+    /// # Returns
+    ///
+    /// An estimated token count, always at least 11 (10 overhead + 1 minimum content).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use crucible_core::events::SessionEvent;
+    ///
+    /// let event = SessionEvent::MessageReceived {
+    ///     content: "Hello, world!".into(),
+    ///     participant_id: "user".into(),
+    /// };
+    /// let tokens = event.estimate_tokens();
+    /// assert!(tokens > 10); // At least structural overhead
+    /// ```
+    pub fn estimate_tokens(&self) -> usize {
+        let content_len = match self {
+            Self::MessageReceived { content, .. } => content.len(),
+            Self::AgentResponded { content, .. } => content.len(),
+            Self::AgentThinking { thought } => thought.len(),
+            Self::ToolCalled { args, .. } => args.to_string().len(),
+            Self::ToolCompleted { result, error, .. } => {
+                result.len() + error.as_ref().map(|e| e.len()).unwrap_or(0)
+            }
+            Self::SessionCompacted { summary, .. } => summary.len(),
+            Self::SessionEnded { reason } => reason.len(),
+            Self::SubagentSpawned { prompt, .. } => prompt.len(),
+            Self::SubagentCompleted { result, .. } => result.len(),
+            Self::SubagentFailed { error, .. } => error.len(),
+            Self::Custom { payload, .. } => payload.to_string().len(),
+            Self::SessionStarted { .. } => 100, // Fixed overhead
+            // Streaming events
+            Self::TextDelta { delta, .. } => delta.len(),
+            // Note events (small metadata)
+            Self::NoteParsed { .. } => 50,
+            Self::NoteCreated { title, .. } => {
+                title.as_ref().map(|t| t.len()).unwrap_or(0) + 50
+            }
+            Self::NoteModified { .. } => 50,
+            Self::NoteDeleted { .. } => 50,
+            // MCP/Tool events
+            Self::McpAttached { server, .. } => server.len() + 50,
+            Self::ToolDiscovered { name, schema, .. } => {
+                name.len() + schema.as_ref().map(|s| s.to_string().len()).unwrap_or(0)
+            }
+            // File events (small metadata)
+            Self::FileChanged { .. } => 50,
+            Self::FileDeleted { .. } => 50,
+            Self::FileMoved { .. } => 50,
+            // Storage events (small metadata)
+            Self::EntityStored { .. } => 50,
+            Self::EntityDeleted { .. } => 50,
+            Self::BlocksUpdated { .. } => 50,
+            Self::RelationStored { .. } => 50,
+            Self::RelationDeleted { .. } => 50,
+            Self::TagAssociated { tag, .. } => tag.len() + 50,
+            // Embedding events (small metadata)
+            Self::EmbeddingRequested { .. } => 50,
+            Self::EmbeddingStored { .. } => 50,
+            Self::EmbeddingFailed { error, .. } => error.len() + 50,
+            Self::EmbeddingBatchComplete { .. } => 50,
+            // Pre-events (interception points)
+            Self::PreToolCall { name, .. } => name.len() + 50,
+            Self::PreParse { .. } => 50,
+            Self::PreLlmCall { prompt, .. } => prompt.len(),
+            Self::AwaitingInput { context, .. } => {
+                context.as_ref().map_or(20, |c| c.len() + 20)
+            }
+            // Interaction events
+            Self::InteractionRequested { .. } => 100, // Request metadata
+            Self::InteractionCompleted { .. } => 50,  // Response metadata
+            // Daemon protocol events
+            Self::SessionStateChanged { .. } => 50,
+            Self::SessionPaused { .. } => 50,
+            Self::SessionResumed { .. } => 50,
+            Self::TerminalOutput { content_base64, .. } => content_base64.len(),
+        };
+
+        // Rough estimate: ~4 characters per token
+        // Add fixed overhead for event structure
+        (content_len / 4).max(1) + 10
+    }
+}
+
+/// Truncate a string to `max_len`, respecting UTF-8 char boundaries.
+///
+/// If the string is longer than `max_len`, it will be truncated at the nearest
+/// valid UTF-8 character boundary.
+fn truncate(s: &str, max_len: usize) -> &str {
+    if s.len() <= max_len {
+        s
+    } else {
+        // Find a char boundary near max_len
+        let mut end = max_len;
+        while !s.is_char_boundary(end) && end > 0 {
+            end -= 1;
+        }
+        &s[..end]
+    }
 }
 
 impl Default for SessionEvent {
@@ -2590,5 +3162,153 @@ mod tests {
             let parsed: SessionEvent = serde_json::from_str(&json).unwrap();
             assert_eq!(event, parsed);
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // New method tests: type_name, summary, payload, estimate_tokens
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_type_name() {
+        // Test a few representative variants
+        assert_eq!(
+            SessionEvent::MessageReceived {
+                content: "".into(),
+                participant_id: "".into()
+            }
+            .type_name(),
+            "MessageReceived"
+        );
+        assert_eq!(
+            SessionEvent::ToolCalled {
+                name: "".into(),
+                args: JsonValue::Null
+            }
+            .type_name(),
+            "ToolCalled"
+        );
+        assert_eq!(
+            SessionEvent::SessionStateChanged {
+                session_id: "".into(),
+                state: crate::session::SessionState::Active,
+                previous_state: None,
+            }
+            .type_name(),
+            "SessionStateChanged"
+        );
+        assert_eq!(
+            SessionEvent::Custom {
+                name: "".into(),
+                payload: JsonValue::Null
+            }
+            .type_name(),
+            "Custom"
+        );
+    }
+
+    #[test]
+    fn test_summary() {
+        // Test MessageReceived summary
+        let event = SessionEvent::MessageReceived {
+            content: "Hello world".into(),
+            participant_id: "user".into(),
+        };
+        let summary = event.summary(100);
+        assert!(summary.contains("from=user"));
+        assert!(summary.contains("content_len=11"));
+
+        // Test ToolCalled summary
+        let event = SessionEvent::ToolCalled {
+            name: "search".into(),
+            args: serde_json::json!({"query": "test"}),
+        };
+        let summary = event.summary(100);
+        assert!(summary.contains("tool=search"));
+        assert!(summary.contains("args_size="));
+
+        // Test truncation in summary
+        let event = SessionEvent::SessionEnded {
+            reason: "This is a very long reason that should be truncated when max_len is small"
+                .into(),
+        };
+        let summary = event.summary(20);
+        assert!(summary.contains("reason="));
+        // The truncated reason should be <= 20 chars
+        assert!(summary.len() < 50);
+    }
+
+    #[test]
+    fn test_payload() {
+        // Test MessageReceived payload
+        let event = SessionEvent::MessageReceived {
+            content: "Hello world".into(),
+            participant_id: "user".into(),
+        };
+        let payload = event.payload(100);
+        assert_eq!(payload, Some("Hello world".to_string()));
+
+        // Test SessionStarted has no payload
+        let event = SessionEvent::SessionStarted {
+            config: SessionEventConfig::default(),
+        };
+        let payload = event.payload(100);
+        assert_eq!(payload, None);
+
+        // Test truncation
+        let event = SessionEvent::MessageReceived {
+            content: "This is a long message that should be truncated".into(),
+            participant_id: "user".into(),
+        };
+        let payload = event.payload(10);
+        assert!(payload.is_some());
+        assert!(payload.unwrap().len() <= 10);
+    }
+
+    #[test]
+    fn test_estimate_tokens() {
+        // Test MessageReceived token estimate
+        let event = SessionEvent::MessageReceived {
+            content: "Hello world".into(), // 11 chars -> ~3 tokens + 10 overhead
+            participant_id: "user".into(),
+        };
+        let tokens = event.estimate_tokens();
+        assert!(tokens >= 11); // At least 10 overhead + 1 minimum
+        assert!(tokens < 20); // Should be reasonable
+
+        // Test SessionStarted fixed overhead
+        let event = SessionEvent::SessionStarted {
+            config: SessionEventConfig::default(),
+        };
+        let tokens = event.estimate_tokens();
+        assert_eq!(tokens, 100 / 4 + 10); // 100 fixed + overhead
+
+        // Test small metadata events
+        let event = SessionEvent::FileChanged {
+            path: PathBuf::from("/notes/test.md"),
+            kind: FileChangeKind::Modified,
+        };
+        let tokens = event.estimate_tokens();
+        assert_eq!(tokens, 50 / 4 + 10); // 50 fixed + overhead
+    }
+
+    #[test]
+    fn test_truncate_helper() {
+        // Test short string (no truncation needed)
+        let short = "hello";
+        assert_eq!(super::truncate(short, 10), "hello");
+
+        // Test exact length
+        let exact = "hello";
+        assert_eq!(super::truncate(exact, 5), "hello");
+
+        // Test truncation
+        let long = "hello world";
+        assert_eq!(super::truncate(long, 5), "hello");
+
+        // Test UTF-8 boundary handling
+        let utf8 = "hello\u{00e9}world"; // e with accent
+        let truncated = super::truncate(utf8, 6);
+        assert!(truncated.len() <= 6);
+        assert!(truncated.is_char_boundary(truncated.len()));
     }
 }
