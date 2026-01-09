@@ -178,7 +178,7 @@ fn test_database_path_unique_per_process() {
     // But should contain the process ID for uniqueness
     let db_path = config1.database_path();
     let filename = db_path.file_name().unwrap().to_str().unwrap();
-    assert!(filename.starts_with("kiln-"));
+    assert!(filename.starts_with("crucible-surreal-"));
     assert!(filename.ends_with(".db"));
 
     // Cleanup
@@ -188,6 +188,9 @@ fn test_database_path_unique_per_process() {
 #[test]
 #[serial]
 fn test_database_path_derivation() {
+    // Ensure test mode is off so we get the standard (non-PID) name
+    std::env::remove_var("CRUCIBLE_TEST_MODE");
+
     let temp = TempDir::new().unwrap();
     let kiln_path = temp.path().join("kiln");
 
@@ -195,7 +198,8 @@ fn test_database_path_derivation() {
     config.kiln_path = kiln_path.clone();
 
     // Database path should be derived from kiln path (no test mode = standard name)
-    let expected_db_path = kiln_path.join(".crucible").join("kiln.db");
+    // Note: database_path() returns the SurrealDB path with "crucible-surreal.db" name
+    let expected_db_path = kiln_path.join(".crucible").join("crucible-surreal.db");
     assert_eq!(config.database_path(), expected_db_path);
 }
 

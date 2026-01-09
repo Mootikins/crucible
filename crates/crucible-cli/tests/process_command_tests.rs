@@ -14,7 +14,7 @@ use crucible_cli::commands::process;
 use crucible_cli::config::{CliAppConfig, CliConfig};
 use crucible_config::{
     AcpConfig, ChatConfig, EmbeddingConfig, EmbeddingProviderType, LlmConfig, ProcessingConfig,
-    ProvidersConfig,
+    ProvidersConfig, StorageConfig, StorageMode,
 };
 use crucible_core::test_support::fixtures::{create_kiln, KilnFixture};
 use std::path::PathBuf;
@@ -65,7 +65,10 @@ fn create_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfig {
         processing: ProcessingConfig::default(),
         providers: ProvidersConfig::default(),
         context: None,
-        storage: None,
+        storage: Some(StorageConfig {
+            mode: StorageMode::Embedded,
+            idle_timeout_secs: 300,
+        }),
         source_map: None,
     }
 }
