@@ -2,8 +2,13 @@
 //!
 //! This crate provides two connection patterns:
 //!
-//! 1. **Legacy daemon** (re-exported from crucible-daemon): Uses PID file and separate daemon binary
+//! 1. **Daemon binary** (re-exported from crucible-daemon): Separate daemon binary
 //! 2. **Single-binary db-server** (lifecycle module): Fork `cru db-server` on demand
+//!
+//! Daemon detection is socket-based:
+//! - If socket exists and connectable -> daemon running
+//! - If socket exists but not connectable -> stale socket, safe to replace
+//! - If socket doesn't exist -> daemon not running
 //!
 //! For new code, prefer the single-binary pattern using `lifecycle::ensure_daemon()`.
 
@@ -14,7 +19,5 @@ mod storage;
 pub use client::{DaemonClient, SessionEvent};
 pub use storage::{DaemonNoteStore, DaemonStorageClient};
 
-// Legacy re-exports for backwards compatibility
-pub use crucible_daemon::{
-    is_daemon_running as is_legacy_daemon_running, socket_path as legacy_socket_path,
-};
+// Re-exports from crucible-daemon for convenience
+pub use crucible_daemon::socket_path as legacy_socket_path;

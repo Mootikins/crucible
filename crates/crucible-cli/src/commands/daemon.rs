@@ -2,7 +2,8 @@
 
 use anyhow::Result;
 use clap::Subcommand;
-use crucible_daemon::{is_daemon_running, pid_path, socket_path, write_pid_file, Server};
+use crucible_daemon::{socket_path, Server};
+use crucible_daemon_client::lifecycle::is_daemon_running;
 use crucible_daemon_client::DaemonClient;
 use std::process::Stdio;
 use tracing::info;
@@ -33,7 +34,9 @@ pub async fn handle(cmd: DaemonCommands) -> Result<()> {
 }
 
 async fn start_daemon(foreground: bool, wait: bool) -> Result<()> {
-    if is_daemon_running() {
+    let sock = socket_path();
+
+    if is_daemon_running(&sock) {
         println!("Daemon is already running");
         return Ok(());
     }
@@ -41,13 +44,9 @@ async fn start_daemon(foreground: bool, wait: bool) -> Result<()> {
     if foreground {
         // Run server directly in this process
         info!("Starting daemon in foreground");
-        let path = socket_path();
-        let server = Server::bind(&path).await?;
+        let server = Server::bind(&sock).await?;
 
-        // Write PID file
-        write_pid_file(&pid_path())?;
-
-        println!("Daemon listening on {:?}", path);
+        println!("Daemon listening on {:?}", sock);
         server.run().await?;
     } else {
         // Fork and exec ourselves with --foreground
@@ -80,7 +79,6 @@ async fn start_daemon(foreground: bool, wait: bool) -> Result<()> {
             anyhow::bail!("Daemon failed to start within 5 seconds");
         } else {
             // Just wait for socket to appear
-            let sock = socket_path();
             for _ in 0..50 {
                 if sock.exists() {
                     println!("Daemon starting...");
@@ -96,7 +94,8 @@ async fn start_daemon(foreground: bool, wait: bool) -> Result<()> {
 }
 
 async fn stop_daemon() -> Result<()> {
-    if !is_daemon_running() {
+    let sock = socket_path();
+    if !is_daemon_running(&sock) {
         println!("Daemon is not running");
         return Ok(());
     }
@@ -115,7 +114,8 @@ async fn stop_daemon() -> Result<()> {
 }
 
 async fn show_status() -> Result<()> {
-    if is_daemon_running() {
+    let sock = socket_path();
+    if is_daemon_running(&sock) {
         match DaemonClient::connect().await {
             Ok(client) => {
                 let _ = client.ping().await?;
@@ -137,7 +137,7 @@ async fn show_status() -> Result<()> {
                 }
             }
             Err(_) => {
-                println!("Daemon PID file exists but cannot connect");
+                println!("Daemon socket exists but cannot connect");
             }
         }
     } else {
@@ -149,7 +149,8 @@ async fn show_status() -> Result<()> {
 
 /// Ensure daemon is running, starting it if necessary
 pub async fn ensure_daemon() -> Result<DaemonClient> {
-    if !is_daemon_running() {
+    let sock = socket_path();
+    if !is_daemon_running(&sock) {
         // Start daemon in background and wait for it to be ready
         start_daemon(false, true).await?;
     }
