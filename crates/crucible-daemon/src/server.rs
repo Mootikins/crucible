@@ -239,6 +239,7 @@ async fn handle_request(
         "session.resume" => handle_session_resume(req, session_manager).await,
         "session.resume_from_storage" => handle_session_resume_from_storage(req, session_manager).await,
         "session.end" => handle_session_end(req, session_manager).await,
+        "session.compact" => handle_session_compact(req, session_manager).await,
         // Subscription RPC methods
         "session.subscribe" => handle_session_subscribe(req, client_id, subscription_manager).await,
         "session.unsubscribe" => {
@@ -806,18 +807,61 @@ async fn handle_session_resume_from_storage(req: Request, sm: &Arc<SessionManage
         None => return Response::error(req.id, INVALID_PARAMS, "kiln path required"),
     };
 
-    match sm.resume_session_from_storage(session_id, &kiln).await {
-        Ok(session) => Response::success(
-            req.id,
-            serde_json::json!({
-                "session_id": session.id,
-                "type": session.session_type.as_prefix(),
-                "state": format!("{}", session.state),
-                "kiln": session.kiln,
-            }),
-        ),
-        Err(e) => Response::error(req.id, INVALID_PARAMS, e.to_string()),
-    }
+    // Optional pagination params
+    let limit = req
+        .params
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize);
+    let offset = req
+        .params
+        .get("offset")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize);
+
+    // Resume session from storage
+    let session = match sm.resume_session_from_storage(session_id, &kiln).await {
+        Ok(s) => s,
+        Err(e) => return Response::error(req.id, INVALID_PARAMS, e.to_string()),
+    };
+
+    // Load event history with pagination
+    let history = match sm.load_session_events(session_id, &kiln, limit, offset).await {
+        Ok(events) => events,
+        Err(e) => {
+            // Session resumed but history load failed - return session without history
+            return Response::success(
+                req.id,
+                serde_json::json!({
+                    "session_id": session.id,
+                    "type": session.session_type.as_prefix(),
+                    "state": format!("{}", session.state),
+                    "kiln": session.kiln,
+                    "history": [],
+                    "total_events": 0,
+                    "history_error": e.to_string(),
+                }),
+            );
+        }
+    };
+
+    // Get total event count for pagination
+    let total = sm
+        .count_session_events(session_id, &kiln)
+        .await
+        .unwrap_or(0);
+
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "session_id": session.id,
+            "type": session.session_type.as_prefix(),
+            "state": format!("{}", session.state),
+            "kiln": session.kiln,
+            "history": history,
+            "total_events": total,
+        }),
+    )
 }
 
 async fn handle_session_end(req: Request, sm: &Arc<SessionManager>) -> Response {
@@ -833,6 +877,28 @@ async fn handle_session_end(req: Request, sm: &Arc<SessionManager>) -> Response 
                 "session_id": session.id,
                 "state": "ended",
                 "kiln": session.kiln,
+            }),
+        ),
+        Err(e) => {
+            let msg = e.to_string();
+            Response::error(req.id, INVALID_PARAMS, msg)
+        }
+    }
+}
+
+async fn handle_session_compact(req: Request, sm: &Arc<SessionManager>) -> Response {
+    let session_id = match req.params.get("session_id").and_then(|v| v.as_str()) {
+        Some(id) => id,
+        None => return Response::error(req.id, INVALID_PARAMS, "session_id required"),
+    };
+
+    match sm.request_compaction(session_id).await {
+        Ok(session) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session.id,
+                "state": format!("{}", session.state),
+                "compaction_requested": true,
             }),
         ),
         Err(e) => {
