@@ -1,0 +1,28 @@
+---
+source: crates/crucible-cli/src/tui/testing/table_tests.rs
+expression: render_conversation(&state)
+---
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ > Show me a comparison                                                         
+                                                                                
+ ● Here's a comparison:                                                         
+                                                                                
+   │Feature│Rust│ Go │                                                          
+   ├───────┼────┼────┤                                                          
+   │Memory │Safe│GC  │                                                          
+   │Speed  │Fast│Fast│
