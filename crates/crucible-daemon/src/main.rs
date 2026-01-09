@@ -3,6 +3,7 @@ mod lifecycle;
 mod protocol;
 mod server;
 mod session_manager;
+mod session_storage;
 mod subscription;
 
 use anyhow::{bail, Result};
