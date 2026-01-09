@@ -21,11 +21,9 @@
 use std::collections::HashMap;
 use std::env;
 use std::path::Path;
-use std::str::FromStr;
 
 use ratatui::style::{Color, Modifier, Style};
-use syntect::highlighting::{FontStyle, Highlighter, Theme, ThemeSet};
-use syntect::parsing::Scope;
+use syntect::highlighting::{Theme, ThemeSet};
 
 /// Markdown elements that can be styled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -90,93 +88,6 @@ impl MarkdownElement {
         Self::HorizontalRule,
     ];
 }
-
-/// Scope mapping configuration for a markdown element.
-///
-/// Defines which syntect scopes to try (in order) and what modifiers to apply.
-struct ScopeMapping {
-    /// Scopes to try, in order of preference
-    scopes: &'static [&'static str],
-    /// Additional modifiers to apply on top of the theme style
-    modifiers: Modifier,
-}
-
-impl MarkdownElement {
-    /// Get the scope mapping for this element.
-    fn scope_mapping(self) -> ScopeMapping {
-        match self {
-            Self::Text => ScopeMapping {
-                scopes: &[], // Uses theme foreground directly
-                modifiers: Modifier::empty(),
-            },
-            Self::Bold => ScopeMapping {
-                scopes: &["markup.bold"],
-                modifiers: Modifier::BOLD,
-            },
-            Self::Italic => ScopeMapping {
-                scopes: &["markup.italic"],
-                modifiers: Modifier::ITALIC,
-            },
-            Self::BoldItalic => ScopeMapping {
-                scopes: &["markup.bold"],
-                modifiers: Modifier::BOLD | Modifier::ITALIC,
-            },
-            Self::InlineCode => ScopeMapping {
-                scopes: &["markup.raw.inline", "markup.raw", "string"],
-                modifiers: Modifier::empty(),
-            },
-            Self::Heading1 => ScopeMapping {
-                scopes: &["markup.heading.1", "entity.name.section", "markup.heading"],
-                modifiers: Modifier::BOLD,
-            },
-            Self::Heading2 => ScopeMapping {
-                scopes: &["markup.heading.2", "markup.heading", "entity.name.section"],
-                modifiers: Modifier::BOLD,
-            },
-            Self::Heading3 => ScopeMapping {
-                scopes: &["markup.heading.3", "markup.heading", "entity.name.section"],
-                modifiers: Modifier::BOLD,
-            },
-            Self::Heading4 => ScopeMapping {
-                scopes: &["markup.heading.4", "markup.heading", "entity.name.section"],
-                modifiers: Modifier::BOLD,
-            },
-            Self::Heading5 => ScopeMapping {
-                scopes: &["markup.heading.5", "markup.heading", "entity.name.section"],
-                modifiers: Modifier::BOLD,
-            },
-            Self::Heading6 => ScopeMapping {
-                scopes: &["markup.heading.6", "markup.heading", "entity.name.section"],
-                modifiers: Modifier::BOLD,
-            },
-            Self::Link => ScopeMapping {
-                scopes: &["markup.underline.link", "string.other.link", "string"],
-                modifiers: Modifier::UNDERLINED,
-            },
-            Self::Blockquote => ScopeMapping {
-                scopes: &["markup.quote", "comment"],
-                modifiers: Modifier::DIM,
-            },
-            Self::ListMarker => ScopeMapping {
-                scopes: &["punctuation.definition.list_item", "punctuation.definition.list", "keyword"],
-                modifiers: Modifier::empty(),
-            },
-            Self::TableBorder => ScopeMapping {
-                scopes: &["punctuation", "comment"],
-                modifiers: Modifier::DIM,
-            },
-            Self::Strikethrough => ScopeMapping {
-                scopes: &["markup.strikethrough"],
-                modifiers: Modifier::CROSSED_OUT,
-            },
-            Self::HorizontalRule => ScopeMapping {
-                scopes: &["punctuation", "comment"],
-                modifiers: Modifier::DIM,
-            },
-        }
-    }
-}
-
 /// A theme for rendering markdown content in the terminal.
 ///
 /// Wraps a syntect `Theme` and provides ratatui `Style` values for markdown elements.
@@ -334,37 +245,71 @@ impl MarkdownTheme {
         }
     }
 
-    /// Compute the style for a markdown element from the theme.
+    /// Compute the style for a markdown element.
+    ///
+    /// Uses ANSI indexed colors (0-15) so styles inherit from terminal theme.
+    /// This ensures consistent appearance across different terminal color schemes.
     fn compute_style(&self, element: MarkdownElement) -> Style {
-        let mapping = element.scope_mapping();
-        let highlighter = Highlighter::new(&self.theme);
+        use MarkdownElement::*;
 
-        // Start with the base style from theme settings
-        let mut style = Style::default().fg(self.foreground());
+        // ANSI color indices (use terminal's palette):
+        // 0=black, 1=red, 2=green, 3=yellow, 4=blue, 5=magenta, 6=cyan, 7=white
+        // 8-15 = bright versions
+        match element {
+            Text => Style::default(), // Use terminal default
 
-        // Try each scope in order until we find a match
-        for scope_str in mapping.scopes {
-            if let Ok(scope) = Scope::from_str(scope_str) {
-                let syntect_style = highlighter.style_for_stack(&[scope]);
+            Bold => Style::default().add_modifier(Modifier::BOLD),
 
-                // Check if this scope actually matched (has non-default colors)
-                let default_style = highlighter.get_default();
-                if syntect_style.foreground != default_style.foreground
-                    || syntect_style.background != default_style.background
-                    || !syntect_style.font_style.is_empty()
-                {
-                    style = convert_syntect_style(&syntect_style);
-                    break;
-                }
+            Italic => Style::default().add_modifier(Modifier::ITALIC),
+
+            BoldItalic => Style::default()
+                .add_modifier(Modifier::BOLD)
+                .add_modifier(Modifier::ITALIC),
+
+            InlineCode => {
+                let bg = Color::Indexed(if self.is_dark { 8 } else { 7 }); // Bright black or white
+                Style::default().bg(bg)
             }
-        }
 
-        // Apply additional modifiers from the mapping
-        if !mapping.modifiers.is_empty() {
-            style = style.add_modifier(mapping.modifiers);
-        }
+            Heading1 => Style::default()
+                .fg(Color::Indexed(4)) // Blue
+                .add_modifier(Modifier::BOLD),
 
-        style
+            Heading2 => Style::default()
+                .fg(Color::Indexed(6)) // Cyan
+                .add_modifier(Modifier::BOLD),
+
+            Heading3 => Style::default()
+                .fg(Color::Indexed(2)) // Green
+                .add_modifier(Modifier::BOLD),
+
+            Heading4 | Heading5 | Heading6 => Style::default()
+                .fg(Color::Indexed(3)) // Yellow
+                .add_modifier(Modifier::BOLD),
+
+            Link => Style::default()
+                .fg(Color::Indexed(12)) // Bright blue
+                .add_modifier(Modifier::UNDERLINED),
+
+            Blockquote => Style::default()
+                .fg(Color::Indexed(8)) // Bright black (gray)
+                .add_modifier(Modifier::DIM),
+
+            ListMarker => Style::default()
+                .fg(Color::Indexed(6)), // Cyan
+
+            TableBorder => Style::default()
+                .fg(Color::Indexed(8)) // Bright black (gray)
+                .add_modifier(Modifier::DIM),
+
+            Strikethrough => Style::default()
+                .add_modifier(Modifier::CROSSED_OUT)
+                .add_modifier(Modifier::DIM),
+
+            HorizontalRule => Style::default()
+                .fg(Color::Indexed(8)) // Bright black (gray)
+                .add_modifier(Modifier::DIM),
+        }
     }
 }
 
@@ -385,27 +330,6 @@ pub enum ThemeLoadError {
 /// Convert a syntect `Color` to a ratatui `Color`.
 fn syntect_to_ratatui_color(color: syntect::highlighting::Color) -> Color {
     Color::Rgb(color.r, color.g, color.b)
-}
-
-/// Convert a syntect `Style` to a ratatui `Style`.
-///
-/// Only uses foreground color - backgrounds are omitted to let terminal bg show through.
-fn convert_syntect_style(syntect_style: &syntect::highlighting::Style) -> Style {
-    let mut style = Style::default()
-        .fg(syntect_to_ratatui_color(syntect_style.foreground));
-
-    // Convert font style flags
-    if syntect_style.font_style.contains(FontStyle::BOLD) {
-        style = style.add_modifier(Modifier::BOLD);
-    }
-    if syntect_style.font_style.contains(FontStyle::ITALIC) {
-        style = style.add_modifier(Modifier::ITALIC);
-    }
-    if syntect_style.font_style.contains(FontStyle::UNDERLINE) {
-        style = style.add_modifier(Modifier::UNDERLINED);
-    }
-
-    style
 }
 
 #[cfg(test)]
@@ -443,8 +367,9 @@ mod tests {
         let theme = MarkdownTheme::dark();
         let style = theme.style_for(MarkdownElement::Text);
 
-        // Text should have a foreground color
-        assert!(style.fg.is_some());
+        // Text uses terminal default (no explicit fg) for terminal theme inheritance
+        assert!(style.fg.is_none());
+        assert!(style.add_modifier.is_empty());
     }
 
     #[test]
@@ -555,11 +480,14 @@ mod tests {
         // All elements should return a style without panicking
         for element in MarkdownElement::ALL {
             let style = theme.style_for(element);
-            // All elements should have at least a foreground color set
-            assert!(
-                style.fg.is_some() || !style.add_modifier.is_empty(),
-                "{element:?} should have either fg color or modifiers"
-            );
+            // All elements except Text should have fg or modifiers
+            // Text uses terminal default for theme inheritance
+            if element != MarkdownElement::Text {
+                assert!(
+                    style.fg.is_some() || style.bg.is_some() || !style.add_modifier.is_empty(),
+                    "{element:?} should have fg, bg, or modifiers"
+                );
+            }
         }
     }
 
