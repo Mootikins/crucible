@@ -488,6 +488,8 @@ impl RatatuiRunner {
         let _popup_debounce =
             crate::tui::popup::PopupDebounce::new(std::time::Duration::from_millis(50));
         let mut last_seen_seq = 0u64;
+        // Track if we need to render this frame
+        let mut needs_render = true; // Always render first frame
 
         loop {
             // 0. Update status with paste indicator if applicable
@@ -495,11 +497,12 @@ impl RatatuiRunner {
                 // Only update if not streaming (streaming has its own status)
                 if !self.streaming_manager.is_streaming() {
                     self.view.set_status_text(&format!("Pending: {}", summary));
+                    needs_render = true;
                 }
             }
 
-            // 1. Render
-            {
+            // 1. Render (only if needed)
+            if needs_render {
                 let view = &self.view;
                 let selection = self.selection_manager.selection();
                 let scroll_offset = view.state().scroll_offset;
@@ -509,6 +512,10 @@ impl RatatuiRunner {
                     view.render_frame(f);
                     apply_selection_highlight(f, selection, scroll_offset, conv_height);
                 })?;
+
+                // Mark conversation cache as clean after render
+                self.view.state_mut().conversation.mark_clean();
+                needs_render = false;
             }
 
             // Take popup back from view after render for event handling
@@ -516,6 +523,7 @@ impl RatatuiRunner {
 
             // 2. Poll events (non-blocking, ~60fps)
             if event::poll(Duration::from_millis(16))? {
+                needs_render = true; // Event received, need to re-render
                 match event::read()? {
                     Event::Key(key) => {
                         if self.handle_key_event(&key, bridge, agent).await? {
@@ -526,6 +534,8 @@ impl RatatuiRunner {
                         self.handle_mouse_event(&mouse);
                     }
                     Event::Resize(width, height) => {
+                        // Invalidate all render caches on resize
+                        self.view.state_mut().conversation.invalidate_all();
                         self.view.handle_resize(width, height)?;
                     }
                     Event::Paste(text) => {
@@ -541,6 +551,10 @@ impl RatatuiRunner {
             } else {
                 // No event - check if rapid input buffer should be flushed
                 self.flush_rapid_input_if_needed();
+                // Check if conversation content changed (streaming, etc.)
+                if self.view.state().conversation.is_dirty() {
+                    needs_render = true;
+                }
             }
 
             // 3. Sync popup state to view for rendering
