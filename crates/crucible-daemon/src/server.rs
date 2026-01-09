@@ -5,6 +5,7 @@ use crate::protocol::{
     Request, Response, SessionEventMessage, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND,
     PARSE_ERROR,
 };
+use crate::rpc_helpers::{optional_str_param, optional_u64_param, require_array_param, require_str_param};
 use crate::session_manager::SessionManager;
 use crate::session_storage::{FileSessionStorage, SessionStorage};
 use crate::subscription::{ClientId, SubscriptionManager};
@@ -259,10 +260,7 @@ async fn handle_request(
 }
 
 async fn handle_kiln_open(req: Request, km: &Arc<KilnManager>) -> Response {
-    let path = match req.params.get("path").and_then(|v| v.as_str()) {
-        Some(p) => p,
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'path' parameter"),
-    };
+    let path = require_str_param!(req, "path");
 
     match km.open(Path::new(path)).await {
         Ok(()) => Response::success(req.id, serde_json::json!({"status": "ok"})),
@@ -271,10 +269,7 @@ async fn handle_kiln_open(req: Request, km: &Arc<KilnManager>) -> Response {
 }
 
 async fn handle_kiln_close(req: Request, km: &Arc<KilnManager>) -> Response {
-    let path = match req.params.get("path").and_then(|v| v.as_str()) {
-        Some(p) => p,
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'path' parameter"),
-    };
+    let path = require_str_param!(req, "path");
 
     match km.close(Path::new(path)).await {
         Ok(()) => Response::success(req.id, serde_json::json!({"status": "ok"})),
@@ -297,24 +292,13 @@ async fn handle_kiln_list(req: Request, km: &Arc<KilnManager>) -> Response {
 }
 
 async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
-        Some(p) => p,
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'kiln' parameter"),
-    };
-
-    let vector: Vec<f32> = match req.params.get("vector").and_then(|v| v.as_array()) {
-        Some(arr) => arr
-            .iter()
-            .filter_map(|v| v.as_f64().map(|f| f as f32))
-            .collect(),
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'vector' parameter"),
-    };
-
-    let limit = req
-        .params
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(20) as usize;
+    let kiln_path = require_str_param!(req, "kiln");
+    let vector_arr = require_array_param!(req, "vector");
+    let vector: Vec<f32> = vector_arr
+        .iter()
+        .filter_map(|v: &serde_json::Value| v.as_f64().map(|f| f as f32))
+        .collect();
+    let limit = optional_u64_param!(req, "limit").unwrap_or(20) as usize;
 
     // Get or open connection to the kiln
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
@@ -341,12 +325,8 @@ async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -> Response 
 }
 
 async fn handle_list_notes(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
-        Some(p) => p,
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'kiln' parameter"),
-    };
-
-    let path_filter = req.params.get("path_filter").and_then(|v| v.as_str());
+    let kiln_path = require_str_param!(req, "kiln");
+    let path_filter = optional_str_param!(req, "path_filter");
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
@@ -374,15 +354,8 @@ async fn handle_list_notes(req: Request, km: &Arc<KilnManager>) -> Response {
 }
 
 async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
-        Some(p) => p,
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'kiln' parameter"),
-    };
-
-    let name = match req.params.get("name").and_then(|v| v.as_str()) {
-        Some(n) => n,
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'name' parameter"),
-    };
+    let kiln_path = require_str_param!(req, "kiln");
+    let name = require_str_param!(req, "name");
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
@@ -412,10 +385,7 @@ async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>) -> Respons
 async fn handle_note_upsert(req: Request, km: &Arc<KilnManager>) -> Response {
     use crucible_core::storage::{NoteRecord, NoteStore};
 
-    let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
-        Some(p) => p,
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'kiln' parameter"),
-    };
+    let kiln_path = require_str_param!(req, "kiln");
 
     let note_json = match req.params.get("note") {
         Some(n) => n,
@@ -454,15 +424,8 @@ async fn handle_note_upsert(req: Request, km: &Arc<KilnManager>) -> Response {
 async fn handle_note_get(req: Request, km: &Arc<KilnManager>) -> Response {
     use crucible_core::storage::NoteStore;
 
-    let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
-        Some(p) => p,
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'kiln' parameter"),
-    };
-
-    let path = match req.params.get("path").and_then(|v| v.as_str()) {
-        Some(p) => p,
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'path' parameter"),
-    };
+    let kiln_path = require_str_param!(req, "kiln");
+    let path = require_str_param!(req, "path");
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
@@ -487,15 +450,8 @@ async fn handle_note_get(req: Request, km: &Arc<KilnManager>) -> Response {
 async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> Response {
     use crucible_core::storage::NoteStore;
 
-    let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
-        Some(p) => p,
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'kiln' parameter"),
-    };
-
-    let path = match req.params.get("path").and_then(|v| v.as_str()) {
-        Some(p) => p,
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'path' parameter"),
-    };
+    let kiln_path = require_str_param!(req, "kiln");
+    let path = require_str_param!(req, "path");
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
@@ -512,10 +468,7 @@ async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> Response {
 async fn handle_note_list(req: Request, km: &Arc<KilnManager>) -> Response {
     use crucible_core::storage::NoteStore;
 
-    let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
-        Some(p) => p,
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'kiln' parameter"),
-    };
+    let kiln_path = require_str_param!(req, "kiln");
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
@@ -541,15 +494,8 @@ async fn handle_note_list(req: Request, km: &Arc<KilnManager>) -> Response {
 // =============================================================================
 
 async fn handle_process_file(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
-        Some(p) => p,
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'kiln' parameter"),
-    };
-
-    let file_path = match req.params.get("path").and_then(|v| v.as_str()) {
-        Some(p) => p,
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'path' parameter"),
-    };
+    let kiln_path = require_str_param!(req, "kiln");
+    let file_path = require_str_param!(req, "path");
 
     match km
         .process_file(Path::new(kiln_path), Path::new(file_path))
@@ -567,18 +513,12 @@ async fn handle_process_file(req: Request, km: &Arc<KilnManager>) -> Response {
 }
 
 async fn handle_process_batch(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = match req.params.get("kiln").and_then(|v| v.as_str()) {
-        Some(p) => p,
-        None => return Response::error(req.id, INVALID_PARAMS, "Missing 'kiln' parameter"),
-    };
-
-    let paths: Vec<std::path::PathBuf> = match req.params.get("paths") {
-        Some(serde_json::Value::Array(arr)) => arr
-            .iter()
-            .filter_map(|v| v.as_str().map(std::path::PathBuf::from))
-            .collect(),
-        _ => return Response::error(req.id, INVALID_PARAMS, "Missing or invalid 'paths' array"),
-    };
+    let kiln_path = require_str_param!(req, "kiln");
+    let paths_arr = require_array_param!(req, "paths");
+    let paths: Vec<std::path::PathBuf> = paths_arr
+        .iter()
+        .filter_map(|v: &serde_json::Value| v.as_str().map(std::path::PathBuf::from))
+        .collect();
 
     match km.process_batch(Path::new(kiln_path), &paths).await {
         Ok((processed, skipped, errors)) => Response::success(
@@ -606,13 +546,8 @@ use crucible_core::session::{SessionState, SessionType};
 use std::path::PathBuf;
 
 async fn handle_session_create(req: Request, sm: &Arc<SessionManager>) -> Response {
-    // Parse session type
-    let session_type_str = req
-        .params
-        .get("type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("chat");
-
+    // Parse session type (optional, defaults to "chat")
+    let session_type_str = optional_str_param!(req, "type").unwrap_or("chat");
     let session_type = match session_type_str {
         "chat" => SessionType::Chat,
         "agent" => SessionType::Agent,
@@ -627,19 +562,10 @@ async fn handle_session_create(req: Request, sm: &Arc<SessionManager>) -> Respon
     };
 
     // Parse kiln path (required)
-    let kiln = match req.params.get("kiln").and_then(|v| v.as_str()) {
-        Some(p) => PathBuf::from(p),
-        None => {
-            return Response::error(req.id, INVALID_PARAMS, "kiln path required");
-        }
-    };
+    let kiln = PathBuf::from(require_str_param!(req, "kiln"));
 
     // Parse optional workspace
-    let workspace = req
-        .params
-        .get("workspace")
-        .and_then(|v| v.as_str())
-        .map(PathBuf::from);
+    let workspace = optional_str_param!(req, "workspace").map(PathBuf::from);
 
     // Parse optional connected kilns
     let connected_kilns: Vec<PathBuf> = req
@@ -673,37 +599,21 @@ async fn handle_session_create(req: Request, sm: &Arc<SessionManager>) -> Respon
 
 async fn handle_session_list(req: Request, sm: &Arc<SessionManager>) -> Response {
     // Parse optional filters
-    let kiln = req
-        .params
-        .get("kiln")
-        .and_then(|v| v.as_str())
-        .map(PathBuf::from);
-    let workspace = req
-        .params
-        .get("workspace")
-        .and_then(|v| v.as_str())
-        .map(PathBuf::from);
-    let session_type = req
-        .params
-        .get("type")
-        .and_then(|v| v.as_str())
-        .and_then(|s| match s {
-            "chat" => Some(SessionType::Chat),
-            "agent" => Some(SessionType::Agent),
-            "workflow" => Some(SessionType::Workflow),
-            _ => None,
-        });
-    let state = req
-        .params
-        .get("state")
-        .and_then(|v| v.as_str())
-        .and_then(|s| match s {
-            "active" => Some(SessionState::Active),
-            "paused" => Some(SessionState::Paused),
-            "compacting" => Some(SessionState::Compacting),
-            "ended" => Some(SessionState::Ended),
-            _ => None,
-        });
+    let kiln = optional_str_param!(req, "kiln").map(PathBuf::from);
+    let workspace = optional_str_param!(req, "workspace").map(PathBuf::from);
+    let session_type = optional_str_param!(req, "type").and_then(|s| match s {
+        "chat" => Some(SessionType::Chat),
+        "agent" => Some(SessionType::Agent),
+        "workflow" => Some(SessionType::Workflow),
+        _ => None,
+    });
+    let state = optional_str_param!(req, "state").and_then(|s| match s {
+        "active" => Some(SessionState::Active),
+        "paused" => Some(SessionState::Paused),
+        "compacting" => Some(SessionState::Compacting),
+        "ended" => Some(SessionState::Ended),
+        _ => None,
+    });
 
     let sessions =
         sm.list_sessions_filtered(kiln.as_ref(), workspace.as_ref(), session_type, state);
@@ -733,10 +643,7 @@ async fn handle_session_list(req: Request, sm: &Arc<SessionManager>) -> Response
 }
 
 async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let session_id = match req.params.get("session_id").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        None => return Response::error(req.id, INVALID_PARAMS, "session_id required"),
-    };
+    let session_id = require_str_param!(req, "session_id");
 
     match sm.get_session(session_id) {
         Some(session) => Response::success(
@@ -762,10 +669,7 @@ async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -> Response 
 }
 
 async fn handle_session_pause(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let session_id = match req.params.get("session_id").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        None => return Response::error(req.id, INVALID_PARAMS, "session_id required"),
-    };
+    let session_id = require_str_param!(req, "session_id");
 
     match sm.pause_session(session_id).await {
         Ok(previous_state) => Response::success(
@@ -784,10 +688,7 @@ async fn handle_session_pause(req: Request, sm: &Arc<SessionManager>) -> Respons
 }
 
 async fn handle_session_resume(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let session_id = match req.params.get("session_id").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        None => return Response::error(req.id, INVALID_PARAMS, "session_id required"),
-    };
+    let session_id = require_str_param!(req, "session_id");
 
     match sm.resume_session(session_id).await {
         Ok(previous_state) => Response::success(
@@ -806,27 +707,12 @@ async fn handle_session_resume(req: Request, sm: &Arc<SessionManager>) -> Respon
 }
 
 async fn handle_session_resume_from_storage(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let session_id = match req.params.get("session_id").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        None => return Response::error(req.id, INVALID_PARAMS, "session_id required"),
-    };
-
-    let kiln = match req.params.get("kiln").and_then(|v| v.as_str()) {
-        Some(p) => PathBuf::from(p),
-        None => return Response::error(req.id, INVALID_PARAMS, "kiln path required"),
-    };
+    let session_id = require_str_param!(req, "session_id");
+    let kiln = PathBuf::from(require_str_param!(req, "kiln"));
 
     // Optional pagination params
-    let limit = req
-        .params
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .map(|n| n as usize);
-    let offset = req
-        .params
-        .get("offset")
-        .and_then(|v| v.as_u64())
-        .map(|n| n as usize);
+    let limit = optional_u64_param!(req, "limit").map(|n| n as usize);
+    let offset = optional_u64_param!(req, "offset").map(|n| n as usize);
 
     // Resume session from storage
     let session = match sm.resume_session_from_storage(session_id, &kiln).await {
@@ -877,10 +763,7 @@ async fn handle_session_resume_from_storage(req: Request, sm: &Arc<SessionManage
 }
 
 async fn handle_session_end(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let session_id = match req.params.get("session_id").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        None => return Response::error(req.id, INVALID_PARAMS, "session_id required"),
-    };
+    let session_id = require_str_param!(req, "session_id");
 
     match sm.end_session(session_id).await {
         Ok(session) => Response::success(
@@ -899,10 +782,7 @@ async fn handle_session_end(req: Request, sm: &Arc<SessionManager>) -> Response 
 }
 
 async fn handle_session_compact(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let session_id = match req.params.get("session_id").and_then(|v| v.as_str()) {
-        Some(id) => id,
-        None => return Response::error(req.id, INVALID_PARAMS, "session_id required"),
-    };
+    let session_id = require_str_param!(req, "session_id");
 
     match sm.request_compaction(session_id).await {
         Ok(session) => Response::success(
@@ -929,16 +809,11 @@ async fn handle_session_subscribe(
     client_id: ClientId,
     sm: &Arc<SubscriptionManager>,
 ) -> Response {
-    let session_ids: Vec<String> = match req.params.get("session_ids") {
-        Some(v) => match v.as_array() {
-            Some(arr) => arr
-                .iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect(),
-            None => return Response::error(req.id, INVALID_PARAMS, "session_ids must be an array"),
-        },
-        None => return Response::error(req.id, INVALID_PARAMS, "session_ids required"),
-    };
+    let session_ids_arr = require_array_param!(req, "session_ids");
+    let session_ids: Vec<String> = session_ids_arr
+        .iter()
+        .filter_map(|v: &serde_json::Value| v.as_str().map(String::from))
+        .collect();
 
     for session_id in &session_ids {
         if session_id == "*" {
@@ -962,16 +837,11 @@ async fn handle_session_unsubscribe(
     client_id: ClientId,
     sm: &Arc<SubscriptionManager>,
 ) -> Response {
-    let session_ids: Vec<String> = match req.params.get("session_ids") {
-        Some(v) => match v.as_array() {
-            Some(arr) => arr
-                .iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect(),
-            None => return Response::error(req.id, INVALID_PARAMS, "session_ids must be an array"),
-        },
-        None => return Response::error(req.id, INVALID_PARAMS, "session_ids required"),
-    };
+    let session_ids_arr = require_array_param!(req, "session_ids");
+    let session_ids: Vec<String> = session_ids_arr
+        .iter()
+        .filter_map(|v: &serde_json::Value| v.as_str().map(String::from))
+        .collect();
 
     for session_id in &session_ids {
         sm.unsubscribe(client_id, session_id);
@@ -1392,7 +1262,7 @@ mod tests {
 
         assert!(response.contains("error"));
         assert!(response.contains("-32602")); // INVALID_PARAMS
-        assert!(response.contains("session_ids required"));
+        assert!(response.contains("'session_ids'"));
 
         let _ = shutdown_handle.send(());
         let _ = server_task.await;
@@ -1422,7 +1292,8 @@ mod tests {
 
         assert!(response.contains("error"));
         assert!(response.contains("-32602")); // INVALID_PARAMS
-        assert!(response.contains("must be an array"));
+        // Macro produces "Missing or invalid 'session_ids' parameter" for wrong type
+        assert!(response.contains("'session_ids'"));
 
         let _ = shutdown_handle.send(());
         let _ = server_task.await;
@@ -1490,7 +1361,7 @@ mod tests {
 
         assert!(response.contains("error"));
         assert!(response.contains("-32602")); // INVALID_PARAMS
-        assert!(response.contains("session_ids required"));
+        assert!(response.contains("'session_ids'"));
 
         let _ = shutdown_handle.send(());
         let _ = server_task.await;
