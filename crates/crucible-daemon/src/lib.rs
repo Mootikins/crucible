@@ -4,9 +4,9 @@
 //! SurrealDB connections to multiple kilns and session lifecycle.
 
 pub mod kiln_manager;
-pub mod rpc_helpers;
 pub mod lifecycle;
 pub mod protocol;
+pub mod rpc_helpers;
 pub mod server;
 pub mod session_manager;
 pub mod session_storage;

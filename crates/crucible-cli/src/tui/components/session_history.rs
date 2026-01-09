@@ -257,7 +257,7 @@ impl Widget for SessionHistoryWidget<'_> {
                 width: area.width,
                 height: content_height as u16,
             };
-            // No Wrap needed - termimad pre-wraps at word boundaries
+            // No Wrap needed - ratatui markdown renderer pre-wraps at word boundaries
             // Apply horizontal scroll (vertical is 0 since content fits)
             let paragraph = Paragraph::new(lines).scroll((0, h_scroll));
             paragraph.render(offset_area, buf);
@@ -273,7 +273,7 @@ impl Widget for SessionHistoryWidget<'_> {
             // Convert bottom-relative to top-relative scroll
             let top_scroll = max_scroll - effective_scroll;
 
-            // No Wrap needed - termimad pre-wraps at word boundaries
+            // No Wrap needed - ratatui markdown renderer pre-wraps at word boundaries
             // Apply both vertical and horizontal scroll
             let paragraph = Paragraph::new(lines).scroll((top_scroll as u16, h_scroll));
             paragraph.render(area, buf);
