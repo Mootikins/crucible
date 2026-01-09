@@ -39,21 +39,19 @@ impl DaemonClient {
     }
 
     /// Connect to daemon or start it if not running
+    ///
+    /// Uses socket-based detection:
+    /// - If socket exists and connectable -> daemon running
+    /// - If socket exists but not connectable -> stale socket, safe to replace
+    /// - If socket doesn't exist -> daemon not running
     pub async fn connect_or_start() -> Result<Self> {
         // Try to connect first
-        match Self::connect().await {
-            Ok(client) => return Ok(client),
-            Err(_) => {
-                // Check if daemon is actually running (stale socket)
-                if crucible_daemon::is_daemon_running() {
-                    // PID exists but can't connect - try again after a short delay
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    return Self::connect().await;
-                }
-            }
+        if let Ok(client) = Self::connect().await {
+            return Ok(client);
         }
 
-        // Daemon not running - start it
+        // Connection failed - daemon not running or stale socket
+        // Start the daemon
         Self::start_daemon().await?;
 
         // Wait for daemon to be ready with exponential backoff
