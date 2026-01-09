@@ -10,6 +10,8 @@ pub mod protocol;
 pub mod server;
 pub mod session_manager;
 pub mod session_storage;
+
+#[cfg(feature = "subscriptions")]
 pub mod subscription;
 
 pub use kiln_manager::KilnManager;
@@ -18,4 +20,6 @@ pub use protocol::{Notification, Request, Response, RpcError, SessionEventMessag
 pub use server::Server;
 pub use session_manager::{SessionError, SessionManager};
 pub use session_storage::{FileSessionStorage, SessionStorage};
+
+#[cfg(feature = "subscriptions")]
 pub use subscription::{ClientId, SubscriptionManager};

@@ -5,6 +5,8 @@ mod rpc_helpers;
 mod server;
 mod session_manager;
 mod session_storage;
+
+#[cfg(feature = "subscriptions")]
 mod subscription;
 
 use anyhow::Result;
