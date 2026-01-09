@@ -1,12 +1,7 @@
 ---
 source: crates/crucible-cli/src/tui/testing/code_block_tests.rs
-expression: render_conversation(&state)
+expression: h.render()
 ---
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
                                                                                 
                                                                                 
                                                                                 
@@ -25,4 +20,9 @@ expression: render_conversation(&state)
                                                                                 
  > What is println?                                                             
                                                                                 
- ● The println! macro prints to stdout. Use it like println!("Hello")
+ ● The println! macro prints to stdout. Use it like println!("Hello")           
+                                                                                
+                                                                                
+ >                                                                              
+                                                                                
+▸ Plan │ Ready
