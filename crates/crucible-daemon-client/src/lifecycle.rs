@@ -94,6 +94,8 @@ pub async fn ensure_daemon(socket: &Path, idle_timeout: u64) -> Result<()> {
 
         if is_daemon_running(socket) {
             info!("Daemon ready after {} attempts", attempt + 1);
+            // Give daemon a moment to fully initialize RPC handling
+            tokio::time::sleep(Duration::from_millis(100)).await;
             return Ok(());
         }
 
