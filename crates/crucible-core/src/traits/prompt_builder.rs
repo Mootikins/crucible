@@ -52,6 +52,8 @@ pub trait PromptBuilder: Send + Sync {
 
 /// Standard layer priorities
 pub mod priorities {
+    /// Skill descriptions (injected for eager mode)
+    pub const SKILL: u32 = 50;
     /// Base prompt (minimal default)
     pub const BASE: u32 = 100;
     /// Project instructions (AGENTS.md/CLAUDE.md)
@@ -72,6 +74,7 @@ mod tests {
     #[allow(clippy::assertions_on_constants)]
     fn test_priority_ordering() {
         // These are intentionally constants - we want to verify ordering at compile time
+        assert!(priorities::SKILL < priorities::BASE);
         assert!(priorities::BASE < priorities::PROJECT);
         assert!(priorities::PROJECT < priorities::AGENT_CARD);
         assert!(priorities::AGENT_CARD < priorities::USER);
