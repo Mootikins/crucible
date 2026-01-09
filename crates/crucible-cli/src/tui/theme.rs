@@ -66,6 +66,31 @@ pub enum MarkdownElement {
     HorizontalRule,
 }
 
+impl MarkdownElement {
+    /// All markdown element variants.
+    ///
+    /// Useful for iteration, caching, and testing.
+    pub const ALL: [Self; 17] = [
+        Self::Text,
+        Self::Bold,
+        Self::Italic,
+        Self::BoldItalic,
+        Self::InlineCode,
+        Self::Heading1,
+        Self::Heading2,
+        Self::Heading3,
+        Self::Heading4,
+        Self::Heading5,
+        Self::Heading6,
+        Self::Link,
+        Self::Blockquote,
+        Self::ListMarker,
+        Self::TableBorder,
+        Self::Strikethrough,
+        Self::HorizontalRule,
+    ];
+}
+
 /// Scope mapping configuration for a markdown element.
 ///
 /// Defines which syntect scopes to try (in order) and what modifiers to apply.
@@ -277,7 +302,12 @@ impl MarkdownTheme {
     }
 
     /// Detect if the terminal has a dark background.
-    fn detect_dark_background() -> bool {
+    ///
+    /// Checks in order:
+    /// 1. `COLORFGBG` env var (format: "fg;bg", bg > 6 = light)
+    /// 2. `TERM_BACKGROUND` env var ("dark" | "light")
+    /// 3. Default to dark
+    pub fn detect_dark_background() -> bool {
         // Check COLORFGBG first (format: "fg;bg")
         if let Ok(val) = env::var("COLORFGBG") {
             if let Some(bg) = val.split(';').nth(1) {
@@ -298,27 +328,7 @@ impl MarkdownTheme {
 
     /// Build the style cache for all markdown elements.
     fn build_style_cache(&mut self) {
-        let elements = [
-            MarkdownElement::Text,
-            MarkdownElement::Bold,
-            MarkdownElement::Italic,
-            MarkdownElement::BoldItalic,
-            MarkdownElement::InlineCode,
-            MarkdownElement::Heading1,
-            MarkdownElement::Heading2,
-            MarkdownElement::Heading3,
-            MarkdownElement::Heading4,
-            MarkdownElement::Heading5,
-            MarkdownElement::Heading6,
-            MarkdownElement::Link,
-            MarkdownElement::Blockquote,
-            MarkdownElement::ListMarker,
-            MarkdownElement::TableBorder,
-            MarkdownElement::Strikethrough,
-            MarkdownElement::HorizontalRule,
-        ];
-
-        for element in elements {
+        for element in MarkdownElement::ALL {
             let style = self.compute_style(element);
             self.style_cache.insert(element, style);
         }
@@ -546,27 +556,7 @@ mod tests {
         let theme = MarkdownTheme::dark();
 
         // All elements should return a style without panicking
-        let elements = [
-            MarkdownElement::Text,
-            MarkdownElement::Bold,
-            MarkdownElement::Italic,
-            MarkdownElement::BoldItalic,
-            MarkdownElement::InlineCode,
-            MarkdownElement::Heading1,
-            MarkdownElement::Heading2,
-            MarkdownElement::Heading3,
-            MarkdownElement::Heading4,
-            MarkdownElement::Heading5,
-            MarkdownElement::Heading6,
-            MarkdownElement::Link,
-            MarkdownElement::Blockquote,
-            MarkdownElement::ListMarker,
-            MarkdownElement::TableBorder,
-            MarkdownElement::Strikethrough,
-            MarkdownElement::HorizontalRule,
-        ];
-
-        for element in elements {
+        for element in MarkdownElement::ALL {
             let style = theme.style_for(element);
             // All elements should have at least a foreground color set
             assert!(
