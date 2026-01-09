@@ -443,6 +443,15 @@ fn render_inline_children_with_wrapping(node: &Node, ctx: &mut RenderContext<'_>
     wrap_spans_to_lines(&temp_spans, max_width, ctx);
 }
 
+/// Trait for collecting styled spans during inline rendering.
+///
+/// This abstracts over the different ways inline content can be collected:
+/// - Directly to the render context (for non-wrapping paths)
+/// - To a temporary buffer (for word-wrapping)
+trait SpanSink {
+    fn push_span(&mut self, text: String, style: Style);
+}
+
 /// Temporary collector for spans during inline rendering.
 struct TempSpanCollector<'a> {
     spans: &'a mut Vec<Span<'static>>,
@@ -452,8 +461,10 @@ impl<'a> TempSpanCollector<'a> {
     fn new(spans: &'a mut Vec<Span<'static>>) -> Self {
         Self { spans }
     }
+}
 
-    fn push(&mut self, text: String, style: Style) {
+impl SpanSink for TempSpanCollector<'_> {
+    fn push_span(&mut self, text: String, style: Style) {
         if !text.is_empty() {
             self.spans.push(Span::styled(text, style));
         }
@@ -463,44 +474,52 @@ impl<'a> TempSpanCollector<'a> {
 /// Collect inline spans without adding them to the context lines.
 fn collect_inline_spans(node: &Node, ctx: &RenderContext<'_>, collector: &mut TempSpanCollector<'_>) {
     for child in node.children.iter() {
-        collect_inline_span(child, ctx, collector);
+        process_inline_node(child, ctx, collector, true);
     }
 }
 
-/// Collect a single inline element's spans.
-fn collect_inline_span(node: &Node, ctx: &RenderContext<'_>, collector: &mut TempSpanCollector<'_>) {
+/// Process a single inline element, pushing spans to the sink.
+///
+/// This unified function handles all inline markdown elements. The `for_wrapping`
+/// parameter controls hard break behavior:
+/// - `true`: emit "\n" span (for word-wrapping collection)
+/// - `false`: flush line directly (for direct rendering)
+fn process_inline_node<S: SpanSink>(
+    node: &Node,
+    ctx: &RenderContext<'_>,
+    sink: &mut S,
+    for_wrapping: bool,
+) {
     // Plain text
     if let Some(text) = node.cast::<Text>() {
         let style = ctx.theme.style_for(MarkdownElement::Text);
-        collector.push(text.content.clone(), style);
+        sink.push_span(text.content.clone(), style);
         return;
     }
 
     // Strong (bold)
     if node.cast::<Strong>().is_some() {
-        let has_italic = has_nested_em(node);
-        let element = if has_italic {
+        let element = if has_nested_node::<Em>(node) {
             MarkdownElement::BoldItalic
         } else {
             MarkdownElement::Bold
         };
         let style = ctx.theme.style_for(element);
         let text = collect_text(node);
-        collector.push(text, style);
+        sink.push_span(text, style);
         return;
     }
 
     // Emphasis (italic)
     if node.cast::<Em>().is_some() {
-        let has_bold = has_nested_strong(node);
-        let element = if has_bold {
+        let element = if has_nested_node::<Strong>(node) {
             MarkdownElement::BoldItalic
         } else {
             MarkdownElement::Italic
         };
         let style = ctx.theme.style_for(element);
         let text = collect_text(node);
-        collector.push(text, style);
+        sink.push_span(text, style);
         return;
     }
 
@@ -508,7 +527,7 @@ fn collect_inline_span(node: &Node, ctx: &RenderContext<'_>, collector: &mut Tem
     if node.cast::<CodeInline>().is_some() {
         let style = ctx.theme.style_for(MarkdownElement::InlineCode);
         let text = collect_text(node);
-        collector.push(text, style);
+        sink.push_span(text, style);
         return;
     }
 
@@ -518,11 +537,11 @@ fn collect_inline_span(node: &Node, ctx: &RenderContext<'_>, collector: &mut Tem
         let text = collect_text(node);
 
         if text == link.url {
-            collector.push(text, style);
+            sink.push_span(text, style);
         } else {
-            collector.push(text, style);
+            sink.push_span(text, style);
             let url_style = ctx.theme.style_for(MarkdownElement::Text).add_modifier(Modifier::DIM);
-            collector.push(format!(" ({})", link.url), url_style);
+            sink.push_span(format!(" ({})", link.url), url_style);
         }
         return;
     }
@@ -530,21 +549,24 @@ fn collect_inline_span(node: &Node, ctx: &RenderContext<'_>, collector: &mut Tem
     // Soft break (treat as space)
     if node.cast::<Softbreak>().is_some() {
         let style = ctx.theme.style_for(MarkdownElement::Text);
-        collector.push(" ".to_string(), style);
+        sink.push_span(" ".to_string(), style);
         return;
     }
 
-    // Hard break is handled specially during wrapping
+    // Hard break
     if node.cast::<Hardbreak>().is_some() {
-        // Mark with a special character that we'll convert to line break
-        let style = ctx.theme.style_for(MarkdownElement::Text);
-        collector.push("\n".to_string(), style);
+        if for_wrapping {
+            // Mark with newline that will be processed during wrapping
+            let style = ctx.theme.style_for(MarkdownElement::Text);
+            sink.push_span("\n".to_string(), style);
+        }
+        // Note: non-wrapping path handles hard breaks by flushing context directly
         return;
     }
 
     // Default: recurse into children
     for child in node.children.iter() {
-        collect_inline_span(child, ctx, collector);
+        process_inline_node(child, ctx, sink, for_wrapping);
     }
 }
 
@@ -639,7 +661,10 @@ fn next_word(s: &str) -> (&str, &str, bool) {
     (word, rest, has_trailing_space)
 }
 
-/// Render an inline element.
+/// Render an inline element directly to the context.
+///
+/// This is the non-wrapping path that renders inline elements directly.
+/// Hard breaks trigger immediate line flush (unlike the wrapping path).
 fn render_inline(node: &Node, ctx: &mut RenderContext<'_>) {
     // Plain text
     if let Some(text) = node.cast::<Text>() {
@@ -649,9 +674,7 @@ fn render_inline(node: &Node, ctx: &mut RenderContext<'_>) {
 
     // Strong (bold)
     if node.cast::<Strong>().is_some() {
-        // Check if also italic (nested Em inside Strong)
-        let has_italic = has_nested_em(node);
-        let element = if has_italic {
+        let element = if has_nested_node::<Em>(node) {
             MarkdownElement::BoldItalic
         } else {
             MarkdownElement::Bold
@@ -664,9 +687,7 @@ fn render_inline(node: &Node, ctx: &mut RenderContext<'_>) {
 
     // Emphasis (italic)
     if node.cast::<Em>().is_some() {
-        // Check if also bold (nested Strong inside Em)
-        let has_bold = has_nested_strong(node);
-        let element = if has_bold {
+        let element = if has_nested_node::<Strong>(node) {
             MarkdownElement::BoldItalic
         } else {
             MarkdownElement::Italic
@@ -691,10 +712,8 @@ fn render_inline(node: &Node, ctx: &mut RenderContext<'_>) {
         let text = collect_text(node);
 
         if text == link.url {
-            // URL-only link
             ctx.push_span(text, style);
         } else {
-            // Text + URL
             ctx.push_span(text, style);
             let url_style = ctx.theme.style_for(MarkdownElement::Text).add_modifier(Modifier::DIM);
             ctx.push_span(format!(" ({})", link.url), url_style);
@@ -735,26 +754,13 @@ fn collect_text(node: &Node) -> String {
     text
 }
 
-/// Check if a node has a nested Em (italic) child.
-fn has_nested_em(node: &Node) -> bool {
+/// Check if a node has a nested child of type T.
+fn has_nested_node<T: markdown_it::NodeValue>(node: &Node) -> bool {
     for child in node.children.iter() {
-        if child.cast::<Em>().is_some() {
+        if child.cast::<T>().is_some() {
             return true;
         }
-        if has_nested_em(child) {
-            return true;
-        }
-    }
-    false
-}
-
-/// Check if a node has a nested Strong (bold) child.
-fn has_nested_strong(node: &Node) -> bool {
-    for child in node.children.iter() {
-        if child.cast::<Strong>().is_some() {
-            return true;
-        }
-        if has_nested_strong(child) {
+        if has_nested_node::<T>(child) {
             return true;
         }
     }
@@ -991,76 +997,75 @@ fn render_table(node: &Node, ctx: &mut RenderContext<'_>) {
     render_table_bottom_border(ctx, &col_widths, num_cols, border_style);
 }
 
-/// Render the top border of a table: ┌─────┬─────┬─────┐
+/// Render a horizontal table border row.
+///
+/// This function renders borders like:
+/// - Top: ┌─────┬─────┐
+/// - Separator: ├─────┼─────┤
+/// - Bottom: └─────┴─────┘
+fn render_table_border_row(
+    ctx: &mut RenderContext<'_>,
+    col_widths: &[usize],
+    num_cols: usize,
+    style: Style,
+    left: char,
+    middle: char,
+    right: char,
+) {
+    let mut spans = Vec::new();
+
+    spans.push(Span::styled(left.to_string(), style));
+    for (i, &w) in col_widths.iter().enumerate() {
+        spans.push(Span::styled(
+            box_chars::HORIZONTAL.to_string().repeat(w + 2),
+            style,
+        ));
+        if i < num_cols - 1 {
+            spans.push(Span::styled(middle.to_string(), style));
+        }
+    }
+    spans.push(Span::styled(right.to_string(), style));
+
+    ctx.lines.push(Line::from(spans));
+}
+
+/// Render the top border of a table: ┌─────┬─────┐
 fn render_table_top_border(
     ctx: &mut RenderContext<'_>,
     col_widths: &[usize],
     num_cols: usize,
     style: Style,
 ) {
-    let mut spans = Vec::new();
-
-    spans.push(Span::styled(box_chars::TOP_LEFT.to_string(), style));
-    for (i, &w) in col_widths.iter().enumerate() {
-        spans.push(Span::styled(
-            box_chars::HORIZONTAL.to_string().repeat(w + 2),
-            style,
-        ));
-        if i < num_cols - 1 {
-            spans.push(Span::styled(box_chars::TOP_T.to_string(), style));
-        }
-    }
-    spans.push(Span::styled(box_chars::TOP_RIGHT.to_string(), style));
-
-    ctx.lines.push(Line::from(spans));
+    render_table_border_row(
+        ctx, col_widths, num_cols, style,
+        box_chars::TOP_LEFT, box_chars::TOP_T, box_chars::TOP_RIGHT,
+    );
 }
 
-/// Render a separator row: ├─────┼─────┼─────┤
+/// Render a separator row: ├─────┼─────┤
 fn render_table_separator_row(
     ctx: &mut RenderContext<'_>,
     col_widths: &[usize],
     num_cols: usize,
     style: Style,
 ) {
-    let mut spans = Vec::new();
-
-    spans.push(Span::styled(box_chars::LEFT_T.to_string(), style));
-    for (i, &w) in col_widths.iter().enumerate() {
-        spans.push(Span::styled(
-            box_chars::HORIZONTAL.to_string().repeat(w + 2),
-            style,
-        ));
-        if i < num_cols - 1 {
-            spans.push(Span::styled(box_chars::CROSS.to_string(), style));
-        }
-    }
-    spans.push(Span::styled(box_chars::RIGHT_T.to_string(), style));
-
-    ctx.lines.push(Line::from(spans));
+    render_table_border_row(
+        ctx, col_widths, num_cols, style,
+        box_chars::LEFT_T, box_chars::CROSS, box_chars::RIGHT_T,
+    );
 }
 
-/// Render the bottom border of a table: └─────┴─────┴─────┘
+/// Render the bottom border of a table: └─────┴─────┘
 fn render_table_bottom_border(
     ctx: &mut RenderContext<'_>,
     col_widths: &[usize],
     num_cols: usize,
     style: Style,
 ) {
-    let mut spans = Vec::new();
-
-    spans.push(Span::styled(box_chars::BOTTOM_LEFT.to_string(), style));
-    for (i, &w) in col_widths.iter().enumerate() {
-        spans.push(Span::styled(
-            box_chars::HORIZONTAL.to_string().repeat(w + 2),
-            style,
-        ));
-        if i < num_cols - 1 {
-            spans.push(Span::styled(box_chars::BOTTOM_T.to_string(), style));
-        }
-    }
-    spans.push(Span::styled(box_chars::BOTTOM_RIGHT.to_string(), style));
-
-    ctx.lines.push(Line::from(spans));
+    render_table_border_row(
+        ctx, col_widths, num_cols, style,
+        box_chars::BOTTOM_LEFT, box_chars::BOTTOM_T, box_chars::BOTTOM_RIGHT,
+    );
 }
 
 /// Render a data row (potentially wrapping cells if needed)
