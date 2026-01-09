@@ -115,7 +115,11 @@ impl KilnContext {
     ) -> Result<Vec<SemanticSearchResult>> {
         use crucible_core::traits::KnowledgeRepository;
 
-        tracing::debug!("semantic_search called with query={:?}, limit={}", query, limit);
+        tracing::debug!(
+            "semantic_search called with query={:?}, limit={}",
+            query,
+            limit
+        );
 
         // Get embedding config from composite config and convert to provider config
         let embedding_config = self.config.embedding.to_provider_config();
@@ -136,7 +140,10 @@ impl KilnContext {
             e
         })?;
         let query_embedding = query_response.embedding;
-        tracing::debug!("Query embedding generated, dimensions={}", query_embedding.len());
+        tracing::debug!(
+            "Query embedding generated, dimensions={}",
+            query_embedding.len()
+        );
 
         // Use KnowledgeRepository trait for search (works with both embedded and daemon)
         let knowledge_repo = self
@@ -148,10 +155,13 @@ impl KilnContext {
             })?;
 
         tracing::debug!("Searching vectors...");
-        let results = knowledge_repo.search_vectors(query_embedding).await.map_err(|e| {
-            tracing::error!("Vector search failed: {}", e);
-            e
-        })?;
+        let results = knowledge_repo
+            .search_vectors(query_embedding)
+            .await
+            .map_err(|e| {
+                tracing::error!("Vector search failed: {}", e);
+                e
+            })?;
         tracing::debug!("Vector search returned {} raw results", results.len());
 
         // Convert to facade result type, respecting limit

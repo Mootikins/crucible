@@ -237,7 +237,9 @@ async fn handle_request(
         "session.get" => handle_session_get(req, session_manager).await,
         "session.pause" => handle_session_pause(req, session_manager).await,
         "session.resume" => handle_session_resume(req, session_manager).await,
-        "session.resume_from_storage" => handle_session_resume_from_storage(req, session_manager).await,
+        "session.resume_from_storage" => {
+            handle_session_resume_from_storage(req, session_manager).await
+        }
         "session.end" => handle_session_end(req, session_manager).await,
         "session.compact" => handle_session_compact(req, session_manager).await,
         // Subscription RPC methods
@@ -471,7 +473,11 @@ async fn handle_note_get(req: Request, km: &Arc<KilnManager>) -> Response {
     match note_store.get(path).await {
         Ok(Some(note)) => match serde_json::to_value(&note) {
             Ok(v) => Response::success(req.id, v),
-            Err(e) => Response::error(req.id, INTERNAL_ERROR, format!("Serialization error: {}", e)),
+            Err(e) => Response::error(
+                req.id,
+                INTERNAL_ERROR,
+                format!("Serialization error: {}", e),
+            ),
         },
         Ok(None) => Response::success(req.id, serde_json::Value::Null),
         Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
@@ -520,7 +526,11 @@ async fn handle_note_list(req: Request, km: &Arc<KilnManager>) -> Response {
     match note_store.list().await {
         Ok(notes) => match serde_json::to_value(&notes) {
             Ok(v) => Response::success(req.id, v),
-            Err(e) => Response::error(req.id, INTERNAL_ERROR, format!("Serialization error: {}", e)),
+            Err(e) => Response::error(
+                req.id,
+                INTERNAL_ERROR,
+                format!("Serialization error: {}", e),
+            ),
         },
         Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
     }
@@ -643,7 +653,10 @@ async fn handle_session_create(req: Request, sm: &Arc<SessionManager>) -> Respon
         })
         .unwrap_or_default();
 
-    match sm.create_session(session_type, kiln, workspace, connected_kilns).await {
+    match sm
+        .create_session(session_type, kiln, workspace, connected_kilns)
+        .await
+    {
         Ok(session) => Response::success(
             req.id,
             serde_json::json!({
@@ -692,12 +705,8 @@ async fn handle_session_list(req: Request, sm: &Arc<SessionManager>) -> Response
             _ => None,
         });
 
-    let sessions = sm.list_sessions_filtered(
-        kiln.as_ref(),
-        workspace.as_ref(),
-        session_type,
-        state,
-    );
+    let sessions =
+        sm.list_sessions_filtered(kiln.as_ref(), workspace.as_ref(), session_type, state);
 
     let sessions_json: Vec<_> = sessions
         .iter()
@@ -826,7 +835,10 @@ async fn handle_session_resume_from_storage(req: Request, sm: &Arc<SessionManage
     };
 
     // Load event history with pagination
-    let history = match sm.load_session_events(session_id, &kiln, limit, offset).await {
+    let history = match sm
+        .load_session_events(session_id, &kiln, limit, offset)
+        .await
+    {
         Ok(events) => events,
         Err(e) => {
             // Session resumed but history load failed - return session without history
@@ -923,9 +935,7 @@ async fn handle_session_subscribe(
                 .iter()
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect(),
-            None => {
-                return Response::error(req.id, INVALID_PARAMS, "session_ids must be an array")
-            }
+            None => return Response::error(req.id, INVALID_PARAMS, "session_ids must be an array"),
         },
         None => return Response::error(req.id, INVALID_PARAMS, "session_ids required"),
     };
@@ -958,9 +968,7 @@ async fn handle_session_unsubscribe(
                 .iter()
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect(),
-            None => {
-                return Response::error(req.id, INVALID_PARAMS, "session_ids must be an array")
-            }
+            None => return Response::error(req.id, INVALID_PARAMS, "session_ids must be an array"),
         },
         None => return Response::error(req.id, INVALID_PARAMS, "session_ids required"),
     };
@@ -1372,7 +1380,9 @@ mod tests {
 
         let mut client = UnixStream::connect(&sock_path).await.unwrap();
         client
-            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.subscribe\",\"params\":{}}\n")
+            .write_all(
+                b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"session.subscribe\",\"params\":{}}\n",
+            )
             .await
             .unwrap();
 
@@ -1574,8 +1584,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         buf.fill(0);
-        let result =
-            tokio::time::timeout(Duration::from_millis(100), client.read(&mut buf)).await;
+        let result = tokio::time::timeout(Duration::from_millis(100), client.read(&mut buf)).await;
         assert!(
             result.is_err(),
             "Should timeout - client shouldn't receive unsubscribed events"

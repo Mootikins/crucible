@@ -21,7 +21,9 @@ use crucible_pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
 use crucible_sqlite::{adapters as sqlite_adapters, SqliteClientHandle, SqliteConfig};
 
 #[cfg(feature = "storage-surrealdb")]
-use crucible_surrealdb::{adapters as surreal_adapters, adapters::SurrealClientHandle, SurrealDbConfig};
+use crucible_surrealdb::{
+    adapters as surreal_adapters, adapters::SurrealClientHandle, SurrealDbConfig,
+};
 
 // ===========================================================================
 // Backend Abstraction

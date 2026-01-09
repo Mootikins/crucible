@@ -515,9 +515,9 @@ fn render_user_message(content: &str, width: usize) -> Vec<Line<'static>> {
     for line in rendered_lines.iter() {
         let prefix = if first_line {
             first_line = false;
-            " > ".to_string()  // space + > + space (3 chars)
+            " > ".to_string() // space + > + space (3 chars)
         } else {
-            "   ".to_string()  // 3-space indent for continuation
+            "   ".to_string() // 3-space indent for continuation
         };
 
         let mut spans = vec![Span::styled(prefix, presets::user_prefix())];

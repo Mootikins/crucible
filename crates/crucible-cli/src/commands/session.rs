@@ -8,8 +8,7 @@ use anyhow::{anyhow, Result};
 use chrono::{Duration, Utc};
 use crucible_daemon_client::DaemonClient;
 use crucible_observe::{
-    list_sessions, load_events, render_to_markdown, LogEvent, RenderOptions, SessionId,
-    SessionType,
+    list_sessions, load_events, render_to_markdown, LogEvent, RenderOptions, SessionId, SessionType,
 };
 use std::path::PathBuf;
 use tokio::fs;

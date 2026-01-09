@@ -231,11 +231,11 @@ use crate::chat::slash_registry::SlashCommandRegistry;
 use crate::session_logger::SessionLogger;
 use crate::tui::agent_picker::AgentSelection;
 use crate::tui::notification::NotificationLevel;
-use crate::tui::paste_handler::{build_indicator_delete, build_message_with_pastes, PasteHandler, PastedContent};
-use crate::tui::session_commands;
-use crate::tui::streaming_channel::{
-    create_streaming_channel, StreamingEvent, StreamingTask,
+use crate::tui::paste_handler::{
+    build_indicator_delete, build_message_with_pastes, PasteHandler, PastedContent,
 };
+use crate::tui::session_commands;
+use crate::tui::streaming_channel::{create_streaming_channel, StreamingEvent, StreamingTask};
 
 use crate::tui::components::generic_popup::PopupState;
 use crate::tui::conversation::StatusKind;
@@ -633,92 +633,92 @@ impl RatatuiRunner {
                         streaming_error = Some(message);
                     }
                     StreamingEvent::ToolCall { id, name, args } => {
-                            // Display tool call in the TUI with arguments
-                            tracing::debug!(
-                                tool_id = ?id,
-                                tool_name = %name,
-                                "StreamingEvent::ToolCall received - pushing to view"
-                            );
-                            self.view.push_tool_running(&name, args.clone());
-                            self.view.set_status_text(&format!("Running: {}", name));
+                        // Display tool call in the TUI with arguments
+                        tracing::debug!(
+                            tool_id = ?id,
+                            tool_name = %name,
+                            "StreamingEvent::ToolCall received - pushing to view"
+                        );
+                        self.view.push_tool_running(&name, args.clone());
+                        self.view.set_status_text(&format!("Running: {}", name));
 
-                            // Log tool call to session
-                            if let Some(logger) = &self.session_logger {
-                                let logger = logger.clone();
-                                let id_str = id.clone().unwrap_or_default();
-                                let name_clone = name.clone();
-                                let args_clone = args.clone();
-                                tokio::spawn(async move {
-                                    logger.log_tool_call(&id_str, &name_clone, args_clone).await;
-                                });
-                            }
-
-                            // Push to event ring for session tracking
-                            bridge.ring.push(SessionEvent::ToolCalled { name, args });
+                        // Log tool call to session
+                        if let Some(logger) = &self.session_logger {
+                            let logger = logger.clone();
+                            let id_str = id.clone().unwrap_or_default();
+                            let name_clone = name.clone();
+                            let args_clone = args.clone();
+                            tokio::spawn(async move {
+                                logger.log_tool_call(&id_str, &name_clone, args_clone).await;
+                            });
                         }
-                        StreamingEvent::ToolCompleted {
+
+                        // Push to event ring for session tracking
+                        bridge.ring.push(SessionEvent::ToolCalled { name, args });
+                    }
+                    StreamingEvent::ToolCompleted {
+                        name,
+                        result,
+                        error,
+                    } => {
+                        // Update tool display with completion status
+                        if let Some(err) = &error {
+                            self.view.error_tool(&name, err);
+                        } else {
+                            // Truncate result for summary (max 50 chars)
+                            let summary = if result.len() > 50 {
+                                Some(format!("{}...", &result[..47]))
+                            } else if !result.is_empty() {
+                                Some(result.clone())
+                            } else {
+                                None
+                            };
+                            self.view.complete_tool(&name, summary);
+                        }
+
+                        // Clear status (tool is done)
+                        self.view.clear_status();
+
+                        // Log tool result to session
+                        if let Some(logger) = &self.session_logger {
+                            let logger = logger.clone();
+                            let name_clone = name.clone();
+                            // Truncate large results for logging
+                            let truncated = result.len() > 8192;
+                            let result_str = if truncated {
+                                result[..8192].to_string()
+                            } else {
+                                result.clone()
+                            };
+                            tokio::spawn(async move {
+                                logger
+                                    .log_tool_result(&name_clone, &result_str, truncated)
+                                    .await;
+                            });
+                        }
+
+                        // Push to event ring for session tracking
+                        bridge.ring.push(SessionEvent::ToolCompleted {
                             name,
                             result,
                             error,
-                        } => {
-                            // Update tool display with completion status
-                            if let Some(err) = &error {
-                                self.view.error_tool(&name, err);
-                            } else {
-                                // Truncate result for summary (max 50 chars)
-                                let summary = if result.len() > 50 {
-                                    Some(format!("{}...", &result[..47]))
-                                } else if !result.is_empty() {
-                                    Some(result.clone())
-                                } else {
-                                    None
-                                };
-                                self.view.complete_tool(&name, summary);
-                            }
+                        });
+                    }
+                    StreamingEvent::Reasoning { text, seq: _ } => {
+                        // Track reasoning tokens in the status display
+                        // (reasoning is thinking/chain-of-thought from models like Qwen3-thinking)
+                        self.prev_token_count = self.token_count;
+                        self.token_count += 1;
+                        self.spinner_frame = self.spinner_frame.wrapping_add(1);
+                        self.view.set_status(StatusKind::Generating {
+                            token_count: self.token_count,
+                            prev_token_count: self.prev_token_count,
+                            spinner_frame: self.spinner_frame,
+                        });
 
-                            // Clear status (tool is done)
-                            self.view.clear_status();
-
-                            // Log tool result to session
-                            if let Some(logger) = &self.session_logger {
-                                let logger = logger.clone();
-                                let name_clone = name.clone();
-                                // Truncate large results for logging
-                                let truncated = result.len() > 8192;
-                                let result_str = if truncated {
-                                    result[..8192].to_string()
-                                } else {
-                                    result.clone()
-                                };
-                                tokio::spawn(async move {
-                                    logger
-                                        .log_tool_result(&name_clone, &result_str, truncated)
-                                        .await;
-                                });
-                            }
-
-                            // Push to event ring for session tracking
-                            bridge.ring.push(SessionEvent::ToolCompleted {
-                                name,
-                                result,
-                                error,
-                            });
-                        }
-                        StreamingEvent::Reasoning { text, seq: _ } => {
-                            // Track reasoning tokens in the status display
-                            // (reasoning is thinking/chain-of-thought from models like Qwen3-thinking)
-                            self.prev_token_count = self.token_count;
-                            self.token_count += 1;
-                            self.spinner_frame = self.spinner_frame.wrapping_add(1);
-                            self.view.set_status(StatusKind::Generating {
-                                token_count: self.token_count,
-                                prev_token_count: self.prev_token_count,
-                                spinner_frame: self.spinner_frame,
-                            });
-
-                            // Accumulate reasoning in view for display (Alt+T toggle)
-                            self.view.append_reasoning(&text);
-                            self.view.tick_reasoning_animation();
+                        // Accumulate reasoning in view for display (Alt+T toggle)
+                        self.view.append_reasoning(&text);
+                        self.view.tick_reasoning_animation();
 
                         // Push reasoning to session using AgentThinking event
                         bridge
@@ -769,7 +769,10 @@ impl RatatuiRunner {
             // 7. Animate spinner during thinking phase (before tokens arrive)
             // The loop runs at ~60fps (16ms). Animate spinner every ~6 frames (~100ms).
             self.animation_frame = self.animation_frame.wrapping_add(1);
-            if self.streaming_manager.is_streaming() && self.token_count == 0 && self.animation_frame % 6 == 0 {
+            if self.streaming_manager.is_streaming()
+                && self.token_count == 0
+                && self.animation_frame % 6 == 0
+            {
                 self.spinner_frame = self.spinner_frame.wrapping_add(1);
                 self.view.set_status(StatusKind::Thinking {
                     spinner_frame: self.spinner_frame,
@@ -916,7 +919,8 @@ impl RatatuiRunner {
                     {
                         // Still in rapid input - record newline and don't send yet
                         self.input_mode_manager.push_char('\n');
-                        self.input_mode_manager.set_last_key_time(std::time::Instant::now());
+                        self.input_mode_manager
+                            .set_last_key_time(std::time::Instant::now());
                         tracing::debug!(
                             buffer_len = self.input_mode_manager.rapid_buffer().len(),
                             "Enter during rapid input - treating as newline"
@@ -1016,7 +1020,8 @@ impl RatatuiRunner {
                 }
 
                 // Set thinking status
-                self.streaming_manager.start_streaming_with_parser(StreamingBuffer::new());
+                self.streaming_manager
+                    .start_streaming_with_parser(StreamingBuffer::new());
                 self.token_count = 0;
                 self.prev_token_count = 0;
                 self.spinner_frame = 0;
@@ -1269,8 +1274,7 @@ impl RatatuiRunner {
                                         }
                                         Err(e) => {
                                             tracing::error!("Search command failed: {}", e);
-                                            self.view
-                                                .echo_error(&format!("Search failed: {}", e));
+                                            self.view.echo_error(&format!("Search failed: {}", e));
                                         }
                                     }
                                 } else {
@@ -1333,8 +1337,9 @@ impl RatatuiRunner {
                                         {
                                             Ok(result) => {
                                                 // Parse the JSON response for sessions
-                                                if let Some(sessions) =
-                                                    result.get("sessions").and_then(|s| s.as_array())
+                                                if let Some(sessions) = result
+                                                    .get("sessions")
+                                                    .and_then(|s| s.as_array())
                                                 {
                                                     for session in sessions.iter().take(10) {
                                                         if let Some(id) = session
@@ -1671,7 +1676,9 @@ impl RatatuiRunner {
             let elapsed_ms = now.duration_since(last_time).as_millis() as u64;
 
             // If gap is larger than threshold and buffer has content
-            if elapsed_ms > Self::RAPID_INPUT_THRESHOLD_MS && !self.input_mode_manager.rapid_buffer().is_empty() {
+            if elapsed_ms > Self::RAPID_INPUT_THRESHOLD_MS
+                && !self.input_mode_manager.rapid_buffer().is_empty()
+            {
                 let buffer = self.input_mode_manager.rapid_buffer().to_string();
                 self.input_mode_manager.clear_rapid_buffer();
                 self.input_mode_manager.clear_last_key_time();
@@ -3172,7 +3179,8 @@ mod tests {
                 RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
             runner
-                .paste_handler.pending_pastes
+                .paste_handler
+                .pending_pastes
                 .push(PastedContent::text("a\nb".to_string()));
             let summary = runner.paste_handler.summary();
             assert!(summary.is_some());
@@ -3185,10 +3193,12 @@ mod tests {
                 RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
             runner
-                .paste_handler.pending_pastes
+                .paste_handler
+                .pending_pastes
                 .push(PastedContent::text("a\nb".to_string()));
             runner
-                .paste_handler.pending_pastes
+                .paste_handler
+                .pending_pastes
                 .push(PastedContent::text("c\nd\ne".to_string()));
             let summary = runner.paste_handler.summary();
             assert!(summary.is_some());
@@ -3203,7 +3213,8 @@ mod tests {
                 RatatuiRunner::new("plan", test_popup_provider(), test_command_registry()).unwrap();
 
             runner
-                .paste_handler.pending_pastes
+                .paste_handler
+                .pending_pastes
                 .push(PastedContent::text("a\nb".to_string()));
             assert!(!runner.paste_handler.pending_pastes.is_empty());
 
@@ -3218,7 +3229,8 @@ mod tests {
 
             // Add a paste
             runner
-                .paste_handler.pending_pastes
+                .paste_handler
+                .pending_pastes
                 .push(PastedContent::text("pasted content".to_string()));
 
             // Set typed input
@@ -3315,7 +3327,8 @@ mod tests {
 
             runner.view.set_input("hello [2 lines, 10 chars]");
             runner
-                .paste_handler.pending_pastes
+                .paste_handler
+                .pending_pastes
                 .push(PastedContent::text("line1\nline2".to_string()));
 
             // Delete the indicator (start=6, end=25, idx=0)
@@ -3336,10 +3349,12 @@ mod tests {
                 .view
                 .set_input("[1 line, 5 chars] [3 lines, 20 chars]");
             runner
-                .paste_handler.pending_pastes
+                .paste_handler
+                .pending_pastes
                 .push(PastedContent::text("12345".to_string()));
             runner
-                .paste_handler.pending_pastes
+                .paste_handler
+                .pending_pastes
                 .push(PastedContent::text("a\nb\nc".to_string()));
 
             // Delete the first indicator (start=0, end=17, idx=0)
@@ -3347,7 +3362,9 @@ mod tests {
 
             // Should remove first paste, keep second
             assert_eq!(runner.paste_handler.pending_pastes.len(), 1);
-            assert!(runner.paste_handler.pending_pastes[0].content().contains('\n'));
+            assert!(runner.paste_handler.pending_pastes[0]
+                .content()
+                .contains('\n'));
         }
     }
 }

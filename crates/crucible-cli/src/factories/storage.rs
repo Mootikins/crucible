@@ -368,9 +368,7 @@ impl StorageHandle {
     pub fn note_store(&self) -> Option<Arc<dyn NoteStore>> {
         match self {
             StorageHandle::Embedded(h) => Some(h.as_note_store()),
-            StorageHandle::Daemon(c) => {
-                Some(Arc::new(DaemonNoteStore::new(Arc::clone(c))))
-            }
+            StorageHandle::Daemon(c) => Some(Arc::new(DaemonNoteStore::new(Arc::clone(c)))),
             StorageHandle::Lightweight(store) => Some(Arc::clone(store) as Arc<dyn NoteStore>),
             #[cfg(feature = "storage-sqlite")]
             StorageHandle::Sqlite(store) => Some(Arc::clone(store) as Arc<dyn NoteStore>),
@@ -544,7 +542,10 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
             #[cfg(feature = "storage-sqlite")]
             {
                 info!("Using SQLite storage mode (experimental)");
-                let sqlite_path = config.kiln_path.join(".crucible").join("crucible-sqlite.db");
+                let sqlite_path = config
+                    .kiln_path
+                    .join(".crucible")
+                    .join("crucible-sqlite.db");
                 let sqlite_config =
                     crucible_sqlite::SqliteConfig::new(sqlite_path.to_string_lossy().as_ref());
                 let pool = crucible_sqlite::SqlitePool::new(sqlite_config)

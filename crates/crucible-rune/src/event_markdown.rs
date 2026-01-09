@@ -395,7 +395,11 @@ impl EventToMarkdown for SessionEvent {
             } => {
                 // Show base64 content as-is (decoding would require additional dep)
                 let truncated = if content_base64.len() > 200 {
-                    format!("{}... ({} bytes)", &content_base64[..200], content_base64.len())
+                    format!(
+                        "{}... ({} bytes)",
+                        &content_base64[..200],
+                        content_base64.len()
+                    )
                 } else {
                     content_base64.clone()
                 };

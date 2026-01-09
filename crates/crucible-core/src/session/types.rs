@@ -128,10 +128,7 @@ impl Session {
     ///
     /// Returns: `{kiln}/.crucible/sessions/{session_id}/`
     pub fn storage_path(&self) -> PathBuf {
-        self.kiln
-            .join(".crucible")
-            .join("sessions")
-            .join(&self.id)
+        self.kiln.join(".crucible").join("sessions").join(&self.id)
     }
 
     /// Get the path to the markdown log file.
@@ -293,7 +290,8 @@ mod tests {
     fn test_session_with_workspace() {
         let kiln = PathBuf::from("/home/user/notes");
         let workspace = PathBuf::from("/home/user/project");
-        let session = Session::new(SessionType::Agent, kiln.clone()).with_workspace(workspace.clone());
+        let session =
+            Session::new(SessionType::Agent, kiln.clone()).with_workspace(workspace.clone());
 
         assert_eq!(session.kiln, kiln);
         assert_eq!(session.workspace, workspace);
@@ -303,7 +301,8 @@ mod tests {
     fn test_session_with_connected_kilns() {
         let kiln = PathBuf::from("/home/user/notes");
         let reference = PathBuf::from("/home/user/reference");
-        let session = Session::new(SessionType::Chat, kiln.clone()).with_connected_kiln(reference.clone());
+        let session =
+            Session::new(SessionType::Chat, kiln.clone()).with_connected_kiln(reference.clone());
 
         assert!(session.can_access_kiln(&kiln));
         assert!(session.can_access_kiln(&reference));
@@ -316,7 +315,9 @@ mod tests {
         let session = Session::new(SessionType::Chat, kiln);
 
         let storage = session.storage_path();
-        assert!(storage.to_string_lossy().contains(".crucible/sessions/chat-"));
+        assert!(storage
+            .to_string_lossy()
+            .contains(".crucible/sessions/chat-"));
         assert!(session.log_path().ends_with("session.md"));
         assert!(session.jsonl_path().ends_with("session.jsonl"));
         assert!(session.artifacts_path().ends_with("artifacts"));
