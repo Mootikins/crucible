@@ -8,6 +8,7 @@ pub mod lifecycle;
 pub mod protocol;
 pub mod server;
 pub mod session_manager;
+pub mod session_storage;
 pub mod subscription;
 
 pub use kiln_manager::KilnManager;
@@ -15,4 +16,5 @@ pub use lifecycle::{is_daemon_running, pid_path, socket_path, write_pid_file};
 pub use protocol::{Notification, Request, Response, RpcError, SessionEventMessage};
 pub use server::Server;
 pub use session_manager::{SessionError, SessionManager};
+pub use session_storage::{FileSessionStorage, SessionStorage};
 pub use subscription::{ClientId, SubscriptionManager};

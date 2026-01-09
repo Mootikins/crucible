@@ -17,6 +17,8 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 dirs = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
 crucible-core = { path = "../crucible-core" }
 crucible-surrealdb = { workspace = true, optional = true }
 crucible-sqlite = { path = "../crucible-sqlite", optional = true }

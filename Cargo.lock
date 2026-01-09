@@ -3801,6 +3801,8 @@ name = "crucible-daemon"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
+ "chrono",
  "crucible-core",
  "crucible-enrichment",
  "crucible-pipeline",
