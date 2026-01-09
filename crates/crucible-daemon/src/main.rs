@@ -17,7 +17,7 @@ use server::Server;
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    tracing::info!("cru-daemon starting");
+    tracing::info!("cru-server starting");
 
     let sock_path = socket_path();
 
@@ -46,6 +46,6 @@ async fn main() -> Result<()> {
         }
     }
 
-    tracing::info!("cru-daemon shutting down");
+    tracing::info!("cru-server shutting down");
     Ok(())
 }

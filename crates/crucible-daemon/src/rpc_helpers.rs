@@ -1,10 +1,10 @@
 //! RPC parameter extraction macros
 //!
-//! Reduces boilerplate in server.rs handlers by providing macros for
-//! extracting and validating JSON-RPC parameters.
+//! Reduces boilerplate in RPC handlers by providing macros for extracting
+//! and validating JSON-RPC parameters.
 //!
-//! These macros are for internal use within the crucible-daemon crate.
-//! They are made available to sibling modules via `#[macro_use]` in lib.rs.
+//! These macros use `#[macro_export]` for availability across the crate.
+//! They return early with error responses when parameters are missing or invalid.
 
 /// Extract a required string parameter from a request.
 ///
@@ -94,11 +94,11 @@ macro_rules! require_array_param {
     };
 }
 
-// Re-export macros for use in sibling modules
-pub(crate) use optional_str_param;
-pub(crate) use optional_u64_param;
-pub(crate) use require_array_param;
-pub(crate) use require_str_param;
+// Re-export macros for use in sibling modules via `use crate::rpc_helpers::*`
+pub use crate::optional_str_param;
+pub use crate::optional_u64_param;
+pub use crate::require_array_param;
+pub use crate::require_str_param;
 
 #[cfg(test)]
 mod tests {
