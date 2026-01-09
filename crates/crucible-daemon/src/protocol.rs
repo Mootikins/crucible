@@ -83,6 +83,147 @@ pub const METHOD_NOT_FOUND: i32 = -32601;
 pub const INVALID_PARAMS: i32 = -32602;
 pub const INTERNAL_ERROR: i32 = -32603;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Daemon Event Protocol (async notifications from daemon to client)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Session event sent from daemon to client (async, no response expected).
+///
+/// Events are pushed to subscribed clients when session state changes occur.
+/// Clients can subscribe to specific sessions or all sessions.
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionEventMessage {
+    /// Message type (always "event")
+    #[serde(rename = "type")]
+    pub msg_type: &'static str,
+    /// The session ID this event belongs to
+    pub session_id: String,
+    /// Event type (e.g., "text_delta", "tool_call", "state_changed")
+    pub event: String,
+    /// Event-specific data
+    pub data: Value,
+}
+
+impl SessionEventMessage {
+    pub fn new(session_id: impl Into<String>, event: impl Into<String>, data: Value) -> Self {
+        Self {
+            msg_type: "event",
+            session_id: session_id.into(),
+            event: event.into(),
+            data,
+        }
+    }
+
+    /// Create a text delta event (streaming response)
+    pub fn text_delta(session_id: impl Into<String>, content: impl Into<String>) -> Self {
+        Self::new(
+            session_id,
+            "text_delta",
+            serde_json::json!({ "content": content.into() }),
+        )
+    }
+
+    /// Create a state changed event
+    pub fn state_changed(session_id: impl Into<String>, state: impl Into<String>) -> Self {
+        Self::new(
+            session_id,
+            "state_changed",
+            serde_json::json!({ "state": state.into() }),
+        )
+    }
+
+    /// Create a thinking event
+    pub fn thinking(session_id: impl Into<String>, content: impl Into<String>) -> Self {
+        Self::new(
+            session_id,
+            "thinking",
+            serde_json::json!({ "content": content.into() }),
+        )
+    }
+
+    /// Create a tool call event
+    pub fn tool_call(
+        session_id: impl Into<String>,
+        call_id: impl Into<String>,
+        tool: impl Into<String>,
+        args: Value,
+    ) -> Self {
+        Self::new(
+            session_id,
+            "tool_call",
+            serde_json::json!({
+                "call_id": call_id.into(),
+                "tool": tool.into(),
+                "args": args,
+            }),
+        )
+    }
+
+    /// Create a tool result event
+    pub fn tool_result(
+        session_id: impl Into<String>,
+        call_id: impl Into<String>,
+        result: Value,
+    ) -> Self {
+        Self::new(
+            session_id,
+            "tool_result",
+            serde_json::json!({
+                "call_id": call_id.into(),
+                "result": result,
+            }),
+        )
+    }
+
+    /// Create a session ended event
+    pub fn ended(session_id: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self::new(
+            session_id,
+            "ended",
+            serde_json::json!({ "reason": reason.into() }),
+        )
+    }
+
+    /// Create a terminal output event
+    pub fn terminal_output(
+        session_id: impl Into<String>,
+        stream: impl Into<String>,
+        content_base64: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            session_id,
+            "terminal_output",
+            serde_json::json!({
+                "stream": stream.into(),
+                "content_base64": content_base64.into(),
+            }),
+        )
+    }
+
+    /// Serialize to JSON string with newline
+    pub fn to_json_line(&self) -> Result<String, serde_json::Error> {
+        let mut json = serde_json::to_string(self)?;
+        json.push('\n');
+        Ok(json)
+    }
+}
+
+/// Notification sent from client to daemon (fire-and-forget, no response).
+///
+/// Notifications are used for messages that don't require acknowledgment.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Notification {
+    /// Message type (always "notify")
+    #[serde(rename = "type")]
+    #[allow(dead_code)]
+    pub msg_type: String,
+    /// Method to invoke
+    pub method: String,
+    /// Optional parameters
+    #[serde(default)]
+    pub params: Value,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -170,5 +311,121 @@ mod tests {
         assert_eq!(METHOD_NOT_FOUND, -32601);
         assert_eq!(INVALID_PARAMS, -32602);
         assert_eq!(INTERNAL_ERROR, -32603);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Session event protocol tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_session_event_message_serialization() {
+        let event = SessionEventMessage::new(
+            "chat-2025-01-08T1530-abc123",
+            "text_delta",
+            serde_json::json!({ "content": "Hello" }),
+        );
+
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"type\":\"event\""));
+        assert!(json.contains("\"session_id\":\"chat-2025-01-08T1530-abc123\""));
+        assert!(json.contains("\"event\":\"text_delta\""));
+        assert!(json.contains("\"content\":\"Hello\""));
+    }
+
+    #[test]
+    fn test_session_event_text_delta() {
+        let event = SessionEventMessage::text_delta("chat-test", "streaming content");
+        let json = serde_json::to_string(&event).unwrap();
+
+        assert!(json.contains("\"event\":\"text_delta\""));
+        assert!(json.contains("\"content\":\"streaming content\""));
+    }
+
+    #[test]
+    fn test_session_event_state_changed() {
+        let event = SessionEventMessage::state_changed("chat-test", "paused");
+        let json = serde_json::to_string(&event).unwrap();
+
+        assert!(json.contains("\"event\":\"state_changed\""));
+        assert!(json.contains("\"state\":\"paused\""));
+    }
+
+    #[test]
+    fn test_session_event_thinking() {
+        let event = SessionEventMessage::thinking("agent-test", "Analyzing request...");
+        let json = serde_json::to_string(&event).unwrap();
+
+        assert!(json.contains("\"event\":\"thinking\""));
+        assert!(json.contains("\"content\":\"Analyzing request...\""));
+    }
+
+    #[test]
+    fn test_session_event_tool_call() {
+        let event = SessionEventMessage::tool_call(
+            "chat-test",
+            "tc-123",
+            "search",
+            serde_json::json!({ "query": "test" }),
+        );
+        let json = serde_json::to_string(&event).unwrap();
+
+        assert!(json.contains("\"event\":\"tool_call\""));
+        assert!(json.contains("\"call_id\":\"tc-123\""));
+        assert!(json.contains("\"tool\":\"search\""));
+        assert!(json.contains("\"query\":\"test\""));
+    }
+
+    #[test]
+    fn test_session_event_tool_result() {
+        let event = SessionEventMessage::tool_result(
+            "chat-test",
+            "tc-123",
+            serde_json::json!({ "count": 5 }),
+        );
+        let json = serde_json::to_string(&event).unwrap();
+
+        assert!(json.contains("\"event\":\"tool_result\""));
+        assert!(json.contains("\"call_id\":\"tc-123\""));
+        assert!(json.contains("\"count\":5"));
+    }
+
+    #[test]
+    fn test_session_event_ended() {
+        let event = SessionEventMessage::ended("chat-test", "user_requested");
+        let json = serde_json::to_string(&event).unwrap();
+
+        assert!(json.contains("\"event\":\"ended\""));
+        assert!(json.contains("\"reason\":\"user_requested\""));
+    }
+
+    #[test]
+    fn test_session_event_terminal_output() {
+        let event =
+            SessionEventMessage::terminal_output("workflow-test", "stdout", "SGVsbG8gV29ybGQK");
+        let json = serde_json::to_string(&event).unwrap();
+
+        assert!(json.contains("\"event\":\"terminal_output\""));
+        assert!(json.contains("\"stream\":\"stdout\""));
+        assert!(json.contains("\"content_base64\":\"SGVsbG8gV29ybGQK\""));
+    }
+
+    #[test]
+    fn test_session_event_to_json_line() {
+        let event = SessionEventMessage::text_delta("chat-test", "hello");
+        let line = event.to_json_line().unwrap();
+
+        assert!(line.ends_with('\n'));
+        let trimmed = line.trim_end();
+        let _: serde_json::Value = serde_json::from_str(trimmed).unwrap();
+    }
+
+    #[test]
+    fn test_notification_deserialization() {
+        let json = r#"{"type":"notify","method":"session.send","params":{"session_id":"chat-test","content":"Hello"}}"#;
+        let notif: Notification = serde_json::from_str(json).unwrap();
+
+        assert_eq!(notif.method, "session.send");
+        assert_eq!(notif.params["session_id"], "chat-test");
+        assert_eq!(notif.params["content"], "Hello");
     }
 }

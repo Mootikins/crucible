@@ -32,6 +32,30 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::path::PathBuf;
 
+/// Terminal stream identifier for output events.
+///
+/// Used with `TerminalOutput` events to indicate which stream the output
+/// came from (stdout or stderr).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+#[derive(Default)]
+pub enum TerminalStream {
+    /// Standard output stream.
+    #[default]
+    Stdout,
+    /// Standard error stream.
+    Stderr,
+}
+
+impl std::fmt::Display for TerminalStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Stdout => write!(f, "stdout"),
+            Self::Stderr => write!(f, "stderr"),
+        }
+    }
+}
+
 /// Events that flow through a session.
 ///
 /// These are the high-level session events that reactors and handlers process.
@@ -215,6 +239,31 @@ pub enum SessionEvent {
         reason: String,
     },
 
+    /// Session state changed (daemon protocol event).
+    ///
+    /// Emitted when a session transitions between states (Active, Paused, Compacting, Ended).
+    /// This is used by the daemon protocol to notify clients of state changes.
+    SessionStateChanged {
+        /// The session ID (e.g., "chat-2025-01-08T1530-abc123").
+        session_id: String,
+        /// The new state.
+        state: crate::session::SessionState,
+        /// The previous state (if known).
+        previous_state: Option<crate::session::SessionState>,
+    },
+
+    /// Session paused (agent stops acting).
+    SessionPaused {
+        /// The session ID.
+        session_id: String,
+    },
+
+    /// Session resumed after being paused.
+    SessionResumed {
+        /// The session ID.
+        session_id: String,
+    },
+
     // ─────────────────────────────────────────────────────────────────────
     // Subagent events
     // ─────────────────────────────────────────────────────────────────────
@@ -251,6 +300,19 @@ pub enum SessionEvent {
         delta: String,
         /// Sequence number for ordering.
         seq: u64,
+    },
+
+    /// Terminal output from tool execution (daemon protocol event).
+    ///
+    /// Used to stream PTY output from commands executed by tools.
+    /// Content is base64 encoded for binary safety in JSON protocol.
+    TerminalOutput {
+        /// The session ID.
+        session_id: String,
+        /// Stream identifier (stdout or stderr).
+        stream: TerminalStream,
+        /// Base64-encoded content for binary safety.
+        content_base64: String,
     },
 
     // ─────────────────────────────────────────────────────────────────────
@@ -502,10 +564,14 @@ impl SessionEvent {
             Self::SessionStarted { .. } => "session_started",
             Self::SessionCompacted { .. } => "session_compacted",
             Self::SessionEnded { .. } => "session_ended",
+            Self::SessionStateChanged { .. } => "session_state_changed",
+            Self::SessionPaused { .. } => "session_paused",
+            Self::SessionResumed { .. } => "session_resumed",
             Self::SubagentSpawned { .. } => "subagent_spawned",
             Self::SubagentCompleted { .. } => "subagent_completed",
             Self::SubagentFailed { .. } => "subagent_failed",
             Self::TextDelta { .. } => "text_delta",
+            Self::TerminalOutput { .. } => "terminal_output",
             Self::FileChanged { .. } => "file_changed",
             Self::FileDeleted { .. } => "file_deleted",
             Self::FileMoved { .. } => "file_moved",
@@ -555,10 +621,18 @@ impl SessionEvent {
             Self::SessionStarted { config, .. } => format!("session:{}", config.session_id),
             Self::SessionCompacted { .. } => "session:compacted".into(),
             Self::SessionEnded { .. } => "session:ended".into(),
+            Self::SessionStateChanged { session_id, .. } => {
+                format!("session:state_changed:{}", session_id)
+            }
+            Self::SessionPaused { session_id, .. } => format!("session:paused:{}", session_id),
+            Self::SessionResumed { session_id, .. } => format!("session:resumed:{}", session_id),
             Self::SubagentSpawned { id, .. } => format!("subagent:spawned:{}", id),
             Self::SubagentCompleted { id, .. } => format!("subagent:completed:{}", id),
             Self::SubagentFailed { id, .. } => format!("subagent:failed:{}", id),
             Self::TextDelta { seq, .. } => format!("streaming:delta:{}", seq),
+            Self::TerminalOutput {
+                session_id, stream, ..
+            } => format!("terminal:{}:{}", session_id, stream),
             Self::FileChanged { path, .. } => path.display().to_string(),
             Self::FileDeleted { path, .. } => path.display().to_string(),
             Self::FileMoved { to, .. } => to.display().to_string(),
@@ -656,7 +730,12 @@ impl SessionEvent {
     pub fn is_lifecycle_event(&self) -> bool {
         matches!(
             self,
-            Self::SessionStarted { .. } | Self::SessionCompacted { .. } | Self::SessionEnded { .. }
+            Self::SessionStarted { .. }
+                | Self::SessionCompacted { .. }
+                | Self::SessionEnded { .. }
+                | Self::SessionStateChanged { .. }
+                | Self::SessionPaused { .. }
+                | Self::SessionResumed { .. }
         )
     }
 
@@ -680,7 +759,7 @@ impl SessionEvent {
 
     /// Check if this is a streaming event.
     pub fn is_streaming_event(&self) -> bool {
-        matches!(self, Self::TextDelta { .. })
+        matches!(self, Self::TextDelta { .. } | Self::TerminalOutput { .. })
     }
 
     /// Check if this is a file system event (raw file changes).
@@ -2351,5 +2430,165 @@ mod tests {
             context: None,
         };
         assert!(!event.is_pre_event());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Daemon protocol event tests (SessionStateChanged, SessionPaused, SessionResumed, TerminalOutput)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_session_state_changed_event() {
+        use crate::session::SessionState;
+
+        let event = SessionEvent::SessionStateChanged {
+            session_id: "chat-2025-01-08T1530-abc123".into(),
+            state: SessionState::Paused,
+            previous_state: Some(SessionState::Active),
+        };
+
+        assert_eq!(event.event_type(), "session_state_changed");
+        assert!(event.is_lifecycle_event());
+        assert_eq!(
+            event.identifier(),
+            "session:state_changed:chat-2025-01-08T1530-abc123"
+        );
+
+        // Verify serialization
+        let json = serde_json::to_string(&event).unwrap();
+        let parsed: SessionEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, parsed);
+    }
+
+    #[test]
+    fn test_session_paused_event() {
+        let event = SessionEvent::SessionPaused {
+            session_id: "chat-2025-01-08T1530-abc123".into(),
+        };
+
+        assert_eq!(event.event_type(), "session_paused");
+        assert!(event.is_lifecycle_event());
+        assert_eq!(
+            event.identifier(),
+            "session:paused:chat-2025-01-08T1530-abc123"
+        );
+
+        let json = serde_json::to_string(&event).unwrap();
+        let parsed: SessionEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, parsed);
+    }
+
+    #[test]
+    fn test_session_resumed_event() {
+        let event = SessionEvent::SessionResumed {
+            session_id: "chat-2025-01-08T1530-abc123".into(),
+        };
+
+        assert_eq!(event.event_type(), "session_resumed");
+        assert!(event.is_lifecycle_event());
+        assert_eq!(
+            event.identifier(),
+            "session:resumed:chat-2025-01-08T1530-abc123"
+        );
+
+        let json = serde_json::to_string(&event).unwrap();
+        let parsed: SessionEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, parsed);
+    }
+
+    #[test]
+    fn test_terminal_output_event() {
+        let event = SessionEvent::TerminalOutput {
+            session_id: "chat-2025-01-08T1530-abc123".into(),
+            stream: TerminalStream::Stdout,
+            content_base64: "SGVsbG8gV29ybGQK".into(), // "Hello World\n"
+        };
+
+        assert_eq!(event.event_type(), "terminal_output");
+        assert!(event.is_streaming_event());
+        assert!(!event.is_lifecycle_event());
+        assert_eq!(
+            event.identifier(),
+            "terminal:chat-2025-01-08T1530-abc123:stdout"
+        );
+
+        let json = serde_json::to_string(&event).unwrap();
+        let parsed: SessionEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, parsed);
+    }
+
+    #[test]
+    fn test_terminal_stream() {
+        // Test default
+        assert_eq!(TerminalStream::default(), TerminalStream::Stdout);
+
+        // Test Display
+        assert_eq!(format!("{}", TerminalStream::Stdout), "stdout");
+        assert_eq!(format!("{}", TerminalStream::Stderr), "stderr");
+
+        // Test serialization
+        let stdout = TerminalStream::Stdout;
+        let json = serde_json::to_string(&stdout).unwrap();
+        assert_eq!(json, "\"stdout\"");
+
+        let stderr = TerminalStream::Stderr;
+        let json = serde_json::to_string(&stderr).unwrap();
+        assert_eq!(json, "\"stderr\"");
+
+        // Test deserialization
+        let stdout: TerminalStream = serde_json::from_str("\"stdout\"").unwrap();
+        assert_eq!(stdout, TerminalStream::Stdout);
+
+        let stderr: TerminalStream = serde_json::from_str("\"stderr\"").unwrap();
+        assert_eq!(stderr, TerminalStream::Stderr);
+    }
+
+    #[test]
+    fn test_daemon_protocol_events_serialize() {
+        use crate::session::SessionState;
+
+        let events = vec![
+            SessionEvent::SessionStateChanged {
+                session_id: "chat-test".into(),
+                state: SessionState::Active,
+                previous_state: None,
+            },
+            SessionEvent::SessionStateChanged {
+                session_id: "chat-test".into(),
+                state: SessionState::Paused,
+                previous_state: Some(SessionState::Active),
+            },
+            SessionEvent::SessionStateChanged {
+                session_id: "chat-test".into(),
+                state: SessionState::Compacting,
+                previous_state: Some(SessionState::Active),
+            },
+            SessionEvent::SessionStateChanged {
+                session_id: "chat-test".into(),
+                state: SessionState::Ended,
+                previous_state: Some(SessionState::Active),
+            },
+            SessionEvent::SessionPaused {
+                session_id: "agent-test".into(),
+            },
+            SessionEvent::SessionResumed {
+                session_id: "agent-test".into(),
+            },
+            SessionEvent::TerminalOutput {
+                session_id: "workflow-test".into(),
+                stream: TerminalStream::Stdout,
+                content_base64: "dGVzdA==".into(),
+            },
+            SessionEvent::TerminalOutput {
+                session_id: "workflow-test".into(),
+                stream: TerminalStream::Stderr,
+                content_base64: "ZXJyb3I=".into(),
+            },
+        ];
+
+        for event in events {
+            let json = serde_json::to_string(&event).unwrap();
+            let parsed: SessionEvent = serde_json::from_str(&json).unwrap();
+            assert_eq!(event, parsed);
+        }
     }
 }

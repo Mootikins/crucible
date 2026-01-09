@@ -147,5 +147,5 @@ pub use subscriber::{
 // Session event types
 pub use session_event::{
     EntityType, FileChangeKind, InputType, NoteChangeType, NotePayload, Priority, SessionEvent,
-    SessionEventConfig, ToolCall, ToolProvider,
+    SessionEventConfig, TerminalStream, ToolCall, ToolProvider,
 };
