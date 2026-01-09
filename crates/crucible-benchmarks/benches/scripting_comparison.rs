@@ -7,7 +7,10 @@
 //! cargo bench -p crucible-benchmarks --features rune,steel,lua -- scripting
 //! ```
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+#[cfg(any(feature = "rune", feature = "steel", feature = "lua"))]
+use criterion::BenchmarkId;
+#[cfg(any(feature = "rune", feature = "steel", feature = "lua"))]
 use serde_json::json;
 
 // =============================================================================
@@ -305,7 +308,9 @@ mod lua_bench {
 // Simple Expression Benchmarks
 // =============================================================================
 
+#[allow(unused_variables, unused_mut)]
 fn bench_simple_expr(c: &mut Criterion) {
+    #[cfg(any(feature = "rune", feature = "steel", feature = "lua"))]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("scripting/simple_expr");
 
@@ -346,7 +351,9 @@ fn bench_simple_expr(c: &mut Criterion) {
 // Function Call with Arguments
 // =============================================================================
 
+#[allow(unused_variables, unused_mut)]
 fn bench_function_args(c: &mut Criterion) {
+    #[cfg(any(feature = "rune", feature = "steel", feature = "lua"))]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("scripting/function_args");
 
@@ -384,7 +391,9 @@ fn bench_function_args(c: &mut Criterion) {
 // Loop/Iteration Overhead
 // =============================================================================
 
+#[allow(unused_variables, unused_mut)]
 fn bench_loop_iterations(c: &mut Criterion) {
+    #[cfg(any(feature = "rune", feature = "steel", feature = "lua"))]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("scripting/loop");
 
@@ -433,11 +442,14 @@ fn bench_loop_iterations(c: &mut Criterion) {
 // Complex Data Marshalling
 // =============================================================================
 
+#[allow(unused_variables, unused_mut)]
 fn bench_complex_data(c: &mut Criterion) {
+    #[cfg(any(feature = "rune", feature = "steel", feature = "lua"))]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("scripting/complex_data");
 
     // Generate test data with N items
+    #[cfg(any(feature = "rune", feature = "steel", feature = "lua"))]
     for item_count in [10usize, 100, 1000] {
         let data = json!({
             "items": (0..item_count).map(|i| {
@@ -490,6 +502,7 @@ fn bench_complex_data(c: &mut Criterion) {
 // Executor Creation Overhead
 // =============================================================================
 
+#[allow(unused_variables, unused_mut)]
 fn bench_executor_creation(c: &mut Criterion) {
     let mut group = c.benchmark_group("scripting/executor_creation");
 

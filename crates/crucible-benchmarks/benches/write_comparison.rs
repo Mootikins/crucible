@@ -8,13 +8,23 @@
 //! ```
 
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+#[cfg(any(feature = "sqlite", feature = "surrealdb"))]
 use crucible_benchmarks::fixtures::random_embedding;
+#[cfg(any(feature = "sqlite", feature = "surrealdb"))]
 use crucible_core::parser::BlockHash;
-use crucible_core::storage::{NoteRecord, NoteStore};
+#[cfg(any(feature = "sqlite", feature = "surrealdb"))]
+use crucible_core::storage::NoteRecord;
+#[cfg(any(feature = "sqlite", feature = "surrealdb"))]
+use crucible_core::storage::NoteStore;
+#[cfg(any(feature = "sqlite", feature = "surrealdb"))]
 use rand::prelude::*;
+#[cfg(any(feature = "sqlite", feature = "surrealdb"))]
 use rand::SeedableRng;
+#[cfg(any(feature = "sqlite", feature = "surrealdb"))]
 use rand_chacha::ChaCha8Rng;
+#[cfg(feature = "sqlite")]
 use std::sync::Arc;
+#[cfg(any(feature = "sqlite", feature = "surrealdb"))]
 use tempfile::TempDir;
 
 // =============================================================================
@@ -22,6 +32,7 @@ use tempfile::TempDir;
 // =============================================================================
 
 /// Generate a single note for insert testing
+#[cfg(any(feature = "sqlite", feature = "surrealdb"))]
 fn generate_note(id: usize) -> NoteRecord {
     let mut rng = ChaCha8Rng::seed_from_u64(id as u64);
     let hash_bytes: [u8; 32] = rng.random();
@@ -40,6 +51,7 @@ fn generate_note(id: usize) -> NoteRecord {
 }
 
 /// Generate batch of notes for bulk insert testing
+#[cfg(any(feature = "sqlite", feature = "surrealdb"))]
 fn generate_batch(start_id: usize, count: usize) -> Vec<NoteRecord> {
     (start_id..start_id + count).map(generate_note).collect()
 }
@@ -137,7 +149,9 @@ mod surreal_bench {
 // Single Insert Benchmarks
 // =============================================================================
 
+#[allow(unused_variables, unused_mut)]
 fn bench_single_insert(c: &mut Criterion) {
+    #[cfg(any(feature = "sqlite", feature = "surrealdb"))]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("write/single_insert");
     group.throughput(Throughput::Elements(1));
@@ -181,7 +195,9 @@ fn bench_single_insert(c: &mut Criterion) {
 // Bulk Insert Benchmarks
 // =============================================================================
 
+#[allow(unused_variables, unused_mut)]
 fn bench_bulk_insert(c: &mut Criterion) {
+    #[cfg(any(feature = "sqlite", feature = "surrealdb"))]
     let rt = tokio::runtime::Runtime::new().unwrap();
 
     for batch_size in [100, 500, 1000] {
@@ -251,6 +267,7 @@ fn bench_bulk_insert(c: &mut Criterion) {
 // =============================================================================
 
 /// Generate an updated version of a note (simulates content change)
+#[cfg(any(feature = "sqlite", feature = "surrealdb"))]
 fn generate_updated_note(id: usize, version: usize) -> NoteRecord {
     // Use combined seed for different content hash each version
     let mut rng = ChaCha8Rng::seed_from_u64((id as u64) ^ ((version as u64) << 32));
@@ -273,7 +290,9 @@ fn generate_updated_note(id: usize, version: usize) -> NoteRecord {
     .with_embedding(random_embedding(&mut rng, 384))
 }
 
+#[allow(unused_variables, unused_mut)]
 fn bench_update(c: &mut Criterion) {
+    #[cfg(any(feature = "sqlite", feature = "surrealdb"))]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("write/update");
     group.throughput(Throughput::Elements(1));
@@ -321,7 +340,9 @@ fn bench_update(c: &mut Criterion) {
 // Delete Benchmarks
 // =============================================================================
 
+#[allow(unused_variables, unused_mut)]
 fn bench_delete(c: &mut Criterion) {
+    #[cfg(any(feature = "sqlite", feature = "surrealdb"))]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("write/delete");
     group.throughput(Throughput::Elements(1));
@@ -374,7 +395,9 @@ fn bench_delete(c: &mut Criterion) {
 // Mixed Workload Benchmark (90% read, 10% write)
 // =============================================================================
 
+#[allow(unused_variables, unused_mut)]
 fn bench_mixed_workload(c: &mut Criterion) {
+    #[cfg(any(feature = "sqlite", feature = "surrealdb"))]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("write/mixed_90_10");
     group.throughput(Throughput::Elements(100)); // 100 operations per iteration

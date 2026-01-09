@@ -7,11 +7,16 @@
 //! cargo bench -p crucible-benchmarks --features sqlite,surrealdb -- resource
 //! ```
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
+#[cfg(any(feature = "sqlite", feature = "surrealdb"))]
+use criterion::BenchmarkId;
+#[cfg(any(feature = "sqlite", feature = "surrealdb"))]
 use crucible_benchmarks::fixtures::{generate_graph, seeds, sizes};
-use crucible_core::storage::NoteStore;
+#[cfg(any(feature = "sqlite", feature = "surrealdb"))]
 use std::fs;
+#[cfg(any(feature = "sqlite", feature = "surrealdb"))]
 use std::time::Instant;
+#[cfg(any(feature = "sqlite", feature = "surrealdb"))]
 use tempfile::TempDir;
 
 // =============================================================================
@@ -20,7 +25,7 @@ use tempfile::TempDir;
 
 /// Get current process RSS (Resident Set Size) in bytes
 /// Returns None on non-Linux platforms
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", any(feature = "sqlite", feature = "surrealdb")))]
 fn get_rss_bytes() -> Option<usize> {
     let statm = fs::read_to_string("/proc/self/statm").ok()?;
     let fields: Vec<&str> = statm.split_whitespace().collect();
@@ -31,11 +36,12 @@ fn get_rss_bytes() -> Option<usize> {
     Some(rss_pages * page_size)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(all(not(target_os = "linux"), any(feature = "sqlite", feature = "surrealdb")))]
 fn get_rss_bytes() -> Option<usize> {
     None // Memory measurement not supported on this platform
 }
 
+#[cfg(any(feature = "sqlite", feature = "surrealdb"))]
 fn format_bytes(bytes: usize) -> String {
     if bytes >= 1024 * 1024 {
         format!("{:.2} MB", bytes as f64 / (1024.0 * 1024.0))
@@ -209,13 +215,16 @@ mod surreal_bench {
 // Resource Measurement (not Criterion - just prints results)
 // =============================================================================
 
+#[allow(unused_variables, unused_mut)]
 fn bench_resources(c: &mut Criterion) {
+    #[cfg(any(feature = "sqlite", feature = "surrealdb"))]
     let rt = tokio::runtime::Runtime::new().unwrap();
 
     // We'll use Criterion's custom measurement for disk size
     let mut group = c.benchmark_group("resource/disk_size");
     group.sample_size(10); // Fewer samples for resource tests
 
+    #[cfg(any(feature = "sqlite", feature = "surrealdb"))]
     for (label, (note_count, avg_links)) in [
         ("power_user", sizes::POWER_USER),
         ("small_team", sizes::SMALL_TEAM),
@@ -299,7 +308,9 @@ fn bench_resources(c: &mut Criterion) {
 // Startup Time Benchmarks
 // =============================================================================
 
+#[allow(unused_variables, unused_mut)]
 fn bench_startup(c: &mut Criterion) {
+    #[cfg(any(feature = "sqlite", feature = "surrealdb"))]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("resource/startup");
     group.sample_size(20);
