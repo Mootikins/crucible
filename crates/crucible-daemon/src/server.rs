@@ -5,7 +5,9 @@ use crate::protocol::{
     Request, Response, SessionEventMessage, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND,
     PARSE_ERROR,
 };
-use crate::rpc_helpers::{optional_str_param, optional_u64_param, require_array_param, require_str_param};
+use crate::rpc_helpers::{
+    optional_str_param, optional_u64_param, require_array_param, require_str_param,
+};
 use crate::session_manager::SessionManager;
 use crate::session_storage::{FileSessionStorage, SessionStorage};
 use anyhow::Result;
@@ -57,7 +59,7 @@ mod subscription_stub {
 
 #[cfg(not(feature = "subscriptions"))]
 use subscription_stub::{ClientId, SubscriptionManager};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::unix::OwnedWriteHalf;
@@ -590,7 +592,6 @@ async fn handle_process_batch(req: Request, km: &Arc<KilnManager>) -> Response {
 // ─────────────────────────────────────────────────────────────────────────────
 
 use crucible_core::session::{SessionState, SessionType};
-use std::path::PathBuf;
 
 async fn handle_session_create(req: Request, sm: &Arc<SessionManager>) -> Response {
     // Parse session type (optional, defaults to "chat")

@@ -74,16 +74,16 @@ impl DaemonClient {
     async fn start_daemon() -> Result<()> {
         use std::process::Command;
 
-        // Find the cru-daemon binary
+        // Find the cru-server binary
         let exe = std::env::current_exe()?;
         let daemon_exe = if exe.ends_with("cru") {
             // In development or installed alongside
             exe.parent()
                 .ok_or_else(|| anyhow::anyhow!("No parent directory"))?
-                .join("cru-daemon")
+                .join("cru-server")
         } else {
             // Try PATH
-            PathBuf::from("cru-daemon")
+            PathBuf::from("cru-server")
         };
 
         tracing::info!("Starting daemon: {:?}", daemon_exe);

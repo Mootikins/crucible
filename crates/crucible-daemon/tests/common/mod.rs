@@ -9,28 +9,27 @@ use tokio::time::sleep;
 /// Test daemon fixture that manages an isolated daemon instance
 pub struct TestDaemon {
     pub socket_path: PathBuf,
-    pub pid_path: PathBuf,
     process: Option<Child>,
-    _temp_dir: tempfile::TempDir,
+    /// Held to keep temp directory alive for duration of test
+    #[allow(dead_code)]
+    temp_dir: tempfile::TempDir,
 }
 
 impl TestDaemon {
-    /// Start a test daemon with isolated socket/pid paths
+    /// Start a test daemon with isolated socket path
     ///
     /// This spawns a real daemon process in a temporary directory,
     /// ensuring test isolation.
     pub async fn start() -> Result<Self> {
         let temp_dir = tempfile::tempdir()?;
         let socket_path = temp_dir.path().join("daemon.sock");
-        let pid_path = temp_dir.path().join("daemon.pid");
 
         // Get the daemon binary path
-        let daemon_exe = env!("CARGO_BIN_EXE_cru-daemon");
+        let daemon_exe = env!("CARGO_BIN_EXE_cru-server");
 
-        // Spawn daemon with custom paths via environment variables
+        // Spawn daemon with custom socket path via environment variable
         let process = Command::new(daemon_exe)
             .env("CRUCIBLE_DAEMON_SOCKET", &socket_path)
-            .env("CRUCIBLE_DAEMON_PID", &pid_path)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -43,9 +42,8 @@ impl TestDaemon {
                 sleep(Duration::from_millis(50)).await;
                 return Ok(Self {
                     socket_path,
-                    pid_path,
                     process: Some(process),
-                    _temp_dir: temp_dir,
+                    temp_dir,
                 });
             }
             sleep(Duration::from_millis(100)).await;
@@ -102,9 +100,6 @@ mod tests {
 
         // Verify socket exists
         assert!(daemon.socket_path.exists(), "Socket should exist");
-
-        // Verify PID file exists
-        assert!(daemon.pid_path.exists(), "PID file should exist");
 
         // Verify daemon is running
         assert!(daemon.is_running(), "Daemon should be running");
