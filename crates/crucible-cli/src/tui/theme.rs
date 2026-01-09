@@ -388,14 +388,11 @@ fn syntect_to_ratatui_color(color: syntect::highlighting::Color) -> Color {
 }
 
 /// Convert a syntect `Style` to a ratatui `Style`.
+///
+/// Only uses foreground color - backgrounds are omitted to let terminal bg show through.
 fn convert_syntect_style(syntect_style: &syntect::highlighting::Style) -> Style {
     let mut style = Style::default()
         .fg(syntect_to_ratatui_color(syntect_style.foreground));
-
-    // Only set background if it's not fully transparent
-    if syntect_style.background.a > 0 {
-        style = style.bg(syntect_to_ratatui_color(syntect_style.background));
-    }
 
     // Convert font style flags
     if syntect_style.font_style.contains(FontStyle::BOLD) {
