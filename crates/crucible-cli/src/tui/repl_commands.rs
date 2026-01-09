@@ -68,6 +68,11 @@ pub const REPL_COMMANDS: &[ReplCommand] = &[
         aliases: &["e", "view"],
         description: "Open session in $EDITOR",
     },
+    ReplCommand {
+        name: "resume",
+        aliases: &["res"],
+        description: "Resume a previous session [:resume <id>]",
+    },
 ];
 
 /// Find REPL commands matching a query (fuzzy prefix match)
@@ -99,8 +104,8 @@ mod tests {
     fn test_find_matching_empty_query() {
         let matches = find_matching("");
         assert_eq!(matches.len(), REPL_COMMANDS.len());
-        // Verify expected count (quit, help, mode, agent, models, config, messages, edit)
-        assert_eq!(REPL_COMMANDS.len(), 8);
+        // Verify expected count (quit, help, mode, agent, models, config, messages, edit, resume)
+        assert_eq!(REPL_COMMANDS.len(), 9);
     }
 
     #[test]
