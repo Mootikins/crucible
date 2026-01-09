@@ -6,6 +6,7 @@ use crate::protocol::{
     PARSE_ERROR,
 };
 use crate::session_manager::SessionManager;
+use crate::session_storage::{FileSessionStorage, SessionStorage};
 use crate::subscription::{ClientId, SubscriptionManager};
 use anyhow::Result;
 use std::path::Path;
@@ -71,6 +72,30 @@ impl Server {
     pub async fn run(self) -> Result<()> {
         let mut shutdown_rx = self.shutdown_tx.subscribe();
 
+        // Spawn event persistence task
+        let storage = FileSessionStorage::new();
+        let sm_clone = self.session_manager.clone();
+        let mut persist_rx = self.event_tx.subscribe();
+
+        let persist_task = tokio::spawn(async move {
+            while let Ok(event) = persist_rx.recv().await {
+                // Try to get the session and persist the event
+                if let Some(session) = sm_clone.get_session(&event.session_id) {
+                    let json = match serde_json::to_string(&event) {
+                        Ok(j) => j,
+                        Err(e) => {
+                            tracing::warn!("Failed to serialize event: {}", e);
+                            continue;
+                        }
+                    };
+
+                    if let Err(e) = storage.append_event(&session, &json).await {
+                        tracing::warn!("Failed to persist event: {}", e);
+                    }
+                }
+            }
+        });
+
         loop {
             tokio::select! {
                 accept_result = self.listener.accept() => {
@@ -98,6 +123,9 @@ impl Server {
                 }
             }
         }
+
+        // Cleanup
+        persist_task.abort();
 
         Ok(())
     }
@@ -209,6 +237,7 @@ async fn handle_request(
         "session.get" => handle_session_get(req, session_manager).await,
         "session.pause" => handle_session_pause(req, session_manager).await,
         "session.resume" => handle_session_resume(req, session_manager).await,
+        "session.resume_from_storage" => handle_session_resume_from_storage(req, session_manager).await,
         "session.end" => handle_session_end(req, session_manager).await,
         // Subscription RPC methods
         "session.subscribe" => handle_session_subscribe(req, client_id, subscription_manager).await,
@@ -613,18 +642,19 @@ async fn handle_session_create(req: Request, sm: &Arc<SessionManager>) -> Respon
         })
         .unwrap_or_default();
 
-    let session = sm.create_session(session_type, kiln, workspace, connected_kilns);
-
-    Response::success(
-        req.id,
-        serde_json::json!({
-            "session_id": session.id,
-            "type": session.session_type.as_prefix(),
-            "kiln": session.kiln,
-            "workspace": session.workspace,
-            "state": format!("{}", session.state),
-        }),
-    )
+    match sm.create_session(session_type, kiln, workspace, connected_kilns).await {
+        Ok(session) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session.id,
+                "type": session.session_type.as_prefix(),
+                "kiln": session.kiln,
+                "workspace": session.workspace,
+                "state": format!("{}", session.state),
+            }),
+        ),
+        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    }
 }
 
 async fn handle_session_list(req: Request, sm: &Arc<SessionManager>) -> Response {
@@ -727,7 +757,7 @@ async fn handle_session_pause(req: Request, sm: &Arc<SessionManager>) -> Respons
         None => return Response::error(req.id, INVALID_PARAMS, "session_id required"),
     };
 
-    match sm.pause_session(session_id) {
+    match sm.pause_session(session_id).await {
         Ok(previous_state) => Response::success(
             req.id,
             serde_json::json!({
@@ -749,7 +779,7 @@ async fn handle_session_resume(req: Request, sm: &Arc<SessionManager>) -> Respon
         None => return Response::error(req.id, INVALID_PARAMS, "session_id required"),
     };
 
-    match sm.resume_session(session_id) {
+    match sm.resume_session(session_id).await {
         Ok(previous_state) => Response::success(
             req.id,
             serde_json::json!({
@@ -765,13 +795,38 @@ async fn handle_session_resume(req: Request, sm: &Arc<SessionManager>) -> Respon
     }
 }
 
+async fn handle_session_resume_from_storage(req: Request, sm: &Arc<SessionManager>) -> Response {
+    let session_id = match req.params.get("session_id").and_then(|v| v.as_str()) {
+        Some(id) => id,
+        None => return Response::error(req.id, INVALID_PARAMS, "session_id required"),
+    };
+
+    let kiln = match req.params.get("kiln").and_then(|v| v.as_str()) {
+        Some(p) => PathBuf::from(p),
+        None => return Response::error(req.id, INVALID_PARAMS, "kiln path required"),
+    };
+
+    match sm.resume_session_from_storage(session_id, &kiln).await {
+        Ok(session) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session.id,
+                "type": session.session_type.as_prefix(),
+                "state": format!("{}", session.state),
+                "kiln": session.kiln,
+            }),
+        ),
+        Err(e) => Response::error(req.id, INVALID_PARAMS, e.to_string()),
+    }
+}
+
 async fn handle_session_end(req: Request, sm: &Arc<SessionManager>) -> Response {
     let session_id = match req.params.get("session_id").and_then(|v| v.as_str()) {
         Some(id) => id,
         None => return Response::error(req.id, INVALID_PARAMS, "session_id required"),
     };
 
-    match sm.end_session(session_id) {
+    match sm.end_session(session_id).await {
         Ok(session) => Response::success(
             req.id,
             serde_json::json!({
@@ -1459,6 +1514,62 @@ mod tests {
             result.is_err(),
             "Should timeout - client shouldn't receive unsubscribed events"
         );
+
+        let _ = shutdown_handle.send(());
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn test_events_auto_persisted() {
+        use std::time::Duration;
+
+        let tmp = TempDir::new().unwrap();
+        let sock_path = tmp.path().join("test.sock");
+        let kiln_path = tmp.path().join("kiln");
+        std::fs::create_dir_all(&kiln_path).unwrap();
+
+        let server = Server::bind(&sock_path).await.unwrap();
+        let event_tx = server.event_sender();
+        let shutdown_handle = server.shutdown_handle();
+        let server_task = tokio::spawn(server.run());
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let mut client = UnixStream::connect(&sock_path).await.unwrap();
+
+        // Create a session
+        let create_req = format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"session.create","params":{{"type":"chat","kiln":"{}"}}}}"#,
+            kiln_path.display()
+        );
+        client.write_all(create_req.as_bytes()).await.unwrap();
+        client.write_all(b"\n").await.unwrap();
+
+        let mut buf = vec![0u8; 4096];
+        let n = client.read(&mut buf).await.unwrap();
+        let response: serde_json::Value = serde_json::from_slice(&buf[..n]).unwrap();
+        let session_id = response["result"]["session_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        // Send event through broadcast channel
+        let event = SessionEventMessage::text_delta(&session_id, "hello world");
+        event_tx.send(event).unwrap();
+
+        // Wait for persistence
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Check that event was persisted
+        let session_dir = kiln_path
+            .join(".crucible")
+            .join("sessions")
+            .join(&session_id);
+        let jsonl_path = session_dir.join("session.jsonl");
+
+        let content = tokio::fs::read_to_string(&jsonl_path).await.unwrap();
+        assert!(content.contains("hello world"));
+        assert!(content.contains("text_delta"));
 
         let _ = shutdown_handle.send(());
         let _ = server_task.await;
