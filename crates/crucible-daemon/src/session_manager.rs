@@ -115,6 +115,28 @@ impl SessionManager {
         Ok(session_clone)
     }
 
+    /// Load events from storage with pagination.
+    ///
+    /// Returns events in chronological order (oldest first).
+    pub async fn load_session_events(
+        &self,
+        session_id: &str,
+        kiln: &Path,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Result<Vec<serde_json::Value>, SessionError> {
+        self.storage.load_events(session_id, kiln, limit, offset).await
+    }
+
+    /// Count total events for a session.
+    pub async fn count_session_events(
+        &self,
+        session_id: &str,
+        kiln: &Path,
+    ) -> Result<usize, SessionError> {
+        self.storage.count_events(session_id, kiln).await
+    }
+
     /// Get a session by ID.
     pub fn get_session(&self, session_id: &str) -> Option<Session> {
         let sessions = self.sessions.read().unwrap();
@@ -228,6 +250,35 @@ impl SessionManager {
         self.storage.save(&session).await?;
 
         info!(session_id = %session_id, "Session ended");
+        Ok(session)
+    }
+
+    /// Request compaction for a session.
+    ///
+    /// Sets the session state to Compacting. The actual compaction
+    /// (summarizing events) is performed by the agent when it sees this state.
+    pub async fn request_compaction(&self, session_id: &str) -> Result<Session, SessionError> {
+        let session = {
+            let mut sessions = self.sessions.write().unwrap();
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or(SessionError::NotFound(session_id.to_string()))?;
+
+            if session.state != SessionState::Active {
+                return Err(SessionError::InvalidState {
+                    expected: SessionState::Active,
+                    actual: session.state,
+                });
+            }
+
+            session.state = SessionState::Compacting;
+            session.clone()
+        };
+
+        // Persist updated state
+        self.storage.save(&session).await?;
+
+        info!(session_id = %session_id, "Compaction requested");
         Ok(session)
     }
 
