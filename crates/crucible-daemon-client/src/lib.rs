@@ -11,7 +11,7 @@ mod client;
 pub mod lifecycle;
 mod storage;
 
-pub use client::DaemonClient;
+pub use client::{DaemonClient, SessionEvent};
 pub use storage::{DaemonNoteStore, DaemonStorageClient};
 
 // Legacy re-exports for backwards compatibility
