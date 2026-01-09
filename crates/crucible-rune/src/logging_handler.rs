@@ -257,6 +257,11 @@ impl LoggingHandler {
             // Interaction events
             SessionEvent::InteractionRequested { .. } => "InteractionRequested",
             SessionEvent::InteractionCompleted { .. } => "InteractionCompleted",
+            // Daemon protocol events
+            SessionEvent::SessionStateChanged { .. } => "SessionStateChanged",
+            SessionEvent::SessionPaused { .. } => "SessionPaused",
+            SessionEvent::SessionResumed { .. } => "SessionResumed",
+            SessionEvent::TerminalOutput { .. } => "TerminalOutput",
         }
     }
 
@@ -472,6 +477,36 @@ impl LoggingHandler {
             SessionEvent::InteractionCompleted { request_id, .. } => {
                 format!("id={}", request_id)
             }
+            // Daemon protocol events
+            SessionEvent::SessionStateChanged {
+                session_id,
+                state,
+                previous_state,
+            } => {
+                let prev = previous_state
+                    .as_ref()
+                    .map(|s| format!("{:?}", s))
+                    .unwrap_or_else(|| "(none)".to_string());
+                format!("session={}, state={:?}, prev={}", session_id, state, prev)
+            }
+            SessionEvent::SessionPaused { session_id } => {
+                format!("session={}", session_id)
+            }
+            SessionEvent::SessionResumed { session_id } => {
+                format!("session={}", session_id)
+            }
+            SessionEvent::TerminalOutput {
+                session_id,
+                stream,
+                content_base64,
+            } => {
+                format!(
+                    "session={}, stream={:?}, content_len={}",
+                    session_id,
+                    stream,
+                    content_base64.len()
+                )
+            }
         };
 
         summary
@@ -584,6 +619,18 @@ impl LoggingHandler {
             // Interaction events - no detailed payload needed
             SessionEvent::InteractionRequested { .. } => None,
             SessionEvent::InteractionCompleted { .. } => None,
+            // Daemon protocol events
+            SessionEvent::SessionStateChanged {
+                session_id,
+                state,
+                previous_state,
+            } => Some(format!(
+                "session={}, state={:?}, previous={:?}",
+                session_id, state, previous_state
+            )),
+            SessionEvent::SessionPaused { session_id } => Some(format!("session={}", session_id)),
+            SessionEvent::SessionResumed { session_id } => Some(format!("session={}", session_id)),
+            SessionEvent::TerminalOutput { content_base64, .. } => Some(content_base64.clone()),
         };
 
         payload.map(|p| truncate(&p, max_len).to_string())
