@@ -10,17 +10,17 @@ expression: h.render()
                                                                                 
                                                                                 
                                                                                 
-                                                                                
-                                                                                
-                                                                                
  > Show me a comparison                                                         
                                                                                 
  ● Here's a comparison:                                                         
                                                                                 
-   │Feature│Rust│ Go │                                                          
-   ├───────┼────┼────┤                                                          
-   │Memory │Safe│GC  │                                                          
-   │Speed  │Fast│Fast│                                                          
+   ┌─────────┬──────┬──────┐                                                    
+   │ Feature │ Rust │ Go   │                                                    
+   ├─────────┼──────┼──────┤                                                    
+   │ Memory  │ Safe │ GC   │                                                    
+   ├─────────┼──────┼──────┤                                                    
+   │ Speed   │ Fast │ Fast │                                                    
+   └─────────┴──────┴──────┘                                                    
                                                                                 
                                                                                 
  >                                                                              

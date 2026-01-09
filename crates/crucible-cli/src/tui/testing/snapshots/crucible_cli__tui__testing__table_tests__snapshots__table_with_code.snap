@@ -3,17 +3,17 @@ source: crates/crucible-cli/src/tui/testing/table_tests.rs
 expression: h.render()
 ---
                                                                                 
-                                                                                
-                                                                                
-                                                                                
  > Explain the struct and show options                                          
                                                                                 
  ● The struct has these fields:                                                 
                                                                                 
-   │Field│ Type │Default│                                                       
-   ├─────┼──────┼───────┤                                                       
-   │name │String│""     │                                                       
-   │count│u32   │0      │                                                       
+   ┌───────┬────────┬─────────┐                                                 
+   │ Field │ Type   │ Default │                                                 
+   ├───────┼────────┼─────────┤                                                 
+   │ name  │ String │ ""      │                                                 
+   ├───────┼────────┼─────────┤                                                 
+   │ count │ u32    │ 0       │                                                 
+   └───────┴────────┴─────────┘                                                 
                                                                                 
    Here's how to use it:                                                        
    let item = Item {                                                            
