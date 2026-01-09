@@ -2,6 +2,8 @@ mod kiln_manager;
 mod lifecycle;
 mod protocol;
 mod server;
+mod session_manager;
+mod subscription;
 
 use anyhow::{bail, Result};
 use lifecycle::{
