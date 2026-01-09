@@ -22,7 +22,8 @@ mod snapshots {
 
     #[test]
     fn multiple_code_blocks_render() {
-        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::with_multi_lang_code());
+        let h =
+            Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::with_multi_lang_code());
         assert_snapshot!("code_blocks_multi_lang", h.render());
     }
 
@@ -69,7 +70,8 @@ mod content_tests {
 
     #[test]
     fn multi_lang_blocks_all_visible() {
-        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::with_multi_lang_code());
+        let h =
+            Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::with_multi_lang_code());
         let output = h.render();
 
         assert!(output.contains("print"), "Should show Python print");
@@ -81,6 +83,9 @@ mod content_tests {
         let h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::with_inline_code());
         let output = h.render();
 
-        assert!(output.contains("println!"), "Should show println! from inline code");
+        assert!(
+            output.contains("println!"),
+            "Should show println! from inline code"
+        );
     }
 }

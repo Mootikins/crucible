@@ -67,7 +67,10 @@ mod content_tests {
             output.contains("Rust") || output.contains("rust"),
             "Should show Rust"
         );
-        assert!(output.contains("Go") || output.contains("go"), "Should show Go");
+        assert!(
+            output.contains("Go") || output.contains("go"),
+            "Should show Go"
+        );
 
         // Should contain table data
         assert!(
@@ -87,7 +90,10 @@ mod content_tests {
 
         // Should contain all column headers
         assert!(output.contains("Package"), "Should show Package column");
-        assert!(output.contains("Description"), "Should show Description column");
+        assert!(
+            output.contains("Description"),
+            "Should show Description column"
+        );
         assert!(output.contains("Version"), "Should show Version column");
         assert!(output.contains("License"), "Should show License column");
 
@@ -161,10 +167,7 @@ mod edge_cases {
     #[test]
     fn empty_table_like_content() {
         // Table with just pipes, edge case
-        let items = vec![
-            user("Show empty"),
-            assistant("| | |\n|-|-|\n| | |"),
-        ];
+        let items = vec![user("Show empty"), assistant("| | |\n|-|-|\n| | |")];
         let h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(items);
         let output = h.render();
 
@@ -190,6 +193,53 @@ mod edge_cases {
         assert!(
             output.contains("long") || output.contains("..."),
             "Should show description or truncation"
+        );
+    }
+
+    /// Test that proportional shrinking works when minimums fit but natural widths don't
+    #[test]
+    fn proportional_shrinking_preserves_all_columns() {
+        // Table with short words (small minimums) but long total content
+        // Minimums: Name=4, Info=4, Type=4, Note=4 = 16 content
+        // Full widths: 4, 30, 4, 20 = 58 content
+        // Overhead: 5 borders + 8 padding = 13
+        // Full table: 71 chars, Minimum table: 29 chars
+        // At 50 chars viewport: should shrink proportionally without clipping
+        let items = vec![
+            user("Show shrinkable table"),
+            assistant(
+                "| Name | Info                          | Type | Note                |\n\
+                 |------|-------------------------------|------|---------------------|\n\
+                 | foo  | some long info text here      | bar  | extra note text     |\n\
+                 | baz  | more info with many words     | qux  | another note here   |",
+            ),
+        ];
+        // Use 50 char viewport - enough for minimums (29) but not full widths (71)
+        let h = Harness::new(50, TEST_HEIGHT).with_session(items);
+        let output = h.render();
+
+        // All columns should be present
+        assert!(output.contains("Name"), "Should show Name column");
+        assert!(output.contains("Info"), "Should show Info column");
+        assert!(output.contains("Type"), "Should show Type column");
+        assert!(output.contains("Note"), "Should show Note column");
+
+        // Table should have proper closing borders (not clipped)
+        // Check that at least one table line has a closing border
+        let has_closing_border = output.lines().any(|line| {
+            let trimmed = line.trim();
+            (trimmed.starts_with('│')
+                || trimmed.starts_with('┌')
+                || trimmed.starts_with('├')
+                || trimmed.starts_with('└'))
+                && (trimmed.ends_with('│')
+                    || trimmed.ends_with('┐')
+                    || trimmed.ends_with('┤')
+                    || trimmed.ends_with('┘'))
+        });
+        assert!(
+            has_closing_border,
+            "Table should have proper closing borders (proportional shrinking should avoid clipping)"
         );
     }
 }
