@@ -21,8 +21,10 @@ use anyhow::{Context, Result};
 use crucible_core::processing::{
     ChangeDetectionStore, FileState, NotePipelineOrchestrator, PipelineMetrics, ProcessingResult,
 };
-use crucible_core::{EnrichedNoteStore, EnrichmentService};
+use crucible_core::storage::{NoteRecord, NoteStore};
+use crucible_core::EnrichmentService;
 use crucible_parser::{traits::MarkdownParser, CrucibleParser};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -63,7 +65,7 @@ pub struct NotePipelineConfig {
 ///   ├─> ChangeDetectionStore (Phase 1: skip checks)
 ///   ├─> crucible-parser (Phase 2: AST)
 ///   ├─> EnrichmentService (Phase 3: embeddings)
-///   └─> Storage (Phase 4: persistence)
+///   └─> NoteStore (Phase 4: persistence)
 /// ```
 ///
 pub struct NotePipeline {
@@ -76,8 +78,8 @@ pub struct NotePipeline {
     /// Enrichment service for embeddings and metadata (Phase 3)
     enrichment_service: Arc<dyn EnrichmentService>,
 
-    /// Storage for enriched notes (Phase 4)
-    storage: Arc<dyn EnrichedNoteStore>,
+    /// Storage for notes (Phase 4) - backend-agnostic via NoteStore trait
+    note_store: Arc<dyn NoteStore>,
 
     /// Configuration
     config: NotePipelineConfig,
@@ -100,7 +102,7 @@ impl NotePipeline {
     pub fn new(
         change_detector: Arc<dyn ChangeDetectionStore>,
         enrichment_service: Arc<dyn EnrichmentService>,
-        storage: Arc<dyn EnrichedNoteStore>,
+        note_store: Arc<dyn NoteStore>,
     ) -> Self {
         let config = NotePipelineConfig::default();
         let parser = Self::create_parser(config.parser);
@@ -109,7 +111,7 @@ impl NotePipeline {
             parser,
             change_detector,
             enrichment_service,
-            storage,
+            note_store,
             config,
         }
     }
@@ -118,7 +120,7 @@ impl NotePipeline {
     pub fn with_config(
         change_detector: Arc<dyn ChangeDetectionStore>,
         enrichment_service: Arc<dyn EnrichmentService>,
-        storage: Arc<dyn EnrichedNoteStore>,
+        note_store: Arc<dyn NoteStore>,
         config: NotePipelineConfig,
     ) -> Self {
         let parser = Self::create_parser(config.parser);
@@ -127,7 +129,7 @@ impl NotePipeline {
             parser,
             change_detector,
             enrichment_service,
-            storage,
+            note_store,
             config,
         }
     }
@@ -212,13 +214,17 @@ impl NotePipeline {
         // Phase 4: Storage
         let phase4_start = std::time::Instant::now();
 
-        // Store enriched note (includes parsed content, embeddings, metadata)
-        self.storage
-            .store_enriched(&enriched, &path_str)
+        // Convert EnrichedNote to NoteRecord for storage
+        let note_record = self.enriched_to_record(&enriched, &path_str)?;
+
+        // Store via NoteStore trait (works with any backend)
+        self.note_store
+            .upsert(note_record)
             .await
+            .map_err(|e| anyhow::anyhow!("Storage error: {}", e))
             .with_context(|| {
                 format!(
-                    "Phase 4: Failed to store enriched note for '{}'",
+                    "Phase 4: Failed to store note for '{}'",
                     path.display()
                 )
             })?;
@@ -310,6 +316,75 @@ impl NotePipeline {
             .await
             .context("Failed to store file state")?;
         Ok(())
+    }
+
+    /// Convert an EnrichedNote to a NoteRecord for storage
+    ///
+    /// This bridges the enrichment domain model to the storage domain model,
+    /// extracting the key fields needed for indexing and search.
+    fn enriched_to_record(
+        &self,
+        enriched: &crucible_core::enrichment::EnrichedNote,
+        relative_path: &str,
+    ) -> Result<NoteRecord> {
+        use crucible_core::parser::BlockHash;
+
+        let parsed = &enriched.parsed;
+
+        // Use content hash from parsed note (BLAKE3 hash of file content)
+        let content_hash = BlockHash::from_hex(&parsed.content_hash)
+            .unwrap_or_else(|_| BlockHash::zero());
+
+        // Get embedding: use first block embedding or average if multiple
+        let embedding = if enriched.embeddings.is_empty() {
+            None
+        } else if enriched.embeddings.len() == 1 {
+            Some(enriched.embeddings[0].vector.clone())
+        } else {
+            // Average all embeddings for document-level vector
+            let dim = enriched.embeddings[0].vector.len();
+            let mut avg = vec![0.0f32; dim];
+            for emb in &enriched.embeddings {
+                for (i, v) in emb.vector.iter().enumerate() {
+                    if i < dim {
+                        avg[i] += v;
+                    }
+                }
+            }
+            let count = enriched.embeddings.len() as f32;
+            for v in &mut avg {
+                *v /= count;
+            }
+            Some(avg)
+        };
+
+        // Extract links from wikilinks
+        let links_to: Vec<String> = parsed
+            .wikilinks
+            .iter()
+            .map(|w| w.target.clone())
+            .collect();
+
+        // Extract tags (Tag.name is the string value)
+        let tags: Vec<String> = parsed.tags.iter().map(|t| t.name.clone()).collect();
+
+        // Extract properties from frontmatter
+        let properties: HashMap<String, serde_json::Value> = parsed
+            .frontmatter
+            .as_ref()
+            .map(|fm| fm.properties().clone())
+            .unwrap_or_default();
+
+        Ok(NoteRecord {
+            path: relative_path.to_string(),
+            content_hash,
+            embedding,
+            title: parsed.title(),
+            tags,
+            links_to,
+            properties,
+            updated_at: chrono::Utc::now(),
+        })
     }
 }
 
