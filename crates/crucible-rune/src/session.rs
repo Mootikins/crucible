@@ -77,79 +77,6 @@ const DEFAULT_RING_CAPACITY: usize = 4096;
 /// Default event channel capacity.
 const DEFAULT_CHANNEL_CAPACITY: usize = 256;
 
-/// Estimate the number of tokens in a session event.
-///
-/// This is a simple heuristic - real implementations should use
-/// a proper tokenizer like tiktoken. The estimate uses a rough
-/// approximation of 4 characters per token for English text.
-fn estimate_event_tokens(event: &SessionEvent) -> usize {
-    let content_len = match event {
-        SessionEvent::MessageReceived { content, .. } => content.len(),
-        SessionEvent::AgentResponded { content, .. } => content.len(),
-        SessionEvent::AgentThinking { thought } => thought.len(),
-        SessionEvent::ToolCalled { args, .. } => args.to_string().len(),
-        SessionEvent::ToolCompleted { result, error, .. } => {
-            result.len() + error.as_ref().map(|e| e.len()).unwrap_or(0)
-        }
-        SessionEvent::SessionCompacted { summary, .. } => summary.len(),
-        SessionEvent::SessionEnded { reason } => reason.len(),
-        SessionEvent::SubagentSpawned { prompt, .. } => prompt.len(),
-        SessionEvent::SubagentCompleted { result, .. } => result.len(),
-        SessionEvent::SubagentFailed { error, .. } => error.len(),
-        SessionEvent::Custom { payload, .. } => payload.to_string().len(),
-        SessionEvent::SessionStarted { .. } => 100, // Fixed overhead
-        // Streaming events
-        SessionEvent::TextDelta { delta, .. } => delta.len(),
-        // Note events (small metadata)
-        SessionEvent::NoteParsed { .. } => 50,
-        SessionEvent::NoteCreated { title, .. } => {
-            title.as_ref().map(|t| t.len()).unwrap_or(0) + 50
-        }
-        SessionEvent::NoteModified { .. } => 50,
-        SessionEvent::NoteDeleted { .. } => 50,
-        // MCP/Tool events
-        SessionEvent::McpAttached { server, .. } => server.len() + 50,
-        SessionEvent::ToolDiscovered { name, schema, .. } => {
-            name.len() + schema.as_ref().map(|s| s.to_string().len()).unwrap_or(0)
-        }
-        // File events (small metadata)
-        SessionEvent::FileChanged { .. } => 50,
-        SessionEvent::FileDeleted { .. } => 50,
-        SessionEvent::FileMoved { .. } => 50,
-        // Storage events (small metadata)
-        SessionEvent::EntityStored { .. } => 50,
-        SessionEvent::EntityDeleted { .. } => 50,
-        SessionEvent::BlocksUpdated { .. } => 50,
-        SessionEvent::RelationStored { .. } => 50,
-        SessionEvent::RelationDeleted { .. } => 50,
-        SessionEvent::TagAssociated { tag, .. } => tag.len() + 50,
-        // Embedding events (small metadata)
-        SessionEvent::EmbeddingRequested { .. } => 50,
-        SessionEvent::EmbeddingStored { .. } => 50,
-        SessionEvent::EmbeddingFailed { error, .. } => error.len() + 50,
-        SessionEvent::EmbeddingBatchComplete { .. } => 50,
-        // Pre-events (interception points)
-        SessionEvent::PreToolCall { name, .. } => name.len() + 50,
-        SessionEvent::PreParse { .. } => 50,
-        SessionEvent::PreLlmCall { prompt, .. } => prompt.len(),
-        SessionEvent::AwaitingInput { context, .. } => {
-            context.as_ref().map_or(20, |c| c.len() + 20)
-        }
-        // Interaction events
-        SessionEvent::InteractionRequested { .. } => 100, // Request metadata
-        SessionEvent::InteractionCompleted { .. } => 50,  // Response metadata
-        // Daemon protocol events
-        SessionEvent::SessionStateChanged { .. } => 50,
-        SessionEvent::SessionPaused { .. } => 50,
-        SessionEvent::SessionResumed { .. } => 50,
-        SessionEvent::TerminalOutput { content_base64, .. } => content_base64.len(),
-    };
-
-    // Rough estimate: ~4 characters per token
-    // Add fixed overhead for event structure
-    (content_len / 4).max(1) + 10
-}
-
 /// Session state enumeration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionState {
@@ -862,7 +789,7 @@ impl Session {
         }
 
         // Estimate and track tokens
-        let token_estimate = estimate_event_tokens(&_processed);
+        let token_estimate = _processed.estimate_tokens();
         ctx.add_tokens(token_estimate);
 
         // Check if compaction is needed
