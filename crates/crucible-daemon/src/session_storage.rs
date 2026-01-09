@@ -53,6 +53,21 @@ pub trait SessionStorage: Send + Sync {
         role: &str,
         content: &str,
     ) -> Result<(), SessionError>;
+
+    /// Load events from the session's JSONL log with pagination.
+    ///
+    /// Returns events in chronological order (oldest first).
+    /// Use `offset` to skip events and `limit` to cap the number returned.
+    async fn load_events(
+        &self,
+        session_id: &str,
+        kiln: &Path,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Result<Vec<serde_json::Value>, SessionError>;
+
+    /// Count total events in the session's JSONL log.
+    async fn count_events(&self, session_id: &str, kiln: &Path) -> Result<usize, SessionError>;
 }
 
 /// File-based session storage.
@@ -225,6 +240,58 @@ impl SessionStorage for FileSessionStorage {
             .map_err(|e| SessionError::IoError(e.to_string()))?;
 
         Ok(())
+    }
+
+    async fn load_events(
+        &self,
+        session_id: &str,
+        kiln: &Path,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Result<Vec<serde_json::Value>, SessionError> {
+        let dir = Self::session_dir_by_id(session_id, kiln);
+        let jsonl_path = dir.join("session.jsonl");
+
+        if !jsonl_path.exists() {
+            return Ok(vec![]);
+        }
+
+        let content = fs::read_to_string(&jsonl_path)
+            .await
+            .map_err(|e| SessionError::IoError(e.to_string()))?;
+
+        let offset = offset.unwrap_or(0);
+        let limit = limit.unwrap_or(usize::MAX);
+
+        let events: Vec<serde_json::Value> = content
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .skip(offset)
+            .take(limit)
+            .filter_map(|line| serde_json::from_str(line).ok())
+            .collect();
+
+        Ok(events)
+    }
+
+    async fn count_events(&self, session_id: &str, kiln: &Path) -> Result<usize, SessionError> {
+        let dir = Self::session_dir_by_id(session_id, kiln);
+        let jsonl_path = dir.join("session.jsonl");
+
+        if !jsonl_path.exists() {
+            return Ok(0);
+        }
+
+        let content = fs::read_to_string(&jsonl_path)
+            .await
+            .map_err(|e| SessionError::IoError(e.to_string()))?;
+
+        let count = content
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .count();
+
+        Ok(count)
     }
 }
 
@@ -467,5 +534,91 @@ mod tests {
         assert!(content.contains("type: workflow"));
         assert!(content.contains("# Workflow Session"));
         assert!(content.contains("Starting workflow"));
+    }
+
+    #[tokio::test]
+    async fn test_session_storage_load_events() {
+        let tmp = TempDir::new().unwrap();
+        let storage = FileSessionStorage::new();
+
+        let session = Session::new(SessionType::Chat, tmp.path().to_path_buf());
+        storage.save(&session).await.unwrap();
+
+        // Append some events
+        storage
+            .append_event(&session, r#"{"type":"text","content":"first"}"#)
+            .await
+            .unwrap();
+        storage
+            .append_event(&session, r#"{"type":"text","content":"second"}"#)
+            .await
+            .unwrap();
+        storage
+            .append_event(&session, r#"{"type":"text","content":"third"}"#)
+            .await
+            .unwrap();
+
+        // Load all events
+        let events = storage
+            .load_events(&session.id, tmp.path(), None, None)
+            .await
+            .unwrap();
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0]["content"], "first");
+        assert_eq!(events[2]["content"], "third");
+
+        // Load with pagination
+        let events = storage
+            .load_events(&session.id, tmp.path(), Some(2), Some(1))
+            .await
+            .unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["content"], "second");
+        assert_eq!(events[1]["content"], "third");
+    }
+
+    #[tokio::test]
+    async fn test_session_storage_count_events() {
+        let tmp = TempDir::new().unwrap();
+        let storage = FileSessionStorage::new();
+
+        let session = Session::new(SessionType::Chat, tmp.path().to_path_buf());
+        storage.save(&session).await.unwrap();
+
+        // Empty initially
+        let count = storage.count_events(&session.id, tmp.path()).await.unwrap();
+        assert_eq!(count, 0);
+
+        // Append events
+        storage
+            .append_event(&session, r#"{"type":"text"}"#)
+            .await
+            .unwrap();
+        storage
+            .append_event(&session, r#"{"type":"text"}"#)
+            .await
+            .unwrap();
+
+        let count = storage.count_events(&session.id, tmp.path()).await.unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[tokio::test]
+    async fn test_session_storage_load_events_nonexistent() {
+        let tmp = TempDir::new().unwrap();
+        let storage = FileSessionStorage::new();
+
+        // Load events for session with no JSONL file
+        let events = storage
+            .load_events("nonexistent", tmp.path(), None, None)
+            .await
+            .unwrap();
+        assert!(events.is_empty());
+
+        let count = storage
+            .count_events("nonexistent", tmp.path())
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
     }
 }
