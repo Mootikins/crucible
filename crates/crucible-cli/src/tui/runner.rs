@@ -328,6 +328,8 @@ pub struct RatatuiRunner {
     kiln_context: Option<Arc<crate::core_facade::KilnContext>>,
     /// Session ID to resume from (loads existing conversation history)
     resume_session_id: Option<String>,
+    /// Optional daemon client for session management
+    daemon_client: Option<std::sync::Arc<crucible_daemon_client::DaemonClient>>,
 
     // =============================================================================
     // Manager fields (Sprint 3 - fully integrated)
@@ -384,6 +386,7 @@ impl RatatuiRunner {
             interaction_registry: None,
             kiln_context: None,
             resume_session_id: None,
+            daemon_client: None,
             // Initialize managers (Sprint 3)
             streaming_manager: crate::tui::streaming_manager::StreamingManager::new(),
             selection_manager: crate::tui::selection_manager::SelectionManager::new(),
@@ -442,6 +445,17 @@ impl RatatuiRunner {
     /// When set, `/search` command performs semantic search directly.
     pub fn with_kiln_context(&mut self, ctx: Arc<crate::core_facade::KilnContext>) -> &mut Self {
         self.kiln_context = Some(ctx);
+        self
+    }
+
+    /// Set the daemon client for session management.
+    ///
+    /// When set, `/resume` command can list sessions from the daemon.
+    pub fn with_daemon_client(
+        &mut self,
+        client: std::sync::Arc<crucible_daemon_client::DaemonClient>,
+    ) -> &mut Self {
+        self.daemon_client = Some(client);
         self
     }
 
@@ -1307,43 +1321,81 @@ impl RatatuiRunner {
                             }
                             "resume" => {
                                 // Open session picker popup
+                                // Collect sessions from all sources
+                                let mut items: Vec<crate::tui::state::PopupItem> = Vec::new();
+
+                                // Try daemon sessions first (if connected)
+                                if let Some(ref client) = self.daemon_client {
+                                    if let Ok(kiln) = std::env::current_dir() {
+                                        match client
+                                            .session_list(Some(&kiln), None, None, None)
+                                            .await
+                                        {
+                                            Ok(result) => {
+                                                // Parse the JSON response for sessions
+                                                if let Some(sessions) =
+                                                    result.get("sessions").and_then(|s| s.as_array())
+                                                {
+                                                    for session in sessions.iter().take(10) {
+                                                        if let Some(id) = session
+                                                            .get("session_id")
+                                                            .and_then(|v| v.as_str())
+                                                        {
+                                                            items.push(
+                                                                crate::tui::state::PopupItem::session(
+                                                                    id,
+                                                                )
+                                                                .desc("Daemon session"),
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                debug!("Failed to list daemon sessions: {}", e);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Add local sessions from logger
                                 if let Some(ref logger) = self.session_logger {
                                     let sessions = logger.list_sessions().await;
-                                    if sessions.is_empty() {
-                                        self.view.set_status_text("No sessions found");
-                                    } else {
-                                        // Convert sessions to PopupItems
-                                        let items: Vec<crate::tui::state::PopupItem> = sessions
-                                            .into_iter()
-                                            .take(20) // Limit to 20 most recent
-                                            .map(|id| {
+                                    for id in sessions.into_iter().take(10) {
+                                        // Avoid duplicates
+                                        if !items.iter().any(|i| {
+                                            matches!(i, crate::tui::state::PopupItem::Session { id: existing, .. } if existing == id.as_str())
+                                        }) {
+                                            items.push(
                                                 crate::tui::state::PopupItem::session(id.as_str())
-                                                    .desc("Resume this session")
-                                            })
-                                            .collect();
-
-                                        // Create popup with session items
-                                        let mut popup = PopupState::new(
-                                            PopupKind::Session,
-                                            std::sync::Arc::clone(&self.popup_provider)
-                                                as std::sync::Arc<dyn PopupProvider>,
-                                        );
-                                        popup.set_items(items.clone());
-                                        self.popup = Some(popup);
-
-                                        // Create separate popup for view
-                                        let mut view_popup = PopupState::new(
-                                            PopupKind::Session,
-                                            std::sync::Arc::clone(&self.popup_provider)
-                                                as std::sync::Arc<dyn PopupProvider>,
-                                        );
-                                        view_popup.set_items(items);
-                                        self.view.set_popup(Some(view_popup));
-                                        self.view.set_status_text("Select a session to resume");
-                                        return Ok(false); // Don't clear input yet
+                                                    .desc("Local session"),
+                                            );
+                                        }
                                     }
+                                }
+
+                                if items.is_empty() {
+                                    self.view.set_status_text("No sessions found");
                                 } else {
-                                    self.view.set_status_text("Session logging not enabled");
+                                    // Create popup with session items
+                                    let mut popup = PopupState::new(
+                                        PopupKind::Session,
+                                        std::sync::Arc::clone(&self.popup_provider)
+                                            as std::sync::Arc<dyn PopupProvider>,
+                                    );
+                                    popup.set_items(items.clone());
+                                    self.popup = Some(popup);
+
+                                    // Create separate popup for view
+                                    let mut view_popup = PopupState::new(
+                                        PopupKind::Session,
+                                        std::sync::Arc::clone(&self.popup_provider)
+                                            as std::sync::Arc<dyn PopupProvider>,
+                                    );
+                                    view_popup.set_items(items);
+                                    self.view.set_popup(Some(view_popup));
+                                    self.view.set_status_text("Select a session to resume");
+                                    return Ok(false); // Don't clear input yet
                                 }
                             }
                             _ => {

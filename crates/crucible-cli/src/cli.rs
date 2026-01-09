@@ -343,6 +343,52 @@ pub enum SessionCommands {
         #[arg(long)]
         dry_run: bool,
     },
+
+    /// Manage daemon sessions (live sessions)
+    #[command(subcommand)]
+    Daemon(DaemonSessionCommands),
+}
+
+/// Daemon session management subcommands
+#[derive(Subcommand, Debug)]
+pub enum DaemonSessionCommands {
+    /// List active daemon sessions
+    List {
+        /// Filter by state (active, paused, ended)
+        #[arg(long)]
+        state: Option<String>,
+    },
+
+    /// Create a new daemon session
+    Create {
+        /// Session type (chat, agent, workflow)
+        #[arg(short = 't', long, default_value = "chat")]
+        session_type: String,
+    },
+
+    /// Get details of a daemon session
+    Get {
+        /// Session ID
+        session_id: String,
+    },
+
+    /// Pause a daemon session
+    Pause {
+        /// Session ID
+        session_id: String,
+    },
+
+    /// Resume a paused daemon session
+    Resume {
+        /// Session ID
+        session_id: String,
+    },
+
+    /// End a daemon session
+    End {
+        /// Session ID
+        session_id: String,
+    },
 }
 
 /// Agent card management subcommands
@@ -968,5 +1014,111 @@ mod tests {
             cli.command,
             Some(Commands::Session(SessionCommands::Reindex))
         ));
+    }
+
+    #[test]
+    fn test_session_daemon_list_parses() {
+        let cli = Cli::try_parse_from(["cru", "session", "daemon", "list"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Session(SessionCommands::Daemon(
+                DaemonSessionCommands::List { state: None }
+            )))
+        ));
+    }
+
+    #[test]
+    fn test_session_daemon_list_with_state_parses() {
+        let cli =
+            Cli::try_parse_from(["cru", "session", "daemon", "list", "--state", "active"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Daemon(DaemonSessionCommands::List {
+            state,
+        }))) = cli.command
+        {
+            assert_eq!(state, Some("active".to_string()));
+        } else {
+            panic!("Expected Session Daemon List command");
+        }
+    }
+
+    #[test]
+    fn test_session_daemon_create_parses() {
+        let cli = Cli::try_parse_from(["cru", "session", "daemon", "create"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Daemon(DaemonSessionCommands::Create {
+            session_type,
+        }))) = cli.command
+        {
+            assert_eq!(session_type, "chat"); // Default value
+        } else {
+            panic!("Expected Session Daemon Create command");
+        }
+    }
+
+    #[test]
+    fn test_session_daemon_create_with_type_parses() {
+        let cli =
+            Cli::try_parse_from(["cru", "session", "daemon", "create", "-t", "workflow"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Daemon(DaemonSessionCommands::Create {
+            session_type,
+        }))) = cli.command
+        {
+            assert_eq!(session_type, "workflow");
+        } else {
+            panic!("Expected Session Daemon Create command");
+        }
+    }
+
+    #[test]
+    fn test_session_daemon_get_parses() {
+        let cli = Cli::try_parse_from(["cru", "session", "daemon", "get", "session-123"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Daemon(DaemonSessionCommands::Get {
+            session_id,
+        }))) = cli.command
+        {
+            assert_eq!(session_id, "session-123");
+        } else {
+            panic!("Expected Session Daemon Get command");
+        }
+    }
+
+    #[test]
+    fn test_session_daemon_pause_parses() {
+        let cli =
+            Cli::try_parse_from(["cru", "session", "daemon", "pause", "session-123"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Daemon(DaemonSessionCommands::Pause {
+            session_id,
+        }))) = cli.command
+        {
+            assert_eq!(session_id, "session-123");
+        } else {
+            panic!("Expected Session Daemon Pause command");
+        }
+    }
+
+    #[test]
+    fn test_session_daemon_resume_parses() {
+        let cli =
+            Cli::try_parse_from(["cru", "session", "daemon", "resume", "session-123"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Daemon(DaemonSessionCommands::Resume {
+            session_id,
+        }))) = cli.command
+        {
+            assert_eq!(session_id, "session-123");
+        } else {
+            panic!("Expected Session Daemon Resume command");
+        }
+    }
+
+    #[test]
+    fn test_session_daemon_end_parses() {
+        let cli = Cli::try_parse_from(["cru", "session", "daemon", "end", "session-123"]).unwrap();
+        if let Some(Commands::Session(SessionCommands::Daemon(DaemonSessionCommands::End {
+            session_id,
+        }))) = cli.command
+        {
+            assert_eq!(session_id, "session-123");
+        } else {
+            panic!("Expected Session Daemon End command");
+        }
     }
 }

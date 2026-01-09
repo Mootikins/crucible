@@ -2,12 +2,14 @@
 //!
 //! Commands for listing, viewing, resuming, and managing chat sessions.
 
-use crate::cli::SessionCommands;
+use crate::cli::{DaemonSessionCommands, SessionCommands};
 use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
 use chrono::{Duration, Utc};
+use crucible_daemon_client::DaemonClient;
 use crucible_observe::{
-    list_sessions, load_events, render_to_markdown, LogEvent, RenderOptions, SessionId, SessionType,
+    list_sessions, load_events, render_to_markdown, LogEvent, RenderOptions, SessionId,
+    SessionType,
 };
 use std::path::PathBuf;
 use tokio::fs;
@@ -33,6 +35,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
             older_than,
             dry_run,
         } => cleanup(config, older_than, dry_run).await,
+        SessionCommands::Daemon(subcmd) => daemon_execute(config, subcmd).await,
     }
 }
 
@@ -391,6 +394,134 @@ fn truncate(s: &str, max_len: usize) -> String {
     } else {
         format!("{}...", s.chars().take(max_len).collect::<String>())
     }
+}
+
+// =========================================================================
+// Daemon Session Commands
+// =========================================================================
+
+/// Execute a daemon session subcommand
+async fn daemon_execute(config: CliConfig, cmd: DaemonSessionCommands) -> Result<()> {
+    let client = DaemonClient::connect_or_start()
+        .await
+        .map_err(|e| anyhow!("Failed to connect to daemon: {}", e))?;
+
+    match cmd {
+        DaemonSessionCommands::List { state } => daemon_list(&client, &config, state).await,
+        DaemonSessionCommands::Create { session_type } => {
+            daemon_create(&client, &config, &session_type).await
+        }
+        DaemonSessionCommands::Get { session_id } => daemon_get(&client, &session_id).await,
+        DaemonSessionCommands::Pause { session_id } => daemon_pause(&client, &session_id).await,
+        DaemonSessionCommands::Resume { session_id } => daemon_resume(&client, &session_id).await,
+        DaemonSessionCommands::End { session_id } => daemon_end(&client, &session_id).await,
+    }
+}
+
+/// List daemon sessions
+async fn daemon_list(
+    client: &DaemonClient,
+    config: &CliConfig,
+    state: Option<String>,
+) -> Result<()> {
+    let result = client
+        .session_list(Some(&config.kiln_path), None, None, state.as_deref())
+        .await?;
+
+    let sessions = result["sessions"].as_array();
+
+    let sessions = match sessions {
+        Some(arr) if !arr.is_empty() => arr,
+        _ => {
+            println!("No daemon sessions found.");
+            return Ok(());
+        }
+    };
+
+    println!(
+        "{:<40} {:<10} {:<10} {}",
+        "SESSION_ID", "TYPE", "STATE", "STARTED"
+    );
+    println!("{}", "-".repeat(80));
+
+    for session in sessions {
+        println!(
+            "{:<40} {:<10} {:<10} {}",
+            session["session_id"].as_str().unwrap_or("?"),
+            session["type"].as_str().unwrap_or("?"),
+            session["state"].as_str().unwrap_or("?"),
+            session["started_at"].as_str().unwrap_or("?"),
+        );
+    }
+
+    Ok(())
+}
+
+/// Create a new daemon session
+async fn daemon_create(
+    client: &DaemonClient,
+    config: &CliConfig,
+    session_type: &str,
+) -> Result<()> {
+    let result = client
+        .session_create(session_type, &config.kiln_path, None, vec![])
+        .await?;
+
+    let session_id = result["session_id"].as_str().unwrap_or("unknown");
+    println!("Created session: {}", session_id);
+    println!("Type: {}", session_type);
+    println!("Kiln: {}", config.kiln_path.display());
+
+    Ok(())
+}
+
+/// Get details of a daemon session
+async fn daemon_get(client: &DaemonClient, session_id: &str) -> Result<()> {
+    let result = client.session_get(session_id).await?;
+
+    println!(
+        "Session ID: {}",
+        result["session_id"].as_str().unwrap_or("?")
+    );
+    println!("Type: {}", result["type"].as_str().unwrap_or("?"));
+    println!("State: {}", result["state"].as_str().unwrap_or("?"));
+    println!("Kiln: {}", result["kiln"].as_str().unwrap_or("?"));
+    println!("Started: {}", result["started_at"].as_str().unwrap_or("?"));
+
+    if let Some(title) = result["title"].as_str() {
+        println!("Title: {}", title);
+    }
+
+    Ok(())
+}
+
+/// Pause a daemon session
+async fn daemon_pause(client: &DaemonClient, session_id: &str) -> Result<()> {
+    let result = client.session_pause(session_id).await?;
+    println!("Paused session: {}", session_id);
+    println!(
+        "Previous state: {}",
+        result["previous_state"].as_str().unwrap_or("?")
+    );
+    Ok(())
+}
+
+/// Resume a paused daemon session
+async fn daemon_resume(client: &DaemonClient, session_id: &str) -> Result<()> {
+    let result = client.session_resume(session_id).await?;
+    println!("Resumed session: {}", session_id);
+    println!(
+        "Previous state: {}",
+        result["previous_state"].as_str().unwrap_or("?")
+    );
+    Ok(())
+}
+
+/// End a daemon session
+async fn daemon_end(client: &DaemonClient, session_id: &str) -> Result<()> {
+    client.session_end(session_id).await?;
+    println!("Ended session: {}", session_id);
+    Ok(())
 }
 
 #[cfg(test)]
