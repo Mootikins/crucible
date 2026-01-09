@@ -7,7 +7,7 @@
 use crate::tui::{
     content_block::StreamBlock,
     markdown::MarkdownRenderer,
-    styles::{indicators, presets},
+    styles::{colors, indicators, presets},
 };
 use once_cell::sync::Lazy;
 use ratatui::{
@@ -501,7 +501,8 @@ fn render_user_message(content: &str, width: usize) -> Vec<Line<'static>> {
     let effective_width = if width > 0 { width } else { 80 };
     let rendered_lines = MARKDOWN_RENDERER.render_lines(content, effective_width);
 
-    // Add prefix to each line
+    // Add prefix to each line, with consistent background
+    let user_style = presets::user_message();
     let mut first_line = true;
     for line in rendered_lines.iter() {
         let prefix = if first_line {
@@ -512,7 +513,11 @@ fn render_user_message(content: &str, width: usize) -> Vec<Line<'static>> {
         };
 
         let mut spans = vec![Span::styled(prefix, presets::user_prefix())];
-        spans.extend(line.spans.iter().cloned());
+        // Apply user bg to content spans while preserving their fg color
+        for span in line.spans.iter() {
+            let style = span.style.bg(user_style.bg.unwrap_or(colors::USER_BG));
+            spans.push(Span::styled(span.content.clone(), style));
+        }
         lines.push(Line::from(spans));
     }
 
