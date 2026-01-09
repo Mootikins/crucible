@@ -212,17 +212,28 @@ impl<'a> SessionHistoryWidget<'a> {
 
     /// Calculate total content height
     ///
-    /// Uses cached lines where available.
+    /// Uses cached total if available, otherwise computes from per-item heights.
     fn content_height(&self, width: usize) -> usize {
         // Check if width changed
         self.state.check_width(width);
 
+        // Try to use cached total height
+        if let Some(total) = self.state.get_total_height() {
+            return total;
+        }
+
+        // Calculate and cache total height
         let items = self.state.items();
-        items
+        let total: usize = items
             .iter()
             .enumerate()
             .map(|(i, item)| {
-                // Check if streaming - don't use cache for streaming
+                // Try cached height first
+                if let Some(height) = self.state.get_cached_height(i) {
+                    return height;
+                }
+
+                // Check if streaming - don't cache streaming
                 let is_streaming = matches!(
                     item,
                     ConversationItem::AssistantMessage {
@@ -231,19 +242,41 @@ impl<'a> SessionHistoryWidget<'a> {
                     } | ConversationItem::Status(_)
                 );
 
-                if !is_streaming {
-                    if let Some(cached) = self.state.get_cached(i, width) {
-                        return cached.len();
-                    }
-                }
-
                 let lines = render_item_to_lines(item, width);
+                let height = lines.len();
                 if !is_streaming {
-                    self.state.store_cached(i, width, lines.clone());
+                    self.state.store_cached(i, width, lines);
                 }
-                lines.len()
+                height
             })
-            .sum()
+            .sum();
+
+        self.state.set_total_height(total);
+        total
+    }
+
+    /// Get item height, using cache if available
+    fn item_height(&self, index: usize, item: &ConversationItem, width: usize) -> usize {
+        // Try cached height first
+        if let Some(height) = self.state.get_cached_height(index) {
+            return height;
+        }
+
+        // Check if streaming - don't cache streaming
+        let is_streaming = matches!(
+            item,
+            ConversationItem::AssistantMessage {
+                is_streaming: true,
+                ..
+            } | ConversationItem::Status(_)
+        );
+
+        let lines = render_item_to_lines(item, width);
+        let height = lines.len();
+        if !is_streaming {
+            self.state.store_cached(index, width, lines);
+        }
+        height
     }
 
     /// Calculate the maximum content width across all lines

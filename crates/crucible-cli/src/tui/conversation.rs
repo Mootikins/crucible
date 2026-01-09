@@ -112,6 +112,10 @@ struct CachedLines {
 pub struct RenderCache {
     /// Cached lines per item index
     items: Vec<Option<CachedLines>>,
+    /// Cached height (line count) per item - always valid if lines are cached
+    heights: Vec<usize>,
+    /// Cached total height (sum of all item heights)
+    total_height: Option<usize>,
     /// Last known terminal width
     last_width: usize,
     /// Global dirty flag - if true, at least one item needs re-render
@@ -123,6 +127,8 @@ impl RenderCache {
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
+            heights: Vec::new(),
+            total_height: None,
             last_width: 0,
             dirty: true, // Start dirty to ensure first render
         }
@@ -143,6 +149,10 @@ impl RenderCache {
         if index < self.items.len() {
             self.items[index] = None;
         }
+        if index < self.heights.len() {
+            self.heights[index] = 0;
+        }
+        self.total_height = None; // Invalidate total
         self.dirty = true;
     }
 
@@ -151,6 +161,8 @@ impl RenderCache {
         for item in &mut self.items {
             *item = None;
         }
+        self.heights.clear();
+        self.total_height = None;
         self.dirty = true;
     }
 
@@ -167,6 +179,9 @@ impl RenderCache {
         if self.items.len() < count {
             self.items.resize_with(count, || None);
         }
+        if self.heights.len() < count {
+            self.heights.resize(count, 0);
+        }
     }
 
     /// Get cached lines for an item, or None if not cached
@@ -179,21 +194,43 @@ impl RenderCache {
         })
     }
 
-    /// Store rendered lines for an item
+    /// Get cached height for an item, or None if not cached
+    pub fn get_height(&self, index: usize) -> Option<usize> {
+        self.heights.get(index).copied().filter(|&h| h > 0)
+    }
+
+    /// Store rendered lines for an item (also stores height)
     pub fn store(&mut self, index: usize, width: usize, lines: Vec<Line<'static>>) {
         self.ensure_capacity(index + 1);
+        let height = lines.len();
         self.items[index] = Some(CachedLines { width, lines });
+        self.heights[index] = height;
+        self.total_height = None; // Invalidate cached total
+    }
+
+    /// Get cached total height, or None if not cached
+    pub fn get_total_height(&self) -> Option<usize> {
+        self.total_height
+    }
+
+    /// Set cached total height
+    pub fn set_total_height(&mut self, height: usize) {
+        self.total_height = Some(height);
     }
 
     /// Called when an item is added
     pub fn on_item_added(&mut self) {
         self.items.push(None);
+        self.heights.push(0);
+        self.total_height = None;
         self.dirty = true;
     }
 
     /// Called when items are cleared
     pub fn on_clear(&mut self) {
         self.items.clear();
+        self.heights.clear();
+        self.total_height = None;
         self.dirty = true;
     }
 }
@@ -255,6 +292,21 @@ impl ConversationState {
     /// Get cached lines for an item, or None if not cached
     pub fn get_cached(&self, index: usize, width: usize) -> Option<Vec<Line<'static>>> {
         self.cache.borrow().get(index, width).cloned()
+    }
+
+    /// Get cached height for an item, or None if not cached
+    pub fn get_cached_height(&self, index: usize) -> Option<usize> {
+        self.cache.borrow().get_height(index)
+    }
+
+    /// Get cached total height, or None if not cached
+    pub fn get_total_height(&self) -> Option<usize> {
+        self.cache.borrow().get_total_height()
+    }
+
+    /// Set cached total height
+    pub fn set_total_height(&self, height: usize) {
+        self.cache.borrow_mut().set_total_height(height);
     }
 
     /// Store rendered lines for an item
