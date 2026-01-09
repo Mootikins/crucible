@@ -474,6 +474,11 @@ fn estimate_event_tokens(event: &SessionEvent) -> usize {
         // Interaction events
         SessionEvent::InteractionRequested { .. } => 100, // Request metadata
         SessionEvent::InteractionCompleted { .. } => 50,  // Response metadata
+        // Daemon protocol events
+        SessionEvent::SessionStateChanged { .. } => 50,
+        SessionEvent::SessionPaused { .. } => 50,
+        SessionEvent::SessionResumed { .. } => 50,
+        SessionEvent::TerminalOutput { content_base64, .. } => content_base64.len(),
     };
 
     // Rough estimate: ~4 characters per token

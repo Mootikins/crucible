@@ -101,6 +101,11 @@ impl EventToMarkdown for SessionEvent {
             // Interaction events
             SessionEvent::InteractionRequested { .. } => "InteractionRequested",
             SessionEvent::InteractionCompleted { .. } => "InteractionCompleted",
+            // Daemon protocol events
+            SessionEvent::SessionStateChanged { .. } => "SessionStateChanged",
+            SessionEvent::SessionPaused { .. } => "SessionPaused",
+            SessionEvent::SessionResumed { .. } => "SessionResumed",
+            SessionEvent::TerminalOutput { .. } => "TerminalOutput",
         }
     }
 
@@ -359,6 +364,44 @@ impl EventToMarkdown for SessionEvent {
                 format!(
                     "**Request ID:** {}\n**Response:** {}\n",
                     request_id, response_summary
+                )
+            }
+
+            // Daemon protocol events
+            SessionEvent::SessionStateChanged {
+                session_id,
+                state,
+                previous_state,
+            } => {
+                let prev = previous_state
+                    .as_ref()
+                    .map(|s| format!("{:?}", s))
+                    .unwrap_or_else(|| "(none)".to_string());
+                format!(
+                    "**Session:** {}\n**State:** {:?}\n**Previous:** {}\n",
+                    session_id, state, prev
+                )
+            }
+            SessionEvent::SessionPaused { session_id } => {
+                format!("**Session:** {}\n", session_id)
+            }
+            SessionEvent::SessionResumed { session_id } => {
+                format!("**Session:** {}\n", session_id)
+            }
+            SessionEvent::TerminalOutput {
+                session_id,
+                stream,
+                content_base64,
+            } => {
+                // Show base64 content as-is (decoding would require additional dep)
+                let truncated = if content_base64.len() > 200 {
+                    format!("{}... ({} bytes)", &content_base64[..200], content_base64.len())
+                } else {
+                    content_base64.clone()
+                };
+                format!(
+                    "**Session:** {}\n**Stream:** {:?}\n**Content (base64):** {}\n",
+                    session_id, stream, truncated
                 )
             }
         };
