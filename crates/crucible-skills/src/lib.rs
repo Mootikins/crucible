@@ -4,6 +4,7 @@
 //!
 //! Supports the [Agent Skills](https://agentskills.io) format.
 
+pub mod context;
 pub mod discovery;
 mod error;
 pub mod parser;
@@ -15,6 +16,7 @@ pub mod storage;
 #[cfg(feature = "embeddings")]
 pub mod embedding;
 
+pub use context::format_skills_for_context;
 pub use discovery::{FolderDiscovery, SearchPath};
 pub use error::{SkillError, SkillResult};
 pub use parser::SkillParser;
