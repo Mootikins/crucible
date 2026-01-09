@@ -211,441 +211,16 @@ impl LoggingHandler {
         self
     }
 
-    /// Get the event type name from a SessionEvent.
-    fn event_type_name(event: &SessionEvent) -> &'static str {
-        match event {
-            SessionEvent::MessageReceived { .. } => "MessageReceived",
-            SessionEvent::AgentResponded { .. } => "AgentResponded",
-            SessionEvent::AgentThinking { .. } => "AgentThinking",
-            SessionEvent::ToolCalled { .. } => "ToolCalled",
-            SessionEvent::ToolCompleted { .. } => "ToolCompleted",
-            SessionEvent::SessionStarted { .. } => "SessionStarted",
-            SessionEvent::SessionCompacted { .. } => "SessionCompacted",
-            SessionEvent::SessionEnded { .. } => "SessionEnded",
-            SessionEvent::SubagentSpawned { .. } => "SubagentSpawned",
-            SessionEvent::SubagentCompleted { .. } => "SubagentCompleted",
-            SessionEvent::SubagentFailed { .. } => "SubagentFailed",
-            SessionEvent::TextDelta { .. } => "TextDelta",
-            SessionEvent::NoteParsed { .. } => "NoteParsed",
-            SessionEvent::NoteCreated { .. } => "NoteCreated",
-            SessionEvent::NoteModified { .. } => "NoteModified",
-            SessionEvent::NoteDeleted { .. } => "NoteDeleted",
-            SessionEvent::McpAttached { .. } => "McpAttached",
-            SessionEvent::ToolDiscovered { .. } => "ToolDiscovered",
-            SessionEvent::Custom { .. } => "Custom",
-            // File events
-            SessionEvent::FileChanged { .. } => "FileChanged",
-            SessionEvent::FileDeleted { .. } => "FileDeleted",
-            SessionEvent::FileMoved { .. } => "FileMoved",
-            // Storage events
-            SessionEvent::EntityStored { .. } => "EntityStored",
-            SessionEvent::EntityDeleted { .. } => "EntityDeleted",
-            SessionEvent::BlocksUpdated { .. } => "BlocksUpdated",
-            SessionEvent::RelationStored { .. } => "RelationStored",
-            SessionEvent::RelationDeleted { .. } => "RelationDeleted",
-            SessionEvent::TagAssociated { .. } => "TagAssociated",
-            // Embedding events
-            SessionEvent::EmbeddingRequested { .. } => "EmbeddingRequested",
-            SessionEvent::EmbeddingStored { .. } => "EmbeddingStored",
-            SessionEvent::EmbeddingFailed { .. } => "EmbeddingFailed",
-            SessionEvent::EmbeddingBatchComplete { .. } => "EmbeddingBatchComplete",
-            // Pre-events
-            SessionEvent::PreToolCall { .. } => "PreToolCall",
-            SessionEvent::PreParse { .. } => "PreParse",
-            SessionEvent::PreLlmCall { .. } => "PreLlmCall",
-            SessionEvent::AwaitingInput { .. } => "AwaitingInput",
-            // Interaction events
-            SessionEvent::InteractionRequested { .. } => "InteractionRequested",
-            SessionEvent::InteractionCompleted { .. } => "InteractionCompleted",
-            // Daemon protocol events
-            SessionEvent::SessionStateChanged { .. } => "SessionStateChanged",
-            SessionEvent::SessionPaused { .. } => "SessionPaused",
-            SessionEvent::SessionResumed { .. } => "SessionResumed",
-            SessionEvent::TerminalOutput { .. } => "TerminalOutput",
-        }
-    }
-
-    /// Get a summary of the event content.
-    fn event_summary(event: &SessionEvent, max_len: usize) -> String {
-        let summary = match event {
-            SessionEvent::MessageReceived {
-                content,
-                participant_id,
-            } => {
-                format!("from={}, content_len={}", participant_id, content.len())
-            }
-            SessionEvent::AgentResponded {
-                content,
-                tool_calls,
-            } => {
-                format!(
-                    "content_len={}, tool_calls={}",
-                    content.len(),
-                    tool_calls.len()
-                )
-            }
-            SessionEvent::AgentThinking { thought } => {
-                format!("thought_len={}", thought.len())
-            }
-            SessionEvent::ToolCalled { name, args } => {
-                format!("tool={}, args_size={}", name, args.to_string().len())
-            }
-            SessionEvent::ToolCompleted {
-                name,
-                result,
-                error,
-            } => {
-                format!(
-                    "tool={}, result_len={}, error={}",
-                    name,
-                    result.len(),
-                    error.is_some()
-                )
-            }
-            SessionEvent::SessionStarted { config } => {
-                format!("session_id={}", config.session_id)
-            }
-            SessionEvent::SessionCompacted { summary, new_file } => {
-                format!(
-                    "summary_len={}, new_file={}",
-                    summary.len(),
-                    new_file.display()
-                )
-            }
-            SessionEvent::SessionEnded { reason } => {
-                format!("reason={}", truncate(reason, max_len))
-            }
-            SessionEvent::SubagentSpawned { id, prompt } => {
-                format!("id={}, prompt_len={}", id, prompt.len())
-            }
-            SessionEvent::SubagentCompleted { id, result } => {
-                format!("id={}, result_len={}", id, result.len())
-            }
-            SessionEvent::SubagentFailed { id, error } => {
-                format!("id={}, error={}", id, truncate(error, max_len))
-            }
-            SessionEvent::TextDelta { delta, seq } => {
-                format!("seq={}, delta_len={}", seq, delta.len())
-            }
-            SessionEvent::NoteParsed {
-                path,
-                block_count,
-                payload,
-            } => {
-                let payload_str = if payload.is_some() {
-                    ", has_payload"
-                } else {
-                    ""
-                };
-                format!(
-                    "path={}, blocks={}{}",
-                    path.display(),
-                    block_count,
-                    payload_str
-                )
-            }
-            SessionEvent::NoteCreated { path, title } => {
-                let title_str = title.as_deref().unwrap_or("(none)");
-                format!(
-                    "path={}, title={}",
-                    path.display(),
-                    truncate(title_str, max_len)
-                )
-            }
-            SessionEvent::NoteModified { path, change_type } => {
-                format!("path={}, change={:?}", path.display(), change_type)
-            }
-            SessionEvent::NoteDeleted { path, existed } => {
-                format!("path={}, existed={}", path.display(), existed)
-            }
-            SessionEvent::McpAttached { server, tool_count } => {
-                format!("server={}, tools={}", server, tool_count)
-            }
-            SessionEvent::ToolDiscovered { name, source, .. } => {
-                format!("name={}, source={:?}", name, source)
-            }
-            SessionEvent::Custom { name, payload } => {
-                format!("name={}, payload_size={}", name, payload.to_string().len())
-            }
-            // File events
-            SessionEvent::FileChanged { path, kind } => {
-                format!("path={}, kind={:?}", path.display(), kind)
-            }
-            SessionEvent::FileDeleted { path } => {
-                format!("path={}", path.display())
-            }
-            SessionEvent::FileMoved { from, to } => {
-                format!("from={}, to={}", from.display(), to.display())
-            }
-            // Storage events
-            SessionEvent::EntityStored {
-                entity_id,
-                entity_type,
-            } => {
-                format!("entity_id={}, type={:?}", entity_id, entity_type)
-            }
-            SessionEvent::EntityDeleted {
-                entity_id,
-                entity_type,
-            } => {
-                format!("entity_id={}, type={:?}", entity_id, entity_type)
-            }
-            SessionEvent::BlocksUpdated {
-                entity_id,
-                block_count,
-            } => {
-                format!("entity_id={}, blocks={}", entity_id, block_count)
-            }
-            SessionEvent::RelationStored {
-                from_id,
-                to_id,
-                relation_type,
-            } => {
-                format!("from={}, to={}, type={}", from_id, to_id, relation_type)
-            }
-            SessionEvent::RelationDeleted {
-                from_id,
-                to_id,
-                relation_type,
-            } => {
-                format!("from={}, to={}, type={}", from_id, to_id, relation_type)
-            }
-            SessionEvent::TagAssociated { entity_id, tag } => {
-                format!("entity_id={}, tag={}", entity_id, tag)
-            }
-            // Embedding events
-            SessionEvent::EmbeddingRequested {
-                entity_id,
-                priority,
-                ..
-            } => {
-                format!("entity_id={}, priority={:?}", entity_id, priority)
-            }
-            SessionEvent::EmbeddingStored {
-                entity_id,
-                dimensions,
-                ..
-            } => {
-                format!("entity_id={}, dims={}", entity_id, dimensions)
-            }
-            SessionEvent::EmbeddingFailed {
-                entity_id, error, ..
-            } => {
-                format!(
-                    "entity_id={}, error={}",
-                    entity_id,
-                    truncate(error, max_len)
-                )
-            }
-            SessionEvent::EmbeddingBatchComplete {
-                entity_id,
-                count,
-                duration_ms,
-            } => {
-                format!(
-                    "entity_id={}, count={}, duration={}ms",
-                    entity_id, count, duration_ms
-                )
-            }
-            // Pre-events
-            SessionEvent::PreToolCall { name, args } => {
-                format!("tool={}, args_size={}", name, args.to_string().len())
-            }
-            SessionEvent::PreParse { path } => {
-                format!("path={}", path.display())
-            }
-            SessionEvent::PreLlmCall { prompt, model } => {
-                format!("model={}, prompt_len={}", model, prompt.len())
-            }
-            SessionEvent::AwaitingInput {
-                input_type,
-                context,
-            } => {
-                format!(
-                    "type={}, context={}",
-                    input_type,
-                    context.as_deref().unwrap_or("(none)")
-                )
-            }
-            // Interaction events
-            SessionEvent::InteractionRequested {
-                request_id,
-                request,
-            } => {
-                format!("id={}, kind={}", request_id, request.kind())
-            }
-            SessionEvent::InteractionCompleted { request_id, .. } => {
-                format!("id={}", request_id)
-            }
-            // Daemon protocol events
-            SessionEvent::SessionStateChanged {
-                session_id,
-                state,
-                previous_state,
-            } => {
-                let prev = previous_state
-                    .as_ref()
-                    .map(|s| format!("{:?}", s))
-                    .unwrap_or_else(|| "(none)".to_string());
-                format!("session={}, state={:?}, prev={}", session_id, state, prev)
-            }
-            SessionEvent::SessionPaused { session_id } => {
-                format!("session={}", session_id)
-            }
-            SessionEvent::SessionResumed { session_id } => {
-                format!("session={}", session_id)
-            }
-            SessionEvent::TerminalOutput {
-                session_id,
-                stream,
-                content_base64,
-            } => {
-                format!(
-                    "session={}, stream={:?}, content_len={}",
-                    session_id,
-                    stream,
-                    content_base64.len()
-                )
-            }
-        };
-
-        summary
-    }
-
-    /// Get the payload content for detailed logging.
-    fn event_payload(event: &SessionEvent, max_len: usize) -> Option<String> {
-        let payload = match event {
-            SessionEvent::MessageReceived { content, .. } => Some(content.clone()),
-            SessionEvent::AgentResponded { content, .. } => Some(content.clone()),
-            SessionEvent::AgentThinking { thought } => Some(thought.clone()),
-            SessionEvent::ToolCalled { args, .. } => Some(args.to_string()),
-            SessionEvent::ToolCompleted { result, .. } => Some(result.clone()),
-            SessionEvent::SessionCompacted { summary, .. } => Some(summary.clone()),
-            SessionEvent::SessionEnded { reason } => Some(reason.clone()),
-            SessionEvent::SubagentSpawned { prompt, .. } => Some(prompt.clone()),
-            SessionEvent::SubagentCompleted { result, .. } => Some(result.clone()),
-            SessionEvent::SubagentFailed { error, .. } => Some(error.clone()),
-            SessionEvent::Custom { payload, .. } => Some(payload.to_string()),
-            SessionEvent::SessionStarted { .. } => None,
-            SessionEvent::TextDelta { delta, .. } => Some(delta.clone()),
-            SessionEvent::NoteParsed { path, .. } => Some(path.display().to_string()),
-            SessionEvent::NoteCreated { path, title } => Some(format!(
-                "{}: {}",
-                path.display(),
-                title.as_deref().unwrap_or("(none)")
-            )),
-            SessionEvent::NoteModified { path, change_type } => {
-                Some(format!("{}: {:?}", path.display(), change_type))
-            }
-            SessionEvent::NoteDeleted { path, existed } => {
-                Some(format!("{}: existed={}", path.display(), existed))
-            }
-            SessionEvent::McpAttached { server, tool_count } => {
-                Some(format!("{}: {} tools", server, tool_count))
-            }
-            SessionEvent::ToolDiscovered {
-                name,
-                source,
-                schema,
-            } => {
-                let schema_len = schema.as_ref().map(|s| s.to_string().len()).unwrap_or(0);
-                Some(format!("{}: {:?}, schema_len={}", name, source, schema_len))
-            }
-            // File events
-            SessionEvent::FileChanged { path, kind } => {
-                Some(format!("{}: {:?}", path.display(), kind))
-            }
-            SessionEvent::FileDeleted { path } => Some(path.display().to_string()),
-            SessionEvent::FileMoved { from, to } => {
-                Some(format!("{} -> {}", from.display(), to.display()))
-            }
-            // Storage events
-            SessionEvent::EntityStored {
-                entity_id,
-                entity_type,
-            } => Some(format!("{}: {:?}", entity_id, entity_type)),
-            SessionEvent::EntityDeleted {
-                entity_id,
-                entity_type,
-            } => Some(format!("{}: {:?}", entity_id, entity_type)),
-            SessionEvent::BlocksUpdated {
-                entity_id,
-                block_count,
-            } => Some(format!("{}: {} blocks", entity_id, block_count)),
-            SessionEvent::RelationStored {
-                from_id,
-                to_id,
-                relation_type,
-            } => Some(format!("{} -> {} ({})", from_id, to_id, relation_type)),
-            SessionEvent::RelationDeleted {
-                from_id,
-                to_id,
-                relation_type,
-            } => Some(format!("{} -> {} ({})", from_id, to_id, relation_type)),
-            SessionEvent::TagAssociated { entity_id, tag } => {
-                Some(format!("{}#{}", entity_id, tag))
-            }
-            // Embedding events
-            SessionEvent::EmbeddingRequested {
-                entity_id,
-                priority,
-                ..
-            } => Some(format!("{}: {:?}", entity_id, priority)),
-            SessionEvent::EmbeddingStored {
-                entity_id,
-                dimensions,
-                model,
-                ..
-            } => Some(format!(
-                "{}: {} dims, model={}",
-                entity_id, dimensions, model
-            )),
-            SessionEvent::EmbeddingFailed {
-                entity_id, error, ..
-            } => Some(format!("{}: {}", entity_id, error)),
-            SessionEvent::EmbeddingBatchComplete {
-                entity_id,
-                count,
-                duration_ms,
-            } => Some(format!(
-                "{}: {} embeddings in {}ms",
-                entity_id, count, duration_ms
-            )),
-            // Pre-events
-            SessionEvent::PreToolCall { args, .. } => Some(args.to_string()),
-            SessionEvent::PreParse { path } => Some(path.display().to_string()),
-            SessionEvent::PreLlmCall { prompt, .. } => Some(prompt.clone()),
-            SessionEvent::AwaitingInput { context, .. } => context.clone(),
-            // Interaction events - no detailed payload needed
-            SessionEvent::InteractionRequested { .. } => None,
-            SessionEvent::InteractionCompleted { .. } => None,
-            // Daemon protocol events
-            SessionEvent::SessionStateChanged {
-                session_id,
-                state,
-                previous_state,
-            } => Some(format!(
-                "session={}, state={:?}, previous={:?}",
-                session_id, state, previous_state
-            )),
-            SessionEvent::SessionPaused { session_id } => Some(format!("session={}", session_id)),
-            SessionEvent::SessionResumed { session_id } => Some(format!("session={}", session_id)),
-            SessionEvent::TerminalOutput { content_base64, .. } => Some(content_base64.clone()),
-        };
-
-        payload.map(|p| truncate(&p, max_len).to_string())
-    }
-
     /// Log the event using the configured level.
     fn log_event(&self, seq: u64, event: &SessionEvent) {
-        let event_type = Self::event_type_name(event);
+        let event_type = event.type_name();
 
         // Check filter
         if !self.config.filter.should_log(event_type) {
             return;
         }
 
-        let summary = Self::event_summary(event, self.config.max_payload_length);
+        let summary = event.summary(self.config.max_payload_length);
         let prefix = self
             .config
             .prefix
@@ -654,7 +229,8 @@ impl LoggingHandler {
             .unwrap_or_default();
 
         let payload_str = if self.config.include_payload {
-            Self::event_payload(event, self.config.max_payload_length)
+            event
+                .payload(self.config.max_payload_length)
                 .map(|p| format!(" | payload={}", p))
                 .unwrap_or_default()
         } else {
@@ -768,20 +344,6 @@ impl std::fmt::Debug for LoggingHandler {
             .field("dependencies", &self.dependencies)
             .field("config", &self.config)
             .finish()
-    }
-}
-
-/// Truncate a string to max_len, adding "..." if truncated.
-fn truncate(s: &str, max_len: usize) -> &str {
-    if s.len() <= max_len {
-        s
-    } else {
-        // Find a char boundary near max_len
-        let mut end = max_len;
-        while !s.is_char_boundary(end) && end > 0 {
-            end -= 1;
-        }
-        &s[..end]
     }
 }
 
@@ -907,35 +469,33 @@ mod tests {
 
     #[test]
     fn test_event_type_name() {
-        assert_eq!(
-            LoggingHandler::event_type_name(&SessionEvent::MessageReceived {
-                content: "test".into(),
-                participant_id: "user".into(),
-            }),
-            "MessageReceived"
-        );
-        assert_eq!(
-            LoggingHandler::event_type_name(&SessionEvent::ToolCalled {
-                name: "tool".into(),
-                args: json!({}),
-            }),
-            "ToolCalled"
-        );
-        assert_eq!(
-            LoggingHandler::event_type_name(&SessionEvent::SessionEnded {
-                reason: "done".into(),
-            }),
-            "SessionEnded"
-        );
+        // These tests now use the SessionEvent::type_name method from crucible-core
+        let event = SessionEvent::MessageReceived {
+            content: "test".into(),
+            participant_id: "user".into(),
+        };
+        assert_eq!(event.type_name(), "MessageReceived");
+
+        let event = SessionEvent::ToolCalled {
+            name: "tool".into(),
+            args: json!({}),
+        };
+        assert_eq!(event.type_name(), "ToolCalled");
+
+        let event = SessionEvent::SessionEnded {
+            reason: "done".into(),
+        };
+        assert_eq!(event.type_name(), "SessionEnded");
     }
 
     #[test]
     fn test_event_summary() {
+        // These tests now use the SessionEvent::summary method from crucible-core
         let event = SessionEvent::MessageReceived {
             content: "Hello world".into(),
             participant_id: "user".into(),
         };
-        let summary = LoggingHandler::event_summary(&event, 100);
+        let summary = event.summary(100);
         assert!(summary.contains("from=user"));
         assert!(summary.contains("content_len=11"));
 
@@ -944,7 +504,7 @@ mod tests {
             name: "read_file".into(),
             args: json!({"path": path.to_string_lossy()}),
         };
-        let summary = LoggingHandler::event_summary(&event, 100);
+        let summary = event.summary(100);
         assert!(summary.contains("tool=read_file"));
         assert!(summary.contains("args_size="));
 
@@ -953,51 +513,43 @@ mod tests {
             result: "file contents".into(),
             error: Some("permission denied".into()),
         };
-        let summary = LoggingHandler::event_summary(&event, 100);
+        let summary = event.summary(100);
         assert!(summary.contains("tool=read_file"));
         assert!(summary.contains("error=true"));
     }
 
     #[test]
     fn test_event_payload() {
+        // These tests now use the SessionEvent::payload method from crucible-core
         let event = SessionEvent::MessageReceived {
             content: "Hello world".into(),
             participant_id: "user".into(),
         };
-        let payload = LoggingHandler::event_payload(&event, 100);
+        let payload = event.payload(100);
         assert_eq!(payload, Some("Hello world".to_string()));
 
         let event = SessionEvent::SessionStarted {
             config: SessionEventConfig::new("test"),
         };
-        let payload = LoggingHandler::event_payload(&event, 100);
+        let payload = event.payload(100);
         assert!(payload.is_none());
     }
 
     #[test]
     fn test_event_payload_truncation() {
+        // These tests now use the SessionEvent::payload method from crucible-core
         let long_content = "x".repeat(500);
         let event = SessionEvent::MessageReceived {
             content: long_content.clone(),
             participant_id: "user".into(),
         };
-        let payload = LoggingHandler::event_payload(&event, 100);
+        let payload = event.payload(100);
         assert!(payload.is_some());
         let p = payload.unwrap();
         assert!(p.len() <= 100);
     }
 
-    #[test]
-    fn test_truncate() {
-        assert_eq!(truncate("hello", 10), "hello");
-        assert_eq!(truncate("hello world", 5), "hello");
-        assert_eq!(truncate("", 10), "");
-
-        // Test with unicode - should not panic
-        let unicode = "héllo wörld";
-        let truncated = truncate(unicode, 5);
-        assert!(truncated.len() <= 5);
-    }
+    // Note: test_truncate removed - truncate function now lives in crucible-core
 
     #[test]
     fn test_logging_handler_debug() {
