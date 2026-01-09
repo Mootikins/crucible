@@ -150,7 +150,8 @@ verbose = false
         // so we test the default behavior
 
         // Database path should be derived from kiln path (no test mode = standard name)
-        let expected_db_path = config.kiln_path.join(".crucible").join("kiln.db");
+        // Note: database_path() returns the SurrealDB path
+        let expected_db_path = config.kiln_path.join(".crucible").join("crucible-surreal.db");
         assert_eq!(config.database_path(), expected_db_path);
     }
 

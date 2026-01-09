@@ -39,6 +39,13 @@ impl SqliteClientHandle {
         self.note_store.clone()
     }
 
+    /// Get a trait object for KnowledgeRepository
+    pub fn as_knowledge_repository(&self) -> Arc<dyn crucible_core::traits::KnowledgeRepository> {
+        Arc::new(crate::repository::SqliteKnowledgeRepository::new(
+            self.note_store.clone(),
+        ))
+    }
+
     /// Execute a SQL query and return results
     ///
     /// This mirrors SurrealClient::query() for daemon compatibility.

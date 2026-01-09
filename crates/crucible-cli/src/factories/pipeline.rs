@@ -7,6 +7,7 @@
 use crate::config::CliConfig;
 use anyhow::Result;
 use crucible_core::processing::InMemoryChangeDetectionStore;
+use crucible_core::storage::NoteStore;
 use crucible_pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
 use std::sync::Arc;
 
@@ -15,7 +16,7 @@ use std::sync::Arc;
 /// This factory assembles a complete NotePipeline by creating and connecting:
 /// 1. Change detection (in-memory for now)
 /// 2. Enrichment service (with optional embeddings)
-/// 3. Enriched note storage (SurrealDB-backed)
+/// 3. Note storage (backend-agnostic via NoteStore trait)
 /// 4. Pipeline configuration
 ///
 /// All dependencies are created as trait objects (`Arc<dyn Trait>`), following
@@ -24,7 +25,7 @@ use std::sync::Arc;
 ///
 /// # Arguments
 ///
-/// * `storage_client` - SurrealDB client for database operations
+/// * `note_store` - Any storage backend implementing NoteStore (SQLite, SurrealDB, LanceDB)
 /// * `config` - CLI configuration containing paths and settings
 /// * `force` - Whether to force reprocessing of all files
 ///
@@ -40,9 +41,11 @@ use std::sync::Arc;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// # let config = CliConfig::default();
-/// let storage_client = factories::create_surrealdb_storage(&config).await?;
+/// let storage = factories::get_storage(&config).await?;
+/// let note_store = storage.note_store()
+///     .ok_or_else(|| anyhow::anyhow!("No note store available"))?;
 /// let pipeline = factories::create_pipeline(
-///     storage_client,
+///     note_store,
 ///     &config,
 ///     false  // don't force reprocess
 /// ).await?;
@@ -50,7 +53,7 @@ use std::sync::Arc;
 /// # }
 /// ```
 pub async fn create_pipeline(
-    storage_client: crucible_surrealdb::adapters::SurrealClientHandle,
+    note_store: Arc<dyn NoteStore>,
     config: &CliConfig,
     force: bool,
 ) -> Result<NotePipeline> {
@@ -62,17 +65,14 @@ pub async fn create_pipeline(
     // 2. Enrichment service (with optional embeddings)
     let enrichment_service = super::create_default_enrichment_service(config).await?;
 
-    // 3. Enriched note store (SurrealDB-backed)
-    let note_store = super::create_surrealdb_enriched_note_store(storage_client);
-
-    // 4. Pipeline configuration
+    // 3. Pipeline configuration
     let pipeline_config = NotePipelineConfig {
         parser: ParserBackend::default(),
         skip_enrichment: false,
         force_reprocess: force,
     };
 
-    // 5. Assemble pipeline (all trait objects)
+    // 4. Assemble pipeline (all trait objects)
     Ok(NotePipeline::with_config(
         change_detector,
         enrichment_service,

@@ -49,36 +49,6 @@ pub async fn execute(
 ) -> Result<()> {
     info!("Starting process command");
 
-    // Process command needs direct database access, so we must stop any running daemon
-    let socket = lifecycle::default_socket_path();
-    let stopped_daemon = if lifecycle::is_daemon_running(&socket) {
-        info!("Stopping daemon for direct database access");
-        output::info("Stopping daemon for direct database access...");
-        if let Ok(client) = DaemonClient::connect().await {
-            let _ = client.shutdown().await;
-        }
-
-        // Wait for daemon to fully exit and release the lock
-        let db_path = config.database_path();
-        for _ in 0..20 {
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            if !lifecycle::is_daemon_running(&socket) && !lifecycle::is_db_locked(&db_path) {
-                info!("Daemon stopped and released database lock");
-                break;
-            }
-        }
-        true
-    } else {
-        false
-    };
-
-    // Force embedded mode for process command since we need direct DB access
-    let mut config = config;
-    config.storage = Some(crucible_config::StorageConfig {
-        mode: crucible_config::StorageMode::Embedded,
-        ..config.storage.clone().unwrap_or_default()
-    });
-
     // Determine target path
     let target_path = path.as_deref().unwrap_or(config.kiln_path.as_path());
 
@@ -87,20 +57,32 @@ pub async fn execute(
     info!("Watch mode: {}", watch);
     info!("Dry-run mode: {}", dry_run);
 
-    // Initialize storage using factory pattern
+    // Initialize storage using factory pattern (backend-agnostic)
     output::info("Initializing storage...");
     let storage_handle = factories::get_storage(&config).await?;
-    let storage_client = storage_handle
-        .get_embedded_for_operation(&config, "file processing")
-        .await?;
-    factories::initialize_surrealdb_schema(&storage_client).await?;
-    output::success("Storage initialized");
 
-    // Create pipeline (wrapped in Arc for sharing across tasks)
-    output::info("Creating processing pipeline...");
-    let pipeline =
-        Arc::new(factories::create_pipeline(storage_client.clone(), &config, force).await?);
-    output::success("Pipeline ready");
+    // Check if using daemon mode - if so, use daemon's pipeline
+    let use_daemon_pipeline = storage_handle.is_daemon();
+
+    // For non-daemon modes, create local pipeline
+    let pipeline: Option<Arc<crucible_pipeline::NotePipeline>> = if !use_daemon_pipeline {
+        let note_store = storage_handle
+            .note_store()
+            .ok_or_else(|| anyhow::anyhow!("Failed to get NoteStore from storage handle"))?;
+        output::success("Storage initialized");
+
+        output::info("Creating processing pipeline...");
+        let p = factories::create_pipeline(note_store, &config, force).await?;
+        output::success("Pipeline ready");
+        Some(Arc::new(p))
+    } else {
+        output::success("Storage initialized (daemon mode - using remote pipeline)");
+        None
+    };
+
+    // Track if we need to restart daemon later
+    let socket = lifecycle::default_socket_path();
+    let stopped_daemon = false; // We no longer stop the daemon for processing
 
     // Initialize Reactor for note lifecycle events
     // This allows Rune handlers to react to note processing
@@ -152,86 +134,149 @@ pub async fn execute(
     if dry_run {
         println!("\n🔍 DRY RUN MODE - No changes will be made");
     }
-    println!(
-        "\n🔄 Processing {} files through pipeline (with {} workers)...",
-        files.len(),
-        workers
-    );
 
-    // Use atomic counters for thread-safe updates
-    let processed_count = Arc::new(AtomicUsize::new(0));
-    let skipped_count = Arc::new(AtomicUsize::new(0));
-    let error_count = Arc::new(AtomicUsize::new(0));
+    let processed_count: usize;
+    let skipped_count: usize;
+    let error_count: usize;
 
-    // Bounded concurrency with semaphore
-    let semaphore = Arc::new(Semaphore::new(workers));
-    let pb = Arc::new(pb);
-    let mut handles = Vec::new();
+    if use_daemon_pipeline {
+        // Daemon mode: use process_batch RPC
+        println!(
+            "\n🔄 Processing {} files through daemon pipeline...",
+            files.len()
+        );
 
-    for file in files {
-        let permit = semaphore.clone().acquire_owned().await?;
-        let pipeline = pipeline.clone();
-        let reactor = reactor.clone();
-        let pb = pb.clone();
-        let processed = processed_count.clone();
-        let skipped = skipped_count.clone();
-        let errors = error_count.clone();
+        if dry_run {
+            processed_count = files.len();
+            skipped_count = 0;
+            error_count = 0;
+            pb.finish_with_message("Dry run complete!");
+        } else {
+            let daemon_storage = storage_handle
+                .as_daemon_client()
+                .ok_or_else(|| anyhow::anyhow!("Expected daemon client in daemon mode"))?;
 
-        let handle = tokio::spawn(async move {
-            let _permit = permit; // Release on drop
+            let kiln_path = config.kiln_path.clone();
 
-            let file_name = file
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("unknown")
-                .to_string();
+            // Process in batches to show progress
+            let batch_size = 100;
+            let mut total_processed = 0;
+            let mut total_skipped = 0;
+            let mut total_errors = 0;
 
-            // Run file through the 5-phase pipeline
-            if dry_run {
-                processed.fetch_add(1, Ordering::Relaxed);
-            } else {
-                match pipeline.process(&file).await {
-                    Ok(crucible_core::processing::ProcessingResult::Success {
-                        changed_blocks,
-                        ..
-                    }) => {
-                        processed.fetch_add(1, Ordering::Relaxed);
-
-                        // Emit note lifecycle event through Reactor
-                        emit_note_event(&reactor, &file, changed_blocks).await;
-                    }
-                    Ok(crucible_core::processing::ProcessingResult::Skipped)
-                    | Ok(crucible_core::processing::ProcessingResult::NoChanges) => {
-                        skipped.fetch_add(1, Ordering::Relaxed);
+            for chunk in files.chunks(batch_size) {
+                let chunk_paths: Vec<PathBuf> = chunk.to_vec();
+                match daemon_storage
+                    .daemon_client()
+                    .process_batch(&kiln_path, &chunk_paths)
+                    .await
+                {
+                    Ok((proc, skip, errs)) => {
+                        total_processed += proc;
+                        total_skipped += skip;
+                        total_errors += errs.len();
+                        for (path, err) in &errs {
+                            eprintln!("Error processing {}: {}", path, err);
+                        }
                     }
                     Err(e) => {
-                        errors.fetch_add(1, Ordering::Relaxed);
-                        eprintln!("Error processing {}: {:?}", file.display(), e);
-                        warn!("Failed to process {}: {}", file.display(), e);
+                        total_errors += chunk.len();
+                        eprintln!("Batch processing error: {}", e);
                     }
                 }
+                pb.inc(chunk.len() as u64);
             }
 
-            pb.inc(1);
-            pb.set_message(format!("Processing: {}", file_name));
-        });
-        handles.push(handle);
-    }
-
-    // Wait for all tasks to complete
-    for handle in handles {
-        if let Err(e) = handle.await {
-            error_count.fetch_add(1, Ordering::Relaxed);
-            eprintln!("Task panic: {:?}", e);
+            processed_count = total_processed;
+            skipped_count = total_skipped;
+            error_count = total_errors;
+            pb.finish_with_message("Processing complete!");
         }
+    } else {
+        // Local pipeline mode
+        println!(
+            "\n🔄 Processing {} files through pipeline (with {} workers)...",
+            files.len(),
+            workers
+        );
+
+        let pipeline = pipeline.expect("Pipeline should exist for non-daemon mode");
+
+        // Use atomic counters for thread-safe updates
+        let processed = Arc::new(AtomicUsize::new(0));
+        let skipped = Arc::new(AtomicUsize::new(0));
+        let errors = Arc::new(AtomicUsize::new(0));
+
+        // Bounded concurrency with semaphore
+        let semaphore = Arc::new(Semaphore::new(workers));
+        let pb = Arc::new(pb);
+        let mut handles = Vec::new();
+
+        for file in files {
+            let permit = semaphore.clone().acquire_owned().await?;
+            let pipeline = pipeline.clone();
+            let reactor = reactor.clone();
+            let pb = pb.clone();
+            let processed = processed.clone();
+            let skipped = skipped.clone();
+            let errors = errors.clone();
+
+            let handle = tokio::spawn(async move {
+                let _permit = permit; // Release on drop
+
+                let file_name = file
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+
+                // Run file through the 5-phase pipeline
+                if dry_run {
+                    processed.fetch_add(1, Ordering::Relaxed);
+                } else {
+                    match pipeline.process(&file).await {
+                        Ok(crucible_core::processing::ProcessingResult::Success {
+                            changed_blocks,
+                            ..
+                        }) => {
+                            processed.fetch_add(1, Ordering::Relaxed);
+
+                            // Emit note lifecycle event through Reactor
+                            emit_note_event(&reactor, &file, changed_blocks).await;
+                        }
+                        Ok(crucible_core::processing::ProcessingResult::Skipped)
+                        | Ok(crucible_core::processing::ProcessingResult::NoChanges) => {
+                            skipped.fetch_add(1, Ordering::Relaxed);
+                        }
+                        Err(e) => {
+                            errors.fetch_add(1, Ordering::Relaxed);
+                            eprintln!("Error processing {}: {:?}", file.display(), e);
+                            warn!("Failed to process {}: {}", file.display(), e);
+                        }
+                    }
+                }
+
+                pb.inc(1);
+                pb.set_message(format!("Processing: {}", file_name));
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all tasks to complete
+        for handle in handles {
+            if let Err(e) = handle.await {
+                errors.fetch_add(1, Ordering::Relaxed);
+                eprintln!("Task panic: {:?}", e);
+            }
+        }
+
+        pb.finish_with_message("Processing complete!");
+
+        // Extract final counts
+        processed_count = processed.load(Ordering::Relaxed);
+        skipped_count = skipped.load(Ordering::Relaxed);
+        error_count = errors.load(Ordering::Relaxed);
     }
-
-    pb.finish_with_message("Processing complete!");
-
-    // Extract final counts
-    let processed_count = processed_count.load(Ordering::Relaxed);
-    let skipped_count = skipped_count.load(Ordering::Relaxed);
-    let error_count = error_count.load(Ordering::Relaxed);
 
     // Print summary
     if dry_run {

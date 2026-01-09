@@ -212,8 +212,10 @@ pub async fn execute(
             ));
 
             // Create pipeline for background processing
-            let pipeline =
-                factories::create_pipeline(storage_client.clone(), &config, false).await?;
+            let note_store = storage_handle
+                .note_store()
+                .ok_or_else(|| anyhow::anyhow!("Storage mode does not support background indexing"))?;
+            let pipeline = factories::create_pipeline(note_store, &config, false).await?;
 
             let files_to_process = sync_status.files_to_process();
             let bg_pipeline = Arc::new(pipeline);
@@ -252,15 +254,16 @@ pub async fn execute(
             Some(progress)
         } else {
             // All files up to date, still spawn watch
-            let pipeline =
-                factories::create_pipeline(storage_client.clone(), &config, false).await?;
-            let watch_config = config.clone();
-            let watch_pipeline = Arc::new(pipeline);
-            tokio::spawn(async move {
-                if let Err(e) = spawn_background_watch(watch_config, watch_pipeline).await {
-                    tracing::error!("Background watch failed: {}", e);
-                }
-            });
+            if let Some(note_store) = storage_handle.note_store() {
+                let pipeline = factories::create_pipeline(note_store, &config, false).await?;
+                let watch_config = config.clone();
+                let watch_pipeline = Arc::new(pipeline);
+                tokio::spawn(async move {
+                    if let Err(e) = spawn_background_watch(watch_config, watch_pipeline).await {
+                        tracing::error!("Background watch failed: {}", e);
+                    }
+                });
+            }
             None
         }
     } else {
@@ -421,8 +424,10 @@ async fn run_deferred_chat(
                 pending
             ));
 
-            let pipeline =
-                factories::create_pipeline(storage_client.clone(), &config, false).await?;
+            let note_store = storage_handle
+                .note_store()
+                .ok_or_else(|| anyhow::anyhow!("Storage mode does not support NoteStore"))?;
+            let pipeline = factories::create_pipeline(note_store, &config, false).await?;
 
             let files_to_process = sync_status.files_to_process();
             let bg_pipeline = Arc::new(pipeline);
@@ -458,8 +463,10 @@ async fn run_deferred_chat(
             info!("Background processing spawned for {} files", pending);
             Some(progress)
         } else {
-            let pipeline =
-                factories::create_pipeline(storage_client.clone(), &config, false).await?;
+            let note_store = storage_handle
+                .note_store()
+                .ok_or_else(|| anyhow::anyhow!("Storage mode does not support NoteStore"))?;
+            let pipeline = factories::create_pipeline(note_store, &config, false).await?;
             let watch_config = config.clone();
             let watch_pipeline = Arc::new(pipeline);
             tokio::spawn(async move {
