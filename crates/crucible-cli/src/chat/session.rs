@@ -66,6 +66,8 @@ pub struct ChatSessionConfig {
     pub default_selection: Option<AgentSelection>,
     /// Session ID to resume from (loads existing conversation history)
     pub resume_session_id: Option<String>,
+    /// Kiln path for session storage (if None, uses core config kiln_path)
+    pub session_kiln_path: Option<std::path::PathBuf>,
 }
 
 impl Default for ChatSessionConfig {
@@ -78,6 +80,7 @@ impl Default for ChatSessionConfig {
             agent_name: None,
             default_selection: None,
             resume_session_id: None,
+            session_kiln_path: None,
         }
     }
 }
@@ -97,6 +100,7 @@ impl ChatSessionConfig {
             agent_name: None,
             default_selection: None,
             resume_session_id: None,
+            session_kiln_path: None,
         }
     }
 
@@ -127,6 +131,15 @@ impl ChatSessionConfig {
     /// session and prepopulate the conversation view.
     pub fn with_resume_session(mut self, session_id: impl Into<String>) -> Self {
         self.resume_session_id = Some(session_id.into());
+        self
+    }
+
+    /// Set the kiln path for session storage.
+    ///
+    /// When set, sessions will be saved to this kiln. If not set, falls back
+    /// to the kiln_path from the core config.
+    pub fn with_session_kiln(mut self, kiln_path: std::path::PathBuf) -> Self {
+        self.session_kiln_path = Some(kiln_path);
         self
     }
 
@@ -389,7 +402,6 @@ impl ChatSession {
 
         // Create and run TUI with factory
         let registry = std::sync::Arc::new(self.command_registry.clone());
-        let kiln_path = self.core.config().kiln_path.clone();
         let mut runner = RatatuiRunner::new(
             &self.config.initial_mode_id,
             popup_provider.clone(),
@@ -403,7 +415,12 @@ impl ChatSession {
             .with_kiln_context(self.core.clone());
 
         // Set up session logging to persist chat events
-        runner.with_session_logger(kiln_path);
+        // Only enabled if session_kiln_path is explicitly set (validated by select_session_kiln)
+        if let Some(kiln_path) = self.config.session_kiln_path.clone() {
+            runner.with_session_logger(kiln_path);
+        }
+        // If no session_kiln_path is configured, session logging is disabled
+        // (the kiln path was either invalid or not configured)
 
         // Set default selection if pre-specified (skips picker first time, allows /new restart)
         if let Some(selection) = self.config.default_selection.clone() {
