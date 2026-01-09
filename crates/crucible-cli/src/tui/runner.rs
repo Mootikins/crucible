@@ -230,6 +230,7 @@ fn apply_selection_highlight(
 use crate::chat::slash_registry::SlashCommandRegistry;
 use crate::session_logger::SessionLogger;
 use crate::tui::agent_picker::AgentSelection;
+use crate::tui::inline_printer::InlinePrinter;
 use crate::tui::notification::NotificationLevel;
 use crate::tui::paste_handler::{
     build_indicator_delete, build_message_with_pastes, PasteHandler, PastedContent,
@@ -238,7 +239,7 @@ use crate::tui::session_commands;
 use crate::tui::streaming_channel::{create_streaming_channel, StreamingEvent, StreamingTask};
 
 use crate::tui::components::generic_popup::PopupState;
-use crate::tui::conversation::StatusKind;
+use crate::tui::conversation::{ConversationItem, StatusKind};
 use crate::tui::conversation_view::{ConversationView, RatatuiView};
 use crate::tui::state::{find_word_start_backward, find_word_start_forward, PopupKind};
 use crate::tui::{
@@ -265,11 +266,26 @@ use crucible_core::traits::chat::AgentHandle;
 use crucible_core::InteractionRegistry;
 use crucible_rune::EventRing;
 use once_cell::sync::Lazy;
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{backend::CrosstermBackend, Terminal, TerminalOptions, Viewport};
 use regex::Regex;
 use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/// Height of inline viewport in lines.
+///
+/// Must be tall enough for:
+/// - Streaming preview area (~5-6 lines)
+/// - Popup/command palette (~5-8 lines)
+/// - Input box (3 lines)
+/// - Status line (1 line)
+///
+/// Total: ~15 lines minimum
+const INLINE_VIEWPORT_HEIGHT: u16 = 15;
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -342,6 +358,23 @@ pub struct RatatuiRunner {
     history_manager: crate::tui::history_manager::HistoryManager,
     /// Input mode subsystem manager
     input_mode_manager: crate::tui::input_mode_manager::InputModeManager,
+
+    // =============================================================================
+    // Inline viewport mode (native terminal scrollback)
+    // =============================================================================
+    /// Whether to use inline viewport mode (default: true)
+    ///
+    /// In inline mode:
+    /// - Uses native terminal scrollback for completed messages
+    /// - Small viewport (15 lines) at bottom for streaming + input
+    /// - Completed messages graduate to scrollback via insert_before()
+    ///
+    /// In fullscreen mode (legacy):
+    /// - Uses alternate screen buffer
+    /// - All history managed in ratatui viewport
+    inline_mode: bool,
+    /// Printer for inline mode scrollback output
+    inline_printer: InlinePrinter,
 }
 
 // ============================================================================
@@ -392,6 +425,9 @@ impl RatatuiRunner {
             selection_manager: crate::tui::selection_manager::SelectionManager::new(),
             history_manager: crate::tui::history_manager::HistoryManager::new(),
             input_mode_manager: crate::tui::input_mode_manager::InputModeManager::new(),
+            // Inline mode (default enabled)
+            inline_mode: true,
+            inline_printer: InlinePrinter::new(),
         })
     }
 
@@ -445,6 +481,19 @@ impl RatatuiRunner {
     /// When set, `/search` command performs semantic search directly.
     pub fn with_kiln_context(&mut self, ctx: Arc<crate::core_facade::KilnContext>) -> &mut Self {
         self.kiln_context = Some(ctx);
+        self
+    }
+
+    /// Use fullscreen mode instead of inline viewport.
+    ///
+    /// In fullscreen mode:
+    /// - Uses alternate screen buffer (traditional TUI)
+    /// - All history managed in ratatui viewport
+    /// - Supports all animations and dynamic updates
+    ///
+    /// Default is inline mode which uses native terminal scrollback.
+    pub fn with_fullscreen_mode(&mut self) -> &mut Self {
+        self.inline_mode = false;
         self
     }
 
@@ -620,6 +669,17 @@ impl RatatuiRunner {
 
                         streaming_complete = true;
 
+                        // Graduate assistant message to scrollback (inline mode)
+                        // Find the last assistant message blocks
+                        if self.inline_mode {
+                            for item in self.view.state().conversation.items().iter().rev() {
+                                if let ConversationItem::AssistantMessage { blocks, .. } = item {
+                                    self.graduate_assistant_message(blocks);
+                                    break;
+                                }
+                            }
+                        }
+
                         // Flush accumulated assistant message to session log
                         if let Some(logger) = &self.session_logger {
                             let logger = logger.clone();
@@ -676,8 +736,11 @@ impl RatatuiRunner {
                         error,
                     } => {
                         // Update tool display with completion status
-                        if let Some(err) = &error {
+                        let tool_status = if let Some(err) = &error {
                             self.view.error_tool(&name, err);
+                            crate::tui::conversation::ToolStatus::Error {
+                                message: err.clone(),
+                            }
                         } else {
                             // Truncate result for summary (max 50 chars)
                             let summary = if result.len() > 50 {
@@ -687,8 +750,12 @@ impl RatatuiRunner {
                             } else {
                                 None
                             };
-                            self.view.complete_tool(&name, summary);
-                        }
+                            self.view.complete_tool(&name, summary.clone());
+                            crate::tui::conversation::ToolStatus::Complete { summary }
+                        };
+
+                        // Graduate tool result to scrollback (inline mode)
+                        self.graduate_tool_result(&name, &tool_status);
 
                         // Clear status (tool is done)
                         self.view.clear_status();
@@ -1022,6 +1089,10 @@ impl RatatuiRunner {
 
                 // Add user message to view
                 self.view.push_user_message(&msg)?;
+
+                // Graduate user message to scrollback (inline mode)
+                self.graduate_user_message(&msg);
+
                 debug!(prompt = %msg, "User message sent");
 
                 // Log user message to session (creates session on first message)
@@ -2033,6 +2104,49 @@ impl RatatuiRunner {
     }
 
     // ========================================================================
+    // INLINE MODE HELPERS
+    // ========================================================================
+
+    /// Graduate a user message to terminal scrollback (inline mode only).
+    ///
+    /// Prints the message above the viewport using InlinePrinter.
+    /// In fullscreen mode, this is a no-op.
+    fn graduate_user_message(&self, content: &str) {
+        if !self.inline_mode {
+            return;
+        }
+        if let Err(e) = self.inline_printer.print_user_message(content) {
+            tracing::warn!("Failed to print user message to scrollback: {}", e);
+        }
+    }
+
+    /// Graduate an assistant message to terminal scrollback (inline mode only).
+    ///
+    /// Prints the completed message above the viewport using InlinePrinter.
+    /// In fullscreen mode, this is a no-op.
+    fn graduate_assistant_message(&self, blocks: &[StreamBlock]) {
+        if !self.inline_mode {
+            return;
+        }
+        if let Err(e) = self.inline_printer.print_assistant_message(blocks) {
+            tracing::warn!("Failed to print assistant message to scrollback: {}", e);
+        }
+    }
+
+    /// Graduate a tool result to terminal scrollback (inline mode only).
+    ///
+    /// Prints the tool result above the viewport using InlinePrinter.
+    /// In fullscreen mode, this is a no-op.
+    fn graduate_tool_result(&self, name: &str, status: &crate::tui::conversation::ToolStatus) {
+        if !self.inline_mode {
+            return;
+        }
+        if let Err(e) = self.inline_printer.print_tool_result(name, status) {
+            tracing::warn!("Failed to print tool result to scrollback: {}", e);
+        }
+    }
+
+    // ========================================================================
     // COMMAND EXECUTION (REPL, Shell, Editor)
     // ========================================================================
 
@@ -2410,15 +2524,36 @@ impl RatatuiRunner {
         // that extracts actual text content, not terminal cells
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        execute!(
-            stdout,
-            EnterAlternateScreen,
-            EnableMouseCapture,
-            EnableBracketedPaste
-        )?;
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
+
+        // Setup terminal based on mode
+        let mut terminal = if self.inline_mode {
+            // Inline mode: small viewport at bottom, native scrollback above
+            execute!(stdout, EnableMouseCapture, EnableBracketedPaste)?;
+            let backend = CrosstermBackend::new(stdout);
+            Terminal::with_options(
+                backend,
+                TerminalOptions {
+                    viewport: Viewport::Inline(INLINE_VIEWPORT_HEIGHT),
+                },
+            )?
+        } else {
+            // Fullscreen mode: traditional alternate screen
+            execute!(
+                stdout,
+                EnterAlternateScreen,
+                EnableMouseCapture,
+                EnableBracketedPaste
+            )?;
+            let backend = CrosstermBackend::new(stdout);
+            Terminal::new(backend)?
+        };
         terminal.clear()?;
+
+        // Update inline printer width
+        if self.inline_mode {
+            let (width, _) = size().unwrap_or((80, 24));
+            self.inline_printer.update_width(width);
+        }
 
         // Get initial selection (use default or discover first available ACP agent)
         let initial_selection = match self.default_selection.take() {
@@ -2506,13 +2641,24 @@ impl RatatuiRunner {
 
         // Cleanup terminal
         disable_raw_mode()?;
-        execute!(
-            terminal.backend_mut(),
-            DisableMouseCapture,
-            DisableBracketedPaste,
-            LeaveAlternateScreen,
-            cursor::Show
-        )?;
+        if self.inline_mode {
+            // Inline mode: just restore cursor and disable mouse (no alternate screen to leave)
+            execute!(
+                terminal.backend_mut(),
+                DisableMouseCapture,
+                DisableBracketedPaste,
+                cursor::Show
+            )?;
+        } else {
+            // Fullscreen mode: leave alternate screen
+            execute!(
+                terminal.backend_mut(),
+                DisableMouseCapture,
+                DisableBracketedPaste,
+                LeaveAlternateScreen,
+                cursor::Show
+            )?;
+        }
 
         // Report saved session (after leaving alternate screen so user sees it)
         if let Some(session_id) = saved_session_id {

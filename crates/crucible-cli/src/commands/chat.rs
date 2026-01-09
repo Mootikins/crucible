@@ -89,6 +89,7 @@ pub async fn execute(
     max_context_tokens: usize,
     env_overrides: Vec<String>,
     resume_session_id: Option<String>,
+    fullscreen: bool,
 ) -> Result<()> {
     // Determine initial mode
     let initial_mode = if read_only { "plan" } else { "act" };
@@ -169,6 +170,7 @@ pub async fn execute(
             status,
             preselected_agent,
             resume_session_id,
+            fullscreen,
         )
         .await;
     }
@@ -430,6 +432,8 @@ async fn run_deferred_chat(
     preselected_agent: Option<AgentSelection>,
     // Session ID to resume from (loads existing conversation context)
     resume_session_id: Option<String>,
+    // Use fullscreen mode (alternate screen) instead of inline viewport
+    fullscreen: bool,
 ) -> Result<()> {
     use crate::chat::{ChatSession, ChatSessionConfig};
 
@@ -561,6 +565,9 @@ async fn run_deferred_chat(
         info!("Will resume session: {}", session_id);
         session_config = session_config.with_resume_session(session_id);
     }
+
+    // Configure viewport mode
+    session_config = session_config.with_fullscreen(fullscreen);
 
     let mut session = ChatSession::new(session_config, core.clone(), None);
 

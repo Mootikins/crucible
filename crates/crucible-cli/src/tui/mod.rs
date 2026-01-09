@@ -21,6 +21,7 @@ pub mod geometry;
 pub mod help;
 pub mod help_assets;
 pub mod history_manager;
+pub mod inline_printer;
 pub mod input;
 pub mod input_mode_manager;
 pub mod interaction;

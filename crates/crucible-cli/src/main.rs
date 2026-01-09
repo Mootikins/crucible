@@ -271,6 +271,7 @@ async fn main() -> Result<()> {
             no_context,
             context_size,
             act,
+            fullscreen,
         }) => {
             commands::chat::execute(
                 config,
@@ -283,8 +284,9 @@ async fn main() -> Result<()> {
                 internal,
                 provider,
                 max_context,
-                env,    // Pass env vars to agent spawning
-                resume, // Session ID to resume
+                env,        // Pass env vars to agent spawning
+                resume,     // Session ID to resume
+                fullscreen, // Use fullscreen mode instead of inline viewport
             )
             .await?
         }
@@ -378,6 +380,7 @@ async fn main() -> Result<()> {
                 16384,          // default max_context = 16384
                 vec![],         // No env overrides
                 None,           // No session to resume
+                false,          // fullscreen = false (use inline mode by default)
             )
             .await?
         }

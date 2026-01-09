@@ -291,6 +291,7 @@ async fn resume(config: CliConfig, id: String) -> Result<()> {
         16384,    // max_context_tokens
         vec![],   // env_overrides
         Some(id), // resume_session_id
+        false,    // fullscreen = false (use inline mode by default)
     )
     .await
 }
