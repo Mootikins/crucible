@@ -1,0 +1,28 @@
+---
+source: crates/crucible-cli/src/tui/testing/code_block_tests.rs
+expression: render_conversation(&state)
+---
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ > Compare languages                                                            
+                                                                                
+ ● Python:                                                                      
+   print("Hello")                                                               
+   Rust:                                                                        
+   println!("Hello");
