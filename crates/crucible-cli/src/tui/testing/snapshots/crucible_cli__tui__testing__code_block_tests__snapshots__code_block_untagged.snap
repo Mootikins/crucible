@@ -1,12 +1,7 @@
 ---
 source: crates/crucible-cli/src/tui/testing/code_block_tests.rs
-expression: render_conversation(&state)
+expression: h.render()
 ---
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
                                                                                 
                                                                                 
                                                                                 
@@ -25,4 +20,9 @@ expression: render_conversation(&state)
  ● Here's the output:                                                           
    Some plain output                                                            
    line 2                                                                       
-   line 3
+   line 3                                                                       
+                                                                                
+                                                                                
+ >                                                                              
+                                                                                
+▸ Plan │ Ready

@@ -5,49 +5,10 @@
 
 use super::fixtures::sessions;
 use super::{Harness, TEST_HEIGHT, TEST_WIDTH};
-use crate::tui::conversation::ConversationState;
 use insta::assert_snapshot;
-use ratatui::backend::TestBackend;
-use ratatui::Terminal;
 
 // =============================================================================
-// Helper Functions
-// =============================================================================
-
-fn render_conversation(state: &ConversationState) -> String {
-    use crate::tui::components::SessionHistoryWidget;
-    use ratatui::widgets::Widget;
-
-    let backend = TestBackend::new(TEST_WIDTH, TEST_HEIGHT);
-    let mut terminal = Terminal::new(backend).unwrap();
-    terminal
-        .draw(|f| {
-            let widget = SessionHistoryWidget::new(state).viewport_height(TEST_HEIGHT);
-            f.render_widget(widget, f.area());
-        })
-        .unwrap();
-
-    let buffer = terminal.backend().buffer();
-    buffer_to_string(buffer)
-}
-
-fn buffer_to_string(buffer: &ratatui::buffer::Buffer) -> String {
-    let mut output = String::new();
-    let area = buffer.area;
-
-    for y in area.top()..area.bottom() {
-        for x in area.left()..area.right() {
-            if let Some(cell) = buffer.cell((x, y)) {
-                output.push_str(cell.symbol());
-            }
-        }
-        output.push('\n');
-    }
-    output
-}
-
-// =============================================================================
-// Snapshot Tests - Table Rendering
+// Snapshot Tests - Table Rendering via Harness
 // =============================================================================
 
 mod snapshots {
@@ -82,41 +43,6 @@ mod snapshots {
     fn table_with_code_blocks() {
         let h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::with_table_and_code());
         assert_snapshot!("table_with_code", h.render());
-    }
-}
-
-// =============================================================================
-// Widget-Level Tests
-// =============================================================================
-
-mod widget_tests {
-    use super::*;
-
-    #[test]
-    fn table_renders_via_widget() {
-        let mut state = ConversationState::new();
-        for item in sessions::with_table() {
-            state.push(item);
-        }
-        assert_snapshot!("widget_table_simple", render_conversation(&state));
-    }
-
-    #[test]
-    fn wide_table_via_widget() {
-        let mut state = ConversationState::new();
-        for item in sessions::with_wide_table() {
-            state.push(item);
-        }
-        assert_snapshot!("widget_table_wide", render_conversation(&state));
-    }
-
-    #[test]
-    fn multiple_tables_via_widget() {
-        let mut state = ConversationState::new();
-        for item in sessions::with_multiple_tables() {
-            state.push(item);
-        }
-        assert_snapshot!("widget_table_multiple", render_conversation(&state));
     }
 }
 

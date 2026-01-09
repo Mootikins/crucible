@@ -1,12 +1,7 @@
 ---
 source: crates/crucible-cli/src/tui/testing/code_block_tests.rs
-expression: render_conversation(&state)
+expression: h.render()
 ---
- > Generate struct                                                              
-                                                                                
- ● struct Data {                                                                
-       field_1: i32,                                                            
-       field_2: i32,                                                            
        field_3: i32,                                                            
        field_4: i32,                                                            
        field_5: i32,                                                            
@@ -25,4 +20,9 @@ expression: render_conversation(&state)
        field_18: i32,                                                           
        field_19: i32,                                                           
        field_20: i32,                                                           
-   }
+   }                                                                            
+                                                                                
+                                                                                
+ >                                                                              
+                                                                                
+▸ Plan │ Ready
