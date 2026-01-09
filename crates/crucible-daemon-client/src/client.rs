@@ -645,17 +645,38 @@ impl DaemonClient {
         .await
     }
 
-    /// Resume a session from storage
+    /// Resume a session from storage with optional pagination for history
     pub async fn session_resume_from_storage(
         &self,
         session_id: &str,
         kiln: &Path,
+        limit: Option<usize>,
+        offset: Option<usize>,
     ) -> Result<serde_json::Value> {
+        let mut params = serde_json::json!({
+            "session_id": session_id,
+            "kiln": kiln.to_string_lossy()
+        });
+
+        if let Some(l) = limit {
+            params["limit"] = serde_json::json!(l);
+        }
+        if let Some(o) = offset {
+            params["offset"] = serde_json::json!(o);
+        }
+
+        self.call("session.resume_from_storage", params).await
+    }
+
+    /// Request compaction for a session
+    ///
+    /// Sets the session state to Compacting. The actual summarization
+    /// is performed by the agent.
+    pub async fn session_compact(&self, session_id: &str) -> Result<serde_json::Value> {
         self.call(
-            "session.resume_from_storage",
+            "session.compact",
             serde_json::json!({
-                "session_id": session_id,
-                "kiln": kiln.to_string_lossy()
+                "session_id": session_id
             }),
         )
         .await
