@@ -47,6 +47,17 @@ impl FolderDiscovery {
         }
     }
 
+    /// Create a FolderDiscovery with default search paths
+    ///
+    /// Searches:
+    /// - `~/.config/crucible/skills/` (personal)
+    /// - `<workspace>/.<agent>/skills/` for each known agent (workspace)
+    /// - `<kiln>/skills/` if kiln path provided (kiln)
+    pub fn with_default_paths(workspace: &Path, kiln: Option<&Path>) -> Self {
+        let paths = default_discovery_paths(Some(workspace), kiln);
+        Self::new(paths)
+    }
+
     pub fn discover(&self) -> SkillResult<HashMap<String, ResolvedSkill>> {
         let mut resolved: HashMap<String, ResolvedSkill> = HashMap::new();
 

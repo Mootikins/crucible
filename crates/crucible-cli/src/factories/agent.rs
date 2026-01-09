@@ -252,6 +252,31 @@ pub async fn create_internal_agent(
         });
     prompt_builder = prompt_builder.with_project_rules_hierarchical(&workspace_root, &rules_files);
 
+    // Skill context injection (eager mode)
+    // Discover skills from standard paths and inject descriptions into context
+    let skill_discovery = crucible_skills::FolderDiscovery::with_default_paths(&workspace_root, None);
+    match skill_discovery.discover() {
+        Ok(skills) if !skills.is_empty() => {
+            let skill_context = crucible_skills::format_skills_for_context(&skills);
+            debug!(
+                "Injecting {} skills into context ({} chars)",
+                skills.len(),
+                skill_context.len()
+            );
+            prompt_builder.add_layer(
+                crucible_context::priorities::SKILL,
+                "skills",
+                skill_context,
+            );
+        }
+        Ok(_) => {
+            debug!("No skills found in default paths");
+        }
+        Err(e) => {
+            tracing::warn!("Skill discovery failed, continuing without skills: {}", e);
+        }
+    }
+
     let system_prompt = prompt_builder.build();
 
     let agent_config = crucible_rig::AgentConfig::new(&model, &system_prompt);
