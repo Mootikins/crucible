@@ -1,0 +1,28 @@
+---
+source: crates/crucible-cli/src/tui/testing/code_block_tests.rs
+expression: render_conversation(&state)
+---
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ > Show me Rust                                                                 
+                                                                                
+ ● Here's an example:                                                           
+   fn main() {                                                                  
+       println!("Hello!");                                                      
+   }

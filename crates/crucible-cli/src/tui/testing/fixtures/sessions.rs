@@ -240,6 +240,70 @@ pub fn mixed_tool_results() -> Vec<ConversationItem> {
     ]
 }
 
+// =============================================================================
+// Code Block Scenarios
+// =============================================================================
+
+/// Session with a Rust code block
+pub fn with_rust_code() -> Vec<ConversationItem> {
+    vec![
+        user("Show me Rust"),
+        assistant_blocks(vec![
+            StreamBlock::prose("Here's an example:"),
+            StreamBlock::code(
+                Some("rust".to_string()),
+                "fn main() {\n    println!(\"Hello!\");\n}",
+            ),
+        ]),
+    ]
+}
+
+/// Session with multiple code blocks in different languages
+pub fn with_multi_lang_code() -> Vec<ConversationItem> {
+    vec![
+        user("Compare languages"),
+        assistant_blocks(vec![
+            StreamBlock::prose("Python:"),
+            StreamBlock::code(Some("python".to_string()), "print(\"Hello\")"),
+            StreamBlock::prose("Rust:"),
+            StreamBlock::code(Some("rust".to_string()), "println!(\"Hello\");"),
+        ]),
+    ]
+}
+
+/// Session with a long code block (20 lines)
+pub fn with_long_code() -> Vec<ConversationItem> {
+    let lines: String = (1..=20)
+        .map(|i| format!("    field_{}: i32,\n", i))
+        .collect();
+    vec![
+        user("Generate struct"),
+        assistant_blocks(vec![StreamBlock::code(
+            Some("rust".to_string()),
+            format!("struct Data {{\n{}}}", lines),
+        )]),
+    ]
+}
+
+/// Session with code block without language tag
+pub fn with_untagged_code() -> Vec<ConversationItem> {
+    vec![
+        user("Show output"),
+        assistant_blocks(vec![
+            StreamBlock::prose("Here's the output:"),
+            StreamBlock::code(None, "Some plain output\nline 2\nline 3"),
+        ]),
+    ]
+}
+
+/// Session with inline code in prose (backticks)
+pub fn with_inline_code() -> Vec<ConversationItem> {
+    vec![
+        user("What is println?"),
+        assistant("The `println!` macro prints to stdout. Use it like `println!(\"Hello\")`"),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
