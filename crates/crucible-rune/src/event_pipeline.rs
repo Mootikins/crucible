@@ -1,10 +1,10 @@
-//! Event pipeline for processing events through Rune plugin hooks
+//! Event pipeline for processing events through Rune plugin handlers
 //!
-//! The pipeline receives events, finds matching hooks, and executes
+//! The pipeline receives events, finds matching handlers, and executes
 //! handler functions in sequence. Handlers can modify events or pass
 //! them through unchanged.
 //!
-//! Note: Rune VMs are not Send, so hook execution is done on a dedicated
+//! Note: Rune VMs are not Send, so handler execution is done on a dedicated
 //! thread pool via spawn_blocking.
 
 use crate::events::ToolResultEvent;
@@ -14,11 +14,11 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
-/// Pipeline for processing events through registered plugin hooks
+/// Pipeline for processing events through registered plugin handlers
 ///
 /// This struct is Send + Sync safe. Rune execution happens on blocking threads.
 pub struct EventPipeline {
-    /// Plugin loader containing registered hooks
+    /// Plugin loader containing registered handlers
     loader: Arc<RwLock<PluginLoader>>,
 }
 
@@ -33,25 +33,25 @@ impl EventPipeline {
         Self { loader }
     }
 
-    /// Process a tool result event through all matching hooks
+    /// Process a tool result event through all matching handlers
     ///
-    /// Hooks are executed in order. Each hook receives the event and can:
-    /// - Return the modified event (will be passed to next hook)
+    /// Handlers are executed in order. Each handler receives the event and can:
+    /// - Return the modified event (will be passed to next handler)
     /// - Return null/unit to pass through unchanged
     ///
-    /// If a hook errors, the event passes through unchanged and processing continues.
+    /// If a handler errors, the event passes through unchanged and processing continues.
     ///
     /// Note: Rune execution happens on a blocking thread pool since Rune VMs are not Send.
     pub async fn process_tool_result(
         &self,
         event: ToolResultEvent,
     ) -> Result<ToolResultEvent, RuneError> {
-        // First, check if there are any matching hooks (this is Send-safe)
+        // First, check if there are any matching handlers (this is Send-safe)
         let hooks_info: Vec<(String, std::path::PathBuf)> = {
             let loader = self.loader.read().await;
             let hooks = loader.get_matching_hooks("tool_result", &event.tool_name);
             if hooks.is_empty() {
-                debug!("No hooks match tool_result:{}", event.tool_name);
+                debug!("No handlers match tool_result:{}", event.tool_name);
                 return Ok(event);
             }
             hooks
