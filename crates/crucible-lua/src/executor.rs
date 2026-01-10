@@ -3,6 +3,7 @@
 //! Executes Lua (and Fennel) scripts with async support and
 //! optional thread safety via the `send` feature.
 
+use crate::ask::register_ask_module;
 use crate::error::LuaError;
 #[cfg(feature = "fennel")]
 use crate::fennel::FennelCompiler;
@@ -104,6 +105,9 @@ impl LuaExecutor {
         crucible.set("json_decode", json_decode)?;
 
         globals.set("crucible", crucible)?;
+
+        // Register ask module for user interaction
+        register_ask_module(lua)?;
 
         Ok(())
     }
