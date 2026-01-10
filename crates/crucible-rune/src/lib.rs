@@ -44,6 +44,7 @@ mod event_pipeline;
 mod event_ring;
 mod events;
 mod executor;
+mod fs_module;
 mod graph_module;
 pub mod handler;
 pub mod handler_chain;
@@ -58,6 +59,7 @@ pub mod mcp_types;
 pub mod note_events;
 mod oq_module;
 mod panel_module;
+mod paths_module;
 pub mod persistence_handler;
 mod plugin_loader;
 mod plugin_types;
@@ -103,6 +105,7 @@ pub use events::{
     ContentBlock, CrucibleEvent, EnrichedRecipe, RecipeEnrichment, RecipeParameter, ToolResultEvent,
 };
 pub use executor::RuneExecutor;
+pub use fs_module::{fs_module, RuneFsError};
 pub use graph_module::{
     graph_module, graph_module_with_all, graph_module_with_executor, graph_module_with_stores,
     register_graph_view_functions, register_note_functions,
@@ -134,6 +137,7 @@ pub use note_events::{
 };
 pub use oq_module::oq_module;
 pub use panel_module::{panel_module, RunePanel, RunePanelHints, RunePanelItem, RunePanelResult};
+pub use paths_module::{paths_module, PathsContext, RunePathsError};
 pub use persistence_handler::PersistenceHandler;
 pub use plugin_loader::PluginLoader;
 pub use plugin_types::{HookConfig, PluginManifest, RegisteredHook};
