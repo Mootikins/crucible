@@ -124,6 +124,10 @@ pub struct ViewState {
     pub horizontal_scroll_offset: usize,
     /// Width of the focused wide item's content (for scroll bounds)
     pub focused_item_width: usize,
+    /// Current provider name (for status bar)
+    pub provider: String,
+    /// Current model name (for status bar)
+    pub model: String,
 }
 
 impl ViewState {
@@ -148,6 +152,8 @@ impl ViewState {
             focused_wide_item: None,
             horizontal_scroll_offset: 0,
             focused_item_width: 0,
+            provider: "ollama".to_string(),
+            model: "llama3.2".to_string(),
         }
     }
 
@@ -392,7 +398,8 @@ impl RatatuiView {
 
         // Status bar with notification support
         let notification = self.state.notifications.current();
-        let mut status_widget = StatusBarWidget::new(&self.state.mode_id, &self.state.status_text);
+        let mut status_widget = StatusBarWidget::new(&self.state.mode_id, &self.state.status_text)
+            .provider_model(&self.state.provider, &self.state.model);
         if let Some(count) = self.state.token_count {
             status_widget = status_widget.token_count(count);
         }
