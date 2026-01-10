@@ -2270,7 +2270,10 @@ impl RatatuiRunner {
             }
             "provider" | "p" | "providers" => {
                 if args.is_empty() {
-                    // Show available providers with current selection
+                    // Show available providers and detected ACP agents
+                    self.view.set_status_text("Detecting providers...");
+
+                    // LLM providers section
                     let current = &self.runtime_config.provider.to_lowercase();
                     let providers = ["ollama", "openai", "anthropic"];
                     let provider_list = providers.iter()
@@ -2283,11 +2286,30 @@ impl RatatuiRunner {
                         })
                         .collect::<Vec<_>>()
                         .join("\n");
+
+                    // Probe for ACP agents
+                    let acp_agents = crucible_acp::probe_all_agents().await;
+                    let available_agents: Vec<_> = acp_agents.iter()
+                        .filter(|a| a.available)
+                        .collect();
+
+                    let agent_section = if available_agents.is_empty() {
+                        String::new()
+                    } else {
+                        let agent_list = available_agents.iter()
+                            .map(|a| format!("  • {} - {}", a.name, a.description))
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        format!("\n\nACP Agents (detected):\n{}", agent_list)
+                    };
+
                     let content = format!(
-                        "Available providers:\n\n{}\n\nUse :provider <name> to switch",
-                        provider_list
+                        "LLM Providers:\n{}{}\n\nUse :provider <name> to switch",
+                        provider_list,
+                        agent_section
                     );
                     self.view.push_dialog(crate::tui::dialog::DialogState::info("Providers", content));
+                    self.view.set_status_text("Ready");
                 } else {
                     // Set new provider
                     match args.to_lowercase().as_str() {
