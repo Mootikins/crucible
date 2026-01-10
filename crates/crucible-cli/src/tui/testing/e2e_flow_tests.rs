@@ -9,7 +9,7 @@
 //! 3. Snapshot the result to verify visual correctness
 
 use super::fixtures::{events, registries, sessions};
-use super::{Harness, TEST_HEIGHT, TEST_WIDTH};
+use super::{Harness, StreamingHarness, TEST_HEIGHT, TEST_WIDTH};
 use crate::tui::state::PopupKind;
 use crossterm::event::KeyCode;
 use insta::assert_snapshot;
@@ -193,6 +193,235 @@ mod streaming_response_flow {
 
         assert!(h.has_error());
         assert_snapshot!("e2e_streaming_error", h.render());
+    }
+}
+
+// =============================================================================
+// Graduation Flow - Content overflows viewport → graduates to scrollback
+// =============================================================================
+
+mod graduation_flow {
+    use super::*;
+
+    /// Content that fits in viewport should not graduate
+    #[test]
+    fn no_graduation_when_content_fits() {
+        let mut h = StreamingHarness::inline();
+
+        h.user_message("Hello");
+        h.start_streaming();
+        h.chunk("Short response.");
+        h.complete();
+
+        assert_eq!(h.graduated_line_count(), 0, "nothing should graduate");
+        assert_snapshot!("e2e_graduation_fits", h.full_state());
+    }
+
+    /// Content that overflows during streaming should graduate progressively
+    #[test]
+    fn overflow_graduates_during_streaming() {
+        let mut h = StreamingHarness::inline().with_timeline();
+
+        h.user_message("Tell me a long story");
+        h.start_streaming();
+
+        // First chunk - should fit
+        h.chunk("First paragraph of the response.\n\n");
+        let after_first = h.graduated_line_count();
+
+        // Keep adding paragraphs until we overflow (need lots of content due to wrapping)
+        for i in 1..=20 {
+            h.chunk(&format!(
+                "Paragraph {} with enough text to take up space in the viewport.\n\n",
+                i
+            ));
+        }
+
+        assert!(
+            h.graduated_line_count() > after_first,
+            "overflow should cause graduation: got {} graduated lines",
+            h.graduated_line_count()
+        );
+        assert_snapshot!("e2e_graduation_overflow_mid_stream", h.full_state());
+    }
+
+    /// KEY TEST: Completing stream should NOT graduate additional content
+    #[test]
+    fn complete_does_not_graduate_all() {
+        let mut h = StreamingHarness::inline().with_timeline();
+
+        h.user_message("Hello");
+        h.start_streaming();
+
+        // Add content that definitely overflows (same pattern as overflow test)
+        for i in 1..=20 {
+            h.chunk(&format!(
+                "Paragraph {} with enough text to take up space in the viewport.\n\n",
+                i
+            ));
+        }
+
+        // Verify we have graduated content before completing
+        assert!(
+            h.graduated_line_count() > 0,
+            "should have graduated content before complete"
+        );
+
+        let graduated_before_complete = h.graduated_line_count();
+
+        // Complete streaming
+        h.complete();
+
+        // KEY ASSERTION: completing should NOT graduate more content
+        assert_eq!(
+            h.graduated_line_count(),
+            graduated_before_complete,
+            "completing should not graduate additional content - only overflow graduates"
+        );
+
+        // Viewport should still show recent content, not be empty
+        let viewport = h.harness.render();
+        assert!(
+            viewport.contains("Paragraph 20") || viewport.contains("Paragraph 19"),
+            "recent content should remain visible in viewport"
+        );
+
+        assert_snapshot!("e2e_graduation_after_complete", h.full_state());
+    }
+
+    /// Scrollback should contain graduated content in order
+    #[test]
+    fn scrollback_preserves_order() {
+        let mut h = StreamingHarness::inline();
+
+        h.user_message("Test ordering");
+        h.start_streaming();
+
+        // Generate enough content to overflow (same pattern as other tests)
+        for i in 1..=20 {
+            h.chunk(&format!(
+                "Paragraph {} with enough text to take up space in the viewport.\n\n",
+                i
+            ));
+        }
+        h.complete();
+
+        let scrollback = h.scrollback();
+        assert!(!scrollback.is_empty(), "should have graduated content");
+
+        // Find first non-empty line in scrollback
+        let first_content = scrollback
+            .iter()
+            .find(|s| !s.trim().is_empty())
+            .expect("should have content in scrollback");
+
+        // First content should be early content (user message or paragraph 1)
+        assert!(
+            first_content.contains("Test") || first_content.contains("Paragraph 1"),
+            "scrollback should start with early content, got: {}",
+            first_content
+        );
+
+        assert_snapshot!("e2e_graduation_scrollback_order", h.full_state());
+    }
+}
+
+// =============================================================================
+// Rendering Bug Reproductions - Issues from small-errors.txt
+// =============================================================================
+
+mod rendering_bugs {
+    use super::*;
+
+    /// BUG: User message appears twice in viewport
+    /// From small-errors.txt lines 1,3: "> hi!" appears twice
+    #[test]
+    fn bug_duplicated_user_message() {
+        let mut h = StreamingHarness::inline().with_timeline();
+
+        // User sends single message
+        h.user_message("hi!");
+
+        // Start and complete a response
+        h.start_streaming();
+        h.chunk("Hello! I'm Claude.");
+        h.complete();
+
+        // Verify user message appears exactly once
+        let rendered = h.harness.render();
+        let hi_count = rendered.matches("> hi!").count();
+        assert_eq!(hi_count, 1, "user message should appear exactly once, found {}", hi_count);
+
+        assert_snapshot!("bug_duplicated_user_message", h.full_state());
+    }
+
+    /// BUG: Tool output appears interleaved mid-prose
+    /// From small-errors.txt: tool result hash appears in middle of bullet list
+    #[test]
+    fn bug_interleaved_tool_output() {
+        let mut h = StreamingHarness::inline().with_timeline();
+
+        h.user_message("hi!");
+        h.start_streaming();
+
+        // Stream some prose
+        h.chunk("Hello! I can help you with:\n");
+        h.chunk("- Understanding the project\n");
+
+        // Tool call happens mid-stream
+        h.harness.event(events::tool_call_with_args(
+            "read_file",
+            serde_json::json!({"path": "README.md"}),
+        ));
+        h.harness.event(events::tool_completed_event(
+            "read_file",
+            "# Crucible\n...",
+        ));
+
+        // More prose after tool
+        h.chunk("- Assisting with development\n");
+        h.chunk("- Explaining systems\n");
+        h.complete();
+
+        // Tool output should NOT appear mid-prose
+        let rendered = h.harness.render();
+
+        // The prose bullet points should be contiguous
+        assert_snapshot!("bug_interleaved_tool_output", h.full_state());
+    }
+
+    /// BUG: Tool call indicator appears during prose stream
+    /// From small-errors.txt line 19: "◐ read_file(...)" in middle of response
+    #[test]
+    fn bug_tool_indicator_mid_stream() {
+        let mut h = StreamingHarness::inline().with_timeline();
+
+        h.user_message("hi!");
+        h.start_streaming();
+
+        // Stream initial response
+        h.chunk("Hello! I'm Claude.\n\n");
+        h.chunk("I can help you with:\n");
+
+        // Tool call starts (should show indicator properly, not mid-prose)
+        h.harness.event(events::tool_call_with_args(
+            "read_file",
+            serde_json::json!({"path": "README.md"}),
+        ));
+
+        // More streaming after tool call starts
+        h.chunk("- Project architecture\n");
+
+        // Tool completes
+        h.harness.event(events::tool_completed_event(
+            "read_file",
+            "# Crucible README",
+        ));
+
+        h.complete();
+
+        // Verify proper rendering order
+        assert_snapshot!("bug_tool_indicator_mid_stream", h.full_state());
     }
 }
 
