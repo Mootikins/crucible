@@ -35,6 +35,20 @@ pub enum StreamBlock {
         content: String,
         is_complete: bool,
     },
+    /// Tool call embedded in the assistant message stream
+    Tool {
+        name: String,
+        args: serde_json::Value,
+        status: ToolBlockStatus,
+    },
+}
+
+/// Status of a tool block within a streaming message
+#[derive(Debug, Clone, PartialEq)]
+pub enum ToolBlockStatus {
+    Running,
+    Complete { summary: Option<String> },
+    Error { message: String },
 }
 
 impl StreamBlock {
@@ -72,6 +86,7 @@ impl StreamBlock {
         match self {
             Self::Prose { is_complete, .. } => *is_complete,
             Self::Code { is_complete, .. } => *is_complete,
+            Self::Tool { status, .. } => !matches!(status, ToolBlockStatus::Running),
         }
     }
 
@@ -85,11 +100,17 @@ impl StreamBlock {
         matches!(self, Self::Code { .. })
     }
 
+    /// Check if this is a tool block
+    pub fn is_tool(&self) -> bool {
+        matches!(self, Self::Tool { .. })
+    }
+
     /// Mark the block as complete
     pub fn complete(&mut self) {
         match self {
             Self::Prose { is_complete, .. } => *is_complete = true,
             Self::Code { is_complete, .. } => *is_complete = true,
+            Self::Tool { .. } => {} // Tools are completed via status update
         }
     }
 
@@ -98,6 +119,7 @@ impl StreamBlock {
         match self {
             Self::Prose { text, .. } => text,
             Self::Code { content, .. } => content,
+            Self::Tool { name, .. } => name,
         }
     }
 
@@ -116,6 +138,16 @@ impl StreamBlock {
                 text: ref mut t, ..
             } => t.push_str(text),
             Self::Code { content, .. } => content.push_str(text),
+            Self::Tool { .. } => {} // Tools don't support text append
+        }
+    }
+
+    /// Create a new tool block in running state
+    pub fn tool(name: impl Into<String>, args: serde_json::Value) -> Self {
+        Self::Tool {
+            name: name.into(),
+            args,
+            status: ToolBlockStatus::Running,
         }
     }
 }
