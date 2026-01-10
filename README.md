@@ -17,7 +17,6 @@ Crucible is a local-first AI assistant where **every conversation becomes a sear
 
 **Polyglot Plugins**: Write extensions in the language that fits:
 - **Rune** — Native Rust integration, sandboxed, fastest
-- **Steel** (Scheme) — Contracts with blame tracking, hygienic macros
 - **Lua** — LLM-friendly syntax, Fennel support, gradual types
 
 **Plaintext First**: No proprietary formats. No cloud lock-in. Files are always the source of truth. The database is optional acceleration.
@@ -95,7 +94,6 @@ Define tools and hooks in your preferred language. Place plugin files in `~/.con
 | Language | Extension | Strengths |
 |----------|-----------|-----------|
 | Rune | `.rn` | Native Rust integration, fastest, sandboxed |
-| Steel | `.scm` | Contracts with blame tracking, formal validation |
 | Lua | `.lua`, `.fnl` | Simple syntax, LLM-friendly, Fennel support |
 
 See the [docs](./docs/Help/Concepts/Scripting%20Languages.md) for language guides.
@@ -109,7 +107,6 @@ crucible-tools      MCP server, tool implementations
 crucible-core       Domain logic, traits, parser types
 crucible-surrealdb  Storage with EAV graph schema
 crucible-rune       Rune scripting runtime
-crucible-steel      Steel (Scheme) with contracts
 crucible-lua        Lua/Luau with Fennel support
 crucible-llm        Embedding backends (FastEmbed, Burn, LlamaCpp)
 crucible-rig        LLM chat via Rig (Ollama, OpenAI, Anthropic)

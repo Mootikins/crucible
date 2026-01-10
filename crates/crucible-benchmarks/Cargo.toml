@@ -18,7 +18,6 @@ crucible-lance = { path = "../crucible-lance", optional = true }
 
 # Scripting runtimes (feature-gated)
 crucible-rune = { path = "../crucible-rune", optional = true }
-crucible-steel = { path = "../crucible-steel", optional = true }
 crucible-lua = { path = "../crucible-lua", optional = true }
 rune = { version = "0.14", optional = true }
 
@@ -44,7 +43,6 @@ surrealdb = ["dep:crucible-surrealdb"]
 lance = ["dep:crucible-lance"]
 # Scripting runtime benchmarks
 rune = ["dep:crucible-rune", "dep:rune"]
-steel = ["dep:crucible-steel"]
 lua = ["dep:crucible-lua"]
 
 [lib]

@@ -22,7 +22,6 @@ members = [
     "crates/crucible-skills",
     "crates/crucible-rig",
     "crates/crucible-query",
-    "crates/crucible-steel",
     "crates/zellij-inbox",
     "crates/crucible-lance",
     "crates/crucible-benchmarks",
