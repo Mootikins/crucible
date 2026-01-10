@@ -13,7 +13,7 @@ crucible-config = { path = "../crucible-config" }
 
 # Rune scripting
 rune = "0.14"
-rune-modules = { version = "0.14", features = ["json", "toml"] }
+rune-modules = { version = "0.14", features = ["json", "toml", "http"] }
 
 # Serialization
 serde = { workspace = true }

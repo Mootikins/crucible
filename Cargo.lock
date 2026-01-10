@@ -3732,6 +3732,7 @@ dependencies = [
  "rand 0.9.2",
  "rayon",
  "regex",
+ "reqwest",
  "rmcp",
  "serde",
  "serde_json",
@@ -13618,6 +13619,7 @@ version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f4ef5dc3546042989f4abc70d6b9f707a539d5cbb5cb2fb167f8fbe891e1b64"
 dependencies = [
+ "reqwest",
  "rune",
  "serde_json",
  "toml 0.8.23",

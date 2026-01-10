@@ -66,6 +66,9 @@ rayon = { version = "1.8", optional = true }
 futures = "0.3"
 glob-match = "0.2.1"
 
+# HTTP client for scripting runtimes
+reqwest = { workspace = true }
+
 [features]
 default = ["core"]
 core = []

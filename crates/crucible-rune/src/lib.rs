@@ -71,6 +71,7 @@ mod shell_module;
 mod struct_plugin;
 pub mod tool_events;
 mod types;
+mod http_module;
 
 pub use ask_module::{
     ask_module, ask_module_with_agent, ask_module_with_context, AgentAskContext, AskContext,
@@ -149,6 +150,7 @@ pub use rune_types::{
 };
 pub use session::{Session, SessionBuilder, SessionHandle, SessionState};
 pub use shell_module::{shell_module, shell_module_with_policy};
+pub use http_module::http_module;
 pub use struct_plugin::{
     PluginMetadata, StructPluginHandle, ToolDefinition, ToolParameter, WatchEvent, WatchEventKind,
 };
