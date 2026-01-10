@@ -31,7 +31,7 @@ async fn test_lua_tool_discovery_and_execution() {
     // Create a Lua tool with annotations
     let tool_source = r#"
 --- Add two numbers
--- @tool
+-- @tool handler
 -- @param x number The first number
 -- @param y number The second number
 -- @return number The sum
@@ -68,7 +68,7 @@ async fn test_lua_tool_with_string_operations() {
 
     let tool_source = r#"
 --- String manipulation tool
--- @tool
+-- @tool handler
 -- @param text string The input text
 -- @param mode string Processing mode (upper/lower/reverse)
 function handler(args)
@@ -257,13 +257,13 @@ end
     assert_eq!(search.params[1].name, "limit");
     assert!(search.params[1].param_type.contains("number"));
 
-    // Verify hooks
-    let hooks = parser
-        .parse_hooks(source, Path::new("multi.lua"), false)
+    // Verify handlers
+    let handlers = parser
+        .parse_handlers(source, Path::new("multi.lua"), false)
         .unwrap();
-    assert_eq!(hooks.len(), 1);
-    assert_eq!(hooks[0].event_type, "tool:after");
-    assert_eq!(hooks[0].pattern, "search*");
+    assert_eq!(handlers.len(), 1);
+    assert_eq!(handlers[0].event_type, "tool:after");
+    assert_eq!(handlers[0].pattern, "search*");
 }
 
 #[test]
@@ -297,11 +297,11 @@ fn test_annotation_parser_fennel_syntax() {
     assert_eq!(tools[0].params.len(), 1);
     assert_eq!(tools[0].params[0].name, "n");
 
-    let hooks = parser
-        .parse_hooks(source, Path::new("math.fnl"), true)
+    let handlers = parser
+        .parse_handlers(source, Path::new("math.fnl"), true)
         .unwrap();
-    assert_eq!(hooks.len(), 1);
-    assert_eq!(hooks[0].name, "log_call");
+    assert_eq!(handlers.len(), 1);
+    assert_eq!(handlers[0].name, "log_call");
 }
 
 #[test]
@@ -343,7 +343,7 @@ async fn test_full_pipeline_lua() {
     // Create a tool that uses both JSON and math
     let tool_source = r#"
 --- Process data with transformations
--- @tool
+-- @tool handler
 -- @param data string JSON data to process
 -- @param multiplier number Multiply numbers by this
 function handler(args)
@@ -402,7 +402,7 @@ async fn test_error_handling_in_tools() {
 
     let tool_source = r#"
 --- Tool that may error
--- @tool
+-- @tool handler
 -- @param should_error boolean Whether to throw
 function handler(args)
     if args.should_error then

@@ -7,36 +7,34 @@
 //!
 //! - S-expressions are unambiguous (great for LLM code generation)
 //! - Macros allow users to define DSLs
+//! - Pattern matching built-in
 //! - Compiles to clean Lua with zero runtime overhead
 //!
-//! ## Luau Type Support
-//!
-//! When the `luau` feature is enabled, uses a modified Fennel compiler
-//! that supports type annotations:
+//! ## Example
 //!
 //! ```fennel
-//! (fn add [a :number b :number] :-> number
-//!   (+ a b))
+//! (fn handler [args]
+//!   {:result (+ args.x args.y)})
 //! ```
 //!
-//! Compiles to Luau with types:
+//! Compiles to Lua:
 //! ```lua
-//! local function add(a: number, b: number): number
-//!   return (a + b)
+//! local function handler(args)
+//!   return {result = (args.x + args.y)}
 //! end
 //! ```
 //!
-//! ## Standard Usage
+//! ## Tool Schema Extraction
 //!
-//! ```lua
-//! -- Fennel code
-//! (fn handler [args]
-//!   {:result (+ args.x args.y)})
+//! Use LDoc-style annotations for tool schemas (works with plain Lua too):
 //!
-//! -- Compiles to Lua:
-//! -- function handler(args)
-//! --   return {result = args.x + args.y}
-//! -- end
+//! ```fennel
+//! ;;; Search the knowledge base
+//! ;; @tool
+//! ;; @param query string The search term
+//! ;; @param limit number? Maximum results
+//! (fn search [query limit]
+//!   (kb.search query (or limit 10)))
 //! ```
 
 use crate::error::LuaError;
@@ -46,14 +44,10 @@ use mlua::{Function, Lua};
 #[allow(unused_imports)]
 use mlua::{LuaOptions, StdLib};
 
-/// The bundled Fennel compiler (fennel-luau fork with type annotation support)
+/// The bundled Fennel compiler (~255KB)
 ///
-/// This is the fennel-luau fork (~313KB) which supports `--target luau` for
-/// emitting Luau type annotations. Standard Fennel code compiles normally.
-///
-/// Note: The Fennel compiler requires Lua 5.4 (uses package.preload which Luau lacks).
-/// When you need Luau runtime, pre-compile your .fnl files first.
-const FENNEL_SOURCE: &str = include_str!("../vendor/fennel-luau.lua");
+/// Standard Fennel compiler for Lua 5.4. Compiles Fennel (a Lisp) to Lua.
+const FENNEL_SOURCE: &str = include_str!("../vendor/fennel.lua");
 
 /// Fennel compiler wrapper
 pub struct FennelCompiler {
@@ -103,56 +97,6 @@ impl FennelCompiler {
         Ok(result)
     }
 
-    /// Compile Fennel source to Luau with type annotations
-    ///
-    /// Uses `--target luau` to emit Luau-style type annotations.
-    /// The compiled output can be parsed by full_moon for schema extraction.
-    ///
-    /// Note: This requires the fennel-luau fork. When using the standard
-    /// Fennel compiler, this will compile but type annotations will be ignored.
-    ///
-    /// # Example
-    ///
-    /// ```fennel
-    /// (fn search [query :string limit :number] :-> (array Result)
-    ///   [...])
-    /// ```
-    ///
-    /// Compiles to:
-    /// ```lua
-    /// local function search(query: string, limit: number): {Result}
-    ///   return {...}
-    /// end
-    /// ```
-    pub fn compile_to_luau(&self, lua: &Lua, source: &str) -> Result<String, LuaError> {
-        let compile_fn: Function = lua.registry_value(&self.compile_fn_key)?;
-
-        // Create options table with target = "luau"
-        let opts = lua
-            .create_table()
-            .map_err(|e| LuaError::FennelCompile(format!("Failed to create options: {}", e)))?;
-        opts.set("target", "luau")
-            .map_err(|e| LuaError::FennelCompile(format!("Failed to set target: {}", e)))?;
-
-        let result: String = compile_fn
-            .call((source, opts))
-            .map_err(|e| LuaError::FennelCompile(format!("Fennel compilation failed: {}", e)))?;
-
-        Ok(result)
-    }
-
-    /// Compile Fennel source to plain Lua (no type annotations)
-    ///
-    /// Use this when you need standard Lua output regardless of features.
-    pub fn compile_to_lua(&self, lua: &Lua, source: &str) -> Result<String, LuaError> {
-        let compile_fn: Function = lua.registry_value(&self.compile_fn_key)?;
-
-        let result: String = compile_fn
-            .call(source)
-            .map_err(|e| LuaError::FennelCompile(format!("Fennel compilation failed: {}", e)))?;
-
-        Ok(result)
-    }
 }
 
 /// Standalone Fennel compilation (creates temporary Lua state)
@@ -218,84 +162,6 @@ mod tests {
         assert!(
             compiled.contains("42") || compiled.contains("(2 * 21)"),
             "Macro should expand: {}",
-            compiled
-        );
-    }
-
-    // These tests verify the fennel-luau fork can compile typed Fennel to Luau.
-    // The compiler runs in Lua 5.4 but outputs Luau-compatible code with types.
-
-    #[test]
-    fn test_compile_typed_fennel_to_luau() {
-        let lua = unsafe {
-            Lua::unsafe_new_with(StdLib::ALL_SAFE | StdLib::DEBUG, LuaOptions::default())
-        };
-        let compiler = FennelCompiler::new(&lua).expect("Should create compiler");
-
-        let source = "(fn add [a :number b :number] :-> number (+ a b))";
-        let result = compiler.compile_to_luau(&lua, source);
-
-        assert!(result.is_ok(), "Should compile typed Fennel: {:?}", result);
-
-        let compiled = result.unwrap();
-        assert!(
-            compiled.contains("a: number"),
-            "Should have typed param a: {}",
-            compiled
-        );
-        assert!(
-            compiled.contains("b: number"),
-            "Should have typed param b: {}",
-            compiled
-        );
-        assert!(
-            compiled.contains("): number"),
-            "Should have return type: {}",
-            compiled
-        );
-    }
-
-    #[test]
-    fn test_compile_deftype_to_luau() {
-        let lua = unsafe {
-            Lua::unsafe_new_with(StdLib::ALL_SAFE | StdLib::DEBUG, LuaOptions::default())
-        };
-        let compiler = FennelCompiler::new(&lua).expect("Should create compiler");
-
-        let source = "(deftype UserId number)";
-        let result = compiler.compile_to_luau(&lua, source);
-
-        assert!(result.is_ok(), "Should compile deftype: {:?}", result);
-
-        let compiled = result.unwrap();
-        assert!(
-            compiled.contains("type UserId = number"),
-            "Should have type alias: {}",
-            compiled
-        );
-    }
-
-    #[test]
-    fn test_compile_generic_fn_to_luau() {
-        let lua = unsafe {
-            Lua::unsafe_new_with(StdLib::ALL_SAFE | StdLib::DEBUG, LuaOptions::default())
-        };
-        let compiler = FennelCompiler::new(&lua).expect("Should create compiler");
-
-        let source = "(fn identity [T] [x :T] :-> T x)";
-        let result = compiler.compile_to_luau(&lua, source);
-
-        assert!(result.is_ok(), "Should compile generic fn: {:?}", result);
-
-        let compiled = result.unwrap();
-        assert!(
-            compiled.contains("identity<T>"),
-            "Should have generic param: {}",
-            compiled
-        );
-        assert!(
-            compiled.contains("x: T"),
-            "Should have typed param using generic: {}",
             compiled
         );
     }

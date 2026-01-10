@@ -7,7 +7,7 @@
 //! - Kiln personal: `KILN/.crucible/plugins/` (gitignored)
 //! - Kiln shared: `KILN/plugins/` (version-controlled)
 //!
-//! Plugins can provide tools (`#[tool(...)]`) and hooks (`#[hook(...)]`).
+//! Plugins can provide tools (`#[tool(...)]`) and handlers (`#[handler(...)]`).
 //!
 //! ## Usage
 //!
@@ -31,7 +31,7 @@
 
 mod ask_module;
 mod attribute_discovery;
-pub mod builtin_hooks;
+pub mod builtin_handlers;
 pub mod compaction;
 pub mod core_handler;
 pub mod dependency_graph;
@@ -47,9 +47,9 @@ mod executor;
 mod graph_module;
 pub mod handler;
 pub mod handler_chain;
+pub mod handler_system;
+mod handler_types;
 pub mod handler_wiring;
-mod hook_system;
-mod hook_types;
 pub mod linear_reactor;
 pub mod logging_handler;
 pub mod mcp_gateway;
@@ -77,10 +77,10 @@ pub use ask_module::{
     RuneAskBatch, RuneAskBatchResponse, RuneAskError, RuneAskQuestion, RuneQuestionAnswer,
 };
 pub use attribute_discovery::{attr_parsers, AttributeDiscovery, FromAttributes};
-pub use builtin_hooks::{
-    create_event_emit_hook, create_recipe_enrichment_hook, create_test_filter_hook,
-    create_tool_selector_hook, create_toon_transform_hook, register_builtin_hooks,
-    BuiltinHooksConfig, EventEmitConfig, HookToggle, ToolSelectorConfig,
+pub use builtin_handlers::{
+    create_event_emit_handler, create_recipe_enrichment_handler, create_test_filter_handler,
+    create_tool_selector_handler, create_toon_transform_handler, register_builtin_handlers,
+    BuiltinHandlersConfig, EventEmitConfig, HandlerToggle, ToolSelectorConfig,
 };
 pub use compaction::{CompactionConfig, CompactionMetrics, CompactionReason, CompactionTrigger};
 pub use core_handler::{RuneHandler, RuneHandlerMeta};
@@ -114,8 +114,7 @@ pub use handler_chain::{ChainResult, HandlerChain};
 pub use handler_wiring::{
     wire_event_bus, wire_event_bus_default, EventBusRingHandler, HandlerWiringBuilder,
 };
-pub use hook_system::{BuiltinHook, Hook, HookManager, HookRegistry, RuneHookHandler};
-pub use hook_types::RuneHook;
+pub use handler_system::{BuiltinHandler, ScriptHandler, HandlerManager, HandlerRegistry, RuneScriptHandler};
 pub use linear_reactor::{LinearReactor, LinearReactorConfig};
 pub use logging_handler::{EventFilter, LogLevel, LoggingConfig, LoggingHandler};
 pub use mcp_gateway::{
