@@ -74,6 +74,7 @@ mod fennel;
 mod graph;
 mod hooks;
 mod json_query;
+mod mcp;
 mod panel;
 mod popup;
 mod registry;
@@ -115,3 +116,6 @@ pub use schema::{
 pub use shell::{register_shell_module, ExecResult, ShellPolicy};
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
 pub use hooks::{execute_hook, HookResult, LuaHookHandler, LuaHookRegistry};
+pub use mcp::{
+    register_mcp_module, register_mcp_module_stub, LuaMcpClient, McpToolInfo, McpToolResult,
+};
