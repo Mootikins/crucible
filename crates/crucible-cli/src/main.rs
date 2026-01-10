@@ -113,23 +113,8 @@ async fn main() -> Result<()> {
         cli.embedding_model.clone(),
     )?;
 
-    // Determine log level from CLI flags, config file, or default to OFF
-    // Priority: --log-level flag > --verbose flag > config file > OFF
-    let level_filter: LevelFilter = if let Some(level) = cli.log_level {
-        level.into()
-    } else if cli.verbose {
-        LevelFilter::DEBUG
-    } else if let Some(config_level) = config.logging_level() {
-        parse_log_level(&config_level).unwrap_or(LevelFilter::OFF)
-    } else {
-        LevelFilter::OFF
-    };
-
-    // Initialize logging based on command type
+    // Check if the command uses stdio for communication (needs file logging)
     // MCP and Chat use stdio (stdin/stdout) for JSON-RPC, so we must avoid stderr output
-    // These commands log to file instead to preserve debugging capability
-    // Check if the command uses stdio for communication
-    // For MCP: stdio mode uses stdio, SSE mode doesn't
     let uses_stdio = match &cli.command {
         Some(Commands::Mcp { stdio, .. }) => *stdio,
         Some(Commands::Chat { .. }) => true,
@@ -137,8 +122,33 @@ async fn main() -> Result<()> {
         _ => false,
     };
 
-    // Only initialize logging if level is not OFF
-    if level_filter != LevelFilter::OFF {
+    // Determine base log level from CLI flags or config
+    // Priority: --log-level flag > --verbose flag > config file > default
+    // Default: WARN for stdio commands (always log errors/warnings), OFF for others
+    let base_level: LevelFilter = if let Some(level) = cli.log_level {
+        level.into()
+    } else if cli.verbose {
+        LevelFilter::DEBUG
+    } else if let Some(config_level) = config.logging_level() {
+        parse_log_level(&config_level).unwrap_or(if uses_stdio {
+            LevelFilter::WARN
+        } else {
+            LevelFilter::OFF
+        })
+    } else if uses_stdio {
+        LevelFilter::WARN // Default to WARN for chat/mcp (always capture errors)
+    } else {
+        LevelFilter::OFF
+    };
+
+    // Build env filter: RUST_LOG overrides, with base_level as fallback
+    // This allows: RUST_LOG=crucible_rig=info,crucible_cli=debug cargo run -- chat
+    let env_filter = tracing_subscriber::EnvFilter::builder()
+        .with_default_directive(base_level.into())
+        .from_env_lossy();
+
+    // Initialize logging based on command type
+    if base_level != LevelFilter::OFF || std::env::var("RUST_LOG").is_ok() {
         if uses_stdio {
             // File-only logging for stdio-based commands (MCP, Chat)
             // Default to ~/.crucible/<command>.log, override with CRUCIBLE_LOG_FILE
@@ -175,12 +185,12 @@ async fn main() -> Result<()> {
 
             tracing_subscriber::registry()
                 .with(file_layer)
-                .with(level_filter)
+                .with(env_filter)
                 .init();
         } else {
             // Normal stderr logging for other commands
             tracing_subscriber::fmt()
-                .with_max_level(level_filter)
+                .with_env_filter(env_filter)
                 .init();
         }
     }
