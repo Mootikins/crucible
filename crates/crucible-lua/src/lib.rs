@@ -82,9 +82,12 @@ mod types;
 
 pub use annotations::{AnnotationParser, DiscoveredHook, DiscoveredPlugin, DiscoveredTool};
 pub use ask::{
-    core_batch_to_lua, core_question_to_lua, lua_batch_table_to_core, lua_batch_to_core,
-    lua_question_table_to_core, lua_question_to_core, register_ask_module, LuaAskBatch,
-    LuaAskQuestion,
+    core_answer_to_lua, core_batch_to_lua, core_question_to_lua, core_response_to_lua,
+    lua_answer_table_to_core, lua_answer_to_core, lua_batch_table_to_core, lua_batch_to_core,
+    lua_question_table_to_core, lua_question_to_core, lua_response_table_to_core,
+    lua_response_to_core, register_ask_module, register_ask_module_with_context,
+    EventPushCallback, LuaAskBatch, LuaAskBatchResponse, LuaAskContext, LuaAskError,
+    LuaAskQuestion, LuaQuestionAnswer,
 };
 pub use core_handler::{LuaHandler, LuaHandlerMeta};
 pub use error::LuaError;
