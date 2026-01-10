@@ -64,6 +64,7 @@
 //! - `fennel` (default): Bundle the Fennel compiler (~160KB)
 //! - `send`: Enable `Send+Sync` on Lua state for multi-threaded use
 
+mod ask;
 pub mod annotations;
 pub mod core_handler;
 mod error;
@@ -80,6 +81,11 @@ mod shell;
 mod types;
 
 pub use annotations::{AnnotationParser, DiscoveredHook, DiscoveredPlugin, DiscoveredTool};
+pub use ask::{
+    core_batch_to_lua, core_question_to_lua, lua_batch_table_to_core, lua_batch_to_core,
+    lua_question_table_to_core, lua_question_to_core, register_ask_module, LuaAskBatch,
+    LuaAskQuestion,
+};
 pub use core_handler::{LuaHandler, LuaHandlerMeta};
 pub use error::LuaError;
 pub use executor::LuaExecutor;
