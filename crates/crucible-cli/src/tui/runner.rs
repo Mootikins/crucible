@@ -434,9 +434,15 @@ impl RatatuiRunner {
             // Inline mode (default enabled)
             inline_mode: true,
             inline_printer: InlinePrinter::new(),
-            // Runtime config (session-scoped provider/model)
+            // Runtime config (session-scoped provider/model) - will be set via with_runtime_config
             runtime_config: crate::tui::RuntimeConfig::default(),
         })
+    }
+
+    /// Set the runtime configuration (provider/model from config file)
+    pub fn with_runtime_config(&mut self, provider: impl Into<String>, model: impl Into<String>) -> &mut Self {
+        self.runtime_config = crate::tui::RuntimeConfig::from_config(&provider.into(), &model.into());
+        self
     }
 
     /// Set the session logger for persisting chat events.
