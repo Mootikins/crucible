@@ -27,6 +27,7 @@ pub mod formatting;
 pub mod interactive;
 pub mod output;
 pub mod progress;
+pub mod provider_detect;
 pub mod search;
 pub mod session_logger;
 pub mod sync;
