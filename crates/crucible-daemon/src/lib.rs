@@ -1,7 +1,29 @@
-//! Crucible Session Daemon
+//! # Crucible Server (cru-server)
 //!
-//! Library for running the Crucible daemon server that manages
-//! SurrealDB connections to multiple kilns and session lifecycle.
+//! Headless backend that provides:
+//! - **Session management**: Create, pause, resume, end chat/agent/workflow sessions
+//! - **Kiln operations**: Open, close, query kilns (SQLite or SurrealDB)
+//! - **File processing**: Parse and index markdown files
+//! - **Event persistence**: Auto-save session events to JSONL/markdown
+//!
+//! ## Architecture
+//!
+//! The server listens on a Unix socket and accepts JSON-RPC 2.0 requests.
+//! Multiple CLI instances can connect simultaneously.
+//!
+//! ## Usage
+//!
+//! ```bash
+//! # Start server (usually auto-started by CLI)
+//! cru-server
+//!
+//! # Server listens at: $XDG_RUNTIME_DIR/crucible/daemon.sock
+//! # Or: /tmp/crucible/daemon.sock
+//! ```
+//!
+//! ## Feature Flags
+//!
+//! - `subscriptions`: Enable real-time event subscriptions (disabled by default)
 
 pub mod kiln_manager;
 pub mod lifecycle;
@@ -16,7 +38,7 @@ pub mod subscription;
 
 pub use kiln_manager::KilnManager;
 pub use lifecycle::{remove_socket, socket_path, wait_for_shutdown};
-pub use protocol::{Notification, Request, Response, RpcError, SessionEventMessage};
+pub use protocol::{Request, Response, RpcError, SessionEventMessage};
 pub use server::Server;
 pub use session_manager::{SessionError, SessionManager};
 pub use session_storage::{FileSessionStorage, SessionStorage};
