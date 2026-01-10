@@ -208,22 +208,6 @@ impl SessionEventMessage {
     }
 }
 
-/// Notification sent from client to daemon (fire-and-forget, no response).
-///
-/// Notifications are used for messages that don't require acknowledgment.
-#[derive(Debug, Clone, Deserialize)]
-pub struct Notification {
-    /// Message type (always "notify")
-    #[serde(rename = "type")]
-    #[allow(dead_code)]
-    pub msg_type: String,
-    /// Method to invoke
-    pub method: String,
-    /// Optional parameters
-    #[serde(default)]
-    pub params: Value,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -419,13 +403,4 @@ mod tests {
         let _: serde_json::Value = serde_json::from_str(trimmed).unwrap();
     }
 
-    #[test]
-    fn test_notification_deserialization() {
-        let json = r#"{"type":"notify","method":"session.send","params":{"session_id":"chat-test","content":"Hello"}}"#;
-        let notif: Notification = serde_json::from_str(json).unwrap();
-
-        assert_eq!(notif.method, "session.send");
-        assert_eq!(notif.params["session_id"], "chat-test");
-        assert_eq!(notif.params["content"], "Hello");
-    }
 }
