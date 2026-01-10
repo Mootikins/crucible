@@ -36,6 +36,9 @@ glob = "0.3"
 # Shared types with core
 crucible-core = { path = "../crucible-core" }
 
+# UUID for interaction batch IDs
+uuid = { workspace = true }
+
 # TOON query for multi-format support
 oq = { workspace = true }
 
