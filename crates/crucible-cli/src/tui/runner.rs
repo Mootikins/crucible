@@ -418,6 +418,8 @@ pub struct RatatuiRunner {
     inline_printer: InlinePrinter,
     /// Pending graduations to flush via terminal.insert_before()
     pending_graduations: Vec<PendingGraduation>,
+    /// Number of blocks graduated during current streaming session (for progressive graduation)
+    graduated_block_count: usize,
 
     // =============================================================================
     // Runtime configuration (session-scoped provider/model overrides)
@@ -480,6 +482,7 @@ impl RatatuiRunner {
             inline_mode: true,
             inline_printer: InlinePrinter::new(),
             pending_graduations: Vec::new(),
+            graduated_block_count: 0,
             // Runtime config (session-scoped provider/model) - will be set via with_runtime_config
             runtime_config: crate::tui::RuntimeConfig::default(),
             // Ollama endpoint - will be set via with_ollama_endpoint
@@ -749,9 +752,9 @@ impl RatatuiRunner {
                         streaming_complete = true;
 
                         // Graduate assistant message to scrollback (inline mode)
-                        // Find the last assistant message blocks and clone to avoid borrow conflict
+                        // Graduate remaining blocks not yet graduated during progressive streaming
                         if self.inline_mode {
-                            let blocks_to_graduate = self
+                            let remaining_blocks: Option<Vec<StreamBlock>> = self
                                 .view
                                 .state()
                                 .conversation
@@ -760,14 +763,26 @@ impl RatatuiRunner {
                                 .rev()
                                 .find_map(|item| {
                                     if let ConversationItem::AssistantMessage { blocks, .. } = item {
-                                        Some(blocks.clone())
+                                        // Only graduate blocks after what we already graduated
+                                        let remaining: Vec<_> = blocks
+                                            .iter()
+                                            .skip(self.graduated_block_count)
+                                            .cloned()
+                                            .collect();
+                                        if remaining.is_empty() {
+                                            None
+                                        } else {
+                                            Some(remaining)
+                                        }
                                     } else {
                                         None
                                     }
                                 });
-                            if let Some(blocks) = blocks_to_graduate {
+                            if let Some(blocks) = remaining_blocks {
                                 self.graduate_assistant_message(&blocks);
                             }
+                            // Reset for next streaming session
+                            self.graduated_block_count = 0;
                         }
 
                         // Flush accumulated assistant message to session log
@@ -912,6 +927,11 @@ impl RatatuiRunner {
             // Apply parse events after borrow of streaming_rx is released
             if !pending_parse_events.is_empty() {
                 self.apply_parse_events(pending_parse_events);
+
+                // Progressive graduation: graduate complete blocks as they overflow viewport
+                if self.inline_mode && self.streaming_manager.is_streaming() {
+                    self.graduate_overflow_blocks();
+                }
             }
 
             // Handle streaming completion
@@ -1207,6 +1227,8 @@ impl RatatuiRunner {
                 // Initialize streaming parser and start streaming message in view
                 // (parser is now created by start_streaming_with_parser)
                 self.view.start_assistant_streaming();
+                // Reset progressive graduation counter for new streaming session
+                self.graduated_block_count = 0;
 
                 // Emit user message to ring
                 bridge.ring.push(SessionEvent::MessageReceived {
@@ -2257,6 +2279,57 @@ impl RatatuiRunner {
             name: name.to_string(),
             status: status.clone(),
         });
+    }
+
+    /// Graduate complete blocks that have overflowed the viewport during streaming.
+    ///
+    /// This implements progressive graduation: as content grows during streaming,
+    /// complete blocks that scroll out of view are pushed to terminal scrollback.
+    /// We keep the last complete block (or partial) in the viewport for context.
+    fn graduate_overflow_blocks(&mut self) {
+        use crate::tui::conversation::ConversationItem;
+
+        // Get the current streaming assistant message blocks
+        let streaming_blocks: Option<Vec<StreamBlock>> = self
+            .view
+            .state()
+            .conversation
+            .items()
+            .iter()
+            .rev()
+            .find_map(|item| {
+                if let ConversationItem::AssistantMessage { blocks, is_streaming: true } = item {
+                    Some(blocks.clone())
+                } else {
+                    None
+                }
+            });
+
+        let Some(blocks) = streaming_blocks else {
+            return;
+        };
+
+        // Count complete blocks (all except the last one, which may be partial)
+        // We keep at least 1 block in viewport for context
+        let complete_count = blocks.iter().take(blocks.len().saturating_sub(1))
+            .filter(|b| b.is_complete())
+            .count();
+
+        // Graduate any complete blocks we haven't graduated yet
+        if complete_count > self.graduated_block_count {
+            let blocks_to_graduate: Vec<StreamBlock> = blocks
+                .iter()
+                .skip(self.graduated_block_count)
+                .take(complete_count - self.graduated_block_count)
+                .cloned()
+                .collect();
+
+            if !blocks_to_graduate.is_empty() {
+                self.pending_graduations
+                    .push(PendingGraduation::Assistant(blocks_to_graduate));
+                self.graduated_block_count = complete_count;
+            }
+        }
     }
 
     /// Flush all pending graduations to terminal scrollback via insert_before().
