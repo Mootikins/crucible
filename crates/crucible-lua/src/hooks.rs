@@ -20,13 +20,31 @@
 //! 2. `LuaHookHandler` is created from each `DiscoveredHook`
 //! 3. Handlers are registered on the event bus
 //! 4. Events trigger matching handlers in priority order
+//!
+//! ## Registry
+//!
+//! The `LuaHookRegistry` provides centralized hook management:
+//!
+//! ```rust,ignore
+//! use crucible_lua::LuaHookRegistry;
+//! use std::path::PathBuf;
+//!
+//! // Discover hooks from directories
+//! let paths = vec![PathBuf::from("./hooks"), PathBuf::from("./plugins")];
+//! let registry = LuaHookRegistry::discover(&paths)?;
+//!
+//! // Get handlers matching an event
+//! let handlers = registry.handlers_for(&event);
+//! ```
 
-use crate::annotations::DiscoveredHook;
+use crate::annotations::{AnnotationParser, DiscoveredHook};
 use crate::error::LuaError;
 use crucible_core::events::SessionEvent;
 use mlua::{Function, Lua, Result as LuaResult, Table, Value};
 use serde_json::Value as JsonValue;
+use std::path::PathBuf;
 use tracing::{debug, warn};
+use walkdir::WalkDir;
 
 /// Handler for Lua hook execution
 ///
@@ -196,6 +214,180 @@ impl Clone for LuaHookHandler {
             metadata: self.metadata.clone(),
             source: self.source.clone(),
         }
+    }
+}
+
+/// Registry of discovered Lua hooks
+///
+/// Manages a collection of `LuaHookHandler` instances discovered from Lua/Fennel
+/// source files. Provides event matching and priority-ordered dispatch.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use crucible_lua::LuaHookRegistry;
+/// use std::path::PathBuf;
+///
+/// // Discover hooks from directories
+/// let paths = vec![PathBuf::from("./hooks")];
+/// let registry = LuaHookRegistry::discover(&paths)?;
+///
+/// // Check what hooks are available
+/// println!("Found {} hooks", registry.len());
+///
+/// // Get handlers matching an event
+/// for handler in registry.handlers_for(&event) {
+///     let result = handler.execute(&lua, &event)?;
+/// }
+/// ```
+#[derive(Debug, Clone)]
+pub struct LuaHookRegistry {
+    handlers: Vec<LuaHookHandler>,
+}
+
+impl LuaHookRegistry {
+    /// Create an empty registry
+    pub fn new() -> Self {
+        Self {
+            handlers: Vec::new(),
+        }
+    }
+
+    /// Discover hooks from the given paths
+    ///
+    /// Walks each path recursively, parsing `.lua` and `.fnl` files for hook
+    /// annotations. Discovered hooks are sorted by priority (lowest first).
+    ///
+    /// # Arguments
+    ///
+    /// * `paths` - Directories or files to scan for hooks
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if file reading fails. Missing paths are silently skipped.
+    pub fn discover(paths: &[PathBuf]) -> Result<Self, std::io::Error> {
+        let parser = AnnotationParser::new();
+        let mut handlers = Vec::new();
+
+        for path in paths {
+            if !path.exists() {
+                debug!("Hook discovery path does not exist: {:?}", path);
+                continue;
+            }
+
+            for entry in WalkDir::new(path)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().is_file())
+                .filter(|e| {
+                    e.path()
+                        .extension()
+                        .is_some_and(|ext| ext == "lua" || ext == "fnl")
+                })
+            {
+                let entry_path = entry.path();
+                let source = match std::fs::read_to_string(entry_path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        warn!("Failed to read hook source {:?}: {}", entry_path, e);
+                        continue;
+                    }
+                };
+
+                let is_fennel = entry_path.extension().is_some_and(|e| e == "fnl");
+
+                match parser.parse_hooks(&source, entry_path, is_fennel) {
+                    Ok(hooks) => {
+                        for hook in hooks {
+                            // Use with_source to avoid re-reading the file
+                            let handler = LuaHookHandler::with_source(hook, source.clone());
+                            debug!(
+                                "Discovered hook: {} (event={}, priority={})",
+                                handler.metadata.name,
+                                handler.metadata.event_type,
+                                handler.metadata.priority
+                            );
+                            handlers.push(handler);
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Failed to parse hooks from {:?}: {}", entry_path, e);
+                    }
+                }
+            }
+        }
+
+        // Sort by priority (lower priority values execute first)
+        handlers.sort_by_key(|h| h.metadata.priority);
+
+        debug!("Hook registry discovered {} handlers", handlers.len());
+        Ok(Self { handlers })
+    }
+
+    /// Get all handlers that match the given event
+    ///
+    /// Returns handlers in priority order (lowest priority value first).
+    pub fn handlers_for(&self, event: &SessionEvent) -> Vec<&LuaHookHandler> {
+        self.handlers.iter().filter(|h| h.matches(event)).collect()
+    }
+
+    /// Get all handlers matching event type and identifier
+    ///
+    /// More flexible matching for cases where the event type and identifier
+    /// are known separately (e.g., tool name for tool events).
+    pub fn handlers_for_identifier(
+        &self,
+        event_type: &str,
+        identifier: &str,
+    ) -> Vec<&LuaHookHandler> {
+        self.handlers
+            .iter()
+            .filter(|h| h.matches_with_identifier(event_type, identifier))
+            .collect()
+    }
+
+    /// Number of registered handlers
+    pub fn len(&self) -> usize {
+        self.handlers.len()
+    }
+
+    /// Check if the registry is empty
+    pub fn is_empty(&self) -> bool {
+        self.handlers.is_empty()
+    }
+
+    /// Add a handler manually
+    ///
+    /// The handler is inserted in priority order.
+    pub fn add(&mut self, handler: LuaHookHandler) {
+        self.handlers.push(handler);
+        self.handlers.sort_by_key(|h| h.metadata.priority);
+    }
+
+    /// Remove all handlers
+    pub fn clear(&mut self) {
+        self.handlers.clear();
+    }
+
+    /// Get an iterator over all handlers
+    pub fn iter(&self) -> impl Iterator<Item = &LuaHookHandler> {
+        self.handlers.iter()
+    }
+
+    /// Reload all handlers from disk
+    ///
+    /// Re-reads source files for all registered handlers.
+    pub fn reload_all(&mut self) -> Result<(), LuaError> {
+        for handler in &mut self.handlers {
+            handler.reload()?;
+        }
+        Ok(())
+    }
+}
+
+impl Default for LuaHookRegistry {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -673,5 +865,342 @@ mod tests {
         assert_eq!(original["bool"], back["bool"]);
         assert_eq!(original["array"], back["array"]);
         assert_eq!(original["nested"], back["nested"]);
+    }
+
+    // ============ Registry Tests ============
+
+    #[test]
+    fn test_registry_new_is_empty() {
+        let registry = LuaHookRegistry::new();
+        assert!(registry.is_empty());
+        assert_eq!(registry.len(), 0);
+    }
+
+    #[test]
+    fn test_registry_default_is_empty() {
+        let registry = LuaHookRegistry::default();
+        assert!(registry.is_empty());
+    }
+
+    #[test]
+    fn test_registry_add_handler() {
+        let mut registry = LuaHookRegistry::new();
+        let handler = create_test_hook("-- test");
+
+        registry.add(handler);
+
+        assert_eq!(registry.len(), 1);
+        assert!(!registry.is_empty());
+    }
+
+    #[test]
+    fn test_registry_add_maintains_priority_order() {
+        let mut registry = LuaHookRegistry::new();
+
+        // Add hooks with different priorities
+        let mut high_priority = create_test_hook("-- high");
+        high_priority.metadata.priority = 10;
+
+        let mut low_priority = create_test_hook("-- low");
+        low_priority.metadata.priority = 200;
+
+        let mut medium_priority = create_test_hook("-- medium");
+        medium_priority.metadata.priority = 100;
+
+        // Add in non-sorted order
+        registry.add(low_priority);
+        registry.add(high_priority);
+        registry.add(medium_priority);
+
+        // Verify they are sorted by priority
+        let handlers: Vec<_> = registry.iter().collect();
+        assert_eq!(handlers[0].metadata.priority, 10);
+        assert_eq!(handlers[1].metadata.priority, 100);
+        assert_eq!(handlers[2].metadata.priority, 200);
+    }
+
+    #[test]
+    fn test_registry_handlers_for_event() {
+        let mut registry = LuaHookRegistry::new();
+
+        // Add a ToolCalled hook
+        let handler = create_test_hook("-- tool called hook");
+        registry.add(handler);
+
+        // Create a matching event
+        let matching_event = SessionEvent::ToolCalled {
+            name: "search".to_string(),
+            args: serde_json::json!({}),
+        };
+
+        // Create a non-matching event
+        let non_matching_event = SessionEvent::ToolCompleted {
+            name: "search".to_string(),
+            result: "done".to_string(),
+            error: None,
+        };
+
+        let matching_handlers = registry.handlers_for(&matching_event);
+        assert_eq!(matching_handlers.len(), 1);
+
+        let non_matching_handlers = registry.handlers_for(&non_matching_event);
+        assert!(non_matching_handlers.is_empty());
+    }
+
+    #[test]
+    fn test_registry_handlers_for_identifier() {
+        let mut registry = LuaHookRegistry::new();
+
+        let hook = DiscoveredHook {
+            name: "search_filter".to_string(),
+            event_type: "tool_called".to_string(),
+            pattern: "search_*".to_string(),
+            priority: 50,
+            description: "Filter search tools".to_string(),
+            source_path: "test.lua".to_string(),
+            handler_fn: "handler".to_string(),
+            is_fennel: false,
+        };
+        let handler = LuaHookHandler::with_source(hook, String::new());
+        registry.add(handler);
+
+        // Should match search_notes
+        let handlers = registry.handlers_for_identifier("tool_called", "search_notes");
+        assert_eq!(handlers.len(), 1);
+
+        // Should match search_files
+        let handlers = registry.handlers_for_identifier("tool_called", "search_files");
+        assert_eq!(handlers.len(), 1);
+
+        // Should not match fetch_data
+        let handlers = registry.handlers_for_identifier("tool_called", "fetch_data");
+        assert!(handlers.is_empty());
+
+        // Should not match wrong event type
+        let handlers = registry.handlers_for_identifier("tool_completed", "search_notes");
+        assert!(handlers.is_empty());
+    }
+
+    #[test]
+    fn test_registry_clear() {
+        let mut registry = LuaHookRegistry::new();
+        registry.add(create_test_hook("-- one"));
+        registry.add(create_test_hook("-- two"));
+
+        assert_eq!(registry.len(), 2);
+
+        registry.clear();
+
+        assert!(registry.is_empty());
+        assert_eq!(registry.len(), 0);
+    }
+
+    #[test]
+    fn test_registry_iter() {
+        let mut registry = LuaHookRegistry::new();
+
+        let mut hook1 = create_test_hook("-- one");
+        hook1.metadata.name = "hook_one".to_string();
+
+        let mut hook2 = create_test_hook("-- two");
+        hook2.metadata.name = "hook_two".to_string();
+
+        registry.add(hook1);
+        registry.add(hook2);
+
+        let names: Vec<_> = registry.iter().map(|h| h.metadata.name.as_str()).collect();
+        assert_eq!(names.len(), 2);
+        assert!(names.contains(&"hook_one"));
+        assert!(names.contains(&"hook_two"));
+    }
+
+    #[test]
+    fn test_registry_discover_nonexistent_path() {
+        let paths = vec![PathBuf::from("/nonexistent/path/that/should/not/exist")];
+        let registry = LuaHookRegistry::discover(&paths).unwrap();
+        assert!(registry.is_empty());
+    }
+
+    #[test]
+    fn test_registry_discover_from_temp_dir() {
+        use std::io::Write;
+
+        // Create a temp directory with a hook file
+        let temp_dir = tempfile::tempdir().unwrap();
+        let hook_file = temp_dir.path().join("my_hook.lua");
+
+        let hook_source = r#"
+--- Filter search results
+-- @hook event="ToolCalled" pattern="*" priority=25
+function filter_results(ctx, event)
+    return event
+end
+"#;
+
+        std::fs::File::create(&hook_file)
+            .unwrap()
+            .write_all(hook_source.as_bytes())
+            .unwrap();
+
+        // Discover hooks
+        let paths = vec![temp_dir.path().to_path_buf()];
+        let registry = LuaHookRegistry::discover(&paths).unwrap();
+
+        assert_eq!(registry.len(), 1);
+
+        let handler = registry.iter().next().unwrap();
+        assert_eq!(handler.metadata.name, "filter_results");
+        assert_eq!(handler.metadata.event_type, "ToolCalled");
+        assert_eq!(handler.metadata.priority, 25);
+    }
+
+    #[test]
+    fn test_registry_discover_multiple_files() {
+        use std::io::Write;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        // Create first hook file
+        let hook1_file = temp_dir.path().join("hook1.lua");
+        let hook1_source = r#"
+--- First hook
+-- @hook event="ToolCalled" pattern="*" priority=100
+function first_handler(ctx, event)
+    return event
+end
+"#;
+        std::fs::File::create(&hook1_file)
+            .unwrap()
+            .write_all(hook1_source.as_bytes())
+            .unwrap();
+
+        // Create second hook file with lower priority
+        let hook2_file = temp_dir.path().join("hook2.lua");
+        let hook2_source = r#"
+--- Second hook
+-- @hook event="ToolCalled" pattern="*" priority=50
+function second_handler(ctx, event)
+    return event
+end
+"#;
+        std::fs::File::create(&hook2_file)
+            .unwrap()
+            .write_all(hook2_source.as_bytes())
+            .unwrap();
+
+        // Discover hooks
+        let paths = vec![temp_dir.path().to_path_buf()];
+        let registry = LuaHookRegistry::discover(&paths).unwrap();
+
+        assert_eq!(registry.len(), 2);
+
+        // Verify priority ordering (lower priority first)
+        let handlers: Vec<_> = registry.iter().collect();
+        assert_eq!(handlers[0].metadata.priority, 50);
+        assert_eq!(handlers[0].metadata.name, "second_handler");
+        assert_eq!(handlers[1].metadata.priority, 100);
+        assert_eq!(handlers[1].metadata.name, "first_handler");
+    }
+
+    #[test]
+    fn test_registry_discover_nested_directories() {
+        use std::io::Write;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        // Create nested directory
+        let nested_dir = temp_dir.path().join("subdir").join("hooks");
+        std::fs::create_dir_all(&nested_dir).unwrap();
+
+        // Create hook in nested directory
+        let hook_file = nested_dir.join("nested_hook.lua");
+        let hook_source = r#"
+--- Nested hook
+-- @hook event="ToolCalled" pattern="*" priority=75
+function nested_handler(ctx, event)
+    return event
+end
+"#;
+        std::fs::File::create(&hook_file)
+            .unwrap()
+            .write_all(hook_source.as_bytes())
+            .unwrap();
+
+        // Discover hooks from parent directory
+        let paths = vec![temp_dir.path().to_path_buf()];
+        let registry = LuaHookRegistry::discover(&paths).unwrap();
+
+        assert_eq!(registry.len(), 1);
+        assert_eq!(
+            registry.iter().next().unwrap().metadata.name,
+            "nested_handler"
+        );
+    }
+
+    #[test]
+    fn test_registry_discover_fennel_files() {
+        use std::io::Write;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        // Create a Fennel hook file
+        let hook_file = temp_dir.path().join("my_hook.fnl");
+        let hook_source = r#"
+;;; Fennel hook
+;; @hook event="ToolCalled" pattern="*" priority=30
+(fn fennel_handler [ctx event]
+  event)
+"#;
+        std::fs::File::create(&hook_file)
+            .unwrap()
+            .write_all(hook_source.as_bytes())
+            .unwrap();
+
+        // Discover hooks
+        let paths = vec![temp_dir.path().to_path_buf()];
+        let registry = LuaHookRegistry::discover(&paths).unwrap();
+
+        assert_eq!(registry.len(), 1);
+
+        let handler = registry.iter().next().unwrap();
+        assert_eq!(handler.metadata.name, "fennel_handler");
+        assert!(handler.metadata.is_fennel);
+    }
+
+    #[test]
+    fn test_registry_ignores_non_hook_files() {
+        use std::io::Write;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        // Create a Lua file without @hook annotation
+        let tool_file = temp_dir.path().join("tool.lua");
+        let tool_source = r#"
+--- A tool, not a hook
+-- @tool desc="Not a hook"
+function my_tool(query)
+    return query
+end
+"#;
+        std::fs::File::create(&tool_file)
+            .unwrap()
+            .write_all(tool_source.as_bytes())
+            .unwrap();
+
+        // Discover hooks
+        let paths = vec![temp_dir.path().to_path_buf()];
+        let registry = LuaHookRegistry::discover(&paths).unwrap();
+
+        // Should find no hooks (only tools)
+        assert!(registry.is_empty());
+    }
+
+    #[test]
+    fn test_registry_clone() {
+        let mut registry = LuaHookRegistry::new();
+        registry.add(create_test_hook("-- test"));
+
+        let cloned = registry.clone();
+        assert_eq!(cloned.len(), registry.len());
     }
 }
