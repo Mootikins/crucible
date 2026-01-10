@@ -24,13 +24,14 @@ use ratatui::{
 /// - `status_text`: Status message to display
 /// - `token_count`: Optional token count to display
 /// - `notification`: Optional (message, level) tuple for right-aligned notification
+/// - `provider_model`: Optional (provider, model) tuple to display
 ///
 /// # Layout
 ///
 /// ```text
-/// ▸ Plan │ 127 tokens │ Ready            File saved
-/// └─┬──┘   └────┬────┘   └──┬──┘           └───┬───┘
-///   mode    tokens      status          notification
+/// ▸ Plan │ ollama/llama3.2 │ 127 tokens │ Ready            File saved
+/// └─┬──┘   └────┬────────┘   └────┬────┘   └──┬──┘           └───┬───┘
+///   mode    provider/model   tokens      status          notification
 /// ```
 ///
 /// The notification is right-aligned if present.
@@ -39,6 +40,7 @@ pub struct StatusBarWidget<'a> {
     status_text: &'a str,
     token_count: Option<usize>,
     notification: Option<(&'a str, NotificationLevel)>,
+    provider_model: Option<(&'a str, &'a str)>,
 }
 
 impl<'a> StatusBarWidget<'a> {
@@ -54,6 +56,7 @@ impl<'a> StatusBarWidget<'a> {
             status_text,
             token_count: None,
             notification: None,
+            provider_model: None,
         }
     }
 
@@ -68,6 +71,12 @@ impl<'a> StatusBarWidget<'a> {
         self.notification = notification;
         self
     }
+
+    /// Set the provider and model to display
+    pub fn provider_model(mut self, provider: &'a str, model: &'a str) -> Self {
+        self.provider_model = Some((provider, model));
+        self
+    }
 }
 
 impl Widget for StatusBarWidget<'_> {
@@ -80,12 +89,20 @@ impl Widget for StatusBarWidget<'_> {
             _ => self.mode_id,
         };
 
-        // Build left-side spans: mode, token count (optional), status
+        // Build left-side spans: mode, provider/model (optional), token count (optional), status
         let mut left_spans = vec![
             Span::styled(indicators::MODE_ARROW, presets::dim()),
             Span::raw(" "),
             Span::styled(mode_name, mode_style),
         ];
+
+        if let Some((provider, model)) = self.provider_model {
+            left_spans.push(Span::styled(" │ ", presets::dim()));
+            left_spans.push(Span::styled(
+                format!("{}/{}", provider, model),
+                presets::dim(),
+            ));
+        }
 
         if let Some(count) = self.token_count {
             left_spans.push(Span::styled(" │ ", presets::dim()));
@@ -150,6 +167,13 @@ mod tests {
         let widget = StatusBarWidget::new("auto", "Idle")
             .notification(Some(("File saved", NotificationLevel::Info)));
         assert!(widget.notification.is_some());
+    }
+
+    #[test]
+    fn test_provider_model_builder() {
+        let widget = StatusBarWidget::new("plan", "Ready")
+            .provider_model("ollama", "llama3.2");
+        assert!(widget.provider_model.is_some());
     }
 
     #[test]
@@ -261,6 +285,15 @@ mod tests {
             );
             let terminal = render_widget(widget);
             assert_snapshot!("status_bar_long_status", terminal.backend());
+        }
+
+        #[test]
+        fn with_provider_model() {
+            let widget = StatusBarWidget::new("plan", "Ready")
+                .provider_model("openai", "gpt-4o")
+                .token_count(100);
+            let terminal = render_widget(widget);
+            assert_snapshot!("status_bar_with_provider", terminal.backend());
         }
     }
 }
