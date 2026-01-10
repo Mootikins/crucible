@@ -111,6 +111,9 @@ fn test_interleaved_turns_preserve_order() {
 /// - "Let me search for that"
 /// - grep tool call
 /// - "Found 5 results"
+///
+/// With inline tool blocks, this is ONE assistant message containing
+/// ordered blocks: [prose, tool, prose]
 #[test]
 fn test_tool_calls_interleaved_in_response() {
     let mut state = ConversationState::new();
@@ -124,33 +127,40 @@ fn test_tool_calls_interleaved_in_response() {
     // First, assistant says something
     state.append_or_create_prose("Let me search for that.\n");
 
-    // Then calls a tool (currently this creates a SEPARATE item!)
+    // Then calls a tool - this adds a Tool block to the streaming message
     state.push_tool_running("grep", serde_json::json!({"pattern": "test"}));
 
     // Tool completes
     state.complete_tool("grep", Some("5 matches".into()));
 
     // Then assistant continues with more prose
-    // BUG: This appends to the SAME assistant message, not after the tool
     state.append_or_create_prose("Found 5 results. Here they are:\n");
 
     // Complete streaming
     state.complete_streaming();
 
-    // Check the order of items
+    // With inline tool blocks, we should have: user -> assistant (single message)
     let types = get_rendered_item_types(&state);
-
-    // EXPECTED: user -> assistant(prose1) -> tool -> assistant(prose2)
-    // ACTUAL (bug): user -> assistant(prose1+prose2) -> tool
-    //
-    // This assertion will FAIL, demonstrating the bug
     assert_eq!(
         types,
-        vec!["user", "assistant", "tool", "assistant"],
-        "Tool call should be interleaved between assistant prose blocks. \
-         Got {:?} - this means prose is grouped together, breaking conversation flow.",
-        types
+        vec!["user", "assistant"],
+        "Should be single assistant message with inline tool blocks"
     );
+
+    // Verify the BLOCKS within the assistant message are correctly ordered
+    let assistant_item = state.items().iter().find(|item| {
+        matches!(item, ConversationItem::AssistantMessage { .. })
+    });
+
+    if let Some(ConversationItem::AssistantMessage { blocks, .. }) = assistant_item {
+        // Should have: prose -> tool -> prose
+        assert_eq!(blocks.len(), 3, "Should have 3 blocks: prose, tool, prose");
+        assert!(blocks[0].is_prose(), "First block should be prose");
+        assert!(blocks[1].is_tool(), "Second block should be tool");
+        assert!(blocks[2].is_prose(), "Third block should be prose");
+    } else {
+        panic!("Should have an assistant message");
+    }
 }
 
 /// Snapshot test for interleaved conversation rendering
@@ -347,15 +357,16 @@ fn test_fixed_interleaved_order() {
 // Tool Call Behavior Tests
 // =============================================================================
 
-/// Test that ConversationState correctly creates separate entries for each push.
+/// Test that ConversationState correctly creates separate tool blocks for each call.
 /// This is CORRECT behavior - the same tool name can be called multiple times
 /// in a conversation (e.g., multiple grep searches).
 ///
-/// The bug where tools appear twice is in the RUNNER, not ConversationState.
-/// The runner's StreamingEvent::ToolCall and SessionEvent::ToolCalled handlers
-/// both call push_tool_running for the same tool - that's the bug to fix.
+/// With inline tool blocks, multiple tool calls become separate Tool blocks
+/// within the single assistant message.
 #[test]
 fn test_multiple_tool_calls_with_same_name_are_separate() {
+    use crate::tui::content_block::ToolBlockStatus;
+
     let mut state = ConversationState::new();
 
     state.push_user_message("Search for foo then bar");
@@ -373,29 +384,34 @@ fn test_multiple_tool_calls_with_same_name_are_separate() {
 
     state.complete_streaming();
 
-    // Should have 2 grep tools (both legitimate)
-    let tool_count = state
-        .items()
-        .iter()
-        .filter(|item| matches!(item, ConversationItem::ToolCall(t) if t.name == "grep"))
-        .count();
+    // Find the assistant message and count tool blocks
+    let assistant_item = state.items().iter().find(|item| {
+        matches!(item, ConversationItem::AssistantMessage { .. })
+    });
 
-    assert_eq!(
-        tool_count, 2,
-        "Two separate grep calls should create two tool entries"
-    );
+    if let Some(ConversationItem::AssistantMessage { blocks, .. }) = assistant_item {
+        // Count tool blocks named "grep"
+        let tool_count = blocks
+            .iter()
+            .filter(|b| matches!(b, StreamBlock::Tool { name, .. } if name == "grep"))
+            .count();
 
-    // Both should be completed
-    let running_count = state
-        .items()
-        .iter()
-        .filter(|item| {
-            matches!(item, ConversationItem::ToolCall(t)
-                if t.name == "grep" && matches!(t.status, ToolStatus::Running))
-        })
-        .count();
+        assert_eq!(
+            tool_count, 2,
+            "Two separate grep calls should create two tool blocks"
+        );
 
-    assert_eq!(running_count, 0, "All tools should be completed");
+        // Both should be completed (not Running)
+        let running_count = blocks
+            .iter()
+            .filter(|b| matches!(b, StreamBlock::Tool { name, status, .. }
+                if name == "grep" && matches!(status, ToolBlockStatus::Running)))
+            .count();
+
+        assert_eq!(running_count, 0, "All tools should be completed");
+    } else {
+        panic!("Should have an assistant message");
+    }
 }
 
 #[cfg(test)]

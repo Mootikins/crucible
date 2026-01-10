@@ -26,14 +26,14 @@ expression: output
 
 
 
+
+
+
+
  > Help me understand the codebase
 
  ● I'll explore the project structure.
-
- ● ls(path=".") → 15 files
-
- ● Found 15 files. Let me check the main module.
-
- ● cat(path="main.rs") → 200 lines
-
- ● The main module handles initialization.
+   ● ls(path=".") → 15 files
+   Found 15 files. Let me check the main module.
+   ● cat(path="main.rs") → 200 lines
+   The main module handles initialization.
