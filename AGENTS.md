@@ -302,7 +302,7 @@ cargo test -p crucible-cli --features test-utils tui::testing
 
 **Fixture reuse:** Before creating new fixtures, check `tui/testing/fixtures/`:
 - `sessions.rs` - Conversation histories
-- `registries.rs` - Commands, agents
+- `registries.rs` - Commands, agents, files, sessions, models
 - `events.rs` - Event sequences
 
 Extend existing fixtures rather than duplicating.
@@ -319,6 +319,41 @@ fn streaming_affects_status_and_history() {
     insta::assert_snapshot!(h.render());
 }
 ```
+
+**New TUI features require full-flow snapshot tests.** When adding popups, dialogs, or interactive elements:
+
+1. Add fixture helpers to `tui/testing/fixtures/registries.rs`:
+   ```rust
+   pub fn test_models() -> Vec<PopupItem> { ... }
+   ```
+
+2. Add snapshot tests covering the full interaction flow:
+   - Initial state (popup opens)
+   - Navigation (cursor moves with arrow keys)
+   - Selection (item selected, popup closes)
+   - Final state (status bar/view updated)
+
+3. Example test structure (see `popup_snapshot_tests.rs`):
+   ```rust
+   mod model_popup_tests {
+       #[test]
+       fn popup_model_list() {
+           let h = Harness::new(80, 24)
+               .with_popup_items(PopupKind::Model, registries::test_models());
+           assert_snapshot!("popup_model_list", h.render());
+       }
+
+       #[test]
+       fn popup_model_navigation() {
+           let mut h = Harness::new(80, 24)
+               .with_popup_items(PopupKind::Model, registries::test_models());
+           h.key(KeyCode::Down);
+           assert_snapshot!("popup_model_second", h.render());
+       }
+   }
+   ```
+
+4. Review snapshots with `cargo insta review` before accepting.
 
 ### Quality Checklist
 
