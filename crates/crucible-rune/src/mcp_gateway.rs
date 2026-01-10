@@ -54,6 +54,7 @@
 use crate::event_bus::{Event, EventBus, EventContext, HandlerError};
 use crate::tool_events::ToolSource;
 use crucible_core::traits::mcp::McpToolExecutor;
+use crucible_core::utils::glob_match;
 use serde_json::{json, Value as JsonValue};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -427,52 +428,6 @@ impl UpstreamMcpClient {
             if self.is_tool_allowed(&tool.name) {
                 self.emit_tool_discovered(&tool).await;
                 tool_map.insert(tool.name.clone(), tool);
-            }
-        }
-    }
-}
-
-/// Simple glob pattern matching (supports * and ?)
-fn glob_match(pattern: &str, text: &str) -> bool {
-    let pattern_chars: Vec<char> = pattern.chars().collect();
-    let text_chars: Vec<char> = text.chars().collect();
-
-    glob_match_recursive(&pattern_chars, &text_chars, 0, 0)
-}
-
-fn glob_match_recursive(pattern: &[char], text: &[char], pi: usize, ti: usize) -> bool {
-    if pi == pattern.len() && ti == text.len() {
-        return true;
-    }
-
-    if pi == pattern.len() {
-        return false;
-    }
-
-    match pattern[pi] {
-        '*' => {
-            // Try matching zero or more characters
-            for i in ti..=text.len() {
-                if glob_match_recursive(pattern, text, pi + 1, i) {
-                    return true;
-                }
-            }
-            false
-        }
-        '?' => {
-            // Match exactly one character
-            if ti < text.len() {
-                glob_match_recursive(pattern, text, pi + 1, ti + 1)
-            } else {
-                false
-            }
-        }
-        c => {
-            // Match literal character
-            if ti < text.len() && text[ti] == c {
-                glob_match_recursive(pattern, text, pi + 1, ti + 1)
-            } else {
-                false
             }
         }
     }

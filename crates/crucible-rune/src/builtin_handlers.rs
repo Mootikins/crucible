@@ -22,6 +22,7 @@
 //! ```
 
 use crate::event_bus::{EventType, Handler};
+use crucible_core::utils::glob_match;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use tracing::debug;
@@ -335,7 +336,7 @@ pub fn create_tool_selector_handler(config: &ToolSelectorConfig) -> Handler {
             // Check blacklist first (takes precedence)
             if let Some(ref blocked) = blocked_tools {
                 for pattern in blocked {
-                    if glob_match_simple(pattern, &tool_name) {
+                    if glob_match(pattern, &tool_name) {
                         debug!("Tool '{}' blocked by pattern '{}'", tool_name, pattern);
                         event.cancel();
                         return Ok(event);
@@ -345,7 +346,7 @@ pub fn create_tool_selector_handler(config: &ToolSelectorConfig) -> Handler {
 
             // Check whitelist (if set, tool must match at least one pattern)
             if let Some(ref allowed) = allowed_tools {
-                let matches_any = allowed.iter().any(|p| glob_match_simple(p, &tool_name));
+                let matches_any = allowed.iter().any(|p| glob_match(p, &tool_name));
                 if !matches_any {
                     debug!("Tool '{}' not in whitelist, blocking", tool_name);
                     event.cancel();
@@ -381,53 +382,7 @@ pub fn create_tool_selector_handler(config: &ToolSelectorConfig) -> Handler {
     .with_enabled(config.enabled)
 }
 
-/// Simple glob pattern matching for tool selector
-///
-/// Supports:
-/// - `*` - matches any sequence of characters
-/// - `?` - matches exactly one character
-fn glob_match_simple(pattern: &str, text: &str) -> bool {
-    let pattern_chars: Vec<char> = pattern.chars().collect();
-    let text_chars: Vec<char> = text.chars().collect();
-    glob_match_recursive(&pattern_chars, &text_chars, 0, 0)
-}
-
-fn glob_match_recursive(pattern: &[char], text: &[char], pi: usize, ti: usize) -> bool {
-    if pi == pattern.len() && ti == text.len() {
-        return true;
-    }
-
-    if pi == pattern.len() {
-        return false;
-    }
-
-    match pattern[pi] {
-        '*' => {
-            for i in ti..=text.len() {
-                if glob_match_recursive(pattern, text, pi + 1, i) {
-                    return true;
-                }
-            }
-            false
-        }
-        '?' => {
-            if ti < text.len() {
-                glob_match_recursive(pattern, text, pi + 1, ti + 1)
-            } else {
-                false
-            }
-        }
-        c => {
-            if ti < text.len() && text[ti] == c {
-                glob_match_recursive(pattern, text, pi + 1, ti + 1)
-            } else {
-                false
-            }
-        }
-    }
-}
-
-/// Create a recipe enrichment hook that categorizes Just recipes
+/// Create a recipe enrichment handler that categorizes Just recipes
 ///
 /// This handler runs on `tool:discovered` events for Just recipes and automatically
 /// adds category, tags, and priority based on the recipe name.
@@ -1165,18 +1120,18 @@ test result: ok. 42 passed; 0 failed"#;
     }
 
     #[test]
-    fn test_glob_match_simple() {
-        assert!(glob_match_simple("*", "anything"));
-        assert!(glob_match_simple("*", ""));
-        assert!(glob_match_simple("foo*", "foobar"));
-        assert!(glob_match_simple("foo*", "foo"));
-        assert!(!glob_match_simple("foo*", "bar"));
-        assert!(glob_match_simple("*bar", "foobar"));
-        assert!(glob_match_simple("foo*bar", "fooXXXbar"));
-        assert!(glob_match_simple("foo?bar", "fooXbar"));
-        assert!(!glob_match_simple("foo?bar", "fooXXbar"));
-        assert!(glob_match_simple("search_*", "search_repositories"));
-        assert!(glob_match_simple("gh_*", "gh_search_code"));
+    fn test_glob_match() {
+        assert!(glob_match("*", "anything"));
+        assert!(glob_match("*", ""));
+        assert!(glob_match("foo*", "foobar"));
+        assert!(glob_match("foo*", "foo"));
+        assert!(!glob_match("foo*", "bar"));
+        assert!(glob_match("*bar", "foobar"));
+        assert!(glob_match("foo*bar", "fooXXXbar"));
+        assert!(glob_match("foo?bar", "fooXbar"));
+        assert!(!glob_match("foo?bar", "fooXXbar"));
+        assert!(glob_match("search_*", "search_repositories"));
+        assert!(glob_match("gh_*", "gh_search_code"));
     }
 
     #[test]
