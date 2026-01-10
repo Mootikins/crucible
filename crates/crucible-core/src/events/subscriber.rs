@@ -36,6 +36,9 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+// Glob matching from utils module
+use crate::utils::glob_match;
+
 // Import HandlerResult from handler module (consolidated type)
 pub use super::handler::HandlerResult;
 
@@ -166,13 +169,13 @@ impl EventFilter {
         let type_matches = self
             .event_type
             .as_ref()
-            .map(|p| match_glob(p, event_type))
+            .map(|p| glob_match(p, event_type))
             .unwrap_or(true);
 
         let id_matches = self
             .identifier
             .as_ref()
-            .map(|p| match_glob(p, identifier))
+            .map(|p| glob_match(p, identifier))
             .unwrap_or(true);
 
         type_matches && id_matches
@@ -183,50 +186,6 @@ impl Default for EventFilter {
     fn default() -> Self {
         Self::all()
     }
-}
-
-/// Simple glob pattern matching.
-///
-/// Supports `*` (matches any sequence) and `?` (matches single char).
-fn match_glob(pattern: &str, text: &str) -> bool {
-    if pattern == "*" {
-        return true;
-    }
-
-    let mut pattern_idx = 0;
-    let mut text_idx = 0;
-    let pattern_chars: Vec<char> = pattern.chars().collect();
-    let text_chars: Vec<char> = text.chars().collect();
-
-    let mut star_idx: Option<usize> = None;
-    let mut match_idx: Option<usize> = None;
-
-    while text_idx < text_chars.len() {
-        if pattern_idx < pattern_chars.len() && pattern_chars[pattern_idx] == '*' {
-            star_idx = Some(pattern_idx);
-            match_idx = Some(text_idx);
-            pattern_idx += 1;
-        } else if pattern_idx < pattern_chars.len()
-            && (pattern_chars[pattern_idx] == text_chars[text_idx]
-                || pattern_chars[pattern_idx] == '?')
-        {
-            pattern_idx += 1;
-            text_idx += 1;
-        } else if let Some(star) = star_idx {
-            pattern_idx = star + 1;
-            match_idx = Some(match_idx.unwrap() + 1);
-            text_idx = match_idx.unwrap();
-        } else {
-            return false;
-        }
-    }
-
-    // Check for remaining stars in pattern
-    while pattern_idx < pattern_chars.len() && pattern_chars[pattern_idx] == '*' {
-        pattern_idx += 1;
-    }
-
-    pattern_idx == pattern_chars.len()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -606,27 +565,27 @@ mod tests {
 
     #[test]
     fn test_glob_pattern_star() {
-        assert!(match_glob("*", "anything"));
-        assert!(match_glob("tool:*", "tool:before"));
-        assert!(match_glob("tool:*", "tool:after"));
-        assert!(match_glob("*:before", "tool:before"));
-        assert!(match_glob("*_test_*", "unit_test_foo"));
-        assert!(!match_glob("tool:*", "note:parsed"));
+        assert!(glob_match("*", "anything"));
+        assert!(glob_match("tool:*", "tool:before"));
+        assert!(glob_match("tool:*", "tool:after"));
+        assert!(glob_match("*:before", "tool:before"));
+        assert!(glob_match("*_test_*", "unit_test_foo"));
+        assert!(!glob_match("tool:*", "note:parsed"));
     }
 
     #[test]
     fn test_glob_pattern_question() {
-        assert!(match_glob("test?", "tests"));
-        assert!(match_glob("t?st", "test"));
-        assert!(!match_glob("test?", "test"));
-        assert!(!match_glob("test?", "testing"));
+        assert!(glob_match("test?", "tests"));
+        assert!(glob_match("t?st", "test"));
+        assert!(!glob_match("test?", "test"));
+        assert!(!glob_match("test?", "testing"));
     }
 
     #[test]
     fn test_glob_pattern_exact() {
-        assert!(match_glob("exact", "exact"));
-        assert!(!match_glob("exact", "exacty"));
-        assert!(!match_glob("exact", "exac"));
+        assert!(glob_match("exact", "exact"));
+        assert!(!glob_match("exact", "exacty"));
+        assert!(!glob_match("exact", "exac"));
     }
 
     // HandlerResult tests are now in handler.rs module (consolidated).

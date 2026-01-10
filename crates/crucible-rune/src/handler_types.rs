@@ -17,6 +17,7 @@
 
 use crate::attribute_discovery::{attr_parsers, FromAttributes};
 use crate::RuneError;
+use crucible_core::utils::glob_match;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -89,7 +90,7 @@ impl RuneHandler {
         }
 
         // Simple glob matching for patterns
-        match_glob(&self.pattern, identifier)
+        glob_match(&self.pattern, identifier)
     }
 }
 
@@ -140,49 +141,6 @@ impl FromAttributes for RuneHandler {
     }
 }
 
-/// Simple glob pattern matching
-fn match_glob(pattern: &str, text: &str) -> bool {
-    if pattern == "*" {
-        return true;
-    }
-
-    // Convert glob to simple regex-like matching
-    let mut pattern_idx = 0;
-    let mut text_idx = 0;
-    let pattern_chars: Vec<char> = pattern.chars().collect();
-    let text_chars: Vec<char> = text.chars().collect();
-
-    let mut star_idx: Option<usize> = None;
-    let mut match_idx: Option<usize> = None;
-
-    while text_idx < text_chars.len() {
-        if pattern_idx < pattern_chars.len() && pattern_chars[pattern_idx] == '*' {
-            star_idx = Some(pattern_idx);
-            match_idx = Some(text_idx);
-            pattern_idx += 1;
-        } else if pattern_idx < pattern_chars.len()
-            && (pattern_chars[pattern_idx] == text_chars[text_idx]
-                || pattern_chars[pattern_idx] == '?')
-        {
-            pattern_idx += 1;
-            text_idx += 1;
-        } else if let Some(star) = star_idx {
-            pattern_idx = star + 1;
-            match_idx = Some(match_idx.unwrap() + 1);
-            text_idx = match_idx.unwrap();
-        } else {
-            return false;
-        }
-    }
-
-    // Check for remaining stars in pattern
-    while pattern_idx < pattern_chars.len() && pattern_chars[pattern_idx] == '*' {
-        pattern_idx += 1;
-    }
-
-    pattern_idx == pattern_chars.len()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,25 +148,25 @@ mod tests {
 
     #[test]
     fn test_match_glob_star() {
-        assert!(match_glob("*", "anything"));
-        assert!(match_glob("just_*", "just_test"));
-        assert!(match_glob("just_*", "just_build"));
-        assert!(match_glob("*_test", "unit_test"));
-        assert!(match_glob("*_test_*", "unit_test_foo"));
-        assert!(!match_glob("just_*", "other_test"));
+        assert!(glob_match("*", "anything"));
+        assert!(glob_match("just_*", "just_test"));
+        assert!(glob_match("just_*", "just_build"));
+        assert!(glob_match("*_test", "unit_test"));
+        assert!(glob_match("*_test_*", "unit_test_foo"));
+        assert!(!glob_match("just_*", "other_test"));
     }
 
     #[test]
     fn test_match_glob_exact() {
-        assert!(match_glob("test", "test"));
-        assert!(!match_glob("test", "testing"));
+        assert!(glob_match("test", "test"));
+        assert!(!glob_match("test", "testing"));
     }
 
     #[test]
     fn test_match_glob_question() {
-        assert!(match_glob("test?", "tests"));
-        assert!(match_glob("t?st", "test"));
-        assert!(!match_glob("test?", "test"));
+        assert!(glob_match("test?", "tests"));
+        assert!(glob_match("t?st", "test"));
+        assert!(!glob_match("test?", "test"));
     }
 
     #[test]

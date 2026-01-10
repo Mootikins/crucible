@@ -64,6 +64,7 @@ rmcp = { workspace = true }
 parking_lot = "0.12"
 rayon = { version = "1.8", optional = true }
 futures = "0.3"
+glob-match = "0.2.1"
 
 [features]
 default = ["core"]
