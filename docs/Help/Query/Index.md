@@ -4,12 +4,11 @@ status: planned
 tags:
   - query
   - search
-  - tq
 ---
 
 # Query System
 
-> [!warning] The tq query language is not yet implemented.
+> [!warning] The query language described here is planned but not yet implemented.
 
 The query system provides a powerful language for finding notes based on complex criteria.
 
