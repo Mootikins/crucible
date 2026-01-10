@@ -85,13 +85,13 @@ pub struct LuaScriptHandler {
 }
 
 impl LuaScriptHandler {
-    /// Create handler from discovered hook/handler
+    /// Create handler from discovered handler metadata
     ///
     /// Reads and caches the source file for later execution.
-    pub fn new(hook: DiscoveredHandler) -> Result<Self, LuaError> {
-        let source = std::fs::read_to_string(&hook.source_path)?;
+    pub fn new(discovered: DiscoveredHandler) -> Result<Self, LuaError> {
+        let source = std::fs::read_to_string(&discovered.source_path)?;
         Ok(Self {
-            metadata: hook,
+            metadata: discovered,
             source,
         })
     }
@@ -99,9 +99,9 @@ impl LuaScriptHandler {
     /// Create handler with pre-loaded source
     ///
     /// Use this when source is already available (e.g., during discovery).
-    pub fn with_source(hook: DiscoveredHandler, source: String) -> Self {
+    pub fn with_source(discovered: DiscoveredHandler, source: String) -> Self {
         Self {
-            metadata: hook,
+            metadata: discovered,
             source,
         }
     }
@@ -384,7 +384,7 @@ impl LuaScriptHandlerRegistry {
 
                 let is_fennel = entry_path.extension().is_some_and(|e| e == "fnl");
 
-                // Try both @handler and @hook annotations
+                // Try @handler annotations (also supports legacy @hook)
                 match parser.parse_handlers(&source, entry_path, is_fennel) {
                     Ok(hooks) => {
                         for hook in hooks {
