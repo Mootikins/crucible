@@ -1,152 +1,80 @@
-use std::fs;
+//! Integration tests for the init command
 use tempfile::TempDir;
 
-#[test]
-#[ignore = "Integration test requiring binary build - run with --ignored"]
-fn test_init_creates_directories_and_config() {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let path_arg = temp_dir.path().to_str().unwrap();
+#[tokio::test]
+async fn test_init_creates_config_with_provider() {
+    let temp_dir = TempDir::new().unwrap();
+    let path = temp_dir.path().to_path_buf();
 
-    // Run init command
-    let output = std::process::Command::new("cargo")
-        .current_dir(std::env::current_dir().unwrap())
-        .args([
-            "run",
-            "-p",
-            "crucible-cli",
-            "--",
-            "init",
-            "--path",
-            path_arg,
-        ])
-        .output()
-        .expect("Failed to run init command");
+    // Run init (non-interactive mode with defaults)
+    crucible_cli::commands::init::execute(Some(path.clone()), false, false)
+        .await
+        .unwrap();
 
-    assert!(
-        output.status.success(),
-        "Init command failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    // Verify .crucible directory was created
+    let crucible_dir = path.join(".crucible");
+    assert!(crucible_dir.exists(), ".crucible directory should exist");
 
-    let crucible_dir = temp_dir.path().join(".crucible");
+    // Verify config.toml was created
+    let config_path = crucible_dir.join("config.toml");
+    assert!(config_path.exists(), "config.toml should exist");
 
-    // Verify directories were created
-    assert!(
-        crucible_dir.exists(),
-        "Expected .crucible directory to be created"
-    );
-    assert!(
-        crucible_dir.join("config.toml").exists(),
-        "Expected config.toml to be created"
-    );
-    assert!(
-        crucible_dir.join("sessions").exists(),
-        "Expected sessions directory to be created"
-    );
-    assert!(
-        crucible_dir.join("plugins").exists(),
-        "Expected plugins directory to be created"
-    );
-
-    // Verify config.toml content
-    let config_content =
-        fs::read_to_string(crucible_dir.join("config.toml")).expect("Failed to read config.toml");
-    assert!(config_content.contains("[kiln]"));
-    assert!(config_content.contains("[storage]"));
-    assert!(config_content.contains("[llm]"));
-    assert!(config_content.contains("backend = \"sqlite\""));
+    // Verify config contains expected sections
+    let content = std::fs::read_to_string(&config_path).unwrap();
+    assert!(content.contains("[chat]"), "config should have [chat] section");
+    assert!(content.contains("provider"), "config should have provider setting");
+    assert!(content.contains("model"), "config should have model setting");
 }
 
-#[test]
-#[ignore = "Integration test requiring binary build - run with --ignored"]
-fn test_init_with_existing_directory_errors() {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let path_arg = temp_dir.path().to_str().unwrap();
+#[tokio::test]
+async fn test_init_creates_required_directories() {
+    let temp_dir = TempDir::new().unwrap();
+    let path = temp_dir.path().to_path_buf();
 
-    // Run init command first
-    let output1 = std::process::Command::new("cargo")
-        .current_dir(std::env::current_dir().unwrap())
-        .args([
-            "run",
-            "-p",
-            "crucible-cli",
-            "--",
-            "init",
-            "--path",
-            path_arg,
-        ])
-        .output()
-        .expect("Failed to run init command");
-    assert!(output1.status.success(), "First init should succeed");
+    crucible_cli::commands::init::execute(Some(path.clone()), false, false)
+        .await
+        .unwrap();
 
-    // Run init command again (should fail)
-    let output2 = std::process::Command::new("cargo")
-        .current_dir(std::env::current_dir().unwrap())
-        .args([
-            "run",
-            "-p",
-            "crucible-cli",
-            "--",
-            "init",
-            "--path",
-            path_arg,
-        ])
-        .output()
-        .expect("Failed to run init command");
-
-    assert!(!output2.status.success(), "Second init should have failed");
-
-    let stderr = String::from_utf8_lossy(&output2.stderr);
-    assert!(
-        stderr.contains("Kiln already initialized"),
-        "Expected error message about existing kiln"
-    );
+    // Verify required subdirectories
+    let crucible_dir = path.join(".crucible");
+    assert!(crucible_dir.join("sessions").exists(), "sessions dir should exist");
+    assert!(crucible_dir.join("plugins").exists(), "plugins dir should exist");
 }
 
-#[test]
-#[ignore = "Integration test requiring binary build - run with --ignored"]
-fn test_init_with_force_overwrites() {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let path_arg = temp_dir.path().to_str().unwrap();
+#[tokio::test]
+async fn test_init_fails_if_already_exists() {
+    let temp_dir = TempDir::new().unwrap();
+    let path = temp_dir.path().to_path_buf();
 
-    // Create .crucible directory with some content
-    let crucible_dir = temp_dir.path().join(".crucible");
-    fs::create_dir_all(&crucible_dir).expect("Failed to create .crucible directory");
-    let test_file = crucible_dir.join("test.txt");
-    fs::write(&test_file, "test content").expect("Failed to write test file");
+    // First init should succeed
+    crucible_cli::commands::init::execute(Some(path.clone()), false, false)
+        .await
+        .unwrap();
 
-    // Run init command with force
-    let output = std::process::Command::new("cargo")
-        .current_dir(std::env::current_dir().unwrap())
-        .args([
-            "run",
-            "-p",
-            "crucible-cli",
-            "--",
-            "init",
-            "--path",
-            path_arg,
-            "--force",
-        ])
-        .output()
-        .expect("Failed to run init command");
+    // Second init without force should fail
+    let result = crucible_cli::commands::init::execute(Some(path.clone()), false, false).await;
+    assert!(result.is_err(), "should fail when already initialized");
+}
 
-    assert!(
-        output.status.success(),
-        "Init command with force should succeed"
-    );
+#[tokio::test]
+async fn test_init_force_reinitializes() {
+    let temp_dir = TempDir::new().unwrap();
+    let path = temp_dir.path().to_path_buf();
 
-    // Verify test file was removed and directories recreated
-    assert!(
-        !test_file.exists(),
-        "Test file should have been removed by --force"
-    );
-    assert!(
-        crucible_dir.exists(),
-        "Expected .crucible directory to still exist"
-    );
-    assert!(
-        crucible_dir.join("config.toml").exists(),
-        "Expected config.toml to be created"
-    );
+    // First init
+    crucible_cli::commands::init::execute(Some(path.clone()), false, false)
+        .await
+        .unwrap();
+
+    // Create a marker file to verify directory is recreated
+    let marker = path.join(".crucible/marker.txt");
+    std::fs::write(&marker, "test").unwrap();
+    assert!(marker.exists());
+
+    // Force reinit should succeed and remove marker
+    crucible_cli::commands::init::execute(Some(path.clone()), true, false)
+        .await
+        .unwrap();
+
+    assert!(!marker.exists(), "marker should be removed after force reinit");
 }
