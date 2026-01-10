@@ -2203,51 +2203,87 @@ impl RatatuiRunner {
                     .set_status_text("Agent switching not yet implemented");
             }
             "models" => {
-                // Fetch and display available models
+                // Unified model picker with all providers and ACP agents
                 self.view.set_status_text("Fetching models...");
 
-                // Get current provider from runtime config
-                let provider = self.runtime_config.provider.to_lowercase();
+                let current = self.runtime_config.display_string();
+                let mut sections = Vec::new();
 
-                match provider.as_str() {
-                    "ollama" => {
-                        // Fetch models from Ollama
-                        match crate::provider_detect::check_ollama().await {
-                            Some(models) if !models.is_empty() => {
-                                let model_list = models.iter()
-                                    .take(20)  // Limit to first 20 for display
-                                    .map(|m| format!("  • {}", m))
-                                    .collect::<Vec<_>>()
-                                    .join("\n");
-                                let content = format!(
-                                    "Available Ollama models ({} total):\n\n{}\n\nUse :model <name> to switch",
-                                    models.len(),
-                                    model_list
-                                );
-                                self.view.push_dialog(crate::tui::dialog::DialogState::info("Models", content));
-                            }
-                            Some(_) => {
-                                self.view.set_status_text("No models found. Run: ollama pull <model>");
-                            }
-                            None => {
-                                self.view.set_status_text("Ollama not running. Start with: ollama serve");
-                            }
+                // Ollama section - fetch live models
+                let ollama_section = match crate::provider_detect::check_ollama().await {
+                    Some(models) if !models.is_empty() => {
+                        let model_list = models.iter()
+                            .take(10)
+                            .map(|m| {
+                                let spec = format!("ollama/{}", m);
+                                if spec == current {
+                                    format!("  • {} (current)", spec)
+                                } else {
+                                    format!("  • {}", spec)
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        format!("Ollama ({} available):\n{}", models.len(), model_list)
+                    }
+                    _ => "Ollama:\n  (not running)".to_string(),
+                };
+                sections.push(ollama_section);
+
+                // OpenAI section - static list
+                let openai_models = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o1-preview", "o1-mini"];
+                let openai_list = openai_models.iter()
+                    .map(|m| {
+                        let spec = format!("openai/{}", m);
+                        if spec == current {
+                            format!("  • {} (current)", spec)
+                        } else {
+                            format!("  • {}", spec)
                         }
-                    }
-                    "openai" => {
-                        // For OpenAI, show commonly available models
-                        let content = "OpenAI models:\n\n  • gpt-4o (recommended)\n  • gpt-4o-mini\n  • gpt-4-turbo\n  • o1-preview\n  • o1-mini\n\nUse :model <name> to switch";
-                        self.view.push_dialog(crate::tui::dialog::DialogState::info("Models", content));
-                    }
-                    "anthropic" => {
-                        // For Anthropic, show commonly available models
-                        let content = "Anthropic models:\n\n  • claude-sonnet-4-20250514 (latest)\n  • claude-3-5-sonnet-latest\n  • claude-3-5-haiku-latest\n  • claude-3-opus-latest\n\nUse :model <name> to switch";
-                        self.view.push_dialog(crate::tui::dialog::DialogState::info("Models", content));
-                    }
-                    _ => {
-                        self.view.set_status_text(&format!("Unknown provider: {}", provider));
-                    }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                sections.push(format!("OpenAI:\n{}", openai_list));
+
+                // Anthropic section - static list
+                let anthropic_models = ["claude-sonnet-4-20250514", "claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"];
+                let anthropic_list = anthropic_models.iter()
+                    .map(|m| {
+                        let spec = format!("anthropic/{}", m);
+                        if spec == current {
+                            format!("  • {} (current)", spec)
+                        } else {
+                            format!("  • {}", spec)
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                sections.push(format!("Anthropic:\n{}", anthropic_list));
+
+                // ACP agents section - probe for available
+                let acp_agents = crucible_acp::probe_all_agents().await;
+                let available_agents: Vec<_> = acp_agents.iter().filter(|a| a.available).collect();
+                if !available_agents.is_empty() {
+                    let agent_list = available_agents.iter()
+                        .map(|a| {
+                            let spec = format!("acp/{}", a.name);
+                            if spec == current {
+                                format!("  • {} - {} (current)", spec, a.description)
+                            } else {
+                                format!("  • {} - {}", spec, a.description)
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    sections.push(format!("ACP Agents:\n{}", agent_list));
                 }
+
+                let content = format!(
+                    "{}\n\nUse :model <provider/model> to switch",
+                    sections.join("\n\n")
+                );
+                self.view.push_dialog(crate::tui::dialog::DialogState::info("Models", content));
+                self.view.set_status_text("Ready");
             }
             "config" => {
                 // Show current config summary
@@ -2274,7 +2310,7 @@ impl RatatuiRunner {
                     self.view.set_status_text("Detecting providers...");
 
                     // LLM providers section
-                    let current = &self.runtime_config.provider.to_lowercase();
+                    let current = self.runtime_config.provider().to_lowercase();
                     let providers = ["ollama", "openai", "anthropic"];
                     let provider_list = providers.iter()
                         .map(|p| {
@@ -2329,21 +2365,29 @@ impl RatatuiRunner {
             }
             "model" | "mod" => {
                 if args.is_empty() {
-                    // Show current model
-                    let current = &self.runtime_config.model;
-                    self.view.set_status_text(&format!("Model: {}", current));
+                    // Show current backend (provider/model format)
+                    let current = self.runtime_config.display_string();
+                    self.view.set_status_text(&format!("Backend: {}", current));
                 } else {
-                    // Set new model (no validation - any string accepted)
-                    self.runtime_config.set_model(args);
-                    self.view.state_mut().model = args.to_string();
-                    self.view.set_status_text(&format!("Model set to: {}", args));
+                    // Parse unified provider/model format
+                    match crate::tui::BackendSpec::parse(args) {
+                        Ok(spec) => {
+                            let display = spec.to_string();
+                            self.view.state_mut().provider = spec.provider().to_string();
+                            self.view.state_mut().model = spec.model().to_string();
+                            self.runtime_config.set_backend(spec);
+                            self.view.set_status_text(&format!("Backend: {}", display));
+                        }
+                        Err(e) => {
+                            self.view.echo_error(&e);
+                        }
+                    }
                 }
             }
             "status" | "s" => {
                 let status = format!(
-                    "Provider: {} | Model: {} | Mode: {}",
-                    self.runtime_config.provider,
-                    self.runtime_config.model,
+                    "Backend: {} | Mode: {}",
+                    self.runtime_config.display_string(),
                     self.view.mode_id()
                 );
                 self.view.set_status_text(&status);
