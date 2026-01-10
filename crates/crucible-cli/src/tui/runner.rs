@@ -441,7 +441,12 @@ impl RatatuiRunner {
 
     /// Set the runtime configuration (provider/model from config file)
     pub fn with_runtime_config(&mut self, provider: impl Into<String>, model: impl Into<String>) -> &mut Self {
-        self.runtime_config = crate::tui::RuntimeConfig::from_config(&provider.into(), &model.into());
+        let provider_str = provider.into();
+        let model_str = model.into();
+        self.runtime_config = crate::tui::RuntimeConfig::from_config(&provider_str, &model_str);
+        // Sync to view state for status bar display
+        self.view.state_mut().provider = provider_str;
+        self.view.state_mut().model = model_str;
         self
     }
 
