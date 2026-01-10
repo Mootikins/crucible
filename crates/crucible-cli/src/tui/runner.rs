@@ -2198,9 +2198,51 @@ impl RatatuiRunner {
                     .set_status_text("Agent switching not yet implemented");
             }
             "models" => {
-                // TODO: Open models list popup
-                self.view
-                    .set_status_text("Model listing not yet implemented");
+                // Fetch and display available models
+                self.view.set_status_text("Fetching models...");
+
+                // Get current provider from runtime config
+                let provider = self.runtime_config.provider.to_lowercase();
+
+                match provider.as_str() {
+                    "ollama" => {
+                        // Fetch models from Ollama
+                        match crate::provider_detect::check_ollama().await {
+                            Some(models) if !models.is_empty() => {
+                                let model_list = models.iter()
+                                    .take(20)  // Limit to first 20 for display
+                                    .map(|m| format!("  • {}", m))
+                                    .collect::<Vec<_>>()
+                                    .join("\n");
+                                let content = format!(
+                                    "Available Ollama models ({} total):\n\n{}\n\nUse :model <name> to switch",
+                                    models.len(),
+                                    model_list
+                                );
+                                self.view.push_dialog(crate::tui::dialog::DialogState::info("Models", content));
+                            }
+                            Some(_) => {
+                                self.view.set_status_text("No models found. Run: ollama pull <model>");
+                            }
+                            None => {
+                                self.view.set_status_text("Ollama not running. Start with: ollama serve");
+                            }
+                        }
+                    }
+                    "openai" => {
+                        // For OpenAI, show commonly available models
+                        let content = "OpenAI models:\n\n  • gpt-4o (recommended)\n  • gpt-4o-mini\n  • gpt-4-turbo\n  • o1-preview\n  • o1-mini\n\nUse :model <name> to switch";
+                        self.view.push_dialog(crate::tui::dialog::DialogState::info("Models", content));
+                    }
+                    "anthropic" => {
+                        // For Anthropic, show commonly available models
+                        let content = "Anthropic models:\n\n  • claude-sonnet-4-20250514 (latest)\n  • claude-3-5-sonnet-latest\n  • claude-3-5-haiku-latest\n  • claude-3-opus-latest\n\nUse :model <name> to switch";
+                        self.view.push_dialog(crate::tui::dialog::DialogState::info("Models", content));
+                    }
+                    _ => {
+                        self.view.set_status_text(&format!("Unknown provider: {}", provider));
+                    }
+                }
             }
             "config" => {
                 // Show current config summary
