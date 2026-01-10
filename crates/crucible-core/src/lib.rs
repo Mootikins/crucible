@@ -10,6 +10,7 @@ pub mod database;
 pub mod enrichment;
 pub mod events;
 pub mod hashing;
+pub mod http;
 pub mod interaction;
 pub mod interaction_registry;
 pub mod merkle;

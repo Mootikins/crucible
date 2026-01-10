@@ -71,6 +71,7 @@ mod executor;
 mod fennel;
 mod graph;
 mod handlers;
+mod http;
 mod json_query;
 mod mcp;
 mod panel;
@@ -85,9 +86,9 @@ pub use ask::{
     core_answer_to_lua, core_batch_to_lua, core_question_to_lua, core_response_to_lua,
     lua_answer_table_to_core, lua_answer_to_core, lua_batch_table_to_core, lua_batch_to_core,
     lua_question_table_to_core, lua_question_to_core, lua_response_table_to_core,
-    lua_response_to_core, register_ask_module, register_ask_module_with_context,
-    EventPushCallback, LuaAskBatch, LuaAskBatchResponse, LuaAskContext, LuaAskError,
-    LuaAskQuestion, LuaQuestionAnswer,
+    lua_response_to_core, register_ask_module, register_ask_module_with_agent,
+    register_ask_module_with_context, EventPushCallback, LuaAgentAskContext, LuaAskBatch,
+    LuaAskBatchResponse, LuaAskContext, LuaAskError, LuaAskQuestion, LuaQuestionAnswer,
 };
 pub use core_handler::{LuaHandler, LuaHandlerMeta};
 pub use error::LuaError;
@@ -99,6 +100,7 @@ pub use graph::{
     register_graph_module_with_executor, register_graph_view_functions,
     register_note_store_functions,
 };
+pub use http::register_http_module;
 pub use json_query::{
     detect_format, encode_to_format, json_to_lua, lua_to_json, parse_auto, parse_with_format,
     register_oq_module, Format,
