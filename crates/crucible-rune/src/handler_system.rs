@@ -102,6 +102,64 @@ fn strip_handler_attributes(source: &str) -> String {
     HANDLER_ATTR_RE.replace_all(source, "").to_string()
 }
 
+/// Execute a Rune handler function with the given context and event.
+///
+/// This is the core execution logic shared between `RuneScriptHandler::handle()`
+/// and `clone_as_handler()`. It converts values to Rune format, calls the function,
+/// and processes the result.
+fn execute_rune_handler(
+    executor: &RuneExecutor,
+    unit: &Arc<Unit>,
+    handler_name: &str,
+    handler_fn: &str,
+    ctx_json: JsonValue,
+    event_json: JsonValue,
+    event: Event,
+) -> HandlerResult {
+    // Convert to Rune values
+    let ctx_val = executor.json_to_rune_value(ctx_json).map_err(|e| {
+        HandlerError::non_fatal(handler_name, format!("Failed to convert context: {}", e))
+    })?;
+    let event_val = executor.json_to_rune_value(event_json).map_err(|e| {
+        HandlerError::non_fatal(handler_name, format!("Failed to convert event: {}", e))
+    })?;
+
+    // Call the handler function
+    let result = tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(async {
+            executor
+                .call_function(unit, handler_fn, (ctx_val, event_val))
+                .await
+        })
+    });
+
+    match result {
+        Ok(result_json) => {
+            if result_json.is_null() {
+                // Handler returned null/None - pass through unchanged
+                Ok(event)
+            } else {
+                // Try to deserialize back to Event
+                match serde_json::from_value::<Event>(result_json) {
+                    Ok(modified_event) => Ok(modified_event),
+                    Err(e) => {
+                        warn!(
+                            "Handler {} returned invalid event structure: {}",
+                            handler_name, e
+                        );
+                        // Return original event on parse error (fail-open)
+                        Ok(event)
+                    }
+                }
+            }
+        }
+        Err(e) => Err(HandlerError::non_fatal(
+            handler_name,
+            format!("Execution failed: {}", e),
+        )),
+    }
+}
+
 impl RuneScriptHandler {
     /// Create a new handler from discovered metadata
     pub fn new(metadata: RuneHandler, executor: Arc<RuneExecutor>) -> Result<Self, RuneError> {
@@ -178,57 +236,15 @@ impl ScriptHandler for RuneScriptHandler {
             )
         })?;
 
-        // Convert to Rune values
-        let ctx_val = self.executor.json_to_rune_value(ctx_json).map_err(|e| {
-            HandlerError::non_fatal(
-                &self.metadata.name,
-                format!("Failed to convert context: {}", e),
-            )
-        })?;
-        let event_val = self.executor.json_to_rune_value(event_json).map_err(|e| {
-            HandlerError::non_fatal(
-                &self.metadata.name,
-                format!("Failed to convert event: {}", e),
-            )
-        })?;
-
-        // Call the handler function
-        // We need to run this synchronously - wrap in a block_on for now
-        // In a real async context, this would be called from an async context
-        let result = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                self.executor
-                    .call_function(&self.unit, &self.metadata.handler_fn, (ctx_val, event_val))
-                    .await
-            })
-        });
-
-        match result {
-            Ok(result_json) => {
-                // Parse result back to Event
-                if result_json.is_null() {
-                    // Handler returned null/None - pass through unchanged
-                    Ok(event)
-                } else {
-                    // Try to deserialize back to Event
-                    match serde_json::from_value::<Event>(result_json) {
-                        Ok(modified_event) => Ok(modified_event),
-                        Err(e) => {
-                            warn!(
-                                "Handler {} returned invalid event structure: {}",
-                                self.metadata.name, e
-                            );
-                            // Return original event on parse error (fail-open)
-                            Ok(event)
-                        }
-                    }
-                }
-            }
-            Err(e) => Err(HandlerError::non_fatal(
-                &self.metadata.name,
-                format!("Execution failed: {}", e),
-            )),
-        }
+        execute_rune_handler(
+            &self.executor,
+            &self.unit,
+            &self.metadata.name,
+            &self.metadata.handler_fn,
+            ctx_json,
+            event_json,
+            event,
+        )
     }
 }
 
@@ -493,57 +509,15 @@ impl RuneScriptHandler {
                     }
                 };
 
-                // Convert to Rune values
-                let ctx_val = match executor.json_to_rune_value(ctx_json) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        return Err(HandlerError::non_fatal(
-                            &metadata.name,
-                            format!("Failed to convert context: {}", e),
-                        ))
-                    }
-                };
-                let event_val = match executor.json_to_rune_value(event_json) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        return Err(HandlerError::non_fatal(
-                            &metadata.name,
-                            format!("Failed to convert event: {}", e),
-                        ))
-                    }
-                };
-
-                // Call the handler function
-                let result = tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().block_on(async {
-                        executor
-                            .call_function(&unit, &metadata.handler_fn, (ctx_val, event_val))
-                            .await
-                    })
-                });
-
-                match result {
-                    Ok(result_json) => {
-                        if result_json.is_null() {
-                            Ok(event)
-                        } else {
-                            match serde_json::from_value::<Event>(result_json) {
-                                Ok(modified_event) => Ok(modified_event),
-                                Err(e) => {
-                                    warn!(
-                                        "Handler {} returned invalid event structure: {}",
-                                        metadata.name, e
-                                    );
-                                    Ok(event)
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => Err(HandlerError::non_fatal(
-                        &metadata.name,
-                        format!("Execution failed: {}", e),
-                    )),
-                }
+                execute_rune_handler(
+                    &executor,
+                    &unit,
+                    &metadata.name,
+                    &metadata.handler_fn,
+                    ctx_json,
+                    event_json,
+                    event,
+                )
             },
         )
         .with_priority(metadata.priority)
