@@ -90,12 +90,14 @@ impl<'a> SessionHistoryWidget<'a> {
     ///
     /// Uses per-item caching to avoid re-parsing markdown on every frame.
     /// Streaming items are never cached since they change frequently.
+    /// Skips graduated lines from the first item (already in terminal scrollback).
     fn render_to_lines(&self, width: usize) -> Vec<Line<'static>> {
         // Check if width changed - invalidates all caches
         self.state.check_width(width);
 
         let mut all_lines = Vec::new();
         let items = self.state.items();
+        let skip_first_n = self.state.graduated_lines_in_first_item();
 
         for (i, item) in items.iter().enumerate() {
             // Add blank line before tool calls, but skip between consecutive tools
@@ -117,20 +119,28 @@ impl<'a> SessionHistoryWidget<'a> {
                 } | ConversationItem::Status(_)
             );
 
-            // Try to get from cache (skip for streaming items)
-            if !is_streaming {
+            // Render the item's lines
+            let item_lines = if !is_streaming {
+                // Try to get from cache
                 if let Some(cached_lines) = self.state.get_cached(i, width) {
-                    all_lines.extend(cached_lines);
-                    continue;
+                    cached_lines
+                } else {
+                    // Render fresh and cache
+                    let lines = render_item_to_lines(item, width);
+                    self.state.store_cached(i, width, lines.clone());
+                    lines
                 }
-            }
+            } else {
+                // Don't cache streaming content
+                render_item_to_lines(item, width)
+            };
 
-            // Render fresh and cache (unless streaming)
-            let item_lines = render_item_to_lines(item, width);
-            if !is_streaming {
-                self.state.store_cached(i, width, item_lines.clone());
+            // For the first item, skip already graduated lines
+            if i == 0 && skip_first_n > 0 {
+                all_lines.extend(item_lines.into_iter().skip(skip_first_n));
+            } else {
+                all_lines.extend(item_lines);
             }
-            all_lines.extend(item_lines);
         }
 
         all_lines
@@ -343,7 +353,9 @@ impl Widget for SessionHistoryWidget<'_> {
         use crate::tui::constants::UiConstants;
         // Content width minus prefix (" ● " = 3 chars) and right margin (1 char)
         let content_width = UiConstants::content_width(area.width);
+        // render_to_lines already skips graduated lines from first item
         let lines = self.render_to_lines(content_width);
+
         let content_height = lines.len();
         let viewport_height = area.height as usize;
 

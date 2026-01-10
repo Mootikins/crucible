@@ -110,7 +110,7 @@ pub fn test_repl_commands() -> Vec<PopupItem> {
         repl("help", "Show keybindings and commands"),
         repl("mode", "Cycle session mode"),
         repl("agent", "Switch agent backend"),
-        repl("models", "List available models"),
+        repl("model", "Switch model (opens picker)"),
     ]
 }
 
@@ -154,6 +154,52 @@ pub fn many_sessions() -> Vec<PopupItem> {
             )
         })
         .collect()
+}
+
+// =============================================================================
+// Model fixtures
+// =============================================================================
+
+/// Helper to create a model item
+pub fn model(spec: impl Into<String>, description: impl Into<String>) -> PopupItem {
+    PopupItem::model(spec.into()).desc(description)
+}
+
+/// Helper to create a model item marked as current
+pub fn model_current(spec: impl Into<String>, description: impl Into<String>) -> PopupItem {
+    PopupItem::model(spec.into())
+        .desc(description)
+        .with_current(true)
+        .with_score(1000) // Current model sorts to top
+}
+
+/// Test models for :model popup
+pub fn test_models() -> Vec<PopupItem> {
+    vec![
+        model_current("ollama/llama3.2", "Ollama - Llama 3.2"),
+        model("ollama/qwen2.5-coder:32b", "Ollama - Qwen 2.5 Coder 32B"),
+        model("openai/gpt-4o", "OpenAI - GPT-4o"),
+        model("anthropic/claude-sonnet-4", "Anthropic - Claude Sonnet 4"),
+    ]
+}
+
+/// Many models for scroll testing
+pub fn many_models() -> Vec<PopupItem> {
+    vec![
+        model_current("ollama/llama3.2", "Ollama - Llama 3.2"),
+        model("ollama/llama3.1", "Ollama - Llama 3.1"),
+        model("ollama/qwen2.5-coder:32b", "Ollama - Qwen 2.5 Coder 32B"),
+        model("ollama/qwen2.5-coder:14b", "Ollama - Qwen 2.5 Coder 14B"),
+        model("ollama/deepseek-r1:32b", "Ollama - DeepSeek R1 32B"),
+        model("ollama/codellama:34b", "Ollama - CodeLlama 34B"),
+        model("openai/gpt-4o", "OpenAI - GPT-4o"),
+        model("openai/gpt-4o-mini", "OpenAI - GPT-4o Mini"),
+        model("openai/gpt-4-turbo", "OpenAI - GPT-4 Turbo"),
+        model("anthropic/claude-sonnet-4", "Anthropic - Claude Sonnet 4"),
+        model("anthropic/claude-opus-4", "Anthropic - Claude Opus 4"),
+        model("anthropic/claude-haiku-3.5", "Anthropic - Claude Haiku 3.5"),
+        model("acp/opencode", "ACP - OpenCode Agent"),
+    ]
 }
 
 /// Mixed items for AgentOrFile popup testing
@@ -280,5 +326,37 @@ mod tests {
     #[test]
     fn many_sessions_has_expected_count() {
         assert_eq!(many_sessions().len(), 20);
+    }
+
+    #[test]
+    fn test_models_not_empty() {
+        assert!(!test_models().is_empty());
+    }
+
+    #[test]
+    fn model_tokens_are_specs() {
+        for m in test_models() {
+            // Model tokens are the provider/model spec
+            assert!(
+                m.token().contains('/'),
+                "Model token should be provider/model format, got: {}",
+                m.token()
+            );
+        }
+    }
+
+    #[test]
+    fn model_current_is_marked() {
+        let m = model_current("ollama/test", "Test model");
+        if let PopupItem::Model { current, .. } = m {
+            assert!(current);
+        } else {
+            panic!("Expected Model variant");
+        }
+    }
+
+    #[test]
+    fn many_models_has_expected_count() {
+        assert_eq!(many_models().len(), 13);
     }
 }

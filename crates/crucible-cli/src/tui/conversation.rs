@@ -18,6 +18,7 @@ use ratatui::{
     widgets::{Paragraph, Widget},
 };
 use std::cell::RefCell;
+use std::collections::VecDeque;
 
 // =============================================================================
 // Static Instances
@@ -242,11 +243,14 @@ impl RenderCache {
 /// Holds the conversation history for rendering
 #[derive(Debug)]
 pub struct ConversationState {
-    items: Vec<ConversationItem>,
+    items: VecDeque<ConversationItem>,
     /// Maximum output lines to show per tool
     max_tool_output_lines: usize,
     /// Per-item render cache (RefCell for interior mutability during render)
     cache: RefCell<RenderCache>,
+    /// Lines already graduated from the first item (for partial graduation)
+    /// When all lines of the first item are graduated, it's popped and this resets to 0
+    graduated_lines_in_first_item: usize,
 }
 
 impl Default for ConversationState {
@@ -258,9 +262,10 @@ impl Default for ConversationState {
 impl ConversationState {
     pub fn new() -> Self {
         Self {
-            items: Vec::new(),
+            items: VecDeque::new(),
             max_tool_output_lines: 3,
             cache: RefCell::new(RenderCache::new()),
+            graduated_lines_in_first_item: 0,
         }
     }
 
@@ -338,12 +343,12 @@ impl ConversationState {
     }
 
     pub fn push(&mut self, item: ConversationItem) {
-        self.items.push(item);
+        self.items.push_back(item);
         self.cache.borrow_mut().on_item_added();
     }
 
     pub fn push_user_message(&mut self, content: impl Into<String>) {
-        self.items.push(ConversationItem::UserMessage {
+        self.items.push_back(ConversationItem::UserMessage {
             content: content.into(),
         });
         self.cache.borrow_mut().on_item_added();
@@ -370,7 +375,7 @@ impl ConversationState {
 
         // For non-streaming messages, create a single prose block
         let blocks = vec![StreamBlock::prose(content.into())];
-        self.items.push(ConversationItem::AssistantMessage {
+        self.items.push_back(ConversationItem::AssistantMessage {
             blocks,
             is_streaming: false,
         });
@@ -386,7 +391,7 @@ impl ConversationState {
             return;
         }
 
-        self.items.push(ConversationItem::AssistantMessage {
+        self.items.push_back(ConversationItem::AssistantMessage {
             blocks: Vec::new(),
             is_streaming: true,
         });
@@ -477,7 +482,7 @@ impl ConversationState {
         if had_status {
             self.cache.borrow_mut().invalidate_all();
         }
-        self.items.push(ConversationItem::Status(status));
+        self.items.push_back(ConversationItem::Status(status));
         self.cache.borrow_mut().on_item_added();
     }
 
@@ -501,17 +506,18 @@ impl ConversationState {
         // Save and remove any existing status (it must remain last)
         let status = self.take_status();
 
-        self.items.push(ConversationItem::ToolCall(ToolCallDisplay {
-            name: name.into(),
-            args,
-            status: ToolStatus::Running,
-            output_lines: Vec::new(),
-        }));
+        self.items
+            .push_back(ConversationItem::ToolCall(ToolCallDisplay {
+                name: name.into(),
+                args,
+                status: ToolStatus::Running,
+                output_lines: Vec::new(),
+            }));
         self.cache.borrow_mut().on_item_added();
 
         // Re-add status at end (if there was one)
         if let Some(s) = status {
-            self.items.push(s);
+            self.items.push_back(s);
             self.cache.borrow_mut().on_item_added();
         }
     }
@@ -522,7 +528,7 @@ impl ConversationState {
             .items
             .iter()
             .position(|item| matches!(item, ConversationItem::Status(_)));
-        pos.map(|idx| {
+        pos.and_then(|idx| {
             // Removing shifts indices, invalidate all
             self.cache.borrow_mut().invalidate_all();
             self.items.remove(idx)
@@ -568,7 +574,7 @@ impl ConversationState {
         }
     }
 
-    pub fn items(&self) -> &[ConversationItem] {
+    pub fn items(&self) -> &VecDeque<ConversationItem> {
         &self.items
     }
 
@@ -608,6 +614,110 @@ impl ConversationState {
     pub fn clear(&mut self) {
         self.items.clear();
         self.cache.borrow_mut().on_clear();
+        self.graduated_lines_in_first_item = 0;
+    }
+
+    /// Get the number of lines already graduated from the first item.
+    ///
+    /// Used by rendering to skip these lines (they're already in terminal scrollback).
+    pub fn graduated_lines_in_first_item(&self) -> usize {
+        self.graduated_lines_in_first_item
+    }
+
+    /// Graduate N lines to terminal scrollback.
+    ///
+    /// Pops complete items from the front when all their lines are graduated.
+    /// Tracks partial graduation for the current front item.
+    ///
+    /// Returns the lines that were graduated (for writing to scrollback).
+    pub fn graduate_lines(&mut self, count: usize, content_width: usize) -> Vec<String> {
+        if count == 0 || self.items.is_empty() {
+            return Vec::new();
+        }
+
+        let mut remaining = count;
+        let mut graduated = Vec::new();
+
+        while remaining > 0 && !self.items.is_empty() {
+            let front_lines = render_item_to_lines(&self.items[0], content_width);
+            let front_line_count = front_lines.len();
+            let already_graduated = self.graduated_lines_in_first_item;
+            let lines_left_in_front = front_line_count.saturating_sub(already_graduated);
+
+            if remaining >= lines_left_in_front {
+                // Graduate all remaining lines of front item
+                for line in front_lines.into_iter().skip(already_graduated) {
+                    let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+                    graduated.push(text);
+                }
+                // Pop the front item
+                self.items.pop_front();
+                self.graduated_lines_in_first_item = 0;
+                // Invalidate cache since indices shifted
+                self.cache.borrow_mut().invalidate_all();
+                remaining -= lines_left_in_front;
+            } else {
+                // Partial graduation of front item
+                for line in front_lines
+                    .into_iter()
+                    .skip(already_graduated)
+                    .take(remaining)
+                {
+                    let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+                    graduated.push(text);
+                }
+                self.graduated_lines_in_first_item += remaining;
+                remaining = 0;
+            }
+        }
+
+        graduated
+    }
+
+    /// Graduate all content (for end of streaming).
+    ///
+    /// Clears all items and returns all lines for scrollback.
+    pub fn graduate_all(&mut self, content_width: usize) -> Vec<String> {
+        let mut all_lines = Vec::new();
+
+        // Start from where we left off in the first item
+        let mut first = true;
+        for item in &self.items {
+            let lines = render_item_to_lines(item, content_width);
+            let skip = if first {
+                first = false;
+                self.graduated_lines_in_first_item
+            } else {
+                0
+            };
+            for line in lines.into_iter().skip(skip) {
+                let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+                all_lines.push(text);
+            }
+        }
+
+        // Clear everything
+        self.items.clear();
+        self.graduated_lines_in_first_item = 0;
+        self.cache.borrow_mut().on_clear();
+
+        all_lines
+    }
+
+    /// Calculate total rendered line count (minus already graduated lines).
+    pub fn visible_line_count(&self, content_width: usize) -> usize {
+        let mut total = 0;
+        let mut first = true;
+        for item in &self.items {
+            let lines = render_item_to_lines(item, content_width).len();
+            if first {
+                first = false;
+                total += lines.saturating_sub(self.graduated_lines_in_first_item);
+            } else {
+                total += lines;
+            }
+        }
+        total
     }
 
     /// Serialize the conversation to markdown format.
@@ -1709,7 +1819,7 @@ mod tests {
 
         // Verify status is the last item
         let items = state.items();
-        let last_item = items.last().expect("Should have items");
+        let last_item = items.back().expect("Should have items");
         assert!(
             matches!(last_item, ConversationItem::Status(_)),
             "Status should be the last item, but got: {:?}",

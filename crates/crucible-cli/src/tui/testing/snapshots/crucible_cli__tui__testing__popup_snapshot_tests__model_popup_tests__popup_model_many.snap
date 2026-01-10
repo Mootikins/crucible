@@ -17,11 +17,11 @@ expression: h.render()
                                                                                 
                                                                                 
                                                                                 
-  quit Exit the application                                                     
-  help Show keybindings and commands                                            
-> mode Cycle session mode                                                       
-  agent Switch agent backend                                                    
-  model Switch model (opens picker)                                             
+> ollama/llama3.2 Ollama - Llama 3.2                                            
+  ollama/llama3.1 Ollama - Llama 3.1                                            
+  ollama/qwen2.5-coder:32b Ollama - Qwen 2.5 Coder 32B                          
+  ollama/qwen2.5-coder:14b Ollama - Qwen 2.5 Coder 14B                          
+  ollama/deepseek-r1:32b Ollama - DeepSeek R1 32B ↓                             
                                                                                 
  >                                                                              
                                                                                 
