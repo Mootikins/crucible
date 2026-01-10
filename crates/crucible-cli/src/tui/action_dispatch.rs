@@ -26,6 +26,8 @@ pub enum PopupEffect {
     ExecuteReplCommand { name: String },
     /// Resume a session by ID
     ResumeSession { session_id: String },
+    /// Switch to a different model/backend
+    SwitchModel { spec: String },
 }
 
 /// Convert a PopupItem to its default effect
@@ -50,6 +52,7 @@ pub fn popup_item_to_effect(item: &PopupItem) -> PopupEffect {
         PopupItem::Session { id, .. } => PopupEffect::ResumeSession {
             session_id: id.clone(),
         },
+        PopupItem::Model { spec, .. } => PopupEffect::SwitchModel { spec: spec.clone() },
     }
 }
 

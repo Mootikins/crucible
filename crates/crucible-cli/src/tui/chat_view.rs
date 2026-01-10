@@ -281,6 +281,12 @@ impl<'a> ChatView<'a> {
                 self.popup = None;
                 return;
             }
+            PopupKind::Model => {
+                // Model popup is opened programmatically via :model command.
+                // Any input closes it (return to normal mode).
+                self.popup = None;
+                return;
+            }
         };
 
         // Verify trigger is at start or after whitespace

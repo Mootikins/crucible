@@ -140,7 +140,10 @@ use_defaults = true
         // Check handlers config
         let handlers = config.type_configs.get("handlers").unwrap();
         assert_eq!(handlers.additional_paths.len(), 1);
-        assert_eq!(handlers.additional_paths[0], PathBuf::from("/custom/handlers"));
+        assert_eq!(
+            handlers.additional_paths[0],
+            PathBuf::from("/custom/handlers")
+        );
         assert!(!handlers.use_defaults);
 
         // Check events config (no additional paths)
@@ -321,7 +324,10 @@ use_defaults = false
 
         // Flat format should take priority
         let handlers = config.get_type_config("handlers").unwrap();
-        assert_eq!(handlers.additional_paths[0], PathBuf::from("/flat/handlers"));
+        assert_eq!(
+            handlers.additional_paths[0],
+            PathBuf::from("/flat/handlers")
+        );
         assert!(handlers.use_defaults);
     }
 }

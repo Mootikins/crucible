@@ -74,43 +74,37 @@ pub fn register_paths_module(lua: &Lua, context: PathsContext) -> Result<(), Lua
 
     // paths.kiln() -> string or nil
     let kiln_path = context.kiln.clone();
-    let kiln_fn = lua.create_function(move |lua, ()| {
-        match &kiln_path {
-            Some(path) => Ok(Value::String(
-                lua.create_string(path.to_string_lossy().as_ref())?,
-            )),
-            None => Err(mlua::Error::external(LuaError::Runtime(
-                "Kiln path not configured".to_string(),
-            ))),
-        }
+    let kiln_fn = lua.create_function(move |lua, ()| match &kiln_path {
+        Some(path) => Ok(Value::String(
+            lua.create_string(path.to_string_lossy().as_ref())?,
+        )),
+        None => Err(mlua::Error::external(LuaError::Runtime(
+            "Kiln path not configured".to_string(),
+        ))),
     })?;
     paths.set("kiln", kiln_fn)?;
 
     // paths.session() -> string or nil
     let session_path = context.session.clone();
-    let session_fn = lua.create_function(move |lua, ()| {
-        match &session_path {
-            Some(path) => Ok(Value::String(
-                lua.create_string(path.to_string_lossy().as_ref())?,
-            )),
-            None => Err(mlua::Error::external(LuaError::Runtime(
-                "Session path not configured".to_string(),
-            ))),
-        }
+    let session_fn = lua.create_function(move |lua, ()| match &session_path {
+        Some(path) => Ok(Value::String(
+            lua.create_string(path.to_string_lossy().as_ref())?,
+        )),
+        None => Err(mlua::Error::external(LuaError::Runtime(
+            "Session path not configured".to_string(),
+        ))),
     })?;
     paths.set("session", session_fn)?;
 
     // paths.workspace() -> string or nil
     let workspace_path = context.workspace.clone();
-    let workspace_fn = lua.create_function(move |lua, ()| {
-        match &workspace_path {
-            Some(path) => Ok(Value::String(
-                lua.create_string(path.to_string_lossy().as_ref())?,
-            )),
-            None => Err(mlua::Error::external(LuaError::Runtime(
-                "Workspace path not configured".to_string(),
-            ))),
-        }
+    let workspace_fn = lua.create_function(move |lua, ()| match &workspace_path {
+        Some(path) => Ok(Value::String(
+            lua.create_string(path.to_string_lossy().as_ref())?,
+        )),
+        None => Err(mlua::Error::external(LuaError::Runtime(
+            "Workspace path not configured".to_string(),
+        ))),
     })?;
     paths.set("workspace", workspace_fn)?;
 
@@ -157,8 +151,8 @@ mod tests {
 
     #[test]
     fn test_session_path() {
-        let ctx =
-            PathsContext::new().with_session(PathBuf::from("/home/user/notes/.crucible/sessions/abc123"));
+        let ctx = PathsContext::new()
+            .with_session(PathBuf::from("/home/user/notes/.crucible/sessions/abc123"));
         let lua = create_lua_with_paths(ctx);
 
         let result: String = lua.load("return paths.session()").eval().unwrap();
@@ -167,7 +161,8 @@ mod tests {
 
     #[test]
     fn test_workspace_path() {
-        let ctx = PathsContext::new().with_workspace(PathBuf::from("/home/user/projects/myproject"));
+        let ctx =
+            PathsContext::new().with_workspace(PathBuf::from("/home/user/projects/myproject"));
         let lua = create_lua_with_paths(ctx);
 
         let result: String = lua.load("return paths.workspace()").eval().unwrap();

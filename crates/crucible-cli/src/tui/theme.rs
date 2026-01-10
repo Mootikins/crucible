@@ -161,12 +161,13 @@ impl MarkdownTheme {
             .map_err(|e| ThemeLoadError::LoadFailed(e.to_string()))?;
 
         // Detect if theme is dark based on background color
-        let is_dark = theme.settings.background
+        let is_dark = theme
+            .settings
+            .background
             .map(|bg| {
                 // Consider dark if luminance is below 0.5
-                let luminance = 0.299 * f64::from(bg.r)
-                    + 0.587 * f64::from(bg.g)
-                    + 0.114 * f64::from(bg.b);
+                let luminance =
+                    0.299 * f64::from(bg.r) + 0.587 * f64::from(bg.g) + 0.114 * f64::from(bg.b);
                 luminance < 128.0
             })
             .unwrap_or(true);
@@ -200,7 +201,11 @@ impl MarkdownTheme {
             .settings
             .foreground
             .map(syntect_to_ratatui_color)
-            .unwrap_or(if self.is_dark { Color::White } else { Color::Black })
+            .unwrap_or(if self.is_dark {
+                Color::White
+            } else {
+                Color::Black
+            })
     }
 
     /// Get the default background color from the theme.
@@ -209,7 +214,11 @@ impl MarkdownTheme {
             .settings
             .background
             .map(syntect_to_ratatui_color)
-            .unwrap_or(if self.is_dark { Color::Black } else { Color::White })
+            .unwrap_or(if self.is_dark {
+                Color::Black
+            } else {
+                Color::White
+            })
     }
 
     /// Detect if the terminal has a dark background.
@@ -295,8 +304,7 @@ impl MarkdownTheme {
                 .fg(Color::Indexed(8)) // Bright black (gray)
                 .add_modifier(Modifier::DIM),
 
-            ListMarker => Style::default()
-                .fg(Color::Indexed(6)), // Cyan
+            ListMarker => Style::default().fg(Color::Indexed(6)), // Cyan
 
             TableBorder => Style::default()
                 .fg(Color::Indexed(8)) // Bright black (gray)

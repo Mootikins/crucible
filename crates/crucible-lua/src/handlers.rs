@@ -189,9 +189,13 @@ impl LuaScriptHandler {
                 match serde_json::from_value::<SessionEvent>(json.clone()) {
                     Ok(event) => Ok(Some(event)),
                     Err(e) => {
-                        debug!("Could not deserialize to SessionEvent ({}), creating Custom event", e);
+                        debug!(
+                            "Could not deserialize to SessionEvent ({}), creating Custom event",
+                            e
+                        );
                         // Get type from JSON or use "Custom"
-                        let name = json.get("type")
+                        let name = json
+                            .get("type")
                             .and_then(|v| v.as_str())
                             .unwrap_or("Custom")
                             .to_string();
@@ -203,9 +207,10 @@ impl LuaScriptHandler {
                 }
             }
             ScriptHandlerResult::PassThrough => Ok(None),
-            ScriptHandlerResult::Cancel { reason } => {
-                Err(mlua::Error::RuntimeError(format!("Handler cancelled: {}", reason)))
-            }
+            ScriptHandlerResult::Cancel { reason } => Err(mlua::Error::RuntimeError(format!(
+                "Handler cancelled: {}",
+                reason
+            ))),
         }
     }
 
@@ -235,9 +240,10 @@ impl LuaScriptHandler {
         match interpret_handler_result(&result)? {
             ScriptHandlerResult::Transform(json) => Ok(json),
             ScriptHandlerResult::PassThrough => Ok(event), // Pass through unchanged
-            ScriptHandlerResult::Cancel { reason } => {
-                Err(mlua::Error::RuntimeError(format!("Handler cancelled: {}", reason)))
-            }
+            ScriptHandlerResult::Cancel { reason } => Err(mlua::Error::RuntimeError(format!(
+                "Handler cancelled: {}",
+                reason
+            ))),
         }
     }
 }
@@ -274,7 +280,9 @@ pub fn interpret_handler_result(result: &Value) -> LuaResult<ScriptHandlerResult
             // Check for cancel convention: {cancel=true, reason="..."}
             if let Ok(cancel) = t.get::<bool>("cancel") {
                 if cancel {
-                    let reason = t.get::<String>("reason").unwrap_or_else(|_| "cancelled".to_string());
+                    let reason = t
+                        .get::<String>("reason")
+                        .unwrap_or_else(|_| "cancelled".to_string());
                     return Ok(ScriptHandlerResult::Cancel { reason });
                 }
             }
@@ -518,9 +526,9 @@ pub fn register_crucible_on_api(
     let handlers = runtime_handlers.clone();
     let on_fn = lua.create_function(move |_lua, (event_type, _handler): (String, Function)| {
         // Store the handler reference
-        let mut guard = handlers.lock().map_err(|e| {
-            mlua::Error::RuntimeError(format!("Failed to lock handlers: {}", e))
-        })?;
+        let mut guard = handlers
+            .lock()
+            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to lock handlers: {}", e)))?;
 
         let name = format!("runtime_handler_{}", guard.len());
         guard.push(RuntimeHandler {
@@ -529,7 +537,10 @@ pub fn register_crucible_on_api(
             priority: 100, // Default priority for runtime handlers
         });
 
-        debug!("Registered runtime handler '{}' for event '{}'", name, event_type);
+        debug!(
+            "Registered runtime handler '{}' for event '{}'",
+            name, event_type
+        );
         Ok(())
     })?;
 
@@ -748,7 +759,9 @@ pub fn execute_handler(
     event: &SessionEvent,
 ) -> HandlerExecutionResult {
     match handler.execute(lua, event) {
-        Ok(Some(modified_event)) => HandlerExecutionResult::ok(&handler.metadata.name, modified_event),
+        Ok(Some(modified_event)) => {
+            HandlerExecutionResult::ok(&handler.metadata.name, modified_event)
+        }
         Ok(None) => HandlerExecutionResult::pass_through(&handler.metadata.name),
         Err(e) => HandlerExecutionResult::err(&handler.metadata.name, e.to_string()),
     }
@@ -782,7 +795,10 @@ pub fn run_handler_chain(
                 // Check if this is a cancel
                 let err_str = e.to_string();
                 if err_str.contains("cancelled") {
-                    debug!("Handler {} cancelled event: {}", handler.metadata.name, err_str);
+                    debug!(
+                        "Handler {} cancelled event: {}",
+                        handler.metadata.name, err_str
+                    );
                     return Ok(None);
                 }
                 return Err(LuaError::Runtime(err_str));
@@ -792,7 +808,6 @@ pub fn run_handler_chain(
 
     Ok(Some(current_event))
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -958,7 +973,10 @@ mod tests {
 
         let result = handler.execute(&lua, &event);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("blocked by policy"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("blocked by policy"));
     }
 
     #[test]
@@ -1266,11 +1284,15 @@ end
         register_crucible_on_api(&lua, handlers.clone()).unwrap();
 
         // Verify crucible.on exists
-        lua.load(r#"
+        lua.load(
+            r#"
             crucible.on("test_event", function(event)
                 return event
             end)
-        "#).exec().unwrap();
+        "#,
+        )
+        .exec()
+        .unwrap();
 
         // Check that handler was registered
         let guard = handlers.lock().unwrap();
@@ -1300,7 +1322,10 @@ end
         };
 
         let result = handler.execute(&lua, &event).unwrap();
-        assert!(result.is_none(), "nil return should produce None (pass-through)");
+        assert!(
+            result.is_none(),
+            "nil return should produce None (pass-through)"
+        );
     }
 
     #[test]
@@ -1321,7 +1346,10 @@ end
         };
 
         let result = handler.execute(&lua, &event).unwrap();
-        assert!(result.is_some(), "table return should produce Some(modified_event)");
+        assert!(
+            result.is_some(),
+            "table return should produce Some(modified_event)"
+        );
     }
 
     #[test]
@@ -1343,7 +1371,10 @@ end
         let result = handler.execute(&lua, &event);
         assert!(result.is_err(), "cancel return should produce error");
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("blocked by security"), "error should contain reason");
+        assert!(
+            err.contains("blocked by security"),
+            "error should contain reason"
+        );
     }
 
     #[test]
@@ -1410,18 +1441,24 @@ end
     #[test]
     fn test_chain_transform_then_passthrough() {
         // h1: transform → h2: passthrough → result has h1's changes
-        let h1 = create_test_handler_named(r#"
+        let h1 = create_test_handler_named(
+            r#"
             function h1(ctx, event)
                 event.from_h1 = true
                 return event
             end
-        "#, "h1");
+        "#,
+            "h1",
+        );
 
-        let h2 = create_test_handler_named(r#"
+        let h2 = create_test_handler_named(
+            r#"
             function h2(ctx, event)
                 return nil  -- pass through, keep h1's changes
             end
-        "#, "h2");
+        "#,
+            "h2",
+        );
 
         let lua = Lua::new();
         let event = SessionEvent::Custom {
@@ -1439,25 +1476,34 @@ end
     #[test]
     fn test_chain_cancel_stops_execution() {
         // h1: transform → h2: cancel → h3 never runs
-        let h1 = create_test_handler_named(r#"
+        let h1 = create_test_handler_named(
+            r#"
             function h1(ctx, event)
                 event.step1 = true
                 return event
             end
-        "#, "h1");
+        "#,
+            "h1",
+        );
 
-        let h2 = create_test_handler_named(r#"
+        let h2 = create_test_handler_named(
+            r#"
             function h2(ctx, event)
                 return { cancel = true, reason = "stopped at h2" }
             end
-        "#, "h2");
+        "#,
+            "h2",
+        );
 
-        let h3 = create_test_handler_named(r#"
+        let h3 = create_test_handler_named(
+            r#"
             function h3(ctx, event)
                 event.step3 = true  -- should never execute
                 return event
             end
-        "#, "h3");
+        "#,
+            "h3",
+        );
 
         let lua = Lua::new();
         let event = SessionEvent::Custom {
@@ -1474,13 +1520,19 @@ end
     #[test]
     fn test_chain_all_passthrough() {
         // All handlers return nil → original event unchanged
-        let h1 = create_test_handler_named(r#"
+        let h1 = create_test_handler_named(
+            r#"
             function h1(ctx, event) return nil end
-        "#, "h1");
+        "#,
+            "h1",
+        );
 
-        let h2 = create_test_handler_named(r#"
+        let h2 = create_test_handler_named(
+            r#"
             function h2(ctx, event) return nil end
-        "#, "h2");
+        "#,
+            "h2",
+        );
 
         let lua = Lua::new();
         let event = SessionEvent::ToolCalled {
@@ -1502,19 +1554,25 @@ end
     #[test]
     fn test_chain_multiple_transforms() {
         // h1: add field1 → h2: add field2 → result has both
-        let h1 = create_test_handler_named(r#"
+        let h1 = create_test_handler_named(
+            r#"
             function h1(ctx, event)
                 event.field1 = "from_h1"
                 return event
             end
-        "#, "h1");
+        "#,
+            "h1",
+        );
 
-        let h2 = create_test_handler_named(r#"
+        let h2 = create_test_handler_named(
+            r#"
             function h2(ctx, event)
                 event.field2 = "from_h2"
                 return event
             end
-        "#, "h2");
+        "#,
+            "h2",
+        );
 
         let lua = Lua::new();
         let event = SessionEvent::Custom {

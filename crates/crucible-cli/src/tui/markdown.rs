@@ -41,8 +41,14 @@ impl MarkdownRenderer {
     pub fn render_with_width(&self, markdown: &str, width: Option<usize>) -> String {
         let w = width.unwrap_or(80);
         let lines = self.render_lines(markdown, w);
-        lines.iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+        lines
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect::<Vec<_>>()
             .join("\n")
     }
@@ -74,7 +80,6 @@ impl MarkdownRenderer {
             .with_width(width)
             .render(markdown)
     }
-
 }
 
 impl Default for MarkdownRenderer {

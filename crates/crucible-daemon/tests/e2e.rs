@@ -324,7 +324,10 @@ mod session_helpers {
             .expect("Failed to write request");
 
         let mut buf = vec![0u8; 8192];
-        let n = stream.read(&mut buf).await.expect("Failed to read response");
+        let n = stream
+            .read(&mut buf)
+            .await
+            .expect("Failed to read response");
         serde_json::from_slice(&buf[..n]).expect("Failed to parse JSON response")
     }
 
@@ -342,10 +345,7 @@ mod session_helpers {
 
     /// Check if the "state" field contains the expected value (case-insensitive)
     pub fn assert_state_contains(result: &serde_json::Value, expected: &str, context: &str) {
-        let state = result
-            .get("state")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let state = result.get("state").and_then(|v| v.as_str()).unwrap_or("");
         assert!(
             state.to_lowercase().contains(&expected.to_lowercase()),
             "{}: expected state to contain '{}', got '{}'",
@@ -404,7 +404,11 @@ async fn test_e2e_session_lifecycle() {
     assert_state_contains(get_result(&response), "paused", "After pause");
 
     // 3. Resume session
-    let response = rpc_call(&mut stream, &session_action_request(3, "resume", session_id)).await;
+    let response = rpc_call(
+        &mut stream,
+        &session_action_request(3, "resume", session_id),
+    )
+    .await;
     assert_state_contains(get_result(&response), "active", "After resume");
 
     // 4. End session
@@ -462,10 +466,7 @@ async fn test_e2e_session_persistence() {
     let session_id = get_str(get_result(&response), "session_id");
 
     // Check that session.json was created
-    let session_dir = kiln_dir
-        .join(".crucible")
-        .join("sessions")
-        .join(session_id);
+    let session_dir = kiln_dir.join(".crucible").join("sessions").join(session_id);
 
     // Poll for file to exist with timeout (avoids flaky sleep)
     let session_file = session_dir.join("session.json");

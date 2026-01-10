@@ -48,11 +48,7 @@ pub const REPL_COMMANDS: &[ReplCommand] = &[
         aliases: &["a"],
         description: "Switch agent backend",
     },
-    ReplCommand {
-        name: "models",
-        aliases: &[],
-        description: "List available models",
-    },
+    // "models" removed - use :model instead (opens interactive popup)
     ReplCommand {
         name: "config",
         aliases: &["cfg"],
@@ -119,8 +115,8 @@ mod tests {
     fn test_find_matching_empty_query() {
         let matches = find_matching("");
         assert_eq!(matches.len(), REPL_COMMANDS.len());
-        // Verify expected count (quit, help, mode, agent, models, config, messages, edit, resume, provider, model, status)
-        assert_eq!(REPL_COMMANDS.len(), 12);
+        // Verify expected count (quit, help, mode, agent, config, messages, edit, resume, provider, model, status)
+        assert_eq!(REPL_COMMANDS.len(), 11);
     }
 
     #[test]
@@ -139,9 +135,9 @@ mod tests {
 
     #[test]
     fn test_find_matching_multiple() {
-        // "m" matches "mode", "models", "messages", and "model"
+        // "m" matches "mode", "messages", and "model"
         let matches = find_matching("m");
-        assert_eq!(matches.len(), 4);
+        assert_eq!(matches.len(), 3);
     }
 
     #[test]

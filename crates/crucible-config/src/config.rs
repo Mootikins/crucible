@@ -505,7 +505,10 @@ impl Config {
             let mut check_pattern = |name: &str, pattern: &Option<String>| {
                 if let Some(p) = pattern {
                     if p.is_empty() {
-                        errors.push(format!("Handler '{}': pattern cannot be empty string", name));
+                        errors.push(format!(
+                            "Handler '{}': pattern cannot be empty string",
+                            name
+                        ));
                     }
                 }
             };

@@ -309,7 +309,8 @@ impl AnnotationParser {
 
         for annotation in &block.annotations {
             // Try @handler first (preferred), then @hook (backwards compat)
-            let rest = annotation.strip_prefix("@handler")
+            let rest = annotation
+                .strip_prefix("@handler")
                 .or_else(|| annotation.strip_prefix("@hook"));
 
             if let Some(rest) = rest {

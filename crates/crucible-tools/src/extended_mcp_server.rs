@@ -233,9 +233,11 @@ impl ExtendedMcpServer {
             }
 
             if builtin_config.recipe_enrichment.enabled {
-                bus.register(crucible_rune::builtin_handlers::create_recipe_enrichment_handler(
-                    &builtin_config.recipe_enrichment,
-                ));
+                bus.register(
+                    crucible_rune::builtin_handlers::create_recipe_enrichment_handler(
+                        &builtin_config.recipe_enrichment,
+                    ),
+                );
                 info!("Registered builtin:recipe_enrichment handler");
             }
 

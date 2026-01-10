@@ -115,14 +115,13 @@ fn remove(path: &str) -> Result<(), LuaError> {
 
 /// List directory contents
 fn list_dir(path: &str) -> Result<Vec<String>, LuaError> {
-    let entries =
-        fs::read_dir(path).map_err(|e| LuaError::Runtime(format!("Failed to read directory '{}': {}", path, e)))?;
+    let entries = fs::read_dir(path)
+        .map_err(|e| LuaError::Runtime(format!("Failed to read directory '{}': {}", path, e)))?;
 
     let mut result = Vec::new();
     for entry in entries {
-        let entry = entry.map_err(|e| {
-            LuaError::Runtime(format!("Failed to read entry in '{}': {}", path, e))
-        })?;
+        let entry = entry
+            .map_err(|e| LuaError::Runtime(format!("Failed to read entry in '{}': {}", path, e)))?;
         if let Some(name) = entry.file_name().to_str() {
             result.push(name.to_string());
         }
@@ -172,9 +171,8 @@ pub fn register_fs_module(lua: &Lua) -> Result<(), LuaError> {
     let fs_table = lua.create_table()?;
 
     // fs.read(path) -> string
-    let read_fn = lua.create_function(|_lua, path: String| {
-        read_file(&path).map_err(mlua::Error::external)
-    })?;
+    let read_fn =
+        lua.create_function(|_lua, path: String| read_file(&path).map_err(mlua::Error::external))?;
     fs_table.set("read", read_fn)?;
 
     // fs.write(path, content) -> nil
@@ -190,9 +188,8 @@ pub fn register_fs_module(lua: &Lua) -> Result<(), LuaError> {
     fs_table.set("append", append_fn)?;
 
     // fs.mkdir(path) -> nil
-    let mkdir_fn = lua.create_function(|_lua, path: String| {
-        mkdir(&path).map_err(mlua::Error::external)
-    })?;
+    let mkdir_fn =
+        lua.create_function(|_lua, path: String| mkdir(&path).map_err(mlua::Error::external))?;
     fs_table.set("mkdir", mkdir_fn)?;
 
     // fs.exists(path) -> bool
@@ -208,9 +205,8 @@ pub fn register_fs_module(lua: &Lua) -> Result<(), LuaError> {
     fs_table.set("is_dir", is_dir_fn)?;
 
     // fs.remove(path) -> nil
-    let remove_fn = lua.create_function(|_lua, path: String| {
-        remove(&path).map_err(mlua::Error::external)
-    })?;
+    let remove_fn =
+        lua.create_function(|_lua, path: String| remove(&path).map_err(mlua::Error::external))?;
     fs_table.set("remove", remove_fn)?;
 
     // fs.list(path) -> table of strings

@@ -90,9 +90,8 @@ pub struct RuneScriptHandler {
 use once_cell::sync::Lazy;
 
 /// Regex for stripping handler/hook attributes from Rune source
-static HANDLER_ATTR_RE: Lazy<regex::Regex> = Lazy::new(|| {
-    regex::Regex::new(r"(?m)^\s*#\[(handler|hook)\([^)]*\)\]\s*\n?").unwrap()
-});
+static HANDLER_ATTR_RE: Lazy<regex::Regex> =
+    Lazy::new(|| regex::Regex::new(r"(?m)^\s*#\[(handler|hook)\([^)]*\)\]\s*\n?").unwrap());
 
 /// Strip handler/hook attributes from Rune source code
 ///
@@ -581,8 +580,9 @@ mod tests {
 
     #[test]
     fn test_builtin_handler_creation() {
-        let handler =
-            BuiltinHandler::new("test_handler", "tool:after", "just_*", |_ctx, event| Ok(event));
+        let handler = BuiltinHandler::new("test_handler", "tool:after", "just_*", |_ctx, event| {
+            Ok(event)
+        });
 
         assert_eq!(handler.name(), "test_handler");
         assert_eq!(handler.event_type(), "tool:after");
@@ -593,8 +593,8 @@ mod tests {
 
     #[test]
     fn test_builtin_handler_priority() {
-        let handler =
-            BuiltinHandler::new("test", "tool:after", "*", |_ctx, event| Ok(event)).with_priority(50);
+        let handler = BuiltinHandler::new("test", "tool:after", "*", |_ctx, event| Ok(event))
+            .with_priority(50);
 
         assert_eq!(handler.priority(), 50);
     }

@@ -42,17 +42,17 @@ use super::theme::{MarkdownElement, MarkdownTheme};
 // =============================================================================
 
 mod box_chars {
-    pub const TOP_LEFT: char = '\u{250C}';     // ┌
-    pub const TOP_RIGHT: char = '\u{2510}';    // ┐
-    pub const BOTTOM_LEFT: char = '\u{2514}';  // └
+    pub const TOP_LEFT: char = '\u{250C}'; // ┌
+    pub const TOP_RIGHT: char = '\u{2510}'; // ┐
+    pub const BOTTOM_LEFT: char = '\u{2514}'; // └
     pub const BOTTOM_RIGHT: char = '\u{2518}'; // ┘
-    pub const HORIZONTAL: char = '\u{2500}';   // ─
-    pub const VERTICAL: char = '\u{2502}';     // │
-    pub const TOP_T: char = '\u{252C}';        // ┬
-    pub const BOTTOM_T: char = '\u{2534}';     // ┴
-    pub const LEFT_T: char = '\u{251C}';       // ├
-    pub const RIGHT_T: char = '\u{2524}';      // ┤
-    pub const CROSS: char = '\u{253C}';        // ┼
+    pub const HORIZONTAL: char = '\u{2500}'; // ─
+    pub const VERTICAL: char = '\u{2502}'; // │
+    pub const TOP_T: char = '\u{252C}'; // ┬
+    pub const BOTTOM_T: char = '\u{2534}'; // ┴
+    pub const LEFT_T: char = '\u{251C}'; // ├
+    pub const RIGHT_T: char = '\u{2524}'; // ┤
+    pub const CROSS: char = '\u{253C}'; // ┼
 }
 
 /// Ratatui-native markdown renderer.
@@ -472,7 +472,11 @@ impl SpanSink for TempSpanCollector<'_> {
 }
 
 /// Collect inline spans without adding them to the context lines.
-fn collect_inline_spans(node: &Node, ctx: &RenderContext<'_>, collector: &mut TempSpanCollector<'_>) {
+fn collect_inline_spans(
+    node: &Node,
+    ctx: &RenderContext<'_>,
+    collector: &mut TempSpanCollector<'_>,
+) {
     for child in node.children.iter() {
         process_inline_node(child, ctx, collector, true);
     }
@@ -540,7 +544,10 @@ fn process_inline_node<S: SpanSink>(
             sink.push_span(text, style);
         } else {
             sink.push_span(text, style);
-            let url_style = ctx.theme.style_for(MarkdownElement::Text).add_modifier(Modifier::DIM);
+            let url_style = ctx
+                .theme
+                .style_for(MarkdownElement::Text)
+                .add_modifier(Modifier::DIM);
             sink.push_span(format!(" ({})", link.url), url_style);
         }
         return;
@@ -590,7 +597,8 @@ fn wrap_spans_to_lines(spans: &[Span<'static>], max_width: usize, ctx: &mut Rend
         if text == "\n" {
             // Flush current line and start a new one
             if !current_line_spans.is_empty() {
-                ctx.lines.push(Line::from(std::mem::take(&mut current_line_spans)));
+                ctx.lines
+                    .push(Line::from(std::mem::take(&mut current_line_spans)));
             } else {
                 ctx.lines.push(Line::from(""));
             }
@@ -612,12 +620,13 @@ fn wrap_spans_to_lines(spans: &[Span<'static>], max_width: usize, ctx: &mut Rend
             let word_width = display_width(word);
 
             // Check if word fits on current line
-            let fits_on_line = current_line_width == 0
-                || current_line_width + 1 + word_width <= max_width;
+            let fits_on_line =
+                current_line_width == 0 || current_line_width + 1 + word_width <= max_width;
 
             if !fits_on_line && current_line_width > 0 {
                 // Word doesn't fit, flush current line
-                ctx.lines.push(Line::from(std::mem::take(&mut current_line_spans)));
+                ctx.lines
+                    .push(Line::from(std::mem::take(&mut current_line_spans)));
                 current_line_width = 0;
             }
 
@@ -715,7 +724,10 @@ fn render_inline(node: &Node, ctx: &mut RenderContext<'_>) {
             ctx.push_span(text, style);
         } else {
             ctx.push_span(text, style);
-            let url_style = ctx.theme.style_for(MarkdownElement::Text).add_modifier(Modifier::DIM);
+            let url_style = ctx
+                .theme
+                .style_for(MarkdownElement::Text)
+                .add_modifier(Modifier::DIM);
             ctx.push_span(format!(" ({})", link.url), url_style);
         }
         return;
@@ -1037,8 +1049,13 @@ fn render_table_top_border(
     style: Style,
 ) {
     render_table_border_row(
-        ctx, col_widths, num_cols, style,
-        box_chars::TOP_LEFT, box_chars::TOP_T, box_chars::TOP_RIGHT,
+        ctx,
+        col_widths,
+        num_cols,
+        style,
+        box_chars::TOP_LEFT,
+        box_chars::TOP_T,
+        box_chars::TOP_RIGHT,
     );
 }
 
@@ -1050,8 +1067,13 @@ fn render_table_separator_row(
     style: Style,
 ) {
     render_table_border_row(
-        ctx, col_widths, num_cols, style,
-        box_chars::LEFT_T, box_chars::CROSS, box_chars::RIGHT_T,
+        ctx,
+        col_widths,
+        num_cols,
+        style,
+        box_chars::LEFT_T,
+        box_chars::CROSS,
+        box_chars::RIGHT_T,
     );
 }
 
@@ -1063,8 +1085,13 @@ fn render_table_bottom_border(
     style: Style,
 ) {
     render_table_border_row(
-        ctx, col_widths, num_cols, style,
-        box_chars::BOTTOM_LEFT, box_chars::BOTTOM_T, box_chars::BOTTOM_RIGHT,
+        ctx,
+        col_widths,
+        num_cols,
+        style,
+        box_chars::BOTTOM_LEFT,
+        box_chars::BOTTOM_T,
+        box_chars::BOTTOM_RIGHT,
     );
 }
 
@@ -1315,11 +1342,26 @@ mod tests {
             .collect();
 
         assert!(text.contains('\u{250C}'), "Should have top-left corner (┌)");
-        assert!(text.contains('\u{2510}'), "Should have top-right corner (┐)");
-        assert!(text.contains('\u{2514}'), "Should have bottom-left corner (└)");
-        assert!(text.contains('\u{2518}'), "Should have bottom-right corner (┘)");
-        assert!(text.contains('\u{2502}'), "Should have vertical borders (│)");
-        assert!(text.contains('\u{2500}'), "Should have horizontal borders (─)");
+        assert!(
+            text.contains('\u{2510}'),
+            "Should have top-right corner (┐)"
+        );
+        assert!(
+            text.contains('\u{2514}'),
+            "Should have bottom-left corner (└)"
+        );
+        assert!(
+            text.contains('\u{2518}'),
+            "Should have bottom-right corner (┘)"
+        );
+        assert!(
+            text.contains('\u{2502}'),
+            "Should have vertical borders (│)"
+        );
+        assert!(
+            text.contains('\u{2500}'),
+            "Should have horizontal borders (─)"
+        );
     }
 
     #[test]
@@ -1328,9 +1370,9 @@ mod tests {
         let lines = r.render("| Header |\n|--------|\n| Data   |");
 
         // Header line should have bold spans
-        let header_line = lines.iter().find(|l| {
-            l.spans.iter().any(|s| s.content.contains("Header"))
-        });
+        let header_line = lines
+            .iter()
+            .find(|l| l.spans.iter().any(|s| s.content.contains("Header")));
         assert!(header_line.is_some(), "Should have header line");
         let has_bold = header_line
             .unwrap()
@@ -1399,14 +1441,13 @@ mod tests {
         // 3. Separator row (├───┼───┤)
         // 4. Data row (│ A │ B │)
         // 5. Bottom border (└───┴───┘)
-        assert!(lines.len() >= 5, "Table should have at least 5 lines (borders + rows)");
+        assert!(
+            lines.len() >= 5,
+            "Table should have at least 5 lines (borders + rows)"
+        );
 
         // First line should start with top-left corner
-        let first_line_text: String = lines[0]
-            .spans
-            .iter()
-            .map(|s| s.content.as_ref())
-            .collect();
+        let first_line_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(
             first_line_text.starts_with('\u{250C}'),
             "First line should start with ┌"
@@ -1486,9 +1527,9 @@ mod tests {
 
         // At least one line should have colored spans (not just default)
         let has_colored = lines.iter().any(|line| {
-            line.spans.iter().any(|span| {
-                matches!(span.style.fg, Some(Color::Rgb(_, _, _)))
-            })
+            line.spans
+                .iter()
+                .any(|span| matches!(span.style.fg, Some(Color::Rgb(_, _, _))))
         });
         assert!(has_colored, "Rust code should have syntax highlighting");
     }
@@ -1505,6 +1546,9 @@ mod tests {
             .flat_map(|l| l.spans.iter())
             .map(|s| s.content.as_ref())
             .collect();
-        assert!(all_text.contains("some code"), "Unknown language code should still render");
+        assert!(
+            all_text.contains("some code"),
+            "Unknown language code should still render"
+        );
     }
 }

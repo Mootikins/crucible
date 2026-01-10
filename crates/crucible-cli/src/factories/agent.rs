@@ -254,7 +254,8 @@ pub async fn create_internal_agent(
 
     // Skill context injection (eager mode)
     // Discover skills from standard paths and inject descriptions into context
-    let skill_discovery = crucible_skills::FolderDiscovery::with_default_paths(&workspace_root, None);
+    let skill_discovery =
+        crucible_skills::FolderDiscovery::with_default_paths(&workspace_root, None);
     match skill_discovery.discover() {
         Ok(skills) if !skills.is_empty() => {
             let skill_context = crucible_skills::format_skills_for_context(&skills);
@@ -263,11 +264,7 @@ pub async fn create_internal_agent(
                 skills.len(),
                 skill_context.len()
             );
-            prompt_builder.add_layer(
-                crucible_context::priorities::SKILL,
-                "skills",
-                skill_context,
-            );
+            prompt_builder.add_layer(crucible_context::priorities::SKILL, "skills", skill_context);
         }
         Ok(_) => {
             debug!("No skills found in default paths");
