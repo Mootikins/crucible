@@ -499,23 +499,44 @@ impl ConversationState {
     }
 
     pub fn push_tool_running(&mut self, name: impl Into<String>, args: serde_json::Value) {
-        // Complete any streaming assistant message first, so that subsequent
-        // prose creates a new message (preserves chronological order)
-        self.complete_streaming();
+        use crate::tui::content_block::ToolBlockStatus;
 
-        // Save and remove any existing status (it must remain last)
+        let name = name.into();
+
+        // If we're in the middle of streaming, add tool as a block within the message
+        if let Some(idx) = self.streaming_item_index() {
+            if let ConversationItem::AssistantMessage { blocks, .. } = &mut self.items[idx] {
+                // Complete any partial prose block first
+                if let Some(last_block) = blocks.last_mut() {
+                    if last_block.is_prose() && !last_block.is_complete() {
+                        last_block.complete();
+                    }
+                }
+
+                // Add tool block to the streaming message
+                blocks.push(StreamBlock::Tool {
+                    name,
+                    args,
+                    status: ToolBlockStatus::Running,
+                });
+                self.cache.borrow_mut().invalidate_item(idx);
+                return;
+            }
+        }
+
+        // Fallback: no streaming message, create standalone tool call
+        // (This handles the case where tool call comes before any assistant response)
         let status = self.take_status();
 
         self.items
             .push_back(ConversationItem::ToolCall(ToolCallDisplay {
-                name: name.into(),
+                name,
                 args,
                 status: ToolStatus::Running,
                 output_lines: Vec::new(),
             }));
         self.cache.borrow_mut().on_item_added();
 
-        // Re-add status at end (if there was one)
         if let Some(s) = status {
             self.items.push_back(s);
             self.cache.borrow_mut().on_item_added();
@@ -555,6 +576,29 @@ impl ConversationState {
     }
 
     pub fn complete_tool(&mut self, name: &str, summary: Option<String>) {
+        use crate::tui::content_block::ToolBlockStatus;
+
+        // First check if tool is a block in the streaming message
+        if let Some(idx) = self.streaming_item_index() {
+            if let ConversationItem::AssistantMessage { blocks, .. } = &mut self.items[idx] {
+                for block in blocks.iter_mut().rev() {
+                    if let StreamBlock::Tool {
+                        name: block_name,
+                        status,
+                        ..
+                    } = block
+                    {
+                        if block_name == name {
+                            *status = ToolBlockStatus::Complete { summary };
+                            self.cache.borrow_mut().invalidate_item(idx);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: check standalone tool items
         if let Some(idx) = self.tool_index(name) {
             if let ConversationItem::ToolCall(tool) = &mut self.items[idx] {
                 tool.status = ToolStatus::Complete { summary };
@@ -564,11 +608,36 @@ impl ConversationState {
     }
 
     pub fn error_tool(&mut self, name: &str, message: impl Into<String>) {
+        use crate::tui::content_block::ToolBlockStatus;
+
+        let message = message.into();
+
+        // First check if tool is a block in the streaming message
+        if let Some(idx) = self.streaming_item_index() {
+            if let ConversationItem::AssistantMessage { blocks, .. } = &mut self.items[idx] {
+                for block in blocks.iter_mut().rev() {
+                    if let StreamBlock::Tool {
+                        name: block_name,
+                        status,
+                        ..
+                    } = block
+                    {
+                        if block_name == name {
+                            *status = ToolBlockStatus::Error {
+                                message: message.clone(),
+                            };
+                            self.cache.borrow_mut().invalidate_item(idx);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: check standalone tool items
         if let Some(idx) = self.tool_index(name) {
             if let ConversationItem::ToolCall(tool) = &mut self.items[idx] {
-                tool.status = ToolStatus::Error {
-                    message: message.into(),
-                };
+                tool.status = ToolStatus::Error { message };
                 self.cache.borrow_mut().invalidate_item(idx);
             }
         }
@@ -602,6 +671,10 @@ impl ConversationState {
                                 markdown.push('\n');
                             }
                             markdown.push_str("```\n");
+                        }
+                        StreamBlock::Tool { name, .. } => {
+                            // Tool calls aren't included in markdown output
+                            markdown.push_str(&format!("[Tool: {}]\n", name));
                         }
                     }
                 }
@@ -762,6 +835,9 @@ impl ConversationState {
                                 }
                                 md.push_str("```\n");
                             }
+                            StreamBlock::Tool { name, .. } => {
+                                md.push_str(&format!("[Tool: {}]\n", name));
+                            }
                         }
                     }
                     if !md.ends_with("\n\n") {
@@ -910,6 +986,39 @@ fn render_assistant_blocks(
                         Span::styled("▌", presets::streaming()),
                     ]));
                 }
+            }
+            StreamBlock::Tool { name, args, status } => {
+                use crate::tui::content_block::ToolBlockStatus;
+
+                // Format tool call with status indicator as part of content
+                let (indicator, style) = match status {
+                    ToolBlockStatus::Running => ("◐", presets::tool_running()),
+                    ToolBlockStatus::Complete { .. } => ("●", presets::tool_complete()),
+                    ToolBlockStatus::Error { .. } => ("✗", presets::tool_error()),
+                };
+
+                // Format args as key=value pairs (compact)
+                let args_str = format_tool_args(args);
+
+                // Build the tool line suffix
+                let suffix = match status {
+                    ToolBlockStatus::Complete { summary } => {
+                        summary.as_ref().map(|s| format!(" → {}", s)).unwrap_or_default()
+                    }
+                    ToolBlockStatus::Error { message } => format!(" → {}", message),
+                    ToolBlockStatus::Running => String::new(),
+                };
+
+                // Build tool line content (indicator is part of content, not prefix)
+                // Note: args_str already includes parens from format_tool_args()
+                let tool_line = Line::from(vec![
+                    Span::styled(format!("{} ", indicator), style),
+                    Span::styled(format!("{}{}", name, args_str), style),
+                    Span::styled(suffix, style),
+                ]);
+
+                // Use add_assistant_prefix for consistent prefixing
+                lines.push(add_assistant_prefix(tool_line, &mut first_content_line));
             }
         }
     }

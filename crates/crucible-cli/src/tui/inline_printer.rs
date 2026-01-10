@@ -14,7 +14,11 @@ mod ct_colors {
     use crossterm::style::Color;
 
     /// User message background
-    pub const USER_BG: Color = Color::Rgb { r: 60, g: 60, b: 80 };
+    pub const USER_BG: Color = Color::Rgb {
+        r: 60,
+        g: 60,
+        b: 80,
+    };
 
     /// Assistant prefix color (dim gray)
     pub const ASSISTANT_PREFIX: Color = Color::DarkGrey;
@@ -118,7 +122,11 @@ impl InlinePrinter {
     pub fn print_assistant_message(&self, blocks: &[StreamBlock]) -> io::Result<()> {
         let markdown = blocks_to_markdown(blocks);
         let rendered = render_markdown(&markdown);
-        self.print_prefixed_lines(&rendered, ct_indicators::ASSISTANT_PREFIX, ct_colors::ASSISTANT_PREFIX)
+        self.print_prefixed_lines(
+            &rendered,
+            ct_indicators::ASSISTANT_PREFIX,
+            ct_colors::ASSISTANT_PREFIX,
+        )
     }
 
     /// Print a tool call result to scrollback
@@ -167,7 +175,12 @@ impl InlinePrinter {
     /// Print lines with a styled prefix on the first line, indent on continuations.
     ///
     /// Used by `print_assistant_message` to avoid duplication.
-    fn print_prefixed_lines(&self, content: &str, prefix_char: &str, color: Color) -> io::Result<()> {
+    fn print_prefixed_lines(
+        &self,
+        content: &str,
+        prefix_char: &str,
+        color: Color,
+    ) -> io::Result<()> {
         let mut stdout = io::stdout().lock();
         writeln!(stdout)?;
 
@@ -253,6 +266,9 @@ fn blocks_to_markdown(blocks: &[StreamBlock]) -> String {
                     markdown.push('\n');
                 }
                 markdown.push_str("```\n");
+            }
+            StreamBlock::Tool { name, .. } => {
+                markdown.push_str(&format!("[Tool: {}]\n", name));
             }
         }
     }
