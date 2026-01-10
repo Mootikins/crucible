@@ -1,16 +1,16 @@
 //! Scripting Runtime FFI Comparison Benchmarks
 //!
-//! Compares FFI overhead across Rune, Steel, and Lua scripting runtimes.
+//! Compares FFI overhead across Rune and Lua scripting runtimes.
 //!
 //! Run with:
 //! ```bash
-//! cargo bench -p crucible-benchmarks --features rune,steel,lua -- scripting
+//! cargo bench -p crucible-benchmarks --features rune,lua -- scripting
 //! ```
 
-#[cfg(any(feature = "rune", feature = "steel", feature = "lua"))]
+#[cfg(any(feature = "rune", feature = "lua"))]
 use criterion::BenchmarkId;
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
-#[cfg(any(feature = "rune", feature = "steel", feature = "lua"))]
+#[cfg(any(feature = "rune", feature = "lua"))]
 use serde_json::json;
 
 // =============================================================================
@@ -123,73 +123,6 @@ mod rune_bench {
             .await
             .unwrap();
         result
-    }
-}
-
-// =============================================================================
-// Steel Benchmarks
-// =============================================================================
-
-#[cfg(feature = "steel")]
-mod steel_bench {
-    use crucible_steel::SteelExecutor;
-    use serde_json::Value as JsonValue;
-
-    pub fn create_executor() -> SteelExecutor {
-        SteelExecutor::new().unwrap()
-    }
-
-    /// Execute a simple arithmetic expression
-    pub async fn simple_expr(executor: &SteelExecutor) -> JsonValue {
-        executor.execute_source("(+ 1 2 3)").await.unwrap()
-    }
-
-    /// Execute a function with arguments
-    pub async fn with_args(executor: &SteelExecutor, a: i64, b: i64) -> JsonValue {
-        // Define the function first
-        executor
-            .execute_source("(define (add a b) (+ a b))")
-            .await
-            .unwrap();
-        executor
-            .call_function("add", vec![JsonValue::from(a), JsonValue::from(b)])
-            .await
-            .unwrap()
-    }
-
-    /// Execute a loop to test iteration overhead (uses recursion in Scheme)
-    pub async fn loop_sum(executor: &SteelExecutor, n: i64) -> JsonValue {
-        let source = format!(
-            r#"
-            (define (sum-to-impl n acc)
-              (if (<= n 0)
-                  acc
-                  (sum-to-impl (- n 1) (+ acc n))))
-            (sum-to-impl {} 0)
-            "#,
-            n - 1
-        );
-        executor.execute_source(&source).await.unwrap()
-    }
-
-    /// Execute with complex JSON data (embedded in source)
-    pub async fn complex_data(executor: &SteelExecutor, data: &JsonValue) -> JsonValue {
-        let items = data["items"].as_array().unwrap();
-        let scheme_items: Vec<String> = items
-            .iter()
-            .map(|item| {
-                let active = item["active"].as_bool().unwrap_or(false);
-                format!("(hash 'active {})", if active { "#t" } else { "#f" })
-            })
-            .collect();
-        let source = format!(
-            r#"
-            (define items (list {}))
-            (length (filter (lambda (item) (hash-get item 'active)) items))
-            "#,
-            scheme_items.join(" ")
-        );
-        executor.execute_source(&source).await.unwrap()
     }
 }
 
@@ -310,7 +243,7 @@ mod lua_bench {
 
 #[allow(unused_variables, unused_mut)]
 fn bench_simple_expr(c: &mut Criterion) {
-    #[cfg(any(feature = "rune", feature = "steel", feature = "lua"))]
+    #[cfg(any(feature = "rune", feature = "lua"))]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("scripting/simple_expr");
 
@@ -319,14 +252,6 @@ fn bench_simple_expr(c: &mut Criterion) {
         let fixture = rune_bench::setup();
         group.bench_function("rune", |b| {
             b.to_async(&rt).iter(|| rune_bench::simple_expr(&fixture));
-        });
-    }
-
-    #[cfg(feature = "steel")]
-    {
-        let executor = steel_bench::create_executor();
-        group.bench_function("steel", |b| {
-            b.to_async(&rt).iter(|| steel_bench::simple_expr(&executor));
         });
     }
 
@@ -353,7 +278,7 @@ fn bench_simple_expr(c: &mut Criterion) {
 
 #[allow(unused_variables, unused_mut)]
 fn bench_function_args(c: &mut Criterion) {
-    #[cfg(any(feature = "rune", feature = "steel", feature = "lua"))]
+    #[cfg(any(feature = "rune", feature = "lua"))]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("scripting/function_args");
 
@@ -363,15 +288,6 @@ fn bench_function_args(c: &mut Criterion) {
         group.bench_function("rune", |b| {
             b.to_async(&rt)
                 .iter(|| rune_bench::with_args(&fixture, 10, 20));
-        });
-    }
-
-    #[cfg(feature = "steel")]
-    {
-        let executor = steel_bench::create_executor();
-        group.bench_function("steel", |b| {
-            b.to_async(&rt)
-                .iter(|| steel_bench::with_args(&executor, 10, 20));
         });
     }
 
@@ -393,7 +309,7 @@ fn bench_function_args(c: &mut Criterion) {
 
 #[allow(unused_variables, unused_mut)]
 fn bench_loop_iterations(c: &mut Criterion) {
-    #[cfg(any(feature = "rune", feature = "steel", feature = "lua"))]
+    #[cfg(any(feature = "rune", feature = "lua"))]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("scripting/loop");
 
@@ -406,17 +322,6 @@ fn bench_loop_iterations(c: &mut Criterion) {
             group.bench_with_input(BenchmarkId::new("rune", n), &n, |b, &n| {
                 b.to_async(&rt).iter(|| rune_bench::loop_sum(&fixture, n));
             });
-        }
-
-        #[cfg(feature = "steel")]
-        {
-            let executor = steel_bench::create_executor();
-            // Steel uses recursion which is slower for large N, skip 10000
-            if n <= 1000 {
-                group.bench_with_input(BenchmarkId::new("steel", n), &n, |b, &n| {
-                    b.to_async(&rt).iter(|| steel_bench::loop_sum(&executor, n));
-                });
-            }
         }
 
         #[cfg(feature = "lua")]
@@ -444,12 +349,12 @@ fn bench_loop_iterations(c: &mut Criterion) {
 
 #[allow(unused_variables, unused_mut)]
 fn bench_complex_data(c: &mut Criterion) {
-    #[cfg(any(feature = "rune", feature = "steel", feature = "lua"))]
+    #[cfg(any(feature = "rune", feature = "lua"))]
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("scripting/complex_data");
 
     // Generate test data with N items
-    #[cfg(any(feature = "rune", feature = "steel", feature = "lua"))]
+    #[cfg(any(feature = "rune", feature = "lua"))]
     for item_count in [10usize, 100, 1000] {
         let data = json!({
             "items": (0..item_count).map(|i| {
@@ -471,18 +376,6 @@ fn bench_complex_data(c: &mut Criterion) {
                 b.to_async(&rt)
                     .iter(|| rune_bench::complex_data(&fixture, data.clone()));
             });
-        }
-
-        #[cfg(feature = "steel")]
-        {
-            let executor = steel_bench::create_executor();
-            // Steel data embedding is expensive for large datasets
-            if item_count <= 100 {
-                group.bench_with_input(BenchmarkId::new("steel", item_count), &data, |b, data| {
-                    b.to_async(&rt)
-                        .iter(|| steel_bench::complex_data(&executor, data));
-                });
-            }
         }
 
         #[cfg(feature = "lua")]
@@ -510,13 +403,6 @@ fn bench_executor_creation(c: &mut Criterion) {
     {
         group.bench_function("rune", |b| {
             b.iter(|| crucible_rune::RuneExecutor::new().unwrap());
-        });
-    }
-
-    #[cfg(feature = "steel")]
-    {
-        group.bench_function("steel", |b| {
-            b.iter(|| steel_bench::create_executor());
         });
     }
 
