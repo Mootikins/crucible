@@ -62,7 +62,7 @@ mod table_tests;
 #[cfg(test)]
 mod tool_call_tests;
 
-pub use harness::Harness;
+pub use harness::{Harness, StreamingHarness, TimelineEntry};
 pub use state_builder::{
     render_to_terminal, test_terminal, test_terminal_sized, TestStateBuilder, TEST_HEIGHT,
     TEST_WIDTH,
