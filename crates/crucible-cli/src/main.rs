@@ -358,7 +358,8 @@ async fn main() -> Result<()> {
         }
 
         Some(Commands::Init { path, force }) => {
-            commands::init::execute(path, force).await?;
+            // interactive flag will be wired in Task 7
+            commands::init::execute(path, force, false).await?;
         }
 
         Some(Commands::Session(cmd)) => {
