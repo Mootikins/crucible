@@ -72,6 +72,7 @@ mod executor;
 #[cfg(feature = "fennel")]
 mod fennel;
 mod graph;
+mod hooks;
 mod json_query;
 mod panel;
 mod popup;
@@ -113,3 +114,4 @@ pub use schema::{
 };
 pub use shell::{register_shell_module, ExecResult, ShellPolicy};
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
+pub use hooks::{execute_hook, HookResult, LuaHookHandler};
