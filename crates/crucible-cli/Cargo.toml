@@ -50,6 +50,9 @@ clap = { workspace = true, features = ["derive", "env", "string"] }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 
+# HTTP client for provider detection
+reqwest = { workspace = true }
+
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
