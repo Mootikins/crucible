@@ -280,6 +280,8 @@ enum PendingGraduation {
         name: String,
         status: crate::tui::conversation::ToolStatus,
     },
+    /// Pre-rendered lines to graduate (for progressive line-based graduation)
+    Lines(Vec<String>),
 }
 
 /// Convert StreamBlocks to markdown string for graduation rendering
@@ -418,8 +420,8 @@ pub struct RatatuiRunner {
     inline_printer: InlinePrinter,
     /// Pending graduations to flush via terminal.insert_before()
     pending_graduations: Vec<PendingGraduation>,
-    /// Number of blocks graduated during current streaming session (for progressive graduation)
-    graduated_block_count: usize,
+    /// Number of rendered lines graduated during current streaming session
+    graduated_line_count: usize,
 
     // =============================================================================
     // Runtime configuration (session-scoped provider/model overrides)
@@ -482,7 +484,7 @@ impl RatatuiRunner {
             inline_mode: true,
             inline_printer: InlinePrinter::new(),
             pending_graduations: Vec::new(),
-            graduated_block_count: 0,
+            graduated_line_count: 0,
             // Runtime config (session-scoped provider/model) - will be set via with_runtime_config
             runtime_config: crate::tui::RuntimeConfig::default(),
             // Ollama endpoint - will be set via with_ollama_endpoint
@@ -752,37 +754,11 @@ impl RatatuiRunner {
                         streaming_complete = true;
 
                         // Graduate assistant message to scrollback (inline mode)
-                        // Graduate remaining blocks not yet graduated during progressive streaming
+                        // Graduate remaining lines not yet graduated during progressive streaming
                         if self.inline_mode {
-                            let remaining_blocks: Option<Vec<StreamBlock>> = self
-                                .view
-                                .state()
-                                .conversation
-                                .items()
-                                .iter()
-                                .rev()
-                                .find_map(|item| {
-                                    if let ConversationItem::AssistantMessage { blocks, .. } = item {
-                                        // Only graduate blocks after what we already graduated
-                                        let remaining: Vec<_> = blocks
-                                            .iter()
-                                            .skip(self.graduated_block_count)
-                                            .cloned()
-                                            .collect();
-                                        if remaining.is_empty() {
-                                            None
-                                        } else {
-                                            Some(remaining)
-                                        }
-                                    } else {
-                                        None
-                                    }
-                                });
-                            if let Some(blocks) = remaining_blocks {
-                                self.graduate_assistant_message(&blocks);
-                            }
+                            self.graduate_remaining_lines();
                             // Reset for next streaming session
-                            self.graduated_block_count = 0;
+                            self.graduated_line_count = 0;
                         }
 
                         // Flush accumulated assistant message to session log
@@ -928,9 +904,9 @@ impl RatatuiRunner {
             if !pending_parse_events.is_empty() {
                 self.apply_parse_events(pending_parse_events);
 
-                // Progressive graduation: graduate complete blocks as they overflow viewport
+                // Progressive graduation: graduate lines as they overflow viewport
                 if self.inline_mode && self.streaming_manager.is_streaming() {
-                    self.graduate_overflow_blocks();
+                    self.graduate_overflow_lines();
                 }
             }
 
@@ -1228,7 +1204,7 @@ impl RatatuiRunner {
                 // (parser is now created by start_streaming_with_parser)
                 self.view.start_assistant_streaming();
                 // Reset progressive graduation counter for new streaming session
-                self.graduated_block_count = 0;
+                self.graduated_line_count = 0;
 
                 // Emit user message to ring
                 bridge.ring.push(SessionEvent::MessageReceived {
@@ -2281,53 +2257,105 @@ impl RatatuiRunner {
         });
     }
 
-    /// Graduate complete blocks that have overflowed the viewport during streaming.
+    /// Graduate lines that have overflowed the viewport during streaming.
     ///
     /// This implements progressive graduation: as content grows during streaming,
-    /// complete blocks that scroll out of view are pushed to terminal scrollback.
-    /// We keep the last complete block (or partial) in the viewport for context.
-    fn graduate_overflow_blocks(&mut self) {
-        use crate::tui::conversation::ConversationItem;
+    /// lines that scroll out of view are pushed to terminal scrollback.
+    fn graduate_overflow_lines(&mut self) {
+        use crate::tui::constants::UiConstants;
+        use crate::tui::conversation::render_item_to_lines;
 
-        // Get the current streaming assistant message blocks
-        let streaming_blocks: Option<Vec<StreamBlock>> = self
+        // Calculate total rendered content lines
+        let content_width = UiConstants::content_width(self.view.state().width);
+        let total_lines: usize = self
             .view
             .state()
             .conversation
             .items()
             .iter()
-            .rev()
-            .find_map(|item| {
-                if let ConversationItem::AssistantMessage { blocks, is_streaming: true } = item {
-                    Some(blocks.clone())
-                } else {
-                    None
+            .map(|item| render_item_to_lines(item, content_width).len())
+            .sum();
+
+        // Viewport capacity (total height minus input area and status line)
+        // INLINE_VIEWPORT_HEIGHT is 15, minus ~4 for input/status = 11 lines for content
+        let viewport_capacity = (INLINE_VIEWPORT_HEIGHT as usize).saturating_sub(4);
+
+        // If we have more lines than viewport can show + what we've graduated, graduate overflow
+        if total_lines > self.graduated_line_count + viewport_capacity {
+            let overflow_count = total_lines - viewport_capacity - self.graduated_line_count;
+
+            // Collect the lines to graduate
+            let mut lines_to_graduate = Vec::new();
+            let mut line_idx = 0;
+
+            for item in self.view.state().conversation.items() {
+                let rendered = render_item_to_lines(item, content_width);
+                for line in rendered {
+                    if line_idx >= self.graduated_line_count
+                        && line_idx < self.graduated_line_count + overflow_count
+                    {
+                        // Convert Line to string for scrollback
+                        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+                        lines_to_graduate.push(text);
+                    }
+                    line_idx += 1;
+                    if line_idx >= self.graduated_line_count + overflow_count {
+                        break;
+                    }
                 }
-            });
+                if line_idx >= self.graduated_line_count + overflow_count {
+                    break;
+                }
+            }
 
-        let Some(blocks) = streaming_blocks else {
-            return;
-        };
-
-        // Count complete blocks (all except the last one, which may be partial)
-        // We keep at least 1 block in viewport for context
-        let complete_count = blocks.iter().take(blocks.len().saturating_sub(1))
-            .filter(|b| b.is_complete())
-            .count();
-
-        // Graduate any complete blocks we haven't graduated yet
-        if complete_count > self.graduated_block_count {
-            let blocks_to_graduate: Vec<StreamBlock> = blocks
-                .iter()
-                .skip(self.graduated_block_count)
-                .take(complete_count - self.graduated_block_count)
-                .cloned()
-                .collect();
-
-            if !blocks_to_graduate.is_empty() {
+            if !lines_to_graduate.is_empty() {
                 self.pending_graduations
-                    .push(PendingGraduation::Assistant(blocks_to_graduate));
-                self.graduated_block_count = complete_count;
+                    .push(PendingGraduation::Lines(lines_to_graduate));
+                self.graduated_line_count += overflow_count;
+            }
+        }
+    }
+
+    /// Graduate all remaining lines at end of streaming.
+    ///
+    /// Called when streaming completes to push any remaining ungraduated content
+    /// to terminal scrollback.
+    fn graduate_remaining_lines(&mut self) {
+        use crate::tui::constants::UiConstants;
+        use crate::tui::conversation::render_item_to_lines;
+
+        // Calculate total rendered content lines
+        let content_width = UiConstants::content_width(self.view.state().width);
+        let total_lines: usize = self
+            .view
+            .state()
+            .conversation
+            .items()
+            .iter()
+            .map(|item| render_item_to_lines(item, content_width).len())
+            .sum();
+
+        // Graduate all remaining lines (everything after what we've already graduated)
+        if total_lines > self.graduated_line_count {
+
+            let mut lines_to_graduate = Vec::new();
+            let mut line_idx = 0;
+
+            for item in self.view.state().conversation.items() {
+                let rendered = render_item_to_lines(item, content_width);
+                for line in rendered {
+                    if line_idx >= self.graduated_line_count {
+                        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+                        lines_to_graduate.push(text);
+                    }
+                    line_idx += 1;
+                }
+            }
+
+            if !lines_to_graduate.is_empty() {
+                self.pending_graduations
+                    .push(PendingGraduation::Lines(lines_to_graduate));
+                self.graduated_line_count = total_lines;
             }
         }
     }
@@ -2434,6 +2462,20 @@ impl RatatuiRunner {
                             Span::styled(suffix, Style::default().fg(style)),
                         ]);
                         buf.set_line(0, 0, &line, width);
+                    })?;
+                }
+                PendingGraduation::Lines(lines) => {
+                    // Pre-rendered lines (from progressive graduation)
+                    if lines.is_empty() {
+                        continue;
+                    }
+
+                    let height = lines.len() as u16;
+                    terminal.insert_before(height, |buf| {
+                        for (i, text) in lines.iter().enumerate() {
+                            let line = Line::from(text.as_str());
+                            buf.set_line(0, i as u16, &line, width);
+                        }
                     })?;
                 }
             }
