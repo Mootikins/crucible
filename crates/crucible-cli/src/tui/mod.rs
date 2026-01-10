@@ -16,6 +16,7 @@ pub mod content_block;
 pub mod conversation;
 pub mod conversation_view;
 pub mod dialog;
+pub mod dynamic_viewport;
 pub mod event_result;
 pub mod geometry;
 pub mod help;
@@ -30,11 +31,12 @@ pub mod markdown;
 pub mod notification;
 pub mod paste_handler;
 pub mod popup;
+pub mod ratatui_markdown;
 pub mod registries;
 pub mod render;
 pub mod repl_commands;
-pub mod runtime_config;
 pub mod runner;
+pub mod runtime_config;
 pub mod scroll_utils;
 pub mod scrollback_runner;
 pub mod selection;
@@ -49,7 +51,6 @@ pub mod styles;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod testing;
 pub mod theme;
-pub mod ratatui_markdown;
 pub mod viewport;
 pub mod widget;
 pub mod widgets;
@@ -76,6 +77,7 @@ pub use constants::{
 };
 pub use content_block::{ParseEvent, StreamBlock};
 pub use dialog::{DialogResult, DialogStack, DialogState, DialogWidget};
+pub use dynamic_viewport::DynamicViewport;
 pub use event_result::{
     DialogResult as UiDialogResult, EventResult, FocusTarget, ScrollDirection, TuiAction,
 };
@@ -87,8 +89,8 @@ pub use notification::{NotificationLevel, NotificationState};
 pub use popup::{DynamicPopupProvider, PopupProvider, StaticPopupProvider};
 pub use registries::{CommandRegistry, CompositeRegistry, ContextRegistry, ReplCommandRegistry};
 pub use render::render;
-pub use runtime_config::{BackendSpec, RuntimeConfig};
 pub use runner::RatatuiRunner;
+pub use runtime_config::{BackendSpec, RuntimeConfig};
 pub use scroll_utils::{LineCount, ScrollUtils};
 pub use selection::{RenderedLineInfo, SelectableContentCache, SelectionPoint, SelectionState};
 pub use state::{ContextAttachment, ContextKind, TuiState};
