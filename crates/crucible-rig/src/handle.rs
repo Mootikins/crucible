@@ -298,6 +298,8 @@ where
                                 let args: serde_json::Value = serde_json::from_str(&arguments)
                                     .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
+                                // Note: This is custom streaming - track for potential result lookup
+                                // (though tool execution not implemented in custom streaming yet)
                                 yield Ok(ChatChunk {
                                     delta: String::new(),
                                     done: false,
@@ -309,9 +311,6 @@ where
                                     tool_results: None,
                                     reasoning: None,
                                 });
-
-                                // Note: Tool execution not implemented in custom streaming yet
-                                // TUI will display the tool call but won't execute it
                             }
                             ReasoningChunk::Done => {
                                 // Update history with assistant response
@@ -414,6 +413,10 @@ where
             let mut rig_tool_calls: Vec<RigToolCall> = Vec::new();
             let mut tool_results: Vec<ToolResult> = Vec::new();
 
+            // Map call_id -> tool_name for looking up names when results arrive
+            // (ToolResult only has call_id, not the tool name)
+            let mut call_id_to_name: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
             // Track buffered text for XML tool call detection
             // We buffer text when we detect potential XML to avoid emitting partial fragments
             let mut is_buffering_xml = false;
@@ -464,41 +467,33 @@ where
                                             let args_json: serde_json::Value = serde_json::to_value(&parsed_tc.arguments)
                                                 .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
+                                            // Generate ID and track call_id -> name mapping
+                                            let xml_id = format!("xml-{}", uuid::Uuid::new_v4());
+                                            call_id_to_name.insert(xml_id.clone(), parsed_tc.name.clone());
+
+                                            let chat_tc = ChatToolCall {
+                                                name: parsed_tc.name.clone(),
+                                                arguments: Some(args_json),
+                                                id: Some(xml_id),
+                                            };
+                                            tool_calls.push(chat_tc.clone());
+
                                             // Check if this is a write operation in plan mode
                                             let is_write = is_write_tool_name(&parsed_tc.name);
                                             if is_write && current_mode_id == "plan" {
                                                 // Block write operations in plan mode
-                                                let error_msg = format!(
-                                                    "Tool '{}' is blocked in plan mode. Switch to act mode to perform write operations.",
-                                                    parsed_tc.name
-                                                );
                                                 warn!(tool = %parsed_tc.name, "Blocking XML write tool in plan mode");
-
-                                                // Emit error message instead of tool call
                                                 yield Ok(ChatChunk {
-                                                    delta: error_msg.clone(),
+                                                    delta: format!(
+                                                        "Tool '{}' is blocked in plan mode. Switch to act mode to perform write operations.",
+                                                        parsed_tc.name
+                                                    ),
                                                     done: false,
                                                     tool_calls: None,
                                                     tool_results: None,
                                                     reasoning: None,
                                                 });
-
-                                                // Still track for history
-                                                tool_calls.push(ChatToolCall {
-                                                    name: parsed_tc.name.clone(),
-                                                    arguments: Some(args_json),
-                                                    id: Some(format!("xml-{}", uuid::Uuid::new_v4())),
-                                                });
                                             } else {
-                                                let chat_tc = ChatToolCall {
-                                                    name: parsed_tc.name.clone(),
-                                                    arguments: Some(args_json),
-                                                    id: Some(format!("xml-{}", uuid::Uuid::new_v4())),
-                                                };
-
-                                                // Track for history
-                                                tool_calls.push(chat_tc.clone());
-
                                                 yield Ok(ChatChunk {
                                                     delta: String::new(),
                                                     done: false,
@@ -574,53 +569,42 @@ where
                             StreamedAssistantContent::ToolCall(tc) => {
                                 debug!(tool = %tc.function.name, "Rig tool call");
 
+                                // Track call_id -> name for result lookup
+                                if let Some(ref call_id) = tc.call_id {
+                                    call_id_to_name.insert(call_id.clone(), tc.function.name.clone());
+                                }
+
+                                // Track for history (always, regardless of plan mode)
+                                rig_tool_calls.push(tc.clone());
+                                let chat_tc = ChatToolCall {
+                                    name: tc.function.name.clone(),
+                                    arguments: Some(tc.function.arguments.clone()),
+                                    id: tc.call_id.clone(),
+                                };
+                                tool_calls.push(chat_tc.clone());
+
                                 // Check if this is a write operation in plan mode
                                 let is_write_tool = is_write_tool_name(&tc.function.name);
                                 if is_write_tool && current_mode_id == "plan" {
                                     // Block write operations in plan mode
-                                    let error_msg = format!(
-                                        "Tool '{}' is blocked in plan mode. Switch to act mode to perform write operations.",
-                                        tc.function.name
-                                    );
                                     warn!(tool = %tc.function.name, "Blocking write tool in plan mode");
-
-                                    // Emit error message instead of tool call
                                     yield Ok(ChatChunk {
-                                        delta: error_msg.clone(),
+                                        delta: format!(
+                                            "Tool '{}' is blocked in plan mode. Switch to act mode to perform write operations.",
+                                            tc.function.name
+                                        ),
                                         done: false,
                                         tool_calls: None,
                                         tool_results: None,
                                         reasoning: None,
                                     });
-
-                                    // Still track for history
-                                    rig_tool_calls.push(tc.clone());
-                                    tool_calls.push(ChatToolCall {
-                                        name: tc.function.name.clone(),
-                                        arguments: Some(tc.function.arguments.clone()),
-                                        id: tc.call_id.clone(),
-                                    });
                                 } else {
-                                    // Track Rig's tool call for history building
-                                    rig_tool_calls.push(tc.clone());
-
-                                    // Accumulate tool call info for history
-                                    tool_calls.push(ChatToolCall {
-                                        name: tc.function.name.clone(),
-                                        arguments: Some(tc.function.arguments.clone()),
-                                        id: tc.call_id.clone(),
-                                    });
-
                                     // Emit tool call immediately via tool_calls field
                                     // (not as text delta - TUI handles tool display separately)
                                     yield Ok(ChatChunk {
                                         delta: String::new(),
                                         done: false,
-                                        tool_calls: Some(vec![ChatToolCall {
-                                            name: tc.function.name.clone(),
-                                            arguments: Some(tc.function.arguments.clone()),
-                                            id: tc.call_id.clone(),
-                                        }]),
+                                        tool_calls: Some(vec![chat_tc]),
                                         tool_results: None,
                                         reasoning: None,
                                     });
@@ -674,21 +658,26 @@ where
                             .collect::<Vec<_>>()
                             .join("\n");
 
+                        // Look up tool name from call_id mapping
+                        // Fall back to tr.id if not found (shouldn't happen normally)
+                        let tool_name = tr.call_id.as_ref()
+                            .and_then(|cid| call_id_to_name.get(cid).cloned())
+                            .unwrap_or_else(|| tr.id.clone());
+
                         debug!(
-                            tool_name = %tr.id,
+                            tool_name = %tool_name,
                             call_id = ?tr.call_id,
                             result_len = result_text.len(),
                             "Tool result received"
                         );
 
                         // Emit tool result to TUI
-                        // Use tr.id as the tool name (call_id is the correlation id)
                         yield Ok(ChatChunk {
                             delta: String::new(),
                             done: false,
                             tool_calls: None,
                             tool_results: Some(vec![ChatToolResult {
-                                name: tr.id.clone(),
+                                name: tool_name,
                                 result: result_text,
                                 error: None, // Rig doesn't distinguish error results
                             }]),
