@@ -14,7 +14,7 @@
 //! - Kiln personal: `KILN/.crucible/plugins/` (gitignored)
 //! - Kiln shared: `KILN/plugins/` (version-controlled)
 //!
-//! Plugins use `#[tool(...)]` and `#[hook(...)]` attributes to register
+//! Plugins use `#[tool(...)]` and `#[handler(...)]` attributes to register
 //! tools and event handlers respectively. Struct-based plugins use
 //! `#[plugin(...)]` for stateful tools with file watching.
 
@@ -26,7 +26,7 @@ use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::events::{SessionEvent, ToolProvider};
 use crucible_core::traits::KnowledgeRepository;
 use crucible_rune::{
-    builtin_hooks::{create_test_filter_hook, BuiltinHooksConfig},
+    builtin_handlers::{create_test_filter_handler, BuiltinHandlersConfig},
     event_bus::EventBus,
     mcp_gateway::McpGatewayManager,
     ContentBlock, EventHandler, EventHandlerConfig, EventPipeline, PluginLoader,
@@ -220,23 +220,23 @@ impl ExtendedMcpServer {
             }
         };
 
-        // Create unified event bus and register built-in hooks
+        // Create unified event bus and register built-in handlers
         let event_bus = {
             let mut bus = EventBus::new();
 
-            // Register all built-in hooks
-            let builtin_config = BuiltinHooksConfig::default();
+            // Register all built-in handlers
+            let builtin_config = BuiltinHandlersConfig::default();
 
             if builtin_config.test_filter.enabled {
-                bus.register(create_test_filter_hook(&builtin_config.test_filter));
-                info!("Registered builtin:test_filter hook");
+                bus.register(create_test_filter_handler(&builtin_config.test_filter));
+                info!("Registered builtin:test_filter handler");
             }
 
             if builtin_config.recipe_enrichment.enabled {
-                bus.register(crucible_rune::builtin_hooks::create_recipe_enrichment_hook(
+                bus.register(crucible_rune::builtin_handlers::create_recipe_enrichment_handler(
                     &builtin_config.recipe_enrichment,
                 ));
-                info!("Registered builtin:recipe_enrichment hook");
+                info!("Registered builtin:recipe_enrichment handler");
             }
 
             Arc::new(RwLock::new(bus))

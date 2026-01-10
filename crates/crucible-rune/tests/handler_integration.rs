@@ -1,23 +1,23 @@
-//! Integration tests for the hook system
+//! Integration tests for the handler system
 
 use crucible_rune::{
-    DiscoveryPaths, Event, EventBus, EventType, Handler, HookManager, HookRegistry,
+    DiscoveryPaths, Event, EventBus, EventType, Handler, HandlerManager, HandlerRegistry,
 };
 use serde_json::json;
 use std::fs;
 use tempfile::TempDir;
 
-/// Test that Rune hooks can modify event payloads
+/// Test that Rune handlers can modify event payloads
 #[tokio::test(flavor = "multi_thread")]
-async fn test_rune_hook_modifies_payload() {
+async fn test_rune_handler_modifies_payload() {
     let temp = TempDir::new().unwrap();
-    let hooks_dir = temp.path().join("hooks");
-    fs::create_dir_all(&hooks_dir).unwrap();
+    let handlers_dir = temp.path().join("handlers");
+    fs::create_dir_all(&handlers_dir).unwrap();
 
-    // Write a hook that adds a "processed" field to the payload
+    // Write a handler that adds a "processed" field to the payload
     let script = r#"
 /// Adds processed flag to events
-#[hook(event = "tool:after", pattern = "*")]
+#[handler(event = "tool:after", pattern = "*")]
 pub fn add_processed(ctx, event) {
     // Add processed flag to payload
     let payload = event.payload;
@@ -26,11 +26,11 @@ pub fn add_processed(ctx, event) {
     event
 }
 "#;
-    fs::write(hooks_dir.join("processor.rn"), script).unwrap();
+    fs::write(handlers_dir.join("processor.rn"), script).unwrap();
 
     // Set up registry and discover
-    let paths = DiscoveryPaths::empty("hooks").with_path(hooks_dir);
-    let mut registry = HookRegistry::with_paths(paths).unwrap();
+    let paths = DiscoveryPaths::empty("handlers").with_path(handlers_dir);
+    let mut registry = HandlerRegistry::with_paths(paths).unwrap();
     let count = registry.discover().unwrap();
     assert_eq!(count, 1);
 
@@ -50,17 +50,17 @@ pub fn add_processed(ctx, event) {
     assert_eq!(result.payload["processed"], json!(true));
 }
 
-/// Test that hooks respect pattern matching
+/// Test that handlers respect pattern matching
 #[tokio::test(flavor = "multi_thread")]
-async fn test_rune_hook_pattern_matching() {
+async fn test_rune_handler_pattern_matching() {
     let temp = TempDir::new().unwrap();
-    let hooks_dir = temp.path().join("hooks");
-    fs::create_dir_all(&hooks_dir).unwrap();
+    let handlers_dir = temp.path().join("handlers");
+    fs::create_dir_all(&handlers_dir).unwrap();
 
-    // Write a hook that only matches "just_*" tools
+    // Write a handler that only matches "just_*" tools
     let script = r#"
 /// Only processes just_* tools
-#[hook(event = "tool:after", pattern = "just_*")]
+#[handler(event = "tool:after", pattern = "just_*")]
 pub fn just_only(ctx, event) {
     let payload = event.payload;
     payload.just_processed = true;
@@ -68,10 +68,10 @@ pub fn just_only(ctx, event) {
     event
 }
 "#;
-    fs::write(hooks_dir.join("just_hook.rn"), script).unwrap();
+    fs::write(handlers_dir.join("just_handler.rn"), script).unwrap();
 
-    let paths = DiscoveryPaths::empty("hooks").with_path(hooks_dir);
-    let mut registry = HookRegistry::with_paths(paths).unwrap();
+    let paths = DiscoveryPaths::empty("handlers").with_path(handlers_dir);
+    let mut registry = HandlerRegistry::with_paths(paths).unwrap();
     registry.discover().unwrap();
 
     let mut bus = EventBus::new();
@@ -95,18 +95,18 @@ pub fn just_only(ctx, event) {
     );
 }
 
-/// Test hook priority ordering
+/// Test handler priority ordering
 #[tokio::test(flavor = "multi_thread")]
-async fn test_rune_hook_priority_ordering() {
+async fn test_rune_handler_priority_ordering() {
     let temp = TempDir::new().unwrap();
-    let hooks_dir = temp.path().join("hooks");
-    fs::create_dir_all(&hooks_dir).unwrap();
+    let handlers_dir = temp.path().join("handlers");
+    fs::create_dir_all(&handlers_dir).unwrap();
 
-    // Write multiple hooks with different priorities
+    // Write multiple handlers with different priorities
     let script = r#"
-/// First hook (priority 10 = runs first)
-#[hook(event = "tool:after", pattern = "*", priority = 10)]
-pub fn first_hook(ctx, event) {
+/// First handler (priority 10 = runs first)
+#[handler(event = "tool:after", pattern = "*", priority = 10)]
+pub fn first_handler(ctx, event) {
     let payload = event.payload;
     let current = if payload.contains_key("order") { payload.order } else { "" };
     payload.order = current + "1";
@@ -114,9 +114,9 @@ pub fn first_hook(ctx, event) {
     event
 }
 
-/// Second hook (priority 50)
-#[hook(event = "tool:after", pattern = "*", priority = 50)]
-pub fn second_hook(ctx, event) {
+/// Second handler (priority 50)
+#[handler(event = "tool:after", pattern = "*", priority = 50)]
+pub fn second_handler(ctx, event) {
     let payload = event.payload;
     let current = if payload.contains_key("order") { payload.order } else { "" };
     payload.order = current + "2";
@@ -124,9 +124,9 @@ pub fn second_hook(ctx, event) {
     event
 }
 
-/// Third hook (priority 100 = default)
-#[hook(event = "tool:after", pattern = "*", priority = 100)]
-pub fn third_hook(ctx, event) {
+/// Third handler (priority 100 = default)
+#[handler(event = "tool:after", pattern = "*", priority = 100)]
+pub fn third_handler(ctx, event) {
     let payload = event.payload;
     let current = if payload.contains_key("order") { payload.order } else { "" };
     payload.order = current + "3";
@@ -134,10 +134,10 @@ pub fn third_hook(ctx, event) {
     event
 }
 "#;
-    fs::write(hooks_dir.join("priority_hooks.rn"), script).unwrap();
+    fs::write(handlers_dir.join("priority_handlers.rn"), script).unwrap();
 
-    let paths = DiscoveryPaths::empty("hooks").with_path(hooks_dir);
-    let mut registry = HookRegistry::with_paths(paths).unwrap();
+    let paths = DiscoveryPaths::empty("handlers").with_path(handlers_dir);
+    let mut registry = HandlerRegistry::with_paths(paths).unwrap();
     registry.discover().unwrap();
 
     let mut bus = EventBus::new();
@@ -154,35 +154,35 @@ pub fn third_hook(ctx, event) {
     );
 }
 
-/// Test that hook errors don't break the pipeline (fail-open)
+/// Test that handler errors don't break the pipeline (fail-open)
 #[tokio::test(flavor = "multi_thread")]
-async fn test_rune_hook_fail_open() {
+async fn test_rune_handler_fail_open() {
     let temp = TempDir::new().unwrap();
-    let hooks_dir = temp.path().join("hooks");
-    fs::create_dir_all(&hooks_dir).unwrap();
+    let handlers_dir = temp.path().join("handlers");
+    fs::create_dir_all(&handlers_dir).unwrap();
 
-    // Write a hook that throws an error
+    // Write a handler that throws an error
     let script = r#"
 /// This hook will fail
-#[hook(event = "tool:after", pattern = "*", priority = 10)]
-pub fn failing_hook(ctx, event) {
+#[handler(event = "tool:after", pattern = "*", priority = 10)]
+pub fn failing_handler(ctx, event) {
     // This will cause a runtime error - panic
     panic!("intentional failure")
 }
 
-/// This hook should still run
-#[hook(event = "tool:after", pattern = "*", priority = 100)]
-pub fn succeeding_hook(ctx, event) {
+/// This handler should still run
+#[handler(event = "tool:after", pattern = "*", priority = 100)]
+pub fn succeeding_handler(ctx, event) {
     let payload = event.payload;
     payload.success = true;
     event.payload = payload;
     event
 }
 "#;
-    fs::write(hooks_dir.join("fail_hooks.rn"), script).unwrap();
+    fs::write(handlers_dir.join("fail_handlers.rn"), script).unwrap();
 
-    let paths = DiscoveryPaths::empty("hooks").with_path(hooks_dir);
-    let mut registry = HookRegistry::with_paths(paths).unwrap();
+    let paths = DiscoveryPaths::empty("handlers").with_path(handlers_dir);
+    let mut registry = HandlerRegistry::with_paths(paths).unwrap();
     registry.discover().unwrap();
 
     let mut bus = EventBus::new();
@@ -191,28 +191,28 @@ pub fn succeeding_hook(ctx, event) {
     let event = Event::tool_after("test", json!({}));
     let (result, _, errors) = bus.emit(event);
 
-    // First hook should have errored
-    assert!(!errors.is_empty(), "First hook should have failed");
+    // First handler should have errored
+    assert!(!errors.is_empty(), "First handler should have failed");
 
-    // But second hook should have run
+    // But second handler should have run
     assert_eq!(
         result.payload["success"],
         json!(true),
-        "Second hook should still run"
+        "Second handler should still run"
     );
 }
 
-/// Test mixing built-in and Rune hooks
+/// Test mixing built-in and Rune handlers
 #[tokio::test(flavor = "multi_thread")]
-async fn test_mixed_builtin_and_rune_hooks() {
+async fn test_mixed_builtin_and_rune_handlers() {
     let temp = TempDir::new().unwrap();
-    let hooks_dir = temp.path().join("hooks");
-    fs::create_dir_all(&hooks_dir).unwrap();
+    let handlers_dir = temp.path().join("handlers");
+    fs::create_dir_all(&handlers_dir).unwrap();
 
-    // Write a Rune hook
+    // Write a Rune handler
     let script = r#"
-/// Rune hook that adds rune_processed flag
-#[hook(event = "tool:after", pattern = "*", priority = 50)]
+/// Rune handler that adds rune_processed flag
+#[handler(event = "tool:after", pattern = "*", priority = 50)]
 pub fn rune_processor(ctx, event) {
     let payload = event.payload;
     payload.rune_processed = true;
@@ -220,10 +220,10 @@ pub fn rune_processor(ctx, event) {
     event
 }
 "#;
-    fs::write(hooks_dir.join("rune_hook.rn"), script).unwrap();
+    fs::write(handlers_dir.join("rune_handler.rn"), script).unwrap();
 
-    let paths = DiscoveryPaths::empty("hooks").with_path(hooks_dir);
-    let mut registry = HookRegistry::with_paths(paths).unwrap();
+    let paths = DiscoveryPaths::empty("handlers").with_path(handlers_dir);
+    let mut registry = HandlerRegistry::with_paths(paths).unwrap();
     registry.discover().unwrap();
 
     let mut bus = EventBus::new();
@@ -244,7 +244,7 @@ pub fn rune_processor(ctx, event) {
         .with_priority(10),
     );
 
-    // Register Rune hooks
+    // Register Rune handlers
     registry.register_all(&mut bus);
 
     // Register built-in hook with lower priority (runs last)
@@ -270,37 +270,37 @@ pub fn rune_processor(ctx, event) {
     assert_eq!(
         result.payload["builtin_first"],
         json!(true),
-        "Built-in first hook should run"
+        "Built-in first handler should run"
     );
     assert_eq!(
         result.payload["rune_processed"],
         json!(true),
-        "Rune hook should run"
+        "Rune handler should run"
     );
     assert_eq!(
         result.payload["builtin_last"],
         json!(true),
-        "Built-in last hook should run"
+        "Built-in last handler should run"
     );
 }
 
-/// Test hook manager thread safety
+/// Test handler manager thread safety
 #[tokio::test(flavor = "multi_thread")]
-async fn test_hook_manager_concurrent_access() {
+async fn test_handler_manager_concurrent_access() {
     let temp = TempDir::new().unwrap();
-    let hooks_dir = temp.path().join("hooks");
-    fs::create_dir_all(&hooks_dir).unwrap();
+    let handlers_dir = temp.path().join("handlers");
+    fs::create_dir_all(&handlers_dir).unwrap();
 
     let script = r#"
-#[hook(event = "tool:after", pattern = "*")]
-pub fn concurrent_hook(ctx, event) {
+#[handler(event = "tool:after", pattern = "*")]
+pub fn concurrent_handler(ctx, event) {
     event
 }
 "#;
-    fs::write(hooks_dir.join("hook.rn"), script).unwrap();
+    fs::write(handlers_dir.join("hook.rn"), script).unwrap();
 
-    let paths = DiscoveryPaths::empty("hooks").with_path(hooks_dir);
-    let manager = HookManager::with_paths(paths).unwrap();
+    let paths = DiscoveryPaths::empty("handlers").with_path(handlers_dir);
+    let manager = HandlerManager::with_paths(paths).unwrap();
     manager.discover().unwrap();
 
     // Access from multiple threads
@@ -319,14 +319,14 @@ pub fn concurrent_hook(ctx, event) {
 
 /// Test event context metadata passing to hooks
 #[tokio::test(flavor = "multi_thread")]
-async fn test_hook_receives_context() {
+async fn test_handler_receives_context() {
     let temp = TempDir::new().unwrap();
-    let hooks_dir = temp.path().join("hooks");
-    fs::create_dir_all(&hooks_dir).unwrap();
+    let handlers_dir = temp.path().join("handlers");
+    fs::create_dir_all(&handlers_dir).unwrap();
 
     // Hook that reads context and adds to payload
     let script = r#"
-#[hook(event = "tool:after", pattern = "*")]
+#[handler(event = "tool:after", pattern = "*")]
 pub fn context_reader(ctx, event) {
     // Copy context key to payload if present
     if ctx.contains_key("request_id") {
@@ -337,15 +337,15 @@ pub fn context_reader(ctx, event) {
     event
 }
 "#;
-    fs::write(hooks_dir.join("ctx_hook.rn"), script).unwrap();
+    fs::write(handlers_dir.join("ctx_handler.rn"), script).unwrap();
 
-    let paths = DiscoveryPaths::empty("hooks").with_path(hooks_dir);
-    let mut registry = HookRegistry::with_paths(paths).unwrap();
+    let paths = DiscoveryPaths::empty("handlers").with_path(handlers_dir);
+    let mut registry = HandlerRegistry::with_paths(paths).unwrap();
     registry.discover().unwrap();
 
     let mut bus = EventBus::new();
 
-    // Add a handler that sets context before the Rune hook
+    // Add a handler that sets context before the Rune handler
     bus.register(
         Handler::new("context_setter", EventType::ToolAfter, "*", |ctx, event| {
             ctx.set("request_id", json!("req-123"));

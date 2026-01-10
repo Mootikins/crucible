@@ -1,62 +1,62 @@
-//! Hooks configuration for built-in event handlers
+//! Handlers configuration for built-in event handlers
 
 use serde::{Deserialize, Serialize};
 
-/// Configuration for event system hooks
+/// Configuration for event system handlers
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct HooksConfig {
-    /// Built-in hooks configuration
+pub struct HandlersConfig {
+    /// Built-in handlers configuration
     #[serde(default)]
-    pub builtin: BuiltinHooksTomlConfig,
+    pub builtin: BuiltinHandlersTomlConfig,
 }
 
 /// Configuration for built-in hooks (TOML-friendly version)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BuiltinHooksTomlConfig {
-    /// Test filter hook configuration
+pub struct BuiltinHandlersTomlConfig {
+    /// Test filter handler configuration
     #[serde(default)]
-    pub test_filter: HookConfig,
+    pub test_filter: HandlerConfig,
 
-    /// TOON transform hook configuration
+    /// TOON transform handler configuration
     #[serde(default)]
-    pub toon_transform: HookConfig,
+    pub toon_transform: HandlerConfig,
 
-    /// Recipe enrichment hook configuration
+    /// Recipe enrichment handler configuration
     #[serde(default)]
-    pub recipe_enrichment: HookConfig,
+    pub recipe_enrichment: HandlerConfig,
 
-    /// Tool selector hook configuration
+    /// Tool selector handler configuration
     #[serde(default)]
-    pub tool_selector: ToolSelectorHookConfig,
+    pub tool_selector: ToolSelectorHandlerConfig,
 }
 
-impl Default for BuiltinHooksTomlConfig {
+impl Default for BuiltinHandlersTomlConfig {
     fn default() -> Self {
         Self {
-            test_filter: HookConfig {
+            test_filter: HandlerConfig {
                 enabled: true,
                 pattern: Some("just_test*".to_string()),
                 priority: Some(10),
             },
-            toon_transform: HookConfig {
+            toon_transform: HandlerConfig {
                 enabled: false,
                 pattern: Some("*".to_string()),
                 priority: Some(50),
             },
-            recipe_enrichment: HookConfig {
+            recipe_enrichment: HandlerConfig {
                 enabled: true,
                 pattern: Some("just_*".to_string()),
                 priority: Some(5),
             },
-            tool_selector: ToolSelectorHookConfig::default(),
+            tool_selector: ToolSelectorHandlerConfig::default(),
         }
     }
 }
 
-/// Configuration for a simple hook
+/// Configuration for a simple handler
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HookConfig {
-    /// Whether the hook is enabled
+pub struct HandlerConfig {
+    /// Whether the handler is enabled
     #[serde(default)]
     pub enabled: bool,
 
@@ -69,7 +69,7 @@ pub struct HookConfig {
     pub priority: Option<i64>,
 }
 
-impl Default for HookConfig {
+impl Default for HandlerConfig {
     fn default() -> Self {
         Self {
             enabled: false,
@@ -81,8 +81,8 @@ impl Default for HookConfig {
 
 /// Configuration for the tool selector hook
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolSelectorHookConfig {
-    /// Whether the hook is enabled
+pub struct ToolSelectorHandlerConfig {
+    /// Whether the handler is enabled
     #[serde(default)]
     pub enabled: bool,
 
@@ -111,7 +111,7 @@ pub struct ToolSelectorHookConfig {
     pub suffix: Option<String>,
 }
 
-impl Default for ToolSelectorHookConfig {
+impl Default for ToolSelectorHandlerConfig {
     fn default() -> Self {
         Self {
             enabled: false,
@@ -130,8 +130,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_hooks_config_default() {
-        let config = HooksConfig::default();
+    fn test_handlers_config_default() {
+        let config = HandlersConfig::default();
 
         // Test filter should be enabled by default
         assert!(config.builtin.test_filter.enabled);
@@ -156,7 +156,7 @@ mod tests {
     }
 
     #[test]
-    fn test_hooks_config_parse_toml() {
+    fn test_handlers_config_parse_toml() {
         let toml_content = r#"
 [builtin.test_filter]
 enabled = true
@@ -181,7 +181,7 @@ blocked_tools = ["delete_*"]
 prefix = "ext_"
 "#;
 
-        let config: HooksConfig = toml::from_str(toml_content).unwrap();
+        let config: HandlersConfig = toml::from_str(toml_content).unwrap();
 
         // Check test_filter
         assert!(config.builtin.test_filter.enabled);
@@ -220,24 +220,24 @@ prefix = "ext_"
     }
 
     #[test]
-    fn test_hook_config_minimal() {
+    fn test_handler_config_minimal() {
         let toml_content = r#"
 enabled = true
 "#;
 
-        let config: HookConfig = toml::from_str(toml_content).unwrap();
+        let config: HandlerConfig = toml::from_str(toml_content).unwrap();
         assert!(config.enabled);
         assert!(config.pattern.is_none());
         assert!(config.priority.is_none());
     }
 
     #[test]
-    fn test_tool_selector_config_minimal() {
+    fn test_tool_selector_handler_config_minimal() {
         let toml_content = r#"
 enabled = true
 "#;
 
-        let config: ToolSelectorHookConfig = toml::from_str(toml_content).unwrap();
+        let config: ToolSelectorHandlerConfig = toml::from_str(toml_content).unwrap();
         assert!(config.enabled);
         assert!(config.allowed_tools.is_none());
         assert!(config.blocked_tools.is_none());
@@ -246,22 +246,22 @@ enabled = true
     }
 
     #[test]
-    fn test_hooks_config_serialization() {
-        let config = HooksConfig {
-            builtin: BuiltinHooksTomlConfig {
-                test_filter: HookConfig {
+    fn test_handlers_config_serialization() {
+        let config = HandlersConfig {
+            builtin: BuiltinHandlersTomlConfig {
+                test_filter: HandlerConfig {
                     enabled: true,
                     pattern: Some("test*".to_string()),
                     priority: Some(10),
                 },
-                toon_transform: HookConfig::default(),
-                recipe_enrichment: HookConfig::default(),
-                tool_selector: ToolSelectorHookConfig::default(),
+                toon_transform: HandlerConfig::default(),
+                recipe_enrichment: HandlerConfig::default(),
+                tool_selector: ToolSelectorHandlerConfig::default(),
             },
         };
 
         let toml_str = toml::to_string(&config).unwrap();
-        let parsed: HooksConfig = toml::from_str(&toml_str).unwrap();
+        let parsed: HandlersConfig = toml::from_str(&toml_str).unwrap();
 
         assert!(parsed.builtin.test_filter.enabled);
         assert_eq!(
@@ -277,14 +277,14 @@ enabled = true
 suffix = "_tool"
 "#;
 
-        let config: ToolSelectorHookConfig = toml::from_str(toml_content).unwrap();
+        let config: ToolSelectorHandlerConfig = toml::from_str(toml_content).unwrap();
         assert!(config.enabled);
         assert_eq!(config.suffix, Some("_tool".to_string()));
         assert!(config.prefix.is_none());
     }
 
     #[test]
-    fn test_builtin_hooks_partial_config() {
+    fn test_builtin_handlers_partial_config() {
         let toml_content = r#"
 [builtin.test_filter]
 enabled = false
@@ -294,7 +294,7 @@ enabled = true
 allowed_tools = ["safe_*"]
 "#;
 
-        let config: HooksConfig = toml::from_str(toml_content).unwrap();
+        let config: HandlersConfig = toml::from_str(toml_content).unwrap();
 
         assert!(!config.builtin.test_filter.enabled);
         assert!(config.builtin.tool_selector.enabled);
@@ -303,7 +303,7 @@ allowed_tools = ["safe_*"]
             Some(vec!["safe_*".to_string()])
         );
 
-        // Other hooks should use defaults
+        // Other handlers should use defaults
         assert!(!config.builtin.toon_transform.enabled);
     }
 }

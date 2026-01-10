@@ -1,40 +1,38 @@
-//! Luau scripting integration for Crucible
+//! Lua 5.4 scripting integration for Crucible
 //!
-//! This crate provides Luau (Lua with gradual types) scripting alongside Rune:
+//! This crate provides Lua scripting with optional Fennel support:
 //! - **LLM-friendly**: Simple syntax, massive training data
-//! - **Type-driven schemas**: Extract tool schemas from Luau type annotations
+//! - **LDoc annotations**: Extract tool schemas from doc comments
 //! - **Threading**: `send` feature enables Send+Sync
-//! - **Fennel**: Optional Lisp syntax with macros (compiles to Lua)
+//! - **Fennel**: Lisp syntax with macros (compiles to Lua)
 //!
 //! ## Architecture
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────┐
-//! │  tool.lua (with Luau type annotations)      │
+//! │  tool.lua (with LDoc annotations)           │
 //! │                                             │
 //! │  --- Search the knowledge base              │
 //! │  -- @tool                                   │
 //! │  -- @param query string Search query        │
 //! │  function search(query, limit)              │
 //! └─────────────────────────────────────────────┘
-//!             │
-//!             ├──────────────────────────────────┐
-//!             ▼                                  ▼
-//! ┌─────────────────────────┐   ┌─────────────────────────┐
-//! │  Annotations Parser     │   │  full_moon (AST)        │
-//! │  LDoc-style comments    │   │  Luau type annotations  │
-//! └─────────────────────────┘   └─────────────────────────┘
-//!             │                              │
-//!             └──────────────┬───────────────┘
-//!                            ▼
+//!                       │
+//!                       ▼
+//!             ┌─────────────────────────┐
+//!             │  Annotations Parser     │
+//!             │  LDoc-style comments    │
+//!             └─────────────────────────┘
+//!                       │
+//!                       ▼
 //!             ┌─────────────────────────────────┐
 //!             │  Tool/Hook/Plugin Registry      │
 //!             │  JSON Schema generation         │
 //!             └─────────────────────────────────┘
-//!                            │
-//!                            ▼
+//!                       │
+//!                       ▼
 //!             ┌─────────────────────────────────┐
-//!             │  mlua/Luau Runtime              │
+//!             │  mlua/Lua 5.4 Runtime           │
 //!             │  + data, shell, json modules    │
 //!             └─────────────────────────────────┘
 //! ```
@@ -61,7 +59,7 @@
 //!
 //! ## Feature Flags
 //!
-//! - `fennel` (default): Bundle the Fennel compiler (~160KB)
+//! - `fennel` (default): Bundle the Fennel compiler (~255KB)
 //! - `send`: Enable `Send+Sync` on Lua state for multi-threaded use
 
 mod ask;
@@ -72,7 +70,7 @@ mod executor;
 #[cfg(feature = "fennel")]
 mod fennel;
 mod graph;
-mod hooks;
+mod handlers;
 mod json_query;
 mod mcp;
 mod panel;
@@ -82,7 +80,7 @@ pub mod schema;
 mod shell;
 mod types;
 
-pub use annotations::{AnnotationParser, DiscoveredHook, DiscoveredPlugin, DiscoveredTool};
+pub use annotations::{AnnotationParser, DiscoveredHandler, DiscoveredPlugin, DiscoveredTool};
 pub use ask::{
     core_answer_to_lua, core_batch_to_lua, core_question_to_lua, core_response_to_lua,
     lua_answer_table_to_core, lua_answer_to_core, lua_batch_table_to_core, lua_batch_to_core,
@@ -110,12 +108,16 @@ pub use panel::{
 };
 pub use popup::{lua_entry_to_core, lua_request_to_core, register_popup_module};
 pub use registry::LuaToolRegistry;
-pub use schema::{
-    extract_signatures, generate_input_schema, type_to_string, FunctionSignature, LuauType,
-};
+pub use schema::{generate_input_schema, type_to_string, FunctionSignature, LuauType, TypedParam};
 pub use shell::{register_shell_module, ExecResult, ShellPolicy};
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
-pub use hooks::{execute_hook, HookResult, LuaHookHandler, LuaHookRegistry};
+// Handler system
+pub use handlers::{
+    execute_handler, run_handler_chain,
+    register_crucible_on_api, interpret_handler_result,
+    HandlerExecutionResult, RuntimeHandler,
+    ScriptHandlerResult, LuaScriptHandler, LuaScriptHandlerRegistry,
+};
 pub use mcp::{
     register_mcp_module, register_mcp_module_stub, LuaMcpClient, McpToolInfo, McpToolResult,
 };

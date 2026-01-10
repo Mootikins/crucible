@@ -1,22 +1,22 @@
-//! Built-in hooks for the event system
+//! Built-in handlers for the event system
 //!
-//! These hooks are implemented in Rust for performance and are registered
-//! alongside Rune script hooks. They can be enabled/disabled via configuration.
+//! These handlers are implemented in Rust for performance and are registered
+//! alongside Rune script handlers. They can be enabled/disabled via configuration.
 //!
-//! ## Available Built-in Hooks
+//! ## Available Built-in Handlers
 //!
-//! - `TestFilterHook` - Filters verbose test output for LLM consumption
-//! - `ToonTransformHook` - Transforms tool results to TOON format
-//! - `EventEmitHook` - Publishes events to external consumers (webhooks, etc.)
+//! - `TestFilterHandler` - Filters verbose test output for LLM consumption
+//! - `ToonTransformHandler` - Transforms tool results to TOON format
+//! - `EventEmitHandler` - Publishes events to external consumers (webhooks, etc.)
 //!
 //! ## Configuration
 //!
 //! ```toml
-//! [hooks.builtin.test_filter]
+//! [handlers.builtin.test_filter]
 //! enabled = true
 //! pattern = "just_test*"
 //!
-//! [hooks.builtin.toon_transform]
+//! [handlers.builtin.toon_transform]
 //! enabled = true
 //! pattern = "*"
 //! ```
@@ -26,18 +26,18 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use tracing::debug;
 
-/// Configuration for built-in hooks
+/// Configuration for built-in handlers
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BuiltinHooksConfig {
-    /// Test filter hook configuration
+pub struct BuiltinHandlersConfig {
+    /// Test filter handler configuration
     #[serde(default)]
-    pub test_filter: HookToggle,
+    pub test_filter: HandlerToggle,
 
-    /// TOON transform hook configuration
+    /// TOON transform handler configuration
     #[serde(default)]
-    pub toon_transform: HookToggle,
+    pub toon_transform: HandlerToggle,
 
-    /// Event emit hook configuration
+    /// Event emit handler configuration
     #[serde(default)]
     pub event_emit: EventEmitConfig,
 
@@ -45,27 +45,27 @@ pub struct BuiltinHooksConfig {
     #[serde(default)]
     pub tool_selector: ToolSelectorConfig,
 
-    /// Recipe enrichment hook configuration
+    /// Recipe enrichment handler configuration
     #[serde(default)]
-    pub recipe_enrichment: HookToggle,
+    pub recipe_enrichment: HandlerToggle,
 }
 
-impl Default for BuiltinHooksConfig {
+impl Default for BuiltinHandlersConfig {
     fn default() -> Self {
         Self {
-            test_filter: HookToggle {
+            test_filter: HandlerToggle {
                 enabled: true,
                 pattern: "just_test*".to_string(),
                 priority: 10,
             },
-            toon_transform: HookToggle {
+            toon_transform: HandlerToggle {
                 enabled: false, // Disabled by default - needs tq integration
                 pattern: "*".to_string(),
                 priority: 50,
             },
             event_emit: EventEmitConfig::default(),
             tool_selector: ToolSelectorConfig::default(),
-            recipe_enrichment: HookToggle {
+            recipe_enrichment: HandlerToggle {
                 enabled: true,
                 pattern: "just_*".to_string(),
                 priority: 5, // Run early, before other enrichment
@@ -74,9 +74,9 @@ impl Default for BuiltinHooksConfig {
     }
 }
 
-/// Simple toggle for a built-in hook
+/// Simple toggle for a built-in handler
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HookToggle {
+pub struct HandlerToggle {
     /// Whether the hook is enabled
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -100,7 +100,7 @@ fn default_priority() -> i64 {
     100
 }
 
-impl Default for HookToggle {
+impl Default for HandlerToggle {
     fn default() -> Self {
         Self {
             enabled: true,
@@ -141,9 +141,9 @@ impl Default for EventEmitConfig {
     }
 }
 
-/// Configuration for the tool selector hook
+/// Configuration for the tool selector handler
 ///
-/// This hook runs on `tool:discovered` events and can:
+/// This handler runs on `tool:discovered` events and can:
 /// - Filter tools by whitelist/blacklist patterns
 /// - Add namespace prefixes to tool names
 /// - Cancel discovery of unwanted tools
@@ -187,7 +187,7 @@ impl Default for ToolSelectorConfig {
         Self {
             enabled: false,
             pattern: "*".to_string(),
-            priority: 5, // Run early to filter before other hooks
+            priority: 5, // Run early to filter before other handlers
             allowed_tools: None,
             blocked_tools: None,
             prefix: None,
@@ -200,7 +200,7 @@ impl Default for ToolSelectorConfig {
 ///
 /// Extracts summary and error information from test framework output,
 /// reducing verbose logs to essential information for LLMs.
-pub fn create_test_filter_hook(config: &HookToggle) -> Handler {
+pub fn create_test_filter_handler(config: &HandlerToggle) -> Handler {
     let pattern = config.pattern.clone();
     let priority = config.priority;
 
@@ -247,11 +247,11 @@ pub fn create_test_filter_hook(config: &HookToggle) -> Handler {
     .with_enabled(config.enabled)
 }
 
-/// Create a TOON transform hook
+/// Create a TOON transform handler
 ///
 /// Transforms tool results to TOON (Terse Object/Outline Notation) format
 /// for token-efficient responses.
-pub fn create_toon_transform_hook(config: &HookToggle) -> Handler {
+pub fn create_toon_transform_handler(config: &HandlerToggle) -> Handler {
     let pattern = config.pattern.clone();
     let priority = config.priority;
 
@@ -262,7 +262,7 @@ pub fn create_toon_transform_hook(config: &HookToggle) -> Handler {
         move |_ctx, event| {
             // TOON transformation would use the tq crate
             // For now, just pass through - full implementation requires tq integration
-            debug!("TOON transform hook triggered for {}", event.identifier);
+            debug!("TOON transform handler triggered for {}", event.identifier);
             Ok(event)
         },
     )
@@ -276,7 +276,7 @@ pub fn create_toon_transform_hook(config: &HookToggle) -> Handler {
 /// - Logging/auditing tool calls
 /// - Triggering webhooks
 /// - Publishing to message queues
-pub fn create_event_emit_hook(config: &EventEmitConfig) -> Handler {
+pub fn create_event_emit_handler(config: &EventEmitConfig) -> Handler {
     let pattern = config.pattern.clone();
     let priority = config.priority;
     let webhook_url = config.webhook_url.clone();
@@ -309,15 +309,15 @@ pub fn create_event_emit_hook(config: &EventEmitConfig) -> Handler {
     .with_enabled(config.enabled)
 }
 
-/// Create a tool selector hook that filters and namespaces discovered tools
+/// Create a tool selector handler that filters and namespaces discovered tools
 ///
-/// This hook runs on `tool:discovered` events and can:
+/// This handler runs on `tool:discovered` events and can:
 /// - Block tools matching blacklist patterns
 /// - Only allow tools matching whitelist patterns
 /// - Add prefixes/suffixes to tool names
 ///
 /// When a tool is blocked, the event is cancelled and the tool won't be registered.
-pub fn create_tool_selector_hook(config: &ToolSelectorConfig) -> Handler {
+pub fn create_tool_selector_handler(config: &ToolSelectorConfig) -> Handler {
     let pattern = config.pattern.clone();
     let priority = config.priority;
     let allowed_tools = config.allowed_tools.clone();
@@ -429,7 +429,7 @@ fn glob_match_recursive(pattern: &[char], text: &[char], pi: usize, ti: usize) -
 
 /// Create a recipe enrichment hook that categorizes Just recipes
 ///
-/// This hook runs on `tool:discovered` events for Just recipes and automatically
+/// This handler runs on `tool:discovered` events for Just recipes and automatically
 /// adds category, tags, and priority based on the recipe name.
 ///
 /// Categorization logic:
@@ -440,7 +440,7 @@ fn glob_match_recursive(pattern: &[char], text: &[char], pi: usize, ti: usize) -
 /// - clean → category: "maintenance"
 /// - deploy* → category: "deploy"
 /// - etc.
-pub fn create_recipe_enrichment_hook(config: &HookToggle) -> Handler {
+pub fn create_recipe_enrichment_handler(config: &HandlerToggle) -> Handler {
     let pattern = config.pattern.clone();
     let priority = config.priority;
 
@@ -542,30 +542,30 @@ fn determine_priority(name: &str, category: &str) -> i32 {
     }
 }
 
-/// Register all enabled built-in hooks on an EventBus
-pub fn register_builtin_hooks(bus: &mut crate::event_bus::EventBus, config: &BuiltinHooksConfig) {
+/// Register all enabled built-in handlers on an EventBus
+pub fn register_builtin_handlers(bus: &mut crate::event_bus::EventBus, config: &BuiltinHandlersConfig) {
     if config.test_filter.enabled {
-        bus.register(create_test_filter_hook(&config.test_filter));
+        bus.register(create_test_filter_handler(&config.test_filter));
         debug!("Registered builtin:test_filter hook");
     }
 
     if config.toon_transform.enabled {
-        bus.register(create_toon_transform_hook(&config.toon_transform));
+        bus.register(create_toon_transform_handler(&config.toon_transform));
         debug!("Registered builtin:toon_transform hook");
     }
 
     if config.event_emit.enabled {
-        bus.register(create_event_emit_hook(&config.event_emit));
+        bus.register(create_event_emit_handler(&config.event_emit));
         debug!("Registered builtin:event_emit hook");
     }
 
     if config.tool_selector.enabled {
-        bus.register(create_tool_selector_hook(&config.tool_selector));
+        bus.register(create_tool_selector_handler(&config.tool_selector));
         debug!("Registered builtin:tool_selector hook");
     }
 
     if config.recipe_enrichment.enabled {
-        bus.register(create_recipe_enrichment_hook(&config.recipe_enrichment));
+        bus.register(create_recipe_enrichment_handler(&config.recipe_enrichment));
         debug!("Registered builtin:recipe_enrichment hook");
     }
 }
@@ -828,18 +828,18 @@ mod tests {
 
     #[test]
     fn test_default_config() {
-        let config = BuiltinHooksConfig::default();
+        let config = BuiltinHandlersConfig::default();
         assert!(config.test_filter.enabled);
         assert!(!config.toon_transform.enabled);
         assert!(!config.event_emit.enabled);
     }
 
     #[test]
-    fn test_register_builtin_hooks() {
+    fn test_register_builtin_handlers() {
         let mut bus = EventBus::new();
-        let config = BuiltinHooksConfig::default();
+        let config = BuiltinHandlersConfig::default();
 
-        register_builtin_hooks(&mut bus, &config);
+        register_builtin_handlers(&mut bus, &config);
 
         // Should have registered test_filter since it's enabled by default
         assert!(bus.count_handlers(EventType::ToolAfter) >= 1);
@@ -847,13 +847,13 @@ mod tests {
 
     #[test]
     fn test_test_filter_hook_filters_cargo_output() {
-        let config = HookToggle {
+        let config = HandlerToggle {
             enabled: true,
             pattern: "*".to_string(),
             priority: 10,
         };
 
-        let hook = create_test_filter_hook(&config);
+        let hook = create_test_filter_handler(&config);
         let mut ctx = EventContext::new();
 
         let cargo_output = r#"running 5 tests
@@ -884,13 +884,13 @@ test result: ok. 5 passed; 0 failed"#;
 
     #[test]
     fn test_test_filter_hook_passes_non_test_output() {
-        let config = HookToggle {
+        let config = HandlerToggle {
             enabled: true,
             pattern: "*".to_string(),
             priority: 10,
         };
 
-        let hook = create_test_filter_hook(&config);
+        let hook = create_test_filter_handler(&config);
         let mut ctx = EventContext::new();
 
         let regular_output = "Hello, this is not test output.";
@@ -922,7 +922,7 @@ test result: ok. 5 passed; 0 failed"#;
             webhook_url: Some("https://example.com/webhook".to_string()),
         };
 
-        let hook = create_event_emit_hook(&config);
+        let hook = create_event_emit_handler(&config);
         let mut ctx = EventContext::new();
 
         let event = Event::tool_after("test_tool", json!({}));
@@ -998,7 +998,7 @@ test result: ok. 42 passed; 0 failed"#;
             suffix: None,
         };
 
-        let hook = create_tool_selector_hook(&config);
+        let hook = create_tool_selector_handler(&config);
         let mut ctx = EventContext::new();
 
         let event = Event::tool_discovered("my_tool", json!({"name": "my_tool"}));
@@ -1020,7 +1020,7 @@ test result: ok. 42 passed; 0 failed"#;
             suffix: None,
         };
 
-        let hook = create_tool_selector_hook(&config);
+        let hook = create_tool_selector_handler(&config);
         let mut ctx = EventContext::new();
 
         // Should be blocked
@@ -1051,7 +1051,7 @@ test result: ok. 42 passed; 0 failed"#;
             suffix: None,
         };
 
-        let hook = create_tool_selector_hook(&config);
+        let hook = create_tool_selector_handler(&config);
         let mut ctx = EventContext::new();
 
         // Should pass (matches whitelist)
@@ -1082,7 +1082,7 @@ test result: ok. 42 passed; 0 failed"#;
             suffix: None,
         };
 
-        let hook = create_tool_selector_hook(&config);
+        let hook = create_tool_selector_handler(&config);
         let mut ctx = EventContext::new();
 
         // Should be blocked (blacklist overrides whitelist)
@@ -1108,7 +1108,7 @@ test result: ok. 42 passed; 0 failed"#;
             suffix: None,
         };
 
-        let hook = create_tool_selector_hook(&config);
+        let hook = create_tool_selector_handler(&config);
         let mut ctx = EventContext::new();
 
         let event = Event::tool_discovered("search_code", json!({"name": "search_code"}));
@@ -1132,7 +1132,7 @@ test result: ok. 42 passed; 0 failed"#;
             suffix: Some("_v2".to_string()),
         };
 
-        let hook = create_tool_selector_hook(&config);
+        let hook = create_tool_selector_handler(&config);
         let mut ctx = EventContext::new();
 
         let event = Event::tool_discovered("search", json!({}));
@@ -1154,7 +1154,7 @@ test result: ok. 42 passed; 0 failed"#;
             suffix: Some("_tool".to_string()),
         };
 
-        let hook = create_tool_selector_hook(&config);
+        let hook = create_tool_selector_handler(&config);
         let mut ctx = EventContext::new();
 
         let event = Event::tool_discovered("search", json!({}));
@@ -1205,13 +1205,13 @@ test result: ok. 42 passed; 0 failed"#;
 
     #[test]
     fn test_recipe_enrichment_hook_categorizes_test() {
-        let config = HookToggle {
+        let config = HandlerToggle {
             enabled: true,
             pattern: "just_*".to_string(),
             priority: 5,
         };
 
-        let hook = create_recipe_enrichment_hook(&config);
+        let hook = create_recipe_enrichment_handler(&config);
         let mut ctx = EventContext::new();
 
         let event = Event::tool_discovered("just_test", json!({"name": "just_test"}));
@@ -1228,13 +1228,13 @@ test result: ok. 42 passed; 0 failed"#;
 
     #[test]
     fn test_recipe_enrichment_hook_categorizes_build() {
-        let config = HookToggle {
+        let config = HandlerToggle {
             enabled: true,
             pattern: "just_*".to_string(),
             priority: 5,
         };
 
-        let hook = create_recipe_enrichment_hook(&config);
+        let hook = create_recipe_enrichment_handler(&config);
         let mut ctx = EventContext::new();
 
         let event = Event::tool_discovered("just_build", json!({"name": "just_build"}));
@@ -1250,13 +1250,13 @@ test result: ok. 42 passed; 0 failed"#;
 
     #[test]
     fn test_recipe_enrichment_hook_categorizes_quality() {
-        let config = HookToggle {
+        let config = HandlerToggle {
             enabled: true,
             pattern: "just_*".to_string(),
             priority: 5,
         };
 
-        let hook = create_recipe_enrichment_hook(&config);
+        let hook = create_recipe_enrichment_handler(&config);
         let mut ctx = EventContext::new();
 
         let event = Event::tool_discovered("just_fmt", json!({"name": "just_fmt"}));
@@ -1271,13 +1271,13 @@ test result: ok. 42 passed; 0 failed"#;
 
     #[test]
     fn test_recipe_enrichment_hook_quick_test_priority() {
-        let config = HookToggle {
+        let config = HandlerToggle {
             enabled: true,
             pattern: "just_*".to_string(),
             priority: 5,
         };
 
-        let hook = create_recipe_enrichment_hook(&config);
+        let hook = create_recipe_enrichment_handler(&config);
         let mut ctx = EventContext::new();
 
         // Quick test should have higher priority than normal test
@@ -1293,13 +1293,13 @@ test result: ok. 42 passed; 0 failed"#;
 
     #[test]
     fn test_recipe_enrichment_hook_handles_hyphens() {
-        let config = HookToggle {
+        let config = HandlerToggle {
             enabled: true,
             pattern: "just_*".to_string(),
             priority: 5,
         };
 
-        let hook = create_recipe_enrichment_hook(&config);
+        let hook = create_recipe_enrichment_handler(&config);
         let mut ctx = EventContext::new();
 
         // Underscores in tool name should be converted to hyphens for categorization
@@ -1312,18 +1312,18 @@ test result: ok. 42 passed; 0 failed"#;
 
     #[test]
     fn test_builtin_config_includes_recipe_enrichment() {
-        let config = BuiltinHooksConfig::default();
+        let config = BuiltinHandlersConfig::default();
         assert!(config.recipe_enrichment.enabled);
         assert_eq!(config.recipe_enrichment.pattern, "just_*");
         assert_eq!(config.recipe_enrichment.priority, 5);
     }
 
     #[test]
-    fn test_register_builtin_hooks_includes_recipe_enrichment() {
+    fn test_register_builtin_handlers_includes_recipe_enrichment() {
         let mut bus = EventBus::new();
-        let config = BuiltinHooksConfig::default();
+        let config = BuiltinHandlersConfig::default();
 
-        register_builtin_hooks(&mut bus, &config);
+        register_builtin_handlers(&mut bus, &config);
 
         // Should have registered recipe enrichment hook
         let handler = bus.get_handler("builtin:recipe_enrichment");

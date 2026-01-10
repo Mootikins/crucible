@@ -8,8 +8,8 @@ use std::path::PathBuf;
 ///
 /// Supports both flat format:
 /// ```toml
-/// [discovery.hooks]
-/// additional_paths = ["~/.config/crucible/hooks"]
+/// [discovery.handlers]
+/// additional_paths = ["~/.config/crucible/handlers"]
 /// use_defaults = true
 ///
 /// [discovery.tools]
@@ -25,9 +25,9 @@ use std::path::PathBuf;
 /// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DiscoveryPathsConfig {
-    /// Direct hooks configuration (flat format: [discovery.hooks])
+    /// Direct handlers configuration (flat format: [discovery.handlers])
     #[serde(default)]
-    pub hooks: Option<TypeDiscoveryConfig>,
+    pub handlers: Option<TypeDiscoveryConfig>,
 
     /// Direct tools configuration (flat format: [discovery.tools])
     #[serde(default)]
@@ -72,12 +72,12 @@ impl DiscoveryPathsConfig {
     /// Get configuration for a specific type, checking both flat and nested formats
     ///
     /// Priority:
-    /// 1. Flat format (e.g., `config.hooks`, `config.tools`)
-    /// 2. Nested format (e.g., `config.type_configs.get("hooks")`)
+    /// 1. Flat format (e.g., `config.handlers`, `config.tools`)
+    /// 2. Nested format (e.g., `config.type_configs.get("handlers")`)
     pub fn get_type_config(&self, type_name: &str) -> Option<&TypeDiscoveryConfig> {
         // Check flat format first
         match type_name {
-            "hooks" => self.hooks.as_ref(),
+            "handlers" => self.handlers.as_ref(),
             "tools" => self.tools.as_ref(),
             "events" => self.events.as_ref(),
             _ => None,
@@ -118,8 +118,8 @@ mod tests {
 additional_paths = ["/custom/tools", "/shared/tools"]
 use_defaults = true
 
-[type_configs.hooks]
-additional_paths = ["/custom/hooks"]
+[type_configs.handlers]
+additional_paths = ["/custom/handlers"]
 use_defaults = false
 
 [type_configs.events]
@@ -137,11 +137,11 @@ use_defaults = true
         assert_eq!(tools.additional_paths[1], PathBuf::from("/shared/tools"));
         assert!(tools.use_defaults);
 
-        // Check hooks config
-        let hooks = config.type_configs.get("hooks").unwrap();
-        assert_eq!(hooks.additional_paths.len(), 1);
-        assert_eq!(hooks.additional_paths[0], PathBuf::from("/custom/hooks"));
-        assert!(!hooks.use_defaults);
+        // Check handlers config
+        let handlers = config.type_configs.get("handlers").unwrap();
+        assert_eq!(handlers.additional_paths.len(), 1);
+        assert_eq!(handlers.additional_paths[0], PathBuf::from("/custom/handlers"));
+        assert!(!handlers.use_defaults);
 
         // Check events config (no additional paths)
         let events = config.type_configs.get("events").unwrap();
@@ -182,7 +182,7 @@ additional_paths = ["/custom/path"]
         );
 
         let config = DiscoveryPathsConfig {
-            hooks: None,
+            handlers: None,
             tools: None,
             events: None,
             type_configs,
@@ -214,10 +214,10 @@ additional_paths = ["./local/tools", "../shared/tools"]
     #[test]
     fn test_discovery_config_flat_format() {
         // When deserializing DiscoveryPathsConfig, we're already inside [discovery]
-        // so [discovery.hooks] becomes [hooks]
+        // so [discovery.handlers] becomes [handlers]
         let toml_content = r#"
-[hooks]
-additional_paths = ["~/.config/crucible/hooks", "/opt/crucible/hooks"]
+[handlers]
+additional_paths = ["~/.config/crucible/handlers", "/opt/crucible/handlers"]
 use_defaults = true
 
 [tools]
@@ -230,19 +230,19 @@ use_defaults = true
 
         let config: DiscoveryPathsConfig = toml::from_str(toml_content).unwrap();
 
-        // Check hooks config
-        assert!(config.hooks.is_some());
-        let hooks = config.hooks.as_ref().unwrap();
-        assert_eq!(hooks.additional_paths.len(), 2);
+        // Check handlers config
+        assert!(config.handlers.is_some());
+        let handlers = config.handlers.as_ref().unwrap();
+        assert_eq!(handlers.additional_paths.len(), 2);
         assert_eq!(
-            hooks.additional_paths[0],
-            PathBuf::from("~/.config/crucible/hooks")
+            handlers.additional_paths[0],
+            PathBuf::from("~/.config/crucible/handlers")
         );
         assert_eq!(
-            hooks.additional_paths[1],
-            PathBuf::from("/opt/crucible/hooks")
+            handlers.additional_paths[1],
+            PathBuf::from("/opt/crucible/handlers")
         );
-        assert!(hooks.use_defaults);
+        assert!(handlers.use_defaults);
 
         // Check tools config
         assert!(config.tools.is_some());
@@ -264,8 +264,8 @@ use_defaults = true
     #[test]
     fn test_get_type_config_flat_format() {
         let toml_content = r#"
-[hooks]
-additional_paths = ["/custom/hooks"]
+[handlers]
+additional_paths = ["/custom/handlers"]
 use_defaults = false
 
 [tools]
@@ -276,9 +276,9 @@ use_defaults = true
         let config: DiscoveryPathsConfig = toml::from_str(toml_content).unwrap();
 
         // Test get_type_config for flat format
-        let hooks = config.get_type_config("hooks").unwrap();
-        assert_eq!(hooks.additional_paths.len(), 1);
-        assert!(!hooks.use_defaults);
+        let handlers = config.get_type_config("handlers").unwrap();
+        assert_eq!(handlers.additional_paths.len(), 1);
+        assert!(!handlers.use_defaults);
 
         let tools = config.get_type_config("tools").unwrap();
         assert_eq!(tools.additional_paths.len(), 1);
@@ -308,20 +308,20 @@ use_defaults = false
     #[test]
     fn test_get_type_config_priority_flat_over_nested() {
         let toml_content = r#"
-[hooks]
-additional_paths = ["/flat/hooks"]
+[handlers]
+additional_paths = ["/flat/handlers"]
 use_defaults = true
 
-[type_configs.hooks]
-additional_paths = ["/nested/hooks"]
+[type_configs.handlers]
+additional_paths = ["/nested/handlers"]
 use_defaults = false
 "#;
 
         let config: DiscoveryPathsConfig = toml::from_str(toml_content).unwrap();
 
         // Flat format should take priority
-        let hooks = config.get_type_config("hooks").unwrap();
-        assert_eq!(hooks.additional_paths[0], PathBuf::from("/flat/hooks"));
-        assert!(hooks.use_defaults);
+        let handlers = config.get_type_config("handlers").unwrap();
+        assert_eq!(handlers.additional_paths[0], PathBuf::from("/flat/handlers"));
+        assert!(handlers.use_defaults);
     }
 }

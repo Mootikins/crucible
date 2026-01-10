@@ -2,25 +2,22 @@
 name = "crucible-lua"
 version = "0.1.0"
 edition = "2021"
-description = "Luau scripting runtime for Crucible with type-based schema extraction"
+description = "Lua 5.4 scripting runtime for Crucible with Fennel support"
 license = "MIT"
 authors = ["Crucible Contributors"]
 
 [features]
 default = ["fennel"]
-# Fennel requires standard Lua (uses package.preload which Luau lacks)
-# When enabled: uses lua54. When disabled: uses luau for gradual typing.
+# Fennel compiles Lisp to Lua - macros, pattern matching, clean syntax
 fennel = ["mlua/lua54"]
-luau = ["mlua/luau"]  # Use Luau (Roblox Lua with gradual types) - incompatible with fennel
 send = ["mlua/send"]  # Enable Send+Sync for multi-threaded use
 
 [dependencies]
-# Runtime: Lua 5.4 (for Fennel) or Luau (for gradual types)
-# Feature flags control which backend is used
-mlua = { version = "0.11", features = ["vendored", "async", "serialize"] }
+# Runtime: Lua 5.4 with optional Fennel compiler
+mlua = { version = "0.11", features = ["vendored", "async", "serialize", "lua54"] }
 
-# Static analysis: Parse Luau to extract type annotations
-full_moon = { version = "2", features = ["luau"] }
+# Static analysis: Parse Lua for documentation extraction
+full_moon = { version = "2", features = ["lua52"] }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
