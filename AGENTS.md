@@ -37,7 +37,6 @@ This file provides essential information for AI agents to understand and contrib
 | `crucible-config` | Configuration types and loading | `AppConfig`, provider configs |
 | `crucible-watch` | File system watching | Change detection |
 | `crucible-acp` | Agent Context Protocol | Protocol types |
-| `tq` | TOON Query language | Query parsing/execution |
 
 ### Type Ownership
 
@@ -133,7 +132,6 @@ crucible/
 │   ├── crucible-parser/         # Markdown parsing
 │   ├── crucible-config/         # Configuration types
 │   ├── crucible-watch/          # File watching
-│   ├── tq/                      # TOON Query library
 │   └── ...                      # Other crates
 ├── docs/                        # Documentation kiln (user guides + test fixture)
 ├── justfile                     # Development recipes
