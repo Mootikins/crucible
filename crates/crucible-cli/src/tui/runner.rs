@@ -266,7 +266,9 @@ use crucible_core::traits::chat::AgentHandle;
 use crucible_core::InteractionRegistry;
 use crucible_rune::EventRing;
 use once_cell::sync::Lazy;
-use ratatui::{backend::CrosstermBackend, buffer::Buffer, layout::Rect, Terminal, TerminalOptions, Viewport};
+use ratatui::{
+    backend::CrosstermBackend, buffer::Buffer, layout::Rect, Terminal, TerminalOptions, Viewport,
+};
 
 /// Pending content to graduate to terminal scrollback via insert_before()
 #[derive(Debug, Clone)]
@@ -420,8 +422,6 @@ pub struct RatatuiRunner {
     inline_printer: InlinePrinter,
     /// Pending graduations to flush via terminal.insert_before()
     pending_graduations: Vec<PendingGraduation>,
-    /// Number of rendered lines graduated during current streaming session
-    graduated_line_count: usize,
 
     // =============================================================================
     // Runtime configuration (session-scoped provider/model overrides)
@@ -484,7 +484,6 @@ impl RatatuiRunner {
             inline_mode: true,
             inline_printer: InlinePrinter::new(),
             pending_graduations: Vec::new(),
-            graduated_line_count: 0,
             // Runtime config (session-scoped provider/model) - will be set via with_runtime_config
             runtime_config: crate::tui::RuntimeConfig::default(),
             // Ollama endpoint - will be set via with_ollama_endpoint
@@ -493,7 +492,11 @@ impl RatatuiRunner {
     }
 
     /// Set the runtime configuration (provider/model from config file)
-    pub fn with_runtime_config(&mut self, provider: impl Into<String>, model: impl Into<String>) -> &mut Self {
+    pub fn with_runtime_config(
+        &mut self,
+        provider: impl Into<String>,
+        model: impl Into<String>,
+    ) -> &mut Self {
         let provider_str = provider.into();
         let model_str = model.into();
         self.runtime_config = crate::tui::RuntimeConfig::from_config(&provider_str, &model_str);
@@ -757,8 +760,6 @@ impl RatatuiRunner {
                         // Graduate remaining lines not yet graduated during progressive streaming
                         if self.inline_mode {
                             self.graduate_remaining_lines();
-                            // Reset for next streaming session
-                            self.graduated_line_count = 0;
                         }
 
                         // Flush accumulated assistant message to session log
@@ -1203,8 +1204,6 @@ impl RatatuiRunner {
                 // Initialize streaming parser and start streaming message in view
                 // (parser is now created by start_streaming_with_parser)
                 self.view.start_assistant_streaming();
-                // Reset progressive graduation counter for new streaming session
-                self.graduated_line_count = 0;
 
                 // Emit user message to ring
                 bridge.ring.push(SessionEvent::MessageReceived {
@@ -2261,57 +2260,36 @@ impl RatatuiRunner {
     ///
     /// This implements progressive graduation: as content grows during streaming,
     /// lines that scroll out of view are pushed to terminal scrollback.
+    /// Graduated items are popped from the conversation state.
     fn graduate_overflow_lines(&mut self) {
         use crate::tui::constants::UiConstants;
-        use crate::tui::conversation::render_item_to_lines;
 
-        // Calculate total rendered content lines
         let content_width = UiConstants::content_width(self.view.state().width);
-        let total_lines: usize = self
+
+        // Calculate visible lines (already accounts for partial graduation)
+        let visible_lines = self
             .view
             .state()
             .conversation
-            .items()
-            .iter()
-            .map(|item| render_item_to_lines(item, content_width).len())
-            .sum();
+            .visible_line_count(content_width);
 
         // Viewport capacity (total height minus input area and status line)
-        // INLINE_VIEWPORT_HEIGHT is 15, minus ~4 for input/status = 11 lines for content
         let viewport_capacity = (INLINE_VIEWPORT_HEIGHT as usize).saturating_sub(4);
 
-        // If we have more lines than viewport can show + what we've graduated, graduate overflow
-        if total_lines > self.graduated_line_count + viewport_capacity {
-            let overflow_count = total_lines - viewport_capacity - self.graduated_line_count;
+        // If we have more visible lines than viewport can show, graduate the overflow
+        if visible_lines > viewport_capacity {
+            let overflow_count = visible_lines - viewport_capacity;
 
-            // Collect the lines to graduate
-            let mut lines_to_graduate = Vec::new();
-            let mut line_idx = 0;
-
-            for item in self.view.state().conversation.items() {
-                let rendered = render_item_to_lines(item, content_width);
-                for line in rendered {
-                    if line_idx >= self.graduated_line_count
-                        && line_idx < self.graduated_line_count + overflow_count
-                    {
-                        // Convert Line to string for scrollback
-                        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-                        lines_to_graduate.push(text);
-                    }
-                    line_idx += 1;
-                    if line_idx >= self.graduated_line_count + overflow_count {
-                        break;
-                    }
-                }
-                if line_idx >= self.graduated_line_count + overflow_count {
-                    break;
-                }
-            }
+            // Graduate lines and get the text for scrollback
+            let lines_to_graduate = self
+                .view
+                .state_mut()
+                .conversation
+                .graduate_lines(overflow_count, content_width);
 
             if !lines_to_graduate.is_empty() {
                 self.pending_graduations
                     .push(PendingGraduation::Lines(lines_to_graduate));
-                self.graduated_line_count += overflow_count;
             }
         }
     }
@@ -2319,44 +2297,22 @@ impl RatatuiRunner {
     /// Graduate all remaining lines at end of streaming.
     ///
     /// Called when streaming completes to push any remaining ungraduated content
-    /// to terminal scrollback.
+    /// to terminal scrollback. Clears all items from the conversation state.
     fn graduate_remaining_lines(&mut self) {
         use crate::tui::constants::UiConstants;
-        use crate::tui::conversation::render_item_to_lines;
 
-        // Calculate total rendered content lines
         let content_width = UiConstants::content_width(self.view.state().width);
-        let total_lines: usize = self
+
+        // Graduate all remaining lines and clear the conversation
+        let lines_to_graduate = self
             .view
-            .state()
+            .state_mut()
             .conversation
-            .items()
-            .iter()
-            .map(|item| render_item_to_lines(item, content_width).len())
-            .sum();
+            .graduate_all(content_width);
 
-        // Graduate all remaining lines (everything after what we've already graduated)
-        if total_lines > self.graduated_line_count {
-
-            let mut lines_to_graduate = Vec::new();
-            let mut line_idx = 0;
-
-            for item in self.view.state().conversation.items() {
-                let rendered = render_item_to_lines(item, content_width);
-                for line in rendered {
-                    if line_idx >= self.graduated_line_count {
-                        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-                        lines_to_graduate.push(text);
-                    }
-                    line_idx += 1;
-                }
-            }
-
-            if !lines_to_graduate.is_empty() {
-                self.pending_graduations
-                    .push(PendingGraduation::Lines(lines_to_graduate));
-                self.graduated_line_count = total_lines;
-            }
+        if !lines_to_graduate.is_empty() {
+            self.pending_graduations
+                .push(PendingGraduation::Lines(lines_to_graduate));
         }
     }
 
@@ -2392,8 +2348,7 @@ impl RatatuiRunner {
                         buf.set_line(0, 0, &blank_line, width);
 
                         // User message with " > " prefix
-                        let user_style = Style::default()
-                            .bg(Color::Rgb(60, 60, 80));
+                        let user_style = Style::default().bg(Color::Rgb(60, 60, 80));
                         for (i, line) in lines.iter().enumerate() {
                             let prefix = if i == 0 { " > " } else { "   " };
                             let styled_line = Line::from(vec![
@@ -2425,10 +2380,7 @@ impl RatatuiRunner {
                                     Span::raw(*line),
                                 ])
                             } else {
-                                Line::from(vec![
-                                    Span::raw("   "),
-                                    Span::raw(*line),
-                                ])
+                                Line::from(vec![Span::raw("   "), Span::raw(*line)])
                             };
                             buf.set_line(0, (i + 1) as u16, &styled_line, width);
                         }
@@ -2454,10 +2406,7 @@ impl RatatuiRunner {
 
                     terminal.insert_before(1, |buf| {
                         let line = Line::from(vec![
-                            Span::styled(
-                                format!(" {} ", indicator),
-                                Style::default().fg(style),
-                            ),
+                            Span::styled(format!(" {} ", indicator), Style::default().fg(style)),
                             Span::styled(&name, Style::default().fg(style)),
                             Span::styled(suffix, Style::default().fg(style)),
                         ]);
@@ -2549,7 +2498,8 @@ impl RatatuiRunner {
                     // LLM providers section
                     let current = self.runtime_config.provider().to_lowercase();
                     let providers = ["ollama", "openai", "anthropic"];
-                    let provider_list = providers.iter()
+                    let provider_list = providers
+                        .iter()
                         .map(|p| {
                             if *p == current {
                                 format!("  • {} (current)", p)
@@ -2562,14 +2512,14 @@ impl RatatuiRunner {
 
                     // Probe for ACP agents
                     let acp_agents = crucible_acp::probe_all_agents().await;
-                    let available_agents: Vec<_> = acp_agents.iter()
-                        .filter(|a| a.available)
-                        .collect();
+                    let available_agents: Vec<_> =
+                        acp_agents.iter().filter(|a| a.available).collect();
 
                     let agent_section = if available_agents.is_empty() {
                         String::new()
                     } else {
-                        let agent_list = available_agents.iter()
+                        let agent_list = available_agents
+                            .iter()
                             .map(|a| format!("  • {} - {}", a.name, a.description))
                             .collect::<Vec<_>>()
                             .join("\n");
@@ -2578,10 +2528,10 @@ impl RatatuiRunner {
 
                     let content = format!(
                         "LLM Providers:\n{}{}\n\nUse :provider <name> to switch",
-                        provider_list,
-                        agent_section
+                        provider_list, agent_section
                     );
-                    self.view.push_dialog(crate::tui::dialog::DialogState::info("Providers", content));
+                    self.view
+                        .push_dialog(crate::tui::dialog::DialogState::info("Providers", content));
                     self.view.set_status_text("Ready");
                 } else {
                     // Set new provider
@@ -2589,7 +2539,8 @@ impl RatatuiRunner {
                         "ollama" | "openai" | "anthropic" => {
                             self.runtime_config.set_provider(args);
                             self.view.state_mut().provider = args.to_string();
-                            self.view.set_status_text(&format!("Provider set to: {}", args));
+                            self.view
+                                .set_status_text(&format!("Provider set to: {}", args));
                         }
                         _ => {
                             self.view.echo_error(&format!(
@@ -2603,8 +2554,8 @@ impl RatatuiRunner {
             "model" | "mod" => {
                 if args.is_empty() {
                     // Open model picker popup with real models
-                    use crate::tui::state::{PopupItem, PopupKind};
                     use crate::tui::components::PopupState;
+                    use crate::tui::state::{PopupItem, PopupKind};
 
                     self.view.set_status_text("Fetching models...");
                     let current_spec = self.runtime_config.display_string();
@@ -2632,7 +2583,13 @@ impl RatatuiRunner {
 
                     // OpenAI models - only show if API key is configured
                     if std::env::var("OPENAI_API_KEY").is_ok() {
-                        let openai_models = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o1-preview", "o1-mini"];
+                        let openai_models = [
+                            "gpt-4o",
+                            "gpt-4o-mini",
+                            "gpt-4-turbo",
+                            "o1-preview",
+                            "o1-mini",
+                        ];
                         for model in openai_models {
                             let spec = format!("openai/{}", model);
                             let is_current = spec == current_spec;
@@ -2647,7 +2604,11 @@ impl RatatuiRunner {
 
                     // Anthropic models - only show if API key is configured
                     if std::env::var("ANTHROPIC_API_KEY").is_ok() {
-                        let anthropic_models = ["claude-sonnet-4-20250514", "claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"];
+                        let anthropic_models = [
+                            "claude-sonnet-4-20250514",
+                            "claude-3-5-sonnet-latest",
+                            "claude-3-5-haiku-latest",
+                        ];
                         for model in anthropic_models {
                             let spec = format!("anthropic/{}", model);
                             let is_current = spec == current_spec;
@@ -2674,10 +2635,11 @@ impl RatatuiRunner {
                     }
 
                     // Sort: current first, then by score (Ollama > ACP > OpenAI/Anthropic)
-                    items.sort_by(|a, b| b.score().cmp(&a.score()));
+                    items.sort_by_key(|item| std::cmp::Reverse(item.score()));
 
                     if items.is_empty() {
-                        self.view.set_status_text("No models available (is Ollama running?)");
+                        self.view
+                            .set_status_text("No models available (is Ollama running?)");
                     } else {
                         // Create popup with model items
                         let mut popup = PopupState::new(

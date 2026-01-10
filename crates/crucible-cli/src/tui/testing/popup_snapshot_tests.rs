@@ -216,6 +216,7 @@ mod popup_effect_tests {
             PopupItem::skill("test"),
             PopupItem::repl("quit"),
             PopupItem::session("sess_123"),
+            PopupItem::model("ollama/llama3.2"),
         ];
 
         for item in items {
@@ -227,6 +228,7 @@ mod popup_effect_tests {
                 PopupEffect::AddNoteContext { path } => assert!(!path.is_empty()),
                 PopupEffect::ExecuteReplCommand { name } => assert!(!name.is_empty()),
                 PopupEffect::ResumeSession { session_id } => assert!(!session_id.is_empty()),
+                PopupEffect::SwitchModel { spec } => assert!(!spec.is_empty()),
             }
         }
     }
@@ -831,5 +833,99 @@ mod session_popup_tests {
                 session_id: "chat-2025-01-01-abc".into()
             }
         );
+    }
+}
+
+// =============================================================================
+// Snapshot Tests - Model Popup (:model command)
+// =============================================================================
+
+mod model_popup_tests {
+    use super::*;
+
+    #[test]
+    fn popup_model_list() {
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
+            .with_popup_items(PopupKind::Model, registries::test_models());
+
+        assert_snapshot!("popup_model_list", h.render());
+    }
+
+    #[test]
+    fn popup_model_many() {
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
+            .with_popup_items(PopupKind::Model, registries::many_models());
+
+        assert_snapshot!("popup_model_many", h.render());
+    }
+
+    #[test]
+    fn popup_model_navigation() {
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
+            .with_popup_items(PopupKind::Model, registries::test_models());
+
+        // Navigate down to second item
+        h.key(KeyCode::Down);
+        assert_snapshot!("popup_model_second", h.render());
+    }
+
+    #[test]
+    fn popup_model_navigation_multiple() {
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
+            .with_popup_items(PopupKind::Model, registries::test_models());
+
+        // Navigate down twice
+        h.key(KeyCode::Down);
+        h.key(KeyCode::Down);
+        assert_snapshot!("popup_model_third", h.render());
+    }
+
+    #[test]
+    fn popup_model_over_conversation() {
+        use crate::tui::testing::fixtures::sessions;
+
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
+            .with_session(sessions::basic_exchange())
+            .with_popup_items(PopupKind::Model, registries::test_models());
+
+        assert_snapshot!("popup_model_over_conversation", h.render());
+    }
+
+    // ==========================================================================
+    // Unit Tests - Model PopupItem
+    // ==========================================================================
+
+    #[test]
+    fn model_item_has_correct_kind() {
+        let item = registries::model("ollama/llama3.2", "Test model");
+        assert!(item.is_model());
+    }
+
+    #[test]
+    fn model_item_token_is_spec() {
+        let item = registries::model("openai/gpt-4o", "Test model");
+        assert_eq!(item.token(), "openai/gpt-4o");
+    }
+
+    #[test]
+    fn model_popup_effect() {
+        let item = registries::model("anthropic/claude-sonnet-4", "Test model");
+        let effect = popup_item_to_effect(&item);
+        assert_eq!(
+            effect,
+            PopupEffect::SwitchModel {
+                spec: "anthropic/claude-sonnet-4".into()
+            }
+        );
+    }
+
+    #[test]
+    fn model_current_has_flag() {
+        let item = registries::model_current("ollama/llama3.2", "Current model");
+        if let PopupItem::Model { current, .. } = item {
+            assert!(current);
+        } else {
+            panic!("Expected Model variant");
+        }
     }
 }
