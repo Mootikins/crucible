@@ -268,9 +268,12 @@ mod tests {
         opts.set("body", r#"{"key": "value"}"#).unwrap();
         opts.set("timeout", 60u64).unwrap();
 
-        let req =
-            build_request(HttpMethod::Post, "https://api.example.com".to_string(), Some(opts))
-                .unwrap();
+        let req = build_request(
+            HttpMethod::Post,
+            "https://api.example.com".to_string(),
+            Some(opts),
+        )
+        .unwrap();
 
         assert_eq!(req.method, HttpMethod::Post);
         assert_eq!(

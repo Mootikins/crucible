@@ -22,14 +22,9 @@ const KNOWN_PROVIDERS: &[&str] = &["ollama", "openai", "anthropic"];
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BackendSpec {
     /// Direct LLM provider - "ollama/llama3.2", "openai/gpt-4o"
-    Direct {
-        provider: String,
-        model: String,
-    },
+    Direct { provider: String, model: String },
     /// ACP agent proxy - "acp/opencode"
-    Acp {
-        agent: String,
-    },
+    Acp { agent: String },
 }
 
 impl BackendSpec {
@@ -42,9 +37,9 @@ impl BackendSpec {
         let s = s.trim();
 
         match s.split_once('/') {
-            Some(("acp", agent)) if !agent.is_empty() => {
-                Ok(Self::Acp { agent: agent.to_string() })
-            }
+            Some(("acp", agent)) if !agent.is_empty() => Ok(Self::Acp {
+                agent: agent.to_string(),
+            }),
             Some((provider, model)) if !model.is_empty() => {
                 let provider_lower = provider.to_lowercase();
                 if KNOWN_PROVIDERS.contains(&provider_lower.as_str()) {
@@ -76,7 +71,9 @@ impl BackendSpec {
 
     /// Create an ACP agent backend spec
     pub fn acp(agent: impl Into<String>) -> Self {
-        Self::Acp { agent: agent.into() }
+        Self::Acp {
+            agent: agent.into(),
+        }
     }
 
     /// Get the provider name (or "acp" for agents)

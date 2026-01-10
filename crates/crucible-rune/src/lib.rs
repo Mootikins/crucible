@@ -51,6 +51,7 @@ pub mod handler_chain;
 pub mod handler_system;
 mod handler_types;
 pub mod handler_wiring;
+mod http_module;
 pub mod linear_reactor;
 pub mod logging_handler;
 pub mod mcp_gateway;
@@ -73,7 +74,6 @@ mod shell_module;
 mod struct_plugin;
 pub mod tool_events;
 mod types;
-mod http_module;
 
 pub use ask_module::{
     ask_module, ask_module_with_agent, ask_module_with_context, AgentAskContext, AskContext,
@@ -115,10 +115,13 @@ pub use handler::{
     RingHandlerResult,
 };
 pub use handler_chain::{ChainResult, HandlerChain};
+pub use handler_system::{
+    BuiltinHandler, HandlerManager, HandlerRegistry, RuneScriptHandler, ScriptHandler,
+};
 pub use handler_wiring::{
     wire_event_bus, wire_event_bus_default, EventBusRingHandler, HandlerWiringBuilder,
 };
-pub use handler_system::{BuiltinHandler, ScriptHandler, HandlerManager, HandlerRegistry, RuneScriptHandler};
+pub use http_module::http_module;
 pub use linear_reactor::{LinearReactor, LinearReactorConfig};
 pub use logging_handler::{EventFilter, LogLevel, LoggingConfig, LoggingHandler};
 pub use mcp_gateway::{
@@ -154,7 +157,6 @@ pub use rune_types::{
 };
 pub use session::{Session, SessionBuilder, SessionHandle, SessionState};
 pub use shell_module::{shell_module, shell_module_with_policy};
-pub use http_module::http_module;
 pub use struct_plugin::{
     PluginMetadata, StructPluginHandle, ToolDefinition, ToolParameter, WatchEvent, WatchEventKind,
 };

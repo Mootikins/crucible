@@ -82,7 +82,9 @@ use crucible_core::interaction::{AskBatch, AskBatchResponse, AskQuestion, Questi
 use crucible_core::traits::completion_backend::{BackendCompletionRequest, CompletionBackend};
 use crucible_core::traits::context_ops::ContextMessage;
 use crucible_core::uuid;
-use mlua::{FromLua, Lua, MetaMethod, Result as LuaResult, Table, UserData, UserDataMethods, Value};
+use mlua::{
+    FromLua, Lua, MetaMethod, Result as LuaResult, Table, UserData, UserDataMethods, Value,
+};
 
 /// Lua wrapper for AskQuestion with chainable methods
 #[derive(Debug, Clone)]
@@ -351,9 +353,9 @@ impl UserData for LuaAskBatchResponse {
         // Get a specific answer by index (1-based for Lua convention)
         methods.add_method("answer", |_, this, index: usize| {
             // Convert from 1-based Lua index to 0-based
-            let idx = index.checked_sub(1).ok_or_else(|| {
-                mlua::Error::runtime("Answer index must be >= 1")
-            })?;
+            let idx = index
+                .checked_sub(1)
+                .ok_or_else(|| mlua::Error::runtime("Answer index must be >= 1"))?;
             this.inner
                 .answers
                 .get(idx)
@@ -366,7 +368,12 @@ impl UserData for LuaAskBatchResponse {
         methods.add_method("answers", |lua, this, ()| {
             let table = lua.create_table()?;
             for (i, answer) in this.inner.answers.iter().enumerate() {
-                table.set(i + 1, LuaQuestionAnswer { inner: answer.clone() })?;
+                table.set(
+                    i + 1,
+                    LuaQuestionAnswer {
+                        inner: answer.clone(),
+                    },
+                )?;
             }
             Ok(table)
         });
@@ -411,16 +418,14 @@ pub fn register_ask_module(lua: &Lua) -> Result<(), LuaError> {
 
     // ask.answer(selected) -> LuaQuestionAnswer
     // Create an answer with selected indices
-    let answer_fn = lua.create_function(|_, selected: Vec<usize>| {
-        Ok(LuaQuestionAnswer::new(selected))
-    })?;
+    let answer_fn =
+        lua.create_function(|_, selected: Vec<usize>| Ok(LuaQuestionAnswer::new(selected)))?;
     ask.set("answer", answer_fn)?;
 
     // ask.answer_other(text) -> LuaQuestionAnswer
     // Create an answer with free-text "other" input
-    let answer_other_fn = lua.create_function(|_, text: String| {
-        Ok(LuaQuestionAnswer::with_other(text))
-    })?;
+    let answer_other_fn =
+        lua.create_function(|_, text: String| Ok(LuaQuestionAnswer::with_other(text)))?;
     ask.set("answer_other", answer_other_fn)?;
 
     // Register as global module
@@ -733,9 +738,9 @@ impl LuaAskContext {
             .map_err(|_| LuaAskError::new("Interaction was cancelled or dropped".to_string()))?;
 
         match response {
-            InteractionResponse::AskBatch(batch_response) => {
-                Ok(LuaAskBatchResponse { inner: batch_response })
-            }
+            InteractionResponse::AskBatch(batch_response) => Ok(LuaAskBatchResponse {
+                inner: batch_response,
+            }),
             InteractionResponse::Cancelled => Ok(LuaAskBatchResponse::cancelled(id)),
             _ => Err(LuaAskError::new(format!(
                 "Unexpected response type: {:?}",
@@ -808,7 +813,8 @@ pub fn register_ask_module_with_context(
     // Add ask_user function with context
     let ctx = context.clone();
     let ask_user_fn = lua.create_function(move |_, batch: LuaAskBatch| {
-        ctx.ask_user(batch).map_err(|e| mlua::Error::runtime(e.message))
+        ctx.ask_user(batch)
+            .map_err(|e| mlua::Error::runtime(e.message))
     })?;
     ask.set("ask_user", ask_user_fn)?;
 
@@ -1064,7 +1070,8 @@ pub fn register_ask_module_with_agent(
     // Add ask_agent function with context
     let ctx = context.clone();
     let ask_agent_fn = lua.create_function(move |_, batch: LuaAskBatch| {
-        ctx.ask_agent(batch).map_err(|e| mlua::Error::runtime(e.message))
+        ctx.ask_agent(batch)
+            .map_err(|e| mlua::Error::runtime(e.message))
     })?;
     ask.set("agent", ask_agent_fn)?;
 
@@ -1707,10 +1714,7 @@ mod tests {
 
         // Verify the event was received
         assert!(event_received.load(Ordering::SeqCst));
-        assert_eq!(
-            *received_request_id.lock().unwrap(),
-            batch_id.to_string()
-        );
+        assert_eq!(*received_request_id.lock().unwrap(), batch_id.to_string());
     }
 
     #[test]

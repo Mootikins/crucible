@@ -206,10 +206,7 @@ impl HttpExecutor {
             HttpMethod::Options => reqwest::Method::OPTIONS,
         };
 
-        let mut builder = self
-            .client
-            .request(method, &req.url)
-            .timeout(req.timeout);
+        let mut builder = self.client.request(method, &req.url).timeout(req.timeout);
 
         for (key, value) in &req.headers {
             builder = builder.header(key, value);
@@ -219,16 +216,13 @@ impl HttpExecutor {
             builder = builder.body(body);
         }
 
-        let response = builder
-            .send()
-            .await
-            .map_err(|e| {
-                if e.is_timeout() {
-                    HttpError::Timeout
-                } else {
-                    HttpError::Request(e.to_string())
-                }
-            })?;
+        let response = builder.send().await.map_err(|e| {
+            if e.is_timeout() {
+                HttpError::Timeout
+            } else {
+                HttpError::Request(e.to_string())
+            }
+        })?;
 
         let status = response.status().as_u16();
         let headers: HashMap<String, String> = response
@@ -262,7 +256,10 @@ mod tests {
 
         assert_eq!(req.url, "https://example.com");
         assert_eq!(req.method, HttpMethod::Get);
-        assert_eq!(req.headers.get("Authorization"), Some(&"Bearer token".to_string()));
+        assert_eq!(
+            req.headers.get("Authorization"),
+            Some(&"Bearer token".to_string())
+        );
         assert_eq!(req.timeout, Duration::from_secs(60));
     }
 

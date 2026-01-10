@@ -62,8 +62,8 @@
 //! - `fennel` (default): Bundle the Fennel compiler (~255KB)
 //! - `send`: Enable `Send+Sync` on Lua state for multi-threaded use
 
-mod ask;
 pub mod annotations;
+mod ask;
 pub mod core_handler;
 mod error;
 mod executor;
@@ -119,10 +119,9 @@ pub use shell::{register_shell_module, ExecResult, ShellPolicy};
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
 // Handler system
 pub use handlers::{
-    execute_handler, run_handler_chain,
-    register_crucible_on_api, interpret_handler_result,
-    HandlerExecutionResult, RuntimeHandler,
-    ScriptHandlerResult, LuaScriptHandler, LuaScriptHandlerRegistry,
+    execute_handler, interpret_handler_result, register_crucible_on_api, run_handler_chain,
+    HandlerExecutionResult, LuaScriptHandler, LuaScriptHandlerRegistry, RuntimeHandler,
+    ScriptHandlerResult,
 };
 pub use mcp::{
     register_mcp_module, register_mcp_module_stub, LuaMcpClient, McpToolInfo, McpToolResult,

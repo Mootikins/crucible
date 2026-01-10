@@ -402,5 +402,4 @@ mod tests {
         let trimmed = line.trim_end();
         let _: serde_json::Value = serde_json::from_str(trimmed).unwrap();
     }
-
 }

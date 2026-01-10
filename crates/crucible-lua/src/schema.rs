@@ -105,7 +105,10 @@ impl LuauType {
         }
 
         // Handle array syntax
-        if let Some(inner) = type_str.strip_prefix("array<").and_then(|s| s.strip_suffix('>')) {
+        if let Some(inner) = type_str
+            .strip_prefix("array<")
+            .and_then(|s| s.strip_suffix('>'))
+        {
             return LuauType::Array {
                 element: Box::new(LuauType::from_ldoc(inner)),
             };
@@ -250,10 +253,7 @@ mod tests {
             LuauType::Primitive { name } if name == "number"
         ));
 
-        assert!(matches!(
-            LuauType::from_ldoc("any"),
-            LuauType::Any
-        ));
+        assert!(matches!(LuauType::from_ldoc("any"), LuauType::Any));
     }
 
     #[test]
