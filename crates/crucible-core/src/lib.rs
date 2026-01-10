@@ -24,6 +24,7 @@ pub mod storage;
 pub mod test_support;
 pub mod traits;
 pub mod types;
+pub mod utils;
 
 pub use agent::{
     AgentCard, AgentCardFrontmatter, AgentCardLoader, AgentCardMatch, AgentCardMatcher,

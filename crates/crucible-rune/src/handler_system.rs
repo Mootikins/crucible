@@ -87,17 +87,19 @@ pub struct RuneScriptHandler {
     executor: Arc<RuneExecutor>,
 }
 
+use once_cell::sync::Lazy;
+
+/// Regex for stripping handler/hook attributes from Rune source
+static HANDLER_ATTR_RE: Lazy<regex::Regex> = Lazy::new(|| {
+    regex::Regex::new(r"(?m)^\s*#\[(handler|hook)\([^)]*\)\]\s*\n?").unwrap()
+});
+
 /// Strip handler/hook attributes from Rune source code
 ///
 /// Rune doesn't support custom attributes on functions, so we need to remove
 /// the `#[handler(...)]` and `#[hook(...)]` attributes before compiling.
 fn strip_handler_attributes(source: &str) -> String {
-    use regex::Regex;
-
-    // Match #[handler(...)] or #[hook(...)] attributes
-    // This handles multi-line attributes and various formatting
-    let re = Regex::new(r"(?m)^\s*#\[(handler|hook)\([^)]*\)\]\s*\n?").unwrap();
-    re.replace_all(source, "").to_string()
+    HANDLER_ATTR_RE.replace_all(source, "").to_string()
 }
 
 impl RuneScriptHandler {
