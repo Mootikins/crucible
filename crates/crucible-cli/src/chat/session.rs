@@ -433,6 +433,15 @@ impl ChatSession {
             .with_interaction_registry(interaction_registry)
             .with_kiln_context(self.core.clone());
 
+        // Configure runtime provider/model from config file
+        let chat_config = &self.core.config().chat;
+        let provider_str = match chat_config.provider {
+            crucible_config::LlmProvider::Ollama => "ollama",
+            crucible_config::LlmProvider::OpenAI => "openai",
+            crucible_config::LlmProvider::Anthropic => "anthropic",
+        };
+        runner.with_runtime_config(provider_str, chat_config.chat_model());
+
         // Set up session logging to persist chat events
         // Only enabled if session_kiln_path is explicitly set (validated by select_session_kiln)
         if let Some(kiln_path) = self.config.session_kiln_path.clone() {
