@@ -13,6 +13,7 @@ use crate::tui::streaming_channel::StreamingEvent;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 /// A static provider that returns a fixed list of items
@@ -498,7 +499,7 @@ impl Harness {
     }
 
     /// Get conversation items
-    pub fn conversation_items(&self) -> &[ConversationItem] {
+    pub fn conversation_items(&self) -> &VecDeque<ConversationItem> {
         self.conversation.items()
     }
 
@@ -699,7 +700,10 @@ impl StreamingHarness {
             text: text.to_string(),
             seq: self.seq,
         });
-        self.maybe_record(&format!("chunk:{}", text.chars().take(20).collect::<String>()));
+        self.maybe_record(&format!(
+            "chunk:{}",
+            text.chars().take(20).collect::<String>()
+        ));
         self.check_graduation();
     }
 

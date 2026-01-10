@@ -21,7 +21,7 @@ expression: h.render()
   help Show keybindings and commands                                            
   mode Cycle session mode                                                       
   agent Switch agent backend                                                    
-  models List available models                                                  
+  model Switch model (opens picker)                                             
                                                                                 
  >                                                                              
                                                                                 
