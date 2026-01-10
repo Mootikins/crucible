@@ -162,7 +162,7 @@
 //! tail -f ~/.crucible/chat.log  # in another terminal
 //! ```
 
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::chat::bridge::AgentEventBridge;
 use crate::tui::selection::SelectionState;
@@ -266,9 +266,9 @@ use crucible_core::traits::chat::AgentHandle;
 use crucible_core::InteractionRegistry;
 use crucible_rune::EventRing;
 use once_cell::sync::Lazy;
-use ratatui::{
-    backend::CrosstermBackend, buffer::Buffer, layout::Rect, Terminal, TerminalOptions, Viewport,
-};
+use ratatui::{buffer::Buffer, layout::Rect};
+
+use super::dynamic_viewport::DynamicViewport;
 
 /// Pending content to graduate to terminal scrollback via insert_before()
 #[derive(Debug, Clone)]
@@ -306,6 +306,9 @@ fn blocks_to_markdown(blocks: &[StreamBlock]) -> String {
                     markdown.push('\n');
                 }
                 markdown.push_str("```\n");
+            }
+            StreamBlock::Tool { name, .. } => {
+                markdown.push_str(&format!("[Tool: {}]\n", name));
             }
         }
     }
@@ -611,7 +614,7 @@ impl RatatuiRunner {
     /// Internal main loop.
     async fn main_loop<A: AgentHandle>(
         &mut self,
-        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+        terminal: &mut DynamicViewport,
         bridge: &AgentEventBridge,
         agent: &mut A,
     ) -> Result<()> {
@@ -747,6 +750,11 @@ impl RatatuiRunner {
                         });
                     }
                     StreamingEvent::Done { full_response } => {
+                        info!(
+                            response_len = full_response.len(),
+                            token_count = self.token_count,
+                            "Runner received StreamingEvent::Done"
+                        );
                         self.streaming_manager.stop_streaming();
                         self.view.clear_status();
                         debug!(response_len = full_response.len(), "Streaming complete");
@@ -756,10 +764,10 @@ impl RatatuiRunner {
 
                         streaming_complete = true;
 
-                        // Graduate assistant message to scrollback (inline mode)
-                        // Graduate remaining lines not yet graduated during progressive streaming
+                        // Graduate only overflow lines (not all content)
+                        // Keep recent content visible - only push what exceeds viewport
                         if self.inline_mode {
-                            self.graduate_remaining_lines();
+                            self.graduate_overflow_lines();
                         }
 
                         // Flush accumulated assistant message to session log
@@ -2294,35 +2302,13 @@ impl RatatuiRunner {
         }
     }
 
-    /// Graduate all remaining lines at end of streaming.
-    ///
-    /// Called when streaming completes to push any remaining ungraduated content
-    /// to terminal scrollback. Clears all items from the conversation state.
-    fn graduate_remaining_lines(&mut self) {
-        use crate::tui::constants::UiConstants;
-
-        let content_width = UiConstants::content_width(self.view.state().width);
-
-        // Graduate all remaining lines and clear the conversation
-        let lines_to_graduate = self
-            .view
-            .state_mut()
-            .conversation
-            .graduate_all(content_width);
-
-        if !lines_to_graduate.is_empty() {
-            self.pending_graduations
-                .push(PendingGraduation::Lines(lines_to_graduate));
-        }
-    }
-
     /// Flush all pending graduations to terminal scrollback via insert_before().
     ///
     /// This is the correct way to insert content above an inline viewport in ratatui.
     /// Called from main_loop after event handling where terminal is available.
     fn flush_pending_graduations(
         &mut self,
-        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+        terminal: &mut DynamicViewport,
     ) -> io::Result<()> {
         use crate::formatting::render_markdown;
         use ratatui::style::{Color, Modifier, Style};
@@ -2333,7 +2319,7 @@ impl RatatuiRunner {
         }
 
         let graduations = std::mem::take(&mut self.pending_graduations);
-        let width = terminal.size()?.width;
+        let width = terminal.terminal_mut().size()?.width;
 
         for grad in graduations {
             match grad {
@@ -3002,17 +2988,11 @@ impl RatatuiRunner {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
 
-        // Setup terminal based on mode
+        // Setup terminal based on mode using DynamicViewport wrapper
         let mut terminal = if self.inline_mode {
             // Inline mode: small viewport at bottom, native scrollback above
             execute!(stdout, EnableMouseCapture, EnableBracketedPaste)?;
-            let backend = CrosstermBackend::new(stdout);
-            Terminal::with_options(
-                backend,
-                TerminalOptions {
-                    viewport: Viewport::Inline(INLINE_VIEWPORT_HEIGHT),
-                },
-            )?
+            DynamicViewport::new_inline(INLINE_VIEWPORT_HEIGHT)?
         } else {
             // Fullscreen mode: traditional alternate screen
             execute!(
@@ -3021,8 +3001,7 @@ impl RatatuiRunner {
                 EnableMouseCapture,
                 EnableBracketedPaste
             )?;
-            let backend = CrosstermBackend::new(stdout);
-            Terminal::new(backend)?
+            DynamicViewport::new_fullscreen()?
         };
         terminal.clear()?;
 
@@ -3121,7 +3100,7 @@ impl RatatuiRunner {
         if self.inline_mode {
             // Inline mode: just restore cursor and disable mouse (no alternate screen to leave)
             execute!(
-                terminal.backend_mut(),
+                terminal.terminal_mut().backend_mut(),
                 DisableMouseCapture,
                 DisableBracketedPaste,
                 cursor::Show
@@ -3129,7 +3108,7 @@ impl RatatuiRunner {
         } else {
             // Fullscreen mode: leave alternate screen
             execute!(
-                terminal.backend_mut(),
+                terminal.terminal_mut().backend_mut(),
                 DisableMouseCapture,
                 DisableBracketedPaste,
                 LeaveAlternateScreen,
@@ -3149,7 +3128,7 @@ impl RatatuiRunner {
     /// Render a single frame (used during status updates).
     fn render_frame(
         &mut self,
-        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+        terminal: &mut DynamicViewport,
     ) -> Result<()> {
         let view = &self.view;
         let selection = self.selection_manager.selection();
