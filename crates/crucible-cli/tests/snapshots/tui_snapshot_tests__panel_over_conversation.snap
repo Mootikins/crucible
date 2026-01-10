@@ -25,4 +25,4 @@ expression: terminal.backend()
 "                                                                                "
 " >                                                                              "
 "                                                                                "
-"▸ Plan │ Ready                                                                  "
+"▸ Plan │ ollama/llama3.2 │ Ready                                                "
