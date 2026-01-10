@@ -375,6 +375,12 @@ pub struct RatatuiRunner {
     inline_mode: bool,
     /// Printer for inline mode scrollback output
     inline_printer: InlinePrinter,
+
+    // =============================================================================
+    // Runtime configuration (session-scoped provider/model overrides)
+    // =============================================================================
+    /// Runtime provider/model configuration (session-scoped)
+    runtime_config: crate::tui::RuntimeConfig,
 }
 
 // ============================================================================
@@ -428,6 +434,8 @@ impl RatatuiRunner {
             // Inline mode (default enabled)
             inline_mode: true,
             inline_printer: InlinePrinter::new(),
+            // Runtime config (session-scoped provider/model)
+            runtime_config: crate::tui::RuntimeConfig::default(),
         })
     }
 
@@ -2206,6 +2214,49 @@ impl RatatuiRunner {
             "resume" | "res" => {
                 // :resume [id] - resume a previous session
                 self.handle_resume_command(args).await?;
+            }
+            "provider" | "p" => {
+                if args.is_empty() {
+                    // Show current provider
+                    let current = &self.runtime_config.provider;
+                    self.view.set_status_text(&format!("Provider: {}", current));
+                } else {
+                    // Set new provider
+                    match args.to_lowercase().as_str() {
+                        "ollama" | "openai" | "anthropic" => {
+                            self.runtime_config.set_provider(args);
+                            self.view.state_mut().provider = args.to_string();
+                            self.view.set_status_text(&format!("Provider set to: {}", args));
+                        }
+                        _ => {
+                            self.view.echo_error(&format!(
+                                "Unknown provider: {}. Use: ollama, openai, anthropic",
+                                args
+                            ));
+                        }
+                    }
+                }
+            }
+            "model" | "mod" => {
+                if args.is_empty() {
+                    // Show current model
+                    let current = &self.runtime_config.model;
+                    self.view.set_status_text(&format!("Model: {}", current));
+                } else {
+                    // Set new model (no validation - any string accepted)
+                    self.runtime_config.set_model(args);
+                    self.view.state_mut().model = args.to_string();
+                    self.view.set_status_text(&format!("Model set to: {}", args));
+                }
+            }
+            "status" | "s" => {
+                let status = format!(
+                    "Provider: {} | Model: {} | Mode: {}",
+                    self.runtime_config.provider,
+                    self.runtime_config.model,
+                    self.view.mode_id()
+                );
+                self.view.set_status_text(&status);
             }
             _ => {
                 self.view.echo_error(&format!("Unknown command: {}", name));
