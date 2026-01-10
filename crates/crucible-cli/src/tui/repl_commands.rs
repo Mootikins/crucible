@@ -73,6 +73,21 @@ pub const REPL_COMMANDS: &[ReplCommand] = &[
         aliases: &["res"],
         description: "Resume a previous session [:resume <id>]",
     },
+    ReplCommand {
+        name: "provider",
+        aliases: &["p"],
+        description: "Switch LLM provider [:provider ollama|openai|anthropic]",
+    },
+    ReplCommand {
+        name: "model",
+        aliases: &["mod"],
+        description: "Switch model [:model <name>]",
+    },
+    ReplCommand {
+        name: "status",
+        aliases: &["s"],
+        description: "Show current provider, model, and agent",
+    },
 ];
 
 /// Find REPL commands matching a query (fuzzy prefix match)
@@ -104,8 +119,8 @@ mod tests {
     fn test_find_matching_empty_query() {
         let matches = find_matching("");
         assert_eq!(matches.len(), REPL_COMMANDS.len());
-        // Verify expected count (quit, help, mode, agent, models, config, messages, edit, resume)
-        assert_eq!(REPL_COMMANDS.len(), 9);
+        // Verify expected count (quit, help, mode, agent, models, config, messages, edit, resume, provider, model, status)
+        assert_eq!(REPL_COMMANDS.len(), 12);
     }
 
     #[test]
@@ -124,9 +139,9 @@ mod tests {
 
     #[test]
     fn test_find_matching_multiple() {
-        // "m" matches "mode", "models", and "messages"
+        // "m" matches "mode", "models", "messages", and "model"
         let matches = find_matching("m");
-        assert_eq!(matches.len(), 3);
+        assert_eq!(matches.len(), 4);
     }
 
     #[test]
@@ -159,5 +174,24 @@ mod tests {
         assert!(cmd.matches("qu"));
         assert!(cmd.matches("quit"));
         assert!(!cmd.matches("x"));
+    }
+
+    #[test]
+    fn test_provider_command_exists() {
+        let cmd = lookup("provider").unwrap();
+        assert_eq!(cmd.name, "provider");
+        assert!(cmd.aliases.contains(&"p"));
+    }
+
+    #[test]
+    fn test_model_command_exists() {
+        let cmd = lookup("model").unwrap();
+        assert_eq!(cmd.name, "model");
+    }
+
+    #[test]
+    fn test_status_command_exists() {
+        let cmd = lookup("status").unwrap();
+        assert_eq!(cmd.name, "status");
     }
 }
