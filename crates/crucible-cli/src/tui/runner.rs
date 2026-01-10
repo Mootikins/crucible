@@ -2268,11 +2268,26 @@ impl RatatuiRunner {
                 // :resume [id] - resume a previous session
                 self.handle_resume_command(args).await?;
             }
-            "provider" | "p" => {
+            "provider" | "p" | "providers" => {
                 if args.is_empty() {
-                    // Show current provider
-                    let current = &self.runtime_config.provider;
-                    self.view.set_status_text(&format!("Provider: {}", current));
+                    // Show available providers with current selection
+                    let current = &self.runtime_config.provider.to_lowercase();
+                    let providers = ["ollama", "openai", "anthropic"];
+                    let provider_list = providers.iter()
+                        .map(|p| {
+                            if *p == current {
+                                format!("  • {} (current)", p)
+                            } else {
+                                format!("  • {}", p)
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    let content = format!(
+                        "Available providers:\n\n{}\n\nUse :provider <name> to switch",
+                        provider_list
+                    );
+                    self.view.push_dialog(crate::tui::dialog::DialogState::info("Providers", content));
                 } else {
                     // Set new provider
                     match args.to_lowercase().as_str() {
