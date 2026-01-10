@@ -69,12 +69,14 @@ mod error;
 mod executor;
 #[cfg(feature = "fennel")]
 mod fennel;
+mod fs;
 mod graph;
 mod handlers;
 mod http;
 mod json_query;
 mod mcp;
 mod panel;
+mod paths;
 mod popup;
 mod registry;
 pub mod schema;
@@ -95,6 +97,7 @@ pub use error::LuaError;
 pub use executor::LuaExecutor;
 #[cfg(feature = "fennel")]
 pub use fennel::FennelCompiler;
+pub use fs::register_fs_module;
 pub use graph::{
     register_graph_module, register_graph_module_full, register_graph_module_with_all,
     register_graph_module_with_executor, register_graph_view_functions,
@@ -108,6 +111,7 @@ pub use json_query::{
 pub use panel::{
     core_result_to_lua, lua_item_to_core, lua_panel_to_core, lua_result_to_core, register_ui_module,
 };
+pub use paths::{register_paths_module, PathsContext};
 pub use popup::{lua_entry_to_core, lua_request_to_core, register_popup_module};
 pub use registry::LuaToolRegistry;
 pub use schema::{generate_input_schema, type_to_string, FunctionSignature, LuauType, TypedParam};
