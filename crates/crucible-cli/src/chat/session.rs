@@ -442,6 +442,9 @@ impl ChatSession {
         };
         runner.with_runtime_config(provider_str, chat_config.chat_model());
 
+        // Pass configured Ollama endpoint for model discovery
+        runner.with_ollama_endpoint(chat_config.llm_endpoint());
+
         // Set up session logging to persist chat events
         // Only enabled if session_kiln_path is explicitly set (validated by select_session_kiln)
         if let Some(kiln_path) = self.config.session_kiln_path.clone() {

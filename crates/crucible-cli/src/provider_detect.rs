@@ -1,11 +1,14 @@
 //! Provider detection for interactive setup
 //!
 //! Detects available LLM providers by checking:
-//! - Ollama: HTTP check to localhost:11434
+//! - Ollama: HTTP check to endpoint (priority: config file > OLLAMA_HOST env var > localhost:11434)
 //! - OpenAI: OPENAI_API_KEY env var
 //! - Anthropic: ANTHROPIC_API_KEY env var
 
 use std::time::Duration;
+
+/// Default Ollama endpoint
+const DEFAULT_OLLAMA_HOST: &str = "http://localhost:11434";
 
 /// A detected provider with availability info
 #[derive(Debug, Clone)]
@@ -17,6 +20,21 @@ pub struct DetectedProvider {
     pub default_model: Option<String>,
 }
 
+/// Get the Ollama endpoint from OLLAMA_HOST env var or default
+pub fn ollama_endpoint() -> String {
+    std::env::var("OLLAMA_HOST")
+        .ok()
+        .map(|host| {
+            // OLLAMA_HOST can be just "host:port" or a full URL
+            if host.starts_with("http://") || host.starts_with("https://") {
+                host
+            } else {
+                format!("http://{}", host)
+            }
+        })
+        .unwrap_or_else(|| DEFAULT_OLLAMA_HOST.to_string())
+}
+
 /// Check if an API key exists for a provider
 pub fn has_api_key(provider: &str) -> bool {
     match provider.to_lowercase().as_str() {
@@ -26,18 +44,20 @@ pub fn has_api_key(provider: &str) -> bool {
     }
 }
 
-/// Check if Ollama is running locally
+/// Check if Ollama is running (checks OLLAMA_HOST env var or localhost:11434)
 pub async fn check_ollama() -> Option<Vec<String>> {
+    check_ollama_at(&ollama_endpoint()).await
+}
+
+/// Check if Ollama is running at a specific endpoint
+pub async fn check_ollama_at(endpoint: &str) -> Option<Vec<String>> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(2))
         .build()
         .ok()?;
 
-    let resp = client
-        .get("http://localhost:11434/api/tags")
-        .send()
-        .await
-        .ok()?;
+    let url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
+    let resp = client.get(&url).send().await.ok()?;
 
     if !resp.status().is_success() {
         return None;
@@ -171,5 +191,36 @@ mod tests {
         assert!(provider.available);
         assert_eq!(provider.reason, "Test reason");
         assert_eq!(provider.default_model, Some("test-model".to_string()));
+    }
+
+    #[test]
+    #[serial]
+    fn test_ollama_endpoint_default() {
+        std::env::remove_var("OLLAMA_HOST");
+        assert_eq!(ollama_endpoint(), "http://localhost:11434");
+    }
+
+    #[test]
+    #[serial]
+    fn test_ollama_endpoint_custom_host_port() {
+        std::env::set_var("OLLAMA_HOST", "myhost:11435");
+        assert_eq!(ollama_endpoint(), "http://myhost:11435");
+        std::env::remove_var("OLLAMA_HOST");
+    }
+
+    #[test]
+    #[serial]
+    fn test_ollama_endpoint_full_url() {
+        std::env::set_var("OLLAMA_HOST", "http://custom-ollama.local:8080");
+        assert_eq!(ollama_endpoint(), "http://custom-ollama.local:8080");
+        std::env::remove_var("OLLAMA_HOST");
+    }
+
+    #[test]
+    #[serial]
+    fn test_ollama_endpoint_https() {
+        std::env::set_var("OLLAMA_HOST", "https://secure-ollama.example.com");
+        assert_eq!(ollama_endpoint(), "https://secure-ollama.example.com");
+        std::env::remove_var("OLLAMA_HOST");
     }
 }

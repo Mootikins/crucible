@@ -266,7 +266,48 @@ use crucible_core::traits::chat::AgentHandle;
 use crucible_core::InteractionRegistry;
 use crucible_rune::EventRing;
 use once_cell::sync::Lazy;
-use ratatui::{backend::CrosstermBackend, Terminal, TerminalOptions, Viewport};
+use ratatui::{backend::CrosstermBackend, buffer::Buffer, layout::Rect, Terminal, TerminalOptions, Viewport};
+
+/// Pending content to graduate to terminal scrollback via insert_before()
+#[derive(Debug, Clone)]
+enum PendingGraduation {
+    /// User message to graduate
+    User(String),
+    /// Assistant message blocks to graduate
+    Assistant(Vec<StreamBlock>),
+    /// Tool result to graduate
+    Tool {
+        name: String,
+        status: crate::tui::conversation::ToolStatus,
+    },
+}
+
+/// Convert StreamBlocks to markdown string for graduation rendering
+fn blocks_to_markdown(blocks: &[StreamBlock]) -> String {
+    let mut markdown = String::new();
+
+    for block in blocks {
+        match block {
+            StreamBlock::Prose { text, .. } => {
+                markdown.push_str(text);
+            }
+            StreamBlock::Code { lang, content, .. } => {
+                markdown.push_str("```");
+                if let Some(lang) = lang {
+                    markdown.push_str(lang);
+                }
+                markdown.push('\n');
+                markdown.push_str(content);
+                if !content.ends_with('\n') {
+                    markdown.push('\n');
+                }
+                markdown.push_str("```\n");
+            }
+        }
+    }
+
+    markdown
+}
 use regex::Regex;
 use std::io;
 use std::sync::{Arc, Mutex};
@@ -373,14 +414,18 @@ pub struct RatatuiRunner {
     /// - Uses alternate screen buffer
     /// - All history managed in ratatui viewport
     inline_mode: bool,
-    /// Printer for inline mode scrollback output
+    /// Printer for inline mode scrollback output (legacy - being replaced by insert_before)
     inline_printer: InlinePrinter,
+    /// Pending graduations to flush via terminal.insert_before()
+    pending_graduations: Vec<PendingGraduation>,
 
     // =============================================================================
     // Runtime configuration (session-scoped provider/model overrides)
     // =============================================================================
     /// Runtime provider/model configuration (session-scoped)
     runtime_config: crate::tui::RuntimeConfig,
+    /// Configured Ollama endpoint from config file (for model discovery)
+    ollama_endpoint: Option<String>,
 }
 
 // ============================================================================
@@ -434,8 +479,11 @@ impl RatatuiRunner {
             // Inline mode (default enabled)
             inline_mode: true,
             inline_printer: InlinePrinter::new(),
+            pending_graduations: Vec::new(),
             // Runtime config (session-scoped provider/model) - will be set via with_runtime_config
             runtime_config: crate::tui::RuntimeConfig::default(),
+            // Ollama endpoint - will be set via with_ollama_endpoint
+            ollama_endpoint: None,
         })
     }
 
@@ -447,6 +495,12 @@ impl RatatuiRunner {
         // Sync to view state for status bar display
         self.view.state_mut().provider = provider_str;
         self.view.state_mut().model = model_str;
+        self
+    }
+
+    /// Set the Ollama endpoint from config (for model discovery)
+    pub fn with_ollama_endpoint(&mut self, endpoint: impl Into<String>) -> &mut Self {
+        self.ollama_endpoint = Some(endpoint.into());
         self
     }
 
@@ -569,7 +623,13 @@ impl RatatuiRunner {
                 }
             }
 
-            // 1. Render (only if needed)
+            // 1. Flush pending graduations to scrollback (before render)
+            // This uses terminal.insert_before() to properly insert content above the viewport
+            if let Err(e) = self.flush_pending_graduations(terminal) {
+                tracing::warn!("Failed to flush graduations: {}", e);
+            }
+
+            // 2. Render (only if needed)
             if needs_render {
                 let view = &self.view;
                 let selection = self.selection_manager.selection();
@@ -689,13 +749,24 @@ impl RatatuiRunner {
                         streaming_complete = true;
 
                         // Graduate assistant message to scrollback (inline mode)
-                        // Find the last assistant message blocks
+                        // Find the last assistant message blocks and clone to avoid borrow conflict
                         if self.inline_mode {
-                            for item in self.view.state().conversation.items().iter().rev() {
-                                if let ConversationItem::AssistantMessage { blocks, .. } = item {
-                                    self.graduate_assistant_message(blocks);
-                                    break;
-                                }
+                            let blocks_to_graduate = self
+                                .view
+                                .state()
+                                .conversation
+                                .items()
+                                .iter()
+                                .rev()
+                                .find_map(|item| {
+                                    if let ConversationItem::AssistantMessage { blocks, .. } = item {
+                                        Some(blocks.clone())
+                                    } else {
+                                        None
+                                    }
+                                });
+                            if let Some(blocks) = blocks_to_graduate {
+                                self.graduate_assistant_message(&blocks);
                             }
                         }
 
@@ -1297,6 +1368,30 @@ impl RatatuiRunner {
                             } else {
                                 self.view
                                     .set_status_text("Session resume requires deferred agent mode");
+                            }
+                            return Ok(false);
+                        }
+
+                        // Handle Model items - switch backend
+                        if let PopupItem::Model { spec, .. } = item {
+                            let spec_str = spec.clone();
+                            self.popup = None;
+                            self.view.set_popup(None);
+                            self.view.set_input("");
+                            self.view.set_cursor_position(0);
+
+                            // Parse and apply the backend spec
+                            match crate::tui::BackendSpec::parse(&spec_str) {
+                                Ok(backend) => {
+                                    let display = backend.to_string();
+                                    self.view.state_mut().provider = backend.provider().to_string();
+                                    self.view.state_mut().model = backend.model().to_string();
+                                    self.runtime_config.set_backend(backend);
+                                    self.view.set_status_text(&format!("Backend: {}", display));
+                                }
+                                Err(e) => {
+                                    self.view.echo_error(&e);
+                                }
                             }
                             return Ok(false);
                         }
@@ -2126,43 +2221,152 @@ impl RatatuiRunner {
     // INLINE MODE HELPERS
     // ========================================================================
 
-    /// Graduate a user message to terminal scrollback (inline mode only).
+    /// Queue a user message for graduation to terminal scrollback (inline mode only).
     ///
-    /// Prints the message above the viewport using InlinePrinter.
+    /// The actual graduation happens in flush_pending_graduations() via terminal.insert_before().
     /// In fullscreen mode, this is a no-op.
-    fn graduate_user_message(&self, content: &str) {
+    fn graduate_user_message(&mut self, content: &str) {
         if !self.inline_mode {
             return;
         }
-        if let Err(e) = self.inline_printer.print_user_message(content) {
-            tracing::warn!("Failed to print user message to scrollback: {}", e);
-        }
+        self.pending_graduations
+            .push(PendingGraduation::User(content.to_string()));
     }
 
-    /// Graduate an assistant message to terminal scrollback (inline mode only).
+    /// Queue an assistant message for graduation to terminal scrollback (inline mode only).
     ///
-    /// Prints the completed message above the viewport using InlinePrinter.
+    /// The actual graduation happens in flush_pending_graduations() via terminal.insert_before().
     /// In fullscreen mode, this is a no-op.
-    fn graduate_assistant_message(&self, blocks: &[StreamBlock]) {
+    fn graduate_assistant_message(&mut self, blocks: &[StreamBlock]) {
         if !self.inline_mode {
             return;
         }
-        if let Err(e) = self.inline_printer.print_assistant_message(blocks) {
-            tracing::warn!("Failed to print assistant message to scrollback: {}", e);
-        }
+        self.pending_graduations
+            .push(PendingGraduation::Assistant(blocks.to_vec()));
     }
 
-    /// Graduate a tool result to terminal scrollback (inline mode only).
+    /// Queue a tool result for graduation to terminal scrollback (inline mode only).
     ///
-    /// Prints the tool result above the viewport using InlinePrinter.
+    /// The actual graduation happens in flush_pending_graduations() via terminal.insert_before().
     /// In fullscreen mode, this is a no-op.
-    fn graduate_tool_result(&self, name: &str, status: &crate::tui::conversation::ToolStatus) {
+    fn graduate_tool_result(&mut self, name: &str, status: &crate::tui::conversation::ToolStatus) {
         if !self.inline_mode {
             return;
         }
-        if let Err(e) = self.inline_printer.print_tool_result(name, status) {
-            tracing::warn!("Failed to print tool result to scrollback: {}", e);
+        self.pending_graduations.push(PendingGraduation::Tool {
+            name: name.to_string(),
+            status: status.clone(),
+        });
+    }
+
+    /// Flush all pending graduations to terminal scrollback via insert_before().
+    ///
+    /// This is the correct way to insert content above an inline viewport in ratatui.
+    /// Called from main_loop after event handling where terminal is available.
+    fn flush_pending_graduations(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    ) -> io::Result<()> {
+        use crate::formatting::render_markdown;
+        use ratatui::style::{Color, Modifier, Style};
+        use ratatui::text::{Line, Span};
+
+        if self.pending_graduations.is_empty() || !self.inline_mode {
+            return Ok(());
         }
+
+        let graduations = std::mem::take(&mut self.pending_graduations);
+        let width = terminal.size()?.width;
+
+        for grad in graduations {
+            match grad {
+                PendingGraduation::User(content) => {
+                    // Calculate height needed (wrapped lines + 1 for blank line before)
+                    let lines: Vec<&str> = content.lines().collect();
+                    let height = (lines.len() + 1) as u16;
+
+                    terminal.insert_before(height, |buf| {
+                        // Blank line
+                        let blank_line = Line::from("");
+                        buf.set_line(0, 0, &blank_line, width);
+
+                        // User message with " > " prefix
+                        let user_style = Style::default()
+                            .bg(Color::Rgb(60, 60, 80));
+                        for (i, line) in lines.iter().enumerate() {
+                            let prefix = if i == 0 { " > " } else { "   " };
+                            let styled_line = Line::from(vec![
+                                Span::styled(prefix, user_style),
+                                Span::styled(*line, user_style),
+                            ]);
+                            buf.set_line(0, (i + 1) as u16, &styled_line, width);
+                        }
+                    })?;
+                }
+                PendingGraduation::Assistant(blocks) => {
+                    // Convert blocks to markdown and render
+                    let markdown = blocks_to_markdown(&blocks);
+                    let rendered = render_markdown(&markdown);
+                    let lines: Vec<&str> = rendered.lines().collect();
+                    let height = (lines.len() + 1) as u16; // +1 for blank line
+
+                    terminal.insert_before(height, |buf| {
+                        // Blank line
+                        let blank_line = Line::from("");
+                        buf.set_line(0, 0, &blank_line, width);
+
+                        // Assistant message with " ● " prefix on first line
+                        let prefix_style = Style::default().fg(Color::DarkGray);
+                        for (i, line) in lines.iter().enumerate() {
+                            let styled_line = if i == 0 {
+                                Line::from(vec![
+                                    Span::styled(" ● ", prefix_style),
+                                    Span::raw(*line),
+                                ])
+                            } else {
+                                Line::from(vec![
+                                    Span::raw("   "),
+                                    Span::raw(*line),
+                                ])
+                            };
+                            buf.set_line(0, (i + 1) as u16, &styled_line, width);
+                        }
+                    })?;
+                }
+                PendingGraduation::Tool { name, status } => {
+                    use crate::tui::conversation::ToolStatus;
+
+                    let (indicator, style, suffix) = match &status {
+                        ToolStatus::Running => ("◐", Color::White, String::new()),
+                        ToolStatus::Complete { summary } => (
+                            "●",
+                            Color::Green,
+                            summary
+                                .as_ref()
+                                .map(|s| format!(" → {}", s))
+                                .unwrap_or_default(),
+                        ),
+                        ToolStatus::Error { message } => {
+                            ("✗", Color::Red, format!(" → {}", message))
+                        }
+                    };
+
+                    terminal.insert_before(1, |buf| {
+                        let line = Line::from(vec![
+                            Span::styled(
+                                format!(" {} ", indicator),
+                                Style::default().fg(style),
+                            ),
+                            Span::styled(&name, Style::default().fg(style)),
+                            Span::styled(suffix, Style::default().fg(style)),
+                        ]);
+                        buf.set_line(0, 0, &line, width);
+                    })?;
+                }
+            }
+        }
+
+        Ok(())
     }
 
     // ========================================================================
@@ -2202,89 +2406,7 @@ impl RatatuiRunner {
                 self.view
                     .set_status_text("Agent switching not yet implemented");
             }
-            "models" => {
-                // Unified model picker with all providers and ACP agents
-                self.view.set_status_text("Fetching models...");
-
-                let current = self.runtime_config.display_string();
-                let mut sections = Vec::new();
-
-                // Ollama section - fetch live models
-                let ollama_section = match crate::provider_detect::check_ollama().await {
-                    Some(models) if !models.is_empty() => {
-                        let model_list = models.iter()
-                            .take(10)
-                            .map(|m| {
-                                let spec = format!("ollama/{}", m);
-                                if spec == current {
-                                    format!("  • {} (current)", spec)
-                                } else {
-                                    format!("  • {}", spec)
-                                }
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        format!("Ollama ({} available):\n{}", models.len(), model_list)
-                    }
-                    _ => "Ollama:\n  (not running)".to_string(),
-                };
-                sections.push(ollama_section);
-
-                // OpenAI section - static list
-                let openai_models = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o1-preview", "o1-mini"];
-                let openai_list = openai_models.iter()
-                    .map(|m| {
-                        let spec = format!("openai/{}", m);
-                        if spec == current {
-                            format!("  • {} (current)", spec)
-                        } else {
-                            format!("  • {}", spec)
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                sections.push(format!("OpenAI:\n{}", openai_list));
-
-                // Anthropic section - static list
-                let anthropic_models = ["claude-sonnet-4-20250514", "claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"];
-                let anthropic_list = anthropic_models.iter()
-                    .map(|m| {
-                        let spec = format!("anthropic/{}", m);
-                        if spec == current {
-                            format!("  • {} (current)", spec)
-                        } else {
-                            format!("  • {}", spec)
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                sections.push(format!("Anthropic:\n{}", anthropic_list));
-
-                // ACP agents section - probe for available
-                let acp_agents = crucible_acp::probe_all_agents().await;
-                let available_agents: Vec<_> = acp_agents.iter().filter(|a| a.available).collect();
-                if !available_agents.is_empty() {
-                    let agent_list = available_agents.iter()
-                        .map(|a| {
-                            let spec = format!("acp/{}", a.name);
-                            if spec == current {
-                                format!("  • {} - {} (current)", spec, a.description)
-                            } else {
-                                format!("  • {} - {}", spec, a.description)
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    sections.push(format!("ACP Agents:\n{}", agent_list));
-                }
-
-                let content = format!(
-                    "{}\n\nUse :model <provider/model> to switch",
-                    sections.join("\n\n")
-                );
-                self.view.push_dialog(crate::tui::dialog::DialogState::info("Models", content));
-                self.view.set_status_text("Ready");
-            }
+            // "models" command removed - use :model instead (opens interactive popup)
             "config" => {
                 // Show current config summary
                 self.view
@@ -2365,9 +2487,102 @@ impl RatatuiRunner {
             }
             "model" | "mod" => {
                 if args.is_empty() {
-                    // Show current backend (provider/model format)
-                    let current = self.runtime_config.display_string();
-                    self.view.set_status_text(&format!("Backend: {}", current));
+                    // Open model picker popup with real models
+                    use crate::tui::state::{PopupItem, PopupKind};
+                    use crate::tui::components::PopupState;
+
+                    self.view.set_status_text("Fetching models...");
+                    let current_spec = self.runtime_config.display_string();
+                    let mut items: Vec<PopupItem> = Vec::new();
+
+                    // Ollama models - fetch from configured endpoint or default
+                    let ollama_endpoint = self
+                        .ollama_endpoint
+                        .clone()
+                        .unwrap_or_else(crate::provider_detect::ollama_endpoint);
+                    if let Some(ollama_models) =
+                        crate::provider_detect::check_ollama_at(&ollama_endpoint).await
+                    {
+                        for model in ollama_models {
+                            let spec = format!("ollama/{}", model);
+                            let is_current = spec == current_spec;
+                            items.push(
+                                PopupItem::model(&spec)
+                                    .desc("Ollama")
+                                    .with_current(is_current)
+                                    .with_score(if is_current { 1000 } else { 100 }),
+                            );
+                        }
+                    }
+
+                    // OpenAI models - only show if API key is configured
+                    if std::env::var("OPENAI_API_KEY").is_ok() {
+                        let openai_models = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o1-preview", "o1-mini"];
+                        for model in openai_models {
+                            let spec = format!("openai/{}", model);
+                            let is_current = spec == current_spec;
+                            items.push(
+                                PopupItem::model(&spec)
+                                    .desc("OpenAI")
+                                    .with_current(is_current)
+                                    .with_score(if is_current { 1000 } else { 50 }),
+                            );
+                        }
+                    }
+
+                    // Anthropic models - only show if API key is configured
+                    if std::env::var("ANTHROPIC_API_KEY").is_ok() {
+                        let anthropic_models = ["claude-sonnet-4-20250514", "claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"];
+                        for model in anthropic_models {
+                            let spec = format!("anthropic/{}", model);
+                            let is_current = spec == current_spec;
+                            items.push(
+                                PopupItem::model(&spec)
+                                    .desc("Anthropic")
+                                    .with_current(is_current)
+                                    .with_score(if is_current { 1000 } else { 50 }),
+                            );
+                        }
+                    }
+
+                    // ACP agents - probe for available
+                    let acp_agents = crucible_acp::probe_all_agents().await;
+                    for agent in acp_agents.iter().filter(|a| a.available) {
+                        let spec = format!("acp/{}", agent.name);
+                        let is_current = spec == current_spec;
+                        items.push(
+                            PopupItem::model(&spec)
+                                .desc(&agent.description)
+                                .with_current(is_current)
+                                .with_score(if is_current { 1000 } else { 200 }),
+                        );
+                    }
+
+                    // Sort: current first, then by score (Ollama > ACP > OpenAI/Anthropic)
+                    items.sort_by(|a, b| b.score().cmp(&a.score()));
+
+                    if items.is_empty() {
+                        self.view.set_status_text("No models available (is Ollama running?)");
+                    } else {
+                        // Create popup with model items
+                        let mut popup = PopupState::new(
+                            PopupKind::Model,
+                            std::sync::Arc::clone(&self.popup_provider)
+                                as std::sync::Arc<dyn crate::tui::popup::PopupProvider>,
+                        );
+                        popup.set_items(items.clone());
+                        self.popup = Some(popup);
+
+                        // Create separate popup for view
+                        let mut view_popup = PopupState::new(
+                            PopupKind::Model,
+                            std::sync::Arc::clone(&self.popup_provider)
+                                as std::sync::Arc<dyn crate::tui::popup::PopupProvider>,
+                        );
+                        view_popup.set_items(items);
+                        self.view.set_popup(Some(view_popup));
+                        self.view.set_status_text("Select model");
+                    }
                 } else {
                     // Parse unified provider/model format
                     match crate::tui::BackendSpec::parse(args) {
