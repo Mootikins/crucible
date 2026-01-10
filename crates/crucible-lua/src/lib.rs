@@ -114,4 +114,4 @@ pub use schema::{
 };
 pub use shell::{register_shell_module, ExecResult, ShellPolicy};
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
-pub use hooks::{execute_hook, HookResult, LuaHookHandler};
+pub use hooks::{execute_hook, HookResult, LuaHookHandler, LuaHookRegistry};
