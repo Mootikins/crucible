@@ -24,7 +24,7 @@ use futures::{Stream, StreamExt};
 use std::pin::Pin;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
-use tracing::{debug, warn};
+use tracing::{debug, error, info, warn};
 
 pub type ChatStream = Pin<Box<dyn Stream<Item = ChatResult<ChatChunk>> + Send>>;
 
@@ -152,10 +152,10 @@ impl StreamingTask {
                         }
 
                         if chunk.done {
-                            debug!(
+                            info!(
                                 chunk_count,
                                 response_len = full_response.len(),
-                                "Stream done"
+                                "Stream signaled done=true, breaking loop"
                             );
                             break;
                         }
@@ -174,11 +174,26 @@ impl StreamingTask {
                 }
             }
 
+            // Log why the loop exited
+            info!(
+                chunk_count,
+                response_len = full_response.len(),
+                "StreamingTask loop exited (stream returned None)"
+            );
+
             if full_response.is_empty() && chunk_count > 0 {
                 warn!(chunk_count, "Stream completed with empty response");
             }
 
-            let _ = tx.send(StreamingEvent::Done { full_response });
+            info!(
+                chunk_count,
+                response_len = full_response.len(),
+                "StreamingTask sending Done event"
+            );
+            match tx.send(StreamingEvent::Done { full_response }) {
+                Ok(_) => info!("StreamingTask Done event sent successfully"),
+                Err(e) => error!("StreamingTask failed to send Done event: {}", e),
+            }
         })
     }
 
@@ -395,5 +410,52 @@ mod tests {
         // Third event: done
         let e3 = rx.recv().await.unwrap();
         assert!(matches!(e3, StreamingEvent::Done { .. }));
+    }
+
+    /// Test that Done event is sent even when stream ends without done=true
+    /// This simulates providers that close the stream without signaling completion
+    #[tokio::test]
+    async fn test_streaming_task_sends_done_without_done_flag() {
+        use futures::stream;
+
+        let (tx, mut rx) = create_streaming_channel();
+
+        // Stream that ends without any chunk having done=true
+        let chunks: Vec<ChatResult<ChatChunk>> = vec![
+            Ok(ChatChunk {
+                delta: "Hello ".to_string(),
+                done: false,
+                tool_calls: None,
+                tool_results: None,
+                reasoning: None,
+            }),
+            Ok(ChatChunk {
+                delta: "world".to_string(),
+                done: false, // Never signals done!
+                tool_calls: None,
+                tool_results: None,
+                reasoning: None,
+            }),
+            // Stream ends here (no more items)
+        ];
+        let stream = stream::iter(chunks);
+
+        let handle = StreamingTask::spawn(tx, Box::pin(stream));
+        handle.await.unwrap();
+
+        // Should receive both deltas
+        let e1 = rx.recv().await.unwrap();
+        assert!(matches!(&e1, StreamingEvent::Delta { text, .. } if text == "Hello "));
+
+        let e2 = rx.recv().await.unwrap();
+        assert!(matches!(&e2, StreamingEvent::Delta { text, .. } if text == "world"));
+
+        // Should still receive Done event when stream ends
+        let e3 = rx.recv().await.unwrap();
+        assert!(
+            matches!(&e3, StreamingEvent::Done { full_response } if full_response == "Hello world"),
+            "Expected Done event with full response, got {:?}",
+            e3
+        );
     }
 }
