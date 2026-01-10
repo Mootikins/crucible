@@ -49,6 +49,9 @@ impl PopupProvider for CompositeRegistry {
             // Session items are provided programmatically by the runner,
             // not through the registry
             PopupKind::Session => vec![],
+            // Model items are provided programmatically by the runner,
+            // not through the registry
+            PopupKind::Model => vec![],
         }
     }
 }

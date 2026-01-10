@@ -120,6 +120,10 @@ impl PopupProvider for StaticPopupProvider {
                 // Sessions are provided programmatically by the runner,
                 // not through the static provider
             }
+            PopupKind::Model => {
+                // Models are provided programmatically by the runner,
+                // not through the static provider
+            }
         }
         // Keep top N by score
         out.sort_by_key(|item| std::cmp::Reverse(item.score()));
@@ -512,6 +516,10 @@ impl PopupProvider for DynamicPopupProvider {
             }
             PopupKind::Session => {
                 // Sessions are provided programmatically by the runner
+                vec![]
+            }
+            PopupKind::Model => {
+                // Models are provided programmatically by the runner
                 vec![]
             }
         }
