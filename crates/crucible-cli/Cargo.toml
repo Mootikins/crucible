@@ -76,6 +76,7 @@ colored = { workspace = true }
 
 # Interactive UI
 indicatif = { workspace = true }
+dialoguer = "0.11"
 
 # Logging
 tracing = { workspace = true }
