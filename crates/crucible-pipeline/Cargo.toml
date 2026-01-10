@@ -18,7 +18,7 @@ crucible-core = { path = "../crucible-core" }
 crucible-parser = { path = "../crucible-parser" }
 
 # Async runtime
-tokio = { version = "1.42", features = ["full"] }
+tokio = { version = "1.49", features = ["full"] }
 async-trait = { workspace = true }
 
 # Error handling
@@ -29,7 +29,7 @@ thiserror = "2.0"
 tracing = "0.1"
 
 # Hashing
-blake3 = "1.5"
+blake3 = "1.8"
 
 # Time and serialization (for NoteRecord)
 chrono = { version = "0.4", features = ["serde"] }
