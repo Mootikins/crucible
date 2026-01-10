@@ -16,7 +16,7 @@ This document defines the orthogonal systems that make up Crucible. Each system 
 | System | Scope | Crates |
 |--------|-------|--------|
 | **parser** | Markdown → structured data (extensions, frontmatter, blocks) | `crucible-parser`, `crucible-core/parser` |
-| **storage** | Persistence: SurrealDB, EAV graph, content-addressed blocks, Merkle trees | `crucible-surrealdb`, `crucible-merkle` |
+| **storage** | Persistence: SurrealDB, EAV graph, content-addressed blocks | `crucible-surrealdb` |
 | **sync** | Merkle-CRDT sync across devices, collaborators, and federated agents | `crucible-sync` (future) |
 | **agents** | Agent cards, handles, LLM providers, tool registry | `crucible-core/agents`, `crucible-llm`, `crucible-tools`, `crucible-acp` |
 | **workflows** | Definitions (markup) + sessions (logging, resumption) | `crucible-core/workflow` (future) |
