@@ -138,6 +138,7 @@ impl Harness {
             PopupKind::AgentOrFile => "@",
             PopupKind::ReplCommand => ":",
             PopupKind::Session => "/resume", // Session popup is triggered by /resume command
+            PopupKind::Model => ":model",    // Model popup is triggered by :model command
         };
         *self.state.input_mut() = trigger.to_string();
         self.state.set_cursor(trigger.len());
@@ -584,6 +585,268 @@ fn buffer_to_string(buffer: &ratatui::buffer::Buffer) -> String {
     output
 }
 
+// =============================================================================
+// StreamingHarness - Testing progressive graduation and scrolling
+// =============================================================================
+
+/// Default viewport height for inline mode (matches runner.rs)
+const DEFAULT_VIEWPORT_HEIGHT: u16 = 15;
+
+/// Test harness for streaming scenarios with graduation tracking
+///
+/// Extends `Harness` to simulate inline viewport behavior:
+/// - Tracks content that would be "graduated" to terminal scrollback
+/// - Calculates rendered line counts after each event
+/// - Provides combined snapshots (scrollback + viewport)
+///
+/// # Example
+///
+/// ```ignore
+/// let mut h = StreamingHarness::new(80, 15);
+/// h.user_message("Hello");
+/// h.start_streaming();
+/// h.chunk("Line 1\nLine 2\nLine 3\n");
+/// assert_eq!(h.graduated_line_count(), 0); // Nothing overflowed yet
+///
+/// h.chunk("Line 4\n...\nLine 20\n");
+/// assert!(h.graduated_line_count() > 0); // Content graduated to scrollback
+///
+/// assert_snapshot!(h.full_state());
+/// ```
+pub struct StreamingHarness {
+    /// Inner harness for rendering and state
+    pub harness: Harness,
+    /// Lines graduated to terminal scrollback (simulated insert_before output)
+    scrollback: Vec<String>,
+    /// Number of rendered lines that have been graduated
+    graduated_line_count: usize,
+    /// Viewport height for content (excluding input/status)
+    content_viewport_height: usize,
+    /// Sequence counter for streaming events
+    seq: u64,
+    /// Whether currently in streaming mode
+    is_streaming: bool,
+    /// Timeline of snapshots (if recording enabled)
+    timeline: Vec<TimelineEntry>,
+    /// Whether to record timeline
+    record_timeline: bool,
+}
+
+/// A snapshot in the timeline
+#[derive(Debug, Clone)]
+pub struct TimelineEntry {
+    /// Event that triggered this snapshot
+    pub event: String,
+    /// Rendered viewport at this point
+    pub viewport: String,
+    /// Scrollback content at this point
+    pub scrollback: Vec<String>,
+    /// Total content lines at this point
+    pub content_lines: usize,
+    /// Graduated lines at this point
+    pub graduated_lines: usize,
+}
+
+impl StreamingHarness {
+    /// Create a new streaming harness with given dimensions
+    ///
+    /// Height should typically be small (e.g., 15) to simulate inline viewport.
+    pub fn new(width: u16, height: u16) -> Self {
+        // Content viewport = total height - input (3) - status (1)
+        let content_viewport_height = (height as usize).saturating_sub(4);
+        Self {
+            harness: Harness::new(width, height),
+            scrollback: Vec::new(),
+            graduated_line_count: 0,
+            content_viewport_height,
+            seq: 0,
+            is_streaming: false,
+            timeline: Vec::new(),
+            record_timeline: false,
+        }
+    }
+
+    /// Create with default inline viewport dimensions (80x15)
+    pub fn inline() -> Self {
+        Self::new(80, DEFAULT_VIEWPORT_HEIGHT)
+    }
+
+    /// Enable timeline recording for debugging
+    pub fn with_timeline(mut self) -> Self {
+        self.record_timeline = true;
+        self
+    }
+
+    /// Add a user message to the conversation
+    pub fn user_message(&mut self, content: &str) {
+        let _ = self.harness.view.push_user_message(content);
+        self.maybe_record("user_message");
+        self.check_graduation();
+    }
+
+    /// Start streaming mode (creates empty assistant message)
+    pub fn start_streaming(&mut self) {
+        self.harness.view.start_assistant_streaming();
+        self.is_streaming = true;
+        self.seq = 0u64;
+        self.maybe_record("start_streaming");
+    }
+
+    /// Send a streaming text chunk
+    pub fn chunk(&mut self, text: &str) {
+        self.seq += 1;
+        self.harness.event(StreamingEvent::Delta {
+            text: text.to_string(),
+            seq: self.seq,
+        });
+        self.maybe_record(&format!("chunk:{}", text.chars().take(20).collect::<String>()));
+        self.check_graduation();
+    }
+
+    /// Complete streaming
+    pub fn complete(&mut self) {
+        self.harness.event(StreamingEvent::Done {
+            full_response: String::new(),
+        });
+        self.is_streaming = false;
+        self.maybe_record("complete");
+        // Graduate any remaining content
+        self.check_graduation();
+    }
+
+    /// Check if content exceeds viewport and graduate overflow
+    fn check_graduation(&mut self) {
+        let total_lines = self.content_line_count();
+        let visible_capacity = self.content_viewport_height;
+
+        // If we have more lines than viewport can show, graduate the overflow
+        if total_lines > self.graduated_line_count + visible_capacity {
+            let overflow = total_lines - visible_capacity - self.graduated_line_count;
+            self.graduate_lines(overflow);
+        }
+    }
+
+    /// Graduate N lines to scrollback
+    fn graduate_lines(&mut self, count: usize) {
+        // Get rendered lines and capture the ones being graduated
+        let rendered = self.render_content_lines();
+        let start = self.graduated_line_count;
+        let end = (start + count).min(rendered.len());
+
+        for line in &rendered[start..end] {
+            self.scrollback.push(line.clone());
+        }
+        self.graduated_line_count = end;
+    }
+
+    /// Calculate total rendered content lines
+    pub fn content_line_count(&self) -> usize {
+        use crate::tui::constants::UiConstants;
+        let content_width = UiConstants::content_width(self.harness.width);
+        self.harness
+            .view
+            .state()
+            .conversation
+            .items()
+            .iter()
+            .map(|item| crate::tui::conversation::render_item_to_lines(item, content_width).len())
+            .sum()
+    }
+
+    /// Render content to lines (for graduation capture)
+    fn render_content_lines(&self) -> Vec<String> {
+        use crate::tui::constants::UiConstants;
+        let content_width = UiConstants::content_width(self.harness.width);
+        let mut lines = Vec::new();
+
+        for item in self.harness.view.state().conversation.items() {
+            let rendered = crate::tui::conversation::render_item_to_lines(item, content_width);
+            for line in rendered {
+                // Convert Line to string
+                let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+                lines.push(text);
+            }
+        }
+        lines
+    }
+
+    /// Record a timeline entry
+    fn maybe_record(&mut self, event: &str) {
+        if !self.record_timeline {
+            return;
+        }
+        self.timeline.push(TimelineEntry {
+            event: event.to_string(),
+            viewport: self.harness.render(),
+            scrollback: self.scrollback.clone(),
+            content_lines: self.content_line_count(),
+            graduated_lines: self.graduated_line_count,
+        });
+    }
+
+    // =========================================================================
+    // Accessors
+    // =========================================================================
+
+    /// Get number of lines graduated to scrollback
+    pub fn graduated_line_count(&self) -> usize {
+        self.graduated_line_count
+    }
+
+    /// Get scrollback content
+    pub fn scrollback(&self) -> &[String] {
+        &self.scrollback
+    }
+
+    /// Check if currently streaming
+    pub fn is_streaming(&self) -> bool {
+        self.is_streaming
+    }
+
+    /// Get timeline (if recording enabled)
+    pub fn timeline(&self) -> &[TimelineEntry] {
+        &self.timeline
+    }
+
+    /// Render just the viewport
+    pub fn render_viewport(&self) -> String {
+        self.harness.render()
+    }
+
+    /// Render scrollback content as string
+    pub fn render_scrollback(&self) -> String {
+        self.scrollback.join("\n")
+    }
+
+    /// Render full state: scrollback + viewport
+    ///
+    /// This represents what the user would see in their terminal:
+    /// - Scrollback: content graduated via insert_before (above viewport)
+    /// - Viewport: current inline viewport content
+    pub fn full_state(&self) -> String {
+        let mut output = String::new();
+
+        if !self.scrollback.is_empty() {
+            output.push_str("═══ SCROLLBACK ═══\n");
+            output.push_str(&self.scrollback.join("\n"));
+            output.push_str("\n═══ VIEWPORT ═══\n");
+        }
+        output.push_str(&self.harness.render());
+
+        output
+    }
+
+    /// Access inner harness for additional operations
+    pub fn inner(&self) -> &Harness {
+        &self.harness
+    }
+
+    /// Access inner harness mutably
+    pub fn inner_mut(&mut self) -> &mut Harness {
+        &mut self.harness
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -717,5 +980,129 @@ mod tests {
             full_response: "Done".to_string(),
         });
         assert!(h.reasoning().is_empty());
+    }
+
+    // =========================================================================
+    // StreamingHarness Tests
+    // =========================================================================
+
+    #[test]
+    fn streaming_harness_tracks_content_lines() {
+        let mut h = StreamingHarness::new(80, 15);
+
+        // Empty state
+        assert_eq!(h.content_line_count(), 0);
+        assert_eq!(h.graduated_line_count(), 0);
+
+        // Add user message
+        h.user_message("Hello");
+        assert!(h.content_line_count() > 0);
+    }
+
+    #[test]
+    fn streaming_harness_no_graduation_when_fits() {
+        let mut h = StreamingHarness::new(80, 20); // Large viewport
+
+        h.user_message("Hello");
+        h.start_streaming();
+        h.chunk("Short response");
+        h.complete();
+
+        // Content should fit in viewport, no graduation needed
+        assert_eq!(h.graduated_line_count(), 0);
+        assert!(h.scrollback().is_empty());
+    }
+
+    #[test]
+    fn streaming_harness_graduates_overflow() {
+        // Very small viewport to force graduation (8 lines total, ~4 for content)
+        let mut h = StreamingHarness::new(80, 8);
+
+        h.user_message("Hello");
+        h.start_streaming();
+
+        // Use double newlines to create markdown paragraphs (rendered as separate lines)
+        // Single newlines in markdown are treated as soft breaks
+        h.chunk("Paragraph 1\n\n");
+        h.chunk("Paragraph 2\n\n");
+        h.chunk("Paragraph 3\n\n");
+        h.chunk("Paragraph 4\n\n");
+        h.chunk("Paragraph 5\n\n");
+        h.chunk("Paragraph 6\n\n");
+        h.chunk("Paragraph 7\n\n");
+        h.chunk("Paragraph 8\n\n");
+        h.chunk("Paragraph 9\n\n");
+        h.chunk("Paragraph 10\n\n");
+        h.complete();
+
+        let content_lines = h.content_line_count();
+        let viewport = h.content_viewport_height;
+
+        // With 8-line terminal, viewport is ~4 lines for content
+        // User message + 10 paragraphs should definitely overflow
+        assert!(
+            content_lines > viewport,
+            "Content ({} lines) should exceed viewport ({} lines)",
+            content_lines,
+            viewport
+        );
+
+        // Should have graduated the overflow
+        assert!(
+            h.graduated_line_count() > 0,
+            "Expected graduation but got 0. Content: {}, Viewport: {}, Scrollback: {:?}",
+            content_lines,
+            viewport,
+            h.scrollback()
+        );
+    }
+
+    #[test]
+    fn streaming_harness_timeline_records_events() {
+        let mut h = StreamingHarness::new(80, 15).with_timeline();
+
+        h.user_message("Hello");
+        h.start_streaming();
+        h.chunk("Response");
+        h.complete();
+
+        let timeline = h.timeline();
+        assert!(timeline.len() >= 4, "Expected at least 4 timeline entries");
+
+        // Check events are recorded
+        assert!(timeline.iter().any(|e| e.event == "user_message"));
+        assert!(timeline.iter().any(|e| e.event == "start_streaming"));
+        assert!(timeline.iter().any(|e| e.event.starts_with("chunk:")));
+        assert!(timeline.iter().any(|e| e.event == "complete"));
+    }
+
+    #[test]
+    fn streaming_harness_full_state_includes_scrollback() {
+        let mut h = StreamingHarness::new(80, 15);
+
+        h.user_message("Hello");
+        h.start_streaming();
+        for i in 1..=20 {
+            h.chunk(&format!("Line {}\n", i));
+        }
+        h.complete();
+
+        let full = h.full_state();
+
+        // If there's scrollback, it should be marked
+        if h.graduated_line_count() > 0 {
+            assert!(
+                full.contains("SCROLLBACK"),
+                "Full state should include SCROLLBACK marker when lines are graduated"
+            );
+        }
+    }
+
+    #[test]
+    fn streaming_harness_inline_creates_small_viewport() {
+        let h = StreamingHarness::inline();
+        assert_eq!(h.harness.height, 15);
+        // Content viewport = 15 - 4 (input + status) = 11
+        assert_eq!(h.content_viewport_height, 11);
     }
 }
