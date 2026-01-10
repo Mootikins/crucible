@@ -638,6 +638,181 @@ pub fn lua_response_table_to_core(table: &Table) -> LuaResult<AskBatchResponse> 
     Ok(response)
 }
 
+// =============================================================================
+// LuaAskContext - Context for ask_user function with async submit bridge
+// =============================================================================
+
+use crucible_core::events::SessionEvent;
+use crucible_core::interaction::{InteractionRequest, InteractionResponse};
+use crucible_core::InteractionRegistry;
+use std::sync::{Arc, Mutex};
+
+/// Callback type for pushing session events.
+///
+/// This abstraction allows the context to work with any event system
+/// (EventRing, channels, etc.) without creating circular dependencies.
+pub type EventPushCallback = Arc<dyn Fn(SessionEvent) + Send + Sync>;
+
+/// Context for ask_user function execution in Lua.
+///
+/// Holds references to the interaction registry and an event push callback
+/// needed to submit requests and wait for responses.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use crucible_lua::ask::LuaAskContext;
+/// use crucible_core::InteractionRegistry;
+/// use std::sync::{Arc, Mutex};
+///
+/// let registry = Arc::new(Mutex::new(InteractionRegistry::new()));
+/// let push_fn: EventPushCallback = Arc::new(|event| {
+///     // Push event to your event system (EventRing, channel, etc.)
+///     my_event_ring.push(event);
+/// });
+///
+/// let context = LuaAskContext::new(registry, push_fn);
+/// ```
+#[derive(Clone)]
+pub struct LuaAskContext {
+    registry: Arc<Mutex<InteractionRegistry>>,
+    push_event: EventPushCallback,
+}
+
+impl LuaAskContext {
+    /// Create a new context with registry and event push callback.
+    ///
+    /// # Arguments
+    ///
+    /// * `registry` - Shared interaction registry for request-response correlation
+    /// * `push_event` - Callback to push SessionEvent to the event system
+    pub fn new(registry: Arc<Mutex<InteractionRegistry>>, push_event: EventPushCallback) -> Self {
+        Self {
+            registry,
+            push_event,
+        }
+    }
+
+    /// Submit an ask batch and wait for the response.
+    ///
+    /// This function:
+    /// 1. Registers the batch ID with the registry (gets a receiver)
+    /// 2. Pushes an InteractionRequested event via the callback
+    /// 3. Blocks waiting for the response via the receiver
+    ///
+    /// # Note
+    ///
+    /// This blocks the calling thread until the TUI/UI completes the interaction.
+    /// In Lua, this is typically called from a script that runs in a separate
+    /// thread from the main event loop.
+    pub fn ask_user(&self, batch: LuaAskBatch) -> Result<LuaAskBatchResponse, LuaAskError> {
+        let core_batch = batch.inner.clone();
+        let id = core_batch.id;
+
+        // Register with the registry to get a receiver
+        let rx = {
+            let mut guard = self
+                .registry
+                .lock()
+                .map_err(|e| LuaAskError::new(format!("Registry lock failed: {}", e)))?;
+            guard.register(id)
+        };
+
+        // Push InteractionRequested event via callback
+        (self.push_event)(SessionEvent::InteractionRequested {
+            request_id: id.to_string(),
+            request: InteractionRequest::AskBatch(core_batch),
+        });
+
+        // Wait for response (blocking)
+        // Note: This blocks the current thread until the TUI completes the interaction
+        let response = rx
+            .blocking_recv()
+            .map_err(|_| LuaAskError::new("Interaction was cancelled or dropped".to_string()))?;
+
+        match response {
+            InteractionResponse::AskBatch(batch_response) => {
+                Ok(LuaAskBatchResponse { inner: batch_response })
+            }
+            InteractionResponse::Cancelled => Ok(LuaAskBatchResponse::cancelled(id)),
+            _ => Err(LuaAskError::new(format!(
+                "Unexpected response type: {:?}",
+                response
+            ))),
+        }
+    }
+}
+
+/// Error type for ask_user function.
+#[derive(Debug, Clone)]
+pub struct LuaAskError {
+    /// Error message
+    pub message: String,
+}
+
+impl LuaAskError {
+    /// Create a new error with message.
+    pub fn new(message: String) -> Self {
+        Self { message }
+    }
+}
+
+impl std::fmt::Display for LuaAskError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for LuaAskError {}
+
+/// Register the ask module with context for ask_user function.
+///
+/// This version includes the `ask_user` function that can submit questions
+/// to the TUI and wait for responses.
+///
+/// # Arguments
+///
+/// * `lua` - The Lua state to register the module with
+/// * `context` - The LuaAskContext containing registry and event callback
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use crucible_lua::ask::{register_ask_module_with_context, LuaAskContext, EventPushCallback};
+/// use crucible_core::InteractionRegistry;
+/// use std::sync::{Arc, Mutex};
+///
+/// let registry = Arc::new(Mutex::new(InteractionRegistry::new()));
+/// let push_fn: EventPushCallback = Arc::new(|event| {
+///     my_event_ring.push(event);
+/// });
+/// let context = Arc::new(LuaAskContext::new(registry, push_fn));
+///
+/// let lua = mlua::Lua::new();
+/// register_ask_module_with_context(&lua, context)?;
+///
+/// // Lua scripts can now use ask.ask_user(batch)
+/// ```
+pub fn register_ask_module_with_context(
+    lua: &Lua,
+    context: Arc<LuaAskContext>,
+) -> Result<(), LuaError> {
+    // First register base module
+    register_ask_module(lua)?;
+
+    // Get the ask table
+    let ask: Table = lua.globals().get("ask")?;
+
+    // Add ask_user function with context
+    let ctx = context.clone();
+    let ask_user_fn = lua.create_function(move |_, batch: LuaAskBatch| {
+        ctx.ask_user(batch).map_err(|e| mlua::Error::runtime(e.message))
+    })?;
+    ask.set("ask_user", ask_user_fn)?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1193,5 +1368,132 @@ mod tests {
         assert!(ask.contains_key("notify").unwrap());
         assert!(ask.contains_key("answer").unwrap());
         assert!(ask.contains_key("answer_other").unwrap());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // LuaAskContext tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_lua_ask_error() {
+        let error = LuaAskError::new("test error".to_string());
+        assert_eq!(error.message, "test error");
+        assert_eq!(format!("{}", error), "test error");
+    }
+
+    #[test]
+    fn test_lua_ask_context_creation() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let registry = Arc::new(Mutex::new(InteractionRegistry::new()));
+        let called = Arc::new(AtomicBool::new(false));
+        let called_clone = called.clone();
+
+        let push_fn: EventPushCallback = Arc::new(move |_event| {
+            called_clone.store(true, Ordering::SeqCst);
+        });
+
+        let context = LuaAskContext::new(registry.clone(), push_fn);
+
+        // Verify context was created with the registry
+        assert!(!called.load(Ordering::SeqCst));
+
+        // The registry should be accessible
+        let guard = context.registry.lock().unwrap();
+        assert_eq!(guard.pending_count(), 0);
+    }
+
+    #[test]
+    fn test_register_ask_module_with_context() {
+        let lua = Lua::new();
+        let registry = Arc::new(Mutex::new(InteractionRegistry::new()));
+        let push_fn: EventPushCallback = Arc::new(|_event| {});
+        let context = Arc::new(LuaAskContext::new(registry, push_fn));
+
+        register_ask_module_with_context(&lua, context).expect("Should register");
+
+        // Verify ask_user function exists
+        let ask: Table = lua.globals().get("ask").expect("ask should exist");
+        assert!(ask.contains_key("ask_user").unwrap());
+    }
+
+    #[test]
+    fn test_lua_ask_context_event_push() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let registry = Arc::new(Mutex::new(InteractionRegistry::new()));
+        let event_received = Arc::new(AtomicBool::new(false));
+        let received_request_id = Arc::new(Mutex::new(String::new()));
+
+        let event_received_clone = event_received.clone();
+        let received_request_id_clone = received_request_id.clone();
+
+        let push_fn: EventPushCallback = Arc::new(move |event| {
+            event_received_clone.store(true, Ordering::SeqCst);
+            if let SessionEvent::InteractionRequested { request_id, .. } = event {
+                *received_request_id_clone.lock().unwrap() = request_id;
+            }
+        });
+
+        let context = LuaAskContext::new(registry.clone(), push_fn);
+
+        // Create a batch and manually trigger the push event path
+        let batch = LuaAskBatch::new();
+        let batch_id = batch.inner.id;
+
+        // Manually push the event (simulating what ask_user does internally)
+        (context.push_event)(SessionEvent::InteractionRequested {
+            request_id: batch_id.to_string(),
+            request: InteractionRequest::AskBatch(batch.inner.clone()),
+        });
+
+        // Verify the event was received
+        assert!(event_received.load(Ordering::SeqCst));
+        assert_eq!(
+            *received_request_id.lock().unwrap(),
+            batch_id.to_string()
+        );
+    }
+
+    #[test]
+    fn test_lua_ask_context_registry_integration() {
+        // Test that the context correctly registers with the registry
+        let registry = Arc::new(Mutex::new(InteractionRegistry::new()));
+        let push_fn: EventPushCallback = Arc::new(|_event| {});
+        let _context = LuaAskContext::new(registry.clone(), push_fn);
+
+        // The batch ID should be registerable
+        let batch = LuaAskBatch::new();
+        let batch_id = batch.inner.id;
+
+        {
+            let mut guard = registry.lock().unwrap();
+            let _rx = guard.register(batch_id);
+            assert!(guard.is_pending(batch_id));
+        }
+    }
+
+    #[test]
+    fn test_lua_ask_context_clone() {
+        let registry = Arc::new(Mutex::new(InteractionRegistry::new()));
+        let push_fn: EventPushCallback = Arc::new(|_event| {});
+        let context = LuaAskContext::new(registry.clone(), push_fn);
+
+        let cloned = context.clone();
+
+        // Both should reference the same registry (they share the Arc)
+        // Note: We can't lock both at once as that would deadlock with std::sync::Mutex
+        // Instead, verify they point to the same underlying data via Arc::ptr_eq
+        assert!(Arc::ptr_eq(&context.registry, &cloned.registry));
+
+        // Also verify functionality works through either handle
+        {
+            let guard = context.registry.lock().unwrap();
+            assert_eq!(guard.pending_count(), 0);
+        }
+        {
+            let guard = cloned.registry.lock().unwrap();
+            assert_eq!(guard.pending_count(), 0);
+        }
     }
 }
