@@ -425,10 +425,11 @@ where
             // Track if we just parsed a tool call and should suppress trailing </function>
             let mut suppress_trailing_function_close = false;
 
-            debug!(message_len = message.len(), "Rig stream starting");
+            info!(message_len = message.len(), "Rig stream starting");
 
             while let Some(item) = stream.next().await {
                 item_count += 1;
+                debug!(item_count, "Stream item received");
 
                 match item {
                     Ok(MultiTurnStreamItem::StreamAssistantItem(content)) => {
@@ -687,6 +688,11 @@ where
                         tool_results.push(tr);
                     }
                     Ok(MultiTurnStreamItem::FinalResponse(final_resp)) => {
+                        info!(
+                            item_count,
+                            response_len = final_resp.response().len(),
+                            "Received FinalResponse from Rig stream"
+                        );
                         got_final_response = true;
 
                         // If we were buffering XML but never got a complete tool call,
@@ -777,6 +783,13 @@ where
                     }
                 }
             }
+
+            info!(
+                item_count,
+                got_final_response,
+                accumulated_len = accumulated_text.len(),
+                "Rig stream loop exited (stream.next() returned None)"
+            );
 
             // Safety net: If stream ended without FinalResponse (e.g., network timeout,
             // unexpected termination), ensure we still emit a done chunk so TUI doesn't
