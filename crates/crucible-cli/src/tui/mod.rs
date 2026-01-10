@@ -87,7 +87,7 @@ pub use notification::{NotificationLevel, NotificationState};
 pub use popup::{DynamicPopupProvider, PopupProvider, StaticPopupProvider};
 pub use registries::{CommandRegistry, CompositeRegistry, ContextRegistry, ReplCommandRegistry};
 pub use render::render;
-pub use runtime_config::RuntimeConfig;
+pub use runtime_config::{BackendSpec, RuntimeConfig};
 pub use runner::RatatuiRunner;
 pub use scroll_utils::{LineCount, ScrollUtils};
 pub use selection::{RenderedLineInfo, SelectableContentCache, SelectionPoint, SelectionState};
