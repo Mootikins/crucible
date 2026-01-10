@@ -21,9 +21,18 @@ async fn test_init_creates_config_with_provider() {
 
     // Verify config contains expected sections
     let content = std::fs::read_to_string(&config_path).unwrap();
-    assert!(content.contains("[chat]"), "config should have [chat] section");
-    assert!(content.contains("provider"), "config should have provider setting");
-    assert!(content.contains("model"), "config should have model setting");
+    assert!(
+        content.contains("[chat]"),
+        "config should have [chat] section"
+    );
+    assert!(
+        content.contains("provider"),
+        "config should have provider setting"
+    );
+    assert!(
+        content.contains("model"),
+        "config should have model setting"
+    );
 }
 
 #[tokio::test]
@@ -37,8 +46,14 @@ async fn test_init_creates_required_directories() {
 
     // Verify required subdirectories
     let crucible_dir = path.join(".crucible");
-    assert!(crucible_dir.join("sessions").exists(), "sessions dir should exist");
-    assert!(crucible_dir.join("plugins").exists(), "plugins dir should exist");
+    assert!(
+        crucible_dir.join("sessions").exists(),
+        "sessions dir should exist"
+    );
+    assert!(
+        crucible_dir.join("plugins").exists(),
+        "plugins dir should exist"
+    );
 }
 
 #[tokio::test]
@@ -76,5 +91,8 @@ async fn test_init_force_reinitializes() {
         .await
         .unwrap();
 
-    assert!(!marker.exists(), "marker should be removed after force reinit");
+    assert!(
+        !marker.exists(),
+        "marker should be removed after force reinit"
+    );
 }

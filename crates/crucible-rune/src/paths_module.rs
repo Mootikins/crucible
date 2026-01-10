@@ -236,7 +236,8 @@ mod tests {
 
     #[test]
     fn test_session_path() {
-        let ctx = PathsContext::new().with_session(PathBuf::from("/home/user/notes/.crucible/sessions/abc123"));
+        let ctx = PathsContext::new()
+            .with_session(PathBuf::from("/home/user/notes/.crucible/sessions/abc123"));
         let (context, runtime) = create_test_context(ctx);
 
         let script = r#"
@@ -254,7 +255,8 @@ mod tests {
 
     #[test]
     fn test_workspace_path() {
-        let ctx = PathsContext::new().with_workspace(PathBuf::from("/home/user/projects/myproject"));
+        let ctx =
+            PathsContext::new().with_workspace(PathBuf::from("/home/user/projects/myproject"));
         let (context, runtime) = create_test_context(ctx);
 
         let script = r#"

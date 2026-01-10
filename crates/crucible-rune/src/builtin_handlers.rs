@@ -498,7 +498,10 @@ fn determine_priority(name: &str, category: &str) -> i32 {
 }
 
 /// Register all enabled built-in handlers on an EventBus
-pub fn register_builtin_handlers(bus: &mut crate::event_bus::EventBus, config: &BuiltinHandlersConfig) {
+pub fn register_builtin_handlers(
+    bus: &mut crate::event_bus::EventBus,
+    config: &BuiltinHandlersConfig,
+) {
     if config.test_filter.enabled {
         bus.register(create_test_filter_handler(&config.test_filter));
         debug!("Registered builtin:test_filter handler");

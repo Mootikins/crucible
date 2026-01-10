@@ -199,7 +199,9 @@ pub fn fs_module() -> Result<Module, ContextError> {
     module.ty::<RuneFsError>()?;
 
     // Register functions
-    module.function("read_to_string", read_to_string_impl).build()?;
+    module
+        .function("read_to_string", read_to_string_impl)
+        .build()?;
     module.function("write_file", write_file_impl).build()?;
     module.function("append_file", append_file_impl).build()?;
     module.function("mkdir", mkdir_impl).build()?;

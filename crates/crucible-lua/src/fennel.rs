@@ -96,7 +96,6 @@ impl FennelCompiler {
 
         Ok(result)
     }
-
 }
 
 /// Standalone Fennel compilation (creates temporary Lua state)
@@ -107,9 +106,8 @@ impl FennelCompiler {
 pub fn compile_fennel(source: &str) -> Result<String, LuaError> {
     // Fennel requires the debug library for proper compilation
     // SAFETY: We're only loading Fennel and compiling, no user code execution
-    let lua = unsafe {
-        Lua::unsafe_new_with(StdLib::ALL_SAFE | StdLib::DEBUG, LuaOptions::default())
-    };
+    let lua =
+        unsafe { Lua::unsafe_new_with(StdLib::ALL_SAFE | StdLib::DEBUG, LuaOptions::default()) };
 
     // Load Fennel - it returns a module, doesn't set global
     let fennel: mlua::Table = lua

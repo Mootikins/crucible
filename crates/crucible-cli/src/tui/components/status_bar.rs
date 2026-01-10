@@ -171,8 +171,7 @@ mod tests {
 
     #[test]
     fn test_provider_model_builder() {
-        let widget = StatusBarWidget::new("plan", "Ready")
-            .provider_model("ollama", "llama3.2");
+        let widget = StatusBarWidget::new("plan", "Ready").provider_model("ollama", "llama3.2");
         assert!(widget.provider_model.is_some());
     }
 

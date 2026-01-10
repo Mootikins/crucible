@@ -79,7 +79,8 @@ pub trait LuaMcpClient: Send + Sync {
     ///
     /// # Returns
     /// Result containing success status and either content or error message
-    fn call_tool(&self, server: &str, tool: &str, args: JsonValue) -> Result<McpToolResult, String>;
+    fn call_tool(&self, server: &str, tool: &str, args: JsonValue)
+        -> Result<McpToolResult, String>;
 
     /// List available server names
     ///
@@ -239,33 +240,35 @@ pub fn register_mcp_module<C: LuaMcpClient + 'static>(lua: &Lua, client: Arc<C>)
     let c = client.clone();
     mcp.set(
         "call_json",
-        lua.create_function(move |lua, (server, tool, args_json): (String, String, String)| {
-            debug!(server = %server, tool = %tool, "mcp.call_json invoked");
+        lua.create_function(
+            move |lua, (server, tool, args_json): (String, String, String)| {
+                debug!(server = %server, tool = %tool, "mcp.call_json invoked");
 
-            // Parse JSON string to JSON value
-            let json_args: JsonValue =
-                serde_json::from_str(&args_json).map_err(mlua::Error::external)?;
+                // Parse JSON string to JSON value
+                let json_args: JsonValue =
+                    serde_json::from_str(&args_json).map_err(mlua::Error::external)?;
 
-            let result_table = lua.create_table()?;
+                let result_table = lua.create_table()?;
 
-            match c.call_tool(&server, &tool, json_args) {
-                Ok(result) => {
-                    result_table.set("success", result.success)?;
-                    if let Some(content) = result.content {
-                        result_table.set("content", content)?;
+                match c.call_tool(&server, &tool, json_args) {
+                    Ok(result) => {
+                        result_table.set("success", result.success)?;
+                        if let Some(content) = result.content {
+                            result_table.set("content", content)?;
+                        }
+                        if let Some(error) = result.error {
+                            result_table.set("error", error)?;
+                        }
                     }
-                    if let Some(error) = result.error {
-                        result_table.set("error", error)?;
+                    Err(e) => {
+                        result_table.set("success", false)?;
+                        result_table.set("error", e)?;
                     }
                 }
-                Err(e) => {
-                    result_table.set("success", false)?;
-                    result_table.set("error", e)?;
-                }
-            }
 
-            Ok(Value::Table(result_table))
-        })?,
+                Ok(Value::Table(result_table))
+            },
+        )?,
     )?;
 
     // -------------------------------------------------------------------------
@@ -526,10 +529,7 @@ mod tests {
             .unwrap();
 
         assert!(result.get::<bool>("success").unwrap());
-        assert_eq!(
-            result.get::<String>("content").unwrap(),
-            "Hello, World!"
-        );
+        assert_eq!(result.get::<String>("content").unwrap(), "Hello, World!");
     }
 
     #[test]
@@ -670,10 +670,7 @@ mod tests {
         register_mcp_module_stub(&lua).unwrap();
 
         // All operations should work but return empty/error results
-        let tools: Table = lua
-            .load(r#"return mcp.list_tools("any")"#)
-            .eval()
-            .unwrap();
+        let tools: Table = lua.load(r#"return mcp.list_tools("any")"#).eval().unwrap();
         assert_eq!(tools.raw_len(), 0);
 
         let servers: Table = lua.load(r#"return mcp.servers()"#).eval().unwrap();
@@ -690,10 +687,7 @@ mod tests {
             .eval()
             .unwrap();
         assert!(!result.get::<bool>("success").unwrap());
-        assert!(result
-            .get::<String>("error")
-            .unwrap()
-            .contains("stub mode"));
+        assert!(result.get::<String>("error").unwrap().contains("stub mode"));
     }
 
     #[test]
