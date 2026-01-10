@@ -1,6 +1,6 @@
 //! Annotation discovery for Lua/Fennel scripts
 //!
-//! Parses LDoc-style annotations from Lua comments to discover tools, hooks, and plugins.
+//! Parses LDoc-style annotations from Lua comments to discover tools, handlers, and plugins.
 //!
 //! ## Lua Annotation Format
 //!
@@ -50,9 +50,9 @@ pub struct DiscoveredParam {
     pub optional: bool,
 }
 
-/// Discovered hook from Lua/Fennel source
+/// Discovered handler from Lua/Fennel source
 #[derive(Debug, Clone)]
-pub struct DiscoveredHook {
+pub struct DiscoveredHandler {
     pub name: String,
     pub event_type: String,
     pub pattern: String,
@@ -136,24 +136,27 @@ impl AnnotationParser {
         Ok(tools)
     }
 
-    /// Parse hooks from source
-    pub fn parse_hooks(
+    /// Parse handlers from source
+    ///
+    /// Discovers functions annotated with `@handler` or `@hook` (backwards compat).
+    pub fn parse_handlers(
         &self,
         source: &str,
         path: &Path,
         is_fennel: bool,
-    ) -> Result<Vec<DiscoveredHook>, LuaError> {
-        let mut hooks = Vec::new();
+    ) -> Result<Vec<DiscoveredHandler>, LuaError> {
+        let mut handlers = Vec::new();
         let blocks = self.find_annotated_blocks(source, is_fennel);
 
         for block in blocks {
-            if block.has_annotation("hook") {
-                let hook = self.parse_hook_from_block(&block, path, is_fennel)?;
-                hooks.push(hook);
+            // Support both @handler (preferred) and @hook (backwards compat)
+            if block.has_annotation("handler") || block.has_annotation("hook") {
+                let handler = self.parse_handler_from_block(&block, path, is_fennel)?;
+                handlers.push(handler);
             }
         }
 
-        Ok(hooks)
+        Ok(handlers)
     }
 
     /// Parse plugins from source
@@ -291,20 +294,26 @@ impl AnnotationParser {
         })
     }
 
-    /// Parse a hook from an annotated block
-    fn parse_hook_from_block(
+    /// Parse a handler from an annotated block
+    ///
+    /// Supports both `@handler` (preferred) and `@hook` (backwards compat) annotations.
+    fn parse_handler_from_block(
         &self,
         block: &AnnotatedBlock,
         path: &Path,
         is_fennel: bool,
-    ) -> Result<DiscoveredHook, LuaError> {
+    ) -> Result<DiscoveredHandler, LuaError> {
         let mut event_type = String::new();
         let mut pattern = "*".to_string();
         let mut priority = 100i64;
 
         for annotation in &block.annotations {
-            if let Some(rest) = annotation.strip_prefix("@hook") {
-                // Parse @hook event="tool:after" pattern="search_*" priority=50
+            // Try @handler first (preferred), then @hook (backwards compat)
+            let rest = annotation.strip_prefix("@handler")
+                .or_else(|| annotation.strip_prefix("@hook"));
+
+            if let Some(rest) = rest {
+                // Parse event="tool:after" pattern="search_*" priority=50
                 if let Some(evt) = extract_quoted_value(rest, "event") {
                     event_type = evt;
                 }
@@ -319,12 +328,12 @@ impl AnnotationParser {
 
         if event_type.is_empty() {
             return Err(LuaError::InvalidTool(format!(
-                "Hook '{}' missing event type",
+                "Handler '{}' missing event type",
                 block.function_name
             )));
         }
 
-        Ok(DiscoveredHook {
+        Ok(DiscoveredHandler {
             name: block.function_name.clone(),
             event_type,
             pattern,
@@ -562,26 +571,26 @@ end
     }
 
     #[test]
-    fn test_parse_lua_hook() {
+    fn test_parse_lua_handler() {
         let source = r#"
 --- Filter search results
--- @hook event="tool:after" pattern="search_*" priority=50
+-- @handler event="tool:after" pattern="search_*" priority=50
 function filter_results(ctx, event)
     return event
 end
 "#;
 
         let parser = AnnotationParser::new();
-        let hooks = parser
-            .parse_hooks(source, Path::new("test.lua"), false)
+        let handlers = parser
+            .parse_handlers(source, Path::new("test.lua"), false)
             .unwrap();
 
-        assert_eq!(hooks.len(), 1);
-        let hook = &hooks[0];
-        assert_eq!(hook.name, "filter_results");
-        assert_eq!(hook.event_type, "tool:after");
-        assert_eq!(hook.pattern, "search_*");
-        assert_eq!(hook.priority, 50);
+        assert_eq!(handlers.len(), 1);
+        let handler = &handlers[0];
+        assert_eq!(handler.name, "filter_results");
+        assert_eq!(handler.event_type, "tool:after");
+        assert_eq!(handler.pattern, "search_*");
+        assert_eq!(handler.priority, 50);
     }
 
     #[test]

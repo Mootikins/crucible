@@ -2,7 +2,7 @@
 
 use crate::components::{
     AcpConfig, ChatConfig, CliConfig, ContextConfig, DiscoveryPathsConfig, EmbeddingConfig,
-    EmbeddingProviderType, GatewayConfig, HooksConfig, LlmConfig, LlmProvider, LlmProviderType,
+    EmbeddingProviderType, GatewayConfig, HandlersConfig, LlmConfig, LlmProvider, LlmProviderType,
     ProvidersConfig, StorageConfig,
 };
 use crate::includes::IncludeConfig;
@@ -176,9 +176,9 @@ pub struct Config {
     #[serde(default)]
     pub gateway: Option<GatewayConfig>,
 
-    /// Hooks configuration.
+    /// Handlers configuration.
     #[serde(default)]
-    pub hooks: Option<HooksConfig>,
+    pub handlers: Option<HandlersConfig>,
 
     /// Context configuration (project rules, etc.)
     #[serde(default)]
@@ -206,7 +206,7 @@ impl Default for Config {
             logging: None,
             discovery: None,
             gateway: None,
-            hooks: None,
+            handlers: None,
             context: None,
             custom: HashMap::new(),
         }
@@ -382,9 +382,9 @@ impl Config {
         self.gateway.as_ref()
     }
 
-    /// Get the effective hooks configuration.
-    pub fn hooks_config(&self) -> Option<&HooksConfig> {
-        self.hooks.as_ref()
+    /// Get the effective handlers configuration.
+    pub fn handlers_config(&self) -> Option<&HandlersConfig> {
+        self.handlers.as_ref()
     }
 
     /// Get the effective context configuration.
@@ -495,9 +495,9 @@ impl Config {
         Ok(())
     }
 
-    /// Validate hooks configuration (checks pattern validity)
-    pub fn validate_hooks(&self) -> Result<(), ConfigValidationError> {
-        if let Some(hooks) = &self.hooks {
+    /// Validate handlers configuration (checks pattern validity)
+    pub fn validate_handlers(&self) -> Result<(), ConfigValidationError> {
+        if let Some(handlers) = &self.handlers {
             let mut errors = Vec::new();
 
             // Validate patterns are valid glob patterns
@@ -505,18 +505,18 @@ impl Config {
             let mut check_pattern = |name: &str, pattern: &Option<String>| {
                 if let Some(p) = pattern {
                     if p.is_empty() {
-                        errors.push(format!("Hook '{}': pattern cannot be empty string", name));
+                        errors.push(format!("Handler '{}': pattern cannot be empty string", name));
                     }
                 }
             };
 
-            check_pattern("test_filter", &hooks.builtin.test_filter.pattern);
-            check_pattern("toon_transform", &hooks.builtin.toon_transform.pattern);
+            check_pattern("test_filter", &handlers.builtin.test_filter.pattern);
+            check_pattern("toon_transform", &handlers.builtin.toon_transform.pattern);
             check_pattern(
                 "recipe_enrichment",
-                &hooks.builtin.recipe_enrichment.pattern,
+                &handlers.builtin.recipe_enrichment.pattern,
             );
-            check_pattern("tool_selector", &hooks.builtin.tool_selector.pattern);
+            check_pattern("tool_selector", &handlers.builtin.tool_selector.pattern);
 
             if !errors.is_empty() {
                 return Err(ConfigValidationError::Multiple { errors });
@@ -559,8 +559,8 @@ impl Config {
                     }
                 };
 
-            if let Some(hooks) = &discovery.hooks {
-                check_type_config("hooks", hooks);
+            if let Some(handlers) = &discovery.handlers {
+                check_type_config("handlers", handlers);
             }
             if let Some(tools) = &discovery.tools {
                 check_type_config("tools", tools);
@@ -580,7 +580,7 @@ impl Config {
     /// Validate all configuration sections
     pub fn validate(&self) -> Result<(), ConfigValidationError> {
         self.validate_gateway()?;
-        self.validate_hooks()?;
+        self.validate_handlers()?;
         self.validate_discovery()?;
         Ok(())
     }
@@ -1939,12 +1939,12 @@ type = "stdio"
 command = "npx"
 args = ["-y", "@modelcontextprotocol/server-github"]
 
-[hooks.builtin.test_filter]
+[handlers.builtin.test_filter]
 enabled = true
 pattern = "just_test*"
 priority = 10
 
-[hooks.builtin.tool_selector]
+[handlers.builtin.tool_selector]
 enabled = true
 allowed_tools = ["search_*"]
 "#;
@@ -1962,11 +1962,11 @@ allowed_tools = ["search_*"]
         assert_eq!(gateway.servers.len(), 1);
         assert_eq!(gateway.servers[0].name, "github");
 
-        // Check hooks config
-        assert!(config.hooks.is_some());
-        let hooks = config.hooks.as_ref().unwrap();
-        assert!(hooks.builtin.test_filter.enabled);
-        assert!(hooks.builtin.tool_selector.enabled);
+        // Check handlers config
+        assert!(config.handlers.is_some());
+        let handlers = config.handlers.as_ref().unwrap();
+        assert!(handlers.builtin.test_filter.enabled);
+        assert!(handlers.builtin.tool_selector.enabled);
     }
 
     #[test]
@@ -2040,11 +2040,11 @@ allowed_tools = ["search_*"]
     }
 
     #[test]
-    fn test_validate_hooks_empty_pattern() {
+    fn test_validate_handlers_empty_pattern() {
         let config = Config {
-            hooks: Some(HooksConfig {
-                builtin: crate::components::BuiltinHooksTomlConfig {
-                    test_filter: crate::components::HookConfig {
+            handlers: Some(HandlersConfig {
+                builtin: crate::components::BuiltinHandlersTomlConfig {
+                    test_filter: crate::components::HandlerConfig {
                         enabled: true,
                         pattern: Some("".to_string()),
                         priority: Some(10),
@@ -2055,16 +2055,16 @@ allowed_tools = ["search_*"]
             ..Config::default()
         };
 
-        let result = config.validate_hooks();
+        let result = config.validate_handlers();
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_validate_hooks_valid() {
+    fn test_validate_handlers_valid() {
         let config = Config {
-            hooks: Some(HooksConfig {
-                builtin: crate::components::BuiltinHooksTomlConfig {
-                    test_filter: crate::components::HookConfig {
+            handlers: Some(HandlersConfig {
+                builtin: crate::components::BuiltinHandlersTomlConfig {
+                    test_filter: crate::components::HandlerConfig {
                         enabled: true,
                         pattern: Some("just_test*".to_string()),
                         priority: Some(10),
@@ -2075,7 +2075,7 @@ allowed_tools = ["search_*"]
             ..Config::default()
         };
 
-        let result = config.validate_hooks();
+        let result = config.validate_handlers();
         assert!(result.is_ok());
     }
 
@@ -2096,7 +2096,7 @@ allowed_tools = ["search_*"]
                     auto_reconnect: true,
                 }],
             }),
-            hooks: Some(HooksConfig::default()),
+            handlers: Some(HandlersConfig::default()),
             ..Config::default()
         };
 
@@ -2118,7 +2118,7 @@ allowed_tools = ["search_*"]
 
         let config = Config {
             discovery: Some(crate::components::DiscoveryPathsConfig {
-                hooks: None,
+                handlers: None,
                 tools: None,
                 events: None,
                 type_configs,
@@ -2144,7 +2144,7 @@ allowed_tools = ["search_*"]
 
         let config = Config {
             discovery: Some(crate::components::DiscoveryPathsConfig {
-                hooks: None,
+                handlers: None,
                 tools: None,
                 events: None,
                 type_configs,
@@ -2161,7 +2161,7 @@ allowed_tools = ["search_*"]
         let config = Config::default();
         assert!(config.discovery.is_none());
         assert!(config.gateway.is_none());
-        assert!(config.hooks.is_none());
+        assert!(config.handlers.is_none());
     }
 
     #[test]
@@ -2169,13 +2169,13 @@ allowed_tools = ["search_*"]
         let config = Config {
             discovery: Some(DiscoveryPathsConfig::default()),
             gateway: Some(GatewayConfig::default()),
-            hooks: Some(HooksConfig::default()),
+            handlers: Some(HandlersConfig::default()),
             ..Config::default()
         };
 
         assert!(config.discovery_config().is_some());
         assert!(config.gateway_config().is_some());
-        assert!(config.hooks_config().is_some());
+        assert!(config.handlers_config().is_some());
     }
 
     #[test]

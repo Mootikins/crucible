@@ -1,7 +1,7 @@
 //! Unified attribute discovery for Rune scripts
 //!
 //! This module provides a consistent pattern for discovering Rune functions
-//! annotated with attributes like `#[tool(...)]`, `#[hook(...)]`, etc.
+//! annotated with attributes like `#[tool(...)]`, `#[handler(...)]`, etc.
 //!
 //! ## Usage
 //!
@@ -29,8 +29,13 @@ use tracing::{debug, warn};
 /// Implement this trait to enable automatic discovery of your type
 /// from Rune scripts annotated with a specific attribute.
 pub trait FromAttributes: Sized {
-    /// The attribute name to search for (e.g., "tool", "hook", "param")
+    /// The attribute name to search for (e.g., "tool", "handler", "param")
     fn attribute_name() -> &'static str;
+
+    /// Alternate attribute names for backwards compatibility (e.g., "hook" for "handler")
+    fn alternate_names() -> &'static [&'static str] {
+        &[]
+    }
 
     /// Parse an instance from attribute content and function metadata
     ///
@@ -162,34 +167,39 @@ impl AttributeDiscovery {
         content: &str,
         path: &Path,
     ) -> Result<Vec<T>, RuneError> {
-        let attr_name = T::attribute_name();
         let mut items = Vec::new();
 
-        // Build regex for this attribute type
-        // Matches: optional doc comments, #[attr(...)], pub [async] fn name(...)
-        let pattern = format!(
-            r"(?ms)(?P<docs>(?:///[^\n]*\n)*)?\s*#\[{}\((?P<attrs>[^)]*)\)\]\s*pub\s+(?:async\s+)?fn\s+(?P<fn_name>\w+)\s*\(",
-            regex::escape(attr_name)
-        );
+        // Collect all attribute names (primary + alternates)
+        let mut attr_names = vec![T::attribute_name()];
+        attr_names.extend(T::alternate_names());
 
-        let re = Regex::new(&pattern)
-            .map_err(|e| RuneError::Discovery(format!("Invalid regex: {}", e)))?;
+        for attr_name in attr_names {
+            // Build regex for this attribute type
+            // Matches: optional doc comments, #[attr(...)], pub [async] fn name(...)
+            let pattern = format!(
+                r"(?ms)(?P<docs>(?:///[^\n]*\n)*)?\s*#\[{}\((?P<attrs>[^)]*)\)\]\s*pub\s+(?:async\s+)?fn\s+(?P<fn_name>\w+)\s*\(",
+                regex::escape(attr_name)
+            );
 
-        for cap in re.captures_iter(content) {
-            let fn_name = cap.name("fn_name").map(|m| m.as_str()).unwrap_or("main");
-            let attrs = cap.name("attrs").map(|m| m.as_str()).unwrap_or("");
-            let docs = cap.name("docs").map(|m| m.as_str()).unwrap_or("");
+            let re = Regex::new(&pattern)
+                .map_err(|e| RuneError::Discovery(format!("Invalid regex: {}", e)))?;
 
-            match T::from_attrs(attrs, fn_name, path, docs) {
-                Ok(item) => items.push(item),
-                Err(e) => {
-                    warn!(
-                        "Failed to parse #{} for function '{}' in {}: {}",
-                        attr_name,
-                        fn_name,
-                        path.display(),
-                        e
-                    );
+            for cap in re.captures_iter(content) {
+                let fn_name = cap.name("fn_name").map(|m| m.as_str()).unwrap_or("main");
+                let attrs = cap.name("attrs").map(|m| m.as_str()).unwrap_or("");
+                let docs = cap.name("docs").map(|m| m.as_str()).unwrap_or("");
+
+                match T::from_attrs(attrs, fn_name, path, docs) {
+                    Ok(item) => items.push(item),
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse #{} for function '{}' in {}: {}",
+                            attr_name,
+                            fn_name,
+                            path.display(),
+                            e
+                        );
+                    }
                 }
             }
         }

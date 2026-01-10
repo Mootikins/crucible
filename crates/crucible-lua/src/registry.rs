@@ -1,11 +1,11 @@
 //! Lua tool registry
 //!
 //! Discovers and manages Lua/Fennel tools from configured directories.
-//! Uses full_moon to extract type annotations from Luau source for schemas.
+//! Uses LDoc-style annotations (@tool, @param) for schema extraction.
 
 use crate::error::LuaError;
 use crate::executor::LuaExecutor;
-use crate::schema::{self, extract_signatures};
+use crate::schema;
 use crate::types::{LuaTool, ToolParam, ToolResult};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -31,7 +31,7 @@ impl LuaToolRegistry {
 
     /// Discover tools from a directory
     ///
-    /// Looks for .lua and .fnl files and extracts schemas from type annotations.
+    /// Looks for .lua and .fnl files and extracts schemas from LDoc annotations.
     pub async fn discover_from(&mut self, dir: impl AsRef<Path>) -> Result<usize, LuaError> {
         let dir = dir.as_ref();
         if !dir.exists() {
@@ -75,7 +75,7 @@ impl LuaToolRegistry {
         Ok(count)
     }
 
-    /// Discover a tool from a single file using type extraction
+    /// Discover a tool from a single file using LDoc annotations
     async fn discover_tool(
         &self,
         path: &Path,
@@ -84,97 +84,91 @@ impl LuaToolRegistry {
         let source = tokio::fs::read_to_string(path).await?;
         let source_path = path.to_string_lossy().to_string();
 
-        // For Fennel, we'd need to compile first then extract
-        // For now, only support Luau type extraction on .lua files
-        if is_fennel {
-            return self
-                .discover_tool_from_comments(&source, &source_path, true)
-                .await;
-        }
-
-        // Try to extract from Luau type annotations first
-        match extract_signatures(&source) {
-            Ok(signatures) => {
-                // Look for handler/main function
-                let sig = signatures
-                    .iter()
-                    .find(|s| s.name == "handler" || s.name == "main")
-                    .or_else(|| signatures.first());
-
-                if let Some(sig) = sig {
-                    let params = sig
-                        .params
-                        .iter()
-                        .map(|p| ToolParam {
-                            name: p.name.clone(),
-                            param_type: schema::type_to_string(&p.type_info),
-                            description: String::new(),
-                            required: !p.optional,
-                            default: None,
-                        })
-                        .collect();
-
-                    // Extract description from doc comment if present
-                    let description = sig.description.clone().unwrap_or_default();
-
-                    return Ok(Some(LuaTool {
-                        name: sig.name.clone(),
-                        description,
-                        params,
-                        source_path,
-                        is_fennel: false,
-                    }));
-                }
-            }
-            Err(e) => {
-                debug!("Type extraction failed, falling back to comments: {}", e);
-            }
-        }
-
-        // Fall back to comment-based discovery
-        self.discover_tool_from_comments(&source, &source_path, false)
+        self.discover_tool_from_annotations(&source, &source_path, is_fennel)
             .await
     }
 
-    /// Fallback: discover tool from @tool/@param comments
-    async fn discover_tool_from_comments(
+    /// Discover tool from @tool/@param annotations
+    async fn discover_tool_from_annotations(
         &self,
         source: &str,
         source_path: &str,
         is_fennel: bool,
     ) -> Result<Option<LuaTool>, LuaError> {
+        // For Fennel, both ;; and ;;; are doc comments
+        // For Lua, -- is a comment, --- is a doc comment (LDoc style)
         let comment_prefix = if is_fennel { ";;" } else { "--" };
 
         let mut name: Option<String> = None;
         let mut description = String::new();
         let mut params = Vec::new();
+        let mut in_header = true;
 
         for line in source.lines() {
             let line = line.trim();
 
+            // Check if this is a comment line
             if !line.starts_with(comment_prefix) {
+                // Non-empty, non-comment line ends the header
                 if !line.is_empty() {
-                    break;
+                    in_header = false;
                 }
                 continue;
             }
 
-            let content = line.trim_start_matches(comment_prefix).trim();
+            if !in_header {
+                continue;
+            }
 
-            if let Some(tool_name) = content.strip_prefix("@tool ") {
-                name = Some(tool_name.trim().to_string());
-            } else if let Some(desc) = content.strip_prefix("@description ") {
+            // Strip comment prefix and any extra dashes/semicolons
+            let content = line
+                .trim_start_matches(comment_prefix)
+                .trim_start_matches('-')
+                .trim_start_matches(';')
+                .trim();
+
+            // Parse @tool annotation
+            if content.starts_with("@tool") {
+                let rest = content.strip_prefix("@tool").unwrap().trim();
+                // Handle @tool name="foo" or just @tool foo
+                if let Some(tool_name) = parse_annotation_value(rest, "name") {
+                    name = Some(tool_name);
+                } else if !rest.is_empty() && !rest.starts_with("desc") {
+                    name = Some(rest.split_whitespace().next().unwrap_or("").to_string());
+                }
+                // If no name given, we'll derive from filename later
+                if name.is_none() || name.as_ref().map(|n| n.is_empty()).unwrap_or(false) {
+                    name = Some(derive_name_from_path(source_path));
+                }
+
+                // Also check for inline description
+                if let Some(desc) = parse_annotation_value(rest, "desc") {
+                    description = desc;
+                }
+            }
+            // Parse @description annotation
+            else if let Some(desc) = content.strip_prefix("@description ") {
                 description = desc.trim().to_string();
-            } else if let Some(param_def) = content.strip_prefix("@param ") {
+            }
+            // Parse @param annotation
+            else if let Some(param_def) = content.strip_prefix("@param ") {
                 if let Some(param) = parse_param(param_def) {
                     params.push(param);
                 }
             }
+            // Plain doc comment before @tool becomes description
+            else if name.is_none() && !content.starts_with('@') && !content.is_empty() {
+                if !description.is_empty() {
+                    description.push(' ');
+                }
+                description.push_str(content);
+            }
         }
 
+        // No @tool annotation found
         let name = match name {
-            Some(n) => n,
-            None => return Ok(None),
+            Some(n) if !n.is_empty() => n,
+            _ => return Ok(None),
         };
 
         Ok(Some(LuaTool {
@@ -217,7 +211,9 @@ impl LuaToolRegistry {
     }
 }
 
-/// Parse a @param annotation (fallback for untyped code)
+/// Parse a @param annotation
+/// Format: @param name type Description text
+/// Optional types end with ? (e.g., number?)
 fn parse_param(s: &str) -> Option<ToolParam> {
     let parts: Vec<&str> = s.splitn(3, ' ').collect();
 
@@ -226,20 +222,23 @@ fn parse_param(s: &str) -> Option<ToolParam> {
     }
 
     let name = parts[0].to_string();
-    let param_type = parts[1].to_string();
+    let mut param_type = parts[1].to_string();
     let description = parts.get(2).map(|s| s.to_string()).unwrap_or_default();
 
-    let (description, required) = if description.ends_with("(optional)") {
-        (
-            description
-                .trim_end_matches("(optional)")
-                .trim()
-                .to_string(),
-            false,
-        )
+    // Check for optional type (T? syntax)
+    let required = if param_type.ends_with('?') {
+        param_type = param_type.trim_end_matches('?').to_string();
+        false
+    } else if description.contains("(optional)") {
+        true // Keep the description handling for backwards compat
     } else {
-        (description, true)
+        true
     };
+
+    let description = description
+        .trim_end_matches("(optional)")
+        .trim()
+        .to_string();
 
     Some(ToolParam {
         name,
@@ -248,6 +247,37 @@ fn parse_param(s: &str) -> Option<ToolParam> {
         required,
         default: None,
     })
+}
+
+/// Parse key="value" from annotation string
+fn parse_annotation_value(s: &str, key: &str) -> Option<String> {
+    let pattern = format!("{}=\"", key);
+    if let Some(start) = s.find(&pattern) {
+        let rest = &s[start + pattern.len()..];
+        if let Some(end) = rest.find('"') {
+            return Some(rest[..end].to_string());
+        }
+    }
+
+    // Also try key='value' with single quotes
+    let pattern = format!("{}='", key);
+    if let Some(start) = s.find(&pattern) {
+        let rest = &s[start + pattern.len()..];
+        if let Some(end) = rest.find('\'') {
+            return Some(rest[..end].to_string());
+        }
+    }
+
+    None
+}
+
+/// Derive tool name from file path
+fn derive_name_from_path(path: &str) -> String {
+    Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown")
+        .to_string()
 }
 
 #[cfg(test)]
@@ -264,6 +294,15 @@ mod tests {
 
         let param = parse_param("limit number Max results (optional)").unwrap();
         assert_eq!(param.name, "limit");
+        assert!(param.required); // (optional) in desc doesn't change type
+    }
+
+    #[test]
+    fn test_parse_param_optional_type() {
+        let param = parse_param("limit number? Max results").unwrap();
+        assert_eq!(param.name, "limit");
+        assert_eq!(param.param_type, "number");
+        assert_eq!(param.description, "Max results");
         assert!(!param.required);
     }
 
@@ -273,5 +312,24 @@ mod tests {
         assert_eq!(param.name, "x");
         assert_eq!(param.param_type, "number");
         assert_eq!(param.description, "");
+    }
+
+    #[test]
+    fn test_parse_annotation_value() {
+        assert_eq!(
+            parse_annotation_value("desc=\"Search notes\"", "desc"),
+            Some("Search notes".to_string())
+        );
+        assert_eq!(
+            parse_annotation_value("name='search'", "name"),
+            Some("search".to_string())
+        );
+        assert_eq!(parse_annotation_value("desc=\"test\"", "name"), None);
+    }
+
+    #[test]
+    fn test_derive_name_from_path() {
+        assert_eq!(derive_name_from_path("/tools/search.lua"), "search");
+        assert_eq!(derive_name_from_path("foo/bar.fnl"), "bar");
     }
 }

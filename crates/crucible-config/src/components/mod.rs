@@ -9,7 +9,7 @@ pub mod context;
 pub mod discovery;
 pub mod embedding;
 pub mod gateway;
-pub mod hooks;
+pub mod handlers;
 pub mod llm;
 pub mod storage;
 
@@ -26,7 +26,7 @@ pub use context::*;
 pub use discovery::*;
 pub use embedding::*;
 pub use gateway::*;
-pub use hooks::*;
+pub use handlers::*;
 pub use llm::*;
 pub use storage::*;
 

@@ -1,29 +1,29 @@
-//! Hook System - Bridges discovered hooks with the event bus
+//! Handler System - Bridges discovered handlers with the event bus
 //!
 //! This module provides:
-//! - `Hook` trait for implementing event handlers (Rune scripts or Rust functions)
-//! - `RuneHookHandler` - executes discovered RuneHook scripts via RuneExecutor
-//! - `BuiltinHook` - wraps Rust closures as hooks
-//! - `HookRegistry` - discovers and manages hooks
+//! - `ScriptHandler` trait for implementing event handlers (Rune scripts or Rust functions)
+//! - `RuneScriptHandler` - executes discovered RuneHandler scripts via RuneExecutor
+//! - `BuiltinHandler` - wraps Rust closures as handlers
+//! - `HandlerRegistry` - discovers and manages handlers
 //!
 //! ## Lifecycle
 //!
-//! 1. Hooks are discovered from `~/.config/crucible/plugins/` and `KILN/.crucible/plugins/`
-//! 2. RuneHook metadata is parsed via `AttributeDiscovery`
-//! 3. RuneHookHandlers are created from discovered metadata
+//! 1. Handlers are discovered from `~/.config/crucible/plugins/` and `KILN/.crucible/plugins/`
+//! 2. RuneHandler metadata is parsed via `AttributeDiscovery`
+//! 3. RuneScriptHandlers are created from discovered metadata
 //! 4. Handlers are registered on the EventBus
 //! 5. Events trigger matching handlers in priority order
 //!
 //! ## Example
 //!
 //! ```rust,ignore
-//! use crucible_rune::{HookRegistry, EventBus, Event};
+//! use crucible_rune::{HandlerRegistry, EventBus, Event};
 //!
 //! let mut bus = EventBus::new();
-//! let registry = HookRegistry::discover(Some(kiln_path))?;
+//! let registry = HandlerRegistry::discover(Some(kiln_path))?;
 //! registry.register_all(&mut bus);
 //!
-//! // Emit event - hooks are triggered automatically
+//! // Emit event - handlers are triggered automatically
 //! let event = Event::tool_after("just_test", json!({...}));
 //! let (result, ctx, errors) = bus.emit(event);
 //! ```
@@ -32,7 +32,7 @@ use crate::attribute_discovery::AttributeDiscovery;
 use crate::discovery_paths::DiscoveryPaths;
 use crate::event_bus::{Event, EventBus, EventContext, Handler, HandlerError, HandlerResult};
 use crate::executor::RuneExecutor;
-use crate::hook_types::RuneHook;
+use crate::handler_types::RuneHandler;
 use crate::RuneError;
 use rune::Unit;
 use serde_json::Value as JsonValue;
@@ -41,16 +41,16 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use tracing::{debug, info, warn};
 
-/// Trait for hook implementations
+/// Trait for script handler implementations
 ///
-/// This trait abstracts over different hook implementations:
-/// - Rune scripts discovered via `#[hook(...)]`
-/// - Built-in Rust function hooks
-pub trait Hook: Send + Sync {
-    /// Unique identifier for this hook
+/// This trait abstracts over different handler implementations:
+/// - Rune scripts discovered via `#[handler(...)]`
+/// - Built-in Rust function handlers
+pub trait ScriptHandler: Send + Sync {
+    /// Unique identifier for this handler
     fn name(&self) -> &str;
 
-    /// Event type this hook handles
+    /// Event type this handler handles
     fn event_type(&self) -> &str;
 
     /// Pattern for matching event identifiers (glob-style)
@@ -59,10 +59,10 @@ pub trait Hook: Send + Sync {
     /// Priority (lower = earlier execution)
     fn priority(&self) -> i64;
 
-    /// Whether this hook is enabled
+    /// Whether this handler is enabled
     fn enabled(&self) -> bool;
 
-    /// Execute the hook
+    /// Execute the handler
     ///
     /// # Arguments
     /// * `ctx` - Mutable event context for metadata and emitting events
@@ -73,12 +73,12 @@ pub trait Hook: Send + Sync {
     fn handle(&self, ctx: &mut EventContext, event: Event) -> HandlerResult;
 }
 
-/// Handler for Rune script hooks
+/// Handler for Rune scripts
 ///
-/// Wraps a discovered `RuneHook` and executes it via `RuneExecutor`
-pub struct RuneHookHandler {
-    /// The discovered hook metadata
-    metadata: RuneHook,
+/// Wraps a discovered `RuneHandler` and executes it via `RuneExecutor`
+pub struct RuneScriptHandler {
+    /// The discovered handler metadata
+    metadata: RuneHandler,
 
     /// Compiled Rune unit (cached for performance)
     unit: Arc<Unit>,
@@ -87,18 +87,34 @@ pub struct RuneHookHandler {
     executor: Arc<RuneExecutor>,
 }
 
-impl RuneHookHandler {
+/// Strip handler/hook attributes from Rune source code
+///
+/// Rune doesn't support custom attributes on functions, so we need to remove
+/// the `#[handler(...)]` and `#[hook(...)]` attributes before compiling.
+fn strip_handler_attributes(source: &str) -> String {
+    use regex::Regex;
+
+    // Match #[handler(...)] or #[hook(...)] attributes
+    // This handles multi-line attributes and various formatting
+    let re = Regex::new(r"(?m)^\s*#\[(handler|hook)\([^)]*\)\]\s*\n?").unwrap();
+    re.replace_all(source, "").to_string()
+}
+
+impl RuneScriptHandler {
     /// Create a new handler from discovered metadata
-    pub fn new(metadata: RuneHook, executor: Arc<RuneExecutor>) -> Result<Self, RuneError> {
-        // Read and compile the script
+    pub fn new(metadata: RuneHandler, executor: Arc<RuneExecutor>) -> Result<Self, RuneError> {
+        // Read the script
         let source = std::fs::read_to_string(&metadata.path).map_err(|e| {
             RuneError::Io(format!(
-                "Failed to read hook script {:?}: {}",
+                "Failed to read handler script {:?}: {}",
                 metadata.path, e
             ))
         })?;
 
-        let unit = executor.compile(&metadata.name, &source)?;
+        // Strip handler attributes before compiling (Rune doesn't support them)
+        let clean_source = strip_handler_attributes(&source);
+
+        let unit = executor.compile(&metadata.name, &clean_source)?;
 
         Ok(Self {
             metadata,
@@ -108,22 +124,25 @@ impl RuneHookHandler {
     }
 
     /// Get the underlying metadata
-    pub fn metadata(&self) -> &RuneHook {
+    pub fn metadata(&self) -> &RuneHandler {
         &self.metadata
     }
 
     /// Reload the script from disk
     pub fn reload(&mut self) -> Result<(), RuneError> {
         let source = std::fs::read_to_string(&self.metadata.path)
-            .map_err(|e| RuneError::Io(format!("Failed to reload hook script: {}", e)))?;
+            .map_err(|e| RuneError::Io(format!("Failed to reload handler script: {}", e)))?;
 
-        self.unit = self.executor.compile(&self.metadata.name, &source)?;
-        info!("Reloaded hook script: {}", self.metadata.name);
+        // Strip handler attributes before compiling
+        let clean_source = strip_handler_attributes(&source);
+
+        self.unit = self.executor.compile(&self.metadata.name, &clean_source)?;
+        info!("Reloaded handler script: {}", self.metadata.name);
         Ok(())
     }
 }
 
-impl Hook for RuneHookHandler {
+impl ScriptHandler for RuneScriptHandler {
     fn name(&self) -> &str {
         &self.metadata.name
     }
@@ -194,7 +213,7 @@ impl Hook for RuneHookHandler {
                         Ok(modified_event) => Ok(modified_event),
                         Err(e) => {
                             warn!(
-                                "Hook {} returned invalid event structure: {}",
+                                "Handler {} returned invalid event structure: {}",
                                 self.metadata.name, e
                             );
                             // Return original event on parse error (fail-open)
@@ -211,10 +230,10 @@ impl Hook for RuneHookHandler {
     }
 }
 
-/// Built-in hook wrapping a Rust closure
+/// Built-in handler wrapping a Rust closure
 ///
-/// Use this for hooks that need native performance or access to Rust APIs.
-pub struct BuiltinHook<F>
+/// Use this for handlers that need native performance or access to Rust APIs.
+pub struct BuiltinHandler<F>
 where
     F: Fn(&mut EventContext, Event) -> HandlerResult + Send + Sync,
 {
@@ -226,11 +245,11 @@ where
     handler_fn: F,
 }
 
-impl<F> BuiltinHook<F>
+impl<F> BuiltinHandler<F>
 where
     F: Fn(&mut EventContext, Event) -> HandlerResult + Send + Sync,
 {
-    /// Create a new built-in hook
+    /// Create a new built-in handler
     pub fn new(
         name: impl Into<String>,
         event_type: impl Into<String>,
@@ -260,7 +279,7 @@ where
     }
 }
 
-impl<F> Hook for BuiltinHook<F>
+impl<F> ScriptHandler for BuiltinHandler<F>
 where
     F: Fn(&mut EventContext, Event) -> HandlerResult + Send + Sync,
 {
@@ -289,12 +308,12 @@ where
     }
 }
 
-/// Registry for managing hooks
+/// Registry for managing handlers
 ///
-/// Discovers hooks from configured directories and provides hot-reload capability.
-pub struct HookRegistry {
-    /// Discovered Rune hooks (keyed by name)
-    rune_hooks: HashMap<String, RuneHookHandler>,
+/// Discovers handlers from configured directories and provides hot-reload capability.
+pub struct HandlerRegistry {
+    /// Discovered Rune handlers (keyed by name)
+    rune_handlers: HashMap<String, RuneScriptHandler>,
 
     /// Discovery paths configuration
     paths: DiscoveryPaths,
@@ -302,21 +321,21 @@ pub struct HookRegistry {
     /// Shared executor
     executor: Arc<RuneExecutor>,
 
-    /// File paths -> hook names (for hot reload)
-    path_to_hooks: HashMap<PathBuf, Vec<String>>,
+    /// File paths -> handler names (for hot reload)
+    path_to_handlers: HashMap<PathBuf, Vec<String>>,
 }
 
-impl HookRegistry {
+impl HandlerRegistry {
     /// Create a new registry with default discovery paths
     pub fn new(kiln_path: Option<&Path>) -> Result<Self, RuneError> {
         let paths = DiscoveryPaths::new("plugins", kiln_path);
         let executor = Arc::new(RuneExecutor::new()?);
 
         Ok(Self {
-            rune_hooks: HashMap::new(),
+            rune_handlers: HashMap::new(),
             paths,
             executor,
-            path_to_hooks: HashMap::new(),
+            path_to_handlers: HashMap::new(),
         })
     }
 
@@ -325,107 +344,107 @@ impl HookRegistry {
         let executor = Arc::new(RuneExecutor::new()?);
 
         Ok(Self {
-            rune_hooks: HashMap::new(),
+            rune_handlers: HashMap::new(),
             paths,
             executor,
-            path_to_hooks: HashMap::new(),
+            path_to_handlers: HashMap::new(),
         })
     }
 
-    /// Discover all hooks from configured paths
+    /// Discover all handlers from configured paths
     pub fn discover(&mut self) -> Result<usize, RuneError> {
         let discovery = AttributeDiscovery::new();
-        let hooks: Vec<RuneHook> = discovery.discover_all(&self.paths)?;
+        let handlers: Vec<RuneHandler> = discovery.discover_all(&self.paths)?;
 
         let mut count = 0;
-        self.path_to_hooks.clear();
+        self.path_to_handlers.clear();
 
-        for hook_meta in hooks {
-            let path = hook_meta.path.clone();
-            let name = hook_meta.name.clone();
+        for handler_meta in handlers {
+            let path = handler_meta.path.clone();
+            let name = handler_meta.name.clone();
 
-            match RuneHookHandler::new(hook_meta, self.executor.clone()) {
+            match RuneScriptHandler::new(handler_meta, self.executor.clone()) {
                 Ok(handler) => {
                     debug!(
-                        "Discovered hook: {} (event={}, pattern={}, priority={})",
+                        "Discovered handler: {} (event={}, pattern={}, priority={})",
                         handler.name(),
                         handler.event_type(),
                         handler.pattern(),
                         handler.priority()
                     );
 
-                    self.rune_hooks.insert(name.clone(), handler);
-                    self.path_to_hooks.entry(path).or_default().push(name);
+                    self.rune_handlers.insert(name.clone(), handler);
+                    self.path_to_handlers.entry(path).or_default().push(name);
                     count += 1;
                 }
                 Err(e) => {
-                    warn!("Failed to load hook '{}': {}", name, e);
+                    warn!("Failed to load handler '{}': {}", name, e);
                 }
             }
         }
 
         info!(
-            "Discovered {} hooks from {} paths",
+            "Discovered {} handlers from {} paths",
             count,
             self.paths.existing_paths().len()
         );
         Ok(count)
     }
 
-    /// Reload hooks from a specific file (for hot-reload)
+    /// Reload handlers from a specific file (for hot-reload)
     pub fn reload_file(&mut self, path: &Path) -> Result<usize, RuneError> {
-        // Remove old hooks from this file
-        if let Some(old_names) = self.path_to_hooks.remove(path) {
+        // Remove old handlers from this file
+        if let Some(old_names) = self.path_to_handlers.remove(path) {
             for name in &old_names {
-                self.rune_hooks.remove(name);
+                self.rune_handlers.remove(name);
             }
         }
 
         // Re-discover from this file
         let discovery = AttributeDiscovery::new();
-        let hooks: Vec<RuneHook> = discovery.parse_from_file(path)?;
+        let handlers: Vec<RuneHandler> = discovery.parse_from_file(path)?;
 
         let mut count = 0;
         let mut new_names = Vec::new();
 
-        for hook_meta in hooks {
-            let name = hook_meta.name.clone();
+        for handler_meta in handlers {
+            let name = handler_meta.name.clone();
 
-            match RuneHookHandler::new(hook_meta, self.executor.clone()) {
+            match RuneScriptHandler::new(handler_meta, self.executor.clone()) {
                 Ok(handler) => {
-                    debug!("Reloaded hook: {}", name);
-                    self.rune_hooks.insert(name.clone(), handler);
+                    debug!("Reloaded handler: {}", name);
+                    self.rune_handlers.insert(name.clone(), handler);
                     new_names.push(name);
                     count += 1;
                 }
                 Err(e) => {
-                    warn!("Failed to reload hook '{}': {}", name, e);
+                    warn!("Failed to reload handler '{}': {}", name, e);
                 }
             }
         }
 
-        self.path_to_hooks.insert(path.to_path_buf(), new_names);
+        self.path_to_handlers.insert(path.to_path_buf(), new_names);
         Ok(count)
     }
 
-    /// Get a hook by name
-    pub fn get(&self, name: &str) -> Option<&RuneHookHandler> {
-        self.rune_hooks.get(name)
+    /// Get a handler by name
+    pub fn get(&self, name: &str) -> Option<&RuneScriptHandler> {
+        self.rune_handlers.get(name)
     }
 
-    /// List all hook names
+    /// List all handler names
     pub fn list_names(&self) -> impl Iterator<Item = &str> {
-        self.rune_hooks.keys().map(|s| s.as_str())
+        self.rune_handlers.keys().map(|s| s.as_str())
     }
 
-    /// Get count of discovered hooks
+    /// Get count of discovered handlers
     pub fn count(&self) -> usize {
-        self.rune_hooks.len()
+        self.rune_handlers.len()
     }
 
-    /// Register all discovered hooks on an EventBus
+    /// Register all discovered handlers on an EventBus
     pub fn register_all(&self, bus: &mut EventBus) {
-        for handler in self.rune_hooks.values() {
+        for handler in self.rune_handlers.values() {
             let h = handler.clone_as_handler();
             bus.register(h);
         }
@@ -437,10 +456,10 @@ impl HookRegistry {
     }
 }
 
-impl RuneHookHandler {
+impl RuneScriptHandler {
     /// Clone as an EventBus Handler
     ///
-    /// Creates a new Handler that wraps this RuneHookHandler for registration
+    /// Creates a new Handler that wraps this RuneScriptHandler for registration
     /// on the EventBus.
     fn clone_as_handler(&self) -> Handler {
         let metadata = self.metadata.clone();
@@ -510,7 +529,7 @@ impl RuneHookHandler {
                                 Ok(modified_event) => Ok(modified_event),
                                 Err(e) => {
                                     warn!(
-                                        "Hook {} returned invalid event structure: {}",
+                                        "Handler {} returned invalid event structure: {}",
                                         metadata.name, e
                                     );
                                     Ok(event)
@@ -530,15 +549,15 @@ impl RuneHookHandler {
     }
 }
 
-/// Thread-safe wrapper for HookRegistry with hot-reload support
-pub struct HookManager {
-    registry: RwLock<HookRegistry>,
+/// Thread-safe wrapper for HandlerRegistry with hot-reload support
+pub struct HandlerManager {
+    registry: RwLock<HandlerRegistry>,
 }
 
-impl HookManager {
+impl HandlerManager {
     /// Create a new manager with default paths
     pub fn new(kiln_path: Option<&Path>) -> Result<Self, RuneError> {
-        let registry = HookRegistry::new(kiln_path)?;
+        let registry = HandlerRegistry::new(kiln_path)?;
         Ok(Self {
             registry: RwLock::new(registry),
         })
@@ -546,13 +565,13 @@ impl HookManager {
 
     /// Create from custom paths
     pub fn with_paths(paths: DiscoveryPaths) -> Result<Self, RuneError> {
-        let registry = HookRegistry::with_paths(paths)?;
+        let registry = HandlerRegistry::with_paths(paths)?;
         Ok(Self {
             registry: RwLock::new(registry),
         })
     }
 
-    /// Discover hooks
+    /// Discover handlers
     pub fn discover(&self) -> Result<usize, RuneError> {
         let mut reg = self.registry.write().unwrap();
         reg.discover()
@@ -564,13 +583,13 @@ impl HookManager {
         reg.reload_file(path)
     }
 
-    /// Register all hooks on an EventBus
+    /// Register all handlers on an EventBus
     pub fn register_all(&self, bus: &mut EventBus) {
         let reg = self.registry.read().unwrap();
         reg.register_all(bus);
     }
 
-    /// Get hook count
+    /// Get handler count
     pub fn count(&self) -> usize {
         let reg = self.registry.read().unwrap();
         reg.count()
@@ -585,35 +604,36 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn test_builtin_hook_creation() {
-        let hook = BuiltinHook::new("test_hook", "tool:after", "just_*", |_ctx, event| Ok(event));
+    fn test_builtin_handler_creation() {
+        let handler =
+            BuiltinHandler::new("test_handler", "tool:after", "just_*", |_ctx, event| Ok(event));
 
-        assert_eq!(hook.name(), "test_hook");
-        assert_eq!(hook.event_type(), "tool:after");
-        assert_eq!(hook.pattern(), "just_*");
-        assert_eq!(hook.priority(), 100);
-        assert!(hook.enabled());
+        assert_eq!(handler.name(), "test_handler");
+        assert_eq!(handler.event_type(), "tool:after");
+        assert_eq!(handler.pattern(), "just_*");
+        assert_eq!(handler.priority(), 100);
+        assert!(handler.enabled());
     }
 
     #[test]
-    fn test_builtin_hook_priority() {
-        let hook =
-            BuiltinHook::new("test", "tool:after", "*", |_ctx, event| Ok(event)).with_priority(50);
+    fn test_builtin_handler_priority() {
+        let handler =
+            BuiltinHandler::new("test", "tool:after", "*", |_ctx, event| Ok(event)).with_priority(50);
 
-        assert_eq!(hook.priority(), 50);
+        assert_eq!(handler.priority(), 50);
     }
 
     #[test]
-    fn test_builtin_hook_disabled() {
-        let hook = BuiltinHook::new("test", "tool:after", "*", |_ctx, event| Ok(event))
+    fn test_builtin_handler_disabled() {
+        let handler = BuiltinHandler::new("test", "tool:after", "*", |_ctx, event| Ok(event))
             .with_enabled(false);
 
-        assert!(!hook.enabled());
+        assert!(!handler.enabled());
     }
 
     #[test]
-    fn test_builtin_hook_execution() {
-        let hook = BuiltinHook::new("modifier", "tool:after", "*", |_ctx, mut event| {
+    fn test_builtin_handler_execution() {
+        let handler = BuiltinHandler::new("modifier", "tool:after", "*", |_ctx, mut event| {
             if let Some(obj) = event.payload.as_object_mut() {
                 obj.insert("modified".to_string(), json!(true));
             }
@@ -622,40 +642,40 @@ mod tests {
 
         let mut ctx = EventContext::new();
         let event = Event::tool_after("test", json!({"original": true}));
-        let result = hook.handle(&mut ctx, event).unwrap();
+        let result = handler.handle(&mut ctx, event).unwrap();
 
         assert_eq!(result.payload["original"], json!(true));
         assert_eq!(result.payload["modified"], json!(true));
     }
 
     #[test]
-    fn test_hook_registry_empty() {
+    fn test_handler_registry_empty() {
         let temp = TempDir::new().unwrap();
-        let paths = DiscoveryPaths::empty("hooks").with_path(temp.path().to_path_buf());
-        let mut registry = HookRegistry::with_paths(paths).unwrap();
+        let paths = DiscoveryPaths::empty("handlers").with_path(temp.path().to_path_buf());
+        let mut registry = HandlerRegistry::with_paths(paths).unwrap();
 
         let count = registry.discover().unwrap();
         assert_eq!(count, 0);
     }
 
     #[tokio::test]
-    async fn test_hook_registry_discovers_hooks() {
+    async fn test_handler_registry_discovers_handlers() {
         let temp = TempDir::new().unwrap();
-        let hooks_dir = temp.path().join("hooks");
-        fs::create_dir_all(&hooks_dir).unwrap();
+        let handlers_dir = temp.path().join("handlers");
+        fs::create_dir_all(&handlers_dir).unwrap();
 
-        // Write a hook script
+        // Write a handler script
         let script = r#"
-/// Test hook that modifies events
-#[hook(event = "tool:after", pattern = "just_*", priority = 50)]
+/// Test handler that modifies events
+#[handler(event = "tool:after", pattern = "just_*", priority = 50)]
 pub fn test_modifier(ctx, event) {
     event
 }
 "#;
-        fs::write(hooks_dir.join("test_hook.rn"), script).unwrap();
+        fs::write(handlers_dir.join("test_handler.rn"), script).unwrap();
 
-        let paths = DiscoveryPaths::empty("hooks").with_path(hooks_dir);
-        let mut registry = HookRegistry::with_paths(paths).unwrap();
+        let paths = DiscoveryPaths::empty("handlers").with_path(handlers_dir);
+        let mut registry = HandlerRegistry::with_paths(paths).unwrap();
 
         let count = registry.discover().unwrap();
         assert_eq!(count, 1);
@@ -663,33 +683,33 @@ pub fn test_modifier(ctx, event) {
     }
 
     #[tokio::test]
-    async fn test_hook_registry_reload_file() {
+    async fn test_handler_registry_reload_file() {
         let temp = TempDir::new().unwrap();
-        let hooks_dir = temp.path().join("hooks");
-        fs::create_dir_all(&hooks_dir).unwrap();
+        let handlers_dir = temp.path().join("handlers");
+        fs::create_dir_all(&handlers_dir).unwrap();
 
-        let script_path = hooks_dir.join("reloadable.rn");
+        let script_path = handlers_dir.join("reloadable.rn");
 
         // Initial script
         let script_v1 = r#"
-#[hook(event = "tool:after", pattern = "*", priority = 100)]
-pub fn reloadable_hook(ctx, event) {
+#[handler(event = "tool:after", pattern = "*", priority = 100)]
+pub fn reloadable_handler(ctx, event) {
     event
 }
 "#;
         fs::write(&script_path, script_v1).unwrap();
 
-        let paths = DiscoveryPaths::empty("hooks").with_path(hooks_dir);
-        let mut registry = HookRegistry::with_paths(paths).unwrap();
+        let paths = DiscoveryPaths::empty("handlers").with_path(handlers_dir);
+        let mut registry = HandlerRegistry::with_paths(paths).unwrap();
         registry.discover().unwrap();
 
-        assert!(registry.get("reloadable_hook").is_some());
-        assert_eq!(registry.get("reloadable_hook").unwrap().priority(), 100);
+        assert!(registry.get("reloadable_handler").is_some());
+        assert_eq!(registry.get("reloadable_handler").unwrap().priority(), 100);
 
         // Update script with different priority
         let script_v2 = r#"
-#[hook(event = "tool:after", pattern = "*", priority = 50)]
-pub fn reloadable_hook(ctx, event) {
+#[handler(event = "tool:after", pattern = "*", priority = 50)]
+pub fn reloadable_handler(ctx, event) {
     event
 }
 "#;
@@ -699,17 +719,42 @@ pub fn reloadable_hook(ctx, event) {
         registry.reload_file(&script_path).unwrap();
 
         // Check priority changed
-        assert!(registry.get("reloadable_hook").is_some());
-        assert_eq!(registry.get("reloadable_hook").unwrap().priority(), 50);
+        assert!(registry.get("reloadable_handler").is_some());
+        assert_eq!(registry.get("reloadable_handler").unwrap().priority(), 50);
     }
 
     #[test]
-    fn test_hook_manager_thread_safe() {
+    fn test_handler_manager_thread_safe() {
         let temp = TempDir::new().unwrap();
-        let paths = DiscoveryPaths::empty("hooks").with_path(temp.path().to_path_buf());
-        let manager = HookManager::with_paths(paths).unwrap();
+        let paths = DiscoveryPaths::empty("handlers").with_path(temp.path().to_path_buf());
+        let manager = HandlerManager::with_paths(paths).unwrap();
 
         manager.discover().unwrap();
         assert_eq!(manager.count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_handler_registry_discovers_legacy_hooks() {
+        // Test backwards compatibility: #[hook(...)] still works
+        let temp = TempDir::new().unwrap();
+        let handlers_dir = temp.path().join("handlers");
+        fs::create_dir_all(&handlers_dir).unwrap();
+
+        // Write using legacy #[hook(...)] attribute
+        let script = r#"
+/// Legacy handler using old attribute
+#[hook(event = "tool:after", pattern = "*")]
+pub fn legacy_handler(ctx, event) {
+    event
+}
+"#;
+        fs::write(handlers_dir.join("legacy.rn"), script).unwrap();
+
+        let paths = DiscoveryPaths::empty("handlers").with_path(handlers_dir);
+        let mut registry = HandlerRegistry::with_paths(paths).unwrap();
+
+        let count = registry.discover().unwrap();
+        assert_eq!(count, 1);
+        assert!(registry.get("legacy_handler").is_some());
     }
 }

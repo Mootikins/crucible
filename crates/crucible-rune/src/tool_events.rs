@@ -2,7 +2,7 @@
 //!
 //! This module provides utilities for emitting tool events and processing
 //! them through the event bus. It's designed to be used by MCP servers
-//! to integrate with the unified hook system.
+//! to integrate with the unified handler system.
 //!
 //! ## Usage
 //!
@@ -10,23 +10,23 @@
 //! use crucible_rune::tool_events::{ToolEventEmitter, ToolSource};
 //!
 //! let mut emitter = ToolEventEmitter::new();
-//! emitter.register_builtin_hooks(&BuiltinHooksConfig::default());
+//! emitter.register_builtin_handlers(&BuiltinHandlersConfig::default());
 //!
 //! // Before tool execution
 //! let (event, ctx) = emitter.emit_before("just_test", args)?;
 //! if event.is_cancelled() {
-//!     return Err("Tool execution cancelled by hook");
+//!     return Err("Tool execution cancelled by handler");
 //! }
-//! let modified_args = event.payload; // Hooks may have modified args
+//! let modified_args = event.payload; // Handlers may have modified args
 //!
 //! // Execute tool...
 //!
 //! // After tool execution
 //! let (result_event, _) = emitter.emit_after("just_test", result, ToolSource::Just)?;
-//! let final_result = result_event.payload; // Hooks may have transformed result
+//! let final_result = result_event.payload; // Handlers may have transformed result
 //! ```
 
-use crate::builtin_hooks::{register_builtin_hooks, BuiltinHooksConfig};
+use crate::builtin_handlers::{register_builtin_handlers, BuiltinHandlersConfig};
 use crate::event_bus::{Event, EventBus, EventContext, EventType, HandlerError};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
@@ -68,7 +68,7 @@ impl ToolSource {
 /// tool:before, tool:after, and tool:error events.
 pub struct ToolEventEmitter {
     bus: EventBus,
-    builtin_config: BuiltinHooksConfig,
+    builtin_config: BuiltinHandlersConfig,
 }
 
 impl Default for ToolEventEmitter {
@@ -82,25 +82,25 @@ impl ToolEventEmitter {
     pub fn new() -> Self {
         Self {
             bus: EventBus::new(),
-            builtin_config: BuiltinHooksConfig::default(),
+            builtin_config: BuiltinHandlersConfig::default(),
         }
     }
 
-    /// Create with custom built-in hooks configuration
-    pub fn with_config(config: BuiltinHooksConfig) -> Self {
+    /// Create with custom built-in handlers configuration
+    pub fn with_config(config: BuiltinHandlersConfig) -> Self {
         let mut emitter = Self::new();
         emitter.builtin_config = config;
         emitter
     }
 
-    /// Register built-in hooks (test filter, toon transform, event emit)
-    pub fn register_builtin_hooks(&mut self) {
-        register_builtin_hooks(&mut self.bus, &self.builtin_config);
+    /// Register built-in handlers (test filter, toon transform, event emit)
+    pub fn register_builtin_handlers(&mut self) {
+        register_builtin_handlers(&mut self.bus, &self.builtin_config);
     }
 
     /// Get mutable reference to the underlying EventBus
     ///
-    /// Use this to register custom hooks.
+    /// Use this to register custom handlers.
     pub fn bus_mut(&mut self) -> &mut EventBus {
         &mut self.bus
     }
@@ -113,7 +113,7 @@ impl ToolEventEmitter {
     /// Emit a tool:before event
     ///
     /// Returns the (possibly modified) event and context.
-    /// Check `event.is_cancelled()` to see if a hook cancelled the execution.
+    /// Check `event.is_cancelled()` to see if a handler cancelled the execution.
     pub fn emit_before(
         &self,
         tool_name: &str,
@@ -162,7 +162,7 @@ impl ToolEventEmitter {
 
     /// Emit a tool:after event with content blocks (MCP format)
     ///
-    /// Convenience method that formats content for hooks to process.
+    /// Convenience method that formats content for handlers to process.
     pub fn emit_after_with_content(
         &self,
         tool_name: &str,
@@ -238,7 +238,7 @@ impl ToolEventEmitter {
 
         // Check if cancelled
         if before_event.is_cancelled() {
-            return Err("Tool execution cancelled by hook".to_string());
+            return Err("Tool execution cancelled by handler".to_string());
         }
 
         // Get potentially modified arguments
@@ -258,11 +258,11 @@ impl ToolEventEmitter {
 
                 if !errors.is_empty() {
                     for e in &errors {
-                        warn!("Hook error during tool:after: {}", e);
+                        warn!("Handler error during tool:after: {}", e);
                     }
                 }
 
-                // Extract result from event (hooks may have transformed it)
+                // Extract result from event (handlers may have transformed it)
                 Ok(after_event
                     .payload
                     .get("result")
@@ -310,9 +310,9 @@ mod tests {
     }
 
     #[test]
-    fn test_emitter_with_builtin_hooks() {
+    fn test_emitter_with_builtin_handlers() {
         let mut emitter = ToolEventEmitter::new();
-        emitter.register_builtin_hooks();
+        emitter.register_builtin_handlers();
         // Should have at least test_filter registered
         assert!(emitter.handler_count() >= 1);
     }
@@ -361,10 +361,10 @@ mod tests {
     }
 
     #[test]
-    fn test_hook_can_cancel_execution() {
+    fn test_handler_can_cancel_execution() {
         let mut emitter = ToolEventEmitter::new();
 
-        // Register a hook that cancels just_* tools
+        // Register a handler that cancels just_* tools
         emitter.bus_mut().register(Handler::new(
             "canceller",
             EventType::ToolBefore,
@@ -385,17 +385,17 @@ mod tests {
     }
 
     #[test]
-    fn test_hook_can_modify_arguments() {
+    fn test_handler_can_modify_arguments() {
         let mut emitter = ToolEventEmitter::new();
 
-        // Register a hook that adds a default value
+        // Register a handler that adds a default value
         emitter.bus_mut().register(Handler::new(
             "arg_modifier",
             EventType::ToolBefore,
             "*",
             |_ctx, mut event| {
                 if let Some(obj) = event.payload.as_object_mut() {
-                    obj.insert("added_by_hook".to_string(), json!(true));
+                    obj.insert("added_by_handler".to_string(), json!(true));
                 }
                 Ok(event)
             },
@@ -405,21 +405,21 @@ mod tests {
             emitter.emit_before("test", json!({"original": true}), ToolSource::Just);
 
         assert_eq!(event.payload["original"], json!(true));
-        assert_eq!(event.payload["added_by_hook"], json!(true));
+        assert_eq!(event.payload["added_by_handler"], json!(true));
     }
 
     #[test]
-    fn test_hook_can_transform_result() {
+    fn test_handler_can_transform_result() {
         let mut emitter = ToolEventEmitter::new();
 
-        // Register a hook that adds processing info
+        // Register a handler that adds processing info
         emitter.bus_mut().register(Handler::new(
             "result_transformer",
             EventType::ToolAfter,
             "*",
             |_ctx, mut event| {
                 if let Some(obj) = event.payload.as_object_mut() {
-                    obj.insert("processed_by_hook".to_string(), json!(true));
+                    obj.insert("processed_by_handler".to_string(), json!(true));
                 }
                 Ok(event)
             },
@@ -428,7 +428,7 @@ mod tests {
         let (event, _ctx, _) =
             emitter.emit_after("test", json!({"data": 42}), ToolSource::Just, 100);
 
-        assert_eq!(event.payload["processed_by_hook"], json!(true));
+        assert_eq!(event.payload["processed_by_handler"], json!(true));
     }
 
     #[test]
@@ -467,7 +467,7 @@ mod tests {
     async fn test_execute_with_events_cancellation() {
         let mut emitter = ToolEventEmitter::new();
 
-        // Register a cancelling hook
+        // Register a cancelling handler
         emitter.bus_mut().register(Handler::new(
             "canceller",
             EventType::ToolBefore,
