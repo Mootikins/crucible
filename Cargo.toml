@@ -51,7 +51,7 @@ categories = ["development-tools", "text-processing", "database"]
 
 [workspace.dependencies]
 yrs = "0.25"
-tokio = { version = "1.48", features = ["full"] }
+tokio = { version = "1.49", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 crucible-parser = { path = "crates/crucible-parser" }
 serde_json = "1.0"
@@ -133,7 +133,7 @@ tokio-test = "0.4"
 mockito = "1.0"
 tracing-test = "0.2"
 expectrl = "0.8"
-assert_cmd = "2.0"
+assert_cmd = "2.1"
 predicates = "3.0"
 wiremock = "0.6"
 mockall = "0.14"
@@ -153,7 +153,7 @@ base64 = "0.22"
 
 # Additional dependencies
 rustc_version = "0.4"
-clap = { version = "4.0", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
 colored = "3.0"
 
 # CLI specific dependencies

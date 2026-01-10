@@ -20,7 +20,7 @@ regex = { workspace = true }
 tracing = { workspace = true }
 async-trait = { workspace = true }
 # Hashing dependencies
-blake3 = "1.0"
+blake3 = "1.8"
 hex = "0.4"
 sha2 = "0.10"
 bitflags = "2.4"
@@ -76,7 +76,7 @@ test-utils = []
 tokio = { workspace = true, features = ["test-util", "full"] }
 tracing-subscriber = { workspace = true }
 tempfile = "3.24"
-serial_test = "3.2"
+serial_test = "3.3"
 
 # Dev-kiln validation tests
 walkdir = "2.4"
