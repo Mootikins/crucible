@@ -89,9 +89,10 @@ impl UserData for LuaAskQuestion {
         });
 
         // Enable multi-select mode (chainable)
-        methods.add_method("multi_select", |_, this, ()| {
+        // Can be called as .multi_select() or .multi_select(true/false)
+        methods.add_method("multi_select", |_, this, enabled: Option<bool>| {
             let mut new = this.clone();
-            new.inner.multi_select = true;
+            new.inner.multi_select = enabled.unwrap_or(true);
             Ok(new)
         });
 
