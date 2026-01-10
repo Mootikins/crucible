@@ -1,7 +1,7 @@
 //! Plugin registration types for the Rune plugin system
 //!
 //! These types represent the structure returned by plugin `init()` functions
-//! and the registered hooks parsed from that data.
+//! and the registered handlers parsed from that data.
 
 use glob::Pattern;
 use rune::Unit;
@@ -10,7 +10,7 @@ use serde_json::Value as JsonValue;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-/// Configuration for a single hook as parsed from plugin init()
+/// Configuration for a single handler as parsed from plugin init()
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HookConfig {
     /// Event type to listen for (default: "tool_result")
@@ -34,7 +34,7 @@ fn default_handler_name() -> String {
 /// Parsed plugin manifest from init() return value
 #[derive(Debug, Clone, Default)]
 pub struct PluginManifest {
-    /// Registered hooks
+    /// Registered handlers
     pub hooks: Vec<HookConfig>,
     // Future: tools, etc.
 }
@@ -57,7 +57,7 @@ impl PluginManifest {
 }
 
 impl HookConfig {
-    /// Convert to a RegisteredHook with compiled unit
+    /// Convert to a RegisteredHook (handler) with compiled unit
     pub fn to_registered_hook(
         &self,
         plugin_path: PathBuf,
@@ -76,10 +76,10 @@ impl HookConfig {
     }
 }
 
-/// A registered hook from a loaded plugin
+/// A registered handler from a loaded plugin
 #[derive(Debug, Clone)]
 pub struct RegisteredHook {
-    /// Event type this hook listens for
+    /// Event type this handler listens for
     pub event_type: String,
     /// Glob pattern to match against tool/event names
     pub pattern: Pattern,
@@ -92,7 +92,7 @@ pub struct RegisteredHook {
 }
 
 impl RegisteredHook {
-    /// Check if this hook matches the given event type and name
+    /// Check if this handler matches the given event type and name
     pub fn matches(&self, event_type: &str, name: &str) -> bool {
         self.event_type == event_type && self.pattern.matches(name)
     }
@@ -103,7 +103,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_registered_hook_pattern_matches_exact() {
+    fn test_registered_handler_pattern_matches_exact() {
         let hook = RegisteredHook {
             event_type: "tool_result".to_string(),
             pattern: Pattern::new("just_test").unwrap(),
@@ -117,7 +117,7 @@ mod tests {
     }
 
     #[test]
-    fn test_registered_hook_pattern_matches_glob() {
+    fn test_registered_handler_pattern_matches_glob() {
         let hook = RegisteredHook {
             event_type: "tool_result".to_string(),
             pattern: Pattern::new("just_test*").unwrap(),

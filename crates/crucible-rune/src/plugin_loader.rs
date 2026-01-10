@@ -1,7 +1,7 @@
 //! Plugin loader for discovering and loading Rune plugins
 //!
 //! Plugins are Rune scripts that define an `init()` function returning
-//! registration data (hooks, tools, etc.).
+//! registration data (handlers, tools, etc.).
 
 use crate::plugin_types::{PluginManifest, RegisteredHook};
 use crate::{RuneError, RuneExecutor};
@@ -12,7 +12,7 @@ use tracing::{debug, warn};
 pub struct PluginLoader {
     /// Rune executor for compiling and running scripts
     executor: RuneExecutor,
-    /// Registered hooks from all loaded plugins
+    /// Registered handlers from all loaded plugins
     hooks: Vec<RegisteredHook>,
     /// Base directory to search for plugins
     plugin_dir: PathBuf,
@@ -61,7 +61,7 @@ impl PluginLoader {
             }
         }
 
-        debug!("Loaded {} hooks from plugins", self.hooks.len());
+        debug!("Loaded {} handlers from plugins", self.hooks.len());
         Ok(())
     }
 
@@ -93,25 +93,25 @@ impl PluginLoader {
                     path.display(),
                     e
                 );
-                return Ok(()); // Not an error, just no hooks from this file
+                return Ok(()); // Not an error, just no handlers from this file
             }
         };
 
         // Parse the manifest
         let manifest = PluginManifest::from_json(&init_result).map_err(RuneError::Conversion)?;
 
-        // Register hooks
+        // Register handlers
         for hook_config in manifest.hooks {
             match hook_config.to_registered_hook(path.to_path_buf(), Some(unit.clone())) {
                 Ok(hook) => {
                     debug!(
-                        "Registered hook: {} on {} -> {}",
+                        "Registered handler: {} on {} -> {}",
                         hook.event_type, hook.pattern, hook.handler_name
                     );
                     self.hooks.push(hook);
                 }
                 Err(e) => {
-                    warn!("Invalid hook in {}: {}", path.display(), e);
+                    warn!("Invalid handler in {}: {}", path.display(), e);
                 }
             }
         }
@@ -119,12 +119,12 @@ impl PluginLoader {
         Ok(())
     }
 
-    /// Get all registered hooks
+    /// Get all registered handlers
     pub fn hooks(&self) -> &[RegisteredHook] {
         &self.hooks
     }
 
-    /// Get hooks that match an event type and name
+    /// Get handlers that match an event type and name
     pub fn get_matching_hooks(&self, event_type: &str, name: &str) -> Vec<&RegisteredHook> {
         self.hooks
             .iter()
