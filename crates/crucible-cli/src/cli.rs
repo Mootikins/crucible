@@ -273,6 +273,10 @@ pub enum Commands {
         /// Overwrite existing kiln
         #[arg(short = 'F', long)]
         force: bool,
+
+        /// Interactive provider/model selection
+        #[arg(short = 'i', long)]
+        interactive: bool,
     },
 
     /// Session management (list, show, resume, export)
@@ -877,7 +881,8 @@ mod tests {
             cli.command,
             Some(Commands::Init {
                 path: None,
-                force: false
+                force: false,
+                interactive: false
             })
         ));
     }
@@ -885,9 +890,15 @@ mod tests {
     #[test]
     fn test_init_with_path_parses() {
         let cli = Cli::try_parse_from(["cru", "init", "--path", "/tmp/test"]).unwrap();
-        if let Some(Commands::Init { path, force }) = cli.command {
+        if let Some(Commands::Init {
+            path,
+            force,
+            interactive,
+        }) = cli.command
+        {
             assert_eq!(path, Some(std::path::PathBuf::from("/tmp/test")));
             assert!(!force);
+            assert!(!interactive);
         } else {
             panic!("Expected Init command");
         }
@@ -896,9 +907,15 @@ mod tests {
     #[test]
     fn test_init_with_force_parses() {
         let cli = Cli::try_parse_from(["cru", "init", "--force"]).unwrap();
-        if let Some(Commands::Init { path, force }) = cli.command {
+        if let Some(Commands::Init {
+            path,
+            force,
+            interactive,
+        }) = cli.command
+        {
             assert_eq!(path, None);
             assert!(force);
+            assert!(!interactive);
         } else {
             panic!("Expected Init command");
         }
@@ -907,9 +924,49 @@ mod tests {
     #[test]
     fn test_init_with_short_flags_parses() {
         let cli = Cli::try_parse_from(["cru", "init", "-p", "/tmp/test", "-F"]).unwrap();
-        if let Some(Commands::Init { path, force }) = cli.command {
+        if let Some(Commands::Init {
+            path,
+            force,
+            interactive,
+        }) = cli.command
+        {
             assert_eq!(path, Some(std::path::PathBuf::from("/tmp/test")));
             assert!(force);
+            assert!(!interactive);
+        } else {
+            panic!("Expected Init command");
+        }
+    }
+
+    #[test]
+    fn test_init_with_interactive_flag_parses() {
+        let cli = Cli::try_parse_from(["cru", "init", "--interactive"]).unwrap();
+        if let Some(Commands::Init {
+            path,
+            force,
+            interactive,
+        }) = cli.command
+        {
+            assert_eq!(path, None);
+            assert!(!force);
+            assert!(interactive);
+        } else {
+            panic!("Expected Init command");
+        }
+    }
+
+    #[test]
+    fn test_init_with_interactive_short_flag_parses() {
+        let cli = Cli::try_parse_from(["cru", "init", "-i"]).unwrap();
+        if let Some(Commands::Init {
+            path,
+            force,
+            interactive,
+        }) = cli.command
+        {
+            assert_eq!(path, None);
+            assert!(!force);
+            assert!(interactive);
         } else {
             panic!("Expected Init command");
         }
