@@ -12,41 +12,60 @@ Configure where and how Crucible stores your data.
 
 ## Default Storage
 
-By default, Crucible uses SurrealDB with RocksDB backend, storing data in:
-- `~/.local/share/crucible/` (Linux)
-- `~/Library/Application Support/crucible/` (macOS)
+By default, Crucible uses **SQLite** - fast, lightweight, and recommended for most users.
 
-## Configuration
+Data is stored in:
+- `<kiln_path>/.crucible/crucible-sqlite.db` (in your kiln)
+- Or `~/.local/share/crucible/` (Linux) / `~/Library/Application Support/crucible/` (macOS)
+
+## Storage Modes
 
 ```toml
 [storage]
-# Storage backend: "surrealdb" (default)
-backend = "surrealdb"
-
-# Data directory (optional, uses default if not set)
-data_dir = "/path/to/data"
-
-# Database name
-database = "crucible"
-
-# Namespace
-namespace = "crucible"
+# Storage mode: "sqlite" (default), "embedded", "daemon", or "lightweight"
+mode = "sqlite"
 ```
 
-## SurrealDB Options
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `sqlite` | SQLite database (default) | Most users, single-user |
+| `embedded` | Embedded SurrealDB | Advanced graph queries |
+| `daemon` | Connect to crucible-daemon | Multi-client, cloud |
+| `lightweight` | Minimal mode | Testing, CI |
+
+## SQLite (Default)
+
+No configuration needed - just works:
 
 ```toml
-[storage.surrealdb]
-# Connection mode: "embedded" or "remote"
-mode = "embedded"
+[storage]
+mode = "sqlite"
+```
 
-# For remote mode
-endpoint = "ws://localhost:8000"
-username = "root"
-password = "root"
+## SurrealDB (Alternative)
+
+For advanced use cases like cloud deployment or multi-tenant:
+
+```toml
+[storage]
+mode = "embedded"  # Or "daemon" for remote
+
+# SurrealDB-specific options
+namespace = "crucible"
+database = "kiln"
+```
+
+### Daemon Mode
+
+Connect to a running `crucible-daemon`:
+
+```toml
+[storage]
+mode = "daemon"
+daemon_socket = "/tmp/crucible-daemon.sock"
 ```
 
 ## See Also
 
 - [[Help/CLI/process]] - Processing pipeline
-- [[Help/CLI/index]] - Indexing commands
+- [[Help/CLI/stats]] - Database statistics
