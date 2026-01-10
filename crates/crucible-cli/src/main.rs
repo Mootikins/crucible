@@ -357,9 +357,12 @@ async fn main() -> Result<()> {
             commands::db_server::execute(config, socket, idle_timeout).await?;
         }
 
-        Some(Commands::Init { path, force }) => {
-            // interactive flag will be wired in Task 7
-            commands::init::execute(path, force, false).await?;
+        Some(Commands::Init {
+            path,
+            force,
+            interactive,
+        }) => {
+            commands::init::execute(path, force, interactive).await?;
         }
 
         Some(Commands::Session(cmd)) => {
