@@ -1,6 +1,14 @@
 //! Ask module for Lua scripts
 //!
-//! Provides batched user questions with choices for Lua and Fennel scripts.
+//! Provides batched user questions with choices for Lua and Fennel scripts,
+//! along with response types for handling user answers.
+//!
+//! ## Types
+//!
+//! - [`LuaAskQuestion`] - A single question with choices
+//! - [`LuaAskBatch`] - A batch of questions to ask together
+//! - [`LuaQuestionAnswer`] - A single question's answer
+//! - [`LuaAskBatchResponse`] - Response to a batch of questions
 //!
 //! ## Lua Usage
 //!
@@ -22,6 +30,33 @@
 //! local features = ask.question("Features", "Select features")
 //!     :choices({"Auth", "Logging", "Caching"})
 //!     :multi_select()
+//!
+//! -- Create answers for testing/mocking
+//! local answer = ask.answer({0, 2})       -- selected indices
+//! local other = ask.answer_other("Custom") -- free-text input
+//!
+//! -- Log notifications
+//! ask.notify("Processing complete!")
+//! ```
+//!
+//! ## Working with Responses
+//!
+//! ```lua
+//! -- Example: processing a batch response
+//! local function process_response(response)
+//!     if response:is_cancelled() then
+//!         print("User cancelled")
+//!         return
+//!     end
+//!
+//!     for i, answer in ipairs(response:answers()) do
+//!         if answer:has_other() then
+//!             print("Custom: " .. answer:other())
+//!         else
+//!             print("Selected: " .. answer:first_selected())
+//!         end
+//!     end
+//! end
 //! ```
 //!
 //! ## Fennel Usage
@@ -37,10 +72,13 @@
 //! ;; Create batch
 //! (local batch (-> (ask.batch)
 //!                  (: :question q)))
+//!
+//! ;; Create an answer
+//! (local answer (ask.answer [0 1]))
 //! ```
 
 use crate::error::LuaError;
-use crucible_core::interaction::{AskBatch, AskQuestion};
+use crucible_core::interaction::{AskBatch, AskBatchResponse, AskQuestion, QuestionAnswer};
 use crucible_core::uuid;
 use mlua::{FromLua, Lua, MetaMethod, Result as LuaResult, Table, UserData, UserDataMethods, Value};
 
@@ -175,6 +213,179 @@ impl UserData for LuaAskBatch {
     }
 }
 
+/// Lua wrapper for QuestionAnswer - a single question's answer
+#[derive(Debug, Clone)]
+pub struct LuaQuestionAnswer {
+    pub inner: QuestionAnswer,
+}
+
+impl LuaQuestionAnswer {
+    /// Create a new answer with selected indices
+    pub fn new(selected: Vec<usize>) -> Self {
+        Self {
+            inner: QuestionAnswer {
+                selected,
+                other: None,
+            },
+        }
+    }
+
+    /// Create an answer with free-text "other" input
+    pub fn with_other(text: String) -> Self {
+        Self {
+            inner: QuestionAnswer {
+                selected: Vec::new(),
+                other: Some(text),
+            },
+        }
+    }
+}
+
+impl FromLua for LuaQuestionAnswer {
+    fn from_lua(value: Value, _lua: &Lua) -> LuaResult<Self> {
+        match value {
+            Value::UserData(ud) => ud.borrow::<LuaQuestionAnswer>().map(|a| a.clone()),
+            _ => Err(mlua::Error::FromLuaConversionError {
+                from: value.type_name(),
+                to: "LuaQuestionAnswer".to_string(),
+                message: Some("expected QuestionAnswer userdata".to_string()),
+            }),
+        }
+    }
+}
+
+impl UserData for LuaQuestionAnswer {
+    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        // Get selected indices as a table
+        methods.add_method("selected", |lua, this, ()| {
+            let table = lua.create_table()?;
+            for (i, idx) in this.inner.selected.iter().enumerate() {
+                table.set(i + 1, *idx)?;
+            }
+            Ok(table)
+        });
+
+        // Get the "other" free-text value (if any)
+        methods.add_method("other", |_, this, ()| Ok(this.inner.other.clone()));
+
+        // Check if "other" was used
+        methods.add_method("has_other", |_, this, ()| Ok(this.inner.other.is_some()));
+
+        // Get the first selected index (convenience for single-select questions)
+        methods.add_method("first_selected", |_, this, ()| {
+            Ok(this.inner.selected.first().copied())
+        });
+
+        // Check if any choice was selected
+        methods.add_method("has_selection", |_, this, ()| {
+            Ok(!this.inner.selected.is_empty())
+        });
+
+        // Get count of selected items
+        methods.add_method("selection_count", |_, this, ()| {
+            Ok(this.inner.selected.len())
+        });
+
+        // String representation for debugging
+        methods.add_meta_method(MetaMethod::ToString, |_, this, ()| {
+            if let Some(other) = &this.inner.other {
+                Ok(format!("QuestionAnswer {{ other: \"{}\" }}", other))
+            } else {
+                Ok(format!(
+                    "QuestionAnswer {{ selected: {:?} }}",
+                    this.inner.selected
+                ))
+            }
+        });
+    }
+}
+
+/// Lua wrapper for AskBatchResponse - response to a batch of questions
+#[derive(Debug, Clone)]
+pub struct LuaAskBatchResponse {
+    pub inner: AskBatchResponse,
+}
+
+impl LuaAskBatchResponse {
+    /// Create a new response for a request ID
+    pub fn new(id: uuid::Uuid) -> Self {
+        Self {
+            inner: AskBatchResponse::new(id),
+        }
+    }
+
+    /// Create a cancelled response
+    pub fn cancelled(id: uuid::Uuid) -> Self {
+        Self {
+            inner: AskBatchResponse::cancelled(id),
+        }
+    }
+}
+
+impl FromLua for LuaAskBatchResponse {
+    fn from_lua(value: Value, _lua: &Lua) -> LuaResult<Self> {
+        match value {
+            Value::UserData(ud) => ud.borrow::<LuaAskBatchResponse>().map(|r| r.clone()),
+            _ => Err(mlua::Error::FromLuaConversionError {
+                from: value.type_name(),
+                to: "LuaAskBatchResponse".to_string(),
+                message: Some("expected AskBatchResponse userdata".to_string()),
+            }),
+        }
+    }
+}
+
+impl UserData for LuaAskBatchResponse {
+    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        // Get the request ID this responds to
+        methods.add_method("id", |_, this, ()| Ok(this.inner.id.to_string()));
+
+        // Check if the user cancelled the interaction
+        methods.add_method("is_cancelled", |_, this, ()| Ok(this.inner.cancelled));
+
+        // Get the number of answers
+        methods.add_method("answer_count", |_, this, ()| Ok(this.inner.answers.len()));
+
+        // Get a specific answer by index (1-based for Lua convention)
+        methods.add_method("answer", |_, this, index: usize| {
+            // Convert from 1-based Lua index to 0-based
+            let idx = index.checked_sub(1).ok_or_else(|| {
+                mlua::Error::runtime("Answer index must be >= 1")
+            })?;
+            this.inner
+                .answers
+                .get(idx)
+                .cloned()
+                .map(|a| LuaQuestionAnswer { inner: a })
+                .ok_or_else(|| mlua::Error::runtime("Answer index out of bounds"))
+        });
+
+        // Get all answers as a table
+        methods.add_method("answers", |lua, this, ()| {
+            let table = lua.create_table()?;
+            for (i, answer) in this.inner.answers.iter().enumerate() {
+                table.set(i + 1, LuaQuestionAnswer { inner: answer.clone() })?;
+            }
+            Ok(table)
+        });
+
+        // Check if there are any answers
+        methods.add_method("has_answers", |_, this, ()| {
+            Ok(!this.inner.answers.is_empty())
+        });
+
+        // String representation for debugging
+        methods.add_meta_method(MetaMethod::ToString, |_, this, ()| {
+            Ok(format!(
+                "AskBatchResponse {{ id: {}, answers: {}, cancelled: {} }}",
+                this.inner.id,
+                this.inner.answers.len(),
+                this.inner.cancelled
+            ))
+        });
+    }
+}
+
 /// Register the ask module with a Lua state
 pub fn register_ask_module(lua: &Lua) -> Result<(), LuaError> {
     let ask = lua.create_table()?;
@@ -188,6 +399,27 @@ pub fn register_ask_module(lua: &Lua) -> Result<(), LuaError> {
     // ask.batch() -> LuaAskBatch
     let batch_fn = lua.create_function(|_, ()| Ok(LuaAskBatch::new()))?;
     ask.set("batch", batch_fn)?;
+
+    // ask.notify(message) - log a notification message
+    let notify_fn = lua.create_function(|_, message: String| {
+        tracing::info!(target: "lua_notify", "{}", message);
+        Ok(())
+    })?;
+    ask.set("notify", notify_fn)?;
+
+    // ask.answer(selected) -> LuaQuestionAnswer
+    // Create an answer with selected indices
+    let answer_fn = lua.create_function(|_, selected: Vec<usize>| {
+        Ok(LuaQuestionAnswer::new(selected))
+    })?;
+    ask.set("answer", answer_fn)?;
+
+    // ask.answer_other(text) -> LuaQuestionAnswer
+    // Create an answer with free-text "other" input
+    let answer_other_fn = lua.create_function(|_, text: String| {
+        Ok(LuaQuestionAnswer::with_other(text))
+    })?;
+    ask.set("answer_other", answer_other_fn)?;
 
     // Register as global module
     lua.globals().set("ask", ask)?;
@@ -294,6 +526,116 @@ pub fn core_batch_to_lua(lua: &Lua, batch: &AskBatch) -> LuaResult<Table> {
     table.set("questions", questions)?;
 
     Ok(table)
+}
+
+/// Convert a LuaQuestionAnswer to a crucible_core QuestionAnswer
+pub fn lua_answer_to_core(answer: &LuaQuestionAnswer) -> QuestionAnswer {
+    answer.inner.clone()
+}
+
+/// Convert a LuaAskBatchResponse to a crucible_core AskBatchResponse
+pub fn lua_response_to_core(response: &LuaAskBatchResponse) -> AskBatchResponse {
+    response.inner.clone()
+}
+
+/// Convert a QuestionAnswer to a Lua table
+pub fn core_answer_to_lua(lua: &Lua, answer: &QuestionAnswer) -> LuaResult<Table> {
+    let table = lua.create_table()?;
+
+    let selected = lua.create_table()?;
+    for (i, idx) in answer.selected.iter().enumerate() {
+        selected.set(i + 1, *idx)?;
+    }
+    table.set("selected", selected)?;
+
+    if let Some(ref other) = answer.other {
+        table.set("other", other.clone())?;
+    }
+
+    Ok(table)
+}
+
+/// Convert an AskBatchResponse to a Lua table
+pub fn core_response_to_lua(lua: &Lua, response: &AskBatchResponse) -> LuaResult<Table> {
+    let table = lua.create_table()?;
+    table.set("id", response.id.to_string())?;
+    table.set("cancelled", response.cancelled)?;
+
+    let answers = lua.create_table()?;
+    for (i, answer) in response.answers.iter().enumerate() {
+        answers.set(i + 1, core_answer_to_lua(lua, answer)?)?;
+    }
+    table.set("answers", answers)?;
+
+    Ok(table)
+}
+
+/// Convert a Lua table to a QuestionAnswer
+///
+/// This supports Lua tables with the structure:
+/// ```lua
+/// { selected = {0, 1}, other = "optional text" }
+/// ```
+pub fn lua_answer_table_to_core(table: &Table) -> LuaResult<QuestionAnswer> {
+    let mut answer = QuestionAnswer {
+        selected: Vec::new(),
+        other: None,
+    };
+
+    if let Ok(selected_table) = table.get::<Table>("selected") {
+        for pair in selected_table.pairs::<i64, usize>() {
+            let (_, idx) = pair?;
+            answer.selected.push(idx);
+        }
+    }
+
+    if let Ok(other) = table.get::<String>("other") {
+        answer.other = Some(other);
+    }
+
+    Ok(answer)
+}
+
+/// Convert a Lua table to an AskBatchResponse
+///
+/// This supports Lua tables with the structure:
+/// ```lua
+/// { id = "uuid", cancelled = false, answers = { ... } }
+/// ```
+pub fn lua_response_table_to_core(table: &Table) -> LuaResult<AskBatchResponse> {
+    let id = if let Ok(id_str) = table.get::<String>("id") {
+        uuid::Uuid::parse_str(&id_str)
+            .map_err(|e| mlua::Error::runtime(format!("Invalid UUID: {}", e)))?
+    } else {
+        uuid::Uuid::new_v4()
+    };
+
+    let cancelled = table.get::<bool>("cancelled").unwrap_or(false);
+
+    let mut response = AskBatchResponse {
+        id,
+        answers: Vec::new(),
+        cancelled,
+    };
+
+    if let Ok(answers_table) = table.get::<Table>("answers") {
+        for pair in answers_table.pairs::<i64, Value>() {
+            let (_, value) = pair?;
+            match value {
+                Value::UserData(ud) => {
+                    if let Ok(a) = ud.borrow::<LuaQuestionAnswer>() {
+                        response.answers.push(a.inner.clone());
+                    }
+                }
+                Value::Table(t) => {
+                    response.answers.push(lua_answer_table_to_core(&t)?);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Ok(response)
 }
 
 #[cfg(test)]
@@ -596,5 +938,260 @@ mod tests {
 
         let result: String = lua.load(script).eval().expect("Should execute");
         assert!(result.contains("questions: 1"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // LuaQuestionAnswer tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_question_answer_creation() {
+        let answer = LuaQuestionAnswer::new(vec![0, 2]);
+        assert_eq!(answer.inner.selected, vec![0, 2]);
+        assert!(answer.inner.other.is_none());
+    }
+
+    #[test]
+    fn test_question_answer_with_other() {
+        let answer = LuaQuestionAnswer::with_other("Custom input".to_string());
+        assert!(answer.inner.selected.is_empty());
+        assert_eq!(answer.inner.other, Some("Custom input".to_string()));
+    }
+
+    #[test]
+    fn test_question_answer_methods() {
+        let lua = Lua::new();
+        register_ask_module(&lua).expect("Should register ask module");
+
+        let script = r#"
+            local answer = ask.answer({0, 2})
+            return {
+                first = answer:first_selected(),
+                count = answer:selection_count(),
+                has_sel = answer:has_selection(),
+                has_other = answer:has_other()
+            }
+        "#;
+
+        let result: Table = lua.load(script).eval().expect("Should execute");
+        assert_eq!(result.get::<usize>("first").unwrap(), 0);
+        assert_eq!(result.get::<usize>("count").unwrap(), 2);
+        assert!(result.get::<bool>("has_sel").unwrap());
+        assert!(!result.get::<bool>("has_other").unwrap());
+    }
+
+    #[test]
+    fn test_question_answer_other_method() {
+        let lua = Lua::new();
+        register_ask_module(&lua).expect("Should register ask module");
+
+        let script = r#"
+            local answer = ask.answer_other("Custom text")
+            return {
+                other = answer:other(),
+                has_other = answer:has_other(),
+                has_sel = answer:has_selection()
+            }
+        "#;
+
+        let result: Table = lua.load(script).eval().expect("Should execute");
+        assert_eq!(result.get::<String>("other").unwrap(), "Custom text");
+        assert!(result.get::<bool>("has_other").unwrap());
+        assert!(!result.get::<bool>("has_sel").unwrap());
+    }
+
+    #[test]
+    fn test_question_answer_selected_table() {
+        let lua = Lua::new();
+        register_ask_module(&lua).expect("Should register ask module");
+
+        let script = r#"
+            local answer = ask.answer({1, 3, 5})
+            local sel = answer:selected()
+            return { sel[1], sel[2], sel[3] }
+        "#;
+
+        let result: Table = lua.load(script).eval().expect("Should execute");
+        assert_eq!(result.get::<usize>(1).unwrap(), 1);
+        assert_eq!(result.get::<usize>(2).unwrap(), 3);
+        assert_eq!(result.get::<usize>(3).unwrap(), 5);
+    }
+
+    #[test]
+    fn test_question_answer_tostring() {
+        let lua = Lua::new();
+        register_ask_module(&lua).expect("Should register ask module");
+
+        let script = r#"
+            local answer = ask.answer({0, 1})
+            return tostring(answer)
+        "#;
+
+        let result: String = lua.load(script).eval().expect("Should execute");
+        assert!(result.contains("selected"));
+        assert!(result.contains("0"));
+        assert!(result.contains("1"));
+    }
+
+    #[test]
+    fn test_question_answer_other_tostring() {
+        let lua = Lua::new();
+        register_ask_module(&lua).expect("Should register ask module");
+
+        let script = r#"
+            local answer = ask.answer_other("Custom")
+            return tostring(answer)
+        "#;
+
+        let result: String = lua.load(script).eval().expect("Should execute");
+        assert!(result.contains("other"));
+        assert!(result.contains("Custom"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // LuaAskBatchResponse tests
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_batch_response_creation() {
+        let id = uuid::Uuid::new_v4();
+        let response = LuaAskBatchResponse::new(id);
+        assert_eq!(response.inner.id, id);
+        assert!(!response.inner.cancelled);
+        assert!(response.inner.answers.is_empty());
+    }
+
+    #[test]
+    fn test_batch_response_cancelled() {
+        let id = uuid::Uuid::new_v4();
+        let response = LuaAskBatchResponse::cancelled(id);
+        assert_eq!(response.inner.id, id);
+        assert!(response.inner.cancelled);
+    }
+
+    #[test]
+    fn test_lua_answer_to_core() {
+        let answer = LuaQuestionAnswer::new(vec![1, 2]);
+        let core = lua_answer_to_core(&answer);
+        assert_eq!(core.selected, vec![1, 2]);
+    }
+
+    #[test]
+    fn test_lua_response_to_core() {
+        let id = uuid::Uuid::new_v4();
+        let response = LuaAskBatchResponse::new(id);
+        let core = lua_response_to_core(&response);
+        assert_eq!(core.id, id);
+    }
+
+    #[test]
+    fn test_core_answer_to_lua() {
+        let lua = Lua::new();
+        let answer = QuestionAnswer::choice(2);
+        let table = core_answer_to_lua(&lua, &answer).expect("Should convert");
+
+        let selected: Table = table.get("selected").expect("selected should exist");
+        assert_eq!(selected.get::<usize>(1).unwrap(), 2);
+    }
+
+    #[test]
+    fn test_core_answer_with_other_to_lua() {
+        let lua = Lua::new();
+        let answer = QuestionAnswer::other("Custom");
+        let table = core_answer_to_lua(&lua, &answer).expect("Should convert");
+
+        let other: String = table.get("other").expect("other should exist");
+        assert_eq!(other, "Custom");
+    }
+
+    #[test]
+    fn test_core_response_to_lua() {
+        let lua = Lua::new();
+        let response = AskBatchResponse::new(uuid::Uuid::new_v4())
+            .answer(QuestionAnswer::choice(0))
+            .answer(QuestionAnswer::other("Text"));
+
+        let table = core_response_to_lua(&lua, &response).expect("Should convert");
+
+        let id: String = table.get("id").expect("id should exist");
+        assert!(uuid::Uuid::parse_str(&id).is_ok());
+
+        let cancelled: bool = table.get("cancelled").expect("cancelled should exist");
+        assert!(!cancelled);
+
+        let answers: Table = table.get("answers").expect("answers should exist");
+        let answer1: Table = answers.get(1).expect("answer1 should exist");
+        let selected1: Table = answer1.get("selected").expect("selected should exist");
+        assert_eq!(selected1.get::<usize>(1).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_lua_answer_table_to_core() {
+        let lua = Lua::new();
+
+        let script = r#"
+            return { selected = {0, 2}, other = "Custom" }
+        "#;
+
+        let table: Table = lua.load(script).eval().expect("Should execute");
+        let answer = lua_answer_table_to_core(&table).expect("Should convert");
+
+        assert_eq!(answer.selected, vec![0, 2]);
+        assert_eq!(answer.other, Some("Custom".to_string()));
+    }
+
+    #[test]
+    fn test_lua_response_table_to_core() {
+        let lua = Lua::new();
+        let id = uuid::Uuid::new_v4();
+
+        let script = format!(
+            r#"
+            return {{
+                id = "{}",
+                cancelled = false,
+                answers = {{
+                    {{ selected = {{0}}, other = nil }},
+                    {{ selected = {{}}, other = "Custom" }}
+                }}
+            }}
+        "#,
+            id
+        );
+
+        let table: Table = lua.load(&script).eval().expect("Should execute");
+        let response = lua_response_table_to_core(&table).expect("Should convert");
+
+        assert_eq!(response.id, id);
+        assert!(!response.cancelled);
+        assert_eq!(response.answers.len(), 2);
+        assert_eq!(response.answers[0].selected, vec![0]);
+        assert_eq!(response.answers[1].other, Some("Custom".to_string()));
+    }
+
+    #[test]
+    fn test_notify_function() {
+        let lua = Lua::new();
+        register_ask_module(&lua).expect("Should register ask module");
+
+        // notify should not error
+        let script = r#"
+            ask.notify("Test notification")
+            return true
+        "#;
+
+        let result: bool = lua.load(script).eval().expect("Should execute");
+        assert!(result);
+    }
+
+    #[test]
+    fn test_module_has_new_functions() {
+        let lua = Lua::new();
+        register_ask_module(&lua).expect("Should register ask module");
+
+        let ask: Table = lua.globals().get("ask").expect("ask should exist");
+        assert!(ask.contains_key("notify").unwrap());
+        assert!(ask.contains_key("answer").unwrap());
+        assert!(ask.contains_key("answer_other").unwrap());
     }
 }
