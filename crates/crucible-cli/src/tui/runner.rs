@@ -759,7 +759,11 @@ impl RatatuiRunner {
                 if let Some(rx) = self.streaming_manager.rx_mut() {
                     let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
                     if !events.is_empty() {
-                        info!(event_count = events.len(), "Runner polled {} events from channel", events.len());
+                        info!(
+                            event_count = events.len(),
+                            "Runner polled {} events from channel",
+                            events.len()
+                        );
                     }
                     events
                 } else {
@@ -1006,7 +1010,10 @@ impl RatatuiRunner {
 
                 // Process drained events
                 for event in drained_events {
-                    info!("Drained event from finished task: {:?}", std::mem::discriminant(&event));
+                    info!(
+                        "Drained event from finished task: {:?}",
+                        std::mem::discriminant(&event)
+                    );
                     match event {
                         StreamingEvent::Done { full_response } => {
                             info!(
@@ -1059,13 +1066,12 @@ impl RatatuiRunner {
             // 7. Animate spinner during thinking phase (before tokens arrive)
             // Animate "Thinking" spinner when streaming but no tokens yet.
             // Spinner is throttled to 500ms, so just tick every frame.
-            if self.streaming_manager.is_streaming() && self.token_count == 0 {
-                if self.spinner.tick() {
-                    // Frame changed - update status
-                    self.view.set_status(StatusKind::Thinking {
-                        spinner_frame: self.spinner.frame(),
-                    });
-                }
+            if self.streaming_manager.is_streaming() && self.token_count == 0 && self.spinner.tick()
+            {
+                // Frame changed - update status
+                self.view.set_status(StatusKind::Thinking {
+                    spinner_frame: self.spinner.frame(),
+                });
             }
         }
 
@@ -2371,7 +2377,7 @@ impl RatatuiRunner {
 
         let (terminal_width, _) = size().unwrap_or((80, 24));
         use crate::tui::constants::UiConstants;
-        let content_width = UiConstants::content_width(terminal_width) as usize;
+        let content_width = UiConstants::content_width(terminal_width);
 
         // Use shared graduation logic
         use crate::tui::graduation::check_graduation;
@@ -2471,7 +2477,7 @@ impl RatatuiRunner {
                 PendingGraduation::Item(item) => {
                     use crate::tui::constants::UiConstants;
                     let content_width = UiConstants::content_width(width);
-                    let lines = render_item_to_lines(&item, content_width as usize);
+                    let lines = render_item_to_lines(&item, content_width);
                     all_lines.extend(lines);
                 }
             }
@@ -2497,7 +2503,7 @@ impl RatatuiRunner {
                     buf.set_line(0, i as u16, line, width);
                 }
             })
-            .map_err(|e| io::Error::other(e))?;
+            .map_err(io::Error::other)?;
 
         Ok(())
     }
@@ -3200,11 +3206,7 @@ impl RatatuiRunner {
         disable_raw_mode()?;
         if self.inline_mode {
             // Inline mode: just restore cursor (no alternate screen to leave, no mouse capture to disable)
-            execute!(
-                terminal.backend_mut(),
-                DisableBracketedPaste,
-                cursor::Show
-            )?;
+            execute!(terminal.backend_mut(), DisableBracketedPaste, cursor::Show)?;
         } else {
             // Fullscreen mode: leave alternate screen
             execute!(
@@ -3226,10 +3228,7 @@ impl RatatuiRunner {
     }
 
     /// Render a single frame (used during status updates).
-    fn render_frame(
-        &mut self,
-        terminal: &mut RatatuiTerminal,
-    ) -> Result<()> {
+    fn render_frame(&mut self, terminal: &mut RatatuiTerminal) -> Result<()> {
         let view = &self.view;
         let selection = self.selection_manager.selection();
         let scroll_offset = view.state().scroll_offset;

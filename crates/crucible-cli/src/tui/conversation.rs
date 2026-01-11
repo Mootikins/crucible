@@ -345,7 +345,11 @@ impl ConversationState {
             }
 
             // For streaming messages, only count complete blocks
-            if let ConversationItem::AssistantMessage { blocks, is_streaming: true } = item {
+            if let ConversationItem::AssistantMessage {
+                blocks,
+                is_streaming: true,
+            } = item
+            {
                 total += self.count_complete_blocks_lines(blocks, width);
                 continue;
             }
@@ -367,19 +371,12 @@ impl ConversationState {
     }
 
     /// Count lines for only the COMPLETE blocks of a streaming message.
+    ///
+    /// Uses the same rendering logic as `render_complete_blocks` to ensure
+    /// the count matches the actual rendered output.
     fn count_complete_blocks_lines(&self, blocks: &[StreamBlock], width: usize) -> usize {
-        let complete_blocks: Vec<_> = blocks.iter().filter(|b| b.is_complete()).collect();
-        if complete_blocks.is_empty() {
-            return 0;
-        }
-
-        // Render complete blocks to count lines
-        // Add blank line for spacing (like full message would have)
-        let mut count = 1; // Leading blank line
-        for block in complete_blocks {
-            count += render_block_to_lines(block, width).len();
-        }
-        count
+        // Delegate to render_complete_blocks to ensure count matches render
+        self.render_complete_blocks(blocks, width).len()
     }
 
     /// Render all items to lines using cache where available.
@@ -437,7 +434,11 @@ impl ConversationState {
             }
 
             // For streaming messages, only render complete blocks
-            if let ConversationItem::AssistantMessage { blocks, is_streaming: true } = item {
+            if let ConversationItem::AssistantMessage {
+                blocks,
+                is_streaming: true,
+            } = item
+            {
                 all_lines.extend(self.render_complete_blocks(blocks, width));
                 continue;
             }
@@ -456,20 +457,19 @@ impl ConversationState {
     }
 
     /// Render only COMPLETE blocks of a streaming message for graduation.
+    ///
+    /// Uses the same rendering logic as `render_assistant_blocks` to ensure
+    /// consistency between graduated content and displayed content. Only the
+    /// first block gets the " ● " prefix, subsequent blocks get "   " indent.
     fn render_complete_blocks(&self, blocks: &[StreamBlock], width: usize) -> Vec<Line<'static>> {
-        let complete_blocks: Vec<_> = blocks.iter().filter(|b| b.is_complete()).collect();
+        let complete_blocks: Vec<_> = blocks.iter().filter(|b| b.is_complete()).cloned().collect();
         if complete_blocks.is_empty() {
             return Vec::new();
         }
 
-        let mut lines = Vec::new();
-        // Add blank line for spacing (like full message would have)
-        lines.push(Line::from(""));
-
-        for block in complete_blocks {
-            lines.extend(render_block_to_lines(block, width));
-        }
-        lines
+        // Use the same rendering function as full messages to ensure
+        // prefix/indent consistency between graduation and display
+        render_assistant_blocks(&complete_blocks, width)
     }
 
     /// Store rendered lines for an item
@@ -634,11 +634,8 @@ impl ConversationState {
         // Check if status exists and is already at end - if so, update in place (fast path).
         // Otherwise, remove old status and add new one at end.
         let len = self.items.len();
-        let last_is_status = len > 0
-            && matches!(
-                self.items.back(),
-                Some(ConversationItem::Status(_))
-            );
+        let last_is_status =
+            len > 0 && matches!(self.items.back(), Some(ConversationItem::Status(_)));
 
         if last_is_status {
             // Fast path: status already at end, update in place
@@ -955,9 +952,7 @@ impl ConversationState {
 pub fn render_item_to_lines(item: &ConversationItem, width: usize) -> Vec<Line<'static>> {
     match item {
         ConversationItem::UserMessage { content } => render_user_message(content, width),
-        ConversationItem::AssistantMessage { blocks, .. } => {
-            render_assistant_blocks(blocks, width)
-        }
+        ConversationItem::AssistantMessage { blocks, .. } => render_assistant_blocks(blocks, width),
         ConversationItem::Status(status) => render_status(status),
         ConversationItem::ToolCall(tool) => render_tool_call(tool),
     }
@@ -1013,7 +1008,10 @@ fn render_assistant_blocks(blocks: &[StreamBlock], width: usize) -> Vec<Line<'st
 
     for block in blocks {
         match block {
-            StreamBlock::Prose { text, is_complete: _ } => {
+            StreamBlock::Prose {
+                text,
+                is_complete: _,
+            } => {
                 // Render prose as markdown with word-aware wrapping
                 let markdown_lines = render_markdown_text(text, width);
 
@@ -1027,7 +1025,6 @@ fn render_assistant_blocks(blocks: &[StreamBlock], width: usize) -> Vec<Line<'st
                     }
                     lines.push(add_assistant_prefix(line, &mut first_content_line));
                 }
-
             }
             StreamBlock::Code {
                 lang,
@@ -1075,9 +1072,10 @@ fn render_assistant_blocks(blocks: &[StreamBlock], width: usize) -> Vec<Line<'st
 
                 // Build the tool line suffix
                 let suffix = match status {
-                    ToolBlockStatus::Complete { summary } => {
-                        summary.as_ref().map(|s| format!(" → {}", s)).unwrap_or_default()
-                    }
+                    ToolBlockStatus::Complete { summary } => summary
+                        .as_ref()
+                        .map(|s| format!(" → {}", s))
+                        .unwrap_or_default(),
                     ToolBlockStatus::Error { message } => format!(" → {}", message),
                     ToolBlockStatus::Running => String::new(),
                 };
@@ -1093,76 +1091,6 @@ fn render_assistant_blocks(blocks: &[StreamBlock], width: usize) -> Vec<Line<'st
                 // Use add_assistant_prefix for consistent prefixing
                 lines.push(add_assistant_prefix(tool_line, &mut first_content_line));
             }
-        }
-    }
-
-    lines
-}
-
-/// Render a single StreamBlock to lines (without spacing/prefix).
-/// Used for rendering individual complete blocks during progressive graduation.
-fn render_block_to_lines(block: &StreamBlock, width: usize) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
-    let mut first_content_line = true;
-
-    match block {
-        StreamBlock::Prose { text, .. } => {
-            let markdown_lines = render_markdown_text(text, width);
-            for line in markdown_lines {
-                if first_content_line && line.spans.iter().all(|s| s.content.trim().is_empty()) {
-                    continue;
-                }
-                lines.push(add_assistant_prefix(line, &mut first_content_line));
-            }
-        }
-        StreamBlock::Code { lang, content, .. } => {
-            let code_lines = render_code_block(lang.as_deref(), content);
-            for line in code_lines {
-                if first_content_line && line.spans.iter().all(|s| s.content.trim().is_empty()) {
-                    continue;
-                }
-                lines.push(add_assistant_prefix(line, &mut first_content_line));
-            }
-        }
-        StreamBlock::Tool { name, args, status } => {
-            use crate::tui::content_block::ToolBlockStatus;
-
-            let (indicator, indicator_style, text_style) = match status {
-                ToolBlockStatus::Running => (
-                    indicators::TOOL_RUNNING,
-                    presets::tool_running(),
-                    presets::tool_running(),
-                ),
-                ToolBlockStatus::Complete { .. } => (
-                    indicators::TOOL_COMPLETE,
-                    presets::tool_complete(),
-                    presets::tool_running(),
-                ),
-                ToolBlockStatus::Error { .. } => (
-                    indicators::TOOL_ERROR,
-                    presets::tool_error(),
-                    presets::tool_error(),
-                ),
-            };
-
-            let args_str = format_tool_args(args);
-            let suffix = match status {
-                ToolBlockStatus::Complete { summary, .. } => {
-                    summary.as_ref().map_or(String::new(), |s: &String| {
-                        let truncated = if s.len() > 50 { &s[..50] } else { s.as_str() };
-                        format!(" → {}", truncated)
-                    })
-                }
-                ToolBlockStatus::Error { message } => format!(" ✗ {}", message),
-                ToolBlockStatus::Running => String::new(),
-            };
-
-            let tool_line = Line::from(vec![
-                Span::styled(format!("{} ", indicator), indicator_style),
-                Span::styled(format!("{}{}", name, args_str), text_style),
-                Span::styled(suffix, text_style),
-            ]);
-            lines.push(add_assistant_prefix(tool_line, &mut first_content_line));
         }
     }
 
@@ -2196,8 +2124,10 @@ mod tests {
         // Check for blank lines between table rows
         let mut in_table = false;
         for (i, text) in line_texts.iter().enumerate() {
-            let is_table_row =
-                text.contains('│') || text.contains('├') || text.contains('┌') || text.contains('└');
+            let is_table_row = text.contains('│')
+                || text.contains('├')
+                || text.contains('┌')
+                || text.contains('└');
             let is_blank_or_only_prefix = text.trim().is_empty()
                 || text == "   " // Just prefix spaces
                 || text.chars().all(|c| c.is_whitespace() || c == '·' || c == '●');

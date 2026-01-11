@@ -189,9 +189,7 @@ async fn main() -> Result<()> {
                 .init();
         } else {
             // Normal stderr logging for other commands
-            tracing_subscriber::fmt()
-                .with_env_filter(env_filter)
-                .init();
+            tracing_subscriber::fmt().with_env_filter(env_filter).init();
         }
     }
 

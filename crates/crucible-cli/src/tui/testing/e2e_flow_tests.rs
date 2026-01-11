@@ -359,7 +359,9 @@ mod graduation_flow {
                 || line.contains('┌')
                 || line.contains('└');
             let is_blank = line.trim().is_empty()
-                || line.chars().all(|c| c.is_whitespace() || c == '·' || c == '●');
+                || line
+                    .chars()
+                    .all(|c| c.is_whitespace() || c == '·' || c == '●');
 
             if is_table_row {
                 in_table = true;
@@ -463,7 +465,11 @@ mod rendering_bugs {
         // Verify user message appears exactly once
         let rendered = h.harness.render();
         let hi_count = rendered.matches("> hi!").count();
-        assert_eq!(hi_count, 1, "user message should appear exactly once, found {}", hi_count);
+        assert_eq!(
+            hi_count, 1,
+            "user message should appear exactly once, found {}",
+            hi_count
+        );
 
         assert_snapshot!("bug_duplicated_user_message", h.full_state());
     }
@@ -486,10 +492,8 @@ mod rendering_bugs {
             "read_file",
             serde_json::json!({"path": "README.md"}),
         ));
-        h.harness.event(events::tool_completed_event(
-            "read_file",
-            "# Crucible\n...",
-        ));
+        h.harness
+            .event(events::tool_completed_event("read_file", "# Crucible\n..."));
 
         // More prose after tool
         h.chunk("- Assisting with development\n");

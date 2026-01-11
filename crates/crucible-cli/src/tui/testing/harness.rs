@@ -726,7 +726,7 @@ impl StreamingHarness {
         use crate::tui::constants::UiConstants;
         use crate::tui::graduation::check_graduation;
 
-        let content_width = UiConstants::content_width(self.harness.width) as usize;
+        let content_width = UiConstants::content_width(self.harness.width);
 
         // Use the shared graduation logic (same as runner)
         let (all_lines, result) = check_graduation(
@@ -751,7 +751,7 @@ impl StreamingHarness {
         use crate::tui::constants::UiConstants;
         use crate::tui::graduation::render_all_lines;
 
-        let content_width = UiConstants::content_width(self.harness.width) as usize;
+        let content_width = UiConstants::content_width(self.harness.width);
         let items: Vec<_> = self
             .harness
             .view
@@ -769,7 +769,7 @@ impl StreamingHarness {
         use crate::tui::constants::UiConstants;
         use crate::tui::graduation::render_all_lines;
 
-        let content_width = UiConstants::content_width(self.harness.width) as usize;
+        let content_width = UiConstants::content_width(self.harness.width);
         let items: Vec<_> = self
             .harness
             .view
