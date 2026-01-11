@@ -118,7 +118,7 @@ where
             mode_state,
             current_mode_id,
             mode_context_sent: AtomicBool::new(false), // Will send context on first message
-            max_tool_depth: 50, // High limit for complex agentic workflows
+            max_tool_depth: 50,                        // High limit for complex agentic workflows
             reasoning_endpoint: None,
             model_name: None,
             http_client: reqwest::Client::new(),
@@ -183,8 +183,8 @@ where
         let current_mode_id = self.current_mode_id.clone();
 
         // Check if we need to send mode context (only once per mode)
-        let should_send_mode_context = current_mode_id == "plan"
-            && !self.mode_context_sent.swap(true, Ordering::SeqCst);
+        let should_send_mode_context =
+            current_mode_id == "plan" && !self.mode_context_sent.swap(true, Ordering::SeqCst);
 
         Box::pin(async_stream::stream! {
             // Build messages array from history + new message
@@ -409,8 +409,8 @@ where
         let current_mode_id = self.current_mode_id.clone();
 
         // Check if we need to send mode context (only once per mode)
-        let should_send_mode_context = current_mode_id == "plan"
-            && !self.mode_context_sent.swap(true, Ordering::SeqCst);
+        let should_send_mode_context =
+            current_mode_id == "plan" && !self.mode_context_sent.swap(true, Ordering::SeqCst);
 
         Box::pin(async_stream::stream! {
             // Get current history
