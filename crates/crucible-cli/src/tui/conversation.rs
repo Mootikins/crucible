@@ -319,24 +319,20 @@ impl ConversationState {
         self.cache.borrow_mut().set_total_height(height);
     }
 
-    /// Calculate total line count efficiently using cached heights.
+    /// Calculate total line count for graduation purposes.
     ///
-    /// Uses cached heights where available, only rendering uncached items.
-    /// Includes spacing lines that would be added before tool calls.
+    /// IMPORTANT: Excludes Status items (ephemeral) and incomplete content:
+    /// - Status items get removed after streaming
+    /// - For streaming AssistantMessages, only counts COMPLETE blocks
     ///
-    /// IMPORTANT: Excludes ephemeral items from the count:
-    /// - Status items (get removed after streaming)
-    /// - Streaming AssistantMessages (content still changing)
-    /// These should not affect graduation calculations.
+    /// This ensures graduation only considers stable, unchanging content.
     pub fn calculate_total_line_count(&self, width: usize) -> usize {
         let mut total = 0;
 
         for (i, item) in self.items.iter().enumerate() {
-            // Skip ephemeral items that shouldn't affect graduation
-            match item {
-                ConversationItem::Status(_) => continue,
-                ConversationItem::AssistantMessage { is_streaming: true, .. } => continue,
-                _ => {}
+            // Skip Status items - they're ephemeral
+            if matches!(item, ConversationItem::Status(_)) {
+                continue;
             }
 
             // Add spacing before tool calls (but not between consecutive tools)
@@ -346,6 +342,12 @@ impl ConversationState {
                 if !prev_was_tool {
                     total += 1; // Empty line for spacing
                 }
+            }
+
+            // For streaming messages, only count complete blocks
+            if let ConversationItem::AssistantMessage { blocks, is_streaming: true } = item {
+                total += self.count_complete_blocks_lines(blocks, width);
+                continue;
             }
 
             // Use cached height if available, otherwise render to get height
@@ -360,9 +362,24 @@ impl ConversationState {
             }
         }
 
-        // Cache the total for next time
-        self.set_total_height(total);
+        // Don't cache this total - it can change as blocks complete
         total
+    }
+
+    /// Count lines for only the COMPLETE blocks of a streaming message.
+    fn count_complete_blocks_lines(&self, blocks: &[StreamBlock], width: usize) -> usize {
+        let complete_blocks: Vec<_> = blocks.iter().filter(|b| b.is_complete()).collect();
+        if complete_blocks.is_empty() {
+            return 0;
+        }
+
+        // Render complete blocks to count lines
+        // Add blank line for spacing (like full message would have)
+        let mut count = 1; // Leading blank line
+        for block in complete_blocks {
+            count += render_block_to_lines(block, width).len();
+        }
+        count
     }
 
     /// Render all items to lines using cache where available.
@@ -396,18 +413,18 @@ impl ConversationState {
 
     /// Render all items to lines for graduation.
     ///
-    /// IMPORTANT: Excludes ephemeral items that shouldn't be graduated:
-    /// - Status items (get removed after streaming)
-    /// - Streaming AssistantMessages (content still changing)
+    /// IMPORTANT: Excludes Status items (ephemeral) and incomplete content:
+    /// - Status items get removed after streaming
+    /// - For streaming AssistantMessages, only renders COMPLETE blocks
+    ///
+    /// This ensures graduation only includes stable, unchanging content.
     pub fn render_for_graduation(&self, width: usize) -> Vec<Line<'static>> {
         let mut all_lines = Vec::new();
 
         for (i, item) in self.items.iter().enumerate() {
-            // Skip ephemeral items that shouldn't be graduated
-            match item {
-                ConversationItem::Status(_) => continue,
-                ConversationItem::AssistantMessage { is_streaming: true, .. } => continue,
-                _ => {}
+            // Skip Status items - they're ephemeral
+            if matches!(item, ConversationItem::Status(_)) {
+                continue;
             }
 
             // Add spacing before tool calls (but not between consecutive tools)
@@ -417,6 +434,12 @@ impl ConversationState {
                 if !prev_was_tool {
                     all_lines.push(Line::from(""));
                 }
+            }
+
+            // For streaming messages, only render complete blocks
+            if let ConversationItem::AssistantMessage { blocks, is_streaming: true } = item {
+                all_lines.extend(self.render_complete_blocks(blocks, width));
+                continue;
             }
 
             // Use cached lines if available, otherwise render and cache
@@ -430,6 +453,23 @@ impl ConversationState {
         }
 
         all_lines
+    }
+
+    /// Render only COMPLETE blocks of a streaming message for graduation.
+    fn render_complete_blocks(&self, blocks: &[StreamBlock], width: usize) -> Vec<Line<'static>> {
+        let complete_blocks: Vec<_> = blocks.iter().filter(|b| b.is_complete()).collect();
+        if complete_blocks.is_empty() {
+            return Vec::new();
+        }
+
+        let mut lines = Vec::new();
+        // Add blank line for spacing (like full message would have)
+        lines.push(Line::from(""));
+
+        for block in complete_blocks {
+            lines.extend(render_block_to_lines(block, width));
+        }
+        lines
     }
 
     /// Store rendered lines for an item
@@ -1053,6 +1093,76 @@ fn render_assistant_blocks(blocks: &[StreamBlock], width: usize) -> Vec<Line<'st
                 // Use add_assistant_prefix for consistent prefixing
                 lines.push(add_assistant_prefix(tool_line, &mut first_content_line));
             }
+        }
+    }
+
+    lines
+}
+
+/// Render a single StreamBlock to lines (without spacing/prefix).
+/// Used for rendering individual complete blocks during progressive graduation.
+fn render_block_to_lines(block: &StreamBlock, width: usize) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    let mut first_content_line = true;
+
+    match block {
+        StreamBlock::Prose { text, .. } => {
+            let markdown_lines = render_markdown_text(text, width);
+            for line in markdown_lines {
+                if first_content_line && line.spans.iter().all(|s| s.content.trim().is_empty()) {
+                    continue;
+                }
+                lines.push(add_assistant_prefix(line, &mut first_content_line));
+            }
+        }
+        StreamBlock::Code { lang, content, .. } => {
+            let code_lines = render_code_block(lang.as_deref(), content);
+            for line in code_lines {
+                if first_content_line && line.spans.iter().all(|s| s.content.trim().is_empty()) {
+                    continue;
+                }
+                lines.push(add_assistant_prefix(line, &mut first_content_line));
+            }
+        }
+        StreamBlock::Tool { name, args, status } => {
+            use crate::tui::content_block::ToolBlockStatus;
+
+            let (indicator, indicator_style, text_style) = match status {
+                ToolBlockStatus::Running => (
+                    indicators::TOOL_RUNNING,
+                    presets::tool_running(),
+                    presets::tool_running(),
+                ),
+                ToolBlockStatus::Complete { .. } => (
+                    indicators::TOOL_COMPLETE,
+                    presets::tool_complete(),
+                    presets::tool_running(),
+                ),
+                ToolBlockStatus::Error { .. } => (
+                    indicators::TOOL_ERROR,
+                    presets::tool_error(),
+                    presets::tool_error(),
+                ),
+            };
+
+            let args_str = format_tool_args(args);
+            let suffix = match status {
+                ToolBlockStatus::Complete { summary, .. } => {
+                    summary.as_ref().map_or(String::new(), |s: &String| {
+                        let truncated = if s.len() > 50 { &s[..50] } else { s.as_str() };
+                        format!(" → {}", truncated)
+                    })
+                }
+                ToolBlockStatus::Error { message } => format!(" ✗ {}", message),
+                ToolBlockStatus::Running => String::new(),
+            };
+
+            let tool_line = Line::from(vec![
+                Span::styled(format!("{} ", indicator), indicator_style),
+                Span::styled(format!("{}{}", name, args_str), text_style),
+                Span::styled(suffix, text_style),
+            ]);
+            lines.push(add_assistant_prefix(tool_line, &mut first_content_line));
         }
     }
 
