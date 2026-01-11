@@ -605,7 +605,9 @@ mod tests {
     }
 
     #[test]
-    fn test_bottom_anchored_rendering() {
+    fn test_top_anchored_rendering() {
+        // Content starts at top, empty space at bottom.
+        // Conversation history grows upward as content is added.
         let mut state = ConversationState::new();
         state.push_user_message("Test");
 
@@ -623,26 +625,28 @@ mod tests {
 
         let buffer = terminal.backend().buffer();
 
-        // Content should be at bottom, not top
-        let top_line: String = (0..80)
-            .map(|x| buffer.cell((x, 0)).map(|c| c.symbol()).unwrap_or(" "))
-            .collect();
-
-        // Top line should be mostly empty
-        assert!(
-            top_line.trim().is_empty(),
-            "Expected top line to be empty for short content"
-        );
-
-        // Bottom area should have content
-        let has_content = (15..20).any(|y| {
+        // Content should be near top (first few lines)
+        let has_content_at_top = (0..5).any(|y| {
             let line: String = (0..80)
                 .map(|x| buffer.cell((x, y)).map(|c| c.symbol()).unwrap_or(" "))
                 .collect();
             line.contains("Test")
         });
 
-        assert!(has_content, "Expected content near bottom of viewport");
+        assert!(
+            has_content_at_top,
+            "Expected content near top of viewport"
+        );
+
+        // Bottom area should be empty (space for more content to grow into)
+        let bottom_line: String = (0..80)
+            .map(|x| buffer.cell((x, 19)).map(|c| c.symbol()).unwrap_or(" "))
+            .collect();
+
+        assert!(
+            bottom_line.trim().is_empty(),
+            "Expected bottom line to be empty for short content"
+        );
     }
 
     #[test]

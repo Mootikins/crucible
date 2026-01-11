@@ -236,6 +236,7 @@ use crate::tui::paste_handler::{
     build_indicator_delete, build_message_with_pastes, PasteHandler, PastedContent,
 };
 use crate::tui::session_commands;
+use crate::tui::spinner::Spinner;
 use crate::tui::streaming_channel::{create_streaming_channel, StreamingEvent, StreamingTask};
 
 use crate::tui::components::generic_popup::PopupState;
@@ -339,7 +340,10 @@ const MIN_INLINE_VIEWPORT_HEIGHT: u16 = 10;
 /// Multiple rapid `insert_before()` calls with scrolling regions can cause
 /// terminal rendering artifacts (gaps between lines). Throttling ensures
 /// content accumulates and is flushed in larger batches.
-const GRADUATION_THROTTLE_MS: u64 = 100;
+///
+/// Reduced from 100ms to 50ms after graduation calculation optimizations
+/// (cached line counts, avoiding full re-renders when no graduation needed).
+const GRADUATION_THROTTLE_MS: u64 = 50;
 
 /// Calculate the inline viewport height based on terminal size.
 ///
@@ -369,10 +373,8 @@ pub struct RatatuiRunner {
     prev_token_count: usize,
     /// Context window size for current model (for percentage display)
     context_window_size: usize,
-    /// Spinner animation frame (cycles 0-3)
-    spinner_frame: usize,
-    /// Animation frame counter for timing (60fps loop)
-    animation_frame: usize,
+    /// Throttled spinner animation (500ms between frame changes)
+    spinner: Spinner,
     /// Track Ctrl+C for double-press exit
     ctrl_c_count: u8,
     last_ctrl_c: Option<std::time::Instant>,
@@ -478,8 +480,7 @@ impl RatatuiRunner {
             token_count: 0,
             prev_token_count: 0,
             context_window_size: 128_000, // Default context window (varies by model)
-            spinner_frame: 0,
-            animation_frame: 0,
+            spinner: Spinner::new(),
             ctrl_c_count: 0,
             last_ctrl_c: None,
             popup: None,
@@ -767,11 +768,11 @@ impl RatatuiRunner {
                     StreamingEvent::Delta { text, seq: _ } => {
                         self.prev_token_count = self.token_count;
                         self.token_count += 1;
-                        self.spinner_frame = self.spinner_frame.wrapping_add(1);
+                        self.spinner.tick(); // Throttled: only advances every 500ms
                         self.view.set_status(StatusKind::Generating {
                             token_count: self.token_count,
                             prev_token_count: self.prev_token_count,
-                            spinner_frame: self.spinner_frame,
+                            spinner_frame: self.spinner.frame(),
                         });
 
                         // Feed delta through parser
@@ -921,11 +922,11 @@ impl RatatuiRunner {
                         // (reasoning is thinking/chain-of-thought from models like Qwen3-thinking)
                         self.prev_token_count = self.token_count;
                         self.token_count += 1;
-                        self.spinner_frame = self.spinner_frame.wrapping_add(1);
+                        self.spinner.tick(); // Throttled: only advances every 500ms
                         self.view.set_status(StatusKind::Generating {
                             token_count: self.token_count,
                             prev_token_count: self.prev_token_count,
-                            spinner_frame: self.spinner_frame,
+                            spinner_frame: self.spinner.frame(),
                         });
 
                         // Accumulate reasoning in view for display (Alt+T toggle)
@@ -1048,16 +1049,15 @@ impl RatatuiRunner {
             }
 
             // 7. Animate spinner during thinking phase (before tokens arrive)
-            // The loop runs at ~60fps (16ms). Animate spinner every ~6 frames (~100ms).
-            self.animation_frame = self.animation_frame.wrapping_add(1);
-            if self.streaming_manager.is_streaming()
-                && self.token_count == 0
-                && self.animation_frame % 6 == 0
-            {
-                self.spinner_frame = self.spinner_frame.wrapping_add(1);
-                self.view.set_status(StatusKind::Thinking {
-                    spinner_frame: self.spinner_frame,
-                });
+            // Animate "Thinking" spinner when streaming but no tokens yet.
+            // Spinner is throttled to 500ms, so just tick every frame.
+            if self.streaming_manager.is_streaming() && self.token_count == 0 {
+                if self.spinner.tick() {
+                    // Frame changed - update status
+                    self.view.set_status(StatusKind::Thinking {
+                        spinner_frame: self.spinner.frame(),
+                    });
+                }
             }
         }
 
@@ -1310,7 +1310,7 @@ impl RatatuiRunner {
                     .start_streaming_with_parser(StreamingBuffer::new());
                 self.token_count = 0;
                 self.prev_token_count = 0;
-                self.spinner_frame = 0;
+                self.spinner.reset();
                 self.view
                     .set_status(StatusKind::Thinking { spinner_frame: 0 });
                 self.view.set_status_text("Thinking");
@@ -2201,19 +2201,10 @@ impl RatatuiRunner {
             Self::handle_notification_event(&mut self.view.state_mut().notifications, &event);
 
             match &*event {
-                SessionEvent::TextDelta { delta, .. } => {
-                    // Update token count and status
-                    self.prev_token_count = self.token_count;
-                    self.token_count += delta.split_whitespace().count();
-                    self.spinner_frame = self.spinner_frame.wrapping_add(1);
-                    self.view.set_status(StatusKind::Generating {
-                        token_count: self.token_count,
-                        prev_token_count: self.prev_token_count,
-                        spinner_frame: self.spinner_frame,
-                    });
-                    self.view.set_status_text("Generating");
-                    self.view
-                        .set_context_usage(self.token_count, self.context_window_size);
+                SessionEvent::TextDelta { .. } => {
+                    // NOTE: Already handled via StreamingEvent::Delta handler which updates
+                    // token_count, spinner_frame, and calls set_status(). Don't duplicate here.
+                    // Ring events may come from external sources, but status is already current.
                 }
                 SessionEvent::AgentResponded {
                     content: _,

@@ -84,16 +84,29 @@ pub fn render_all_lines(items: &[ConversationItem], width: usize) -> Vec<Line<'s
 ///
 /// Combines rendering and calculation into one call.
 /// This is the main entry point for both runner and harness.
+///
+/// Optimized to:
+/// 1. First check if graduation is needed using cached line counts
+/// 2. Only render lines if graduation is actually needed
 pub fn check_graduation(
     conversation: &ConversationState,
     graduated_count: usize,
     viewport_capacity: usize,
     content_width: usize,
 ) -> (Vec<Line<'static>>, Option<GraduationResult>) {
-    let items: Vec<_> = conversation.items().iter().cloned().collect();
-    let all_lines = render_all_lines(&items, content_width);
+    // First, efficiently calculate total line count using cache
+    let total_lines = conversation.calculate_total_line_count(content_width);
 
-    let result = calculate_graduation(all_lines.len(), graduated_count, viewport_capacity);
+    // Check if graduation is needed (cheap calculation)
+    let result = calculate_graduation(total_lines, graduated_count, viewport_capacity);
+
+    if result.is_none() {
+        // No graduation needed - return empty vec to avoid rendering
+        return (Vec::new(), None);
+    }
+
+    // Graduation needed - render using cache where available
+    let all_lines = conversation.render_all_lines_cached(content_width);
 
     (all_lines, result)
 }
