@@ -37,7 +37,8 @@ fn extract_plain_text(line: &Line) -> String {
 ///
 /// - `scroll_offset = 0`: Bottom of content is visible (newest messages)
 /// - `scroll_offset = N`: Scrolled N lines up from bottom
-/// - Content shorter than viewport is bottom-anchored with empty space at top
+/// - Content shorter than viewport is top-anchored with empty space at bottom
+///   (prevents visual shifts when status indicators appear/disappear)
 pub struct SessionHistoryWidget<'a> {
     state: &'a ConversationState,
     scroll_offset: usize,
@@ -382,11 +383,12 @@ impl Widget for SessionHistoryWidget<'_> {
         // scroll_offset = N means N lines scrolled up from bottom
 
         if content_height <= viewport_height {
-            // Content fits in viewport - render at bottom
-            let empty_space = viewport_height - content_height;
+            // Content fits in viewport - render at TOP (empty space at bottom).
+            // This prevents visual shifts when status indicators appear/disappear,
+            // since content stays anchored at top and empty space grows/shrinks below.
             let offset_area = Rect {
                 x: area.x,
-                y: area.y + empty_space as u16,
+                y: area.y, // TOP anchored
                 width: area.width,
                 height: content_height as u16,
             };

@@ -2,9 +2,6 @@
 source: crates/crucible-cli/src/tui/testing/resize_tests.rs
 expression: h.render()
 ---
-                                                  
- > Analyze this codebase                          
-                                                  
  ● Let me explore the structure.                  
                                                   
  ● glob → src/**/*.rs - 24 files                  

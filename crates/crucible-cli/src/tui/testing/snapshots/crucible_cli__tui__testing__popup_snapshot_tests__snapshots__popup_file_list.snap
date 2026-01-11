@@ -4,20 +4,6 @@ expression: h.render()
 ---
                                                                                 
                                                                                 
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
 > [file] src/main.rs workspace                                                  
   [file] src/lib.rs workspace                                                   
   [file] Cargo.toml workspace                                                   
