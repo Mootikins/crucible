@@ -248,9 +248,12 @@ pub struct ConversationState {
     max_tool_output_lines: usize,
     /// Per-item render cache (RefCell for interior mutability during render)
     cache: RefCell<RenderCache>,
-    /// Lines already graduated from the first item (for partial graduation)
-    /// When all lines of the first item are graduated, it's popped and this resets to 0
-    graduated_lines_in_first_item: usize,
+    /// Lines captured from the last render pass (for graduation without re-rendering).
+    /// Includes ALL lines, not just visible ones.
+    last_rendered_lines: RefCell<Vec<Line<'static>>>,
+    /// Number of lines already graduated to terminal scrollback.
+    /// Rendering skips these lines; graduation increments this.
+    graduated_line_count: usize,
 }
 
 impl Default for ConversationState {
@@ -265,7 +268,8 @@ impl ConversationState {
             items: VecDeque::new(),
             max_tool_output_lines: 3,
             cache: RefCell::new(RenderCache::new()),
-            graduated_lines_in_first_item: 0,
+            last_rendered_lines: RefCell::new(Vec::new()),
+            graduated_line_count: 0,
         }
     }
 
@@ -687,107 +691,172 @@ impl ConversationState {
     pub fn clear(&mut self) {
         self.items.clear();
         self.cache.borrow_mut().on_clear();
-        self.graduated_lines_in_first_item = 0;
+        self.last_rendered_lines.borrow_mut().clear();
+        self.graduated_line_count = 0;
     }
 
-    /// Get the number of lines already graduated from the first item.
+    /// Get the number of lines already graduated to scrollback.
     ///
     /// Used by rendering to skip these lines (they're already in terminal scrollback).
-    pub fn graduated_lines_in_first_item(&self) -> usize {
-        self.graduated_lines_in_first_item
+    pub fn graduated_line_count(&self) -> usize {
+        self.graduated_line_count
     }
 
-    /// Graduate N lines to terminal scrollback.
+    /// Store lines captured during render (for graduation without re-rendering).
     ///
-    /// Pops complete items from the front when all their lines are graduated.
-    /// Tracks partial graduation for the current front item.
+    /// This should be called during the render pass with ALL lines (including
+    /// ones that will be skipped for display). Graduation then uses these
+    /// exact lines instead of re-rendering, avoiding mismatches.
+    pub fn capture_rendered_lines(&self, lines: Vec<Line<'static>>) {
+        *self.last_rendered_lines.borrow_mut() = lines;
+    }
+
+    /// Get the lines that are visible (not yet graduated).
     ///
-    /// Returns the lines that were graduated (for writing to scrollback).
-    pub fn graduate_lines(&mut self, count: usize, content_width: usize) -> Vec<Line<'static>> {
-        if count == 0 || self.items.is_empty() {
+    /// Returns a slice of the captured lines starting from `graduated_line_count`.
+    pub fn visible_lines(&self) -> Vec<Line<'static>> {
+        let captured = self.last_rendered_lines.borrow();
+        if self.graduated_line_count >= captured.len() {
+            Vec::new()
+        } else {
+            captured[self.graduated_line_count..].to_vec()
+        }
+    }
+
+    /// Graduate lines from the captured render output.
+    ///
+    /// Takes `count` lines from the captured lines (starting at `graduated_line_count`)
+    /// and returns them for writing to terminal scrollback. Increments the counter.
+    ///
+    /// This avoids re-rendering, so the graduated lines exactly match what was displayed.
+    pub fn graduate_from_captured(&mut self, count: usize) -> Vec<Line<'static>> {
+        if count == 0 {
             return Vec::new();
         }
 
-        let mut remaining = count;
-        let mut graduated = Vec::new();
+        let captured = self.last_rendered_lines.borrow();
+        let start = self.graduated_line_count;
+        let end = (start + count).min(captured.len());
 
-        while remaining > 0 && !self.items.is_empty() {
-            let front_lines = render_item_to_lines(&self.items[0], content_width);
-            let front_line_count = front_lines.len();
-            let already_graduated = self.graduated_lines_in_first_item;
-            let lines_left_in_front = front_line_count.saturating_sub(already_graduated);
-
-            if remaining >= lines_left_in_front {
-                // Graduate all remaining lines of front item
-                for line in front_lines.into_iter().skip(already_graduated) {
-                    graduated.push(line);
-                }
-                // Pop the front item
-                self.items.pop_front();
-                self.graduated_lines_in_first_item = 0;
-                // Invalidate cache since indices shifted
-                self.cache.borrow_mut().invalidate_all();
-                remaining -= lines_left_in_front;
-            } else {
-                // Partial graduation of front item
-                for line in front_lines
-                    .into_iter()
-                    .skip(already_graduated)
-                    .take(remaining)
-                {
-                    graduated.push(line);
-                }
-                self.graduated_lines_in_first_item += remaining;
-                remaining = 0;
-            }
+        if start >= captured.len() {
+            return Vec::new();
         }
+
+        let graduated: Vec<Line<'static>> = captured[start..end].to_vec();
+        drop(captured); // Release borrow before mutating
+
+        self.graduated_line_count = end;
+        graduated
+    }
+
+    /// Graduate all remaining content from captured lines.
+    ///
+    /// Returns all lines from `graduated_line_count` to end, for final graduation.
+    pub fn graduate_all_captured(&mut self) -> Vec<Line<'static>> {
+        let captured = self.last_rendered_lines.borrow();
+        let start = self.graduated_line_count;
+
+        if start >= captured.len() {
+            return Vec::new();
+        }
+
+        let graduated: Vec<Line<'static>> = captured[start..].to_vec();
+        drop(captured);
+
+        // Mark all as graduated and clear
+        self.graduated_line_count = 0;
+        self.last_rendered_lines.borrow_mut().clear();
+        self.items.clear();
+        self.cache.borrow_mut().on_clear();
 
         graduated
     }
 
-    /// Graduate all content (for end of streaming).
-    ///
-    /// Clears all items and returns all lines for scrollback.
-    pub fn graduate_all(&mut self, content_width: usize) -> Vec<Line<'static>> {
-        let mut all_lines = Vec::new();
-
-        // Start from where we left off in the first item
-        let mut first = true;
-        for item in &self.items {
-            let lines = render_item_to_lines(item, content_width);
-            let skip = if first {
-                first = false;
-                self.graduated_lines_in_first_item
-            } else {
-                0
-            };
-            for line in lines.into_iter().skip(skip) {
-                all_lines.push(line);
-            }
-        }
-
-        // Clear everything
-        self.items.clear();
-        self.graduated_lines_in_first_item = 0;
-        self.cache.borrow_mut().on_clear();
-
-        all_lines
+    /// Get the count of visible lines (total captured minus graduated).
+    pub fn visible_line_count(&self) -> usize {
+        let captured_len = self.last_rendered_lines.borrow().len();
+        captured_len.saturating_sub(self.graduated_line_count)
     }
 
-    /// Calculate total rendered line count (minus already graduated lines).
-    pub fn visible_line_count(&self, content_width: usize) -> usize {
-        let mut total = 0;
-        let mut first = true;
-        for item in &self.items {
-            let lines = render_item_to_lines(item, content_width).len();
-            if first {
-                first = false;
-                total += lines.saturating_sub(self.graduated_lines_in_first_item);
-            } else {
-                total += lines;
+    /// Re-render all items fresh and capture the result.
+    ///
+    /// This is used before graduation to ensure we have accurate line content
+    /// that matches what the next render will produce. Prevents gaps caused by
+    /// stale cached lines when streaming content changes.
+    ///
+    /// Returns the total number of lines rendered.
+    pub fn refresh_captured_lines(&self, width: usize) -> usize {
+        use crate::tui::constants::UiConstants;
+        let content_width = UiConstants::content_width(width as u16);
+
+        let mut all_lines = Vec::new();
+        let items = self.items();
+
+        for (i, item) in items.iter().enumerate() {
+            // Add blank line spacing before tool calls (same as render logic)
+            if matches!(item, ConversationItem::ToolCall(_)) {
+                let prev_was_tool =
+                    i > 0 && matches!(items.get(i - 1), Some(ConversationItem::ToolCall(_)));
+                if !prev_was_tool {
+                    all_lines.push(Line::from(""));
+                }
             }
+
+            let item_lines = render_item_to_lines(item, content_width);
+            all_lines.extend(item_lines);
         }
+
+        let total = all_lines.len();
+        *self.last_rendered_lines.borrow_mut() = all_lines;
         total
+    }
+
+    /// Calculate how many lines belong to stable (non-streaming) items.
+    ///
+    /// Stable content is content that won't change between renders:
+    /// - User messages (always complete)
+    /// - Completed assistant messages
+    /// - Tool calls
+    ///
+    /// Streaming content is excluded because its line count can change
+    /// (wrapping, cursor, new content) which causes graduation mismatches.
+    pub fn stable_line_count(&self, width: usize) -> usize {
+        use crate::tui::constants::UiConstants;
+        let content_width = UiConstants::content_width(width as u16);
+
+        let mut stable_lines = 0;
+        let items = self.items();
+
+        for (i, item) in items.iter().enumerate() {
+            // Check if this item is streaming (unstable)
+            let is_streaming = matches!(
+                item,
+                ConversationItem::AssistantMessage {
+                    is_streaming: true,
+                    ..
+                } | ConversationItem::Status(_)
+            );
+
+            if is_streaming {
+                // Stop counting - everything from here is unstable
+                break;
+            }
+
+            // Add blank line spacing before tool calls (same as render logic)
+            if matches!(item, ConversationItem::ToolCall(_)) {
+                let prev_was_tool =
+                    i > 0 && matches!(items.get(i - 1), Some(ConversationItem::ToolCall(_)));
+                if !prev_was_tool {
+                    stable_lines += 1;
+                }
+            }
+
+            // Count lines for this stable item
+            let item_lines = render_item_to_lines(item, content_width);
+            stable_lines += item_lines.len();
+        }
+
+        stable_lines
     }
 
     /// Serialize the conversation to markdown format.
@@ -987,11 +1056,25 @@ fn render_assistant_blocks(
             StreamBlock::Tool { name, args, status } => {
                 use crate::tui::content_block::ToolBlockStatus;
 
-                // Format tool call with status indicator as part of content
-                let (indicator, style) = match status {
-                    ToolBlockStatus::Running => ("◐", presets::tool_running()),
-                    ToolBlockStatus::Complete { .. } => ("●", presets::tool_complete()),
-                    ToolBlockStatus::Error { .. } => ("✗", presets::tool_error()),
+                // Format tool call with status indicator
+                // Indicator: white dot running, green dot complete, red X error
+                // Text: white normally, red on error
+                let (indicator, indicator_style, text_style) = match status {
+                    ToolBlockStatus::Running => (
+                        indicators::TOOL_RUNNING,
+                        presets::tool_running(),
+                        presets::tool_running(),
+                    ),
+                    ToolBlockStatus::Complete { .. } => (
+                        indicators::TOOL_COMPLETE,
+                        presets::tool_complete(),
+                        presets::tool_running(), // White text for completed tools
+                    ),
+                    ToolBlockStatus::Error { .. } => (
+                        indicators::TOOL_ERROR,
+                        presets::tool_error(),
+                        presets::tool_error(), // Red text for errors
+                    ),
                 };
 
                 // Format args as key=value pairs (compact)
@@ -1009,9 +1092,9 @@ fn render_assistant_blocks(
                 // Build tool line content (indicator is part of content, not prefix)
                 // Note: args_str already includes parens from format_tool_args()
                 let tool_line = Line::from(vec![
-                    Span::styled(format!("{} ", indicator), style),
-                    Span::styled(format!("{}{}", name, args_str), style),
-                    Span::styled(suffix, style),
+                    Span::styled(format!("{} ", indicator), indicator_style),
+                    Span::styled(format!("{}{}", name, args_str), text_style),
+                    Span::styled(suffix, text_style),
                 ]);
 
                 // Use add_assistant_prefix for consistent prefixing
@@ -1113,14 +1196,31 @@ fn render_status(status: &StatusKind) -> Vec<Line<'static>> {
     ]
 }
 
-/// Format tool arguments for display (compact single-line format)
+/// Format tool arguments for display (compact single-line format).
+/// Hides default-looking values (null, false, small numbers) to reduce noise.
 fn format_tool_args(args: &serde_json::Value) -> String {
     match args {
         serde_json::Value::Object(map) if map.is_empty() => String::new(),
         serde_json::Value::Object(map) => {
             let parts: Vec<String> = map
                 .iter()
-                .map(|(k, v)| {
+                .filter_map(|(k, v)| {
+                    // Skip default-looking values to reduce noise
+                    match v {
+                        serde_json::Value::Null => return None,
+                        serde_json::Value::Bool(false) => return None,
+                        serde_json::Value::Number(n) => {
+                            // Skip common default numbers (0, 1, small limits)
+                            if let Some(i) = n.as_i64() {
+                                if i <= 1 || i == 100 || i == 50 || i == 10 {
+                                    return None;
+                                }
+                            }
+                        }
+                        serde_json::Value::String(s) if s.is_empty() => return None,
+                        _ => {}
+                    }
+
                     let v_str = match v {
                         serde_json::Value::String(s) => {
                             // Truncate long strings
@@ -1130,16 +1230,20 @@ fn format_tool_args(args: &serde_json::Value) -> String {
                                 format!("\"{}\"", s)
                             }
                         }
-                        serde_json::Value::Null => "null".to_string(),
                         serde_json::Value::Bool(b) => b.to_string(),
                         serde_json::Value::Number(n) => n.to_string(),
                         serde_json::Value::Array(arr) => format!("[{} items]", arr.len()),
                         serde_json::Value::Object(_) => "{...}".to_string(),
+                        serde_json::Value::Null => return None, // Already filtered above
                     };
-                    format!("{}={}", k, v_str)
+                    Some(format!("{}={}", k, v_str))
                 })
                 .collect();
-            format!("({})", parts.join(", "))
+            if parts.is_empty() {
+                String::new()
+            } else {
+                format!("({})", parts.join(", "))
+            }
         }
         serde_json::Value::Null => String::new(),
         _ => format!("({})", args),
@@ -1160,10 +1264,24 @@ fn render_tool_call(tool: &ToolCallDisplay) -> Vec<Line<'static>> {
     // to allow consecutive tool calls to be grouped together.
 
     // Tool status line - use " X " prefix to align with " > " and " ● " message prefixes
-    let (indicator, style) = match &tool.status {
-        ToolStatus::Running => (indicators::SPINNER_FRAMES[0], presets::tool_running()),
-        ToolStatus::Complete { .. } => (indicators::TOOL_COMPLETE, presets::tool_complete()),
-        ToolStatus::Error { .. } => (indicators::TOOL_ERROR, presets::tool_error()),
+    // Indicator: white dot running, green dot complete, red X error
+    // Text: white normally, red on error
+    let (indicator, indicator_style, text_style) = match &tool.status {
+        ToolStatus::Running => (
+            indicators::TOOL_RUNNING,
+            presets::tool_running(),
+            presets::tool_running(),
+        ),
+        ToolStatus::Complete { .. } => (
+            indicators::TOOL_COMPLETE,
+            presets::tool_complete(),
+            presets::tool_running(), // White text for completed tools
+        ),
+        ToolStatus::Error { .. } => (
+            indicators::TOOL_ERROR,
+            presets::tool_error(),
+            presets::tool_error(), // Red text for errors
+        ),
     };
 
     // Format tool name with arguments
@@ -1179,10 +1297,11 @@ fn render_tool_call(tool: &ToolCallDisplay) -> Vec<Line<'static>> {
     };
 
     // Use " X " prefix format to align with user/assistant message prefixes
-    lines.push(Line::from(vec![Span::styled(
-        format!(" {} {}{}{}", indicator, tool.name, args_str, status_suffix),
-        style,
-    )]));
+    lines.push(Line::from(vec![
+        Span::styled(format!(" {} ", indicator), indicator_style),
+        Span::styled(format!("{}{}", tool.name, args_str), text_style),
+        Span::styled(status_suffix, text_style),
+    ]));
 
     // Tool output lines - only show while running (max 3 lines)
     // Output disappears when tool completes (shrinks to single line)
@@ -1983,5 +2102,69 @@ mod tests {
         let md = state.to_markdown();
 
         assert!(md.contains("**Tool:** `calculator` - 4"));
+    }
+
+    /// Test that tables rendered in assistant messages don't have blank lines between rows.
+    /// This tests the full path through render_item_to_lines.
+    #[test]
+    fn test_table_no_blank_lines_in_conversation() {
+        let table_content = "Here's a table:\n\n| Tool | Description |\n|------|-------------|\n| Glob | Fast file pattern matching tool that finds files by pattern. |\n| Grep | Search content with regex. |";
+
+        // Render through the full conversation path
+        let lines = render_item_to_lines(
+            &ConversationItem::AssistantMessage {
+                blocks: vec![StreamBlock::prose(table_content)],
+                is_streaming: false,
+            },
+            60, // Width that requires some wrapping
+        );
+
+        // Convert to text for analysis
+        let line_texts: Vec<String> = lines
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect();
+
+        // Check for blank lines between table rows
+        let mut in_table = false;
+        for (i, text) in line_texts.iter().enumerate() {
+            let is_table_row =
+                text.contains('│') || text.contains('├') || text.contains('┌') || text.contains('└');
+            let is_blank_or_only_prefix = text.trim().is_empty()
+                || text == "   " // Just prefix spaces
+                || text.chars().all(|c| c.is_whitespace() || c == '·' || c == '●');
+
+            if is_table_row {
+                in_table = true;
+            }
+
+            // If we're in a table and see a blank line, that's unexpected
+            if in_table && is_blank_or_only_prefix && !text.contains('└') {
+                // Check if this is really inside a table (not the blank line before)
+                let prev_was_table = i > 0
+                    && line_texts[i - 1]
+                        .chars()
+                        .any(|c| c == '│' || c == '├' || c == '┌');
+                let next_is_table = i + 1 < line_texts.len()
+                    && line_texts[i + 1]
+                        .chars()
+                        .any(|c| c == '│' || c == '├' || c == '└');
+
+                if prev_was_table && next_is_table {
+                    panic!(
+                        "Found blank line at index {} between table rows. Prev: '{}', Current: '{}', Next: '{}'",
+                        i,
+                        line_texts.get(i.saturating_sub(1)).unwrap_or(&String::new()),
+                        text,
+                        line_texts.get(i + 1).unwrap_or(&String::new())
+                    );
+                }
+            }
+        }
     }
 }

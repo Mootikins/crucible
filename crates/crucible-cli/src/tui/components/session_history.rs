@@ -90,14 +90,16 @@ impl<'a> SessionHistoryWidget<'a> {
     ///
     /// Uses per-item caching to avoid re-parsing markdown on every frame.
     /// Streaming items are never cached since they change frequently.
-    /// Skips graduated lines from the first item (already in terminal scrollback).
+    ///
+    /// Captures ALL rendered lines (including graduated ones) and stores them
+    /// for graduation without re-rendering. Returns only the visible lines
+    /// (after skipping already-graduated lines).
     fn render_to_lines(&self, width: usize) -> Vec<Line<'static>> {
         // Check if width changed - invalidates all caches
         self.state.check_width(width);
 
         let mut all_lines = Vec::new();
         let items = self.state.items();
-        let skip_first_n = self.state.graduated_lines_in_first_item();
 
         for (i, item) in items.iter().enumerate() {
             // Add blank line before tool calls, but skip between consecutive tools
@@ -135,12 +137,19 @@ impl<'a> SessionHistoryWidget<'a> {
                 render_item_to_lines(item, width)
             };
 
-            // For the first item, skip already graduated lines
-            if i == 0 && skip_first_n > 0 {
-                all_lines.extend(item_lines.into_iter().skip(skip_first_n));
-            } else {
-                all_lines.extend(item_lines);
-            }
+            all_lines.extend(item_lines);
+        }
+
+        // Store ALL lines for graduation (before skipping graduated ones).
+        // This ensures graduation uses the exact lines that were rendered.
+        self.state.capture_rendered_lines(all_lines.clone());
+
+        // Skip already-graduated lines for display
+        let skip_count = self.state.graduated_line_count();
+        if skip_count > 0 && skip_count < all_lines.len() {
+            all_lines.drain(0..skip_count);
+        } else if skip_count >= all_lines.len() {
+            all_lines.clear();
         }
 
         all_lines
