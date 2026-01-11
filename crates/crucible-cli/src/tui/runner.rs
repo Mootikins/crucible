@@ -2369,15 +2369,36 @@ impl RatatuiRunner {
     /// tests and production code use the same algorithm.
     fn graduate_overflow_lines(&mut self) {
         if !self.inline_mode {
+            debug!("graduate_overflow_lines: skipped (not inline mode)");
             return;
         }
 
         // Use actual viewport height (accounts for input box, status bar, popups, etc.)
         let viewport_capacity = self.view.conversation_viewport_height();
 
-        let (terminal_width, _) = size().unwrap_or((80, 24));
+        let (terminal_width, terminal_height) = size().unwrap_or((80, 24));
         use crate::tui::constants::UiConstants;
         let content_width = UiConstants::content_width(terminal_width);
+
+        // Get actual total line count for logging (check_graduation returns empty vec when no graduation)
+        let actual_total_lines = self
+            .view
+            .state()
+            .conversation
+            .calculate_total_line_count(content_width);
+        let visible_lines = actual_total_lines.saturating_sub(self.graduated_line_count);
+
+        debug!(
+            actual_total_lines,
+            visible_lines,
+            graduated = self.graduated_line_count,
+            viewport_capacity,
+            terminal_width,
+            terminal_height,
+            content_width,
+            view_height = self.view.state().height,
+            "graduate_overflow_lines: checking"
+        );
 
         // Use shared graduation logic
         use crate::tui::graduation::check_graduation;
@@ -2389,11 +2410,9 @@ impl RatatuiRunner {
         );
 
         debug!(
-            total_lines = all_lines.len(),
-            graduated = self.graduated_line_count,
-            viewport_capacity,
+            rendered_lines = all_lines.len(),
             has_graduation = result.is_some(),
-            "graduate_overflow_lines"
+            "graduate_overflow_lines: result"
         );
 
         if let Some(grad) = result {
@@ -2488,7 +2507,10 @@ impl RatatuiRunner {
         }
 
         let num_lines = all_lines.len();
-        debug!(num_lines, "flush_pending_graduations: inserting lines");
+        info!(
+            num_lines,
+            "flush_pending_graduations: inserting lines to scrollback"
+        );
 
         // Note: We don't clear() here because ratatui does cell-level diffs and
         // clearing causes visible flashing. The cursor filtering in render_for_graduation()
