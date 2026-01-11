@@ -321,21 +321,41 @@ impl ConversationState {
 
     /// Calculate total line count for graduation purposes.
     ///
-    /// Uses the same rendering as the viewport to ensure consistency.
-    /// Simple model: graduate overflow lines as content pushes past viewport bottom.
+    /// EXCLUDES Status items - they are ephemeral (get removed after streaming).
+    /// If we count them, then they get removed, our graduated count becomes wrong.
     pub fn calculate_total_line_count(&self, width: usize) -> usize {
-        self.render_all_lines_cached(width).len()
+        self.render_for_graduation(width).len()
     }
 
     /// Render all items to lines using cache where available.
     ///
-    /// This matches the viewport's rendering exactly:
+    /// This is for VIEWPORT rendering - includes ALL items including Status.
     /// - Caches stable content (user messages, completed assistant messages, tool calls)
     /// - Does NOT cache streaming content (is_streaming assistant messages, Status)
     pub fn render_all_lines_cached(&self, width: usize) -> Vec<Line<'static>> {
+        self.render_items_internal(width, false)
+    }
+
+    /// Render all items to lines for graduation.
+    ///
+    /// EXCLUDES Status items - they are ephemeral (get removed after streaming).
+    /// This ensures graduated line count matches actual stable content.
+    pub fn render_for_graduation(&self, width: usize) -> Vec<Line<'static>> {
+        self.render_items_internal(width, true)
+    }
+
+    /// Internal rendering helper.
+    ///
+    /// - `exclude_status`: if true, skip Status items (for graduation)
+    fn render_items_internal(&self, width: usize, exclude_status: bool) -> Vec<Line<'static>> {
         let mut all_lines = Vec::new();
 
         for (i, item) in self.items.iter().enumerate() {
+            // Skip Status items for graduation (they're ephemeral)
+            if exclude_status && matches!(item, ConversationItem::Status(_)) {
+                continue;
+            }
+
             // Add spacing before tool calls (but not between consecutive tools)
             if matches!(item, ConversationItem::ToolCall(_)) {
                 let prev_was_tool =
@@ -373,14 +393,6 @@ impl ConversationState {
         }
 
         all_lines
-    }
-
-    /// Render all items to lines for graduation.
-    ///
-    /// Uses the same rendering as the viewport to ensure consistency.
-    /// Simple model: graduate overflow lines as content pushes past viewport bottom.
-    pub fn render_for_graduation(&self, width: usize) -> Vec<Line<'static>> {
-        self.render_all_lines_cached(width)
     }
 
     /// Store rendered lines for an item
