@@ -712,6 +712,10 @@ impl RatatuiRunner {
                             let viewport_height = calculate_inline_viewport_height(height);
                             // Update view with current viewport height (width may have changed)
                             self.view.handle_resize(width, viewport_height)?;
+
+                            // Clear pending graduations - don't flush content that was queued
+                            // at the old width, as it would create mismatched formatting.
+                            self.pending_graduations.clear();
                         } else {
                             self.view.handle_resize(width, height)?;
                         }
