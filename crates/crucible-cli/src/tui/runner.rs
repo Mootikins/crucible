@@ -162,7 +162,7 @@
 //! tail -f ~/.crucible/chat.log  # in another terminal
 //! ```
 
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 use crate::chat::bridge::AgentEventBridge;
 use crate::tui::selection::SelectionState;
@@ -2416,28 +2416,35 @@ impl RatatuiRunner {
         );
 
         if let Some(grad) = result {
-            debug!(
+            // CRITICAL CHECK: if range.start < current graduated count, we're re-graduating!
+            if grad.lines_to_graduate.start < self.graduated_line_count {
+                error!(
+                    range = ?grad.lines_to_graduate,
+                    current_graduated = self.graduated_line_count,
+                    "BUG: graduation range starts before current graduated count!"
+                );
+            }
+
+            info!(
                 range = ?grad.lines_to_graduate,
-                new_count = grad.new_graduated_count,
-                "graduation calculation"
+                num_lines = grad.lines_to_graduate.len(),
+                prev_graduated = self.graduated_line_count,
+                new_graduated = grad.new_graduated_count,
+                "graduation: graduating lines"
             );
 
             // Graduate these lines
             let lines_to_graduate = all_lines[grad.lines_to_graduate.clone()].to_vec();
 
-            // Debug: log lines being graduated (especially around table characters)
-            for (i, line) in lines_to_graduate.iter().enumerate() {
+            // Log first 3 lines being graduated (for debugging content)
+            for (i, line) in lines_to_graduate.iter().take(3).enumerate() {
                 let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-                let has_table = text.contains('│') || text.contains('┌') || text.contains('└');
-                if has_table || text.trim().is_empty() {
-                    debug!(
-                        idx = grad.lines_to_graduate.start + i,
-                        is_blank = text.trim().is_empty(),
-                        has_table,
-                        content = %text,
-                        "graduating line"
-                    );
-                }
+                let preview: String = text.chars().take(60).collect();
+                debug!(
+                    line_idx = grad.lines_to_graduate.start + i,
+                    content = %preview,
+                    "graduating line (preview)"
+                );
             }
 
             self.pending_graduations
