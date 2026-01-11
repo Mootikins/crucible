@@ -19,6 +19,7 @@ pub mod dialog;
 pub mod dynamic_viewport;
 pub mod event_result;
 pub mod geometry;
+pub mod graduation;
 pub mod help;
 pub mod help_assets;
 pub mod history_manager;
