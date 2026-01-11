@@ -813,13 +813,20 @@ impl RatatuiRunner {
                             token_count = self.token_count,
                             "Runner received StreamingEvent::Done"
                         );
+                        // Finalize parser BEFORE stop_streaming() clears it
+                        // This ensures final tokens including incomplete tables are in the view
+                        if let Some(parser) = self.streaming_manager.parser_mut() {
+                            let final_events = parser.finalize();
+                            if !final_events.is_empty() {
+                                debug!(num_final_events = final_events.len(), "Applying final parser events");
+                                self.apply_parse_events(final_events);
+                            }
+                        }
+
                         self.streaming_manager.stop_streaming();
                         self.view.clear_status();
                         self.view.set_status_text("Ready");
                         debug!(response_len = full_response.len(), "Streaming complete");
-
-                        // Finalize parser (already cleared by stop_streaming, but we had a reference)
-                        // Parser is now managed by StreamingManager
 
                         streaming_complete = true;
 
@@ -981,9 +988,16 @@ impl RatatuiRunner {
                 // Clear reasoning buffer for next response
                 self.view.clear_reasoning();
 
-                // Graduate overflow on completion (not during streaming to avoid artifacts)
+                // Graduate overflow on completion and force flush (bypass throttling)
+                // This ensures final content is displayed immediately
                 if self.inline_mode {
                     self.graduate_overflow_lines();
+                    // Force flush to ensure all content is displayed (no throttling)
+                    if let Err(e) = self.flush_pending_graduations(terminal, true) {
+                        tracing::warn!("Failed to force flush graduations on completion: {}", e);
+                    }
+                    // Sync graduated count to view
+                    self.view.state_mut().graduated_line_count = self.graduated_line_count;
                 }
             }
 
@@ -1020,16 +1034,28 @@ impl RatatuiRunner {
                                 response_len = full_response.len(),
                                 "Runner received Done from drain (race condition caught!)"
                             );
+                            // Finalize parser BEFORE stop_streaming() clears it
+                            if let Some(parser) = self.streaming_manager.parser_mut() {
+                                let final_events = parser.finalize();
+                                if !final_events.is_empty() {
+                                    debug!(num_final_events = final_events.len(), "Applying final parser events (drain)");
+                                    self.apply_parse_events(final_events);
+                                }
+                            }
                             self.streaming_manager.stop_streaming();
-                            self.streaming_manager.clear_parser();
                             self.view.complete_assistant_streaming();
                             self.view.clear_status();
                             self.view.set_status_text("Ready");
                             self.view.clear_reasoning();
 
-                            // Graduate any overflow on completion
+                            // Graduate any overflow on completion and force flush
                             if self.inline_mode {
                                 self.graduate_overflow_lines();
+                                // Force flush to ensure all content is displayed
+                                if let Err(e) = self.flush_pending_graduations(terminal, true) {
+                                    tracing::warn!("Failed to force flush on drain completion: {}", e);
+                                }
+                                self.view.state_mut().graduated_line_count = self.graduated_line_count;
                             }
 
                             if let Some(logger) = &self.session_logger {
@@ -2519,6 +2545,21 @@ impl RatatuiRunner {
             "flush_pending_graduations: inserting lines to scrollback"
         );
 
+        // Log first 3 and last 2 lines being flushed (for debugging)
+        for (i, line) in all_lines.iter().take(3).enumerate() {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            let preview: String = text.chars().take(60).collect();
+            debug!(line_idx = i, content = %preview, "flush: line preview (first)");
+        }
+        if all_lines.len() > 5 {
+            for (i, line) in all_lines.iter().rev().take(2).rev().enumerate() {
+                let idx = all_lines.len() - 2 + i;
+                let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+                let preview: String = text.chars().take(60).collect();
+                debug!(line_idx = idx, content = %preview, "flush: line preview (last)");
+            }
+        }
+
         // Note: We don't clear() here because ratatui does cell-level diffs and
         // clearing causes visible flashing. The cursor filtering in render_for_graduation()
         // should prevent cursor artifacts. UI element artifacts are mitigated by
@@ -3132,7 +3173,11 @@ impl RatatuiRunner {
             let backend = CrosstermBackend::new(io::stdout());
             Terminal::new(backend)?
         };
-        terminal.clear()?;
+
+        // Only clear terminal in fullscreen mode - inline mode preserves scrollback
+        if !self.inline_mode {
+            terminal.clear()?;
+        }
 
         // Set initial dimensions
         let (term_width, term_height) = size().unwrap_or((80, 24));

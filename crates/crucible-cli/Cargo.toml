@@ -109,7 +109,7 @@ futures = { workspace = true }
 
 # Terminal utilities (kept for progress.rs, markdown_renderer.rs)
 crossterm = { workspace = true }
-ratatui = { version = "0.30", features = ["scrolling-regions"] }
+ratatui = { version = "0.30" }  # Note: scrolling-regions feature disabled - was causing scrollback issues
 tui-textarea = { version = "0.7", default-features = false, features = ["crossterm"] }
 
 # Markdown rendering with syntax highlighting
