@@ -3,10 +3,6 @@ source: crates/crucible-cli/src/tui/components/session_history.rs
 expression: terminal.backend()
 ---
 "                                                                                "
-"                                                                                "
-"                                                                                "
-"                                                                                "
-"                                                                                "
 " > Message 0                                                                    "
 "                                                                                "
 " > Message 1                                                                    "
@@ -26,3 +22,7 @@ expression: terminal.backend()
 " > Message 8                                                                    "
 "                                                                                "
 " > Message 9                                                                    "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "

@@ -310,6 +310,69 @@ impl ConversationState {
         self.cache.borrow_mut().set_total_height(height);
     }
 
+    /// Calculate total line count efficiently using cached heights.
+    ///
+    /// Uses cached heights where available, only rendering uncached items.
+    /// Includes spacing lines that would be added before tool calls.
+    pub fn calculate_total_line_count(&self, width: usize) -> usize {
+        let mut total = 0;
+
+        for (i, item) in self.items.iter().enumerate() {
+            // Add spacing before tool calls (but not between consecutive tools)
+            if matches!(item, ConversationItem::ToolCall(_)) {
+                let prev_was_tool =
+                    i > 0 && matches!(self.items.get(i - 1), Some(ConversationItem::ToolCall(_)));
+                if !prev_was_tool {
+                    total += 1; // Empty line for spacing
+                }
+            }
+
+            // Use cached height if available, otherwise render to get height
+            if let Some(height) = self.get_cached_height(i) {
+                total += height;
+            } else {
+                // Render and cache for future use
+                let lines = render_item_to_lines(item, width);
+                let height = lines.len();
+                self.store_cached(i, width, lines);
+                total += height;
+            }
+        }
+
+        // Cache the total for next time
+        self.set_total_height(total);
+        total
+    }
+
+    /// Render all items to lines using cache where available.
+    ///
+    /// This is more efficient than render_all_lines() as it uses cached renders.
+    pub fn render_all_lines_cached(&self, width: usize) -> Vec<Line<'static>> {
+        let mut all_lines = Vec::new();
+
+        for (i, item) in self.items.iter().enumerate() {
+            // Add spacing before tool calls (but not between consecutive tools)
+            if matches!(item, ConversationItem::ToolCall(_)) {
+                let prev_was_tool =
+                    i > 0 && matches!(self.items.get(i - 1), Some(ConversationItem::ToolCall(_)));
+                if !prev_was_tool {
+                    all_lines.push(Line::from(""));
+                }
+            }
+
+            // Use cached lines if available, otherwise render and cache
+            if let Some(cached) = self.get_cached(i, width) {
+                all_lines.extend(cached);
+            } else {
+                let lines = render_item_to_lines(item, width);
+                self.store_cached(i, width, lines.clone());
+                all_lines.extend(lines);
+            }
+        }
+
+        all_lines
+    }
+
     /// Store rendered lines for an item
     pub fn store_cached(&self, index: usize, width: usize, lines: Vec<Line<'static>>) {
         self.cache.borrow_mut().store(index, width, lines);
@@ -468,29 +531,54 @@ impl ConversationState {
     }
 
     pub fn set_status(&mut self, status: StatusKind) {
-        // Remove any existing status - indices shift, so invalidate all
-        let had_status = self
-            .items
-            .iter()
-            .any(|item| matches!(item, ConversationItem::Status(_)));
-        self.items
-            .retain(|item| !matches!(item, ConversationItem::Status(_)));
-        if had_status {
-            self.cache.borrow_mut().invalidate_all();
+        // Status should always be LAST item (after streaming content).
+        // Check if status exists and is already at end - if so, update in place (fast path).
+        // Otherwise, remove old status and add new one at end.
+        let len = self.items.len();
+        let last_is_status = len > 0
+            && matches!(
+                self.items.back(),
+                Some(ConversationItem::Status(_))
+            );
+
+        if last_is_status {
+            // Fast path: status already at end, update in place
+            self.items[len - 1] = ConversationItem::Status(status);
+            self.cache.borrow_mut().invalidate_item(len - 1);
+        } else {
+            // Status not at end (or doesn't exist) - remove any existing and add at end
+            if let Some(idx) = self
+                .items
+                .iter()
+                .position(|item| matches!(item, ConversationItem::Status(_)))
+            {
+                self.items.remove(idx);
+                // Removing shifts indices, invalidate from idx onward
+                let mut cache = self.cache.borrow_mut();
+                for i in idx..cache.items.len() {
+                    cache.invalidate_item(i);
+                }
+            }
+            self.items.push_back(ConversationItem::Status(status));
+            self.cache.borrow_mut().on_item_added();
         }
-        self.items.push_back(ConversationItem::Status(status));
-        self.cache.borrow_mut().on_item_added();
     }
 
     pub fn clear_status(&mut self) {
-        let had_status = self
+        // Find status item and remove it without shifting other indices' cache
+        if let Some(idx) = self
             .items
             .iter()
-            .any(|item| matches!(item, ConversationItem::Status(_)));
-        self.items
-            .retain(|item| !matches!(item, ConversationItem::Status(_)));
-        if had_status {
-            self.cache.borrow_mut().invalidate_all();
+            .position(|item| matches!(item, ConversationItem::Status(_)))
+        {
+            self.items.remove(idx);
+            // Note: Removing shifts indices after idx, so we need to invalidate from idx onward.
+            // But status is typically at the end, so this is usually a no-op or minimal.
+            // For correctness, invalidate all items from idx onward in the cache.
+            let mut cache = self.cache.borrow_mut();
+            for i in idx..cache.items.len() {
+                cache.invalidate_item(i);
+            }
         }
     }
 
