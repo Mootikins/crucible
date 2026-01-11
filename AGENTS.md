@@ -191,6 +191,8 @@ The `docs/` directory is a **reference kiln** — a valid Crucible vault that se
 
 Run `just` to see all available commands.
 
+**Don't build release unless installing**: Release builds use LTO and take 5-10 minutes. For development iteration, always use debug builds (`cargo build` or `cargo run`). Only build release when the user explicitly asks to install or needs a release binary.
+
 **Web frontend uses `bun`**: For crucible-web frontend development, use bun (not npm/yarn):
 - `bun install` - Install dependencies
 - `bun run dev` - Start dev server
@@ -354,6 +356,45 @@ fn streaming_affects_status_and_history() {
    ```
 
 4. Review snapshots with `cargo insta review` before accepting.
+
+### PTY-Based E2E Testing
+
+For testing real TUI behavior with actual terminal emulation, use the `expectrl`-based harness in `tests/tui_e2e_harness.rs`:
+
+```rust
+use tui_e2e_harness::{TuiTestBuilder, Key};
+
+#[test]
+#[ignore = "requires built binary and Ollama"]
+fn test_chat_interaction() {
+    let mut session = TuiTestBuilder::new()
+        .command("chat")
+        .env("RUST_LOG", "crucible_rig=info")
+        .timeout(30)
+        .spawn()
+        .expect("Failed to spawn");
+
+    // Send message
+    session.send_line("hello").expect("send failed");
+
+    // Wait for response
+    session.expect_regex(r"Hello").expect("no response");
+
+    // Send Ctrl+C to exit
+    session.send_control('c').expect("Ctrl+C failed");
+}
+```
+
+**When to use PTY tests:**
+- Testing real streaming behavior end-to-end
+- Debugging timing issues (spinner, status updates)
+- Verifying terminal escape sequence handling
+- Multi-turn conversation flows with real LLM
+
+**Run PTY tests:**
+```bash
+cargo test -p crucible-cli streaming_completion -- --ignored --nocapture
+```
 
 ### Quality Checklist
 
