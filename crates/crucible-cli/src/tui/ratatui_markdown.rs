@@ -330,15 +330,23 @@ fn render_node(node: &Node, ctx: &mut RenderContext<'_>) {
     if node.cast::<BulletList>().is_some() {
         ctx.flush_line();
         let old_indent = ctx.indent;
+        let max_width = ctx.width.unwrap_or(80);
 
         for child in node.children.iter() {
             if child.cast::<ListItem>().is_some() {
                 // Use "- " prefix with current indent (3 chars total at base level)
                 let prefix = format!("{}- ", ctx.indent_prefix());
                 let marker_style = ctx.theme.style_for(MarkdownElement::ListMarker);
-                ctx.push_span(prefix, marker_style);
-                render_inline_children(child, ctx);
-                ctx.flush_line();
+
+                // Collect inline spans for wrapping
+                let mut temp_spans: Vec<Span<'static>> = Vec::new();
+                {
+                    let mut temp_ctx = TempSpanCollector::new(&mut temp_spans);
+                    collect_inline_spans(child, ctx, &mut temp_ctx);
+                }
+
+                // Wrap with proper list item indentation
+                wrap_list_item_spans(&temp_spans, &prefix, marker_style, max_width, ctx);
             }
         }
 
@@ -353,15 +361,23 @@ fn render_node(node: &Node, ctx: &mut RenderContext<'_>) {
         let old_counter = ctx.list_counter;
         ctx.indent += 1;
         ctx.list_counter = Some(1);
+        let max_width = ctx.width.unwrap_or(80);
 
         for child in node.children.iter() {
             if child.cast::<ListItem>().is_some() {
                 let num = ctx.list_counter.unwrap_or(1);
                 let prefix = format!("{}{}. ", ctx.indent_prefix(), num);
                 let marker_style = ctx.theme.style_for(MarkdownElement::ListMarker);
-                ctx.push_span(prefix, marker_style);
-                render_inline_children(child, ctx);
-                ctx.flush_line();
+
+                // Collect inline spans for wrapping
+                let mut temp_spans: Vec<Span<'static>> = Vec::new();
+                {
+                    let mut temp_ctx = TempSpanCollector::new(&mut temp_spans);
+                    collect_inline_spans(child, ctx, &mut temp_ctx);
+                }
+
+                // Wrap with proper list item indentation
+                wrap_list_item_spans(&temp_spans, &prefix, marker_style, max_width, ctx);
                 ctx.list_counter = Some(num + 1);
             }
         }
@@ -647,6 +663,111 @@ fn wrap_spans_to_lines(spans: &[Span<'static>], max_width: usize, ctx: &mut Rend
     // Flush remaining spans
     if !current_line_spans.is_empty() {
         ctx.lines.push(Line::from(current_line_spans));
+    }
+}
+
+/// Wrap spans for a list item with proper indentation.
+///
+/// First line uses the bullet/number prefix, continuation lines use spaces
+/// to align with the content (after the bullet).
+fn wrap_list_item_spans(
+    spans: &[Span<'static>],
+    prefix: &str,
+    prefix_style: Style,
+    max_width: usize,
+    ctx: &mut RenderContext<'_>,
+) {
+    if spans.is_empty() {
+        // Empty list item - just output the prefix
+        ctx.lines.push(Line::from(Span::styled(prefix.to_string(), prefix_style)));
+        return;
+    }
+
+    let prefix_width = display_width(prefix);
+    let content_width = max_width.saturating_sub(prefix_width);
+    let continuation_indent = " ".repeat(prefix_width);
+
+    let mut current_line_spans: Vec<Span<'static>> = Vec::new();
+    let mut current_line_width: usize = 0;
+    let mut is_first_line = true;
+
+    for span in spans {
+        let text = span.content.as_ref();
+        let style = span.style;
+
+        // Handle hard breaks (newlines in the content)
+        if text == "\n" {
+            // Flush current line
+            let line = if is_first_line {
+                is_first_line = false;
+                let mut line_spans = vec![Span::styled(prefix.to_string(), prefix_style)];
+                line_spans.extend(std::mem::take(&mut current_line_spans));
+                Line::from(line_spans)
+            } else {
+                let mut line_spans = vec![Span::raw(continuation_indent.clone())];
+                line_spans.extend(std::mem::take(&mut current_line_spans));
+                Line::from(line_spans)
+            };
+            ctx.lines.push(line);
+            current_line_width = 0;
+            continue;
+        }
+
+        // Process text word by word
+        let mut remaining = text;
+        while !remaining.is_empty() {
+            let (word, rest, _) = next_word(remaining);
+            remaining = rest;
+
+            if word.is_empty() {
+                continue;
+            }
+
+            let word_width = display_width(word);
+
+            // Check if word fits on current line
+            let fits = current_line_width == 0 || current_line_width + 1 + word_width <= content_width;
+
+            if !fits && current_line_width > 0 {
+                // Flush current line
+                let line = if is_first_line {
+                    is_first_line = false;
+                    let mut line_spans = vec![Span::styled(prefix.to_string(), prefix_style)];
+                    line_spans.extend(std::mem::take(&mut current_line_spans));
+                    Line::from(line_spans)
+                } else {
+                    let mut line_spans = vec![Span::raw(continuation_indent.clone())];
+                    line_spans.extend(std::mem::take(&mut current_line_spans));
+                    Line::from(line_spans)
+                };
+                ctx.lines.push(line);
+                current_line_width = 0;
+            }
+
+            // Add word to current line
+            let word_text = if current_line_width > 0 && !current_line_spans.is_empty() {
+                format!(" {}", word)
+            } else {
+                word.to_string()
+            };
+
+            current_line_spans.push(Span::styled(word_text.clone(), style));
+            current_line_width += display_width(&word_text);
+        }
+    }
+
+    // Flush remaining content
+    if !current_line_spans.is_empty() || is_first_line {
+        let line = if is_first_line {
+            let mut line_spans = vec![Span::styled(prefix.to_string(), prefix_style)];
+            line_spans.extend(current_line_spans);
+            Line::from(line_spans)
+        } else {
+            let mut line_spans = vec![Span::raw(continuation_indent)];
+            line_spans.extend(current_line_spans);
+            Line::from(line_spans)
+        };
+        ctx.lines.push(line);
     }
 }
 
@@ -1283,6 +1404,43 @@ mod tests {
         assert!(all_text.contains("Second"));
         assert!(all_text.contains("1."));
         assert!(all_text.contains("2."));
+    }
+
+    #[test]
+    fn list_item_wraps_with_proper_indent() {
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark()).with_width(30);
+        // Long list item that should wrap
+        let lines = r.render("- This is a very long list item that should wrap to the next line");
+
+        // Should produce multiple lines for the wrapped content
+        assert!(
+            lines.len() >= 2,
+            "Long list item should wrap to multiple lines, got {} lines",
+            lines.len()
+        );
+
+        // First line should start with bullet
+        let first_line: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            first_line.starts_with("- "),
+            "First line should start with bullet: {:?}",
+            first_line
+        );
+
+        // Continuation lines should have proper indentation (spaces, not bullet)
+        if lines.len() > 1 {
+            let second_line: String = lines[1].spans.iter().map(|s| s.content.as_ref()).collect();
+            assert!(
+                second_line.starts_with("  "),
+                "Continuation line should be indented: {:?}",
+                second_line
+            );
+            assert!(
+                !second_line.starts_with("- "),
+                "Continuation line should not have bullet: {:?}",
+                second_line
+            );
+        }
     }
 
     #[test]
