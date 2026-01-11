@@ -3058,7 +3058,9 @@ impl RatatuiRunner {
         // Setup terminal based on mode using DynamicViewport wrapper
         let mut terminal = if self.inline_mode {
             // Inline mode: small viewport at bottom, native scrollback above
-            execute!(stdout, EnableMouseCapture, EnableBracketedPaste)?;
+            // Don't enable mouse capture - let terminal handle scroll natively
+            // so user can scroll up to see graduated content in scrollback
+            execute!(stdout, EnableBracketedPaste)?;
             DynamicViewport::new_inline(INLINE_VIEWPORT_HEIGHT)?
         } else {
             // Fullscreen mode: traditional alternate screen
@@ -3165,10 +3167,9 @@ impl RatatuiRunner {
         // Cleanup terminal
         disable_raw_mode()?;
         if self.inline_mode {
-            // Inline mode: just restore cursor and disable mouse (no alternate screen to leave)
+            // Inline mode: just restore cursor (no alternate screen to leave, no mouse capture to disable)
             execute!(
                 terminal.terminal_mut().backend_mut(),
-                DisableMouseCapture,
                 DisableBracketedPaste,
                 cursor::Show
             )?;

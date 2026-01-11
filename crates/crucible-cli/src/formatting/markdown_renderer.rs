@@ -263,12 +263,9 @@ fn collect_inline_text(node: &Node) -> String {
     render_inline_children(node)
 }
 
-/// Style a border string with dim gray (matching viewport table styling)
+/// Style a border string with gray (subtle but visible)
 fn style_border(border: &str) -> String {
-    border
-        .with(Color::DarkGrey)
-        .attribute(Attribute::Dim)
-        .to_string()
+    border.with(Color::Grey).to_string()
 }
 
 /// Render a GFM table with proper formatting (fully outlined box)
