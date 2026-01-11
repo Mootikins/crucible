@@ -130,6 +130,8 @@ pub struct ViewState {
     pub provider: String,
     /// Current model name (for status bar)
     pub model: String,
+    /// Number of lines already graduated to scrollback (for inline viewport mode)
+    pub graduated_line_count: usize,
 }
 
 impl ViewState {
@@ -156,6 +158,7 @@ impl ViewState {
             focused_item_width: 0,
             provider: "ollama".to_string(),
             model: "llama3.2".to_string(),
+            graduated_line_count: 0,
         }
     }
 
@@ -368,7 +371,8 @@ impl RatatuiView {
         let conv_widget = SessionHistoryWidget::new(&self.state.conversation)
             .scroll_offset(self.state.scroll_offset)
             .viewport_height(conv_area.height)
-            .horizontal_offset(self.state.horizontal_scroll_offset);
+            .horizontal_offset(self.state.horizontal_scroll_offset)
+            .skip_lines(self.state.graduated_line_count);
         frame.render_widget(conv_widget, conv_area);
         idx += 1;
 

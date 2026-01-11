@@ -45,6 +45,8 @@ pub struct SessionHistoryWidget<'a> {
     viewport_width: u16,
     /// Horizontal scroll offset for wide content (tables, code blocks)
     horizontal_offset: usize,
+    /// Number of lines to skip from the beginning (already graduated to scrollback)
+    skip_lines: usize,
 }
 
 impl<'a> SessionHistoryWidget<'a> {
@@ -56,7 +58,14 @@ impl<'a> SessionHistoryWidget<'a> {
             viewport_height: 0,
             viewport_width: 80, // Default width for tests
             horizontal_offset: 0,
+            skip_lines: 0,
         }
+    }
+
+    /// Set the number of lines to skip (already graduated to scrollback)
+    pub fn skip_lines(mut self, count: usize) -> Self {
+        self.skip_lines = count;
+        self
     }
 
     /// Set the scroll offset (lines from bottom)
@@ -140,18 +149,11 @@ impl<'a> SessionHistoryWidget<'a> {
             all_lines.extend(item_lines);
         }
 
-        // Store ALL lines for graduation (before skipping graduated ones).
-        // This ensures graduation uses the exact lines that were rendered.
-        self.state.capture_rendered_lines(all_lines.clone());
-
-        // Skip already-graduated lines for display
-        let skip_count = self.state.graduated_line_count();
-        if skip_count > 0 && skip_count < all_lines.len() {
-            all_lines.drain(0..skip_count);
-        } else if skip_count >= all_lines.len() {
-            all_lines.clear();
+        // With line-based graduation, skip the first N lines that have already
+        // been graduated to terminal scrollback.
+        if self.skip_lines > 0 && self.skip_lines < all_lines.len() {
+            all_lines.drain(..self.skip_lines);
         }
-
         all_lines
     }
 
