@@ -353,6 +353,8 @@ pub struct RatatuiRunner {
     token_count: usize,
     /// Previous token count for direction indicator
     prev_token_count: usize,
+    /// Context window size for current model (for percentage display)
+    context_window_size: usize,
     /// Spinner animation frame (cycles 0-3)
     spinner_frame: usize,
     /// Animation frame counter for timing (60fps loop)
@@ -457,6 +459,7 @@ impl RatatuiRunner {
             popup_provider,
             token_count: 0,
             prev_token_count: 0,
+            context_window_size: 128_000, // Default context window (varies by model)
             spinner_frame: 0,
             animation_frame: 0,
             ctrl_c_count: 0,
@@ -2172,7 +2175,8 @@ impl RatatuiRunner {
                         spinner_frame: self.spinner_frame,
                     });
                     self.view.set_status_text("Generating");
-                    self.view.set_token_count(Some(self.token_count));
+                    self.view
+                        .set_context_usage(self.token_count, self.context_window_size);
                 }
                 SessionEvent::AgentResponded {
                     content: _,
