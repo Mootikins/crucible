@@ -20,7 +20,7 @@ expression: h.render()
                                                                                 
  ● Hi! How can I help?                                                          
                                                                                 
- ◐ glob(pattern="**/*.rs")                                                      
+ ● glob(pattern="**/*.rs")                                                      
                                                                                 
                                                                                 
  >                                                                              

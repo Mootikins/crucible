@@ -21,8 +21,8 @@ expression: render_conversation(&state)
                                                                                 
  ● ls → 15 files                                                                
  ● grep(pattern="TODO") → 5 matches                                             
- ● read(path="/src/main.rs", limit=100) → 100 lines                             
+ ● read(path="/src/main.rs") → 100 lines                                        
  ● search(query="This is a very long search query that...") → 3 results         
- ● build(release=true, verbose=false) → success                                 
+ ● build(release=true) → success                                                
  ● batch(files=[3 items]) → 3 files processed                                   
  ● config(options={...}) → configured
