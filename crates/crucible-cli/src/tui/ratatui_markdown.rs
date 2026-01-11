@@ -1634,6 +1634,48 @@ mod tests {
     }
 
     #[test]
+    fn table_no_blank_lines_with_wrapping() {
+        // Test that tables with wrapped cell content don't have blank lines between rows
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark()).with_width(60);
+
+        // Table with long content that will wrap
+        let markdown = "| Tool | Description |\n|------|-------------|\n| Glob | Fast file pattern matching tool that finds files by pattern. |\n| Grep | Search content with regex patterns. |";
+
+        let lines = r.render(markdown);
+
+        // Extract text from each line
+        let line_texts: Vec<String> = lines
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect();
+
+        // Check for blank lines between table rows
+        // A blank line would be a line that doesn't contain any table characters
+        let mut prev_line_was_table_row = false;
+        for (i, text) in line_texts.iter().enumerate() {
+            let is_table_row = text.contains('│') || text.contains('├') || text.contains('┌') || text.contains('└');
+            let is_blank = text.trim().is_empty();
+
+            if prev_line_was_table_row && is_blank {
+                panic!(
+                    "Found blank line at index {} after table row. Lines:\n{}",
+                    i,
+                    line_texts.join("\n")
+                );
+            }
+
+            if is_table_row {
+                prev_line_was_table_row = true;
+            }
+        }
+    }
+
+    #[test]
     fn wrap_text_splits_at_word_boundaries() {
         // "hello world foo bar" = 19 chars
         // With width 10: "hello" (5), " world" would be 11 > 10, so wrap
