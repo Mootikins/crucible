@@ -1,6 +1,5 @@
 ---
 source: crates/crucible-cli/src/tui/components/status_bar.rs
-assertion_line: 296
 expression: terminal.backend()
 ---
-"▸ Plan │ openai/gpt-4o │ 100 tokens │ Ready                                     "
+"▸ Plan │ openai/gpt-4o │ 6% ctx │ Ready                                         "
