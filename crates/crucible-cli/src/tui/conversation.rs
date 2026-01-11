@@ -314,9 +314,6 @@ impl ConversationState {
     ///
     /// Uses cached heights where available, only rendering uncached items.
     /// Includes spacing lines that would be added before tool calls.
-    ///
-    /// Note: This count EXCLUDES cursor lines to match render_for_graduation().
-    /// This ensures graduation calculations use consistent line counts.
     pub fn calculate_total_line_count(&self, width: usize) -> usize {
         let mut total = 0;
 
@@ -342,50 +339,15 @@ impl ConversationState {
             }
         }
 
-        // Subtract cursor line if present (streaming assistant message at end)
-        // This matches render_for_graduation() which filters out cursor lines
-        if self.has_streaming_cursor() {
-            total = total.saturating_sub(1);
-        }
-
         // Cache the total for next time
         self.set_total_height(total);
         total
     }
 
-    /// Check if there's a streaming cursor that would be rendered.
-    fn has_streaming_cursor(&self) -> bool {
-        // Cursor is shown when: last item is streaming assistant with incomplete last block
-        if let Some(ConversationItem::AssistantMessage { blocks, is_streaming }) = self.items.back()
-        {
-            if *is_streaming {
-                if let Some(last_block) = blocks.last() {
-                    return !last_block.is_complete();
-                }
-            }
-        }
-        false
-    }
-
     /// Render all items to lines using cache where available.
     ///
     /// This is more efficient than render_all_lines() as it uses cached renders.
-    /// Note: Includes streaming cursor if present. Use `render_for_graduation`
-    /// to exclude cursor lines for graduation to scrollback.
     pub fn render_all_lines_cached(&self, width: usize) -> Vec<Line<'static>> {
-        self.render_lines_internal(width, false)
-    }
-
-    /// Render all items to lines for graduation (excludes streaming cursor).
-    ///
-    /// Same as `render_all_lines_cached` but filters out cursor lines
-    /// so they don't get "frozen" in terminal scrollback during streaming.
-    pub fn render_for_graduation(&self, width: usize) -> Vec<Line<'static>> {
-        self.render_lines_internal(width, true)
-    }
-
-    /// Internal render implementation with optional cursor filtering.
-    fn render_lines_internal(&self, width: usize, exclude_cursor: bool) -> Vec<Line<'static>> {
         let mut all_lines = Vec::new();
 
         for (i, item) in self.items.iter().enumerate() {
@@ -408,12 +370,14 @@ impl ConversationState {
             }
         }
 
-        // Filter out cursor lines if requested (for graduation)
-        if exclude_cursor {
-            all_lines.retain(|line| !is_cursor_line(line));
-        }
-
         all_lines
+    }
+
+    /// Render all items to lines for graduation.
+    ///
+    /// Alias for `render_all_lines_cached` - kept for API compatibility.
+    pub fn render_for_graduation(&self, width: usize) -> Vec<Line<'static>> {
+        self.render_all_lines_cached(width)
     }
 
     /// Store rendered lines for an item
@@ -895,28 +859,13 @@ impl ConversationState {
 // Rendering
 // =============================================================================
 
-/// Check if a line is the streaming cursor indicator.
-///
-/// The cursor line has the form: `"   ▌"` (3 spaces + cursor character).
-/// We filter these out during graduation so they don't get frozen in scrollback.
-fn is_cursor_line(line: &Line<'_>) -> bool {
-    // Cursor line: exactly 2 spans, second contains "▌"
-    if line.spans.len() == 2 {
-        if let Some(second) = line.spans.get(1) {
-            return second.content.contains('▌');
-        }
-    }
-    false
-}
-
 /// Render a conversation item to lines
 pub fn render_item_to_lines(item: &ConversationItem, width: usize) -> Vec<Line<'static>> {
     match item {
         ConversationItem::UserMessage { content } => render_user_message(content, width),
-        ConversationItem::AssistantMessage {
-            blocks,
-            is_streaming,
-        } => render_assistant_blocks(blocks, *is_streaming, width),
+        ConversationItem::AssistantMessage { blocks, .. } => {
+            render_assistant_blocks(blocks, width)
+        }
         ConversationItem::Status(status) => render_status(status),
         ConversationItem::ToolCall(tool) => render_tool_call(tool),
     }
@@ -957,12 +906,8 @@ fn render_user_message(content: &str, width: usize) -> Vec<Line<'static>> {
     lines
 }
 
-/// Render assistant message blocks with streaming indicators
-fn render_assistant_blocks(
-    blocks: &[StreamBlock],
-    is_streaming: bool,
-    width: usize,
-) -> Vec<Line<'static>> {
+/// Render assistant message blocks
+fn render_assistant_blocks(blocks: &[StreamBlock], width: usize) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     // Only add blank line for spacing if there's content to render
@@ -974,9 +919,9 @@ fn render_assistant_blocks(
     // Track if we've added the first-line prefix yet
     let mut first_content_line = true;
 
-    for (idx, block) in blocks.iter().enumerate() {
+    for block in blocks {
         match block {
-            StreamBlock::Prose { text, is_complete } => {
+            StreamBlock::Prose { text, is_complete: _ } => {
                 // Render prose as markdown with word-aware wrapping
                 let markdown_lines = render_markdown_text(text, width);
 
@@ -991,18 +936,11 @@ fn render_assistant_blocks(
                     lines.push(add_assistant_prefix(line, &mut first_content_line));
                 }
 
-                // Show streaming cursor on incomplete blocks
-                if !is_complete && is_streaming && idx == blocks.len() - 1 {
-                    lines.push(Line::from(vec![
-                        Span::raw("   "), // Indent to match
-                        Span::styled("▌", presets::streaming()),
-                    ]));
-                }
             }
             StreamBlock::Code {
                 lang,
                 content,
-                is_complete,
+                is_complete: _,
             } => {
                 // Render code block - no wrapping for code
                 let code_lines = render_code_block(lang.as_deref(), content);
@@ -1014,14 +952,6 @@ fn render_assistant_blocks(
                         continue;
                     }
                     lines.push(add_assistant_prefix(line, &mut first_content_line));
-                }
-
-                // Show streaming cursor on incomplete blocks
-                if !is_complete && is_streaming && idx == blocks.len() - 1 {
-                    lines.push(Line::from(vec![
-                        Span::raw("   "), // Indent to match
-                        Span::styled("▌", presets::streaming()),
-                    ]));
                 }
             }
             StreamBlock::Tool { name, args, status } => {
@@ -1118,7 +1048,7 @@ fn render_code_block(lang: Option<&str>, content: &str) -> Vec<Line<'static>> {
 fn render_assistant_message(content: &str) -> Vec<Line<'static>> {
     // Convert string to single prose block and render with default width
     let blocks = vec![StreamBlock::prose(content)];
-    render_assistant_blocks(&blocks, false, 80) // Default 80 column width for tests
+    render_assistant_blocks(&blocks, 80) // Default 80 column width for tests
 }
 
 fn render_status(status: &StatusKind) -> Vec<Line<'static>> {
@@ -1824,7 +1754,7 @@ mod tests {
 
         // Assistant messages should have " ● " prefix (3 chars: space + ● + space)
         let blocks = vec![crate::tui::StreamBlock::prose("World")];
-        let assistant_lines = render_assistant_blocks(&blocks, false, 80);
+        let assistant_lines = render_assistant_blocks(&blocks, 80);
         // Skip the blank line
         let assistant_content_line = &assistant_lines[1];
 
@@ -1849,7 +1779,7 @@ mod tests {
         let blocks = vec![crate::tui::StreamBlock::prose(
             "Line one\nLine two\nLine three",
         )];
-        let lines = render_assistant_blocks(&blocks, false, 80);
+        let lines = render_assistant_blocks(&blocks, 80);
 
         // Skip blank line, get content lines
         let content_lines: Vec<_> = lines.iter().skip(1).collect();
