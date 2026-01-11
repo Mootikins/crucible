@@ -1574,18 +1574,18 @@ mod tests {
     }
 
     #[test]
-    fn table_border_has_dim_modifier() {
+    fn table_border_has_gray_color() {
         let r = RatatuiMarkdown::new(MarkdownTheme::dark()).with_width(80);
         let lines = r.render("| A | B |\n|---|---|\n| 1 | 2 |");
 
-        // Border characters should have DIM modifier (from TableBorder style)
-        let has_dim_border = lines.iter().any(|l| {
+        // Border characters should have Gray foreground color (from TableBorder style)
+        let has_gray_border = lines.iter().any(|l| {
             l.spans.iter().any(|s| {
                 s.content.contains('\u{2500}') // horizontal border
-                    && s.style.add_modifier.contains(Modifier::DIM)
+                    && s.style.fg == Some(Color::Gray)
             })
         });
-        assert!(has_dim_border, "Border should have DIM modifier");
+        assert!(has_gray_border, "Border should have Gray color");
     }
 
     #[test]
