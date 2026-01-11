@@ -13,7 +13,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Widget, Wrap},
+    widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap},
     Frame,
 };
 
@@ -385,7 +385,9 @@ impl RatatuiView {
         let mut idx = 0;
 
         // Conversation (using SessionHistoryWidget)
+        // Clear first to prevent background artifacts from ratatui's cell-level diffing
         let conv_area = chunks[idx];
+        frame.render_widget(Clear, conv_area);
         let conv_widget = SessionHistoryWidget::new(&self.state.conversation)
             .scroll_offset(self.state.scroll_offset)
             .viewport_height(conv_area.height)
@@ -410,7 +412,9 @@ impl RatatuiView {
         }
 
         // Input box (dynamic height with multiline support and text wrapping)
+        // Clear first to prevent background artifacts
         let input_area = chunks[idx];
+        frame.render_widget(Clear, input_area);
         let input_width = input_area.width;
         let input_scroll = self.state.input_visual_scroll_offset(input_width);
         let input_widget =
@@ -421,6 +425,8 @@ impl RatatuiView {
         idx += 1;
 
         // Status bar with notification support
+        // Clear first to prevent background artifacts
+        frame.render_widget(Clear, chunks[idx]);
         let notification = self.state.notifications.current();
         let mut status_widget = StatusBarWidget::new(&self.state.mode_id, &self.state.status_text)
             .provider_model(&self.state.provider, &self.state.model);
