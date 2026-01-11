@@ -2,20 +2,6 @@
 source: crates/crucible-cli/src/tui/testing/tool_call_tests.rs
 expression: h.render()
 ---
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
  > Find all Rust files and read main.rs                                         
                                                                                 
  ● glob(pattern="**/*.rs") → Found 15 files                                     

@@ -3,18 +3,6 @@ source: crates/crucible-cli/src/tui/testing/code_block_tests.rs
 expression: h.render()
 ---
                                                                                 
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
  > Show output                                                                  
                                                                                 
  ● Here's the output:                                                           

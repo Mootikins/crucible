@@ -3,21 +3,6 @@ source: crates/crucible-cli/src/tui/testing/code_block_tests.rs
 expression: h.render()
 ---
                                                                                 
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
  > What is println?                                                             
                                                                                 
  ● The println! macro prints to stdout. Use it like println!("Hello")           

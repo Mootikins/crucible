@@ -342,7 +342,24 @@ impl RatatuiView {
                 0
             };
 
-        let mut constraints = vec![Constraint::Min(3)]; // Conversation area
+        // Calculate fixed element heights (everything except conversation and empty space)
+        let input_height = self.state.input_box_height();
+        let fixed_height = reasoning_height
+            + 1 // spacer
+            + popup_height
+            + input_height
+            + 1; // status bar
+
+        // Calculate actual conversation content height (visible lines after graduation)
+        let total_content = self.content_height();
+        let visible_content = total_content.saturating_sub(self.state.graduated_line_count);
+
+        // Conversation height is the actual content, capped by available space
+        let available_for_conv = (frame.area().height).saturating_sub(fixed_height);
+        let conv_height = (visible_content as u16).min(available_for_conv).max(1);
+
+        // Build constraints: all elements float at TOP, empty space at BOTTOM
+        let mut constraints = vec![Constraint::Length(conv_height)]; // Conversation - actual size
 
         // Add reasoning panel if visible
         if reasoning_height > 0 {
@@ -356,8 +373,9 @@ impl RatatuiView {
             constraints.push(Constraint::Length(popup_height));
         }
 
-        constraints.push(Constraint::Length(self.state.input_box_height())); // Input box (dynamic)
+        constraints.push(Constraint::Length(input_height)); // Input box (dynamic)
         constraints.push(Constraint::Length(1)); // Status bar
+        constraints.push(Constraint::Min(0)); // Empty space absorbs rest at BOTTOM
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)

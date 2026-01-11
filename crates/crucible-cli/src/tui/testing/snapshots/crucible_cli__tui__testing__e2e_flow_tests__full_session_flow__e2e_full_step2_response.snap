@@ -3,21 +3,6 @@ source: crates/crucible-cli/src/tui/testing/e2e_flow_tests.rs
 expression: h.render()
 ---
                                                                                 
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
  > What is Rust?                                                                
                                                                                 
  ● Rust is a systems programming language focused on safety and performance.    
