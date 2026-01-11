@@ -329,7 +329,9 @@ impl ConversationState {
 
     /// Render all items to lines using cache where available.
     ///
-    /// This is more efficient than render_all_lines() as it uses cached renders.
+    /// This matches the viewport's rendering exactly:
+    /// - Caches stable content (user messages, completed assistant messages, tool calls)
+    /// - Does NOT cache streaming content (is_streaming assistant messages, Status)
     pub fn render_all_lines_cached(&self, width: usize) -> Vec<Line<'static>> {
         let mut all_lines = Vec::new();
 
@@ -343,14 +345,31 @@ impl ConversationState {
                 }
             }
 
-            // Use cached lines if available, otherwise render and cache
-            if let Some(cached) = self.get_cached(i, width) {
-                all_lines.extend(cached);
+            // Check if this item is streaming (don't cache streaming content)
+            // This MUST match SessionHistoryWidget::render_to_lines behavior
+            let is_streaming = matches!(
+                item,
+                ConversationItem::AssistantMessage {
+                    is_streaming: true,
+                    ..
+                } | ConversationItem::Status(_)
+            );
+
+            // Use cached lines for stable content, fresh render for streaming
+            let item_lines = if !is_streaming {
+                if let Some(cached) = self.get_cached(i, width) {
+                    cached
+                } else {
+                    let lines = render_item_to_lines(item, width);
+                    self.store_cached(i, width, lines.clone());
+                    lines
+                }
             } else {
-                let lines = render_item_to_lines(item, width);
-                self.store_cached(i, width, lines.clone());
-                all_lines.extend(lines);
-            }
+                // Don't cache streaming content - it changes frequently
+                render_item_to_lines(item, width)
+            };
+
+            all_lines.extend(item_lines);
         }
 
         all_lines
