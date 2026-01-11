@@ -18,7 +18,7 @@ expression: terminal.backend()
 " ● I'll search for relevant files.                                              "
 "                                                                                "
 " ● grep(pattern="pattern") → 12 matches                                         "
-" ◐ read(path="src/main.rs")                                                     "
+" ● read(path="src/main.rs")                                                     "
 "    fn main() {                                                                 "
 "        println!("Hello");                                                      "
 "    }                                                                           "

@@ -19,7 +19,7 @@ expression: h.render()
  ● Hi! How can I help?                                                          
                                                                                 
  ● glob(pattern="**/*.rs") → Found 15 files                                     
- ● read_file(path="src/main.rs", limit=50) → fn main() { ... }                  
+ ● read_file(path="src/main.rs") → fn main() { ... }                            
  ✗ grep(pattern="[invalid") → Invalid regex pattern                             
                                                                                 
                                                                                 

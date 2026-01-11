@@ -123,13 +123,16 @@ pub mod indicators {
     /// Generating/streaming indicator (half circle, animated would cycle)
     pub const STREAMING: &str = "◐";
 
-    /// Tool running spinner frames
+    /// Tool running spinner frames (legacy, kept for status indicators)
     pub const SPINNER_FRAMES: &[&str] = &["◐", "◓", "◑", "◒"];
 
-    /// Tool complete indicator (dot, matches assistant prefix)
+    /// Tool running indicator (white dot)
+    pub const TOOL_RUNNING: &str = "●";
+
+    /// Tool complete indicator (green dot)
     pub const TOOL_COMPLETE: &str = "●";
 
-    /// Tool error X
+    /// Tool error/blocked indicator (red X)
     pub const TOOL_ERROR: &str = "✗";
 
     /// Legacy checkmark (kept for backwards compatibility)

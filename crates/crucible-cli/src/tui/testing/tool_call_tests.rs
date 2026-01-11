@@ -213,7 +213,7 @@ mod unit_tests {
     use crate::tui::styles::indicators;
 
     #[test]
-    fn running_tool_shows_spinner() {
+    fn running_tool_shows_white_dot() {
         let tool = ConversationItem::ToolCall(ToolCallDisplay {
             name: "grep".to_string(),
             args: serde_json::json!({"pattern": "test"}),
@@ -229,11 +229,11 @@ mod unit_tests {
             .find(|l| l.spans.iter().any(|s| s.content.as_ref().contains("grep")))
             .expect("Should find grep line");
 
-        // Should contain spinner character with alignment prefix
+        // Should contain running indicator (white dot) with alignment prefix
         let text: String = tool_line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(
-            text.contains(indicators::SPINNER_FRAMES[0]),
-            "Running tool should show spinner. Got: {}",
+            text.contains(indicators::TOOL_RUNNING),
+            "Running tool should show dot indicator. Got: {}",
             text
         );
         // Should be aligned with " X " prefix pattern
@@ -543,8 +543,8 @@ mod event_based_tests {
         // Render while running
         let running_output = h.render();
         assert!(
-            running_output.contains("◐"),
-            "Running tool should show spinner"
+            running_output.contains("●"),
+            "Running tool should show white dot"
         );
         assert!(
             running_output.contains("glob(pattern="),
@@ -566,10 +566,6 @@ mod event_based_tests {
         assert!(
             complete_output.contains("Found 25 markdown files"),
             "Should show result summary"
-        );
-        assert!(
-            !complete_output.contains("◐"),
-            "Should not show spinner after completion"
         );
 
         assert_snapshot!("single_tool_lifecycle", complete_output);
@@ -606,7 +602,7 @@ mod regression_tests {
     use crate::tui::streaming_channel::StreamingEvent;
 
     /// Regression test: Tool calls should show tool name, never empty
-    /// Bug: Orphan spinner " ◐" appeared with no tool name
+    /// Bug: Orphan indicator appeared with no tool name
     /// Fix: Empty tool names now render nothing (no lines at all)
     #[test]
     fn tool_call_with_empty_name_not_rendered() {
@@ -626,18 +622,18 @@ mod regression_tests {
             lines.len()
         );
 
-        // Double-check no spinner appears
-        let has_spinner = lines.iter().any(|l| {
+        // Double-check no indicator appears
+        let has_indicator = lines.iter().any(|l| {
             let text: String = l.spans.iter().map(|s| s.content.as_ref()).collect();
-            text.contains("◐")
+            text.contains("●") || text.contains("✗")
         });
-        assert!(!has_spinner, "Empty tool name should not render spinner");
+        assert!(!has_indicator, "Empty tool name should not render indicator");
     }
 
-    /// Regression test: Simulate the exact sequence from the bug report
-    /// Tool runs, then there's an orphan spinner, then assistant message
+    /// Regression test: Tool completion flow shows correct indicators
+    /// Running tool shows white dot, completed tool shows green dot
     #[test]
-    fn tool_completion_flow_no_orphan_spinner() {
+    fn tool_completion_flow_indicators() {
         let mut h = Harness::new(80, 24);
 
         // User asks a question
@@ -650,13 +646,12 @@ mod regression_tests {
         h.view
             .push_tool_running("crucible_get_kiln_info", serde_json::json!({}));
 
-        // Render and check - should have exactly one tool running
+        // Render and check - should have running tool with dot
         let output = h.render();
-        let spinner_count = output.matches(" ◐ ").count();
-        assert_eq!(
-            spinner_count, 1,
-            "Should have exactly one running tool spinner. Got {} in:\n{}",
-            spinner_count, output
+        assert!(
+            output.contains(" ● crucible_get_kiln_info"),
+            "Running tool should show dot indicator. Got:\n{}",
+            output
         );
 
         // Tool completes
@@ -665,19 +660,16 @@ mod regression_tests {
             Some("kiln path returned".to_string()),
         );
 
-        // Render again - should have green dot, no spinners
+        // Render again - should still have dot (now green) with result
         let output = h.render();
-        let spinner_count = output.matches(" ◐ ").count();
-        assert_eq!(
-            spinner_count, 0,
-            "Completed tool should have no spinners. Got {} in:\n{}",
-            spinner_count, output
-        );
-
-        // Should have green dot
         assert!(
             output.contains(" ● crucible_get_kiln_info"),
             "Completed tool should show green dot. Got:\n{}",
+            output
+        );
+        assert!(
+            output.contains("kiln path returned"),
+            "Completed tool should show result. Got:\n{}",
             output
         );
     }
