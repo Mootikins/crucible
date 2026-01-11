@@ -263,6 +263,14 @@ fn collect_inline_text(node: &Node) -> String {
     render_inline_children(node)
 }
 
+/// Style a border string with dim gray (matching viewport table styling)
+fn style_border(border: &str) -> String {
+    border
+        .with(Color::DarkGrey)
+        .attribute(Attribute::Dim)
+        .to_string()
+}
+
 /// Render a GFM table with proper formatting (fully outlined box)
 fn render_table(node: &Node) -> String {
     let mut header_rows: Vec<Vec<String>> = Vec::new();
@@ -328,7 +336,7 @@ fn render_table(node: &Node) -> String {
             .collect::<Vec<_>>()
             .join("┬")
     );
-    output.push_str(&format!("{}\n", top_border));
+    output.push_str(&format!("{}\n", style_border(&top_border)));
 
     // Render header rows with bold content
     for row in &header_rows {
@@ -345,8 +353,10 @@ fn render_table(node: &Node) -> String {
             cells.push(" ".repeat(width));
         }
 
-        let row_content = cells.join(" │ ");
-        output.push_str(&format!("│ {} │\n", row_content));
+        // Style the borders (│) with dim gray, content stays as-is
+        let border = style_border("│");
+        let row_content = cells.join(&format!(" {} ", border));
+        output.push_str(&format!("{} {} {}\n", border, row_content, border));
     }
 
     // Separator line after header: ├───┼───┤
@@ -359,7 +369,7 @@ fn render_table(node: &Node) -> String {
                 .collect::<Vec<_>>()
                 .join("┼")
         );
-        output.push_str(&format!("{}\n", mid_border));
+        output.push_str(&format!("{}\n", style_border(&mid_border)));
     }
 
     // Render body rows with separators between them
@@ -376,8 +386,10 @@ fn render_table(node: &Node) -> String {
             cells.push(" ".repeat(width));
         }
 
-        let row_content = cells.join(" │ ");
-        output.push_str(&format!("│ {} │\n", row_content));
+        // Style the borders (│) with dim gray, content stays as-is
+        let border = style_border("│");
+        let row_content = cells.join(&format!(" {} ", border));
+        output.push_str(&format!("{} {} {}\n", border, row_content, border));
 
         // Add separator between data rows (but not after the last one)
         if idx < body_rows.len() - 1 {
@@ -389,7 +401,7 @@ fn render_table(node: &Node) -> String {
                     .collect::<Vec<_>>()
                     .join("┼")
             );
-            output.push_str(&format!("{}\n", mid_border));
+            output.push_str(&format!("{}\n", style_border(&mid_border)));
         }
     }
 
@@ -402,7 +414,7 @@ fn render_table(node: &Node) -> String {
             .collect::<Vec<_>>()
             .join("┴")
     );
-    output.push_str(&format!("{}\n", bottom_border));
+    output.push_str(&format!("{}\n", style_border(&bottom_border)));
 
     output
 }
