@@ -37,6 +37,7 @@ expression: h.full_state()
    Paragraph 14 with enough text to take up space in the viewport.
    
 ═══ VIEWPORT ═══
+                                                                                
    Paragraph 16 with enough text to take up space in the viewport.              
                                                                                 
    Paragraph 17 with enough text to take up space in the viewport.              
@@ -46,7 +47,6 @@ expression: h.full_state()
    Paragraph 19 with enough text to take up space in the viewport.              
                                                                                 
    Paragraph 20 with enough text to take up space in the viewport.              
-   ▌                                                                            
                                                                                 
                                                                                 
  >                                                                              
