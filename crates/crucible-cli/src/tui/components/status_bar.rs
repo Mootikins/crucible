@@ -22,23 +22,24 @@ use ratatui::{
 ///
 /// - `mode_id`: The current mode ("plan", "act", or "auto")
 /// - `status_text`: Status message to display
-/// - `token_count`: Optional token count to display
+/// - `context_usage`: Optional (used, total) tokens for context window percentage
 /// - `notification`: Optional (message, level) tuple for right-aligned notification
 /// - `provider_model`: Optional (provider, model) tuple to display
 ///
 /// # Layout
 ///
 /// ```text
-/// ▸ Plan │ ollama/llama3.2 │ 127 tokens │ Ready            File saved
-/// └─┬──┘   └────┬────────┘   └────┬────┘   └──┬──┘           └───┬───┘
-///   mode    provider/model   tokens      status          notification
+/// ▸ Plan │ ollama/llama3.2 │ 12% ctx │ Ready            File saved
+/// └─┬──┘   └────┬────────┘   └──┬──┘   └──┬──┘           └───┬───┘
+///   mode    provider/model   context   status          notification
 /// ```
 ///
 /// The notification is right-aligned if present.
 pub struct StatusBarWidget<'a> {
     mode_id: &'a str,
     status_text: &'a str,
-    token_count: Option<usize>,
+    /// Context usage as (used_tokens, context_window_size)
+    context_usage: Option<(usize, usize)>,
     notification: Option<(&'a str, NotificationLevel)>,
     provider_model: Option<(&'a str, &'a str)>,
 }
@@ -54,15 +55,19 @@ impl<'a> StatusBarWidget<'a> {
         Self {
             mode_id,
             status_text,
-            token_count: None,
+            context_usage: None,
             notification: None,
             provider_model: None,
         }
     }
 
-    /// Set the token count (displayed after mode)
-    pub fn token_count(mut self, count: usize) -> Self {
-        self.token_count = Some(count);
+    /// Set the context usage (displayed as percentage after model)
+    ///
+    /// # Arguments
+    /// * `used` - Number of tokens used
+    /// * `total` - Total context window size
+    pub fn context_usage(mut self, used: usize, total: usize) -> Self {
+        self.context_usage = Some((used, total));
         self
     }
 
@@ -77,6 +82,77 @@ impl<'a> StatusBarWidget<'a> {
         self.provider_model = Some((provider, model));
         self
     }
+}
+
+/// Truncate provider/model display to fit within max_width.
+///
+/// Strategy:
+/// 1. If "provider/model" fits, return as-is
+/// 2. Drop provider, show just model name
+/// 3. Strip common quantization suffixes (q4_0, Q4_K_M, etc.)
+/// 4. If still too long, truncate with ellipsis
+fn truncate_provider_model(provider: &str, model: &str, max_width: usize) -> String {
+    let full = format!("{}/{}", provider, model);
+    if full.chars().count() <= max_width {
+        return full;
+    }
+
+    // Step 2: Drop provider, just show model
+    if model.chars().count() <= max_width {
+        return model.to_string();
+    }
+
+    // Step 3: Strip common quantization suffixes
+    let stripped = strip_quantization_suffix(model);
+    if stripped.chars().count() <= max_width {
+        return stripped.to_string();
+    }
+
+    // Step 4: Truncate with ellipsis
+    let truncated: String = stripped.chars().take(max_width.saturating_sub(1)).collect();
+    format!("{}…", truncated)
+}
+
+/// Strip common quantization suffixes from model names.
+///
+/// Handles patterns like:
+/// - `-q4_k_m`, `-q8_0`, `-Q4_K_M` (hyphen-separated quantization)
+/// - `-GGUF`, `-gguf` (GGUF format indicator)
+/// - `:latest` (Ollama default tag)
+fn strip_quantization_suffix(model: &str) -> &str {
+    // Common suffix patterns to strip (longest first)
+    let suffixes = [
+        // Ollama tags
+        ":latest",
+        // Speculative decoding
+        "-speculative",
+        // GGUF indicators
+        "-GGUF",
+        "-gguf",
+        // Extended quantization (XL variants)
+        "-q8_k_xl",
+        "-q4_k_xl",
+        // Standard quantization suffixes
+        "-q4_k_m",
+        "-q4_k_s",
+        "-q5_k_m",
+        "-q5_k_s",
+        "-q6_k",
+        "-q8_0",
+        "-q4_0",
+        "-q4_1",
+        "-q5_0",
+        "-q5_1",
+        "-fp16",
+        "-f16",
+    ];
+
+    for suffix in &suffixes {
+        if let Some(stripped) = model.strip_suffix(suffix) {
+            return stripped;
+        }
+    }
+    model
 }
 
 impl Widget for StatusBarWidget<'_> {
@@ -99,15 +175,20 @@ impl Widget for StatusBarWidget<'_> {
         if let Some((provider, model)) = self.provider_model {
             left_spans.push(Span::styled(" │ ", presets::dim()));
             left_spans.push(Span::styled(
-                format!("{}/{}", provider, model),
+                truncate_provider_model(provider, model, 20),
                 presets::dim(),
             ));
         }
 
-        if let Some(count) = self.token_count {
+        if let Some((used, total)) = self.context_usage {
+            let percent = if total > 0 {
+                (used as f64 / total as f64 * 100.0).round() as usize
+            } else {
+                0
+            };
             left_spans.push(Span::styled(" │ ", presets::dim()));
             left_spans.push(Span::styled(
-                format!("{} tokens", count),
+                format!("{}% ctx", percent),
                 presets::metrics(),
             ));
         }
@@ -152,14 +233,14 @@ mod tests {
         let widget = StatusBarWidget::new("plan", "Ready");
         assert_eq!(widget.mode_id, "plan");
         assert_eq!(widget.status_text, "Ready");
-        assert_eq!(widget.token_count, None);
+        assert_eq!(widget.context_usage, None);
         assert_eq!(widget.notification, None);
     }
 
     #[test]
-    fn test_token_count_builder() {
-        let widget = StatusBarWidget::new("act", "Processing").token_count(127);
-        assert_eq!(widget.token_count, Some(127));
+    fn test_context_usage_builder() {
+        let widget = StatusBarWidget::new("act", "Processing").context_usage(1000, 8192);
+        assert_eq!(widget.context_usage, Some((1000, 8192)));
     }
 
     #[test]
@@ -173,6 +254,48 @@ mod tests {
     fn test_provider_model_builder() {
         let widget = StatusBarWidget::new("plan", "Ready").provider_model("ollama", "llama3.2");
         assert!(widget.provider_model.is_some());
+    }
+
+    #[test]
+    fn test_truncate_short_model() {
+        // Fits within 20 chars: "ollama/gpt-4" = 12 chars
+        let result = truncate_provider_model("ollama", "gpt-4", 20);
+        assert_eq!(result, "ollama/gpt-4");
+    }
+
+    #[test]
+    fn test_truncate_drops_provider() {
+        // "ollama/model-name-here" = 22 chars, drops provider
+        let result = truncate_provider_model("ollama", "model-name-here", 20);
+        assert_eq!(result, "model-name-here");
+    }
+
+    #[test]
+    fn test_truncate_strips_quantization() {
+        // Model with quantization suffix that's too long (21 chars)
+        let result = truncate_provider_model("ollama", "longer-model-name-q8_0", 20);
+        // Should strip -q8_0 to fit (17 chars after strip)
+        assert_eq!(result, "longer-model-name");
+    }
+
+    #[test]
+    fn test_truncate_with_ellipsis() {
+        // Even after stripping, still too long - truncate with ellipsis
+        let result = truncate_provider_model("provider", "very-long-model-name-that-wont-fit", 20);
+        assert!(result.chars().count() <= 20);
+        assert!(result.ends_with('…'));
+    }
+
+    #[test]
+    fn test_strip_speculative_suffix() {
+        let result = strip_quantization_suffix("model-speculative");
+        assert_eq!(result, "model");
+    }
+
+    #[test]
+    fn test_strip_q8_k_xl_suffix() {
+        let result = strip_quantization_suffix("model-q8_k_xl");
+        assert_eq!(result, "model");
     }
 
     #[test]
@@ -246,23 +369,23 @@ mod tests {
         }
 
         #[test]
-        fn with_token_count() {
-            let widget = StatusBarWidget::new("plan", "Ready").token_count(127);
+        fn with_context_usage() {
+            let widget = StatusBarWidget::new("plan", "Ready").context_usage(1000, 8192);
             let terminal = render_widget(widget);
-            assert_snapshot!("status_bar_with_tokens", terminal.backend());
+            assert_snapshot!("status_bar_with_context", terminal.backend());
         }
 
         #[test]
-        fn without_token_count() {
+        fn without_context_usage() {
             let widget = StatusBarWidget::new("act", "Processing");
             let terminal = render_widget(widget);
-            assert_snapshot!("status_bar_no_tokens", terminal.backend());
+            assert_snapshot!("status_bar_no_context", terminal.backend());
         }
 
         #[test]
         fn with_info_notification() {
             let widget = StatusBarWidget::new("plan", "Ready")
-                .token_count(50)
+                .context_usage(4096, 8192)
                 .notification(Some(("File saved", NotificationLevel::Info)));
             let terminal = render_widget(widget);
             assert_snapshot!("status_bar_info_notification", terminal.backend());
@@ -290,7 +413,7 @@ mod tests {
         fn with_provider_model() {
             let widget = StatusBarWidget::new("plan", "Ready")
                 .provider_model("openai", "gpt-4o")
-                .token_count(100);
+                .context_usage(8000, 128000);
             let terminal = render_widget(widget);
             assert_snapshot!("status_bar_with_provider", terminal.backend());
         }

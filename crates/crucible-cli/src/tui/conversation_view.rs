@@ -62,8 +62,9 @@ pub trait ConversationView {
     /// Mode and status for status bar
     fn mode_id(&self) -> &str;
     fn set_mode_id(&mut self, mode: &str);
-    fn token_count(&self) -> Option<usize>;
-    fn set_token_count(&mut self, count: Option<usize>);
+    /// Context usage as (used_tokens, context_window_size)
+    fn context_usage(&self) -> Option<(usize, usize)>;
+    fn set_context_usage(&mut self, used: usize, total: usize);
     fn status_text(&self) -> &str;
     fn set_status_text(&mut self, status: &str);
     /// Set status text and record to message history for :messages
@@ -98,7 +99,8 @@ pub struct ViewState {
     pub input_buffer: String,
     pub cursor_position: usize,
     pub mode_id: String,
-    pub token_count: Option<usize>,
+    /// Context usage as (used_tokens, context_window_size)
+    pub context_usage: Option<(usize, usize)>,
     pub status_text: String,
     pub scroll_offset: usize,
     /// True if user is at bottom (auto-scroll enabled)
@@ -137,7 +139,7 @@ impl ViewState {
             input_buffer: String::new(),
             cursor_position: 0,
             mode_id: mode_id.to_string(),
-            token_count: None,
+            context_usage: None,
             status_text: "Ready".to_string(),
             scroll_offset: 0,
             at_bottom: true,
@@ -400,8 +402,8 @@ impl RatatuiView {
         let notification = self.state.notifications.current();
         let mut status_widget = StatusBarWidget::new(&self.state.mode_id, &self.state.status_text)
             .provider_model(&self.state.provider, &self.state.model);
-        if let Some(count) = self.state.token_count {
-            status_widget = status_widget.token_count(count);
+        if let Some((used, total)) = self.state.context_usage {
+            status_widget = status_widget.context_usage(used, total);
         }
         status_widget = status_widget.notification(notification);
         frame.render_widget(status_widget, chunks[idx]);
@@ -886,12 +888,12 @@ impl ConversationView for RatatuiView {
         self.state.mode_id = mode.to_string();
     }
 
-    fn token_count(&self) -> Option<usize> {
-        self.state.token_count
+    fn context_usage(&self) -> Option<(usize, usize)> {
+        self.state.context_usage
     }
 
-    fn set_token_count(&mut self, count: Option<usize>) {
-        self.state.token_count = count;
+    fn set_context_usage(&mut self, used: usize, total: usize) {
+        self.state.context_usage = Some((used, total));
     }
 
     fn status_text(&self) -> &str {
