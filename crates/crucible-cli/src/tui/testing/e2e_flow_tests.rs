@@ -324,6 +324,118 @@ mod graduation_flow {
 
         assert_snapshot!("e2e_graduation_scrollback_order", h.full_state());
     }
+
+    /// Tables in graduated content should not have blank lines between rows
+    #[test]
+    fn table_graduation_no_blank_lines() {
+        let mut h = StreamingHarness::inline().with_timeline();
+
+        h.user_message("Show me a table");
+        h.start_streaming();
+
+        // Stream a table with enough content to wrap cells
+        h.chunk("Here's a table:\n\n");
+        h.chunk("| Tool | Description |\n");
+        h.chunk("|------|-------------|\n");
+        h.chunk("| Glob | Fast file pattern matching tool that finds files by pattern. |\n");
+        h.chunk("| Grep | Search content with regex patterns to find matches. |\n");
+        h.chunk("| Read | Read file contents from disk. |\n");
+        h.chunk("\nThat's the table.");
+
+        // Add more content to force graduation
+        for i in 1..=15 {
+            h.chunk(&format!("\n\nMore text paragraph {}.", i));
+        }
+        h.complete();
+
+        // Check scrollback for blank lines between table rows
+        let scrollback = h.scrollback();
+        let mut in_table = false;
+
+        for (i, line) in scrollback.iter().enumerate() {
+            let is_table_row = line.contains('│')
+                || line.contains('├')
+                || line.contains('┌')
+                || line.contains('└');
+            let is_blank = line.trim().is_empty()
+                || line.chars().all(|c| c.is_whitespace() || c == '·' || c == '●');
+
+            if is_table_row {
+                in_table = true;
+            }
+
+            // Check for blank lines inside the table
+            if in_table && is_blank {
+                let prev_was_table = i > 0
+                    && scrollback[i - 1]
+                        .chars()
+                        .any(|c| c == '│' || c == '├' || c == '┌');
+                let next_is_table = i + 1 < scrollback.len()
+                    && scrollback[i + 1]
+                        .chars()
+                        .any(|c| c == '│' || c == '├' || c == '└');
+
+                if prev_was_table && next_is_table {
+                    panic!(
+                        "Found blank line at index {} in scrollback between table rows.\nPrev: '{}'\nCurrent: '{}'\nNext: '{}'",
+                        i,
+                        scrollback.get(i.saturating_sub(1)).unwrap_or(&String::new()),
+                        line,
+                        scrollback.get(i + 1).unwrap_or(&String::new())
+                    );
+                }
+            }
+
+            // Exit table after bottom border
+            if line.contains('└') {
+                in_table = false;
+            }
+        }
+    }
+
+    /// Test viewport content for gaps when table crosses graduation boundary
+    /// The gap appears when a multi-line element (table) straddles the visible/graduated line
+    #[test]
+    fn table_at_graduation_boundary_no_gap() {
+        let mut h = StreamingHarness::inline().with_timeline();
+
+        h.user_message("Show table");
+        h.start_streaming();
+
+        // Stream just enough to fill viewport, then add table
+        h.chunk("Line 1\n\nLine 2\n\nLine 3\n\n");
+        h.chunk("| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n| 5 | 6 |\n");
+        h.chunk("\n\nAfter table.");
+
+        // Force graduation by adding more content
+        for i in 1..=10 {
+            h.chunk(&format!("\n\nParagraph {}.", i));
+        }
+        h.complete();
+
+        // Check viewport for consecutive blank lines
+        let viewport = h.harness.render();
+        let lines: Vec<&str> = viewport.lines().collect();
+
+        for i in 1..lines.len() {
+            let prev_blank = lines[i - 1].trim().is_empty();
+            let curr_blank = lines[i].trim().is_empty();
+
+            if prev_blank && curr_blank {
+                // Allow at most one consecutive blank (for spacing between elements)
+                let next_blank = i + 1 < lines.len() && lines[i + 1].trim().is_empty();
+                if next_blank {
+                    panic!(
+                        "Found 3+ consecutive blank lines at index {}.\n\
+                         Viewport:\n{}",
+                        i, viewport
+                    );
+                }
+            }
+        }
+
+        assert_snapshot!("table_graduation_boundary", h.full_state());
+    }
 }
 
 // =============================================================================

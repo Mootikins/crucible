@@ -277,11 +277,6 @@ enum PendingGraduation {
     User(String),
     /// Assistant message blocks to graduate
     Assistant(Vec<StreamBlock>),
-    /// Tool result to graduate
-    Tool {
-        name: String,
-        status: crate::tui::conversation::ToolStatus,
-    },
     /// Pre-rendered styled lines to graduate (for progressive line-based graduation)
     Lines(Vec<ratatui::text::Line<'static>>),
 }
@@ -776,11 +771,10 @@ impl RatatuiRunner {
 
                         streaming_complete = true;
 
-                        // Graduate only overflow lines (not all content)
-                        // Keep recent content visible - only push what exceeds viewport
-                        if self.inline_mode {
-                            self.graduate_overflow_lines();
-                        }
+                        // IMPORTANT: Complete the streaming message BEFORE render
+                        // This removes the cursor line so the final render is correct
+                        // Graduation happens naturally in the render loop
+                        self.view.complete_assistant_streaming();
 
                         // Flush accumulated assistant message to session log
                         if let Some(logger) = &self.session_logger {
@@ -838,11 +832,8 @@ impl RatatuiRunner {
                         error,
                     } => {
                         // Update tool display with completion status
-                        let tool_status = if let Some(err) = &error {
+                        if let Some(err) = &error {
                             self.view.error_tool(&name, err);
-                            crate::tui::conversation::ToolStatus::Error {
-                                message: err.clone(),
-                            }
                         } else {
                             // Truncate result for summary (max 50 chars)
                             let summary = if result.len() > 50 {
@@ -853,11 +844,10 @@ impl RatatuiRunner {
                                 None
                             };
                             self.view.complete_tool(&name, summary.clone());
-                            crate::tui::conversation::ToolStatus::Complete { summary }
-                        };
+                        }
 
-                        // Graduate tool result to scrollback (inline mode)
-                        self.graduate_tool_result(&name, &tool_status);
+                        // Tool stays in conversation and graduates naturally via overflow
+                        // graduation in the render loop
 
                         // Clear status (tool is done)
                         self.view.clear_status();
@@ -931,10 +921,10 @@ impl RatatuiRunner {
                 }
             }
 
-            // Handle streaming completion
+            // Handle streaming completion (parser cleanup only - completion already handled above)
             if streaming_complete {
                 self.streaming_manager.clear_parser();
-                self.view.complete_assistant_streaming();
+                // Note: complete_assistant_streaming() already called before graduation above
                 // Clear reasoning buffer for next response
                 self.view.clear_reasoning();
             }
@@ -2321,50 +2311,43 @@ impl RatatuiRunner {
             .push(PendingGraduation::Assistant(blocks.to_vec()));
     }
 
-    /// Queue a tool result for graduation to terminal scrollback (inline mode only).
-    ///
-    /// The actual graduation happens in flush_pending_graduations() via terminal.insert_before().
-    /// In fullscreen mode, this is a no-op.
-    fn graduate_tool_result(&mut self, name: &str, status: &crate::tui::conversation::ToolStatus) {
-        if !self.inline_mode {
-            return;
-        }
-        self.pending_graduations.push(PendingGraduation::Tool {
-            name: name.to_string(),
-            status: status.clone(),
-        });
-    }
-
     /// Graduate lines that have overflowed the viewport during streaming.
     ///
     /// This implements progressive graduation: as content grows during streaming,
     /// lines that scroll out of view are pushed to terminal scrollback.
-    /// Graduated items are popped from the conversation state.
+    ///
+    /// Key insight: We must refresh (re-render) lines right before graduation to
+    /// ensure the graduated lines match what the next render will produce. Using
+    /// stale cached lines from the previous render causes gaps when streaming
+    /// content changes between renders.
     fn graduate_overflow_lines(&mut self) {
-        use crate::tui::constants::UiConstants;
+        // Viewport capacity (total height minus input area and status line)
+        let viewport_capacity = (INLINE_VIEWPORT_HEIGHT as usize).saturating_sub(4);
 
-        let content_width = UiConstants::content_width(self.view.state().width);
-
-        // Calculate visible lines (already accounts for partial graduation)
-        let visible_lines = self
+        // Re-render fresh to get accurate line count and content.
+        // This is essential: streaming may have added content since last render,
+        // so cached lines are stale. By refreshing now, what we graduate will
+        // exactly match what the next render produces and skips.
+        let (terminal_width, _) = size().unwrap_or((80, 24));
+        let total_lines = self
             .view
             .state()
             .conversation
-            .visible_line_count(content_width);
+            .refresh_captured_lines(terminal_width as usize);
 
-        // Viewport capacity (total height minus input area and status line)
-        let viewport_capacity = (INLINE_VIEWPORT_HEIGHT as usize).saturating_sub(4);
+        let already_graduated = self.view.state().conversation.graduated_line_count();
+        let visible_lines = total_lines.saturating_sub(already_graduated);
 
         // If we have more visible lines than viewport can show, graduate the overflow
         if visible_lines > viewport_capacity {
             let overflow_count = visible_lines - viewport_capacity;
 
-            // Graduate lines and get the text for scrollback
+            // Graduate lines from the freshly-captured render output
             let lines_to_graduate = self
                 .view
                 .state_mut()
                 .conversation
-                .graduate_lines(overflow_count, content_width);
+                .graduate_from_captured(overflow_count);
 
             if !lines_to_graduate.is_empty() {
                 self.pending_graduations
@@ -2441,33 +2424,6 @@ impl RatatuiRunner {
                             };
                             buf.set_line(0, (i + 1) as u16, &styled_line, width);
                         }
-                    })?;
-                }
-                PendingGraduation::Tool { name, status } => {
-                    use crate::tui::conversation::ToolStatus;
-
-                    let (indicator, style, suffix) = match &status {
-                        ToolStatus::Running => ("◐", Color::White, String::new()),
-                        ToolStatus::Complete { summary } => (
-                            "●",
-                            Color::Green,
-                            summary
-                                .as_ref()
-                                .map(|s| format!(" → {}", s))
-                                .unwrap_or_default(),
-                        ),
-                        ToolStatus::Error { message } => {
-                            ("✗", Color::Red, format!(" → {}", message))
-                        }
-                    };
-
-                    terminal.insert_before(1, |buf| {
-                        let line = Line::from(vec![
-                            Span::styled(format!(" {} ", indicator), Style::default().fg(style)),
-                            Span::styled(&name, Style::default().fg(style)),
-                            Span::styled(suffix, Style::default().fg(style)),
-                        ]);
-                        buf.set_line(0, 0, &line, width);
                     })?;
                 }
                 PendingGraduation::Lines(lines) => {
