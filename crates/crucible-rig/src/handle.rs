@@ -22,6 +22,7 @@ use rig::agent::Agent;
 use rig::completion::{AssistantContent, CompletionModel};
 use rig::message::{Message, ToolCall as RigToolCall, ToolResult};
 use rig::OneOrMany;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
@@ -79,6 +80,10 @@ where
     /// Current mode ID
     current_mode_id: String,
 
+    /// Whether mode context has been sent for current mode
+    /// Reset to false on mode change, set to true after first message
+    mode_context_sent: AtomicBool,
+
     /// Maximum tool call depth (prevents infinite loops)
     max_tool_depth: usize,
 
@@ -112,6 +117,7 @@ where
             chat_history: Arc::new(RwLock::new(Vec::new())),
             mode_state,
             current_mode_id,
+            mode_context_sent: AtomicBool::new(false), // Will send context on first message
             max_tool_depth: 50, // High limit for complex agentic workflows
             reasoning_endpoint: None,
             model_name: None,
@@ -174,6 +180,11 @@ where
     ) -> BoxStream<'static, ChatResult<ChatChunk>> {
         let history = Arc::clone(&self.chat_history);
         let http_client = self.http_client.clone();
+        let current_mode_id = self.current_mode_id.clone();
+
+        // Check if we need to send mode context (only once per mode)
+        let should_send_mode_context = current_mode_id == "plan"
+            && !self.mode_context_sent.swap(true, Ordering::SeqCst);
 
         Box::pin(async_stream::stream! {
             // Build messages array from history + new message
@@ -238,13 +249,23 @@ where
                 }
             }
 
-            // Add new user message
+            // Add mode context for plan mode (only on first message after mode change)
+            let prompt_message = if should_send_mode_context {
+                format!(
+                    "[MODE: Plan mode - write tools (bash, write_file, edit_file, create_*, delete_*) are DISABLED. Use read-only tools only. Switch to act mode with /act to enable writes.]\n\n{}",
+                    message
+                )
+            } else {
+                message.clone()
+            };
+
+            // Add new user message with mode context if applicable
             messages.push(serde_json::json!({
                 "role": "user",
-                "content": message.clone()
+                "content": prompt_message
             }));
 
-            // Add user message to history
+            // Add user message to history (original message, not mode-prefixed)
             {
                 let mut h = history.write().await;
                 h.push(Message::user(&message));
@@ -387,19 +408,33 @@ where
         let max_depth = self.max_tool_depth;
         let current_mode_id = self.current_mode_id.clone();
 
+        // Check if we need to send mode context (only once per mode)
+        let should_send_mode_context = current_mode_id == "plan"
+            && !self.mode_context_sent.swap(true, Ordering::SeqCst);
+
         Box::pin(async_stream::stream! {
             // Get current history
             let current_history = history.read().await.clone();
 
-            // Add user message to history
+            // Add mode context for plan mode (only on first message after mode change)
+            let prompt_message = if should_send_mode_context {
+                format!(
+                    "[MODE: Plan mode - write tools (bash, write_file, edit_file, create_*, delete_*) are DISABLED. Use read-only tools only. Switch to act mode with /act to enable writes.]\n\n{}",
+                    message
+                )
+            } else {
+                message.clone()
+            };
+
+            // Add user message to history (original message, not the mode-prefixed one)
             {
                 let mut h = history.write().await;
                 h.push(Message::user(&message));
             }
 
-            // Create streaming request with history
+            // Create streaming request with history (use mode-prefixed prompt)
             let mut stream = agent
-                .stream_prompt(&message)
+                .stream_prompt(&prompt_message)
                 .multi_turn(max_depth)
                 .with_history(current_history)
                 .await;
@@ -723,7 +758,9 @@ where
 
                         // Build proper history with text AND tool calls
                         {
+                            info!("Acquiring history write lock...");
                             let mut h = history.write().await;
+                            info!("History write lock acquired");
 
                             // Build assistant content with both text and tool calls
                             let mut assistant_content: Vec<AssistantContent> = Vec::new();
@@ -759,6 +796,7 @@ where
                         // Emit final chunk
                         // Note: Don't include tool_calls here - they were already emitted
                         // individually via StreamedAssistantContent::ToolCall above
+                        info!("Yielding final done=true chunk");
                         yield Ok(ChatChunk {
                             delta: String::new(),
                             done: true,
@@ -766,6 +804,7 @@ where
                             tool_results: None,
                             reasoning: None,
                         });
+                        info!("Final chunk yielded successfully");
                     }
                     Err(e) => {
                         warn!(
@@ -853,6 +892,8 @@ where
         }
 
         self.current_mode_id = mode_id.to_string();
+        // Reset mode context flag so next message will include mode info
+        self.mode_context_sent.store(false, Ordering::SeqCst);
         Ok(())
     }
 }
