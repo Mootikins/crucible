@@ -282,8 +282,8 @@ enum PendingGraduation {
         name: String,
         status: crate::tui::conversation::ToolStatus,
     },
-    /// Pre-rendered lines to graduate (for progressive line-based graduation)
-    Lines(Vec<String>),
+    /// Pre-rendered styled lines to graduate (for progressive line-based graduation)
+    Lines(Vec<ratatui::text::Line<'static>>),
 }
 
 /// Convert StreamBlocks to markdown string for graduation rendering
@@ -634,14 +634,15 @@ impl RatatuiRunner {
                 }
             }
 
-            // 1. Flush pending graduations to scrollback (before render)
-            // This uses terminal.insert_before() to properly insert content above the viewport
-            if let Err(e) = self.flush_pending_graduations(terminal) {
-                tracing::warn!("Failed to flush graduations: {}", e);
-            }
-
-            // 2. Render (only if needed)
+            // 1. Render (only if needed)
+            // Note: Flush pending graduations right before render so there's no gap
+            // between insert_before and the viewport showing the updated content.
             if needs_render {
+                // Flush pending graduations to scrollback (right before render)
+                // This uses terminal.insert_before() to properly insert content above the viewport
+                if let Err(e) = self.flush_pending_graduations(terminal) {
+                    tracing::warn!("Failed to flush graduations: {}", e);
+                }
                 let view = &self.view;
                 let selection = self.selection_manager.selection();
                 let scroll_offset = view.state().scroll_offset;
@@ -710,8 +711,15 @@ impl RatatuiRunner {
             let mut streaming_error = None;
             let collected_events: Vec<_> = {
                 if let Some(rx) = self.streaming_manager.rx_mut() {
-                    std::iter::from_fn(|| rx.try_recv().ok()).collect()
+                    let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+                    if !events.is_empty() {
+                        info!(event_count = events.len(), "Runner polled {} events from channel", events.len());
+                    }
+                    events
                 } else {
+                    if self.streaming_manager.is_streaming() {
+                        info!("Runner: rx_mut() returned None but is_streaming=true!");
+                    }
                     Vec::new()
                 }
             };
@@ -757,6 +765,7 @@ impl RatatuiRunner {
                         );
                         self.streaming_manager.stop_streaming();
                         self.view.clear_status();
+                        self.view.set_status_text("Ready");
                         debug!(response_len = full_response.len(), "Streaming complete");
 
                         // Finalize parser (already cleared by stop_streaming, but we had a reference)
@@ -935,7 +944,64 @@ impl RatatuiRunner {
             }
 
             // 6. Poll streaming task for completion (cleanup)
+            // IMPORTANT: We must drain any remaining events BEFORE clearing the receiver
+            // Otherwise the Done event can be lost if the task finished after step 5 polled
             if self.streaming_manager.is_task_finished() {
+                // Drain any remaining events from the channel before clearing
+                // Collect first to avoid borrow conflicts
+                let drained_events: Vec<_> = {
+                    if let Some(rx) = self.streaming_manager.rx_mut() {
+                        std::iter::from_fn(|| rx.try_recv().ok()).collect()
+                    } else {
+                        Vec::new()
+                    }
+                };
+
+                // Process drained events
+                for event in drained_events {
+                    info!("Drained event from finished task: {:?}", std::mem::discriminant(&event));
+                    match event {
+                        StreamingEvent::Done { full_response } => {
+                            info!(
+                                response_len = full_response.len(),
+                                "Runner received Done from drain (race condition caught!)"
+                            );
+                            self.streaming_manager.stop_streaming();
+                            self.streaming_manager.clear_parser();
+                            self.view.complete_assistant_streaming();
+                            self.view.clear_status();
+                            self.view.set_status_text("Ready");
+                            self.view.clear_reasoning();
+
+                            if self.inline_mode {
+                                self.graduate_overflow_lines();
+                            }
+
+                            if let Some(logger) = &self.session_logger {
+                                let logger = logger.clone();
+                                let model = self.current_agent.clone();
+                                tokio::spawn(async move {
+                                    logger.flush_assistant_message(model.as_deref()).await;
+                                });
+                            }
+
+                            bridge.ring.push(SessionEvent::AgentResponded {
+                                content: full_response,
+                                tool_calls: vec![],
+                            });
+                        }
+                        StreamingEvent::Error { message } => {
+                            self.streaming_manager.stop_streaming();
+                            self.streaming_manager.clear_parser();
+                            self.view.complete_assistant_streaming();
+                            self.view.clear_status();
+                            self.view.echo_error(&format!("Error: {}", message));
+                        }
+                        // Other events (Delta, ToolCall, etc.) can be safely ignored during cleanup
+                        _ => {}
+                    }
+                }
+
                 if let Some(task) = self.streaming_manager.take_task() {
                     let _ = task.await; // Just cleanup, events already processed
                     self.streaming_manager.clear_task_and_receiver();
@@ -1185,8 +1251,9 @@ impl RatatuiRunner {
                 // Add user message to view
                 self.view.push_user_message(&msg)?;
 
-                // Graduate user message to scrollback (inline mode)
-                self.graduate_user_message(&msg);
+                // Note: Don't call graduate_user_message() here - it causes duplication!
+                // The user message will be graduated naturally by graduate_overflow_lines()
+                // when the response content overflows the viewport.
 
                 debug!(prompt = %msg, "User message sent");
 
@@ -2400,16 +2467,16 @@ impl RatatuiRunner {
                     })?;
                 }
                 PendingGraduation::Lines(lines) => {
-                    // Pre-rendered lines (from progressive graduation)
+                    // Pre-rendered styled lines (from progressive graduation)
+                    // Lines already have ratatui styling, use directly in buffer
                     if lines.is_empty() {
                         continue;
                     }
 
                     let height = lines.len() as u16;
                     terminal.insert_before(height, |buf| {
-                        for (i, text) in lines.iter().enumerate() {
-                            let line = Line::from(text.as_str());
-                            buf.set_line(0, i as u16, &line, width);
+                        for (i, line) in lines.iter().enumerate() {
+                            buf.set_line(0, i as u16, line, width);
                         }
                     })?;
                 }

@@ -13,7 +13,7 @@ use once_cell::sync::Lazy;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Paragraph, Widget},
 };
@@ -703,7 +703,7 @@ impl ConversationState {
     /// Tracks partial graduation for the current front item.
     ///
     /// Returns the lines that were graduated (for writing to scrollback).
-    pub fn graduate_lines(&mut self, count: usize, content_width: usize) -> Vec<String> {
+    pub fn graduate_lines(&mut self, count: usize, content_width: usize) -> Vec<Line<'static>> {
         if count == 0 || self.items.is_empty() {
             return Vec::new();
         }
@@ -720,8 +720,7 @@ impl ConversationState {
             if remaining >= lines_left_in_front {
                 // Graduate all remaining lines of front item
                 for line in front_lines.into_iter().skip(already_graduated) {
-                    let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-                    graduated.push(text);
+                    graduated.push(line);
                 }
                 // Pop the front item
                 self.items.pop_front();
@@ -736,8 +735,7 @@ impl ConversationState {
                     .skip(already_graduated)
                     .take(remaining)
                 {
-                    let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-                    graduated.push(text);
+                    graduated.push(line);
                 }
                 self.graduated_lines_in_first_item += remaining;
                 remaining = 0;
@@ -750,7 +748,7 @@ impl ConversationState {
     /// Graduate all content (for end of streaming).
     ///
     /// Clears all items and returns all lines for scrollback.
-    pub fn graduate_all(&mut self, content_width: usize) -> Vec<String> {
+    pub fn graduate_all(&mut self, content_width: usize) -> Vec<Line<'static>> {
         let mut all_lines = Vec::new();
 
         // Start from where we left off in the first item
@@ -764,8 +762,7 @@ impl ConversationState {
                 0
             };
             for line in lines.into_iter().skip(skip) {
-                let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-                all_lines.push(text);
+                all_lines.push(line);
             }
         }
 
