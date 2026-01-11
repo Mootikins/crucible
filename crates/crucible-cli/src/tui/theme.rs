@@ -306,9 +306,7 @@ impl MarkdownTheme {
 
             ListMarker => Style::default().fg(Color::Indexed(6)), // Cyan
 
-            TableBorder => Style::default()
-                .fg(Color::Indexed(8)) // Bright black (gray)
-                .add_modifier(Modifier::DIM),
+            TableBorder => Style::default().fg(Color::Gray), // Light gray, no dim
 
             Strikethrough => Style::default()
                 .add_modifier(Modifier::CROSSED_OUT)
@@ -462,13 +460,14 @@ mod tests {
     }
 
     #[test]
-    fn test_style_for_table_border_has_dim_modifier() {
+    fn test_style_for_table_border_has_gray_color() {
         let theme = MarkdownTheme::dark();
         let style = theme.style_for(MarkdownElement::TableBorder);
 
-        assert!(
-            style.add_modifier.contains(Modifier::DIM),
-            "TableBorder element should have DIM modifier"
+        assert_eq!(
+            style.fg,
+            Some(Color::Gray),
+            "TableBorder element should have Gray foreground color"
         );
     }
 
