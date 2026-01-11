@@ -250,8 +250,8 @@ impl<'a> SessionHistoryWidget<'a> {
             .iter()
             .enumerate()
             .map(|(i, item)| {
-                // Try cached height first
-                if let Some(height) = self.state.get_cached_height(i) {
+                // Try cached height first (must match width)
+                if let Some(height) = self.state.get_cached_height(i, width) {
                     return height;
                 }
 
@@ -279,8 +279,8 @@ impl<'a> SessionHistoryWidget<'a> {
 
     /// Get item height, using cache if available
     fn item_height(&self, index: usize, item: &ConversationItem, width: usize) -> usize {
-        // Try cached height first
-        if let Some(height) = self.state.get_cached_height(index) {
+        // Try cached height first (must match width)
+        if let Some(height) = self.state.get_cached_height(index, width) {
             return height;
         }
 

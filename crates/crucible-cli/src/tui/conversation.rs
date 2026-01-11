@@ -195,9 +195,18 @@ impl RenderCache {
         })
     }
 
-    /// Get cached height for an item, or None if not cached
-    pub fn get_height(&self, index: usize) -> Option<usize> {
-        self.heights.get(index).copied().filter(|&h| h > 0)
+    /// Get cached height for an item at a specific width, or None if not cached
+    ///
+    /// IMPORTANT: Heights are only valid for the width they were rendered at.
+    /// This checks that the cached item exists AND was rendered at the requested width.
+    pub fn get_height(&self, index: usize, width: usize) -> Option<usize> {
+        // Only return height if we have a cached item at the correct width
+        self.items.get(index).and_then(|cached| {
+            cached
+                .as_ref()
+                .filter(|c| c.width == width)
+                .map(|c| c.lines.len())
+        })
     }
 
     /// Store rendered lines for an item (also stores height)
@@ -295,9 +304,9 @@ impl ConversationState {
         self.cache.borrow().get(index, width).cloned()
     }
 
-    /// Get cached height for an item, or None if not cached
-    pub fn get_cached_height(&self, index: usize) -> Option<usize> {
-        self.cache.borrow().get_height(index)
+    /// Get cached height for an item at a specific width, or None if not cached
+    pub fn get_cached_height(&self, index: usize, width: usize) -> Option<usize> {
+        self.cache.borrow().get_height(index, width)
     }
 
     /// Get cached total height, or None if not cached
@@ -328,7 +337,7 @@ impl ConversationState {
             }
 
             // Use cached height if available, otherwise render to get height
-            if let Some(height) = self.get_cached_height(i) {
+            if let Some(height) = self.get_cached_height(i, width) {
                 total += height;
             } else {
                 // Render and cache for future use
