@@ -16,7 +16,6 @@ pub mod content_block;
 pub mod conversation;
 pub mod conversation_view;
 pub mod dialog;
-pub mod dynamic_viewport;
 pub mod event_result;
 pub mod geometry;
 pub mod graduation;
@@ -78,7 +77,6 @@ pub use constants::{
 };
 pub use content_block::{ParseEvent, StreamBlock};
 pub use dialog::{DialogResult, DialogStack, DialogState, DialogWidget};
-pub use dynamic_viewport::DynamicViewport;
 pub use event_result::{
     DialogResult as UiDialogResult, EventResult, FocusTarget, ScrollDirection, TuiAction,
 };

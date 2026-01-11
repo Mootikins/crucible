@@ -3,20 +3,6 @@ source: crates/crucible-cli/src/tui/testing/tool_call_tests.rs
 expression: render_conversation(&state)
 ---
                                                                                 
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
  > Find all Rust files and their sizes                                          
                                                                                 
  ● I'll search for Rust files and check their sizes.                            

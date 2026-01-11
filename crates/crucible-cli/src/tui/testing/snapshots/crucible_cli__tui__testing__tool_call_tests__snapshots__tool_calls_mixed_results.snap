@@ -3,20 +3,6 @@ source: crates/crucible-cli/src/tui/testing/tool_call_tests.rs
 expression: render_conversation(&state)
 ---
                                                                                 
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
  > Read all config files                                                        
                                                                                 
  ● I'll read each config file.                                                  

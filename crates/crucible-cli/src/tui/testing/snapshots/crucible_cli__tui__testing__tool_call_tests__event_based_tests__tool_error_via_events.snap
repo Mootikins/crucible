@@ -2,24 +2,6 @@
 source: crates/crucible-cli/src/tui/testing/tool_call_tests.rs
 expression: output
 ---
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
  ✗ read_file(path="/nonexistent.txt") → File not found                          
                                                                                 
                                                                                 

@@ -266,9 +266,11 @@ use crucible_core::traits::chat::AgentHandle;
 use crucible_core::InteractionRegistry;
 use crucible_rune::EventRing;
 use once_cell::sync::Lazy;
-use ratatui::{buffer::Buffer, layout::Rect};
+use ratatui::backend::CrosstermBackend;
+use ratatui::{buffer::Buffer, layout::Rect, Terminal, TerminalOptions, Viewport};
 
-use super::dynamic_viewport::DynamicViewport;
+/// Type alias for the terminal - inline mode uses Viewport::Inline
+type RatatuiTerminal = Terminal<CrosstermBackend<io::Stdout>>;
 
 /// Pending content to graduate to terminal scrollback via insert_before()
 #[derive(Debug, Clone)]
@@ -315,7 +317,7 @@ fn blocks_to_markdown(blocks: &[StreamBlock]) -> String {
 use regex::Regex;
 use std::io;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 // ============================================================================
 // CONSTANTS
@@ -331,6 +333,13 @@ use std::time::Duration;
 ///
 /// Minimum viewport height for inline mode.
 const MIN_INLINE_VIEWPORT_HEIGHT: u16 = 10;
+
+/// Minimum time between graduation flushes during streaming.
+///
+/// Multiple rapid `insert_before()` calls with scrolling regions can cause
+/// terminal rendering artifacts (gaps between lines). Throttling ensures
+/// content accumulates and is flushed in larger batches.
+const GRADUATION_THROTTLE_MS: u64 = 100;
 
 /// Calculate the inline viewport height based on terminal size.
 ///
@@ -434,6 +443,8 @@ pub struct RatatuiRunner {
     pending_graduations: Vec<PendingGraduation>,
     /// Number of lines already graduated to terminal scrollback (line-based graduation)
     graduated_line_count: usize,
+    /// Timestamp of the last graduation flush (for throttling during streaming)
+    last_graduation_flush: Instant,
 
     // =============================================================================
     // Runtime configuration (session-scoped provider/model overrides)
@@ -498,6 +509,7 @@ impl RatatuiRunner {
             inline_printer: InlinePrinter::new(),
             pending_graduations: Vec::new(),
             graduated_line_count: 0,
+            last_graduation_flush: Instant::now(),
             // Runtime config (session-scoped provider/model) - will be set via with_runtime_config
             runtime_config: crate::tui::RuntimeConfig::default(),
             // Ollama endpoint - will be set via with_ollama_endpoint
@@ -625,7 +637,7 @@ impl RatatuiRunner {
     /// Internal main loop.
     async fn main_loop<A: AgentHandle>(
         &mut self,
-        terminal: &mut DynamicViewport,
+        terminal: &mut RatatuiTerminal,
         bridge: &AgentEventBridge,
         agent: &mut A,
     ) -> Result<()> {
@@ -650,8 +662,9 @@ impl RatatuiRunner {
             // between insert_before and the viewport showing the updated content.
             if needs_render {
                 // Flush pending graduations to scrollback (right before render)
-                // This uses terminal.insert_before() to properly insert content above the viewport
-                if let Err(e) = self.flush_pending_graduations(terminal) {
+                // This uses terminal.insert_before() to properly insert content above the viewport.
+                // During streaming, flushes are throttled to prevent terminal artifacts.
+                if let Err(e) = self.flush_pending_graduations(terminal, false) {
                     tracing::warn!("Failed to flush graduations: {}", e);
                 }
 
@@ -692,12 +705,12 @@ impl RatatuiRunner {
                         // Invalidate all render caches on resize
                         self.view.state_mut().conversation.invalidate_all();
 
-                        // In inline mode, adjust viewport height based on new terminal size
+                        // In inline mode, viewport height is fixed (can't change after creation)
+                        // Just update the view dimensions based on new width
                         if self.inline_mode {
-                            let new_viewport_height = calculate_inline_viewport_height(height);
-                            terminal.set_viewport_height(new_viewport_height)?;
-                            // Pass viewport height to view (not terminal height)
-                            self.view.handle_resize(width, new_viewport_height)?;
+                            let viewport_height = calculate_inline_viewport_height(height);
+                            // Update view with current viewport height (width may have changed)
+                            self.view.handle_resize(width, viewport_height)?;
                         } else {
                             self.view.handle_resize(width, height)?;
                         }
@@ -941,18 +954,24 @@ impl RatatuiRunner {
             if !pending_parse_events.is_empty() {
                 self.apply_parse_events(pending_parse_events);
 
-                // Item-based progressive graduation during streaming
-                if self.inline_mode && self.streaming_manager.is_streaming() {
+                // Progressive graduation during streaming.
+                // Graduate overflow lines as content streams in.
+                if self.inline_mode {
                     self.graduate_overflow_lines();
                 }
             }
 
-            // Handle streaming completion (parser cleanup only - completion already handled above)
+            // Handle streaming completion
             if streaming_complete {
                 self.streaming_manager.clear_parser();
-                // Note: complete_assistant_streaming() already called before graduation above
+                // Note: complete_assistant_streaming() already called in Done handler
                 // Clear reasoning buffer for next response
                 self.view.clear_reasoning();
+
+                // Graduate overflow on completion (not during streaming to avoid artifacts)
+                if self.inline_mode {
+                    self.graduate_overflow_lines();
+                }
             }
 
             // Handle streaming error
@@ -2380,116 +2399,101 @@ impl RatatuiRunner {
             );
 
             // Graduate these lines
-            let lines_to_graduate = all_lines[grad.lines_to_graduate].to_vec();
+            let lines_to_graduate = all_lines[grad.lines_to_graduate.clone()].to_vec();
+
+            // Debug: log lines being graduated (especially around table characters)
+            for (i, line) in lines_to_graduate.iter().enumerate() {
+                let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+                let has_table = text.contains('│') || text.contains('┌') || text.contains('└');
+                if has_table || text.trim().is_empty() {
+                    debug!(
+                        idx = grad.lines_to_graduate.start + i,
+                        is_blank = text.trim().is_empty(),
+                        has_table,
+                        content = %text,
+                        "graduating line"
+                    );
+                }
+            }
+
             self.pending_graduations
                 .push(PendingGraduation::Lines(lines_to_graduate));
             self.graduated_line_count = grad.new_graduated_count;
         }
     }
 
-    /// Flush all pending graduations to terminal scrollback via insert_before().
+    /// Flush all pending graduations to terminal scrollback via insert_before.
     ///
-    /// This is the correct way to insert content above an inline viewport in ratatui.
-    /// Called from main_loop after event handling where terminal is available.
+    /// Uses ratatui's insert_before() to push content above the inline viewport.
+    /// During streaming, flushes are throttled to prevent too-rapid calls.
     fn flush_pending_graduations(
         &mut self,
-        terminal: &mut DynamicViewport,
+        terminal: &mut RatatuiTerminal,
+        force: bool,
     ) -> io::Result<()> {
-        use crate::formatting::render_markdown;
-        use ratatui::style::{Color, Modifier, Style};
-        use ratatui::text::{Line, Span};
+        use ratatui::text::Line;
 
         if self.pending_graduations.is_empty() || !self.inline_mode {
             return Ok(());
         }
 
+        // Throttle during streaming to prevent rapid insert_before calls
+        let elapsed = self.last_graduation_flush.elapsed();
+        let throttle_duration = Duration::from_millis(GRADUATION_THROTTLE_MS);
+
+        if !force && self.streaming_manager.is_streaming() && elapsed < throttle_duration {
+            return Ok(());
+        }
+
+        self.last_graduation_flush = Instant::now();
+
         let graduations = std::mem::take(&mut self.pending_graduations);
-        let width = terminal.terminal_mut().size()?.width;
+        let width = terminal.size()?.width;
+
+        debug!(
+            num_pending = graduations.len(),
+            "flush_pending_graduations: starting"
+        );
+
+        // Collect all lines to graduate
+        let mut all_lines: Vec<Line<'static>> = Vec::new();
 
         for grad in graduations {
             match grad {
-                PendingGraduation::User(content) => {
-                    // Calculate height needed (wrapped lines + 1 for blank line before)
-                    let lines: Vec<&str> = content.lines().collect();
-                    let height = (lines.len() + 1) as u16;
-
-                    terminal.insert_before(height, |buf| {
-                        // Blank line
-                        let blank_line = Line::from("");
-                        buf.set_line(0, 0, &blank_line, width);
-
-                        // User message with " > " prefix
-                        let user_style = Style::default().bg(Color::Rgb(60, 60, 80));
-                        for (i, line) in lines.iter().enumerate() {
-                            let prefix = if i == 0 { " > " } else { "   " };
-                            let styled_line = Line::from(vec![
-                                Span::styled(prefix, user_style),
-                                Span::styled(*line, user_style),
-                            ]);
-                            buf.set_line(0, (i + 1) as u16, &styled_line, width);
-                        }
-                    })?;
+                PendingGraduation::User(_content) => {
+                    // User messages are now handled via Lines, this path is legacy
                 }
-                PendingGraduation::Assistant(blocks) => {
-                    // Convert blocks to markdown and render
-                    let markdown = blocks_to_markdown(&blocks);
-                    let rendered = render_markdown(&markdown);
-                    let lines: Vec<&str> = rendered.lines().collect();
-                    let height = (lines.len() + 1) as u16; // +1 for blank line
-
-                    terminal.insert_before(height, |buf| {
-                        // Blank line
-                        let blank_line = Line::from("");
-                        buf.set_line(0, 0, &blank_line, width);
-
-                        // Assistant message with " ● " prefix on first line
-                        let prefix_style = Style::default().fg(Color::DarkGray);
-                        for (i, line) in lines.iter().enumerate() {
-                            let styled_line = if i == 0 {
-                                Line::from(vec![
-                                    Span::styled(" ● ", prefix_style),
-                                    Span::raw(*line),
-                                ])
-                            } else {
-                                Line::from(vec![Span::raw("   "), Span::raw(*line)])
-                            };
-                            buf.set_line(0, (i + 1) as u16, &styled_line, width);
-                        }
-                    })?;
+                PendingGraduation::Assistant(_blocks) => {
+                    // Assistant messages are now handled via Lines, this path is legacy
                 }
                 PendingGraduation::Lines(lines) => {
-                    // Pre-rendered styled lines (from progressive graduation)
-                    // Lines already have ratatui styling, use directly in buffer
-                    if lines.is_empty() {
-                        continue;
-                    }
-
-                    let height = lines.len() as u16;
-                    terminal.insert_before(height, |buf| {
-                        for (i, line) in lines.iter().enumerate() {
-                            buf.set_line(0, i as u16, line, width);
-                        }
-                    })?;
+                    all_lines.extend(lines);
                 }
                 PendingGraduation::Item(item) => {
-                    // Render the item and insert
                     use crate::tui::constants::UiConstants;
                     let content_width = UiConstants::content_width(width);
                     let lines = render_item_to_lines(&item, content_width as usize);
-
-                    if lines.is_empty() {
-                        continue;
-                    }
-
-                    let height = lines.len() as u16;
-                    terminal.insert_before(height, |buf| {
-                        for (i, line) in lines.iter().enumerate() {
-                            buf.set_line(0, i as u16, line, width);
-                        }
-                    })?;
+                    all_lines.extend(lines);
                 }
             }
         }
+
+        if all_lines.is_empty() {
+            return Ok(());
+        }
+
+        let num_lines = all_lines.len();
+        debug!(num_lines, "flush_pending_graduations: inserting lines");
+
+        // Insert graduated content above the viewport using ratatui's insert_before
+        let height = all_lines.len() as u16;
+        terminal
+            .insert_before(height, |buf| {
+                for (i, line) in all_lines.iter().enumerate() {
+                    buf.set_line(0, i as u16, line, width);
+                }
+            })
+            .map_err(|e| io::Error::other(e))?;
 
         Ok(())
     }
@@ -3063,15 +3067,21 @@ impl RatatuiRunner {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
 
-        // Setup terminal based on mode using DynamicViewport wrapper
-        let mut terminal = if self.inline_mode {
+        // Setup terminal based on mode
+        let mut terminal: RatatuiTerminal = if self.inline_mode {
             // Inline mode: small viewport at bottom, native scrollback above
             // Don't enable mouse capture - let terminal handle scroll natively
             // so user can scroll up to see graduated content in scrollback
             execute!(stdout, EnableBracketedPaste)?;
             let (_, term_height) = size().unwrap_or((80, 24));
             let viewport_height = calculate_inline_viewport_height(term_height);
-            DynamicViewport::new_inline(viewport_height)?
+            let backend = CrosstermBackend::new(io::stdout());
+            Terminal::with_options(
+                backend,
+                TerminalOptions {
+                    viewport: Viewport::Inline(viewport_height),
+                },
+            )?
         } else {
             // Fullscreen mode: traditional alternate screen
             execute!(
@@ -3080,7 +3090,8 @@ impl RatatuiRunner {
                 EnableMouseCapture,
                 EnableBracketedPaste
             )?;
-            DynamicViewport::new_fullscreen()?
+            let backend = CrosstermBackend::new(io::stdout());
+            Terminal::new(backend)?
         };
         terminal.clear()?;
 
@@ -3186,14 +3197,14 @@ impl RatatuiRunner {
         if self.inline_mode {
             // Inline mode: just restore cursor (no alternate screen to leave, no mouse capture to disable)
             execute!(
-                terminal.terminal_mut().backend_mut(),
+                terminal.backend_mut(),
                 DisableBracketedPaste,
                 cursor::Show
             )?;
         } else {
             // Fullscreen mode: leave alternate screen
             execute!(
-                terminal.terminal_mut().backend_mut(),
+                terminal.backend_mut(),
                 DisableMouseCapture,
                 DisableBracketedPaste,
                 LeaveAlternateScreen,
@@ -3213,7 +3224,7 @@ impl RatatuiRunner {
     /// Render a single frame (used during status updates).
     fn render_frame(
         &mut self,
-        terminal: &mut DynamicViewport,
+        terminal: &mut RatatuiTerminal,
     ) -> Result<()> {
         let view = &self.view;
         let selection = self.selection_manager.selection();

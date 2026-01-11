@@ -3,11 +3,6 @@ source: crates/crucible-cli/src/tui/testing/table_tests.rs
 expression: h.render()
 ---
                                                                                 
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
  > Show packages                                                                
                                                                                 
  ● Here are the packages:                                                       
