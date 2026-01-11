@@ -12,6 +12,8 @@ pub struct StreamingParser {
     content_buffer: String,
     /// Accumulated content blocks
     blocks: Vec<StreamBlock>,
+    /// Length of content_buffer that was already flushed (to avoid duplicates)
+    flushed_code_len: usize,
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -23,6 +25,11 @@ enum ParserState {
         lang: Option<String>,
         fence_char: char,
         fence_len: usize,
+    },
+    /// Inside a markdown table, buffering lines until table ends
+    /// Tables are emitted as a single Text event when complete for proper column width calculation
+    InTable {
+        lines: Vec<String>,
     },
 }
 
@@ -70,6 +77,13 @@ impl StreamingParser {
         match &self.state {
             ParserState::Text => {
                 if !self.line_buffer.is_empty() {
+                    // Don't flush partial content that looks like it might be a table start
+                    // Wait for newline to determine if it's actually a table
+                    let trimmed = self.line_buffer.trim_start();
+                    if trimmed.starts_with('|') {
+                        // Potential table - don't flush, wait for newline
+                        return None;
+                    }
                     // Return partial text and clear the buffer
                     // (it will be re-accumulated if more chars arrive before newline)
                     Some(ParseEvent::Text(std::mem::take(&mut self.line_buffer)))
@@ -78,15 +92,22 @@ impl StreamingParser {
                 }
             }
             ParserState::InCodeBlock { .. } => {
-                // In code blocks, we can show partial code content
-                let content = format!("{}{}", self.content_buffer, self.line_buffer);
-                if !content.is_empty() {
-                    // Don't clear buffers - this is just for display
-                    // The content_buffer is for proper parsing
-                    Some(ParseEvent::CodeBlockContent(content.clone()))
+                // In code blocks, return only NEW content since last flush
+                // This prevents duplication when append_to_last_block appends
+                let full_content = format!("{}{}", self.content_buffer, self.line_buffer);
+                let new_content = &full_content[self.flushed_code_len..];
+                if !new_content.is_empty() {
+                    let result = new_content.to_string();
+                    self.flushed_code_len = full_content.len();
+                    Some(ParseEvent::CodeBlockContent(result))
                 } else {
                     None
                 }
+            }
+            ParserState::InTable { .. } => {
+                // Tables need complete content for column width calculation
+                // Don't flush partial tables - wait for completion
+                None
             }
         }
     }
@@ -95,7 +116,7 @@ impl StreamingParser {
     pub fn finalize(&mut self) -> Vec<ParseEvent> {
         let mut events = Vec::new();
 
-        match &self.state {
+        match &mut self.state {
             ParserState::Text => {
                 // Emit any remaining partial line (text before final newline)
                 // Note: complete lines are emitted immediately in process_text_line
@@ -104,12 +125,29 @@ impl StreamingParser {
                 }
             }
             ParserState::InCodeBlock { .. } => {
-                // Unclosed code block - emit content and implicit end
-                let content = format!("{}{}", self.content_buffer, self.line_buffer);
-                if !content.is_empty() {
-                    events.push(ParseEvent::CodeBlockContent(content));
+                // Unclosed code block - emit only UN-FLUSHED content and implicit end
+                let full_content = format!("{}{}", self.content_buffer, self.line_buffer);
+                let new_content = if self.flushed_code_len < full_content.len() {
+                    &full_content[self.flushed_code_len..]
+                } else {
+                    ""
+                };
+                if !new_content.is_empty() {
+                    events.push(ParseEvent::CodeBlockContent(new_content.to_string()));
                 }
                 events.push(ParseEvent::CodeBlockEnd);
+                self.flushed_code_len = 0;
+            }
+            ParserState::InTable { lines } => {
+                // Emit any remaining table lines as a single block
+                if !lines.is_empty() {
+                    let table_text = std::mem::take(lines).join("");
+                    events.push(ParseEvent::Text(table_text));
+                }
+                // Also emit any partial line still in buffer
+                if !self.line_buffer.is_empty() {
+                    events.push(ParseEvent::Text(std::mem::take(&mut self.line_buffer)));
+                }
             }
         }
 
@@ -140,6 +178,7 @@ impl StreamingParser {
                 fence_len,
                 ..
             } => self.process_code_line(line, *fence_char, *fence_len),
+            ParserState::InTable { .. } => self.process_table_line(line),
         }
     }
 
@@ -174,14 +213,62 @@ impl StreamingParser {
                     fence_char,
                     fence_len,
                 };
+                // Reset flushed tracking for new code block
+                self.flushed_code_len = 0;
 
                 return events;
             }
         }
 
+        // Check for table start (line starting with |)
+        if Self::is_table_line(trimmed) {
+            // Start table buffering
+            self.state = ParserState::InTable { lines: vec![line] };
+            return vec![];
+        }
+
         // Regular text line - emit immediately for responsive streaming
         // Each line becomes a Text event so the UI updates as content arrives
         vec![ParseEvent::Text(line)]
+    }
+
+    /// Check if a line is part of a markdown table
+    fn is_table_line(line: &str) -> bool {
+        let trimmed = line.trim();
+        // Table lines start with | or are separator lines like |---|---|
+        trimmed.starts_with('|')
+            || (trimmed.contains('|') && trimmed.chars().all(|c| c == '|' || c == '-' || c == ':' || c.is_whitespace()))
+    }
+
+    /// Process a line while in table mode
+    fn process_table_line(&mut self, line: String) -> Vec<ParseEvent> {
+        let trimmed = line.trim_end();
+
+        // Check if this line continues the table
+        if Self::is_table_line(trimmed) {
+            // Add to table buffer
+            if let ParserState::InTable { lines } = &mut self.state {
+                lines.push(line);
+            }
+            return vec![];
+        }
+
+        // Table ended - emit all buffered table lines as a single block
+        let mut events = Vec::new();
+        if let ParserState::InTable { lines } = &mut self.state {
+            if !lines.is_empty() {
+                let table_text = std::mem::take(lines).join("");
+                events.push(ParseEvent::Text(table_text));
+            }
+        }
+
+        // Reset to text mode
+        self.state = ParserState::Text;
+
+        // Process the non-table line as regular text
+        // (it might be a code fence or another table)
+        events.extend(self.process_text_line(line));
+        events
     }
 
     fn process_code_line(
@@ -202,14 +289,20 @@ impl StreamingParser {
             // Found closing fence
             let mut events = Vec::new();
 
-            // Emit content if any
+            // Emit only UN-FLUSHED content (content after flushed_code_len)
             if !self.content_buffer.is_empty() {
                 // Remove trailing newline from content
-                let content = self.content_buffer.trim_end_matches('\n').to_string();
-                if !content.is_empty() {
-                    events.push(ParseEvent::CodeBlockContent(content));
+                let full_content = self.content_buffer.trim_end_matches('\n').to_string();
+                let new_content = if self.flushed_code_len < full_content.len() {
+                    &full_content[self.flushed_code_len..]
+                } else {
+                    ""
+                };
+                if !new_content.is_empty() {
+                    events.push(ParseEvent::CodeBlockContent(new_content.to_string()));
                 }
                 self.content_buffer.clear();
+                self.flushed_code_len = 0;
             }
 
             // Emit end marker
@@ -575,5 +668,131 @@ mod tests {
             partial,
             Some(ParseEvent::CodeBlockContent(ref c)) if c == "fn main() {"
         ));
+    }
+
+    #[test]
+    fn test_flush_partial_code_block_no_duplication() {
+        // This test catches the bug where multiple flushes would return
+        // ALL accumulated content, causing duplication when appended
+        let mut parser = StreamingParser::new();
+
+        // Start code block
+        let events = parser.feed("```rust\n");
+        assert_eq!(events.len(), 1); // CodeBlockStart
+
+        // Add first chunk and flush
+        parser.feed("line1");
+        let flush1 = parser.flush_partial();
+        assert!(matches!(
+            flush1,
+            Some(ParseEvent::CodeBlockContent(ref c)) if c == "line1"
+        ));
+
+        // Add second chunk and flush - should only return NEW content
+        parser.feed("\nline2");
+        let flush2 = parser.flush_partial();
+        assert!(matches!(
+            flush2,
+            Some(ParseEvent::CodeBlockContent(ref c)) if c == "\nline2"
+        ), "Second flush should only return new content, not 'line1\\nline2'");
+
+        // Add third chunk and flush
+        parser.feed("\nline3");
+        let flush3 = parser.flush_partial();
+        assert!(matches!(
+            flush3,
+            Some(ParseEvent::CodeBlockContent(ref c)) if c == "\nline3"
+        ), "Third flush should only return new content");
+
+        // Simulating what the view does: appending all flushes
+        // Should result in "line1\nline2\nline3", not "line1line1\nline2line1\nline2\nline3"
+        let mut accumulated = String::new();
+        if let Some(ParseEvent::CodeBlockContent(c)) = flush1 {
+            accumulated.push_str(&c);
+        }
+        if let Some(ParseEvent::CodeBlockContent(c)) = flush2 {
+            accumulated.push_str(&c);
+        }
+        if let Some(ParseEvent::CodeBlockContent(c)) = flush3 {
+            accumulated.push_str(&c);
+        }
+        assert_eq!(accumulated, "line1\nline2\nline3");
+    }
+
+    #[test]
+    fn test_table_buffering() {
+        let mut parser = StreamingParser::new();
+
+        // Feed a complete table
+        let events = parser.feed("| A | B |\n|---|---|\n| 1 | 2 |\n\n");
+
+        // Table lines should be buffered and emitted together when followed by non-table line
+        // The final blank line triggers the table completion
+        assert_eq!(events.len(), 2); // Table block + blank line
+
+        // First event should be the complete table
+        if let ParseEvent::Text(text) = &events[0] {
+            assert!(text.contains("| A | B |"));
+            assert!(text.contains("|---|---|"));
+            assert!(text.contains("| 1 | 2 |"));
+        } else {
+            panic!("Expected Text event for table");
+        }
+    }
+
+    #[test]
+    fn test_table_buffering_streaming() {
+        let mut parser = StreamingParser::new();
+
+        // Stream table line by line
+        let events1 = parser.feed("| Header1 | Header2 |\n");
+        assert!(events1.is_empty(), "Table lines should be buffered");
+
+        let events2 = parser.feed("|---------|----------|\n");
+        assert!(events2.is_empty(), "Table lines should be buffered");
+
+        let events3 = parser.feed("| Data1   | Data2    |\n");
+        assert!(events3.is_empty(), "Table lines should be buffered");
+
+        // Non-table line ends the table
+        let events4 = parser.feed("Some text after table\n");
+        assert_eq!(events4.len(), 2); // Table + following text
+
+        if let ParseEvent::Text(table_text) = &events4[0] {
+            assert!(table_text.contains("Header1"));
+            assert!(table_text.contains("Data1"));
+        } else {
+            panic!("Expected Text event for table");
+        }
+    }
+
+    #[test]
+    fn test_flush_partial_in_table() {
+        let mut parser = StreamingParser::new();
+
+        // Start a table
+        parser.feed("| A | B |\n");
+
+        // Flush should NOT return anything (tables need complete content)
+        let partial = parser.flush_partial();
+        assert!(partial.is_none(), "Partial tables should not be flushed");
+    }
+
+    #[test]
+    fn test_finalize_incomplete_table() {
+        let mut parser = StreamingParser::new();
+
+        // Start a table but don't end it
+        parser.feed("| A | B |\n|---|---|\n| 1 | 2 |\n");
+
+        // Finalize should emit the buffered table
+        let events = parser.finalize();
+        assert_eq!(events.len(), 1);
+
+        if let ParseEvent::Text(table_text) = &events[0] {
+            assert!(table_text.contains("| A | B |"));
+        } else {
+            panic!("Expected Text event for table");
+        }
     }
 }
