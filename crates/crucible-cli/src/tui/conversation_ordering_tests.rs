@@ -148,9 +148,10 @@ fn test_tool_calls_interleaved_in_response() {
     );
 
     // Verify the BLOCKS within the assistant message are correctly ordered
-    let assistant_item = state.items().iter().find(|item| {
-        matches!(item, ConversationItem::AssistantMessage { .. })
-    });
+    let assistant_item = state
+        .items()
+        .iter()
+        .find(|item| matches!(item, ConversationItem::AssistantMessage { .. }));
 
     if let Some(ConversationItem::AssistantMessage { blocks, .. }) = assistant_item {
         // Should have: prose -> tool -> prose
@@ -385,9 +386,10 @@ fn test_multiple_tool_calls_with_same_name_are_separate() {
     state.complete_streaming();
 
     // Find the assistant message and count tool blocks
-    let assistant_item = state.items().iter().find(|item| {
-        matches!(item, ConversationItem::AssistantMessage { .. })
-    });
+    let assistant_item = state
+        .items()
+        .iter()
+        .find(|item| matches!(item, ConversationItem::AssistantMessage { .. }));
 
     if let Some(ConversationItem::AssistantMessage { blocks, .. }) = assistant_item {
         // Count tool blocks named "grep"
@@ -404,8 +406,10 @@ fn test_multiple_tool_calls_with_same_name_are_separate() {
         // Both should be completed (not Running)
         let running_count = blocks
             .iter()
-            .filter(|b| matches!(b, StreamBlock::Tool { name, status, .. }
-                if name == "grep" && matches!(status, ToolBlockStatus::Running)))
+            .filter(|b| {
+                matches!(b, StreamBlock::Tool { name, status, .. }
+                if name == "grep" && matches!(status, ToolBlockStatus::Running))
+            })
             .count();
 
         assert_eq!(running_count, 0, "All tools should be completed");

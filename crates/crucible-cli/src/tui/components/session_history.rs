@@ -633,10 +633,7 @@ mod tests {
             line.contains("Test")
         });
 
-        assert!(
-            has_content_at_top,
-            "Expected content near top of viewport"
-        );
+        assert!(has_content_at_top, "Expected content near top of viewport");
 
         // Bottom area should be empty (space for more content to grow into)
         let bottom_line: String = (0..80)

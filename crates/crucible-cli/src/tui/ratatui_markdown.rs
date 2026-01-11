@@ -679,7 +679,8 @@ fn wrap_list_item_spans(
 ) {
     if spans.is_empty() {
         // Empty list item - just output the prefix
-        ctx.lines.push(Line::from(Span::styled(prefix.to_string(), prefix_style)));
+        ctx.lines
+            .push(Line::from(Span::styled(prefix.to_string(), prefix_style)));
         return;
     }
 
@@ -726,7 +727,8 @@ fn wrap_list_item_spans(
             let word_width = display_width(word);
 
             // Check if word fits on current line
-            let fits = current_line_width == 0 || current_line_width + 1 + word_width <= content_width;
+            let fits =
+                current_line_width == 0 || current_line_width + 1 + word_width <= content_width;
 
             if !fits && current_line_width > 0 {
                 // Flush current line
@@ -1658,7 +1660,10 @@ mod tests {
         // A blank line would be a line that doesn't contain any table characters
         let mut prev_line_was_table_row = false;
         for (i, text) in line_texts.iter().enumerate() {
-            let is_table_row = text.contains('│') || text.contains('├') || text.contains('┌') || text.contains('└');
+            let is_table_row = text.contains('│')
+                || text.contains('├')
+                || text.contains('┌')
+                || text.contains('└');
             let is_blank = text.trim().is_empty();
 
             if prev_line_was_table_row && is_blank {

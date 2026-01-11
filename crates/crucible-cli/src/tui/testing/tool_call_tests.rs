@@ -627,7 +627,10 @@ mod regression_tests {
             let text: String = l.spans.iter().map(|s| s.content.as_ref()).collect();
             text.contains("●") || text.contains("✗")
         });
-        assert!(!has_indicator, "Empty tool name should not render indicator");
+        assert!(
+            !has_indicator,
+            "Empty tool name should not render indicator"
+        );
     }
 
     /// Regression test: Tool completion flow shows correct indicators

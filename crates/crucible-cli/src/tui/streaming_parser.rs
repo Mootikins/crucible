@@ -28,9 +28,7 @@ enum ParserState {
     },
     /// Inside a markdown table, buffering lines until table ends
     /// Tables are emitted as a single Text event when complete for proper column width calculation
-    InTable {
-        lines: Vec<String>,
-    },
+    InTable { lines: Vec<String> },
 }
 
 impl StreamingParser {
@@ -237,7 +235,10 @@ impl StreamingParser {
         let trimmed = line.trim();
         // Table lines start with | or are separator lines like |---|---|
         trimmed.starts_with('|')
-            || (trimmed.contains('|') && trimmed.chars().all(|c| c == '|' || c == '-' || c == ':' || c.is_whitespace()))
+            || (trimmed.contains('|')
+                && trimmed
+                    .chars()
+                    .all(|c| c == '|' || c == '-' || c == ':' || c.is_whitespace()))
     }
 
     /// Process a line while in table mode
@@ -691,18 +692,24 @@ mod tests {
         // Add second chunk and flush - should only return NEW content
         parser.feed("\nline2");
         let flush2 = parser.flush_partial();
-        assert!(matches!(
-            flush2,
-            Some(ParseEvent::CodeBlockContent(ref c)) if c == "\nline2"
-        ), "Second flush should only return new content, not 'line1\\nline2'");
+        assert!(
+            matches!(
+                flush2,
+                Some(ParseEvent::CodeBlockContent(ref c)) if c == "\nline2"
+            ),
+            "Second flush should only return new content, not 'line1\\nline2'"
+        );
 
         // Add third chunk and flush
         parser.feed("\nline3");
         let flush3 = parser.flush_partial();
-        assert!(matches!(
-            flush3,
-            Some(ParseEvent::CodeBlockContent(ref c)) if c == "\nline3"
-        ), "Third flush should only return new content");
+        assert!(
+            matches!(
+                flush3,
+                Some(ParseEvent::CodeBlockContent(ref c)) if c == "\nline3"
+            ),
+            "Third flush should only return new content"
+        );
 
         // Simulating what the view does: appending all flushes
         // Should result in "line1\nline2\nline3", not "line1line1\nline2line1\nline2\nline3"
