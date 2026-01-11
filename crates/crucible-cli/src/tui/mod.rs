@@ -38,6 +38,7 @@ pub mod repl_commands;
 pub mod runner;
 pub mod runtime_config;
 pub mod scroll_utils;
+pub mod spinner;
 pub mod scrollback_runner;
 pub mod selection;
 pub mod selection_manager;
