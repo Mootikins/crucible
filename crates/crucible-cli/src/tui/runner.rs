@@ -445,6 +445,9 @@ pub struct RatatuiRunner {
     pending_graduations: Vec<PendingGraduation>,
     /// Number of lines already graduated to terminal scrollback (line-based graduation)
     graduated_line_count: usize,
+    /// Item count at last graduation - prevents re-graduating after resize
+    /// (line counts change with width, but item count doesn't)
+    graduated_item_count: usize,
     /// Timestamp of the last graduation flush (for throttling during streaming)
     last_graduation_flush: Instant,
 
@@ -510,6 +513,7 @@ impl RatatuiRunner {
             inline_printer: InlinePrinter::new(),
             pending_graduations: Vec::new(),
             graduated_line_count: 0,
+            graduated_item_count: 0,
             last_graduation_flush: Instant::now(),
             // Runtime config (session-scoped provider/model) - will be set via with_runtime_config
             runtime_config: crate::tui::RuntimeConfig::default(),
