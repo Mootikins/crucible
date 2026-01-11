@@ -718,60 +718,72 @@ impl StreamingHarness {
         self.check_graduation();
     }
 
-    /// Check if content exceeds viewport and graduate overflow
+    /// Check if content exceeds viewport and graduate overflow.
+    ///
+    /// Uses the SAME graduation logic as the real runner to ensure tests
+    /// exercise actual production code.
     fn check_graduation(&mut self) {
-        let total_lines = self.content_line_count();
-        let visible_capacity = self.content_viewport_height;
+        use crate::tui::constants::UiConstants;
+        use crate::tui::graduation::check_graduation;
 
-        // If we have more lines than viewport can show, graduate the overflow
-        if total_lines > self.graduated_line_count + visible_capacity {
-            let overflow = total_lines - visible_capacity - self.graduated_line_count;
-            self.graduate_lines(overflow);
+        let content_width = UiConstants::content_width(self.harness.width) as usize;
+
+        // Use the shared graduation logic (same as runner)
+        let (all_lines, result) = check_graduation(
+            &self.harness.view.state().conversation,
+            self.graduated_line_count,
+            self.content_viewport_height,
+            content_width,
+        );
+
+        if let Some(grad) = result {
+            // Graduate these lines to scrollback
+            for line in &all_lines[grad.lines_to_graduate.clone()] {
+                let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+                self.scrollback.push(text);
+            }
+            self.graduated_line_count = grad.new_graduated_count;
         }
     }
 
-    /// Graduate N lines to scrollback
-    fn graduate_lines(&mut self, count: usize) {
-        // Get rendered lines and capture the ones being graduated
-        let rendered = self.render_content_lines();
-        let start = self.graduated_line_count;
-        let end = (start + count).min(rendered.len());
-
-        for line in &rendered[start..end] {
-            self.scrollback.push(line.clone());
-        }
-        self.graduated_line_count = end;
-    }
-
-    /// Calculate total rendered content lines
+    /// Calculate total rendered content lines (using shared logic)
     pub fn content_line_count(&self) -> usize {
         use crate::tui::constants::UiConstants;
-        let content_width = UiConstants::content_width(self.harness.width);
-        self.harness
+        use crate::tui::graduation::render_all_lines;
+
+        let content_width = UiConstants::content_width(self.harness.width) as usize;
+        let items: Vec<_> = self
+            .harness
             .view
             .state()
             .conversation
             .items()
             .iter()
-            .map(|item| crate::tui::conversation::render_item_to_lines(item, content_width).len())
-            .sum()
+            .cloned()
+            .collect();
+        render_all_lines(&items, content_width).len()
     }
 
-    /// Render content to lines (for graduation capture)
+    /// Render content to lines (using shared logic for consistency)
     fn render_content_lines(&self) -> Vec<String> {
         use crate::tui::constants::UiConstants;
-        let content_width = UiConstants::content_width(self.harness.width);
-        let mut lines = Vec::new();
+        use crate::tui::graduation::render_all_lines;
 
-        for item in self.harness.view.state().conversation.items() {
-            let rendered = crate::tui::conversation::render_item_to_lines(item, content_width);
-            for line in rendered {
-                // Convert Line to string
-                let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-                lines.push(text);
-            }
-        }
-        lines
+        let content_width = UiConstants::content_width(self.harness.width) as usize;
+        let items: Vec<_> = self
+            .harness
+            .view
+            .state()
+            .conversation
+            .items()
+            .iter()
+            .cloned()
+            .collect();
+
+        render_all_lines(&items, content_width)
+            .iter()
+            .map(|line| line.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect()
     }
 
     /// Record a timeline entry

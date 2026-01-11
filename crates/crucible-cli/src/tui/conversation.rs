@@ -248,12 +248,6 @@ pub struct ConversationState {
     max_tool_output_lines: usize,
     /// Per-item render cache (RefCell for interior mutability during render)
     cache: RefCell<RenderCache>,
-    /// Lines captured from the last render pass (for graduation without re-rendering).
-    /// Includes ALL lines, not just visible ones.
-    last_rendered_lines: RefCell<Vec<Line<'static>>>,
-    /// Number of lines already graduated to terminal scrollback.
-    /// Rendering skips these lines; graduation increments this.
-    graduated_line_count: usize,
 }
 
 impl Default for ConversationState {
@@ -268,8 +262,6 @@ impl ConversationState {
             items: VecDeque::new(),
             max_tool_output_lines: 3,
             cache: RefCell::new(RenderCache::new()),
-            last_rendered_lines: RefCell::new(Vec::new()),
-            graduated_line_count: 0,
         }
     }
 
@@ -691,172 +683,6 @@ impl ConversationState {
     pub fn clear(&mut self) {
         self.items.clear();
         self.cache.borrow_mut().on_clear();
-        self.last_rendered_lines.borrow_mut().clear();
-        self.graduated_line_count = 0;
-    }
-
-    /// Get the number of lines already graduated to scrollback.
-    ///
-    /// Used by rendering to skip these lines (they're already in terminal scrollback).
-    pub fn graduated_line_count(&self) -> usize {
-        self.graduated_line_count
-    }
-
-    /// Store lines captured during render (for graduation without re-rendering).
-    ///
-    /// This should be called during the render pass with ALL lines (including
-    /// ones that will be skipped for display). Graduation then uses these
-    /// exact lines instead of re-rendering, avoiding mismatches.
-    pub fn capture_rendered_lines(&self, lines: Vec<Line<'static>>) {
-        *self.last_rendered_lines.borrow_mut() = lines;
-    }
-
-    /// Get the lines that are visible (not yet graduated).
-    ///
-    /// Returns a slice of the captured lines starting from `graduated_line_count`.
-    pub fn visible_lines(&self) -> Vec<Line<'static>> {
-        let captured = self.last_rendered_lines.borrow();
-        if self.graduated_line_count >= captured.len() {
-            Vec::new()
-        } else {
-            captured[self.graduated_line_count..].to_vec()
-        }
-    }
-
-    /// Graduate lines from the captured render output.
-    ///
-    /// Takes `count` lines from the captured lines (starting at `graduated_line_count`)
-    /// and returns them for writing to terminal scrollback. Increments the counter.
-    ///
-    /// This avoids re-rendering, so the graduated lines exactly match what was displayed.
-    pub fn graduate_from_captured(&mut self, count: usize) -> Vec<Line<'static>> {
-        if count == 0 {
-            return Vec::new();
-        }
-
-        let captured = self.last_rendered_lines.borrow();
-        let start = self.graduated_line_count;
-        let end = (start + count).min(captured.len());
-
-        if start >= captured.len() {
-            return Vec::new();
-        }
-
-        let graduated: Vec<Line<'static>> = captured[start..end].to_vec();
-        drop(captured); // Release borrow before mutating
-
-        self.graduated_line_count = end;
-        graduated
-    }
-
-    /// Graduate all remaining content from captured lines.
-    ///
-    /// Returns all lines from `graduated_line_count` to end, for final graduation.
-    pub fn graduate_all_captured(&mut self) -> Vec<Line<'static>> {
-        let captured = self.last_rendered_lines.borrow();
-        let start = self.graduated_line_count;
-
-        if start >= captured.len() {
-            return Vec::new();
-        }
-
-        let graduated: Vec<Line<'static>> = captured[start..].to_vec();
-        drop(captured);
-
-        // Mark all as graduated and clear
-        self.graduated_line_count = 0;
-        self.last_rendered_lines.borrow_mut().clear();
-        self.items.clear();
-        self.cache.borrow_mut().on_clear();
-
-        graduated
-    }
-
-    /// Get the count of visible lines (total captured minus graduated).
-    pub fn visible_line_count(&self) -> usize {
-        let captured_len = self.last_rendered_lines.borrow().len();
-        captured_len.saturating_sub(self.graduated_line_count)
-    }
-
-    /// Re-render all items fresh and capture the result.
-    ///
-    /// This is used before graduation to ensure we have accurate line content
-    /// that matches what the next render will produce. Prevents gaps caused by
-    /// stale cached lines when streaming content changes.
-    ///
-    /// Returns the total number of lines rendered.
-    pub fn refresh_captured_lines(&self, width: usize) -> usize {
-        use crate::tui::constants::UiConstants;
-        let content_width = UiConstants::content_width(width as u16);
-
-        let mut all_lines = Vec::new();
-        let items = self.items();
-
-        for (i, item) in items.iter().enumerate() {
-            // Add blank line spacing before tool calls (same as render logic)
-            if matches!(item, ConversationItem::ToolCall(_)) {
-                let prev_was_tool =
-                    i > 0 && matches!(items.get(i - 1), Some(ConversationItem::ToolCall(_)));
-                if !prev_was_tool {
-                    all_lines.push(Line::from(""));
-                }
-            }
-
-            let item_lines = render_item_to_lines(item, content_width);
-            all_lines.extend(item_lines);
-        }
-
-        let total = all_lines.len();
-        *self.last_rendered_lines.borrow_mut() = all_lines;
-        total
-    }
-
-    /// Calculate how many lines belong to stable (non-streaming) items.
-    ///
-    /// Stable content is content that won't change between renders:
-    /// - User messages (always complete)
-    /// - Completed assistant messages
-    /// - Tool calls
-    ///
-    /// Streaming content is excluded because its line count can change
-    /// (wrapping, cursor, new content) which causes graduation mismatches.
-    pub fn stable_line_count(&self, width: usize) -> usize {
-        use crate::tui::constants::UiConstants;
-        let content_width = UiConstants::content_width(width as u16);
-
-        let mut stable_lines = 0;
-        let items = self.items();
-
-        for (i, item) in items.iter().enumerate() {
-            // Check if this item is streaming (unstable)
-            let is_streaming = matches!(
-                item,
-                ConversationItem::AssistantMessage {
-                    is_streaming: true,
-                    ..
-                } | ConversationItem::Status(_)
-            );
-
-            if is_streaming {
-                // Stop counting - everything from here is unstable
-                break;
-            }
-
-            // Add blank line spacing before tool calls (same as render logic)
-            if matches!(item, ConversationItem::ToolCall(_)) {
-                let prev_was_tool =
-                    i > 0 && matches!(items.get(i - 1), Some(ConversationItem::ToolCall(_)));
-                if !prev_was_tool {
-                    stable_lines += 1;
-                }
-            }
-
-            // Count lines for this stable item
-            let item_lines = render_item_to_lines(item, content_width);
-            stable_lines += item_lines.len();
-        }
-
-        stable_lines
     }
 
     /// Serialize the conversation to markdown format.

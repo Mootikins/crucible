@@ -239,7 +239,7 @@ use crate::tui::session_commands;
 use crate::tui::streaming_channel::{create_streaming_channel, StreamingEvent, StreamingTask};
 
 use crate::tui::components::generic_popup::PopupState;
-use crate::tui::conversation::{ConversationItem, StatusKind};
+use crate::tui::conversation::{render_item_to_lines, ConversationItem, StatusKind};
 use crate::tui::conversation_view::{ConversationView, RatatuiView};
 use crate::tui::state::{find_word_start_backward, find_word_start_forward, PopupKind};
 use crate::tui::{
@@ -279,6 +279,8 @@ enum PendingGraduation {
     Assistant(Vec<StreamBlock>),
     /// Pre-rendered styled lines to graduate (for progressive line-based graduation)
     Lines(Vec<ratatui::text::Line<'static>>),
+    /// Complete conversation item to graduate (item-based graduation)
+    Item(ConversationItem),
 }
 
 /// Convert StreamBlocks to markdown string for graduation rendering
@@ -327,8 +329,16 @@ use std::time::Duration;
 /// - Input box (3 lines)
 /// - Status line (1 line)
 ///
-/// Total: ~15 lines minimum
-const INLINE_VIEWPORT_HEIGHT: u16 = 15;
+/// Minimum viewport height for inline mode.
+const MIN_INLINE_VIEWPORT_HEIGHT: u16 = 10;
+
+/// Calculate the inline viewport height based on terminal size.
+///
+/// Uses max(MIN_INLINE_VIEWPORT_HEIGHT, term_height / 2) to ensure
+/// the viewport scales with terminal size while maintaining a usable minimum.
+fn calculate_inline_viewport_height(term_height: u16) -> u16 {
+    MIN_INLINE_VIEWPORT_HEIGHT.max(term_height / 2)
+}
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -422,6 +432,8 @@ pub struct RatatuiRunner {
     inline_printer: InlinePrinter,
     /// Pending graduations to flush via terminal.insert_before()
     pending_graduations: Vec<PendingGraduation>,
+    /// Number of lines already graduated to terminal scrollback (line-based graduation)
+    graduated_line_count: usize,
 
     // =============================================================================
     // Runtime configuration (session-scoped provider/model overrides)
@@ -485,6 +497,7 @@ impl RatatuiRunner {
             inline_mode: true,
             inline_printer: InlinePrinter::new(),
             pending_graduations: Vec::new(),
+            graduated_line_count: 0,
             // Runtime config (session-scoped provider/model) - will be set via with_runtime_config
             runtime_config: crate::tui::RuntimeConfig::default(),
             // Ollama endpoint - will be set via with_ollama_endpoint
@@ -641,6 +654,10 @@ impl RatatuiRunner {
                 if let Err(e) = self.flush_pending_graduations(terminal) {
                     tracing::warn!("Failed to flush graduations: {}", e);
                 }
+
+                // Sync graduated line count to view state for rendering
+                self.view.state_mut().graduated_line_count = self.graduated_line_count;
+
                 let view = &self.view;
                 let selection = self.selection_manager.selection();
                 let scroll_offset = view.state().scroll_offset;
@@ -674,7 +691,16 @@ impl RatatuiRunner {
                     Event::Resize(width, height) => {
                         // Invalidate all render caches on resize
                         self.view.state_mut().conversation.invalidate_all();
-                        self.view.handle_resize(width, height)?;
+
+                        // In inline mode, adjust viewport height based on new terminal size
+                        if self.inline_mode {
+                            let new_viewport_height = calculate_inline_viewport_height(height);
+                            terminal.set_viewport_height(new_viewport_height)?;
+                            // Pass viewport height to view (not terminal height)
+                            self.view.handle_resize(width, new_viewport_height)?;
+                        } else {
+                            self.view.handle_resize(width, height)?;
+                        }
                     }
                     Event::Paste(text) => {
                         tracing::debug!(
@@ -915,7 +941,7 @@ impl RatatuiRunner {
             if !pending_parse_events.is_empty() {
                 self.apply_parse_events(pending_parse_events);
 
-                // Progressive graduation: graduate lines as they overflow viewport
+                // Item-based progressive graduation during streaming
                 if self.inline_mode && self.streaming_manager.is_streaming() {
                     self.graduate_overflow_lines();
                 }
@@ -966,6 +992,7 @@ impl RatatuiRunner {
                             self.view.set_status_text("Ready");
                             self.view.clear_reasoning();
 
+                            // Graduate any overflow on completion
                             if self.inline_mode {
                                 self.graduate_overflow_lines();
                             }
@@ -1492,6 +1519,7 @@ impl RatatuiRunner {
                             }
                             "clear" => {
                                 self.view.state_mut().conversation.clear();
+                                self.graduated_line_count = 0;
                                 self.view.echo_message("Conversation cleared");
                             }
                             "mode" | "plan" | "act" | "auto" => {
@@ -2311,48 +2339,51 @@ impl RatatuiRunner {
             .push(PendingGraduation::Assistant(blocks.to_vec()));
     }
 
-    /// Graduate lines that have overflowed the viewport during streaming.
+    /// Graduate lines that have overflowed the viewport.
     ///
-    /// This implements progressive graduation: as content grows during streaming,
-    /// lines that scroll out of view are pushed to terminal scrollback.
-    ///
-    /// Key insight: We must refresh (re-render) lines right before graduation to
-    /// ensure the graduated lines match what the next render will produce. Using
-    /// stale cached lines from the previous render causes gaps when streaming
-    /// content changes between renders.
+    /// Uses the shared graduation logic from `crate::tui::graduation` to ensure
+    /// tests and production code use the same algorithm.
     fn graduate_overflow_lines(&mut self) {
-        // Viewport capacity (total height minus input area and status line)
-        let viewport_capacity = (INLINE_VIEWPORT_HEIGHT as usize).saturating_sub(4);
+        if !self.inline_mode {
+            return;
+        }
 
-        // Re-render fresh to get accurate line count and content.
-        // This is essential: streaming may have added content since last render,
-        // so cached lines are stale. By refreshing now, what we graduate will
-        // exactly match what the next render produces and skips.
+        // Use actual viewport height (accounts for input box, status bar, popups, etc.)
+        let viewport_capacity = self.view.conversation_viewport_height();
+
         let (terminal_width, _) = size().unwrap_or((80, 24));
-        let total_lines = self
-            .view
-            .state()
-            .conversation
-            .refresh_captured_lines(terminal_width as usize);
+        use crate::tui::constants::UiConstants;
+        let content_width = UiConstants::content_width(terminal_width) as usize;
 
-        let already_graduated = self.view.state().conversation.graduated_line_count();
-        let visible_lines = total_lines.saturating_sub(already_graduated);
+        // Use shared graduation logic
+        use crate::tui::graduation::check_graduation;
+        let (all_lines, result) = check_graduation(
+            &self.view.state().conversation,
+            self.graduated_line_count,
+            viewport_capacity,
+            content_width,
+        );
 
-        // If we have more visible lines than viewport can show, graduate the overflow
-        if visible_lines > viewport_capacity {
-            let overflow_count = visible_lines - viewport_capacity;
+        debug!(
+            total_lines = all_lines.len(),
+            graduated = self.graduated_line_count,
+            viewport_capacity,
+            has_graduation = result.is_some(),
+            "graduate_overflow_lines"
+        );
 
-            // Graduate lines from the freshly-captured render output
-            let lines_to_graduate = self
-                .view
-                .state_mut()
-                .conversation
-                .graduate_from_captured(overflow_count);
+        if let Some(grad) = result {
+            debug!(
+                range = ?grad.lines_to_graduate,
+                new_count = grad.new_graduated_count,
+                "graduation calculation"
+            );
 
-            if !lines_to_graduate.is_empty() {
-                self.pending_graduations
-                    .push(PendingGraduation::Lines(lines_to_graduate));
-            }
+            // Graduate these lines
+            let lines_to_graduate = all_lines[grad.lines_to_graduate].to_vec();
+            self.pending_graduations
+                .push(PendingGraduation::Lines(lines_to_graduate));
+            self.graduated_line_count = grad.new_graduated_count;
         }
     }
 
@@ -2429,6 +2460,23 @@ impl RatatuiRunner {
                 PendingGraduation::Lines(lines) => {
                     // Pre-rendered styled lines (from progressive graduation)
                     // Lines already have ratatui styling, use directly in buffer
+                    if lines.is_empty() {
+                        continue;
+                    }
+
+                    let height = lines.len() as u16;
+                    terminal.insert_before(height, |buf| {
+                        for (i, line) in lines.iter().enumerate() {
+                            buf.set_line(0, i as u16, line, width);
+                        }
+                    })?;
+                }
+                PendingGraduation::Item(item) => {
+                    // Render the item and insert
+                    use crate::tui::constants::UiConstants;
+                    let content_width = UiConstants::content_width(width);
+                    let lines = render_item_to_lines(&item, content_width as usize);
+
                     if lines.is_empty() {
                         continue;
                     }
@@ -3021,7 +3069,9 @@ impl RatatuiRunner {
             // Don't enable mouse capture - let terminal handle scroll natively
             // so user can scroll up to see graduated content in scrollback
             execute!(stdout, EnableBracketedPaste)?;
-            DynamicViewport::new_inline(INLINE_VIEWPORT_HEIGHT)?
+            let (_, term_height) = size().unwrap_or((80, 24));
+            let viewport_height = calculate_inline_viewport_height(term_height);
+            DynamicViewport::new_inline(viewport_height)?
         } else {
             // Fullscreen mode: traditional alternate screen
             execute!(
@@ -3034,10 +3084,15 @@ impl RatatuiRunner {
         };
         terminal.clear()?;
 
-        // Update inline printer width
+        // Set initial dimensions
+        let (term_width, term_height) = size().unwrap_or((80, 24));
         if self.inline_mode {
-            let (width, _) = size().unwrap_or((80, 24));
-            self.inline_printer.update_width(width);
+            self.inline_printer.update_width(term_width);
+            // Set view height to viewport height (not terminal height)
+            let viewport_height = calculate_inline_viewport_height(term_height);
+            self.view.handle_resize(term_width, viewport_height)?;
+        } else {
+            self.view.handle_resize(term_width, term_height)?;
         }
 
         // Get initial selection (use default or discover first available ACP agent)
@@ -3085,6 +3140,7 @@ impl RatatuiRunner {
 
             // Clear conversation for fresh start
             self.view.state_mut().conversation.clear();
+            self.graduated_line_count = 0;
 
             // Resume session if requested (loads existing conversation history)
             if let Some(session_id_str) = self.resume_session_id.take() {
@@ -3111,6 +3167,7 @@ impl RatatuiRunner {
 
             // Restart requested - loop back with same agent
             self.view.state_mut().conversation.clear();
+            self.graduated_line_count = 0;
             self.view.set_status_text("Restarting session...");
             self.render_frame(&mut terminal)?;
         }
