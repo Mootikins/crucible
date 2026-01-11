@@ -321,62 +321,10 @@ impl ConversationState {
 
     /// Calculate total line count for graduation purposes.
     ///
-    /// IMPORTANT: Excludes Status items (ephemeral) and incomplete content:
-    /// - Status items get removed after streaming
-    /// - For streaming AssistantMessages, only counts COMPLETE blocks
-    ///
-    /// This ensures graduation only considers stable, unchanging content.
+    /// Uses the same rendering as the viewport to ensure consistency.
+    /// Simple model: graduate overflow lines as content pushes past viewport bottom.
     pub fn calculate_total_line_count(&self, width: usize) -> usize {
-        let mut total = 0;
-
-        for (i, item) in self.items.iter().enumerate() {
-            // Skip Status items - they're ephemeral
-            if matches!(item, ConversationItem::Status(_)) {
-                continue;
-            }
-
-            // Add spacing before tool calls (but not between consecutive tools)
-            if matches!(item, ConversationItem::ToolCall(_)) {
-                let prev_was_tool =
-                    i > 0 && matches!(self.items.get(i - 1), Some(ConversationItem::ToolCall(_)));
-                if !prev_was_tool {
-                    total += 1; // Empty line for spacing
-                }
-            }
-
-            // For streaming messages, only count complete blocks
-            if let ConversationItem::AssistantMessage {
-                blocks,
-                is_streaming: true,
-            } = item
-            {
-                total += self.count_complete_blocks_lines(blocks, width);
-                continue;
-            }
-
-            // Use cached height if available, otherwise render to get height
-            if let Some(height) = self.get_cached_height(i, width) {
-                total += height;
-            } else {
-                // Render and cache for future use
-                let lines = render_item_to_lines(item, width);
-                let height = lines.len();
-                self.store_cached(i, width, lines);
-                total += height;
-            }
-        }
-
-        // Don't cache this total - it can change as blocks complete
-        total
-    }
-
-    /// Count lines for only the COMPLETE blocks of a streaming message.
-    ///
-    /// Uses the same rendering logic as `render_complete_blocks` to ensure
-    /// the count matches the actual rendered output.
-    fn count_complete_blocks_lines(&self, blocks: &[StreamBlock], width: usize) -> usize {
-        // Delegate to render_complete_blocks to ensure count matches render
-        self.render_complete_blocks(blocks, width).len()
+        self.render_all_lines_cached(width).len()
     }
 
     /// Render all items to lines using cache where available.
@@ -410,66 +358,10 @@ impl ConversationState {
 
     /// Render all items to lines for graduation.
     ///
-    /// IMPORTANT: Excludes Status items (ephemeral) and incomplete content:
-    /// - Status items get removed after streaming
-    /// - For streaming AssistantMessages, only renders COMPLETE blocks
-    ///
-    /// This ensures graduation only includes stable, unchanging content.
+    /// Uses the same rendering as the viewport to ensure consistency.
+    /// Simple model: graduate overflow lines as content pushes past viewport bottom.
     pub fn render_for_graduation(&self, width: usize) -> Vec<Line<'static>> {
-        let mut all_lines = Vec::new();
-
-        for (i, item) in self.items.iter().enumerate() {
-            // Skip Status items - they're ephemeral
-            if matches!(item, ConversationItem::Status(_)) {
-                continue;
-            }
-
-            // Add spacing before tool calls (but not between consecutive tools)
-            if matches!(item, ConversationItem::ToolCall(_)) {
-                let prev_was_tool =
-                    i > 0 && matches!(self.items.get(i - 1), Some(ConversationItem::ToolCall(_)));
-                if !prev_was_tool {
-                    all_lines.push(Line::from(""));
-                }
-            }
-
-            // For streaming messages, only render complete blocks
-            if let ConversationItem::AssistantMessage {
-                blocks,
-                is_streaming: true,
-            } = item
-            {
-                all_lines.extend(self.render_complete_blocks(blocks, width));
-                continue;
-            }
-
-            // Use cached lines if available, otherwise render and cache
-            if let Some(cached) = self.get_cached(i, width) {
-                all_lines.extend(cached);
-            } else {
-                let lines = render_item_to_lines(item, width);
-                self.store_cached(i, width, lines.clone());
-                all_lines.extend(lines);
-            }
-        }
-
-        all_lines
-    }
-
-    /// Render only COMPLETE blocks of a streaming message for graduation.
-    ///
-    /// Uses the same rendering logic as `render_assistant_blocks` to ensure
-    /// consistency between graduated content and displayed content. Only the
-    /// first block gets the " ● " prefix, subsequent blocks get "   " indent.
-    fn render_complete_blocks(&self, blocks: &[StreamBlock], width: usize) -> Vec<Line<'static>> {
-        let complete_blocks: Vec<_> = blocks.iter().filter(|b| b.is_complete()).cloned().collect();
-        if complete_blocks.is_empty() {
-            return Vec::new();
-        }
-
-        // Use the same rendering function as full messages to ensure
-        // prefix/indent consistency between graduation and display
-        render_assistant_blocks(&complete_blocks, width)
+        self.render_all_lines_cached(width)
     }
 
     /// Store rendered lines for an item
