@@ -2476,6 +2476,11 @@ impl RatatuiRunner {
         let num_lines = all_lines.len();
         debug!(num_lines, "flush_pending_graduations: inserting lines");
 
+        // Note: We don't clear() here because ratatui does cell-level diffs and
+        // clearing causes visible flashing. The cursor filtering in render_for_graduation()
+        // should prevent cursor artifacts. UI element artifacts are mitigated by
+        // rendering the full viewport immediately after insert_before.
+
         // Insert graduated content above the viewport using ratatui's insert_before
         let height = all_lines.len() as u16;
         terminal

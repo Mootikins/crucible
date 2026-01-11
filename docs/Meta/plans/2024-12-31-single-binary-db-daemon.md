@@ -4,6 +4,8 @@
 
 **Goal:** Enable multi-session kiln access via a forked DB daemon, while keeping single-binary simplicity and backward-compatible embedded mode.
 
+**See also:** [[../Analysis/2026-01-10 Dioxus Unified Binary Architecture|Dioxus Unified Binary Architecture]] - extends this daemon to support desktop GUI via Dioxus.
+
 **Architecture:** Single `cru` binary runs as either CLI client or DB server (hidden subcommand). Config toggles between in-process embedded DB vs daemon-backed DB with auto-fork on first connect.
 
 **Tech Stack:** Rust, tokio, daemonize crate, Unix sockets, JSON-RPC, SurrealDB embedded
