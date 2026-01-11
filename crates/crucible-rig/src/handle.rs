@@ -518,15 +518,25 @@ where
                                             let is_write = is_write_tool_name(&parsed_tc.name);
                                             if is_write && current_mode_id == "plan" {
                                                 // Block write operations in plan mode
+                                                // Emit tool call first (so it shows in UI)
                                                 warn!(tool = %parsed_tc.name, "Blocking XML write tool in plan mode");
                                                 yield Ok(ChatChunk {
-                                                    delta: format!(
-                                                        "Tool '{}' is blocked in plan mode. Switch to act mode to perform write operations.",
-                                                        parsed_tc.name
-                                                    ),
+                                                    delta: String::new(),
+                                                    done: false,
+                                                    tool_calls: Some(vec![chat_tc]),
+                                                    tool_results: None,
+                                                    reasoning: None,
+                                                });
+                                                // Immediately emit error result (shows as red failed tool)
+                                                yield Ok(ChatChunk {
+                                                    delta: String::new(),
                                                     done: false,
                                                     tool_calls: None,
-                                                    tool_results: None,
+                                                    tool_results: Some(vec![ChatToolResult {
+                                                        name: parsed_tc.name.clone(),
+                                                        result: String::new(),
+                                                        error: Some("Blocked in plan mode".to_string()),
+                                                    }]),
                                                     reasoning: None,
                                                 });
                                             } else {
@@ -623,15 +633,25 @@ where
                                 let is_write_tool = is_write_tool_name(&tc.function.name);
                                 if is_write_tool && current_mode_id == "plan" {
                                     // Block write operations in plan mode
+                                    // Emit tool call first (so it shows in UI)
                                     warn!(tool = %tc.function.name, "Blocking write tool in plan mode");
                                     yield Ok(ChatChunk {
-                                        delta: format!(
-                                            "Tool '{}' is blocked in plan mode. Switch to act mode to perform write operations.",
-                                            tc.function.name
-                                        ),
+                                        delta: String::new(),
+                                        done: false,
+                                        tool_calls: Some(vec![chat_tc]),
+                                        tool_results: None,
+                                        reasoning: None,
+                                    });
+                                    // Immediately emit error result (shows as red failed tool)
+                                    yield Ok(ChatChunk {
+                                        delta: String::new(),
                                         done: false,
                                         tool_calls: None,
-                                        tool_results: None,
+                                        tool_results: Some(vec![ChatToolResult {
+                                            name: tc.function.name.clone(),
+                                            result: String::new(),
+                                            error: Some("Blocked in plan mode".to_string()),
+                                        }]),
                                         reasoning: None,
                                     });
                                 } else {
