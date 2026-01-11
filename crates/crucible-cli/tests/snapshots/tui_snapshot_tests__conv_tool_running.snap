@@ -21,7 +21,7 @@ expression: terminal.backend()
 "                                                                                "
 " ● Let me search for authentication-related files.                              "
 "                                                                                "
-" ◐ grep(pattern="auth", type="rs")                                              "
+" ● grep(pattern="auth", type="rs")                                              "
 "                                                                                "
 " >                                                                              "
 "                                                                                "
