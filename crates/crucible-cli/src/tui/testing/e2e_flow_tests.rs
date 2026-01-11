@@ -217,8 +217,10 @@ mod graduation_flow {
         assert_snapshot!("e2e_graduation_fits", h.full_state());
     }
 
-    /// During streaming, content graduates immediately as viewport overflows.
-    /// This is the simplified model - no streaming boundary detection.
+    /// During streaming, content is NOT graduated because it's still changing.
+    /// Streaming content is excluded from graduation to prevent duplication issues
+    /// (content changes mid-graduation would cause misaligned line counts).
+    /// Graduation happens only after streaming completes.
     #[test]
     fn overflow_graduates_during_streaming() {
         let mut h = StreamingHarness::inline().with_timeline();
@@ -237,11 +239,20 @@ mod graduation_flow {
             ));
         }
 
-        // With simplified graduation, overflow graduates immediately during streaming.
-        // Should have graduated significant content by now.
+        // Streaming content is excluded from graduation - should be 0 during streaming
+        assert_eq!(
+            h.graduated_line_count(),
+            0,
+            "streaming content should NOT be graduated: got {} graduated lines",
+            h.graduated_line_count()
+        );
+
+        // Complete streaming - NOW graduation should happen
+        h.complete();
+
         assert!(
             h.graduated_line_count() > 0,
-            "overflow should graduate during streaming: got {} graduated lines",
+            "after completion, content should graduate: got {} graduated lines",
             h.graduated_line_count()
         );
         assert_snapshot!("e2e_graduation_overflow_mid_stream", h.full_state());

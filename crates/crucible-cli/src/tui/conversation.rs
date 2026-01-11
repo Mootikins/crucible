@@ -323,10 +323,22 @@ impl ConversationState {
     ///
     /// Uses cached heights where available, only rendering uncached items.
     /// Includes spacing lines that would be added before tool calls.
+    ///
+    /// IMPORTANT: Excludes ephemeral items from the count:
+    /// - Status items (get removed after streaming)
+    /// - Streaming AssistantMessages (content still changing)
+    /// These should not affect graduation calculations.
     pub fn calculate_total_line_count(&self, width: usize) -> usize {
         let mut total = 0;
 
         for (i, item) in self.items.iter().enumerate() {
+            // Skip ephemeral items that shouldn't affect graduation
+            match item {
+                ConversationItem::Status(_) => continue,
+                ConversationItem::AssistantMessage { is_streaming: true, .. } => continue,
+                _ => {}
+            }
+
             // Add spacing before tool calls (but not between consecutive tools)
             if matches!(item, ConversationItem::ToolCall(_)) {
                 let prev_was_tool =
@@ -384,9 +396,40 @@ impl ConversationState {
 
     /// Render all items to lines for graduation.
     ///
-    /// Alias for `render_all_lines_cached` - kept for API compatibility.
+    /// IMPORTANT: Excludes ephemeral items that shouldn't be graduated:
+    /// - Status items (get removed after streaming)
+    /// - Streaming AssistantMessages (content still changing)
     pub fn render_for_graduation(&self, width: usize) -> Vec<Line<'static>> {
-        self.render_all_lines_cached(width)
+        let mut all_lines = Vec::new();
+
+        for (i, item) in self.items.iter().enumerate() {
+            // Skip ephemeral items that shouldn't be graduated
+            match item {
+                ConversationItem::Status(_) => continue,
+                ConversationItem::AssistantMessage { is_streaming: true, .. } => continue,
+                _ => {}
+            }
+
+            // Add spacing before tool calls (but not between consecutive tools)
+            if matches!(item, ConversationItem::ToolCall(_)) {
+                let prev_was_tool =
+                    i > 0 && matches!(self.items.get(i - 1), Some(ConversationItem::ToolCall(_)));
+                if !prev_was_tool {
+                    all_lines.push(Line::from(""));
+                }
+            }
+
+            // Use cached lines if available, otherwise render and cache
+            if let Some(cached) = self.get_cached(i, width) {
+                all_lines.extend(cached);
+            } else {
+                let lines = render_item_to_lines(item, width);
+                self.store_cached(i, width, lines.clone());
+                all_lines.extend(lines);
+            }
+        }
+
+        all_lines
     }
 
     /// Store rendered lines for an item
