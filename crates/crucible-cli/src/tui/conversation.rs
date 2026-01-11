@@ -314,6 +314,9 @@ impl ConversationState {
     ///
     /// Uses cached heights where available, only rendering uncached items.
     /// Includes spacing lines that would be added before tool calls.
+    ///
+    /// Note: This count EXCLUDES cursor lines to match render_for_graduation().
+    /// This ensures graduation calculations use consistent line counts.
     pub fn calculate_total_line_count(&self, width: usize) -> usize {
         let mut total = 0;
 
@@ -339,15 +342,50 @@ impl ConversationState {
             }
         }
 
+        // Subtract cursor line if present (streaming assistant message at end)
+        // This matches render_for_graduation() which filters out cursor lines
+        if self.has_streaming_cursor() {
+            total = total.saturating_sub(1);
+        }
+
         // Cache the total for next time
         self.set_total_height(total);
         total
     }
 
+    /// Check if there's a streaming cursor that would be rendered.
+    fn has_streaming_cursor(&self) -> bool {
+        // Cursor is shown when: last item is streaming assistant with incomplete last block
+        if let Some(ConversationItem::AssistantMessage { blocks, is_streaming }) = self.items.back()
+        {
+            if *is_streaming {
+                if let Some(last_block) = blocks.last() {
+                    return !last_block.is_complete();
+                }
+            }
+        }
+        false
+    }
+
     /// Render all items to lines using cache where available.
     ///
     /// This is more efficient than render_all_lines() as it uses cached renders.
+    /// Note: Includes streaming cursor if present. Use `render_for_graduation`
+    /// to exclude cursor lines for graduation to scrollback.
     pub fn render_all_lines_cached(&self, width: usize) -> Vec<Line<'static>> {
+        self.render_lines_internal(width, false)
+    }
+
+    /// Render all items to lines for graduation (excludes streaming cursor).
+    ///
+    /// Same as `render_all_lines_cached` but filters out cursor lines
+    /// so they don't get "frozen" in terminal scrollback during streaming.
+    pub fn render_for_graduation(&self, width: usize) -> Vec<Line<'static>> {
+        self.render_lines_internal(width, true)
+    }
+
+    /// Internal render implementation with optional cursor filtering.
+    fn render_lines_internal(&self, width: usize, exclude_cursor: bool) -> Vec<Line<'static>> {
         let mut all_lines = Vec::new();
 
         for (i, item) in self.items.iter().enumerate() {
@@ -368,6 +406,11 @@ impl ConversationState {
                 self.store_cached(i, width, lines.clone());
                 all_lines.extend(lines);
             }
+        }
+
+        // Filter out cursor lines if requested (for graduation)
+        if exclude_cursor {
+            all_lines.retain(|line| !is_cursor_line(line));
         }
 
         all_lines
@@ -851,6 +894,20 @@ impl ConversationState {
 // =============================================================================
 // Rendering
 // =============================================================================
+
+/// Check if a line is the streaming cursor indicator.
+///
+/// The cursor line has the form: `"   ▌"` (3 spaces + cursor character).
+/// We filter these out during graduation so they don't get frozen in scrollback.
+fn is_cursor_line(line: &Line<'_>) -> bool {
+    // Cursor line: exactly 2 spans, second contains "▌"
+    if line.spans.len() == 2 {
+        if let Some(second) = line.spans.get(1) {
+            return second.content.contains('▌');
+        }
+    }
+    false
+}
 
 /// Render a conversation item to lines
 pub fn render_item_to_lines(item: &ConversationItem, width: usize) -> Vec<Line<'static>> {

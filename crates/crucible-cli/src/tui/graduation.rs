@@ -105,8 +105,8 @@ pub fn check_graduation(
         return (Vec::new(), None);
     }
 
-    // Graduation needed - render using cache where available
-    let all_lines = conversation.render_all_lines_cached(content_width);
+    // Graduation needed - render for graduation (excludes streaming cursor)
+    let all_lines = conversation.render_for_graduation(content_width);
 
     (all_lines, result)
 }
