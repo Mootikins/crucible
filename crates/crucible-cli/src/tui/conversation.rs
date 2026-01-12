@@ -257,6 +257,12 @@ pub struct ConversationState {
     max_tool_output_lines: usize,
     /// Per-item render cache (RefCell for interior mutability during render)
     cache: RefCell<RenderCache>,
+    /// Count of complete lines (those ending with \n) for graduation.
+    ///
+    /// Only complete lines can be graduated to scrollback - partial lines
+    /// (those still being streamed without a terminating newline) must stay
+    /// in the viewport because they may still change.
+    committed_lines: usize,
 }
 
 impl Default for ConversationState {
@@ -271,6 +277,7 @@ impl ConversationState {
             items: VecDeque::new(),
             max_tool_output_lines: 3,
             cache: RefCell::new(RenderCache::new()),
+            committed_lines: 0,
         }
     }
 
@@ -400,6 +407,11 @@ impl ConversationState {
         self.cache.borrow_mut().store(index, width, lines);
     }
 
+    /// Check if there's an active streaming message
+    pub fn is_streaming(&self) -> bool {
+        self.streaming_item_index().is_some()
+    }
+
     /// Find the index of the currently streaming assistant message
     fn streaming_item_index(&self) -> Option<usize> {
         self.items.iter().position(|item| {
@@ -429,9 +441,13 @@ impl ConversationState {
     }
 
     pub fn push_user_message(&mut self, content: impl Into<String>) {
-        self.items.push_back(ConversationItem::UserMessage {
-            content: content.into(),
-        });
+        let content = content.into();
+        // Count lines for graduation (user messages are always complete)
+        // Each line is complete, plus there's always at least 1 line
+        let line_count = content.lines().count().max(1);
+        self.committed_lines += line_count;
+
+        self.items.push_back(ConversationItem::UserMessage { content });
         self.cache.borrow_mut().on_item_added();
     }
 
@@ -455,7 +471,12 @@ impl ConversationState {
         }
 
         // For non-streaming messages, create a single prose block
-        let blocks = vec![StreamBlock::prose(content.into())];
+        let content = content.into();
+        // Count lines for graduation (complete messages have all lines committed)
+        let line_count = content.lines().count().max(1);
+        self.committed_lines += line_count;
+
+        let blocks = vec![StreamBlock::prose(content)];
         self.items.push_back(ConversationItem::AssistantMessage {
             blocks,
             is_streaming: false,
@@ -481,6 +502,12 @@ impl ConversationState {
 
     /// Append blocks to the most recent streaming assistant message
     pub fn append_streaming_blocks(&mut self, new_blocks: Vec<StreamBlock>) {
+        // Count newlines in all new blocks for graduation tracking
+        for block in &new_blocks {
+            let newline_count = block.text().chars().filter(|c| *c == '\n').count();
+            self.committed_lines += newline_count;
+        }
+
         if let Some(idx) = self.streaming_item_index() {
             if let ConversationItem::AssistantMessage { blocks, .. } = &mut self.items[idx] {
                 blocks.extend(new_blocks);
@@ -492,7 +519,26 @@ impl ConversationState {
     /// Mark the most recent streaming assistant message as complete
     pub fn complete_streaming(&mut self) {
         if let Some(idx) = self.streaming_item_index() {
-            if let ConversationItem::AssistantMessage { is_streaming, .. } = &mut self.items[idx] {
+            if let ConversationItem::AssistantMessage {
+                blocks,
+                is_streaming,
+            } = &mut self.items[idx]
+            {
+                // When streaming completes, commit any final partial line.
+                // Check if the last block's text ends without a newline.
+                let has_trailing_partial = blocks
+                    .last()
+                    .map(|b| {
+                        let text = b.text();
+                        !text.is_empty() && !text.ends_with('\n')
+                    })
+                    .unwrap_or(false);
+
+                if has_trailing_partial {
+                    // The final line didn't have a newline - count it as committed now
+                    self.committed_lines += 1;
+                }
+
                 *is_streaming = false;
                 self.cache.borrow_mut().invalidate_item(idx);
             }
@@ -501,6 +547,10 @@ impl ConversationState {
 
     /// Append content to the last block of the streaming assistant message
     pub fn append_to_last_block(&mut self, content: &str) {
+        // Count newlines for graduation tracking
+        let newline_count = content.chars().filter(|c| *c == '\n').count();
+        self.committed_lines += newline_count;
+
         if let Some(idx) = self.streaming_item_index() {
             if let ConversationItem::AssistantMessage { blocks, .. } = &mut self.items[idx] {
                 if let Some(last_block) = blocks.last_mut() {
@@ -529,7 +579,23 @@ impl ConversationState {
     /// If no streaming assistant message exists, starts a new one. This handles
     /// the case where a tool call interrupted streaming - subsequent prose should
     /// go into a new message to maintain chronological order.
+    ///
+    /// Only complete lines (those ending with \n) increment committed_lines.
+    /// Partial lines stay uncommitted until a newline arrives.
     pub fn append_or_create_prose(&mut self, text: &str) {
+        self.append_or_create_prose_internal(text, true);
+    }
+
+    /// Internal implementation that optionally counts newlines.
+    /// The public method always counts; recursion does not re-count.
+    fn append_or_create_prose_internal(&mut self, text: &str, count_newlines: bool) {
+        if count_newlines {
+            // Count newlines in the appended text for graduation tracking
+            // ONLY newlines count - partial lines are not committed yet
+            let newline_count = text.chars().filter(|c| *c == '\n').count();
+            self.committed_lines += newline_count;
+        }
+
         if let Some(idx) = self.streaming_item_index() {
             if let ConversationItem::AssistantMessage { blocks, .. } = &mut self.items[idx] {
                 // Check if last block is an incomplete prose block
@@ -549,7 +615,8 @@ impl ConversationState {
 
         // No streaming message found - create a new one (e.g., after tool call)
         self.start_assistant_streaming();
-        self.append_or_create_prose(text);
+        // Don't re-count newlines in the recursive call
+        self.append_or_create_prose_internal(text, false);
     }
 
     pub fn set_status(&mut self, status: StatusKind) {
@@ -750,6 +817,14 @@ impl ConversationState {
         &self.items
     }
 
+    /// Get the count of committed (complete) lines for graduation.
+    ///
+    /// Only complete lines can be graduated to scrollback. This count
+    /// excludes any partial line currently being streamed.
+    pub fn committed_line_count(&self) -> usize {
+        self.committed_lines
+    }
+
     /// Get the last assistant message as markdown.
     ///
     /// Reconstructs the original markdown from StreamBlocks.
@@ -790,6 +865,7 @@ impl ConversationState {
     pub fn clear(&mut self) {
         self.items.clear();
         self.cache.borrow_mut().on_clear();
+        self.committed_lines = 0;
     }
 
     /// Serialize the conversation to markdown format.
