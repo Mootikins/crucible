@@ -53,12 +53,6 @@ impl StreamingParser {
         &self.blocks
     }
 
-    /// Get partial content being accumulated
-    pub fn partial(&self) -> String {
-        // Return whatever's in our buffers
-        format!("{}{}", self.line_buffer, self.content_buffer)
-    }
-
     /// Check if currently in a code block
     pub fn in_code_block(&self) -> bool {
         matches!(self.state, ParserState::InCodeBlock { .. })
@@ -537,8 +531,9 @@ mod tests {
         let mut parser = StreamingParser::new();
 
         parser.feed("Hello");
-        // Partial() includes accumulated content
-        assert!(!parser.partial().is_empty());
+        // flush_partial() returns accumulated content
+        let partial = parser.flush_partial();
+        assert!(partial.is_some());
         assert!(!parser.in_code_block());
     }
 

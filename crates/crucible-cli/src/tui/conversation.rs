@@ -1149,13 +1149,6 @@ fn render_code_block(lang: Option<&str>, content: &str) -> Vec<Line<'static>> {
     lines
 }
 
-/// Legacy function for backward compatibility (now wraps block rendering)
-fn render_assistant_message(content: &str) -> Vec<Line<'static>> {
-    // Convert string to single prose block and render with default width
-    let blocks = vec![StreamBlock::prose(content)];
-    render_assistant_blocks(&blocks, 80) // Default 80 column width for tests
-}
-
 fn render_status(status: &StatusKind) -> Vec<Line<'static>> {
     let (spinner_frame, text, style) = match status {
         StatusKind::Thinking { spinner_frame } => (
@@ -1576,6 +1569,12 @@ impl Widget for StatusBarWidget<'_> {
 mod tests {
     use super::*;
     use ratatui::style::{Modifier, Style};
+
+    /// Test helper: render a simple string as an assistant message
+    fn render_assistant_message(content: &str) -> Vec<Line<'static>> {
+        let blocks = vec![StreamBlock::prose(content)];
+        render_assistant_blocks(&blocks, 80)
+    }
 
     #[test]
     fn test_conversation_state_new() {
