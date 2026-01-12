@@ -3,9 +3,8 @@
 //! These tests verify that messages in the conversation view maintain
 //! their chronological order regardless of message type.
 //!
-//! BUG UNDER TEST: Messages currently appear sorted by type instead of
-//! chronological order - prose is grouped together, tool calls are grouped
-//! separately, breaking conversational flow.
+//! The inline block model ensures prose and tool blocks render in the
+//! correct order within assistant messages.
 
 use super::content_block::StreamBlock;
 use super::conversation::{
@@ -96,21 +95,12 @@ fn test_interleaved_turns_preserve_order() {
     );
 }
 
-/// This test demonstrates the BUG.
+/// Tests interleaved prose and tool blocks within a single assistant message.
 ///
 /// In a real conversation, an assistant might:
 /// 1. Say "Let me search for that"
 /// 2. Call the grep tool
 /// 3. Say "Found 5 results"
-///
-/// Currently, this renders as:
-/// - All prose together: "Let me search for that" + "Found 5 results"
-/// - Tool call: grep
-///
-/// It SHOULD render as:
-/// - "Let me search for that"
-/// - grep tool call
-/// - "Found 5 results"
 ///
 /// With inline tool blocks, this is ONE assistant message containing
 /// ordered blocks: [prose, tool, prose]
@@ -223,7 +213,7 @@ fn test_interleaved_conversation_snapshot() {
     assert!(
         tool < prose2,
         "Tool call should appear before second prose. \
-         tool at {}, prose2 at {}. This is the BUG - prose is grouped together! Output:\n{}",
+         tool at {}, prose2 at {}. Output:\n{}",
         tool,
         prose2,
         output
