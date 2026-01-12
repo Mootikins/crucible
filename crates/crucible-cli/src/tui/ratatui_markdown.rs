@@ -918,10 +918,13 @@ fn display_width(s: &str) -> usize {
 /// Wrap text to fit within a given width, returning lines.
 ///
 /// Uses word-level wrapping: lines break at word boundaries.
-/// If a single word is longer than the column width, it is kept whole
-/// (allowed to overflow) rather than being broken mid-word.
+/// If a single word is longer than the column width, it is broken mid-word
+/// to ensure the line fits within the width constraint.
 fn wrap_text(text: &str, width: usize) -> Vec<String> {
-    if width == 0 || display_width(text) <= width {
+    if width == 0 {
+        return vec![text.to_string()];
+    }
+    if display_width(text) <= width {
         return vec![text.to_string()];
     }
 
@@ -931,21 +934,48 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
 
     for word in text.split_whitespace() {
         let word_width = display_width(word);
+
         if current_width == 0 {
-            // First word on line - always add it (even if it overflows)
-            current_line = word.to_string();
-            current_width = word_width;
+            // First word on line
+            if word_width <= width {
+                // Word fits
+                current_line = word.to_string();
+                current_width = word_width;
+            } else {
+                // Word too long - break it
+                let broken = break_word(word, width);
+                for (i, part) in broken.into_iter().enumerate() {
+                    if i > 0 || !current_line.is_empty() {
+                        lines.push(std::mem::take(&mut current_line));
+                    }
+                    current_line = part.clone();
+                    current_width = display_width(&part);
+                }
+            }
         } else if current_width + 1 + word_width <= width {
             // Word fits on current line
             current_line.push(' ');
             current_line.push_str(word);
             current_width += 1 + word_width;
         } else {
-            // Need to wrap - push current line and start new one
-            lines.push(current_line);
-            // Start new line with this word (even if it overflows)
-            current_line = word.to_string();
-            current_width = word_width;
+            // Need to wrap - push current line and handle this word
+            lines.push(std::mem::take(&mut current_line));
+
+            if word_width <= width {
+                // Word fits on new line
+                current_line = word.to_string();
+                current_width = word_width;
+            } else {
+                // Word too long - break it
+                let broken = break_word(word, width);
+                for (i, part) in broken.into_iter().enumerate() {
+                    if i > 0 {
+                        lines.push(std::mem::take(&mut current_line));
+                    }
+                    current_line = part.clone();
+                    current_width = display_width(&part);
+                }
+            }
         }
     }
 
@@ -958,6 +988,39 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
     }
 
     lines
+}
+
+/// Break a word into chunks that fit within the given width.
+fn break_word(word: &str, width: usize) -> Vec<String> {
+    if width == 0 {
+        return vec![word.to_string()];
+    }
+
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut current_width = 0;
+
+    for c in word.chars() {
+        let char_width = 1; // Simple char count
+
+        if current_width + char_width > width && !current.is_empty() {
+            parts.push(std::mem::take(&mut current));
+            current_width = 0;
+        }
+
+        current.push(c);
+        current_width += char_width;
+    }
+
+    if !current.is_empty() {
+        parts.push(current);
+    }
+
+    if parts.is_empty() {
+        parts.push(String::new());
+    }
+
+    parts
 }
 
 /// Render a GFM table with box-drawing borders.
@@ -1089,12 +1152,30 @@ fn render_table(node: &Node, ctx: &mut RenderContext<'_>) {
                         }
                     }
                 } else if available_content < total_min {
-                    // Even minimums don't fit - use minimums and let terminal wrap.
-                    // This is intentional: tables with long words that can't fit will
-                    // render at their natural minimum width, and the terminal wraps
-                    // the overflowing lines. This is better than truncating content.
-                    for (i, w) in col_widths.iter_mut().enumerate() {
-                        *w = min_col_widths[i];
+                    // Even minimums don't fit - force-shrink columns proportionally.
+                    // This will break words, but ensures all content is visible.
+                    // Each column gets at least 3 chars (absolute minimum).
+                    let absolute_min = 3usize;
+                    let num_columns = col_widths.len();
+                    let absolute_total = num_columns * absolute_min;
+
+                    if available_content >= absolute_total {
+                        // Distribute available space proportionally based on original widths
+                        let extra = available_content - absolute_total;
+                        let total_original: usize = col_widths.iter().sum();
+
+                        for w in col_widths.iter_mut() {
+                            // Each column gets absolute_min plus a proportional share of extra
+                            #[allow(clippy::cast_precision_loss)]
+                            let proportion = *w as f64 / total_original as f64;
+                            let extra_for_col = (proportion * extra as f64).floor() as usize;
+                            *w = absolute_min + extra_for_col;
+                        }
+                    } else {
+                        // Can't even fit absolute minimums - use them anyway
+                        for w in col_widths.iter_mut() {
+                            *w = absolute_min;
+                        }
                     }
                 }
             }
@@ -1700,11 +1781,24 @@ mod tests {
     }
 
     #[test]
-    fn wrap_text_keeps_long_words_intact() {
+    fn wrap_text_breaks_long_words() {
         let wrapped = wrap_text("supercalifragilisticexpialidocious", 10);
-        // Single long word should not be broken
-        assert_eq!(wrapped.len(), 1);
-        assert_eq!(wrapped[0], "supercalifragilisticexpialidocious");
+        // Single long word should be broken to fit width
+        assert!(
+            wrapped.len() > 1,
+            "Long word should be broken into multiple lines"
+        );
+        // All pieces should be <= 10 chars
+        for piece in &wrapped {
+            assert!(
+                display_width(piece) <= 10,
+                "Each piece should fit within width: '{}'",
+                piece
+            );
+        }
+        // Joined, they should reconstruct the original word
+        let joined: String = wrapped.join("");
+        assert_eq!(joined, "supercalifragilisticexpialidocious");
     }
 
     #[test]
@@ -1718,6 +1812,53 @@ mod tests {
     fn with_width_returns_self() {
         let r = RatatuiMarkdown::new(MarkdownTheme::dark()).with_width(80);
         assert_eq!(r.width, Some(80));
+    }
+
+    #[test]
+    fn wide_table_fits_viewport_with_word_breaking() {
+        // Table with long words in columns that force minimum widths exceeding viewport
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark()).with_width(60);
+
+        // 5 columns with long single words that can't be shrunk without word breaking
+        // Each column has a ~12-15 char word, plus borders and padding = way over 60
+        let markdown = "| ToolFunction | CategoryType | PrimaryPurpose | ArgumentsList | ExampleUsage |\n\
+                        |--------------|--------------|----------------|---------------|---------------|\n\
+                        | read_file_op | filesystem | RetrieveContent | path,offset | read(path) |\n\
+                        | write_file_op | filesystem | WriteContent | path,content | write(path) |";
+
+        let lines = r.render(markdown);
+
+        // Every table line should fit within the viewport width
+        for (i, line) in lines.iter().enumerate() {
+            let line_width: usize = line.spans.iter().map(|s| display_width(&s.content)).sum();
+            assert!(
+                line_width <= 60,
+                "Line {} exceeds viewport width of 60: {} chars - content: {}",
+                i,
+                line_width,
+                line.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            );
+        }
+
+        // All original content should be present (words may be broken across lines)
+        let all_text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+
+        // Check that key content from each column is present
+        assert!(
+            all_text.contains("Tool") || all_text.contains("ool"),
+            "Header content should be present"
+        );
+        assert!(
+            all_text.contains("read") || all_text.contains("ead"),
+            "Data content should be present"
+        );
     }
 
     #[test]
@@ -1759,6 +1900,195 @@ mod tests {
         assert!(
             all_text.contains("some code"),
             "Unknown language code should still render"
+        );
+    }
+
+    #[test]
+    fn asterisk_bullet_list_with_bold_wraps_correctly() {
+        // Test case based on user-reported issue: asterisk bullet lists with bold
+        // content should wrap at narrow widths
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark()).with_width(50);
+        let markdown = "* **Vectorized operations** (`np.sum`, `np.cos`, etc.) make the calculations fast and efficient.";
+
+        let lines = r.render(markdown);
+
+        // Should have multiple lines (content wraps)
+        assert!(
+            lines.len() >= 2,
+            "Long bullet list item should wrap. Got {} lines:\n{}",
+            lines.len(),
+            lines
+                .iter()
+                .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+
+        // All content should be present
+        let all_text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+
+        assert!(
+            all_text.contains("Vectorized"),
+            "Should contain bold text"
+        );
+        assert!(
+            all_text.contains("calculations"),
+            "Should contain wrapped content"
+        );
+
+        // First line should have bullet marker (- not *)
+        let first_line: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            first_line.contains('-'),
+            "First line should have bullet marker: {}",
+            first_line
+        );
+    }
+
+    #[test]
+    fn narrow_width_wrapping_preserves_content() {
+        // Test at very narrow width to ensure all content is preserved
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark()).with_width(30);
+        let markdown = "This is a paragraph with some long words that need to wrap correctly across multiple lines.";
+
+        let lines = r.render(markdown);
+
+        // Should wrap into multiple lines
+        assert!(
+            lines.len() >= 3,
+            "Should wrap at narrow width. Got {} lines",
+            lines.len()
+        );
+
+        // All words should be present
+        let all_text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+
+        for word in ["paragraph", "long", "words", "wrap", "correctly", "multiple", "lines"] {
+            assert!(
+                all_text.contains(word),
+                "Should contain '{}' in: {}",
+                word,
+                all_text
+            );
+        }
+    }
+
+    #[test]
+    fn ordered_list_wraps_at_narrow_width() {
+        // Test ordered list wrapping - reproducing user-reported truncation
+        // User saw: "1. **Opens** the CSV file (`sample_table.csv`) using the built‑i"
+        // This tests that ordered list items wrap correctly
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark()).with_width(60);
+        let markdown = r#"1. **Opens** the CSV file (`sample_table.csv`) using the built-in `open()` function with `mode='r'`
+2. **Creates** a `DictReader`, which automatically uses the first row as column headers
+3. **Iterates** over each row, converting the `Age` column to an integer"#;
+
+        let lines = r.render(markdown);
+
+        // Collect all text to check content preservation
+        let all_text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+
+        // All key content should be present (not truncated)
+        assert!(
+            all_text.contains("built-in"),
+            "Content should not be truncated, missing 'built-in' in:\n{}",
+            all_text
+        );
+        assert!(
+            all_text.contains("DictReader"),
+            "Content should not be truncated, missing 'DictReader' in:\n{}",
+            all_text
+        );
+        assert!(
+            all_text.contains("integer"),
+            "Content should not be truncated, missing 'integer' in:\n{}",
+            all_text
+        );
+
+        // Should have multiple lines (wrapping occurred)
+        assert!(
+            lines.len() >= 5,
+            "Should wrap into multiple lines. Got {} lines:\n{}",
+            lines.len(),
+            lines
+                .iter()
+                .enumerate()
+                .map(|(i, l)| format!(
+                    "{}: {}",
+                    i,
+                    l.spans.iter().map(|s| s.content.as_ref()).collect::<String>()
+                ))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+
+        // Verify each line is not too long (should be <= 60 chars)
+        for (i, line) in lines.iter().enumerate() {
+            let line_len: usize = line.spans.iter().map(|s| s.content.chars().count()).sum();
+            assert!(
+                line_len <= 60,
+                "Line {} is too long ({} chars): {}",
+                i,
+                line_len,
+                line.spans.iter().map(|s| s.content.as_ref()).collect::<String>()
+            );
+        }
+    }
+
+    #[test]
+    fn list_item_bold_has_bold_modifier() {
+        // Verify that **bold** text in list items actually gets the BOLD modifier
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark()).with_width(80);
+        let markdown = "- The **Eiffel Tower** is a famous landmark";
+
+        let lines = r.render(markdown);
+
+        // Find spans containing "Eiffel" or "Tower" - word wrapping splits them
+        let mut found_eiffel = false;
+        let mut found_tower = false;
+        for line in &lines {
+            for span in &line.spans {
+                if span.content.contains("Eiffel") {
+                    assert!(
+                        span.style.add_modifier.contains(Modifier::BOLD),
+                        "Span '{}' should have BOLD modifier, got {:?}",
+                        span.content,
+                        span.style
+                    );
+                    found_eiffel = true;
+                }
+                if span.content.contains("Tower") {
+                    assert!(
+                        span.style.add_modifier.contains(Modifier::BOLD),
+                        "Span '{}' should have BOLD modifier, got {:?}",
+                        span.content,
+                        span.style
+                    );
+                    found_tower = true;
+                }
+            }
+        }
+
+        assert!(
+            found_eiffel && found_tower,
+            "Should have found both 'Eiffel' and 'Tower' spans with BOLD. Lines:\n{}",
+            lines
+                .iter()
+                .map(|l| format!("{:?}", l))
+                .collect::<Vec<_>>()
+                .join("\n")
         );
     }
 }
