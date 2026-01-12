@@ -6,9 +6,15 @@ expression: h.render()
  > Compare languages                                                            
                                                                                 
  ● Python:                                                                      
+                                                                                
+   python                                                                       
    print("Hello")                                                               
+                                                                                
    Rust:                                                                        
+                                                                                
+   rust                                                                         
    println!("Hello");                                                           
+                                                                                
                                                                                 
                                                                                 
  >                                                                              
