@@ -29,6 +29,7 @@ use markdown_it::plugins::cmark::inline::link::Link;
 use markdown_it::plugins::cmark::inline::newline::{Hardbreak, Softbreak};
 use markdown_it::plugins::extra::tables::{Table, TableBody, TableCell, TableHead, TableRow};
 use markdown_it::{MarkdownIt, Node};
+use once_cell::sync::Lazy;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use syntect::easy::HighlightLines;
@@ -36,6 +37,13 @@ use syntect::highlighting::Theme;
 use syntect::parsing::SyntaxSet;
 
 use super::theme::{MarkdownElement, MarkdownTheme};
+
+// =============================================================================
+// Static Syntax Set (expensive to load, so cache globally)
+// =============================================================================
+
+/// Global syntax set for code highlighting (loaded once at startup)
+static SYNTAX_SET: Lazy<SyntaxSet> = Lazy::new(SyntaxSet::load_defaults_newlines);
 
 // =============================================================================
 // Box-drawing characters for tables
@@ -64,18 +72,12 @@ pub struct RatatuiMarkdown {
     theme: MarkdownTheme,
     /// Optional width constraint for word wrapping
     width: Option<usize>,
-    /// Syntax definitions for code highlighting
-    syntax_set: SyntaxSet,
 }
 
 impl RatatuiMarkdown {
     /// Create a new renderer with the given theme.
     pub fn new(theme: MarkdownTheme) -> Self {
-        Self {
-            theme,
-            width: None,
-            syntax_set: SyntaxSet::load_defaults_newlines(),
-        }
+        Self { theme, width: None }
     }
 
     /// Set the width constraint for word wrapping.
@@ -99,7 +101,7 @@ impl RatatuiMarkdown {
         let mut ctx = RenderContext::new(
             &self.theme,
             self.width,
-            &self.syntax_set,
+            &SYNTAX_SET,
             self.theme.syntect_theme(),
         );
         render_node(&ast, &mut ctx);
