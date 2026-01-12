@@ -1,0 +1,5 @@
+---
+source: crates/crucible-cli/src/tui/testing/cross_theme_snapshots.rs
+expression: light
+---
+"┌──────┬──────┐\n│ Col1 │ Col2 │\n├──────┼──────┤\n│ A    │ B    │\n└──────┴──────┘"

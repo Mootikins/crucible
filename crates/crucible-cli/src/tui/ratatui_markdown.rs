@@ -336,19 +336,7 @@ fn render_node(node: &Node, ctx: &mut RenderContext<'_>) {
 
         for child in node.children.iter() {
             if child.cast::<ListItem>().is_some() {
-                // Use "- " prefix with current indent (3 chars total at base level)
-                let prefix = format!("{}- ", ctx.indent_prefix());
-                let marker_style = ctx.theme.style_for(MarkdownElement::ListMarker);
-
-                // Collect inline spans for wrapping
-                let mut temp_spans: Vec<Span<'static>> = Vec::new();
-                {
-                    let mut temp_ctx = TempSpanCollector::new(&mut temp_spans);
-                    collect_inline_spans(child, ctx, &mut temp_ctx);
-                }
-
-                // Wrap with proper list item indentation
-                wrap_list_item_spans(&temp_spans, &prefix, marker_style, max_width, ctx);
+                render_list_item(child, ctx, "-", max_width);
             }
         }
 
@@ -368,18 +356,7 @@ fn render_node(node: &Node, ctx: &mut RenderContext<'_>) {
         for child in node.children.iter() {
             if child.cast::<ListItem>().is_some() {
                 let num = ctx.list_counter.unwrap_or(1);
-                let prefix = format!("{}{}. ", ctx.indent_prefix(), num);
-                let marker_style = ctx.theme.style_for(MarkdownElement::ListMarker);
-
-                // Collect inline spans for wrapping
-                let mut temp_spans: Vec<Span<'static>> = Vec::new();
-                {
-                    let mut temp_ctx = TempSpanCollector::new(&mut temp_spans);
-                    collect_inline_spans(child, ctx, &mut temp_ctx);
-                }
-
-                // Wrap with proper list item indentation
-                wrap_list_item_spans(&temp_spans, &prefix, marker_style, max_width, ctx);
+                render_list_item(child, ctx, &format!("{}.", num), max_width);
                 ctx.list_counter = Some(num + 1);
             }
         }
@@ -428,6 +405,69 @@ fn render_node(node: &Node, ctx: &mut RenderContext<'_>) {
     // Default: render children
     for child in node.children.iter() {
         render_node(child, ctx);
+    }
+}
+
+/// Render a list item with proper prefix and indentation.
+///
+/// Handles both inline content (text, bold, etc.) AND block-level elements
+/// (code fences, nested lists, paragraphs). The prefix is added to the first
+/// line of content, with continuation lines properly indented.
+fn render_list_item(node: &Node, ctx: &mut RenderContext<'_>, prefix: &str, _max_width: usize) {
+    let prefix_style = ctx.theme.style_for(MarkdownElement::ListMarker);
+    let prefix_width = display_width(prefix);
+    let continuation_indent = " ".repeat(prefix_width);
+
+    // Check if all children are inline-only (no block elements)
+    let has_block_children = node.children.iter().any(|child| {
+        child.cast::<MdCodeBlock>().is_some()
+            || child.cast::<CodeFence>().is_some()
+            || child.cast::<BulletList>().is_some()
+            || child.cast::<OrderedList>().is_some()
+            || child.cast::<Blockquote>().is_some()
+            || child.cast::<Table>().is_some()
+    });
+
+    if has_block_children {
+        // Block content: render children normally, then prefix each line
+        let item_start = ctx.lines.len();
+
+        for child in node.children.iter() {
+            render_node(child, ctx);
+        }
+
+        ctx.flush_line();
+        let item_end = ctx.lines.len();
+
+        if item_start < item_end {
+            for (idx, line) in ctx.lines[item_start..item_end].iter_mut().enumerate() {
+                if idx == 0 {
+                    let mut new_spans = vec![Span::styled(prefix.to_string(), prefix_style)];
+                    new_spans.append(&mut line.spans.clone());
+                    *line = Line::from(new_spans);
+                } else {
+                    let mut new_spans = vec![Span::raw(continuation_indent.clone())];
+                    new_spans.append(&mut line.spans.clone());
+                    *line = Line::from(new_spans);
+                }
+            }
+        }
+    } else {
+        // Inline-only content: collect spans and wrap with prefix
+        let mut temp_spans: Vec<Span<'static>> = Vec::new();
+        {
+            let mut temp_ctx = TempSpanCollector::new(&mut temp_spans);
+            collect_inline_spans(node, ctx, &mut temp_ctx);
+        }
+
+        // Wrap spans with prefix
+        wrap_list_item_spans(
+            &temp_spans,
+            prefix,
+            prefix_style,
+            ctx.width.unwrap_or(80),
+            ctx,
+        );
     }
 }
 
@@ -686,7 +726,7 @@ fn wrap_list_item_spans(
         return;
     }
 
-    let prefix_width = display_width(prefix);
+    let prefix_width = display_width(prefix) + 1; // +1 for the space after prefix
     let content_width = max_width.saturating_sub(prefix_width);
     let continuation_indent = " ".repeat(prefix_width);
 
@@ -703,7 +743,7 @@ fn wrap_list_item_spans(
             // Flush current line
             let line = if is_first_line {
                 is_first_line = false;
-                let mut line_spans = vec![Span::styled(prefix.to_string(), prefix_style)];
+                let mut line_spans = vec![Span::styled(format!("{} ", prefix), prefix_style)];
                 line_spans.extend(std::mem::take(&mut current_line_spans));
                 Line::from(line_spans)
             } else {
@@ -736,7 +776,7 @@ fn wrap_list_item_spans(
                 // Flush current line
                 let line = if is_first_line {
                     is_first_line = false;
-                    let mut line_spans = vec![Span::styled(prefix.to_string(), prefix_style)];
+                    let mut line_spans = vec![Span::styled(format!("{} ", prefix), prefix_style)];
                     line_spans.extend(std::mem::take(&mut current_line_spans));
                     Line::from(line_spans)
                 } else {
@@ -763,7 +803,7 @@ fn wrap_list_item_spans(
     // Flush remaining content
     if !current_line_spans.is_empty() || is_first_line {
         let line = if is_first_line {
-            let mut line_spans = vec![Span::styled(prefix.to_string(), prefix_style)];
+            let mut line_spans = vec![Span::styled(format!("{} ", prefix), prefix_style)];
             line_spans.extend(current_line_spans);
             Line::from(line_spans)
         } else {
@@ -1919,7 +1959,11 @@ mod tests {
             lines.len(),
             lines
                 .iter()
-                .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+                .map(|l| l
+                    .spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>())
                 .collect::<Vec<_>>()
                 .join("\n")
         );
@@ -1931,10 +1975,7 @@ mod tests {
             .map(|s| s.content.as_ref())
             .collect();
 
-        assert!(
-            all_text.contains("Vectorized"),
-            "Should contain bold text"
-        );
+        assert!(all_text.contains("Vectorized"), "Should contain bold text");
         assert!(
             all_text.contains("calculations"),
             "Should contain wrapped content"
@@ -1971,7 +2012,15 @@ mod tests {
             .map(|s| s.content.as_ref())
             .collect();
 
-        for word in ["paragraph", "long", "words", "wrap", "correctly", "multiple", "lines"] {
+        for word in [
+            "paragraph",
+            "long",
+            "words",
+            "wrap",
+            "correctly",
+            "multiple",
+            "lines",
+        ] {
             assert!(
                 all_text.contains(word),
                 "Should contain '{}' in: {}",
@@ -2028,7 +2077,10 @@ mod tests {
                 .map(|(i, l)| format!(
                     "{}: {}",
                     i,
-                    l.spans.iter().map(|s| s.content.as_ref()).collect::<String>()
+                    l.spans
+                        .iter()
+                        .map(|s| s.content.as_ref())
+                        .collect::<String>()
                 ))
                 .collect::<Vec<_>>()
                 .join("\n")
@@ -2042,7 +2094,10 @@ mod tests {
                 "Line {} is too long ({} chars): {}",
                 i,
                 line_len,
-                line.spans.iter().map(|s| s.content.as_ref()).collect::<String>()
+                line.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
             );
         }
     }
@@ -2090,5 +2145,39 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n")
         );
+    }
+
+    #[test]
+    fn nested_code_block_in_bullet_list() {
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark());
+        let markdown = "- Item with code:\n  ```rust\n  fn main() {}\n  ```";
+        let lines = r.render(markdown);
+        let all_text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            all_text.contains("main"),
+            "Code block content should be present in list"
+        );
+        assert!(all_text.contains("-"), "Should have bullet marker");
+    }
+
+    #[test]
+    fn nested_code_block_in_ordered_list() {
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark());
+        let markdown = "1. Step with code:\n   ```python\n   print('hello')\n   ```";
+        let lines = r.render(markdown);
+        let all_text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            all_text.contains("hello"),
+            "Code block content should be present in ordered list"
+        );
+        assert!(all_text.contains("1."), "Should have number marker");
     }
 }

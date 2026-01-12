@@ -1,0 +1,5 @@
+---
+source: crates/crucible-cli/src/tui/testing/cross_theme_snapshots.rs
+expression: dark
+---
+"This is a very long line that should wrap\nAnother long line here"

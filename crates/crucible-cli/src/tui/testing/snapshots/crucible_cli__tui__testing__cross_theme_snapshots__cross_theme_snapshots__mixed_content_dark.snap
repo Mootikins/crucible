@@ -1,0 +1,5 @@
+---
+source: crates/crucible-cli/src/tui/testing/cross_theme_snapshots.rs
+expression: dark
+---
+"Main Title\n\nSome bold and italic text.\n- List item 1\n- List item 2\nfn add(a: i32, b: i32) -> i32 {\n    a + b\n}"
