@@ -2,9 +2,6 @@
 source: crates/crucible-cli/src/tui/testing/table_tests.rs
 expression: h.render()
 ---
-                                                                                
- > Explain the struct and show options                                          
-                                                                                
  ● The struct has these fields:                                                 
                                                                                 
    ┌───────┬────────┬─────────┐                                                 
@@ -16,10 +13,13 @@ expression: h.render()
    └───────┴────────┴─────────┘                                                 
                                                                                 
    Here's how to use it:                                                        
+                                                                                
+   rust                                                                         
    let item = Item {                                                            
        name: "test".into(),                                                     
        count: 42,                                                               
    };                                                                           
+                                                                                
    This creates an Item with custom values.                                     
                                                                                 
                                                                                 
