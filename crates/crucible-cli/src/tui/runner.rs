@@ -276,44 +276,8 @@ type RatatuiTerminal = Terminal<CrosstermBackend<io::Stdout>>;
 /// Pending content to graduate to terminal scrollback via insert_before()
 #[derive(Debug, Clone)]
 enum PendingGraduation {
-    /// User message to graduate
-    User(String),
-    /// Assistant message blocks to graduate
-    Assistant(Vec<StreamBlock>),
     /// Pre-rendered styled lines to graduate (for progressive line-based graduation)
     Lines(Vec<ratatui::text::Line<'static>>),
-    /// Complete conversation item to graduate (item-based graduation)
-    Item(ConversationItem),
-}
-
-/// Convert StreamBlocks to markdown string for graduation rendering
-fn blocks_to_markdown(blocks: &[StreamBlock]) -> String {
-    let mut markdown = String::new();
-
-    for block in blocks {
-        match block {
-            StreamBlock::Prose { text, .. } => {
-                markdown.push_str(text);
-            }
-            StreamBlock::Code { lang, content, .. } => {
-                markdown.push_str("```");
-                if let Some(lang) = lang {
-                    markdown.push_str(lang);
-                }
-                markdown.push('\n');
-                markdown.push_str(content);
-                if !content.ends_with('\n') {
-                    markdown.push('\n');
-                }
-                markdown.push_str("```\n");
-            }
-            StreamBlock::Tool { name, .. } => {
-                markdown.push_str(&format!("[Tool: {}]\n", name));
-            }
-        }
-    }
-
-    markdown
 }
 use regex::Regex;
 use std::io;
@@ -450,6 +414,8 @@ pub struct RatatuiRunner {
     graduated_item_count: usize,
     /// Timestamp of the last graduation flush (for throttling during streaming)
     last_graduation_flush: Instant,
+    /// Flag to batch graduation checks per render cycle (set when content changes)
+    graduation_check_pending: bool,
 
     // =============================================================================
     // Runtime configuration (session-scoped provider/model overrides)
@@ -515,6 +481,7 @@ impl RatatuiRunner {
             graduated_line_count: 0,
             graduated_item_count: 0,
             last_graduation_flush: Instant::now(),
+            graduation_check_pending: false,
             // Runtime config (session-scoped provider/model) - will be set via with_runtime_config
             runtime_config: crate::tui::RuntimeConfig::default(),
             // Ollama endpoint - will be set via with_ollama_endpoint
@@ -666,6 +633,18 @@ impl RatatuiRunner {
             // Note: Flush pending graduations right before render so there's no gap
             // between insert_before and the viewport showing the updated content.
             if needs_render {
+                // Check for graduation once per render cycle (batched from multiple token batches)
+                if self.graduation_check_pending && self.inline_mode {
+                    self.graduate_overflow_lines();
+                    self.graduation_check_pending = false;
+                }
+
+                // Begin synchronized update to batch insert_before + draw together
+                // This tells the terminal to buffer updates and display them atomically
+                use crossterm::terminal::{BeginSynchronizedUpdate, EndSynchronizedUpdate};
+                use crossterm::execute;
+                let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
+
                 // Flush pending graduations to scrollback (right before render)
                 // This uses terminal.insert_before() to properly insert content above the viewport.
                 // During streaming, flushes are throttled to prevent terminal artifacts.
@@ -685,6 +664,9 @@ impl RatatuiRunner {
                     view.render_frame(f);
                     apply_selection_highlight(f, selection, scroll_offset, conv_height);
                 })?;
+
+                // End synchronized update - terminal will now display all changes atomically
+                let _ = execute!(io::stdout(), EndSynchronizedUpdate);
 
                 // Mark conversation cache as clean after render
                 self.view.state_mut().conversation.mark_clean();
@@ -974,10 +956,10 @@ impl RatatuiRunner {
             if !pending_parse_events.is_empty() {
                 self.apply_parse_events(pending_parse_events);
 
-                // Progressive graduation during streaming.
-                // Graduate overflow lines as content streams in.
+                // Mark graduation as pending - actual check happens once per render cycle
+                // This batches multiple token batches into a single graduation check
                 if self.inline_mode {
-                    self.graduate_overflow_lines();
+                    self.graduation_check_pending = true;
                 }
             }
 
@@ -1330,8 +1312,7 @@ impl RatatuiRunner {
                 // Add user message to view
                 self.view.push_user_message(&msg)?;
 
-                // Note: Don't call graduate_user_message() here - it causes duplication!
-                // The user message will be graduated naturally by graduate_overflow_lines()
+                // User message will be graduated naturally by graduate_overflow_lines()
                 // when the response content overflows the viewport.
 
                 debug!(prompt = %msg, "User message sent");
@@ -2365,30 +2346,6 @@ impl RatatuiRunner {
     // INLINE MODE HELPERS
     // ========================================================================
 
-    /// Queue a user message for graduation to terminal scrollback (inline mode only).
-    ///
-    /// The actual graduation happens in flush_pending_graduations() via terminal.insert_before().
-    /// In fullscreen mode, this is a no-op.
-    fn graduate_user_message(&mut self, content: &str) {
-        if !self.inline_mode {
-            return;
-        }
-        self.pending_graduations
-            .push(PendingGraduation::User(content.to_string()));
-    }
-
-    /// Queue an assistant message for graduation to terminal scrollback (inline mode only).
-    ///
-    /// The actual graduation happens in flush_pending_graduations() via terminal.insert_before().
-    /// In fullscreen mode, this is a no-op.
-    fn graduate_assistant_message(&mut self, blocks: &[StreamBlock]) {
-        if !self.inline_mode {
-            return;
-        }
-        self.pending_graduations
-            .push(PendingGraduation::Assistant(blocks.to_vec()));
-    }
-
     /// Graduate lines that have overflowed the viewport.
     ///
     /// Uses the shared graduation logic from `crate::tui::graduation` to ensure
@@ -2402,43 +2359,18 @@ impl RatatuiRunner {
         // Use actual viewport height (accounts for input box, status bar, popups, etc.)
         let viewport_capacity = self.view.conversation_viewport_height();
 
-        let (terminal_width, terminal_height) = size().unwrap_or((80, 24));
+        // Use cached terminal width instead of querying terminal
         use crate::tui::constants::UiConstants;
+        let terminal_width = self.view.state().width;
         let content_width = UiConstants::content_width(terminal_width);
 
-        // Get actual total line count for logging (check_graduation returns empty vec when no graduation)
-        let actual_total_lines = self
-            .view
-            .state()
-            .conversation
-            .calculate_total_line_count(content_width);
-        let visible_lines = actual_total_lines.saturating_sub(self.graduated_line_count);
-
-        debug!(
-            actual_total_lines,
-            visible_lines,
-            graduated = self.graduated_line_count,
-            viewport_capacity,
-            terminal_width,
-            terminal_height,
-            content_width,
-            view_height = self.view.state().height,
-            "graduate_overflow_lines: checking"
-        );
-
-        // Use shared graduation logic
+        // Use shared graduation logic - renders once and returns result
         use crate::tui::graduation::check_graduation;
         let (all_lines, result) = check_graduation(
             &self.view.state().conversation,
             self.graduated_line_count,
             viewport_capacity,
             content_width,
-        );
-
-        debug!(
-            rendered_lines = all_lines.len(),
-            has_graduation = result.is_some(),
-            "graduate_overflow_lines: result"
         );
 
         if let Some(grad) = result {
@@ -2505,7 +2437,6 @@ impl RatatuiRunner {
         self.last_graduation_flush = Instant::now();
 
         let graduations = std::mem::take(&mut self.pending_graduations);
-        let width = terminal.size()?.width;
 
         debug!(
             num_pending = graduations.len(),
@@ -2514,25 +2445,9 @@ impl RatatuiRunner {
 
         // Collect all lines to graduate
         let mut all_lines: Vec<Line<'static>> = Vec::new();
-
         for grad in graduations {
-            match grad {
-                PendingGraduation::User(_content) => {
-                    // User messages are now handled via Lines, this path is legacy
-                }
-                PendingGraduation::Assistant(_blocks) => {
-                    // Assistant messages are now handled via Lines, this path is legacy
-                }
-                PendingGraduation::Lines(lines) => {
-                    all_lines.extend(lines);
-                }
-                PendingGraduation::Item(item) => {
-                    use crate::tui::constants::UiConstants;
-                    let content_width = UiConstants::content_width(width);
-                    let lines = render_item_to_lines(&item, content_width);
-                    all_lines.extend(lines);
-                }
-            }
+            let PendingGraduation::Lines(lines) = grad;
+            all_lines.extend(lines);
         }
 
         if all_lines.is_empty() {
@@ -2567,6 +2482,7 @@ impl RatatuiRunner {
 
         // Insert graduated content above the viewport using ratatui's insert_before
         let height = all_lines.len() as u16;
+        let width = terminal.size()?.width;
         terminal
             .insert_before(height, |buf| {
                 for (i, line) in all_lines.iter().enumerate() {
