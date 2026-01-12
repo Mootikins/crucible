@@ -257,12 +257,6 @@ pub struct ConversationState {
     max_tool_output_lines: usize,
     /// Per-item render cache (RefCell for interior mutability during render)
     cache: RefCell<RenderCache>,
-    /// Count of complete lines (those ending with \n) for graduation.
-    ///
-    /// Only complete lines can be graduated to scrollback - partial lines
-    /// (those still being streamed without a terminating newline) must stay
-    /// in the viewport because they may still change.
-    committed_lines: usize,
 }
 
 impl Default for ConversationState {
@@ -277,7 +271,6 @@ impl ConversationState {
             items: VecDeque::new(),
             max_tool_output_lines: 3,
             cache: RefCell::new(RenderCache::new()),
-            committed_lines: 0,
         }
     }
 
@@ -441,13 +434,9 @@ impl ConversationState {
     }
 
     pub fn push_user_message(&mut self, content: impl Into<String>) {
-        let content = content.into();
-        // Count lines for graduation (user messages are always complete)
-        // Each line is complete, plus there's always at least 1 line
-        let line_count = content.lines().count().max(1);
-        self.committed_lines += line_count;
-
-        self.items.push_back(ConversationItem::UserMessage { content });
+        self.items.push_back(ConversationItem::UserMessage {
+            content: content.into(),
+        });
         self.cache.borrow_mut().on_item_added();
     }
 
@@ -471,12 +460,7 @@ impl ConversationState {
         }
 
         // For non-streaming messages, create a single prose block
-        let content = content.into();
-        // Count lines for graduation (complete messages have all lines committed)
-        let line_count = content.lines().count().max(1);
-        self.committed_lines += line_count;
-
-        let blocks = vec![StreamBlock::prose(content)];
+        let blocks = vec![StreamBlock::prose(content.into())];
         self.items.push_back(ConversationItem::AssistantMessage {
             blocks,
             is_streaming: false,
@@ -502,12 +486,6 @@ impl ConversationState {
 
     /// Append blocks to the most recent streaming assistant message
     pub fn append_streaming_blocks(&mut self, new_blocks: Vec<StreamBlock>) {
-        // Count newlines in all new blocks for graduation tracking
-        for block in &new_blocks {
-            let newline_count = block.text().chars().filter(|c| *c == '\n').count();
-            self.committed_lines += newline_count;
-        }
-
         if let Some(idx) = self.streaming_item_index() {
             if let ConversationItem::AssistantMessage { blocks, .. } = &mut self.items[idx] {
                 blocks.extend(new_blocks);
@@ -519,26 +497,7 @@ impl ConversationState {
     /// Mark the most recent streaming assistant message as complete
     pub fn complete_streaming(&mut self) {
         if let Some(idx) = self.streaming_item_index() {
-            if let ConversationItem::AssistantMessage {
-                blocks,
-                is_streaming,
-            } = &mut self.items[idx]
-            {
-                // When streaming completes, commit any final partial line.
-                // Check if the last block's text ends without a newline.
-                let has_trailing_partial = blocks
-                    .last()
-                    .map(|b| {
-                        let text = b.text();
-                        !text.is_empty() && !text.ends_with('\n')
-                    })
-                    .unwrap_or(false);
-
-                if has_trailing_partial {
-                    // The final line didn't have a newline - count it as committed now
-                    self.committed_lines += 1;
-                }
-
+            if let ConversationItem::AssistantMessage { is_streaming, .. } = &mut self.items[idx] {
                 *is_streaming = false;
                 self.cache.borrow_mut().invalidate_item(idx);
             }
@@ -547,10 +506,6 @@ impl ConversationState {
 
     /// Append content to the last block of the streaming assistant message
     pub fn append_to_last_block(&mut self, content: &str) {
-        // Count newlines for graduation tracking
-        let newline_count = content.chars().filter(|c| *c == '\n').count();
-        self.committed_lines += newline_count;
-
         if let Some(idx) = self.streaming_item_index() {
             if let ConversationItem::AssistantMessage { blocks, .. } = &mut self.items[idx] {
                 if let Some(last_block) = blocks.last_mut() {
@@ -579,23 +534,7 @@ impl ConversationState {
     /// If no streaming assistant message exists, starts a new one. This handles
     /// the case where a tool call interrupted streaming - subsequent prose should
     /// go into a new message to maintain chronological order.
-    ///
-    /// Only complete lines (those ending with \n) increment committed_lines.
-    /// Partial lines stay uncommitted until a newline arrives.
     pub fn append_or_create_prose(&mut self, text: &str) {
-        self.append_or_create_prose_internal(text, true);
-    }
-
-    /// Internal implementation that optionally counts newlines.
-    /// The public method always counts; recursion does not re-count.
-    fn append_or_create_prose_internal(&mut self, text: &str, count_newlines: bool) {
-        if count_newlines {
-            // Count newlines in the appended text for graduation tracking
-            // ONLY newlines count - partial lines are not committed yet
-            let newline_count = text.chars().filter(|c| *c == '\n').count();
-            self.committed_lines += newline_count;
-        }
-
         if let Some(idx) = self.streaming_item_index() {
             if let ConversationItem::AssistantMessage { blocks, .. } = &mut self.items[idx] {
                 // Check if last block is an incomplete prose block
@@ -615,8 +554,7 @@ impl ConversationState {
 
         // No streaming message found - create a new one (e.g., after tool call)
         self.start_assistant_streaming();
-        // Don't re-count newlines in the recursive call
-        self.append_or_create_prose_internal(text, false);
+        self.append_or_create_prose(text);
     }
 
     pub fn set_status(&mut self, status: StatusKind) {
@@ -817,14 +755,6 @@ impl ConversationState {
         &self.items
     }
 
-    /// Get the count of committed (complete) lines for graduation.
-    ///
-    /// Only complete lines can be graduated to scrollback. This count
-    /// excludes any partial line currently being streamed.
-    pub fn committed_line_count(&self) -> usize {
-        self.committed_lines
-    }
-
     /// Get the last assistant message as markdown.
     ///
     /// Reconstructs the original markdown from StreamBlocks.
@@ -865,7 +795,6 @@ impl ConversationState {
     pub fn clear(&mut self) {
         self.items.clear();
         self.cache.borrow_mut().on_clear();
-        self.committed_lines = 0;
     }
 
     /// Serialize the conversation to markdown format.
@@ -1033,7 +962,10 @@ fn render_assistant_blocks(blocks: &[StreamBlock], width: usize) -> Vec<Line<'st
                 // Add blank line before code block for visual separation
                 // (but only if we already have content)
                 if !first_content_line {
-                    lines.push(add_assistant_prefix(Line::from(""), &mut first_content_line));
+                    lines.push(add_assistant_prefix(
+                        Line::from(""),
+                        &mut first_content_line,
+                    ));
                 }
 
                 // Render code block - no wrapping for code
@@ -1049,7 +981,10 @@ fn render_assistant_blocks(blocks: &[StreamBlock], width: usize) -> Vec<Line<'st
                 }
 
                 // Add blank line after code block for visual separation
-                lines.push(add_assistant_prefix(Line::from(""), &mut first_content_line));
+                lines.push(add_assistant_prefix(
+                    Line::from(""),
+                    &mut first_content_line,
+                ));
             }
             StreamBlock::Tool { name, args, status } => {
                 use crate::tui::content_block::ToolBlockStatus;
@@ -2172,6 +2107,295 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    /// Test that ordered lists wrap correctly at narrow widths through the full pipeline.
+    /// This tests render_item_to_lines which adds the assistant prefix after markdown wrapping.
+    #[test]
+    fn test_ordered_list_wrapping_full_pipeline() {
+        // This content was reported as being truncated by the user
+        let content = r#"### What the snippet does
+
+1. **Opens** the CSV file (`sample_table.csv`) using the built-in `open()` function with `mode='r'`
+2. **Creates** a `DictReader`, which automatically uses the first row as column headers
+3. **Iterates** over each row, converting the `Age` column to an integer"#;
+
+        // Test at narrow width (60 chars) to trigger wrapping
+        let width = 60;
+        let lines = render_item_to_lines(
+            &ConversationItem::AssistantMessage {
+                blocks: vec![StreamBlock::prose(content)],
+                is_streaming: false,
+            },
+            width,
+        );
+
+        // Collect all text
+        let all_text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+
+        // All content should be present (not truncated)
+        assert!(
+            all_text.contains("built-in"),
+            "Content truncated, missing 'built-in' in:\n{}",
+            all_text
+        );
+        assert!(
+            all_text.contains("DictReader"),
+            "Content truncated, missing 'DictReader' in:\n{}",
+            all_text
+        );
+        assert!(
+            all_text.contains("integer"),
+            "Content truncated, missing 'integer' in:\n{}",
+            all_text
+        );
+
+        // Verify each line is not too long (width + buffer for prefix)
+        // The markdown wraps to `width`, then assistant prefix adds 3 chars
+        let max_expected_len = width + 3; // content_width + assistant prefix
+        for (i, line) in lines.iter().enumerate() {
+            let line_len: usize = line.spans.iter().map(|s| s.content.chars().count()).sum();
+            // Use a small tolerance for edge cases
+            assert!(
+                line_len <= max_expected_len + 2,
+                "Line {} is too long ({} chars, max {}): '{}'",
+                i,
+                line_len,
+                max_expected_len,
+                line.spans.iter().map(|s| s.content.as_ref()).collect::<String>()
+            );
+        }
+
+        // Print lines for debugging
+        eprintln!("Rendered {} lines at width {}:", lines.len(), width);
+        for (i, line) in lines.iter().enumerate() {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            eprintln!("  {:2}: [{}] '{}'", i, text.chars().count(), text);
+        }
+    }
+
+    /// Test with realistic terminal width using UiConstants::content_width
+    /// This simulates the exact production path.
+    #[test]
+    fn test_ordered_list_wrapping_realistic_terminal() {
+        use crate::tui::constants::UiConstants;
+
+        let content = r#"1. **Opens** the CSV file (`sample_table.csv`) using the built-in `open()` function"#;
+
+        // Simulate various terminal widths
+        for terminal_width in [40u16, 60, 80, 100] {
+            let content_width = UiConstants::content_width(terminal_width);
+            let lines = render_item_to_lines(
+                &ConversationItem::AssistantMessage {
+                    blocks: vec![StreamBlock::prose(content)],
+                    is_streaming: false,
+                },
+                content_width,
+            );
+
+            let all_text: String = lines
+                .iter()
+                .flat_map(|l| l.spans.iter())
+                .map(|s| s.content.as_ref())
+                .collect();
+
+            // Content should never be truncated
+            assert!(
+                all_text.contains("built-in"),
+                "Content truncated at terminal_width={}, content_width={}:\n{}",
+                terminal_width,
+                content_width,
+                all_text
+            );
+
+            // All lines should fit within terminal width
+            for (i, line) in lines.iter().enumerate() {
+                let line_len: usize = line.spans.iter().map(|s| s.content.chars().count()).sum();
+                assert!(
+                    line_len <= terminal_width as usize,
+                    "Terminal {}px: Line {} is {} chars (max {}): '{}'",
+                    terminal_width,
+                    i,
+                    line_len,
+                    terminal_width,
+                    line.spans.iter().map(|s| s.content.as_ref()).collect::<String>()
+                );
+            }
+
+            eprintln!("Terminal {}px (content_width={}):", terminal_width, content_width);
+            for (i, line) in lines.iter().enumerate() {
+                let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+                eprintln!("  {:2}: [{}] '{}'", i, text.chars().count(), text);
+            }
+        }
+    }
+
+    /// Test prose after code block - simulates streaming sequence
+    #[test]
+    fn test_prose_after_code_block_renders_markdown() {
+        use crate::tui::constants::UiConstants;
+
+        // Simulate streaming: code block followed by prose with inline code
+        let blocks = vec![
+            StreamBlock::code(Some("cpp".into()), "#include <iostream>"),
+            StreamBlock::prose("**What it does**\n\n1. Uses `iostream` for output.\n"),
+        ];
+
+        let terminal_width = 70u16;
+        let content_width = UiConstants::content_width(terminal_width);
+
+        let lines = render_item_to_lines(
+            &ConversationItem::AssistantMessage {
+                blocks,
+                is_streaming: false,
+            },
+            content_width,
+        );
+
+        eprintln!("=== Prose after code block ===");
+        for (i, line) in lines.iter().enumerate() {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            eprintln!("  {:2}: '{}'", i, text);
+        }
+
+        // Check that inline code backticks are NOT in the output
+        let all_text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+
+        // Backticks should be stripped (rendered as styled text)
+        assert!(
+            !all_text.contains('`'),
+            "Backticks should be stripped from prose, got: {}",
+            all_text
+        );
+
+        // Bold markers should be stripped
+        assert!(
+            !all_text.contains("**"),
+            "Bold markers should be stripped, got: {}",
+            all_text
+        );
+
+        // Content should still be present
+        assert!(all_text.contains("iostream"), "Content missing");
+        assert!(all_text.contains("What it does"), "Heading missing");
+    }
+
+    /// Test the exact content from user's session that showed truncation
+    #[test]
+    fn test_user_reported_truncation_case() {
+        use crate::tui::constants::UiConstants;
+
+        // Exact content from user's session.jsonl
+        let content = r#"**What it does**
+
+1. Includes the standard `iostream` and `string` headers.
+2. Defines a `Person` class with a constructor, a private data member, and a `describe` method.
+3. In `main`, creates two `Person` instances and prints their descriptions using `std::cout`.
+
+Feel free to adapt the class or add more functionality as needed!"#;
+
+        // User's terminal is ~70 chars - test range
+        let terminal_width = 65u16; // Try narrower
+        let content_width = UiConstants::content_width(terminal_width);
+
+        let lines = render_item_to_lines(
+            &ConversationItem::AssistantMessage {
+                blocks: vec![StreamBlock::prose(content)],
+                is_streaming: false,
+            },
+            content_width,
+        );
+
+        eprintln!("Terminal {}px, content_width {}:", terminal_width, content_width);
+        for (i, line) in lines.iter().enumerate() {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            let len = text.chars().count();
+            let overflow = if len > terminal_width as usize { " OVERFLOW!" } else { "" };
+            eprintln!("  {:2}: [{}]{} '{}'", i, len, overflow, text);
+        }
+
+        // Check all items are present
+        let all_text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+
+        assert!(all_text.contains("iostream"), "Item 1 missing");
+        assert!(all_text.contains("describe"), "Item 2 truncated");
+        assert!(all_text.contains("std::cout"), "Item 3 truncated");
+
+        // Check no line overflows
+        for (i, line) in lines.iter().enumerate() {
+            let len: usize = line.spans.iter().map(|s| s.content.chars().count()).sum();
+            assert!(
+                len <= terminal_width as usize,
+                "Line {} overflows: {} > {}",
+                i, len, terminal_width
+            );
+        }
+    }
+
+    /// Test PARTIAL streaming content - simulates what happens mid-stream
+    /// when content hasn't been fully received yet.
+    #[test]
+    fn test_partial_streaming_content_wrapping() {
+        use crate::tui::constants::UiConstants;
+
+        // Simulate partial content as if streaming hasn't finished yet
+        // This is what the markdown parser would see mid-stream
+        let partial_contents = [
+            // Partial list item (cut mid-word)
+            "1. **Opens** the CSV file (`sample_table.csv`) using the built-",
+            // Partial list item (cut at word boundary)
+            "1. **Opens** the CSV file (`sample_table.csv`) using the ",
+            // Multiple partial items
+            "1. **Opens** the file\n2. **Creates** a reader which automatically uses the first",
+        ];
+
+        let terminal_width = 60u16;
+        let content_width = UiConstants::content_width(terminal_width);
+
+        for (idx, content) in partial_contents.iter().enumerate() {
+            eprintln!("\n=== Partial content {} ===", idx);
+            eprintln!("Content: '{}'", content);
+
+            let lines = render_item_to_lines(
+                &ConversationItem::AssistantMessage {
+                    blocks: vec![StreamBlock::prose_partial(*content)],
+                    is_streaming: true,
+                },
+                content_width,
+            );
+
+            // Check if lines fit within terminal
+            let mut overflow_detected = false;
+            for (i, line) in lines.iter().enumerate() {
+                let line_len: usize = line.spans.iter().map(|s| s.content.chars().count()).sum();
+                let line_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+
+                eprintln!("  {:2}: [{}] '{}'", i, line_len, line_text);
+
+                if line_len > terminal_width as usize {
+                    eprintln!("    ^^^ OVERFLOW: {} > {} ^^^", line_len, terminal_width);
+                    overflow_detected = true;
+                }
+            }
+
+            assert!(
+                !overflow_detected,
+                "Partial content {} has lines that overflow terminal width {}",
+                idx, terminal_width
+            );
         }
     }
 }

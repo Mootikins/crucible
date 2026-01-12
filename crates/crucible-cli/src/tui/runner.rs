@@ -275,9 +275,11 @@ type RatatuiTerminal = Terminal<CrosstermBackend<io::Stdout>>;
 
 /// Pending content to graduate to terminal scrollback via insert_before()
 #[derive(Debug, Clone)]
-enum PendingGraduation {
-    /// Pre-rendered styled lines to graduate (for progressive line-based graduation)
-    Lines(Vec<ratatui::text::Line<'static>>),
+struct PendingGraduation {
+    /// Pre-rendered styled lines to graduate
+    lines: Vec<ratatui::text::Line<'static>>,
+    /// The new graduated_line_count after this graduation is flushed
+    new_graduated_count: usize,
 }
 use regex::Regex;
 use std::io;
@@ -641,14 +643,16 @@ impl RatatuiRunner {
 
                 // Begin synchronized update to batch insert_before + draw together
                 // This tells the terminal to buffer updates and display them atomically
-                use crossterm::terminal::{BeginSynchronizedUpdate, EndSynchronizedUpdate};
                 use crossterm::execute;
+                use crossterm::terminal::{BeginSynchronizedUpdate, EndSynchronizedUpdate};
                 let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
 
                 // Flush pending graduations to scrollback (right before render)
                 // This uses terminal.insert_before() to properly insert content above the viewport.
-                // During streaming, flushes are throttled to prevent terminal artifacts.
-                if let Err(e) = self.flush_pending_graduations(terminal, false) {
+                // Force flush since we're inside a synchronized update block - all changes will
+                // be displayed atomically, so throttling is unnecessary and would cause lines
+                // to disappear (scrolled out of viewport but not yet in scrollback).
+                if let Err(e) = self.flush_pending_graduations(terminal, true) {
                     tracing::warn!("Failed to flush graduations: {}", e);
                 }
 
@@ -800,7 +804,10 @@ impl RatatuiRunner {
                         if let Some(parser) = self.streaming_manager.parser_mut() {
                             let final_events = parser.finalize();
                             if !final_events.is_empty() {
-                                debug!(num_final_events = final_events.len(), "Applying final parser events");
+                                debug!(
+                                    num_final_events = final_events.len(),
+                                    "Applying final parser events"
+                                );
                                 self.apply_parse_events(final_events);
                             }
                         }
@@ -1020,7 +1027,10 @@ impl RatatuiRunner {
                             if let Some(parser) = self.streaming_manager.parser_mut() {
                                 let final_events = parser.finalize();
                                 if !final_events.is_empty() {
-                                    debug!(num_final_events = final_events.len(), "Applying final parser events (drain)");
+                                    debug!(
+                                        num_final_events = final_events.len(),
+                                        "Applying final parser events (drain)"
+                                    );
                                     self.apply_parse_events(final_events);
                                 }
                             }
@@ -1035,9 +1045,13 @@ impl RatatuiRunner {
                                 self.graduate_overflow_lines();
                                 // Force flush to ensure all content is displayed
                                 if let Err(e) = self.flush_pending_graduations(terminal, true) {
-                                    tracing::warn!("Failed to force flush on drain completion: {}", e);
+                                    tracing::warn!(
+                                        "Failed to force flush on drain completion: {}",
+                                        e
+                                    );
                                 }
-                                self.view.state_mut().graduated_line_count = self.graduated_line_count;
+                                self.view.state_mut().graduated_line_count =
+                                    self.graduated_line_count;
                             }
 
                             if let Some(logger) = &self.session_logger {
@@ -2365,28 +2379,88 @@ impl RatatuiRunner {
         let content_width = UiConstants::content_width(terminal_width);
 
         // Use shared graduation logic - renders once and returns result
+        // Pass streaming flag to reserve buffer for volatile content
         use crate::tui::graduation::check_graduation;
+        let is_streaming = self.streaming_manager.is_streaming();
+
+        // Account for pending graduations that haven't been flushed yet.
+        // This prevents re-graduating the same lines when flush is throttled.
+        let effective_graduated = self
+            .pending_graduations
+            .iter()
+            .map(|p| p.new_graduated_count)
+            .max()
+            .unwrap_or(self.graduated_line_count);
+
         let (all_lines, result) = check_graduation(
             &self.view.state().conversation,
-            self.graduated_line_count,
+            effective_graduated,
             viewport_capacity,
             content_width,
+            is_streaming,
         );
 
         if let Some(grad) = result {
-            // CRITICAL CHECK: if range.start < current graduated count, we're re-graduating!
-            if grad.lines_to_graduate.start < self.graduated_line_count {
+            // ==================================================================
+            // GRADUATION INVARIANT ASSERTIONS
+            // These debug_assert! statements catch bugs during development.
+            // ==================================================================
+
+            // Invariant 1: Range should start at effective graduated count
+            debug_assert!(
+                grad.lines_to_graduate.start >= effective_graduated,
+                "BUG: graduation range start ({}) < effective graduated ({})",
+                grad.lines_to_graduate.start,
+                effective_graduated
+            );
+
+            // Invariant 2: Range end should equal new_graduated_count
+            debug_assert_eq!(
+                grad.lines_to_graduate.end,
+                grad.new_graduated_count,
+                "BUG: range end ({}) != new_graduated_count ({})",
+                grad.lines_to_graduate.end,
+                grad.new_graduated_count
+            );
+
+            // Invariant 3: New graduated count should never exceed total lines
+            debug_assert!(
+                grad.new_graduated_count <= all_lines.len(),
+                "BUG: new_graduated_count ({}) > total lines ({})",
+                grad.new_graduated_count,
+                all_lines.len()
+            );
+
+            // Invariant 4: Monotonicity - new count >= current flushed count
+            debug_assert!(
+                grad.new_graduated_count >= self.graduated_line_count,
+                "BUG: new_graduated_count ({}) < flushed graduated_line_count ({})",
+                grad.new_graduated_count,
+                self.graduated_line_count
+            );
+
+            // Invariant 5: Range should be non-empty
+            debug_assert!(
+                !grad.lines_to_graduate.is_empty(),
+                "BUG: graduation triggered with empty range"
+            );
+
+            // CRITICAL CHECK: if range.start < effective graduated count, we're re-graduating!
+            // (Logged as error even in release builds)
+            if grad.lines_to_graduate.start < effective_graduated {
                 error!(
                     range = ?grad.lines_to_graduate,
-                    current_graduated = self.graduated_line_count,
-                    "BUG: graduation range starts before current graduated count!"
+                    effective_graduated,
+                    flushed_graduated = self.graduated_line_count,
+                    "BUG: graduation range starts before effective graduated count!"
                 );
             }
 
             info!(
                 range = ?grad.lines_to_graduate,
                 num_lines = grad.lines_to_graduate.len(),
-                prev_graduated = self.graduated_line_count,
+                flushed_graduated = self.graduated_line_count,
+                effective_graduated,
                 new_graduated = grad.new_graduated_count,
                 "graduation: graduating lines"
             );
@@ -2405,16 +2479,28 @@ impl RatatuiRunner {
                 );
             }
 
-            self.pending_graduations
-                .push(PendingGraduation::Lines(lines_to_graduate));
-            self.graduated_line_count = grad.new_graduated_count;
+            // Queue the graduation but DON'T update graduated_line_count yet!
+            // The count is updated in flush_pending_graduations() after lines
+            // are actually inserted into scrollback. This prevents the viewport
+            // from skipping lines that haven't been flushed (due to throttling).
+            self.pending_graduations.push(PendingGraduation {
+                lines: lines_to_graduate,
+                new_graduated_count: grad.new_graduated_count,
+            });
         }
     }
 
     /// Flush all pending graduations to terminal scrollback via insert_before.
     ///
     /// Uses ratatui's insert_before() to push content above the inline viewport.
-    /// During streaming, flushes are throttled to prevent too-rapid calls.
+    ///
+    /// The `force` parameter controls throttling during streaming:
+    /// - `force=true`: Always flush immediately (used in render loop with synchronized updates)
+    /// - `force=false`: Throttle to prevent rapid insert_before calls (currently unused)
+    ///
+    /// Note: All callers currently use `force=true` since the render loop wraps flushes
+    /// in synchronized updates, making throttling unnecessary and potentially harmful
+    /// (causing lines to be scrolled out of viewport before being flushed to scrollback).
     fn flush_pending_graduations(
         &mut self,
         terminal: &mut RatatuiTerminal,
@@ -2426,7 +2512,8 @@ impl RatatuiRunner {
             return Ok(());
         }
 
-        // Throttle during streaming to prevent rapid insert_before calls
+        // Throttle during streaming to prevent rapid insert_before calls (when not forced)
+        // Note: Currently all callers use force=true, so this branch is rarely hit.
         let elapsed = self.last_graduation_flush.elapsed();
         let throttle_duration = Duration::from_millis(GRADUATION_THROTTLE_MS);
 
@@ -2443,16 +2530,41 @@ impl RatatuiRunner {
             "flush_pending_graduations: starting"
         );
 
-        // Collect all lines to graduate
+        // Collect all lines to graduate and track the final graduated count
         let mut all_lines: Vec<Line<'static>> = Vec::new();
+        let mut final_graduated_count = self.graduated_line_count;
         for grad in graduations {
-            let PendingGraduation::Lines(lines) = grad;
-            all_lines.extend(lines);
+            all_lines.extend(grad.lines);
+            // Take the highest count (later graduations include earlier ones)
+            final_graduated_count = final_graduated_count.max(grad.new_graduated_count);
         }
 
         if all_lines.is_empty() {
             return Ok(());
         }
+
+        // ==================================================================
+        // FLUSH INVARIANT ASSERTIONS
+        // These debug_assert! statements catch bugs during development.
+        // ==================================================================
+
+        // Invariant 1: Final graduated count must be >= current count (monotonicity)
+        debug_assert!(
+            final_graduated_count >= self.graduated_line_count,
+            "BUG: final_graduated_count ({}) < current graduated_line_count ({})",
+            final_graduated_count,
+            self.graduated_line_count
+        );
+
+        // Invariant 2: Lines being flushed should match the graduation delta
+        // (unless batched across multiple graduations)
+        let expected_delta = final_graduated_count - self.graduated_line_count;
+        debug_assert!(
+            all_lines.len() <= expected_delta || expected_delta == 0,
+            "BUG: flushing {} lines but delta is only {}",
+            all_lines.len(),
+            expected_delta
+        );
 
         let num_lines = all_lines.len();
         info!(
@@ -2490,6 +2602,10 @@ impl RatatuiRunner {
                 }
             })
             .map_err(io::Error::other)?;
+
+        // NOW update the graduated line count - after lines are actually in scrollback.
+        // This ensures the viewport only skips lines that have been flushed.
+        self.graduated_line_count = final_graduated_count;
 
         Ok(())
     }

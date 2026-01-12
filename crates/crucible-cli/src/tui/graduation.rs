@@ -85,52 +85,32 @@ pub fn render_all_lines(items: &[ConversationItem], width: usize) -> Vec<Line<'s
 /// Combines rendering and calculation into one call.
 /// This is the main entry point for both runner and harness.
 ///
-/// IMPORTANT: Uses newline-gated graduation to prevent partial content
-/// from being graduated to scrollback. Only complete lines (those ending
-/// with newlines) can be graduated. This prevents flickering when streaming
-/// content changes after graduation.
-///
-/// The algorithm:
-/// 1. Render all content for viewport display
-/// 2. Use committed_line_count() to determine how many RENDERED lines are safe
-/// 3. Only graduate up to the committed line count (never partial content)
+/// When `is_streaming` is true, reserves a buffer of lines at the bottom
+/// to prevent volatile streaming content from being graduated. This prevents
+/// the "disappearing lines" artifact during rapid content updates.
 pub fn check_graduation(
     conversation: &ConversationState,
     graduated_count: usize,
     viewport_capacity: usize,
     content_width: usize,
+    is_streaming: bool,
 ) -> (Vec<Line<'static>>, Option<GraduationResult>) {
     // Render all content for viewport display
     let all_lines = conversation.render_for_graduation(content_width);
     let total_rendered = all_lines.len();
 
-    // Get the committed line count - this is based on source newlines.
-    // For safety, we use the minimum of committed and rendered lines.
-    // This ensures we never graduate more than what's actually rendered,
-    // and never graduate partial (uncommitted) content.
-    let committed = conversation.committed_line_count();
-
-    // Check if streaming is active - if so, be conservative
-    let is_streaming = conversation.is_streaming();
-
-    // Calculate graduatable lines:
-    // - If streaming, use committed count (excludes partial lines)
-    // - If not streaming, all lines are graduatable
-    let graduatable = if is_streaming {
-        // During streaming, only graduate committed lines
-        // This prevents partial content from being graduated
-        committed.min(total_rendered)
+    // During streaming, reserve some lines to handle content volatility.
+    // The last few lines may change as partial content is parsed/rendered.
+    // Reserve ~20% of viewport or minimum 3 lines as a buffer.
+    let graduatable_lines = if is_streaming {
+        let buffer = (viewport_capacity / 5).max(3);
+        total_rendered.saturating_sub(buffer)
     } else {
-        // When not streaming, all rendered content is stable
         total_rendered
     };
 
-    // Check if graduation is needed based on graduatable lines
-    let result = calculate_graduation(graduatable, graduated_count, viewport_capacity);
-
-    if result.is_none() {
-        return (all_lines, None);
-    }
+    // Check if graduation is needed
+    let result = calculate_graduation(graduatable_lines, graduated_count, viewport_capacity);
 
     (all_lines, result)
 }
@@ -138,6 +118,178 @@ pub fn check_graduation(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // =========================================================================
+    // Property-based tests for graduation invariants
+    // =========================================================================
+
+    mod proptest_graduation {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Property: Graduated count should never exceed total lines
+            #[test]
+            fn graduation_never_exceeds_total(
+                total_lines in 1..1000usize,
+                graduated in 0..500usize,
+                viewport in 5..50usize
+            ) {
+                if let Some(result) = calculate_graduation(total_lines, graduated, viewport) {
+                    prop_assert!(
+                        result.new_graduated_count <= total_lines,
+                        "new_graduated_count ({}) exceeded total_lines ({})",
+                        result.new_graduated_count, total_lines
+                    );
+                }
+            }
+
+            /// Property: Graduation range should never start before current graduated count
+            #[test]
+            fn graduation_range_starts_at_graduated(
+                total_lines in 1..1000usize,
+                graduated in 0..500usize,
+                viewport in 5..50usize
+            ) {
+                if let Some(result) = calculate_graduation(total_lines, graduated, viewport) {
+                    prop_assert!(
+                        result.lines_to_graduate.start >= graduated,
+                        "Range start ({}) < graduated count ({})",
+                        result.lines_to_graduate.start, graduated
+                    );
+                }
+            }
+
+            /// Property: After graduation, visible lines should fit in viewport
+            #[test]
+            fn graduation_makes_visible_fit(
+                total_lines in 1..1000usize,
+                graduated in 0..500usize,
+                viewport in 5..50usize
+            ) {
+                if let Some(result) = calculate_graduation(total_lines, graduated, viewport) {
+                    let new_visible = total_lines.saturating_sub(result.new_graduated_count);
+                    prop_assert!(
+                        new_visible <= viewport,
+                        "After graduation, visible ({}) > viewport ({})",
+                        new_visible, viewport
+                    );
+                }
+            }
+
+            /// Property: Graduation should be monotonic (count never decreases)
+            #[test]
+            fn graduation_is_monotonic(
+                total_lines in 100..1000usize,
+                viewport in 10..50usize
+            ) {
+                let mut graduated = 0;
+                let mut iterations = 0;
+                const MAX_ITERATIONS: usize = 100;
+
+                while iterations < MAX_ITERATIONS {
+                    if let Some(result) = calculate_graduation(total_lines, graduated, viewport) {
+                        prop_assert!(
+                            result.new_graduated_count >= graduated,
+                            "Monotonicity violated: new ({}) < old ({})",
+                            result.new_graduated_count, graduated
+                        );
+                        graduated = result.new_graduated_count;
+                    } else {
+                        break;
+                    }
+                    iterations += 1;
+                }
+            }
+
+            /// Property: Graduation should be idempotent (same inputs = same outputs)
+            #[test]
+            fn graduation_is_idempotent(
+                total_lines in 1..1000usize,
+                graduated in 0..500usize,
+                viewport in 5..50usize
+            ) {
+                let result1 = calculate_graduation(total_lines, graduated, viewport);
+                let result2 = calculate_graduation(total_lines, graduated, viewport);
+                prop_assert_eq!(result1, result2, "Idempotency violated");
+            }
+
+            /// Property: Range end should equal new_graduated_count
+            #[test]
+            fn graduation_range_end_equals_count(
+                total_lines in 1..1000usize,
+                graduated in 0..500usize,
+                viewport in 5..50usize
+            ) {
+                if let Some(result) = calculate_graduation(total_lines, graduated, viewport) {
+                    prop_assert_eq!(
+                        result.lines_to_graduate.end,
+                        result.new_graduated_count,
+                        "Range end ({}) != new_graduated_count ({})",
+                        result.lines_to_graduate.end, result.new_graduated_count
+                    );
+                }
+            }
+
+            /// Property: No graduation needed when visible lines fit
+            #[test]
+            fn no_graduation_when_fits(
+                total_lines in 0..100usize,
+                viewport in 100..200usize
+            ) {
+                // When viewport >= total, no graduation should happen
+                let result = calculate_graduation(total_lines, 0, viewport);
+                prop_assert!(
+                    result.is_none(),
+                    "Graduation should be None when total ({}) <= viewport ({})",
+                    total_lines, viewport
+                );
+            }
+
+            /// Property: Streaming buffer should never graduate more than non-streaming
+            #[test]
+            fn streaming_buffer_reduces_graduation(
+                total_lines in 50..500usize,
+                viewport in 10..30usize
+            ) {
+                // Simulate streaming vs non-streaming graduation
+                let non_streaming_result = calculate_graduation(total_lines, 0, viewport);
+
+                // Streaming reserves ~20% buffer
+                let buffer = (viewport / 5).max(3);
+                let graduatable = total_lines.saturating_sub(buffer);
+                let streaming_result = calculate_graduation(graduatable, 0, viewport);
+
+                // Streaming should graduate same or fewer lines
+                match (non_streaming_result, streaming_result) {
+                    (Some(ns), Some(s)) => {
+                        prop_assert!(
+                            s.new_graduated_count <= ns.new_graduated_count,
+                            "Streaming graduated more ({}) than non-streaming ({})",
+                            s.new_graduated_count, ns.new_graduated_count
+                        );
+                    }
+                    (Some(_), None) => {
+                        // OK: streaming decided not to graduate
+                    }
+                    (None, Some(s)) => {
+                        prop_assert!(
+                            false,
+                            "Streaming graduated ({}) when non-streaming didn't",
+                            s.new_graduated_count
+                        );
+                    }
+                    (None, None) => {
+                        // OK: neither graduated
+                    }
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Unit tests
+    // =========================================================================
 
     #[test]
     fn test_no_graduation_when_fits() {
@@ -198,102 +350,5 @@ mod tests {
         let result = calculate_graduation(100, 0, 10).unwrap();
         assert_eq!(result.lines_to_graduate, 0..90);
         assert_eq!(result.new_graduated_count, 90);
-    }
-
-    // =========================================================================
-    // Newline-Gated Graduation Tests
-    // =========================================================================
-
-    #[test]
-    fn test_check_graduation_respects_committed_lines_during_streaming() {
-        // Test that during streaming, only committed lines are considered
-        let mut conversation = ConversationState::new();
-
-        // Start streaming
-        conversation.start_assistant_streaming();
-
-        // Append text with newlines (3 complete lines)
-        conversation.append_or_create_prose("Line 1\nLine 2\nLine 3\n");
-
-        // Append partial line (no trailing newline)
-        conversation.append_or_create_prose("Partial line without newline");
-
-        // Should have 3 committed lines (from the 3 newlines)
-        assert_eq!(conversation.committed_line_count(), 3);
-        assert!(conversation.is_streaming());
-
-        // Check graduation - should only consider committed lines
-        let (all_lines, result) = check_graduation(&conversation, 0, 2, 80);
-
-        // Should have at least 1 line rendered (depends on how prose consolidates)
-        assert!(!all_lines.is_empty(), "Should render content");
-
-        // Key test: graduation should respect committed count, not total rendered
-        // With 3 committed lines and viewport of 2, we should graduate 1 line
-        if let Some(grad) = result {
-            // Can graduate up to 1 line (3 committed - 2 viewport = 1 overflow)
-            assert_eq!(grad.lines_to_graduate.len(), 1);
-        }
-    }
-
-    #[test]
-    fn test_check_graduation_all_lines_when_not_streaming() {
-        // Test that when not streaming, all lines are graduatable
-        let mut conversation = ConversationState::new();
-
-        // Add a complete user message (not streaming)
-        conversation.push_user_message("Hello world");
-
-        // Add a complete assistant message (not streaming)
-        conversation.push_assistant_message("Hi there!\nHow are you?");
-
-        // Not streaming
-        assert!(!conversation.is_streaming());
-
-        // Check graduation
-        let (all_lines, result) = check_graduation(&conversation, 0, 2, 80);
-
-        // Should consider ALL lines for graduation since not streaming
-        assert!(!all_lines.is_empty());
-        // Result depends on content vs viewport - just verify it runs
-        let _ = result;
-    }
-
-    #[test]
-    fn test_committed_lines_count_only_newlines() {
-        let mut conversation = ConversationState::new();
-        conversation.start_assistant_streaming();
-
-        // "Hello" has no newline - should not increment committed
-        conversation.append_or_create_prose("Hello");
-        assert_eq!(conversation.committed_line_count(), 0);
-
-        // " world" still no newline
-        conversation.append_or_create_prose(" world");
-        assert_eq!(conversation.committed_line_count(), 0);
-
-        // Now add newline - should increment
-        conversation.append_or_create_prose("\n");
-        assert_eq!(conversation.committed_line_count(), 1);
-
-        // Add another complete line
-        conversation.append_or_create_prose("Second line\n");
-        assert_eq!(conversation.committed_line_count(), 2);
-    }
-
-    #[test]
-    fn test_complete_streaming_commits_final_line() {
-        let mut conversation = ConversationState::new();
-        conversation.start_assistant_streaming();
-
-        // Add text without trailing newline
-        conversation.append_or_create_prose("Hello world");
-        assert_eq!(conversation.committed_line_count(), 0);
-        assert!(conversation.is_streaming());
-
-        // Complete streaming - should commit the final line
-        conversation.complete_streaming();
-        assert_eq!(conversation.committed_line_count(), 1);
-        assert!(!conversation.is_streaming());
     }
 }

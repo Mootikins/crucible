@@ -7,18 +7,20 @@ expression: h.render()
                                                   
  ● Here are the packages:                         
                                                   
-   ┌─────────┬───────────────┬─────────┬──────────
-   │ Package │ Description   │ Version │ License  
-   ├─────────┼───────────────┼─────────┼──────────
-   │ serde   │ Serialization │ 1.0.195 │ MIT/Apach
-   │         │ framework     │         │          
-   ├─────────┼───────────────┼─────────┼──────────
-   │ tokio   │ Async runtime │ 1.35.1  │ MIT      
-   │         │ for Rust      │         │          
-   ├─────────┼───────────────┼─────────┼──────────
-   │ clap    │ Command line  │ 4.4.12  │ MIT/Apach
-   │         │ parser        │         │          
-   └─────────┴───────────────┴─────────┴──────────
+   ┌───────┬──────────────┬───────┬──────────┐    
+   │ Packa │ Description  │ Versi │ License  │    
+   │ ge    │              │ on    │          │    
+   ├───────┼──────────────┼───────┼──────────┤    
+   │ serde │ Serializatio │ 1.0.1 │ MIT/Apac │    
+   │       │ n framework  │ 95    │ he-2.0   │    
+   ├───────┼──────────────┼───────┼──────────┤    
+   │ tokio │ Async        │ 1.35. │ MIT      │    
+   │       │ runtime for  │ 1     │          │    
+   │       │ Rust         │       │          │    
+   ├───────┼──────────────┼───────┼──────────┤    
+   │ clap  │ Command line │ 4.4.1 │ MIT/Apac │    
+   │       │ parser       │ 2     │ he-2.0   │    
+   └───────┴──────────────┴───────┴──────────┘    
                                                   
                                                   
  >                                                
