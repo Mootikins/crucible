@@ -224,22 +224,22 @@ impl MarkdownTheme {
     /// Detect if the terminal has a dark background.
     ///
     /// Checks in order:
-    /// 1. `COLORFGBG` env var (format: "fg;bg", bg > 6 = light)
-    /// 2. `TERM_BACKGROUND` env var ("dark" | "light")
+    /// 1. `TERM_BACKGROUND` env var ("dark" | "light") - takes precedence
+    /// 2. `COLORFGBG` env var (format: "fg;bg", bg > 6 = light)
     /// 3. Default to dark
     pub fn detect_dark_background() -> bool {
-        // Check COLORFGBG first (format: "fg;bg")
+        // Check TERM_BACKGROUND first (user override takes precedence)
+        if let Ok(val) = env::var("TERM_BACKGROUND") {
+            return val.to_lowercase() != "light";
+        }
+
+        // Check COLORFGBG (format: "fg;bg")
         if let Ok(val) = env::var("COLORFGBG") {
             if let Some(bg) = val.split(';').nth(1) {
                 if let Ok(bg_num) = bg.parse::<u8>() {
                     return bg_num <= 6; // 0-6 are dark colors in standard palette
                 }
             }
-        }
-
-        // Check TERM_BACKGROUND
-        if let Ok(val) = env::var("TERM_BACKGROUND") {
-            return val.to_lowercase() != "light";
         }
 
         // Default to dark
@@ -528,5 +528,177 @@ mod tests {
         let _dark_bg = dark_theme.background();
         let _light_fg = light_theme.foreground();
         let _light_bg = light_theme.background();
+    }
+
+    // =================================================================
+    // Theme auto-detection tests
+    // =================================================================
+
+    use scopeguard::guard;
+    use serial_test::serial;
+
+    #[test]
+    #[serial]
+    fn test_auto_detects_dark_from_colorfgbg_dark_bg() {
+        std::env::remove_var("COLORFGBG");
+        std::env::remove_var("TERM_BACKGROUND");
+        let _guard = guard("", |_| {
+            std::env::remove_var("COLORFGBG");
+            std::env::remove_var("TERM_BACKGROUND");
+        });
+        std::env::set_var("COLORFGBG", "15;0");
+
+        let theme = MarkdownTheme::auto();
+        assert!(
+            theme.is_dark(),
+            "Should detect dark theme from COLORFGBG=15;0"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_auto_detects_light_from_colorfgbg_light_bg() {
+        std::env::remove_var("COLORFGBG");
+        std::env::remove_var("TERM_BACKGROUND");
+        let _guard = guard("", |_| {
+            std::env::remove_var("COLORFGBG");
+            std::env::remove_var("TERM_BACKGROUND");
+        });
+        std::env::set_var("COLORFGBG", "0;15");
+
+        let theme = MarkdownTheme::auto();
+        assert!(
+            !theme.is_dark(),
+            "Should detect light theme from COLORFGBG=0;15"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_auto_detects_light_from_colorfgbg_medium_bg() {
+        std::env::remove_var("COLORFGBG");
+        std::env::remove_var("TERM_BACKGROUND");
+        let _guard = guard("", |_| {
+            std::env::remove_var("COLORFGBG");
+            std::env::remove_var("TERM_BACKGROUND");
+        });
+        std::env::set_var("COLORFGBG", "0;7");
+
+        let theme = MarkdownTheme::auto();
+        assert!(!theme.is_dark(), "COLORFGBG=0;7 should be light");
+    }
+
+    #[test]
+    #[serial]
+    fn test_colorfgbg_edge_case_boundary_values() {
+        std::env::remove_var("COLORFGBG");
+        std::env::remove_var("TERM_BACKGROUND");
+        let _guard = guard("", |_| {
+            std::env::remove_var("COLORFGBG");
+            std::env::remove_var("TERM_BACKGROUND");
+        });
+
+        std::env::set_var("COLORFGBG", "0;6");
+        let theme = MarkdownTheme::auto();
+        assert!(theme.is_dark(), "COLORFGBG=0;6 should be dark");
+
+        std::env::set_var("COLORFGBG", "0;7");
+        let theme = MarkdownTheme::auto();
+        assert!(!theme.is_dark(), "COLORFGBG=0;7 should be light");
+    }
+
+    #[test]
+    #[serial]
+    fn test_auto_respects_term_background_env_dark() {
+        std::env::remove_var("COLORFGBG");
+        std::env::remove_var("TERM_BACKGROUND");
+        let _guard = guard("", |_| {
+            std::env::remove_var("COLORFGBG");
+            std::env::remove_var("TERM_BACKGROUND");
+        });
+
+        std::env::set_var("COLORFGBG", "0;15");
+        std::env::set_var("TERM_BACKGROUND", "dark");
+
+        let theme = MarkdownTheme::auto();
+        assert!(
+            theme.is_dark(),
+            "TERM_BACKGROUND=dark should override COLORFGBG"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_auto_respects_term_background_env_light() {
+        std::env::remove_var("COLORFGBG");
+        std::env::remove_var("TERM_BACKGROUND");
+        let _guard = guard("", |_| {
+            std::env::remove_var("COLORFGBG");
+            std::env::remove_var("TERM_BACKGROUND");
+        });
+
+        std::env::set_var("COLORFGBG", "15;0");
+        std::env::set_var("TERM_BACKGROUND", "light");
+
+        let theme = MarkdownTheme::auto();
+        assert!(
+            !theme.is_dark(),
+            "TERM_BACKGROUND=light should override COLORFGBG"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_auto_falls_back_to_dark_when_no_env() {
+        std::env::remove_var("COLORFGBG");
+        std::env::remove_var("TERM_BACKGROUND");
+        let _guard = guard("", |_| {
+            std::env::remove_var("COLORFGBG");
+            std::env::remove_var("TERM_BACKGROUND");
+        });
+
+        let theme = MarkdownTheme::auto();
+        assert!(
+            theme.is_dark(),
+            "Should default to dark when no env vars set"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_auto_handles_invalid_colorfgbg_gracefully() {
+        std::env::remove_var("COLORFGBG");
+        std::env::remove_var("TERM_BACKGROUND");
+        let _guard = guard("", |_| {
+            std::env::remove_var("COLORFGBG");
+            std::env::remove_var("TERM_BACKGROUND");
+        });
+
+        std::env::set_var("COLORFGBG", "invalid");
+        let result = std::panic::catch_unwind(|| MarkdownTheme::auto());
+        assert!(result.is_ok(), "Invalid COLORFGBG should not panic");
+
+        std::env::set_var("COLORFGBG", "singlevalue");
+        let result = std::panic::catch_unwind(|| MarkdownTheme::auto());
+        assert!(result.is_ok(), "Single value COLORFGBG should not panic");
+
+        std::env::set_var("COLORFGBG", "15;notanumber");
+        let result = std::panic::catch_unwind(|| MarkdownTheme::auto());
+        assert!(result.is_ok(), "Non-numeric COLORFGBG should not panic");
+    }
+
+    #[test]
+    #[serial]
+    fn test_auto_handles_empty_colorfgbg_gracefully() {
+        std::env::remove_var("COLORFGBG");
+        std::env::remove_var("TERM_BACKGROUND");
+        let _guard = guard("", |_| {
+            std::env::remove_var("COLORFGBG");
+            std::env::remove_var("TERM_BACKGROUND");
+        });
+
+        std::env::set_var("COLORFGBG", "");
+        let theme = MarkdownTheme::auto();
+        assert!(theme.is_dark(), "Empty COLORFGBG should default to dark");
     }
 }
