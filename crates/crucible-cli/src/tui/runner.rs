@@ -2416,11 +2416,9 @@ impl RatatuiRunner {
 
             // Invariant 2: Range end should equal new_graduated_count
             debug_assert_eq!(
-                grad.lines_to_graduate.end,
-                grad.new_graduated_count,
+                grad.lines_to_graduate.end, grad.new_graduated_count,
                 "BUG: range end ({}) != new_graduated_count ({})",
-                grad.lines_to_graduate.end,
-                grad.new_graduated_count
+                grad.lines_to_graduate.end, grad.new_graduated_count
             );
 
             // Invariant 3: New graduated count should never exceed total lines

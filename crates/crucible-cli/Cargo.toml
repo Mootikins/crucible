@@ -101,6 +101,9 @@ regex = { workspace = true }
 # Path manipulation
 dirs = { workspace = true }
 
+# Unicode width for proper character display width calculation
+unicode-width = "0.2"
+
 # Markdown parsing for terminal rendering
 markdown-it = { workspace = true }
 

@@ -584,7 +584,7 @@ mod event_based_tests {
 
         let output = h.render();
         assert!(
-            output.contains("✗") || output.contains("×"),
+            output.contains(crate::tui::styles::indicators::TOOL_ERROR),
             "Error tool should show error indicator"
         );
         assert!(
