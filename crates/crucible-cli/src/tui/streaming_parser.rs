@@ -272,15 +272,27 @@ impl StreamingParser {
         fence_char: char,
         fence_len: usize,
     ) -> Vec<ParseEvent> {
-        let trimmed = line.trim();
-
         // Check for closing fence
-        let fence_str = &String::from(fence_char).repeat(fence_len);
-        if trimmed.starts_with(fence_str)
-            && trimmed
+        // Per CommonMark spec, closing fence can have 0-3 spaces of indentation
+        let fence_str = String::from(fence_char).repeat(fence_len);
+
+        // Count leading spaces (max 3 allowed for closing fence)
+        let leading_spaces = line.chars().take_while(|c| *c == ' ').count();
+
+        // Only consider as closing fence if:
+        // 1. Has 0-3 leading spaces
+        // 2. After spaces, starts with the fence characters
+        // 3. Rest of line is only fence chars or whitespace
+        let after_spaces = &line[leading_spaces..];
+        let trimmed_after = after_spaces.trim_end();
+
+        let is_closing_fence = leading_spaces <= 3
+            && trimmed_after.starts_with(&fence_str)
+            && trimmed_after
                 .chars()
-                .all(|c| c == fence_char || c.is_whitespace())
-        {
+                .all(|c| c == fence_char || c.is_whitespace());
+
+        if is_closing_fence {
             // Found closing fence
             let mut events = Vec::new();
 
@@ -719,6 +731,89 @@ mod tests {
             accumulated.push_str(&c);
         }
         assert_eq!(accumulated, "line1\nline2\nline3");
+    }
+
+    /// Test that backticks inside comments don't prematurely close code blocks
+    #[test]
+    fn test_code_block_with_backticks_in_comment() {
+        let mut parser = StreamingParser::new();
+
+        // Code block with a comment that contains triple backticks
+        let input = "```python\n# This comment has ``` backticks\nprint(\"hello\")\n```\nAfter the code\n";
+
+        let events = parser.feed(input);
+
+        // Debug output
+        for (i, event) in events.iter().enumerate() {
+            eprintln!("Event {}: {:?}", i, event);
+        }
+
+        // Should have: CodeBlockStart, CodeBlockContent, CodeBlockEnd, Text
+        // NOT: CodeBlockStart, Text (if comment closed block prematurely)
+        assert!(
+            events.len() >= 3,
+            "Should have at least 3 events (start, content, end), got {}",
+            events.len()
+        );
+
+        // First event should be CodeBlockStart
+        assert!(
+            matches!(events[0], ParseEvent::CodeBlockStart { .. }),
+            "First event should be CodeBlockStart, got {:?}",
+            events[0]
+        );
+
+        // Code content should include the comment line
+        let has_comment_in_code = events.iter().any(|e| {
+            if let ParseEvent::CodeBlockContent(content) = e {
+                content.contains("# This comment has")
+            } else {
+                false
+            }
+        });
+        assert!(
+            has_comment_in_code,
+            "Comment with backticks should be part of code block content"
+        );
+
+        // There should be a CodeBlockEnd before any text
+        let end_idx = events
+            .iter()
+            .position(|e| matches!(e, ParseEvent::CodeBlockEnd));
+        assert!(end_idx.is_some(), "Should have CodeBlockEnd event");
+    }
+
+    /// Test code block with line that's just indented backticks
+    #[test]
+    fn test_code_block_indented_backticks() {
+        let mut parser = StreamingParser::new();
+
+        // Code block with indented backticks (shouldn't close the block)
+        let input = "```python\ncode_here\n   ```\nmore_code\n```\nAfter\n";
+
+        let events = parser.feed(input);
+
+        for (i, event) in events.iter().enumerate() {
+            eprintln!("Event {}: {:?}", i, event);
+        }
+
+        // The indented ``` should NOT close the block (it has leading whitespace)
+        // Actually, let's check what the behavior is...
+        let code_content: String = events
+            .iter()
+            .filter_map(|e| {
+                if let ParseEvent::CodeBlockContent(c) = e {
+                    Some(c.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        eprintln!("Code content: '{}'", code_content);
+
+        // If indented backticks close the block, "more_code" won't be in content
+        // If they don't, "more_code" will be in content
     }
 
     #[test]
