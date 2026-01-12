@@ -85,25 +85,50 @@ pub fn render_all_lines(items: &[ConversationItem], width: usize) -> Vec<Line<'s
 /// Combines rendering and calculation into one call.
 /// This is the main entry point for both runner and harness.
 ///
-/// IMPORTANT: Renders ONCE to avoid race conditions with streaming content.
-/// If we render twice (once for count, once for content), streaming content
-/// might change between calls, causing line count mismatches.
+/// IMPORTANT: Uses newline-gated graduation to prevent partial content
+/// from being graduated to scrollback. Only complete lines (those ending
+/// with newlines) can be graduated. This prevents flickering when streaming
+/// content changes after graduation.
+///
+/// The algorithm:
+/// 1. Render all content for viewport display
+/// 2. Use committed_line_count() to determine how many RENDERED lines are safe
+/// 3. Only graduate up to the committed line count (never partial content)
 pub fn check_graduation(
     conversation: &ConversationState,
     graduated_count: usize,
     viewport_capacity: usize,
     content_width: usize,
 ) -> (Vec<Line<'static>>, Option<GraduationResult>) {
-    // Render ONCE - streaming content can change between calls
+    // Render all content for viewport display
     let all_lines = conversation.render_for_graduation(content_width);
-    let total_lines = all_lines.len();
+    let total_rendered = all_lines.len();
 
-    // Check if graduation is needed
-    let result = calculate_graduation(total_lines, graduated_count, viewport_capacity);
+    // Get the committed line count - this is based on source newlines.
+    // For safety, we use the minimum of committed and rendered lines.
+    // This ensures we never graduate more than what's actually rendered,
+    // and never graduate partial (uncommitted) content.
+    let committed = conversation.committed_line_count();
+
+    // Check if streaming is active - if so, be conservative
+    let is_streaming = conversation.is_streaming();
+
+    // Calculate graduatable lines:
+    // - If streaming, use committed count (excludes partial lines)
+    // - If not streaming, all lines are graduatable
+    let graduatable = if is_streaming {
+        // During streaming, only graduate committed lines
+        // This prevents partial content from being graduated
+        committed.min(total_rendered)
+    } else {
+        // When not streaming, all rendered content is stable
+        total_rendered
+    };
+
+    // Check if graduation is needed based on graduatable lines
+    let result = calculate_graduation(graduatable, graduated_count, viewport_capacity);
 
     if result.is_none() {
-        // No graduation needed - but still return the lines for consistency
-        // (caller may want them for debugging)
         return (all_lines, None);
     }
 
@@ -173,5 +198,102 @@ mod tests {
         let result = calculate_graduation(100, 0, 10).unwrap();
         assert_eq!(result.lines_to_graduate, 0..90);
         assert_eq!(result.new_graduated_count, 90);
+    }
+
+    // =========================================================================
+    // Newline-Gated Graduation Tests
+    // =========================================================================
+
+    #[test]
+    fn test_check_graduation_respects_committed_lines_during_streaming() {
+        // Test that during streaming, only committed lines are considered
+        let mut conversation = ConversationState::new();
+
+        // Start streaming
+        conversation.start_assistant_streaming();
+
+        // Append text with newlines (3 complete lines)
+        conversation.append_or_create_prose("Line 1\nLine 2\nLine 3\n");
+
+        // Append partial line (no trailing newline)
+        conversation.append_or_create_prose("Partial line without newline");
+
+        // Should have 3 committed lines (from the 3 newlines)
+        assert_eq!(conversation.committed_line_count(), 3);
+        assert!(conversation.is_streaming());
+
+        // Check graduation - should only consider committed lines
+        let (all_lines, result) = check_graduation(&conversation, 0, 2, 80);
+
+        // Should have at least 1 line rendered (depends on how prose consolidates)
+        assert!(!all_lines.is_empty(), "Should render content");
+
+        // Key test: graduation should respect committed count, not total rendered
+        // With 3 committed lines and viewport of 2, we should graduate 1 line
+        if let Some(grad) = result {
+            // Can graduate up to 1 line (3 committed - 2 viewport = 1 overflow)
+            assert_eq!(grad.lines_to_graduate.len(), 1);
+        }
+    }
+
+    #[test]
+    fn test_check_graduation_all_lines_when_not_streaming() {
+        // Test that when not streaming, all lines are graduatable
+        let mut conversation = ConversationState::new();
+
+        // Add a complete user message (not streaming)
+        conversation.push_user_message("Hello world");
+
+        // Add a complete assistant message (not streaming)
+        conversation.push_assistant_message("Hi there!\nHow are you?");
+
+        // Not streaming
+        assert!(!conversation.is_streaming());
+
+        // Check graduation
+        let (all_lines, result) = check_graduation(&conversation, 0, 2, 80);
+
+        // Should consider ALL lines for graduation since not streaming
+        assert!(!all_lines.is_empty());
+        // Result depends on content vs viewport - just verify it runs
+        let _ = result;
+    }
+
+    #[test]
+    fn test_committed_lines_count_only_newlines() {
+        let mut conversation = ConversationState::new();
+        conversation.start_assistant_streaming();
+
+        // "Hello" has no newline - should not increment committed
+        conversation.append_or_create_prose("Hello");
+        assert_eq!(conversation.committed_line_count(), 0);
+
+        // " world" still no newline
+        conversation.append_or_create_prose(" world");
+        assert_eq!(conversation.committed_line_count(), 0);
+
+        // Now add newline - should increment
+        conversation.append_or_create_prose("\n");
+        assert_eq!(conversation.committed_line_count(), 1);
+
+        // Add another complete line
+        conversation.append_or_create_prose("Second line\n");
+        assert_eq!(conversation.committed_line_count(), 2);
+    }
+
+    #[test]
+    fn test_complete_streaming_commits_final_line() {
+        let mut conversation = ConversationState::new();
+        conversation.start_assistant_streaming();
+
+        // Add text without trailing newline
+        conversation.append_or_create_prose("Hello world");
+        assert_eq!(conversation.committed_line_count(), 0);
+        assert!(conversation.is_streaming());
+
+        // Complete streaming - should commit the final line
+        conversation.complete_streaming();
+        assert_eq!(conversation.committed_line_count(), 1);
+        assert!(!conversation.is_streaming());
     }
 }

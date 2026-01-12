@@ -1087,7 +1087,10 @@ fn render_table(node: &Node, ctx: &mut RenderContext<'_>) {
                         }
                     }
                 } else if available_content < total_min {
-                    // Even minimums don't fit - use minimums and let it clip
+                    // Even minimums don't fit - use minimums and let terminal wrap.
+                    // This is intentional: tables with long words that can't fit will
+                    // render at their natural minimum width, and the terminal wraps
+                    // the overflowing lines. This is better than truncating content.
                     for (i, w) in col_widths.iter_mut().enumerate() {
                         *w = min_col_widths[i];
                     }
