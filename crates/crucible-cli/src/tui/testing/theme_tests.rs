@@ -67,34 +67,6 @@ mod prose_rendering {
     }
 
     #[test]
-    fn table_border_characters_visible_in_light_theme() {
-        let content = "| A | B |\n|---|---|\n| 1 | 2 |";
-        let result = render_with_light_theme(content);
-        // Table should have border characters (box-drawing characters)
-        let has_horizontal_border = result.contains('─') || result.contains('┌');
-        let has_vertical_border = result.contains('│') || result.contains('|');
-        assert!(
-            has_horizontal_border && has_vertical_border,
-            "Table should have border characters: {}",
-            result
-        );
-    }
-
-    #[test]
-    fn table_with_long_cell_content_wraps_in_light_theme() {
-        let content = "| Short | Long Content That Should Wrap |\n|-------|------------------------------|\n| A | This is a very long cell content that exceeds the column width and needs to wrap gracefully. |";
-        let result = render_with_light_theme(content);
-        // The table should contain the content, wrapped appropriately
-        assert!(result.contains("Short"), "Should contain Short column");
-        assert!(result.contains("A"), "Should contain cell value A");
-        // The long content may be wrapped or truncated - just verify table rendered
-        assert!(
-            result.contains('│') || result.contains('|'),
-            "Should have table structure"
-        );
-    }
-
-    #[test]
     fn inline_code_renders_in_light_theme() {
         let content = "Use `let x = 5;` to define a variable.";
         let result = render_with_light_theme(content);

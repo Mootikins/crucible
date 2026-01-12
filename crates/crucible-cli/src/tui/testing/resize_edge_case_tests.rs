@@ -172,7 +172,11 @@ mod resize_with_long_conversation {
         h.resize(NARROW_WIDTH as u16, TEST_HEIGHT as u16);
 
         let rendered = h.render();
-        assert!(!rendered.is_empty());
+        // Long conversation has "Message X" and "Response X" items
+        assert!(
+            rendered.contains("Message") || rendered.contains("Response"),
+            "Should contain conversation content after narrow resize"
+        );
     }
 
     #[test]
@@ -183,7 +187,11 @@ mod resize_with_long_conversation {
         h.resize(TEST_WIDTH as u16, SHORT_HEIGHT as u16);
 
         let rendered = h.render();
-        assert!(!rendered.is_empty());
+        // Should still show some conversation content
+        assert!(
+            rendered.contains("Message") || rendered.contains("Response"),
+            "Should contain conversation content after short resize"
+        );
     }
 
     #[test]
@@ -196,7 +204,11 @@ mod resize_with_long_conversation {
         h.resize(WIDE_WIDTH as u16, TEST_HEIGHT as u16);
 
         let rendered = h.render();
-        assert!(!rendered.is_empty());
+        // Should still have conversation content after multiple resizes
+        assert!(
+            rendered.contains("Message") || rendered.contains("Response"),
+            "Should preserve conversation content through multiple resizes"
+        );
     }
 }
 
@@ -210,7 +222,11 @@ mod resize_with_code_blocks {
         h.resize(NARROW_WIDTH as u16, TEST_HEIGHT as u16);
 
         let rendered = h.render();
-        assert!(!rendered.is_empty());
+        // with_long_code has "struct Data" with field_N fields
+        assert!(
+            rendered.contains("struct") || rendered.contains("field"),
+            "Should contain code block content after narrow resize"
+        );
     }
 
     #[test]
@@ -221,7 +237,10 @@ mod resize_with_code_blocks {
         h.resize(WIDE_WIDTH as u16, TEST_HEIGHT as u16);
 
         let rendered = h.render();
-        assert!(rendered.contains("fn"));
+        assert!(
+            rendered.contains("fn"),
+            "Should contain function keyword after wide resize"
+        );
     }
 }
 
@@ -235,7 +254,11 @@ mod resize_with_tables {
         h.resize(NARROW_WIDTH as u16, TEST_HEIGHT as u16);
 
         let rendered = h.render();
-        assert!(!rendered.is_empty());
+        // with_table has a Rust vs Go comparison table
+        assert!(
+            rendered.contains("Rust") || rendered.contains("Feature") || rendered.contains("comparison"),
+            "Should contain table content after narrow resize"
+        );
     }
 
     #[test]
@@ -245,7 +268,11 @@ mod resize_with_tables {
         h.resize(WIDE_WIDTH as u16, TEST_HEIGHT as u16);
 
         let rendered = h.render();
-        assert!(!rendered.is_empty());
+        // with_wide_table has Package, Description, Version columns
+        assert!(
+            rendered.contains("Package") || rendered.contains("serde") || rendered.contains("tokio"),
+            "Should contain table content after wide resize"
+        );
     }
 
     #[test]

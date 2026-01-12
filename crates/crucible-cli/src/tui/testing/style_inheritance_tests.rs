@@ -41,9 +41,8 @@ mod user_message_styles {
         // When content is rendered inside user message,
         // it should inherit the user's background color
         let user_bg = colors::USER_BG;
-        let user_style = Style::default().bg(user_bg);
 
-        // Verify the style can be combined with content styles
+        // Verify the user_bg can be combined with content styles
         let content_style = Style::default().fg(Color::White);
         let combined = content_style.bg(user_bg);
 
