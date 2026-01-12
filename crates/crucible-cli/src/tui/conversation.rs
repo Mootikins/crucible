@@ -1030,6 +1030,12 @@ fn render_assistant_blocks(blocks: &[StreamBlock], width: usize) -> Vec<Line<'st
                 content,
                 is_complete: _,
             } => {
+                // Add blank line before code block for visual separation
+                // (but only if we already have content)
+                if !first_content_line {
+                    lines.push(add_assistant_prefix(Line::from(""), &mut first_content_line));
+                }
+
                 // Render code block - no wrapping for code
                 let code_lines = render_code_block(lang.as_deref(), content);
 
@@ -1041,6 +1047,9 @@ fn render_assistant_blocks(blocks: &[StreamBlock], width: usize) -> Vec<Line<'st
                     }
                     lines.push(add_assistant_prefix(line, &mut first_content_line));
                 }
+
+                // Add blank line after code block for visual separation
+                lines.push(add_assistant_prefix(Line::from(""), &mut first_content_line));
             }
             StreamBlock::Tool { name, args, status } => {
                 use crate::tui::content_block::ToolBlockStatus;
@@ -1122,15 +1131,22 @@ fn render_markdown_text(content: &str, width: usize) -> Vec<Line<'static>> {
 
 /// Helper to render a code block with optional language (no wrapping)
 fn render_code_block(lang: Option<&str>, content: &str) -> Vec<Line<'static>> {
-    // Format as markdown code block and render without wrapping
-    let markdown = if let Some(lang) = lang {
-        format!("```{}\n{}\n```", lang, content)
-    } else {
-        format!("```\n{}\n```", content)
-    };
+    let mut lines = Vec::new();
 
-    // Code blocks don't wrap
-    render_markdown_text(&markdown, 0)
+    // Add language label if specified (gray, subtle)
+    if let Some(lang) = lang {
+        if !lang.is_empty() {
+            let label_style = Style::default().fg(Color::DarkGray);
+            lines.push(Line::from(Span::styled(lang.to_string(), label_style)));
+        }
+    }
+
+    // Format as markdown code block and render without wrapping
+    let markdown = format!("```\n{}\n```", content);
+
+    // Code blocks don't wrap - append rendered lines
+    lines.extend(render_markdown_text(&markdown, 0));
+    lines
 }
 
 /// Legacy function for backward compatibility (now wraps block rendering)

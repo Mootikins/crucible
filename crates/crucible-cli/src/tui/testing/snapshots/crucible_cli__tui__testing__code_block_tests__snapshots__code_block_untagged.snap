@@ -6,9 +6,11 @@ expression: h.render()
  > Show output                                                                  
                                                                                 
  ● Here's the output:                                                           
+                                                                                
    Some plain output                                                            
    line 2                                                                       
    line 3                                                                       
+                                                                                
                                                                                 
                                                                                 
  >                                                                              

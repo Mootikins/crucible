@@ -6,9 +6,12 @@ expression: h.render()
  > Show me some code                              
                                                   
  ● Here's an example:                             
+                                                  
+   rust                                           
    fn main() {                                    
        println!("Hello");                         
    }                                              
+                                                  
    This prints Hello.                             
                                                   
                                                   
