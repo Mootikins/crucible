@@ -24,17 +24,59 @@
 #[path = "tui_e2e_harness.rs"]
 mod tui_e2e_harness;
 
+use std::path::PathBuf;
 use std::time::Duration;
 use tui_e2e_harness::{Key, TuiTestBuilder, TuiTestConfig, TuiTestSession};
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
+/// Check if the cru binary exists (either debug or release)
+fn find_binary() -> Option<PathBuf> {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let manifest_path = PathBuf::from(manifest_dir);
+    let workspace_root = manifest_path
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("Could not find workspace root");
+
+    let release_path = workspace_root.join("target/release/cru");
+    if release_path.exists() {
+        return Some(release_path);
+    }
+
+    let debug_path = workspace_root.join("target/debug/cru");
+    if debug_path.exists() {
+        return Some(debug_path);
+    }
+
+    None
+}
+
+/// Skip test if binary is not built
+macro_rules! require_binary {
+    () => {
+        if find_binary().is_none() {
+            eprintln!("SKIPPED: cru binary not built. Run `cargo build` first.");
+            return;
+        }
+    };
+}
 
 // =============================================================================
 // Smoke Tests
 // =============================================================================
 
 /// Test that `cru --version` works
+///
+/// This test runs by default (no #[ignore]) and skips gracefully if the binary
+/// isn't built. This allows CI to catch version string issues when the binary
+/// is available.
 #[test]
-#[ignore = "requires built binary"]
 fn smoke_version() {
+    require_binary!();
+
     let config = TuiTestConfig::new("--version");
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
@@ -43,9 +85,12 @@ fn smoke_version() {
 }
 
 /// Test that `cru --help` works
+///
+/// Runs by default and skips gracefully if binary isn't built.
 #[test]
-#[ignore = "requires built binary"]
 fn smoke_help() {
+    require_binary!();
+
     let config = TuiTestConfig::new("--help");
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 

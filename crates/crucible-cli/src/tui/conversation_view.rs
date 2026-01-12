@@ -1288,10 +1288,8 @@ mod tests {
 
     /// Test that scrolling works correctly for messages with many lines.
     ///
-    /// BUG: content_height() uses items.len() * 3, which severely underestimates
-    /// actual content height for messages with code blocks or multiple paragraphs.
-    /// This causes scroll_up to clamp scroll_offset too early, preventing users
-    /// from scrolling back to see older content.
+    /// Verifies that content_height() correctly calculates height by rendering
+    /// each item (not just using a fixed estimate like items.len() * 3).
     #[test]
     fn test_scroll_with_multiline_messages() {
         let mut view = RatatuiView::new("plan", 80, 24);
