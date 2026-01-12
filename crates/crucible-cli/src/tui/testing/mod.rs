@@ -47,18 +47,28 @@
 #[cfg(test)]
 mod code_block_tests;
 #[cfg(test)]
+mod cross_theme_snapshots;
+#[cfg(test)]
 mod e2e_flow_tests;
 pub mod fixtures;
 mod harness;
 #[cfg(test)]
 mod harness_tests;
 #[cfg(test)]
+mod markdown_property_tests;
+#[cfg(test)]
 mod popup_snapshot_tests;
+#[cfg(test)]
+mod resize_edge_case_tests;
 #[cfg(test)]
 mod resize_tests;
 mod state_builder;
 #[cfg(test)]
+mod style_inheritance_tests;
+#[cfg(test)]
 mod table_tests;
+#[cfg(test)]
+mod theme_tests;
 #[cfg(test)]
 mod tool_call_tests;
 
