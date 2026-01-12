@@ -4,12 +4,15 @@
 //! without a real terminal.
 
 use crate::tui::components::generic_popup::PopupState;
-use crate::tui::conversation::{ConversationItem, ConversationState};
+use crate::tui::content_block::ParseEvent;
+use crate::tui::conversation::ConversationItem;
 use crate::tui::conversation_view::{ConversationView, RatatuiView};
 use crate::tui::popup::PopupProvider;
 use crate::tui::state::types::{PopupItem, PopupKind};
 use crate::tui::state::TuiState;
 use crate::tui::streaming_channel::StreamingEvent;
+use crate::tui::streaming_parser::StreamingParser;
+use crate::tui::StreamBlock;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
@@ -48,6 +51,12 @@ impl PopupProvider for EmptyProvider {
 /// - Injects streaming events
 /// - Captures rendered output for snapshot testing
 ///
+/// # Single Source of Truth
+///
+/// The view owns ALL state (conversation, dimensions, etc.).
+/// This ensures tests exercise the same code paths as production.
+/// Dimensions are accessed via `view.state().width` / `view.state().height`.
+///
 /// # Example
 ///
 /// ```ignore
@@ -61,13 +70,10 @@ impl PopupProvider for EmptyProvider {
 pub struct Harness {
     /// Main TUI state (input, popup, etc.)
     pub state: TuiState,
-    /// Conversation state
-    pub conversation: ConversationState,
-    /// Ratatui view (combines conversation + state for rendering)
+    /// Ratatui view (owns ALL state - conversation, dimensions, etc.)
     pub view: RatatuiView,
-    /// Viewport dimensions
-    pub width: u16,
-    pub height: u16,
+    /// Streaming parser (same as production runner uses)
+    streaming_parser: StreamingParser,
 }
 
 impl Default for Harness {
@@ -81,22 +87,25 @@ impl Harness {
     pub fn new(width: u16, height: u16) -> Self {
         Self {
             state: TuiState::new("plan"),
-            conversation: ConversationState::new(),
             view: RatatuiView::new("plan", width, height),
-            width,
-            height,
+            streaming_parser: StreamingParser::new(),
         }
+    }
+
+    /// Get viewport width (from view state - single source of truth)
+    pub fn width(&self) -> u16 {
+        self.view.state().width
+    }
+
+    /// Get viewport height (from view state - single source of truth)
+    pub fn height(&self) -> u16 {
+        self.view.state().height
     }
 
     /// Builder: set initial conversation
     ///
-    /// Populates both the harness's conversation state and the view's internal
-    /// conversation state so rendering works correctly.
+    /// Populates the view's conversation state (single source of truth).
     pub fn with_session(mut self, items: Vec<ConversationItem>) -> Self {
-        for item in items.clone() {
-            self.conversation.push(item);
-        }
-        // Also sync to view's internal conversation for rendering
         for item in items {
             self.view.state_mut().conversation.push(item);
         }
@@ -105,11 +114,8 @@ impl Harness {
 
     /// Resize the terminal viewport
     ///
-    /// Updates dimensions and notifies the view of the resize.
+    /// Updates the view's dimensions (single source of truth).
     pub fn resize(&mut self, width: u16, height: u16) {
-        self.width = width;
-        self.height = height;
-        // Update view dimensions
         let _ = self.view.handle_resize(width, height);
     }
 
@@ -390,13 +396,24 @@ impl Harness {
     // =========================================================================
 
     /// Inject a streaming event
+    ///
+    /// For Delta events, uses the same streaming parser as the production runner
+    /// to ensure tests exercise the actual code path including code fence detection.
     pub fn event(&mut self, event: StreamingEvent) {
         match event {
             StreamingEvent::Delta { text, seq } => {
                 self.state.last_seen_seq = seq;
-                self.view.append_or_create_prose(&text);
+                // Use streaming parser - SAME as production runner
+                let parse_events = self.streaming_parser.feed(&text);
+                self.apply_parse_events(parse_events);
             }
             StreamingEvent::Done { full_response: _ } => {
+                // Finalize parser to flush any remaining content - SAME as production runner
+                let final_events = self.streaming_parser.finalize();
+                self.apply_parse_events(final_events);
+                // Reset parser for next streaming session
+                self.streaming_parser = StreamingParser::new();
+
                 self.view.complete_assistant_streaming();
                 // Clear reasoning buffer when response completes
                 self.state.clear_reasoning();
@@ -464,6 +481,34 @@ impl Harness {
         }
     }
 
+    /// Apply parse events to the conversation view.
+    ///
+    /// This is the SAME logic as the production runner's apply_parse_events,
+    /// ensuring tests exercise the real code path for code blocks, prose, etc.
+    fn apply_parse_events(&mut self, events: Vec<ParseEvent>) {
+        for event in events {
+            match event {
+                ParseEvent::Text(text) => {
+                    // Append to existing prose block if possible, otherwise create new
+                    self.view.append_or_create_prose(&text);
+                }
+                ParseEvent::CodeBlockStart { lang } => {
+                    // Start a new partial code block
+                    self.view
+                        .append_streaming_blocks(vec![StreamBlock::code_partial(lang, "")]);
+                }
+                ParseEvent::CodeBlockContent(content) => {
+                    // Append to the existing code block in the view
+                    self.view.append_to_last_block(&content);
+                }
+                ParseEvent::CodeBlockEnd => {
+                    // Mark the code block as complete
+                    self.view.complete_last_block();
+                }
+            }
+        }
+    }
+
     // =========================================================================
     // State accessors
     // =========================================================================
@@ -498,14 +543,14 @@ impl Harness {
         self.view.popup().map(|p| p.selected_index())
     }
 
-    /// Get conversation items
+    /// Get conversation items (from view's state - single source of truth)
     pub fn conversation_items(&self) -> &VecDeque<ConversationItem> {
-        self.conversation.items()
+        self.view.state().conversation.items()
     }
 
     /// Get number of conversation items
     pub fn conversation_len(&self) -> usize {
-        self.conversation.items().len()
+        self.view.state().conversation.items().len()
     }
 
     /// Check if there's an error
@@ -535,7 +580,7 @@ impl Harness {
     /// Render to a test terminal and return it for snapshot testing
     pub fn render_terminal(&self) -> Terminal<TestBackend> {
         let mut terminal =
-            Terminal::new(TestBackend::new(self.width, self.height)).expect("create terminal");
+            Terminal::new(TestBackend::new(self.width(), self.height())).expect("create terminal");
         terminal
             .draw(|frame| {
                 self.view.render_frame(frame);
@@ -617,12 +662,6 @@ const DEFAULT_VIEWPORT_HEIGHT: u16 = 15;
 pub struct StreamingHarness {
     /// Inner harness for rendering and state
     pub harness: Harness,
-    /// Lines graduated to terminal scrollback (simulated insert_before output)
-    scrollback: Vec<String>,
-    /// Number of rendered lines that have been graduated
-    graduated_line_count: usize,
-    /// Viewport height for content (excluding input/status)
-    content_viewport_height: usize,
     /// Sequence counter for streaming events
     seq: u64,
     /// Whether currently in streaming mode
@@ -653,13 +692,8 @@ impl StreamingHarness {
     ///
     /// Height should typically be small (e.g., 15) to simulate inline viewport.
     pub fn new(width: u16, height: u16) -> Self {
-        // Content viewport = total height - input (3) - status (1)
-        let content_viewport_height = (height as usize).saturating_sub(4);
         Self {
             harness: Harness::new(width, height),
-            scrollback: Vec::new(),
-            graduated_line_count: 0,
-            content_viewport_height,
             seq: 0,
             is_streaming: false,
             timeline: Vec::new(),
@@ -726,61 +760,57 @@ impl StreamingHarness {
         use crate::tui::constants::UiConstants;
         use crate::tui::graduation::check_graduation;
 
-        let content_width = UiConstants::content_width(self.harness.width);
+        // Use view's state width - SAME as production runner
+        let terminal_width = self.harness.view.state().width;
+        let content_width = UiConstants::content_width(terminal_width);
+        let current_graduated = self.harness.view.state().graduated_line_count;
+
+        // Use the view's actual viewport height calculation - SAME as production runner!
+        // This accounts for input box height, reasoning panel, popups, etc.
+        let viewport_capacity = self.harness.view.conversation_viewport_height();
 
         // Use the shared graduation logic (same as runner)
-        let (all_lines, result) = check_graduation(
+        // Pass streaming flag to reserve buffer for volatile content
+        let (_all_lines, result) = check_graduation(
             &self.harness.view.state().conversation,
-            self.graduated_line_count,
-            self.content_viewport_height,
+            current_graduated,
+            viewport_capacity,
             content_width,
+            self.is_streaming,
         );
 
         if let Some(grad) = result {
-            // Graduate these lines to scrollback
-            for line in &all_lines[grad.lines_to_graduate.clone()] {
-                let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-                self.scrollback.push(text);
-            }
-            self.graduated_line_count = grad.new_graduated_count;
+            // Update the view's graduated_line_count - scrollback is derived from this
+            self.harness.view.state_mut().graduated_line_count = grad.new_graduated_count;
         }
     }
 
-    /// Calculate total rendered content lines (using shared logic)
+    /// Calculate total rendered content lines (using same logic as graduation).
+    ///
+    /// Uses `render_for_graduation` which excludes Status items, matching
+    /// what the actual graduation logic uses.
     pub fn content_line_count(&self) -> usize {
-        use crate::tui::constants::UiConstants;
-        use crate::tui::graduation::render_all_lines;
-
-        let content_width = UiConstants::content_width(self.harness.width);
-        let items: Vec<_> = self
-            .harness
-            .view
-            .state()
-            .conversation
-            .items()
-            .iter()
-            .cloned()
-            .collect();
-        render_all_lines(&items, content_width).len()
+        self.render_content_lines().len()
     }
 
-    /// Render content to lines (using shared logic for consistency)
+    /// Render content to lines for scrollback (using same logic as graduation).
+    ///
+    /// Uses `render_for_graduation` which excludes Status items, matching
+    /// what the actual graduation logic uses. This ensures scrollback
+    /// content matches what would actually be graduated in production.
     fn render_content_lines(&self) -> Vec<String> {
         use crate::tui::constants::UiConstants;
-        use crate::tui::graduation::render_all_lines;
 
-        let content_width = UiConstants::content_width(self.harness.width);
-        let items: Vec<_> = self
-            .harness
+        // Use view's state width - SAME as production runner
+        let terminal_width = self.harness.view.state().width;
+        let content_width = UiConstants::content_width(terminal_width);
+
+        // Use render_for_graduation (excludes Status) - same as production graduation
+        self.harness
             .view
             .state()
             .conversation
-            .items()
-            .iter()
-            .cloned()
-            .collect();
-
-        render_all_lines(&items, content_width)
+            .render_for_graduation(content_width)
             .iter()
             .map(|line| line.spans.iter().map(|s| s.content.as_ref()).collect())
             .collect()
@@ -794,9 +824,9 @@ impl StreamingHarness {
         self.timeline.push(TimelineEntry {
             event: event.to_string(),
             viewport: self.harness.render(),
-            scrollback: self.scrollback.clone(),
+            scrollback: self.scrollback(),
             content_lines: self.content_line_count(),
-            graduated_lines: self.graduated_line_count,
+            graduated_lines: self.graduated_line_count(),
         });
     }
 
@@ -804,14 +834,26 @@ impl StreamingHarness {
     // Accessors
     // =========================================================================
 
-    /// Get number of lines graduated to scrollback
+    /// Get number of lines graduated to scrollback.
+    ///
+    /// Uses the view's graduated_line_count as the source of truth.
     pub fn graduated_line_count(&self) -> usize {
-        self.graduated_line_count
+        self.harness.view.state().graduated_line_count
     }
 
-    /// Get scrollback content
-    pub fn scrollback(&self) -> &[String] {
-        &self.scrollback
+    /// Get scrollback content as lines.
+    ///
+    /// Derives scrollback from the graduated lines - the first N lines that have
+    /// been graduated to terminal scrollback, where N = graduated_line_count.
+    pub fn scrollback(&self) -> Vec<String> {
+        let all_lines = self.render_content_lines();
+        let graduated = self.harness.view.state().graduated_line_count;
+
+        if graduated == 0 {
+            return Vec::new();
+        }
+
+        all_lines.into_iter().take(graduated).collect()
     }
 
     /// Check if currently streaming
@@ -829,9 +871,24 @@ impl StreamingHarness {
         self.harness.render()
     }
 
-    /// Render scrollback content as string
+    /// Render scrollback content as string.
+    ///
+    /// Derives scrollback from the graduated lines - the first N lines that have
+    /// been graduated to terminal scrollback, where N = graduated_line_count.
     pub fn render_scrollback(&self) -> String {
-        self.scrollback.join("\n")
+        // Get all rendered lines and take the first graduated_line_count
+        let all_lines = self.render_content_lines();
+        let graduated = self.harness.view.state().graduated_line_count;
+
+        if graduated == 0 || all_lines.is_empty() {
+            return String::new();
+        }
+
+        all_lines
+            .into_iter()
+            .take(graduated)
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     /// Render full state: scrollback + viewport
@@ -839,12 +896,16 @@ impl StreamingHarness {
     /// This represents what the user would see in their terminal:
     /// - Scrollback: content graduated via insert_before (above viewport)
     /// - Viewport: current inline viewport content
+    ///
+    /// Uses the view's graduated_line_count as the source of truth, ensuring
+    /// tests verify the exact same logic as production.
     pub fn full_state(&self) -> String {
         let mut output = String::new();
 
-        if !self.scrollback.is_empty() {
+        let scrollback = self.render_scrollback();
+        if !scrollback.is_empty() {
             output.push_str("═══ SCROLLBACK ═══\n");
-            output.push_str(&self.scrollback.join("\n"));
+            output.push_str(&scrollback);
             output.push_str("\n═══ VIEWPORT ═══\n");
         }
         output.push_str(&self.harness.render());
@@ -1052,7 +1113,7 @@ mod tests {
         h.complete();
 
         let content_lines = h.content_line_count();
-        let viewport = h.content_viewport_height;
+        let viewport = h.harness.view.conversation_viewport_height();
 
         // With 8-line terminal, viewport is ~4 lines for content
         // User message + 10 paragraphs should definitely overflow
@@ -1117,8 +1178,96 @@ mod tests {
     #[test]
     fn streaming_harness_inline_creates_small_viewport() {
         let h = StreamingHarness::inline();
-        assert_eq!(h.harness.height, 15);
-        // Content viewport = 15 - 4 (input + status) = 11
-        assert_eq!(h.content_viewport_height, 11);
+        assert_eq!(h.harness.height(), 15);
+        // Content viewport is dynamically calculated by the view
+        // With height=15, input=3, spacer=1, status=1: 15-5=10
+        let viewport = h.harness.view.conversation_viewport_height();
+        assert_eq!(viewport, 10);
+    }
+
+    /// Test that prose after a code block is correctly parsed and rendered.
+    ///
+    /// This is a regression test for the bug where code blocks break subsequent
+    /// markdown formatting (e.g., **bold** shows as literal asterisks).
+    #[test]
+    fn streaming_prose_after_code_block_parses_correctly() {
+        use crate::tui::conversation::ConversationItem;
+
+        let mut h = StreamingHarness::inline();
+
+        h.start_streaming();
+
+        // Stream content with code block followed by prose with markdown
+        h.chunk("Here is some code:\n\n");
+        h.chunk("```rust\n");
+        h.chunk("fn main() {}\n");
+        h.chunk("```\n");
+        h.chunk("\nAnd here is **bold** text after the code block.\n");
+
+        h.complete();
+
+        // Get the assistant message blocks
+        let items = h.harness.view.state().conversation.items();
+        let assistant_msg = items.iter().find(|item| {
+            matches!(item, ConversationItem::AssistantMessage { .. })
+        });
+
+        assert!(assistant_msg.is_some(), "Should have assistant message");
+
+        if let Some(ConversationItem::AssistantMessage { blocks, .. }) = assistant_msg {
+            // Should have multiple blocks: prose -> code -> prose
+            assert!(
+                blocks.len() >= 3,
+                "Should have at least 3 blocks (prose, code, prose), got {}: {:?}",
+                blocks.len(),
+                blocks.iter().map(|b| b.text()).collect::<Vec<_>>()
+            );
+
+            // First block should be prose
+            assert!(blocks[0].is_prose(), "First block should be prose");
+
+            // Second block should be code
+            assert!(blocks[1].is_code(), "Second block should be code");
+            assert_eq!(blocks[1].text(), "fn main() {}");
+
+            // Third block should be prose with the bold text
+            assert!(blocks[2].is_prose(), "Third block should be prose");
+            assert!(
+                blocks[2].text().contains("**bold**"),
+                "Third block should contain markdown: {:?}",
+                blocks[2].text()
+            );
+        }
+    }
+
+    /// Test that the streaming parser is actually being used by the harness.
+    ///
+    /// This ensures we don't regress to direct append_or_create_prose calls.
+    #[test]
+    fn streaming_harness_uses_parser_for_code_blocks() {
+        use crate::tui::conversation::ConversationItem;
+
+        let mut h = StreamingHarness::inline();
+
+        h.start_streaming();
+        h.chunk("```\ncode\n```\n");
+        h.complete();
+
+        let items = h.harness.view.state().conversation.items();
+        let assistant_msg = items.iter().find(|item| {
+            matches!(item, ConversationItem::AssistantMessage { .. })
+        });
+
+        if let Some(ConversationItem::AssistantMessage { blocks, .. }) = assistant_msg {
+            // If parser is working, we should have a CODE block, not prose
+            let has_code_block = blocks.iter().any(|b| b.is_code());
+            assert!(
+                has_code_block,
+                "Should have code block (parser should be active). Blocks: {:?}",
+                blocks.iter().map(|b| (b.is_prose(), b.is_code(), b.text())).collect::<Vec<_>>()
+            );
+        } else {
+            panic!("Should have assistant message");
+        }
     }
 }

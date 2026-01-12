@@ -139,7 +139,9 @@ mod padding_tests {
 
         // Find positions to verify order
         let lines: Vec<&str> = output.lines().collect();
-        let label_idx = lines.iter().position(|l| l.contains("rust") && !l.contains("fn"));
+        let label_idx = lines
+            .iter()
+            .position(|l| l.contains("rust") && !l.contains("fn"));
         let code_idx = lines.iter().position(|l| l.contains("fn main()"));
 
         assert!(
