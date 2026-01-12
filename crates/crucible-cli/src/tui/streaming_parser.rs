@@ -739,7 +739,8 @@ mod tests {
         let mut parser = StreamingParser::new();
 
         // Code block with a comment that contains triple backticks
-        let input = "```python\n# This comment has ``` backticks\nprint(\"hello\")\n```\nAfter the code\n";
+        let input =
+            "```python\n# This comment has ``` backticks\nprint(\"hello\")\n```\nAfter the code\n";
 
         let events = parser.feed(input);
 

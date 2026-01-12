@@ -332,11 +332,10 @@ fn render_node(node: &Node, ctx: &mut RenderContext<'_>) {
     if node.cast::<BulletList>().is_some() {
         ctx.flush_line();
         let old_indent = ctx.indent;
-        let max_width = ctx.width.unwrap_or(80);
 
         for child in node.children.iter() {
             if child.cast::<ListItem>().is_some() {
-                render_list_item(child, ctx, "-", max_width);
+                render_list_item(child, ctx, "-");
             }
         }
 
@@ -351,12 +350,11 @@ fn render_node(node: &Node, ctx: &mut RenderContext<'_>) {
         let old_counter = ctx.list_counter;
         ctx.indent += 1;
         ctx.list_counter = Some(1);
-        let max_width = ctx.width.unwrap_or(80);
 
         for child in node.children.iter() {
             if child.cast::<ListItem>().is_some() {
                 let num = ctx.list_counter.unwrap_or(1);
-                render_list_item(child, ctx, &format!("{}.", num), max_width);
+                render_list_item(child, ctx, &format!("{}.", num));
                 ctx.list_counter = Some(num + 1);
             }
         }
@@ -413,7 +411,7 @@ fn render_node(node: &Node, ctx: &mut RenderContext<'_>) {
 /// Handles both inline content (text, bold, etc.) AND block-level elements
 /// (code fences, nested lists, paragraphs). The prefix is added to the first
 /// line of content, with continuation lines properly indented.
-fn render_list_item(node: &Node, ctx: &mut RenderContext<'_>, prefix: &str, _max_width: usize) {
+fn render_list_item(node: &Node, ctx: &mut RenderContext<'_>, prefix: &str) {
     let prefix_style = ctx.theme.style_for(MarkdownElement::ListMarker);
     let prefix_width = display_width(prefix);
     let continuation_indent = " ".repeat(prefix_width);
@@ -948,11 +946,11 @@ fn has_nested_node<T: markdown_it::NodeValue>(node: &Node) -> bool {
 // Table Rendering
 // =============================================================================
 
-/// Calculate display width of a string (counting characters).
+/// Calculate display width of a string using Unicode width algorithm.
 ///
-/// For proper Unicode width handling, consider using the unicode-width crate.
-fn display_width(s: &str) -> usize {
-    s.chars().count()
+/// Properly handles CJK characters (2 cells), combining characters, and emojis.
+pub(crate) fn display_width(s: &str) -> usize {
+    unicode_width::UnicodeWidthStr::width(s)
 }
 
 /// Wrap text to fit within a given width, returning lines.

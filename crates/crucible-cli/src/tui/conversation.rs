@@ -2167,7 +2167,10 @@ mod tests {
                 i,
                 line_len,
                 max_expected_len,
-                line.spans.iter().map(|s| s.content.as_ref()).collect::<String>()
+                line.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
             );
         }
 
@@ -2223,11 +2226,17 @@ mod tests {
                     i,
                     line_len,
                     terminal_width,
-                    line.spans.iter().map(|s| s.content.as_ref()).collect::<String>()
+                    line.spans
+                        .iter()
+                        .map(|s| s.content.as_ref())
+                        .collect::<String>()
                 );
             }
 
-            eprintln!("Terminal {}px (content_width={}):", terminal_width, content_width);
+            eprintln!(
+                "Terminal {}px (content_width={}):",
+                terminal_width, content_width
+            );
             for (i, line) in lines.iter().enumerate() {
                 let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
                 eprintln!("  {:2}: [{}] '{}'", i, text.chars().count(), text);
@@ -2315,11 +2324,18 @@ Feel free to adapt the class or add more functionality as needed!"#;
             content_width,
         );
 
-        eprintln!("Terminal {}px, content_width {}:", terminal_width, content_width);
+        eprintln!(
+            "Terminal {}px, content_width {}:",
+            terminal_width, content_width
+        );
         for (i, line) in lines.iter().enumerate() {
             let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
             let len = text.chars().count();
-            let overflow = if len > terminal_width as usize { " OVERFLOW!" } else { "" };
+            let overflow = if len > terminal_width as usize {
+                " OVERFLOW!"
+            } else {
+                ""
+            };
             eprintln!("  {:2}: [{}]{} '{}'", i, len, overflow, text);
         }
 
@@ -2340,7 +2356,9 @@ Feel free to adapt the class or add more functionality as needed!"#;
             assert!(
                 len <= terminal_width as usize,
                 "Line {} overflows: {} > {}",
-                i, len, terminal_width
+                i,
+                len,
+                terminal_width
             );
         }
     }

@@ -176,14 +176,6 @@ impl Harness {
     /// Simulate Alt+key
     pub fn key_alt(&mut self, c: char) {
         self.key_with_modifiers(KeyCode::Char(c), KeyModifiers::ALT);
-        // Handle Alt+T for reasoning toggle
-        // Note: show_reasoning is now accessed via a method
-        // The actual toggle will be handled by InputAction::ToggleReasoning
-        // This manual toggle may need to be removed or updated
-        if c == 't' {
-            // self.state.show_reasoning = !self.state.show_reasoning; // No longer directly accessible
-            // The toggle will be handled through the action system
-        }
     }
 
     /// Type a string (simulates key-by-key input)
@@ -1208,9 +1200,9 @@ mod tests {
 
         // Get the assistant message blocks
         let items = h.harness.view.state().conversation.items();
-        let assistant_msg = items.iter().find(|item| {
-            matches!(item, ConversationItem::AssistantMessage { .. })
-        });
+        let assistant_msg = items
+            .iter()
+            .find(|item| matches!(item, ConversationItem::AssistantMessage { .. }));
 
         assert!(assistant_msg.is_some(), "Should have assistant message");
 
@@ -1254,9 +1246,9 @@ mod tests {
         h.complete();
 
         let items = h.harness.view.state().conversation.items();
-        let assistant_msg = items.iter().find(|item| {
-            matches!(item, ConversationItem::AssistantMessage { .. })
-        });
+        let assistant_msg = items
+            .iter()
+            .find(|item| matches!(item, ConversationItem::AssistantMessage { .. }));
 
         if let Some(ConversationItem::AssistantMessage { blocks, .. }) = assistant_msg {
             // If parser is working, we should have a CODE block, not prose
@@ -1264,7 +1256,10 @@ mod tests {
             assert!(
                 has_code_block,
                 "Should have code block (parser should be active). Blocks: {:?}",
-                blocks.iter().map(|b| (b.is_prose(), b.is_code(), b.text())).collect::<Vec<_>>()
+                blocks
+                    .iter()
+                    .map(|b| (b.is_prose(), b.is_code(), b.text()))
+                    .collect::<Vec<_>>()
             );
         } else {
             panic!("Should have assistant message");
