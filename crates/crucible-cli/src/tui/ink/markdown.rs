@@ -6,6 +6,7 @@
 use crate::tui::ink::node::*;
 use crate::tui::ink::style::{Color, Style};
 use markdown_it::parser::inline::Text;
+use markdown_it::plugins::cmark::block::blockquote::Blockquote;
 use markdown_it::plugins::cmark::block::code::CodeBlock as MdCodeBlock;
 use markdown_it::plugins::cmark::block::fence::CodeFence;
 use markdown_it::plugins::cmark::block::heading::ATXHeading;
@@ -13,7 +14,9 @@ use markdown_it::plugins::cmark::block::list::{BulletList, ListItem, OrderedList
 use markdown_it::plugins::cmark::block::paragraph::Paragraph;
 use markdown_it::plugins::cmark::inline::backticks::CodeInline;
 use markdown_it::plugins::cmark::inline::emphasis::{Em, Strong};
+use markdown_it::plugins::cmark::inline::link::Link;
 use markdown_it::plugins::cmark::inline::newline::{Hardbreak, Softbreak};
+use markdown_it::plugins::extra::tables::{Table, TableBody, TableCell, TableHead, TableRow};
 use markdown_it::MarkdownIt;
 
 /// Convert markdown text to an ink Node tree
@@ -163,6 +166,21 @@ fn render_node(node: &markdown_it::Node, ctx: &mut RenderContext) {
         return;
     }
 
+    if node.cast::<Blockquote>().is_some() {
+        render_blockquote(node, ctx);
+        return;
+    }
+
+    if node.cast::<Table>().is_some() {
+        render_table(node, ctx);
+        return;
+    }
+
+    if let Some(link) = node.cast::<Link>() {
+        render_link(node, link, ctx);
+        return;
+    }
+
     if let Some(text) = node.cast::<Text>() {
         ctx.push_text(&text.content);
         return;
@@ -255,6 +273,99 @@ fn render_list_item(node: &markdown_it::Node, ctx: &mut RenderContext) {
     ctx.flush_line();
 }
 
+fn render_blockquote(node: &markdown_it::Node, ctx: &mut RenderContext) {
+    ctx.flush_line();
+
+    for child in node.children.iter() {
+        let child_text = extract_all_text(child);
+        for line in child_text.lines() {
+            ctx.push_block(row([
+                styled("│ ", Style::new().fg(Color::DarkGray)),
+                styled(line, Style::new().fg(Color::Gray).italic()),
+            ]));
+        }
+    }
+}
+
+fn render_table(node: &markdown_it::Node, ctx: &mut RenderContext) {
+    ctx.flush_line();
+
+    let mut rows: Vec<Vec<String>> = Vec::new();
+
+    for child in node.children.iter() {
+        if child.cast::<TableHead>().is_some() || child.cast::<TableBody>().is_some() {
+            for row_node in child.children.iter() {
+                if row_node.cast::<TableRow>().is_some() {
+                    let mut cells: Vec<String> = Vec::new();
+                    for cell_node in row_node.children.iter() {
+                        if cell_node.cast::<TableCell>().is_some() {
+                            cells.push(extract_all_text(cell_node).trim().to_string());
+                        }
+                    }
+                    rows.push(cells);
+                }
+            }
+        }
+    }
+
+    if rows.is_empty() {
+        return;
+    }
+
+    let col_count = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    let mut col_widths: Vec<usize> = vec![0; col_count];
+
+    for row in &rows {
+        for (i, cell) in row.iter().enumerate() {
+            if i < col_widths.len() {
+                col_widths[i] = col_widths[i].max(cell.chars().count());
+            }
+        }
+    }
+
+    for (row_idx, table_row) in rows.iter().enumerate() {
+        let mut cells: Vec<Node> = Vec::new();
+
+        for (i, width) in col_widths.iter().enumerate() {
+            let cell_text = table_row.get(i).map(|s| s.as_str()).unwrap_or("");
+            let padded = format!("{:width$}", cell_text, width = width);
+
+            let style = if row_idx == 0 {
+                Style::new().bold()
+            } else {
+                Style::default()
+            };
+
+            if i > 0 {
+                cells.push(styled(" │ ", Style::new().fg(Color::DarkGray)));
+            }
+            cells.push(styled(padded, style));
+        }
+
+        ctx.push_block(row(cells));
+
+        if row_idx == 0 && rows.len() > 1 {
+            let separator: String = col_widths
+                .iter()
+                .map(|w| "─".repeat(*w))
+                .collect::<Vec<_>>()
+                .join("─┼─");
+            ctx.push_block(styled(separator, Style::new().fg(Color::DarkGray)));
+        }
+    }
+}
+
+fn render_link(node: &markdown_it::Node, link: &Link, ctx: &mut RenderContext) {
+    let link_text = extract_all_text(node);
+    let display = if link_text.is_empty() {
+        link.url.clone()
+    } else {
+        link_text
+    };
+    ctx.current_spans
+        .push((display, Style::new().fg(Color::Blue).underline()));
+}
+
 fn heading_style(level: u8) -> Style {
     match level {
         1 => Style::new().fg(Color::Cyan).bold(),
@@ -321,5 +432,30 @@ mod tests {
         let output = render_to_string(&node, 80);
         assert!(output.contains("Item 1"));
         assert!(output.contains("•"));
+    }
+
+    #[test]
+    fn test_blockquote() {
+        let node = markdown_to_node("> This is a quote");
+        let output = render_to_string(&node, 80);
+        assert!(output.contains("quote"));
+        assert!(output.contains("│"));
+    }
+
+    #[test]
+    fn test_table() {
+        let node = markdown_to_node("| A | B |\n|---|---|\n| 1 | 2 |");
+        let output = render_to_string(&node, 80);
+        assert!(output.contains("A"));
+        assert!(output.contains("B"));
+        assert!(output.contains("1"));
+        assert!(output.contains("2"));
+    }
+
+    #[test]
+    fn test_link() {
+        let node = markdown_to_node("[click here](https://example.com)");
+        let output = render_to_string(&node, 80);
+        assert!(output.contains("click here"));
     }
 }
