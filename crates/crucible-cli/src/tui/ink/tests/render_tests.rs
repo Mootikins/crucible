@@ -18,7 +18,7 @@ fn empty_node_renders_nothing() {
 fn column_renders_children_with_newlines() {
     let node = col([text("Line 1"), text("Line 2")]);
     let output = render_to_string(&node, 80);
-    assert_eq!(output, "Line 1\nLine 2");
+    assert_eq!(output, "Line 1\r\nLine 2");
 }
 
 #[test]
