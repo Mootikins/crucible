@@ -211,11 +211,13 @@ fn render_children(node: &markdown_it::Node, ctx: &mut RenderContext) {
 }
 
 fn render_code_block(node: &markdown_it::Node, ctx: &mut RenderContext) {
-    let content = extract_all_text(node);
-    let lang = if let Some(fence) = node.cast::<CodeFence>() {
-        fence.info.split_whitespace().next().map(|s| s.to_string())
+    let (content, lang) = if let Some(fence) = node.cast::<CodeFence>() {
+        let lang = fence.info.split_whitespace().next().map(|s| s.to_string());
+        (fence.content.clone(), lang)
+    } else if let Some(code) = node.cast::<MdCodeBlock>() {
+        (code.content.clone(), None)
     } else {
-        None
+        (extract_all_text(node), None)
     };
 
     let code_style = Style::new().fg(Color::Green);
