@@ -101,8 +101,6 @@ impl Terminal {
     }
 
     pub fn render(&mut self, tree: &Node) -> io::Result<()> {
-
-
         let graduated = self.graduation.graduate(tree, self.width as usize)?;
 
         if !graduated.is_empty() {
@@ -129,19 +127,14 @@ impl Terminal {
 
         self.output.render(&content)?;
 
-
         Ok(())
     }
-
-
-
 
     fn filter_graduated(&self, node: &Node) -> Node {
         match node {
             Node::Static(s) if self.graduation.is_graduated(&s.key) => Node::Empty,
 
             // Popup rendered inline, not filtered
-
             Node::Static(s) => Node::Static(StaticNode {
                 key: s.key.clone(),
                 children: s
