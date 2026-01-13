@@ -65,6 +65,7 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
         vec![],                           // env_overrides
         None,                             // resume (session ID)
         false,                            // fullscreen
+        false,                            // ink
     )
     .await;
 
@@ -154,6 +155,7 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
         vec![], // env_overrides
         None,   // resume (session ID)
         false,  // fullscreen
+        false,  // ink
     )
     .await;
 
