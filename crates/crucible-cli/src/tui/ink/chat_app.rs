@@ -379,8 +379,8 @@ impl InkChatApp {
 
     fn render_message(&self, msg: &Message) -> Node {
         let (prefix, style) = match msg.role {
-            Role::User => (" > ", Style::new().fg(Color::Cyan)),
-            Role::Assistant => (" . ", Style::new().fg(Color::DarkGray)),
+            Role::User => (" > ", Style::new().fg(Color::Cyan).bold()),
+            Role::Assistant => ("   ", Style::new()),
             Role::System => (" * ", Style::new().fg(Color::Yellow).dim()),
         };
 
@@ -395,7 +395,7 @@ impl InkChatApp {
         let content_node = if tool_nodes.is_empty() {
             col([text(""), styled(&display, style)])
         } else {
-            col([text(""), styled(&display, style), fragment(tool_nodes)])
+            col([text(""), styled(&display, style), col(tool_nodes)])
         };
 
         scrollback(&msg.id, [content_node])
@@ -442,12 +442,12 @@ impl InkChatApp {
                 .map(|tc| self.render_tool_call(tc))
                 .collect();
 
-            let display = format!(" . {}", &self.streaming.content);
+            let display = format!("   {}", &self.streaming.content);
 
             col([
                 text(""),
-                styled(&display, Style::new().fg(Color::DarkGray)),
-                fragment(tool_nodes),
+                text(&display),
+                col(tool_nodes),
                 spinner(Some("Generating...".into()), self.spinner_frame),
             ])
         }
