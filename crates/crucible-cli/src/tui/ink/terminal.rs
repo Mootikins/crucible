@@ -181,6 +181,8 @@ impl Terminal {
         match node {
             Node::Static(s) if self.graduation.is_graduated(&s.key) => Node::Empty,
 
+            Node::Popup(_) => Node::Empty,
+
             Node::Static(s) => Node::Static(StaticNode {
                 key: s.key.clone(),
                 children: s
