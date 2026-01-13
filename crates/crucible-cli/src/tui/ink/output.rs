@@ -55,7 +55,9 @@ impl OutputBuffer {
             let next_line = next_lines.get(i).map(|s| s.as_str()).unwrap_or("");
             let prev_line = self.previous_lines.get(i).map(|s| s.as_str()).unwrap_or("");
 
-            if next_line != prev_line || i >= self.previous_height {
+            let line_changed = next_line != prev_line || i >= self.previous_height;
+
+            if line_changed {
                 execute!(self.stdout, cursor::MoveToColumn(0))?;
                 write!(self.stdout, "{}", next_line)?;
                 execute!(
@@ -65,7 +67,11 @@ impl OutputBuffer {
             }
 
             if i < max_lines - 1 {
-                write!(self.stdout, "\r\n")?;
+                if line_changed {
+                    write!(self.stdout, "\r\n")?;
+                } else {
+                    execute!(self.stdout, cursor::MoveDown(1), cursor::MoveToColumn(0))?;
+                }
             }
         }
 
@@ -99,6 +105,11 @@ impl OutputBuffer {
 
     pub fn height(&self) -> usize {
         self.previous_height
+    }
+
+    pub fn reset(&mut self) {
+        self.previous_lines.clear();
+        self.previous_height = 0;
     }
 }
 
