@@ -156,3 +156,75 @@ fn popup_renders_kind_indicator() {
     assert!(output.contains("tool_item"));
     assert!(output.contains("cmd_item"));
 }
+
+#[test]
+fn popup_in_chat_view_with_scrollback() {
+    let messages: Vec<Node> = (0..10)
+        .map(|i| {
+            scrollback(
+                &format!("msg-{}", i),
+                [col([
+                    text(format!("User message {}", i)),
+                    text(format!("Assistant response {} with lots of content", i)),
+                ])],
+            )
+        })
+        .collect();
+
+    let popup_node = popup(sample_items(), 0, 10);
+
+    let view = col([
+        fragment(messages),
+        spacer(),
+        popup_node,
+        text("▄".repeat(80)),
+        text(" > input"),
+        text("▀".repeat(80)),
+        text(" [plan] │ Ready"),
+    ]);
+
+    let output = render_to_string(&view, 80);
+
+    let popup_count = output.matches("▸").count();
+    assert_eq!(
+        popup_count, 1,
+        "popup selection indicator should appear exactly once, found {}",
+        popup_count
+    );
+
+    let search_count = output.matches("search").count();
+    assert_eq!(
+        search_count, 1,
+        "popup item 'search' should appear exactly once, found {}",
+        search_count
+    );
+}
+
+#[test]
+fn popup_positioned_above_input_bar() {
+    let popup_node = popup(sample_items(), 0, 10);
+
+    let view = col([
+        text("Header content"),
+        text("More content"),
+        spacer(),
+        popup_node,
+        text("▄▄▄▄▄▄▄▄"),
+        text(" > input"),
+        text("▀▀▀▀▀▀▀▀"),
+        text(" [plan]"),
+    ]);
+
+    let output = render_to_string(&view, 80);
+    let lines: Vec<&str> = output.lines().collect();
+
+    let popup_line_idx = lines.iter().position(|l| l.contains("▸")).unwrap();
+    let input_line_idx = lines.iter().position(|l| l.contains(" > input")).unwrap();
+
+    assert!(
+        popup_line_idx < input_line_idx,
+        "popup (line {}) should be above input bar (line {})",
+        popup_line_idx,
+        input_line_idx
+    );
+}
