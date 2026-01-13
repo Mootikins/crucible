@@ -339,11 +339,16 @@ fn render_blockquote(node: &markdown_it::Node, ctx: &mut RenderContext) {
         ctx.blocks.push(text(""));
     }
 
+    let prefix = "│ ";
+    let prefix_width = 2;
+    let content_width = ctx.width.saturating_sub(prefix_width);
+
     for child in node.children.iter() {
         let child_text = extract_all_text(child);
-        for line in child_text.lines() {
+        let wrapped = wrap_text(&child_text, content_width);
+        for line in wrapped {
             ctx.push_block(row([
-                styled("│ ", Style::new().fg(Color::DarkGray)),
+                styled(prefix, Style::new().fg(Color::DarkGray)),
                 styled(line, Style::new().fg(Color::Gray).italic()),
             ]));
         }
@@ -857,5 +862,51 @@ mod tests {
             output.contains("Pneumonoultramicroscopicsilicovolcanoconiosis"),
             "Long word should not be broken when it fits on a line"
         );
+    }
+
+    #[test]
+    fn table_at_67_columns() {
+        let table = r#"| Feature | Rust | Go |
+|---------|------|-----|
+| Memory | Safe | GC |
+| Speed | Fast | Fast |"#;
+
+        let node = markdown_to_node_with_width(table, 67);
+        let output = render_to_string(&node, 67);
+        assert_lines_fit_width(&output, 67);
+    }
+
+    #[test]
+    fn table_forces_cell_wrap_at_67_columns() {
+        let table = r#"| Command | Description | Example Usage |
+|---------|-------------|---------------|
+| search | Search through notes semantically | crucible search "query" |
+| semantic | Semantic search with embeddings enabled | crucible semantic "concept" |
+| note create | Create a new note in kiln | crucible note create path.md |"#;
+
+        let node = markdown_to_node_with_width(table, 67);
+        let output = render_to_string(&node, 67);
+        assert_lines_fit_width(&output, 67);
+    }
+
+    #[test]
+    fn table_with_bullet_prefix_at_67_columns() {
+        use crate::tui::ink::node::{row, styled};
+        use crate::tui::ink::style::{Color, Style};
+
+        let table = r#"| Command | Description | Example Usage |
+|---------|-------------|---------------|
+| search | Search through notes semantically | crucible search "query" |
+| semantic | Semantic search with embeddings enabled | crucible semantic "concept" |"#;
+
+        let prefix_width = 2;
+        let content_width = 67 - prefix_width;
+        let md_node = markdown_to_node_with_width(table, content_width);
+        let with_prefix = row([
+            styled("● ".to_string(), Style::new().fg(Color::DarkGray)),
+            md_node,
+        ]);
+        let output = render_to_string(&with_prefix, 67);
+        assert_lines_fit_width(&output, 67);
     }
 }
