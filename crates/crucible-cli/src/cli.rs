@@ -131,6 +131,10 @@ pub enum Commands {
         /// screen buffer like traditional TUIs.
         #[arg(long)]
         fullscreen: bool,
+
+        /// Use experimental Ink-based runner (simpler graduation model)
+        #[arg(long)]
+        ink: bool,
     },
 
     /// Start MCP server exposing Crucible tools
