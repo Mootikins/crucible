@@ -59,7 +59,7 @@ fn render_text(text: &TextNode, width: usize, output: &mut String) {
 
         for (i, line) in wrapped.iter().enumerate() {
             if i > 0 {
-                output.push('\n');
+                output.push_str("\r\n");
             }
             output.push_str(&apply_style(line, &text.style));
         }
@@ -85,7 +85,7 @@ fn render_box(boxnode: &BoxNode, width: usize, output: &mut String) {
         Direction::Column => {
             for (i, child_str) in children_output.iter().enumerate() {
                 if i > 0 {
-                    output.push('\n');
+                    output.push_str("\r\n");
                 }
                 output.push_str(child_str);
             }

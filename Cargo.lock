@@ -3644,6 +3644,7 @@ dependencies = [
  "similar",
  "syntect",
  "tabled",
+ "taffy",
  "tempfile",
  "textwrap 0.16.2",
  "thiserror 2.0.17",
@@ -7607,6 +7608,12 @@ dependencies = [
  "memchr",
  "memmap2",
 ]
+
+[[package]]
+name = "grid"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "36119f3a540b086b4e436bb2b588cf98a68863470e0e880f4d0842f112a3183a"
 
 [[package]]
 name = "h2"
@@ -15182,6 +15189,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.111",
+]
+
+[[package]]
+name = "taffy"
+version = "0.7.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab4f4d046dd956a47a7e1a2947083d7ac3e6aa3cfaaead36173ceaa5ab11878c"
+dependencies = [
+ "arrayvec 0.7.6",
+ "grid",
+ "serde",
+ "slotmap",
 ]
 
 [[package]]
