@@ -1,12 +1,13 @@
 use crate::tui::ink::app::{Action, App};
 use crate::tui::ink::event::{Event, InputAction, InputBuffer};
-use crate::tui::ink::markdown::markdown_to_node;
+use crate::tui::ink::markdown::markdown_to_node_with_width;
 use crate::tui::ink::node::*;
 use crate::tui::ink::style::{Color, Style};
 use crossterm::event::KeyCode;
 use std::time::Duration;
 
 const INPUT_BG: Color = Color::Rgb(40, 44, 52);
+const BULLET_PREFIX_WIDTH: usize = 2;
 
 #[derive(Debug, Clone)]
 pub enum ChatAppMsg {
@@ -388,7 +389,8 @@ impl InkChatApp {
         let content_node = match msg.role {
             Role::User => self.render_user_prompt(&msg.content),
             Role::Assistant => {
-                let md_node = markdown_to_node(&msg.content);
+                let content_width = terminal_width().saturating_sub(BULLET_PREFIX_WIDTH);
+                let md_node = markdown_to_node_with_width(&msg.content, content_width);
                 col([
                     text(""),
                     row([styled("● ", Style::new().fg(Color::DarkGray)), md_node]),
@@ -456,7 +458,8 @@ impl InkChatApp {
                 .map(|tc| self.render_tool_call(tc))
                 .collect();
 
-            let content_node = markdown_to_node(&self.streaming.content);
+            let content_width = terminal_width().saturating_sub(BULLET_PREFIX_WIDTH);
+            let content_node = markdown_to_node_with_width(&self.streaming.content, content_width);
 
             col([
                 text(""),
