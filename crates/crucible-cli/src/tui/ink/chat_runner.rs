@@ -46,13 +46,19 @@ impl InkChatRunner {
     {
         self.terminal.enter()?;
 
+        let mut app = InkChatApp::default();
+        app.set_mode(self.mode);
+        app.set_status("Connecting...");
+
+        let tree = app.view();
+        self.terminal.render(&tree)?;
+
         let selection = self.discover_agent().await;
         let mut agent = create_agent(selection).await?;
 
-        let (msg_tx, msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
+        app.set_status("Ready");
 
-        let mut app = InkChatApp::default();
-        app.set_mode(self.mode);
+        let (msg_tx, msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
 
         self.event_loop(&mut app, &mut agent, bridge, msg_tx, msg_rx)
             .await?;
