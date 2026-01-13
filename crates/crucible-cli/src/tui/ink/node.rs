@@ -8,6 +8,7 @@ pub enum Node {
     Static(StaticNode),
     Input(InputNode),
     Spinner(SpinnerNode),
+    Popup(PopupNode),
     Fragment(Vec<Node>),
 }
 
@@ -54,6 +55,21 @@ pub struct SpinnerNode {
     pub label: Option<String>,
     pub style: Style,
     pub frame: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PopupNode {
+    pub items: Vec<PopupItemNode>,
+    pub selected: usize,
+    pub viewport_offset: usize,
+    pub max_visible: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PopupItemNode {
+    pub label: String,
+    pub description: Option<String>,
+    pub kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -142,6 +158,40 @@ pub fn spinner(label: Option<String>, frame: usize) -> Node {
 
 pub fn fragment(children: impl IntoIterator<Item = Node>) -> Node {
     Node::Fragment(children.into_iter().collect())
+}
+
+pub fn popup(items: Vec<PopupItemNode>, selected: usize, max_visible: usize) -> Node {
+    let viewport_offset = if selected >= max_visible {
+        selected.saturating_sub(max_visible - 1)
+    } else {
+        0
+    };
+    Node::Popup(PopupNode {
+        items,
+        selected,
+        viewport_offset,
+        max_visible,
+    })
+}
+
+pub fn popup_item(label: impl Into<String>) -> PopupItemNode {
+    PopupItemNode {
+        label: label.into(),
+        description: None,
+        kind: None,
+    }
+}
+
+impl PopupItemNode {
+    pub fn desc(mut self, desc: impl Into<String>) -> Self {
+        self.description = Some(desc.into());
+        self
+    }
+
+    pub fn kind(mut self, kind: impl Into<String>) -> Self {
+        self.kind = Some(kind.into());
+        self
+    }
 }
 
 pub fn spacer() -> Node {

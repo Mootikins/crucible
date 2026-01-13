@@ -82,6 +82,14 @@ fn layout_node(node: &Node, available: &Rect) -> LayoutNode {
             children: Vec::new(),
         },
 
+        Node::Popup(popup) => {
+            let height = popup.max_visible.min(popup.items.len()) as u16;
+            LayoutNode {
+                rect: Rect::new(available.x, available.y, available.width, height),
+                children: Vec::new(),
+            }
+        }
+
         Node::Fragment(children) => {
             let mut child_layouts = Vec::new();
             let mut y = available.y;

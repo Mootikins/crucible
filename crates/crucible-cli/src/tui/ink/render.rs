@@ -1,6 +1,8 @@
 use crate::tui::ink::ansi::visible_width;
-use crate::tui::ink::node::{BoxNode, Direction, InputNode, Node, SpinnerNode, TextNode};
-use crate::tui::ink::style::Style;
+use crate::tui::ink::node::{
+    BoxNode, Direction, InputNode, Node, PopupNode, SpinnerNode, TextNode,
+};
+use crate::tui::ink::style::{Color, Style};
 use crossterm::style::Stylize;
 use std::io::{self, Write};
 use textwrap::{wrap, Options, WordSplitter};
@@ -35,6 +37,10 @@ fn render_node_to_string(node: &Node, width: usize, output: &mut String) {
 
         Node::Spinner(spinner) => {
             render_spinner(spinner, output);
+        }
+
+        Node::Popup(popup) => {
+            render_popup(popup, width, output);
         }
 
         Node::Fragment(children) => {
@@ -210,6 +216,85 @@ fn render_spinner(spinner: &SpinnerNode, output: &mut String) {
         output.push(' ');
         output.push_str(&apply_style(label, &spinner.style));
     }
+}
+
+fn render_popup(popup: &PopupNode, width: usize, output: &mut String) {
+    let popup_width = width.saturating_sub(2);
+    if popup_width == 0 || popup.items.is_empty() {
+        return;
+    }
+
+    let popup_bg = Color::Rgb(45, 50, 60);
+    let selected_bg = Color::Rgb(60, 70, 90);
+
+    let visible_end = (popup.viewport_offset + popup.max_visible).min(popup.items.len());
+    let visible_items = &popup.items[popup.viewport_offset..visible_end];
+
+    for (i, item) in visible_items.iter().enumerate() {
+        let actual_index = popup.viewport_offset + i;
+        let is_selected = actual_index == popup.selected;
+        let bg = if is_selected { selected_bg } else { popup_bg };
+
+        let mut line = String::new();
+        line.push(' ');
+
+        if is_selected {
+            line.push_str("▸ ");
+        } else {
+            line.push_str("  ");
+        }
+
+        if let Some(kind) = &item.kind {
+            line.push_str(kind);
+            line.push(' ');
+        }
+
+        line.push_str(&item.label);
+
+        let label_width = visible_width(&line);
+
+        if let Some(desc) = &item.description {
+            let available = popup_width.saturating_sub(label_width + 3);
+            if available > 10 {
+                let truncated = if desc.chars().count() > available {
+                    let s: String = desc.chars().take(available - 1).collect();
+                    format!("{}…", s)
+                } else {
+                    desc.clone()
+                };
+                line.push_str("  ");
+                let desc_style = Style::new().bg(bg).dim();
+                output.push_str(&apply_style(&line, &Style::new().bg(bg)));
+                line.clear();
+                line.push_str(&truncated);
+                let after_desc_width = label_width + 2 + visible_width(&truncated);
+                let padding = popup_width.saturating_sub(after_desc_width);
+                line.push_str(&" ".repeat(padding));
+                line.push(' ');
+                output.push_str(&apply_style(&line, &desc_style));
+            } else {
+                let padding = popup_width.saturating_sub(label_width);
+                line.push_str(&" ".repeat(padding));
+                line.push(' ');
+                output.push_str(&apply_style(&line, &Style::new().bg(bg)));
+            }
+        } else {
+            let padding = popup_width.saturating_sub(label_width);
+            line.push_str(&" ".repeat(padding));
+            line.push(' ');
+            output.push_str(&apply_style(&line, &Style::new().bg(bg)));
+        }
+
+        if i < visible_items.len() - 1 {
+            output.push_str("\r\n");
+        }
+    }
+}
+
+pub fn render_popup_standalone(popup: &PopupNode, width: usize) -> String {
+    let mut output = String::new();
+    render_popup(popup, width, &mut output);
+    output
 }
 
 fn apply_style(content: &str, style: &Style) -> String {
