@@ -1,6 +1,6 @@
-use crate::tui::ink::node::{BoxNode, Direction, Node, PopupNode, StaticNode};
+use crate::tui::ink::node::{BoxNode, Direction, Node, StaticNode};
 use crate::tui::ink::output::OutputBuffer;
-use crate::tui::ink::render::{render_popup_standalone, render_to_string};
+use crate::tui::ink::render::render_to_string;
 use crate::tui::ink::runtime::GraduationState;
 use crossterm::{
     cursor::{Hide, MoveTo, MoveToColumn, Show},
@@ -22,8 +22,6 @@ pub struct Terminal {
     use_alternate_screen: bool,
     output: OutputBuffer,
     keyboard_enhanced: bool,
-    had_popup_last_frame: bool,
-    last_popup_height: usize,
 }
 
 impl Terminal {
@@ -37,8 +35,6 @@ impl Terminal {
             use_alternate_screen: false,
             output: OutputBuffer::new(width as usize, height as usize),
             keyboard_enhanced: false,
-            had_popup_last_frame: false,
-            last_popup_height: 0,
         })
     }
 
@@ -105,15 +101,7 @@ impl Terminal {
     }
 
     pub fn render(&mut self, tree: &Node) -> io::Result<()> {
-        let popup = self.find_popup(tree);
-        let has_popup = popup.is_some();
 
-        if self.had_popup_last_frame && !has_popup && self.last_popup_height > 0 {
-            self.clear_popup_area(self.last_popup_height)?;
-            self.output.force_redraw();
-            self.last_popup_height = 0;
-        }
-        self.had_popup_last_frame = has_popup;
 
         let graduated = self.graduation.graduate(tree, self.width as usize)?;
 
@@ -141,88 +129,18 @@ impl Terminal {
 
         self.output.render(&content)?;
 
-        if let Some(popup_node) = popup {
-            self.last_popup_height = self.render_popup_overlay(popup_node)?;
-        }
 
         Ok(())
     }
 
-    fn clear_popup_area(&mut self, popup_height: usize) -> io::Result<()> {
-        use crossterm::cursor::{MoveDown, MoveUp, RestorePosition, SavePosition};
-        use crossterm::terminal::{Clear, ClearType};
 
-        let input_bar_lines = 3usize;
-        let lines_up = input_bar_lines + popup_height;
 
-        execute!(self.stdout, SavePosition)?;
-        execute!(self.stdout, MoveUp(lines_up as u16), MoveToColumn(0))?;
-
-        for i in 0..popup_height {
-            if i > 0 {
-                execute!(self.stdout, MoveDown(1), MoveToColumn(0))?;
-            }
-            execute!(self.stdout, Clear(ClearType::CurrentLine))?;
-        }
-
-        execute!(self.stdout, RestorePosition)?;
-        self.stdout.flush()
-    }
-
-    fn find_popup<'a>(&self, node: &'a Node) -> Option<&'a PopupNode> {
-        match node {
-            Node::Popup(p) => Some(p),
-            Node::Box(b) => b.children.iter().find_map(|c| self.find_popup(c)),
-            Node::Static(s) => s.children.iter().find_map(|c| self.find_popup(c)),
-            Node::Fragment(children) => children.iter().find_map(|c| self.find_popup(c)),
-            _ => None,
-        }
-    }
-
-    fn render_popup_overlay(&mut self, popup: &PopupNode) -> io::Result<usize> {
-        if popup.items.is_empty() {
-            return Ok(0);
-        }
-
-        let popup_content = render_popup_standalone(popup, self.width as usize);
-        let popup_lines: Vec<&str> = popup_content.split("\r\n").collect();
-        let popup_height = popup_lines.len();
-
-        let input_bar_lines = 3usize;
-        let lines_up_from_cursor = input_bar_lines + popup_height;
-
-        use crossterm::cursor::{MoveDown, MoveUp, RestorePosition, SavePosition};
-        use crossterm::terminal::{Clear, ClearType};
-
-        execute!(self.stdout, SavePosition)?;
-
-        if lines_up_from_cursor > 0 {
-            execute!(
-                self.stdout,
-                MoveUp(lines_up_from_cursor as u16),
-                MoveToColumn(0)
-            )?;
-        }
-
-        for (i, line) in popup_lines.iter().enumerate() {
-            if i > 0 {
-                execute!(self.stdout, MoveDown(1), MoveToColumn(0))?;
-            }
-            execute!(self.stdout, Clear(ClearType::CurrentLine))?;
-            write!(self.stdout, " {}", line)?;
-        }
-
-        execute!(self.stdout, RestorePosition)?;
-        self.stdout.flush()?;
-
-        Ok(popup_height)
-    }
 
     fn filter_graduated(&self, node: &Node) -> Node {
         match node {
             Node::Static(s) if self.graduation.is_graduated(&s.key) => Node::Empty,
 
-            Node::Popup(_) => Node::Empty,
+            // Popup rendered inline, not filtered
 
             Node::Static(s) => Node::Static(StaticNode {
                 key: s.key.clone(),
