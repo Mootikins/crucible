@@ -141,6 +141,37 @@ impl Terminal {
             self.render_popup_overlay(popup_node)?;
         }
 
+        let input_info = self.find_input(tree);
+        self.position_cursor(input_info)?;
+
+        Ok(())
+    }
+
+    fn find_input(&self, node: &Node) -> Option<(usize, bool)> {
+        match node {
+            Node::Input(input) => Some((input.cursor, input.focused)),
+            Node::Box(b) => b.children.iter().find_map(|c| self.find_input(c)),
+            Node::Static(s) => s.children.iter().find_map(|c| self.find_input(c)),
+            Node::Fragment(children) => children.iter().find_map(|c| self.find_input(c)),
+            _ => None,
+        }
+    }
+
+    fn position_cursor(&mut self, input_info: Option<(usize, bool)>) -> io::Result<()> {
+        use crossterm::cursor::{SetCursorStyle, Show};
+
+        if let Some((cursor_pos, focused)) = input_info {
+            if focused {
+                let prompt_len = 3;
+                let col = (prompt_len + cursor_pos) as u16;
+                execute!(
+                    self.stdout,
+                    MoveToColumn(col),
+                    SetCursorStyle::SteadyBar,
+                    Show
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -167,6 +198,7 @@ impl Terminal {
         let lines_up_from_cursor = input_bar_lines + popup_height;
 
         use crossterm::cursor::{MoveDown, MoveUp, RestorePosition, SavePosition};
+        use crossterm::terminal::{Clear, ClearType};
 
         execute!(self.stdout, SavePosition)?;
 
@@ -174,15 +206,16 @@ impl Terminal {
             execute!(
                 self.stdout,
                 MoveUp(lines_up_from_cursor as u16),
-                MoveToColumn(1)
+                MoveToColumn(0)
             )?;
         }
 
         for (i, line) in popup_lines.iter().enumerate() {
             if i > 0 {
-                execute!(self.stdout, MoveDown(1), MoveToColumn(1))?;
+                execute!(self.stdout, MoveDown(1), MoveToColumn(0))?;
             }
-            write!(self.stdout, "{}", line)?;
+            execute!(self.stdout, Clear(ClearType::CurrentLine))?;
+            write!(self.stdout, " {}", line)?;
         }
 
         execute!(self.stdout, RestorePosition)?;
