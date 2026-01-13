@@ -111,6 +111,19 @@ impl LayoutEngine {
                 })
                 .unwrap(),
 
+            Node::Popup(popup) => {
+                let height = popup.max_visible.min(popup.items.len()) as f32;
+                self.tree
+                    .new_leaf(Style {
+                        size: Size {
+                            width: length(available_width),
+                            height: length(height),
+                        },
+                        ..Default::default()
+                    })
+                    .unwrap()
+            }
+
             Node::Fragment(children) => {
                 let child_ids: Vec<NodeId> = children
                     .iter()
