@@ -23,6 +23,7 @@ pub struct Terminal {
     output: OutputBuffer,
     keyboard_enhanced: bool,
     had_popup_last_frame: bool,
+    last_popup_height: usize,
 }
 
 impl Terminal {
@@ -37,6 +38,7 @@ impl Terminal {
             output: OutputBuffer::new(width as usize, height as usize),
             keyboard_enhanced: false,
             had_popup_last_frame: false,
+            last_popup_height: 0,
         })
     }
 
@@ -106,8 +108,10 @@ impl Terminal {
         let popup = self.find_popup(tree);
         let has_popup = popup.is_some();
 
-        if self.had_popup_last_frame && !has_popup {
+        if self.had_popup_last_frame && !has_popup && self.last_popup_height > 0 {
+            self.clear_popup_area(self.last_popup_height)?;
             self.output.force_redraw();
+            self.last_popup_height = 0;
         }
         self.had_popup_last_frame = has_popup;
 
@@ -138,13 +142,34 @@ impl Terminal {
         self.output.render(&content)?;
 
         if let Some(popup_node) = popup {
-            self.render_popup_overlay(popup_node)?;
+            self.last_popup_height = self.render_popup_overlay(popup_node)?;
         }
 
         let input_info = self.find_input(tree);
         self.position_cursor(input_info)?;
 
         Ok(())
+    }
+
+    fn clear_popup_area(&mut self, popup_height: usize) -> io::Result<()> {
+        use crossterm::cursor::{MoveDown, MoveUp, RestorePosition, SavePosition};
+        use crossterm::terminal::{Clear, ClearType};
+
+        let input_bar_lines = 3usize;
+        let lines_up = input_bar_lines + popup_height;
+
+        execute!(self.stdout, SavePosition)?;
+        execute!(self.stdout, MoveUp(lines_up as u16), MoveToColumn(0))?;
+
+        for i in 0..popup_height {
+            if i > 0 {
+                execute!(self.stdout, MoveDown(1), MoveToColumn(0))?;
+            }
+            execute!(self.stdout, Clear(ClearType::CurrentLine))?;
+        }
+
+        execute!(self.stdout, RestorePosition)?;
+        self.stdout.flush()
     }
 
     fn find_input(&self, node: &Node) -> Option<(usize, bool)> {
@@ -158,14 +183,16 @@ impl Terminal {
     }
 
     fn position_cursor(&mut self, input_info: Option<(usize, bool)>) -> io::Result<()> {
-        use crossterm::cursor::{SetCursorStyle, Show};
+        use crossterm::cursor::{MoveUp, SetCursorStyle, Show};
 
         if let Some((cursor_pos, focused)) = input_info {
             if focused {
                 let prompt_len = 3;
                 let col = (prompt_len + cursor_pos) as u16;
+                let lines_up = 2u16;
                 execute!(
                     self.stdout,
+                    MoveUp(lines_up),
                     MoveToColumn(col),
                     SetCursorStyle::SteadyBar,
                     Show
@@ -185,9 +212,9 @@ impl Terminal {
         }
     }
 
-    fn render_popup_overlay(&mut self, popup: &PopupNode) -> io::Result<()> {
+    fn render_popup_overlay(&mut self, popup: &PopupNode) -> io::Result<usize> {
         if popup.items.is_empty() {
-            return Ok(());
+            return Ok(0);
         }
 
         let popup_content = render_popup_standalone(popup, self.width as usize);
@@ -221,7 +248,7 @@ impl Terminal {
         execute!(self.stdout, RestorePosition)?;
         self.stdout.flush()?;
 
-        Ok(())
+        Ok(popup_height)
     }
 
     fn filter_graduated(&self, node: &Node) -> Node {
