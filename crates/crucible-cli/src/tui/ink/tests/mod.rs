@@ -3,6 +3,7 @@ mod event_tests;
 mod graduation_tests;
 mod layout_tests;
 mod node_tests;
+mod popup_tests;
 mod property_tests;
 mod render_tests;
 mod streaming_tests;
