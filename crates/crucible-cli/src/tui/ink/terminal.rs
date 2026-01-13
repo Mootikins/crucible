@@ -22,6 +22,7 @@ pub struct Terminal {
     use_alternate_screen: bool,
     output: OutputBuffer,
     keyboard_enhanced: bool,
+    had_popup_last_frame: bool,
 }
 
 impl Terminal {
@@ -35,6 +36,7 @@ impl Terminal {
             use_alternate_screen: false,
             output: OutputBuffer::new(width as usize, height as usize),
             keyboard_enhanced: false,
+            had_popup_last_frame: false,
         })
     }
 
@@ -102,6 +104,12 @@ impl Terminal {
 
     pub fn render(&mut self, tree: &Node) -> io::Result<()> {
         let popup = self.find_popup(tree);
+        let has_popup = popup.is_some();
+
+        if self.had_popup_last_frame && !has_popup {
+            self.output.force_redraw();
+        }
+        self.had_popup_last_frame = has_popup;
 
         let graduated = self.graduation.graduate(tree, self.width as usize)?;
 
