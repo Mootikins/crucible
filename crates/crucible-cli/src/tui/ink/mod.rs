@@ -33,6 +33,7 @@
 //! }
 //! ```
 
+mod ansi;
 mod app;
 pub mod chat_app;
 pub mod chat_runner;
