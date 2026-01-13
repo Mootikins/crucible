@@ -22,6 +22,7 @@ pub mod graduation;
 pub mod help;
 pub mod help_assets;
 pub mod history_manager;
+pub mod ink;
 pub mod inline_printer;
 pub mod input;
 pub mod input_mode_manager;

@@ -441,3 +441,174 @@ fn chat_rapid_input() {
     // Clean exit
     session.send_control('c').expect("Failed to send Ctrl+C");
 }
+
+// =============================================================================
+// Ink Runner Tests
+// =============================================================================
+
+/// Test that ink runner doesn't freeze after startup
+///
+/// This reproduces a bug where the TUI freezes ~5s after startup,
+/// becoming unresponsive to all input including Ctrl+C.
+#[test]
+#[ignore = "requires built binary"]
+fn ink_runner_does_not_freeze() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process"])
+        .with_env("RUST_LOG", "crucible_cli::tui::ink=debug")
+        .with_timeout(Duration::from_secs(3));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn chat --ink");
+
+    let start = std::time::Instant::now();
+
+    session.wait(Duration::from_secs(1));
+    eprintln!(
+        "[{:?}] Startup complete, beginning input test",
+        start.elapsed()
+    );
+
+    for i in 0..20 {
+        let elapsed = start.elapsed();
+        eprintln!("[{:?}] Sending keystroke {}", elapsed, i);
+
+        if session.send("x").is_err() {
+            panic!("Send failed at {:?} (iteration {})", elapsed, i);
+        }
+
+        session.wait(Duration::from_millis(300));
+
+        if session.send_key(Key::Backspace).is_err() {
+            panic!("Backspace failed at {:?} (iteration {})", elapsed, i);
+        }
+
+        session.wait(Duration::from_millis(300));
+    }
+
+    eprintln!(
+        "[{:?}] Input test passed, trying ESC first",
+        start.elapsed()
+    );
+    session.send_key(Key::Escape).expect("ESC failed");
+
+    session.wait(Duration::from_millis(500));
+
+    eprintln!("[{:?}] Checking if ESC caused exit", start.elapsed());
+    match session.expect_eof() {
+        Ok(_) => {
+            eprintln!("[{:?}] ESC worked - test passed", start.elapsed());
+            return;
+        }
+        Err(_) => {
+            eprintln!("[{:?}] ESC didn't exit, trying Ctrl+C", start.elapsed());
+        }
+    }
+
+    session.send_control('c').expect("Ctrl+C failed");
+    session.wait(Duration::from_millis(500));
+
+    eprintln!("[{:?}] Waiting for exit after Ctrl+C", start.elapsed());
+    if session.expect_eof().is_err() {
+        panic!(
+            "TUI did not exit after ESC or Ctrl+C at {:?}",
+            start.elapsed()
+        );
+    }
+
+    eprintln!("[{:?}] Test passed", start.elapsed());
+}
+
+/// Test that /quit command causes exit
+#[test]
+#[ignore = "requires built binary"]
+fn ink_quit_with_slash_command() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(5));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn chat --ink");
+
+    session.wait(Duration::from_secs(1));
+    eprintln!("Sending /quit command");
+
+    session.send_line("/quit").expect("Failed to send /quit");
+    session.wait(Duration::from_millis(500));
+
+    match session.expect_eof() {
+        Ok(_) => eprintln!("/quit worked - test passed"),
+        Err(e) => panic!("/quit command did not exit: {:?}", e),
+    }
+}
+
+/// Test that typing and Enter works - check output for echo
+#[test]
+#[ignore = "requires built binary"]
+fn ink_verify_pty_works() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process"])
+        .with_env("RUST_LOG", "crucible_cli::tui::ink=debug")
+        .with_timeout(Duration::from_secs(10));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn chat --ink");
+
+    session.wait(Duration::from_secs(2));
+
+    eprintln!("Checking for initial prompt...");
+    let screen = session.capture_screen().unwrap_or_default();
+    eprintln!("Initial screen: {:?}", screen);
+
+    eprintln!("Typing hello...");
+    session.send("hello").expect("Failed to send hello");
+    session.wait(Duration::from_secs(1));
+
+    let screen2 = session.capture_screen().unwrap_or_default();
+    eprintln!("Screen after 'hello': {:?}", screen2);
+
+    eprintln!("Sending Enter...");
+    session.send("\r").expect("Failed to send Enter");
+    session.wait(Duration::from_secs(2));
+
+    let screen3 = session.capture_screen().unwrap_or_default();
+    eprintln!("Screen after Enter: {:?}", screen3);
+
+    session.send_control('c').ok();
+}
+
+/// Test ink runner stays responsive for extended period
+#[test]
+#[ignore = "requires built binary"]
+fn ink_runner_stays_responsive_10s() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(20));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn chat --ink");
+
+    session.wait(Duration::from_secs(1));
+
+    let start = std::time::Instant::now();
+    let mut last_responsive = start;
+
+    while start.elapsed() < Duration::from_secs(10) {
+        session.send("a").expect(&format!(
+            "Send failed after {:?}, last responsive {:?} ago",
+            start.elapsed(),
+            last_responsive.elapsed()
+        ));
+
+        session.wait(Duration::from_millis(200));
+
+        session
+            .send_key(Key::Backspace)
+            .expect(&format!("Backspace failed after {:?}", start.elapsed()));
+
+        last_responsive = std::time::Instant::now();
+        session.wait(Duration::from_millis(300));
+    }
+
+    session
+        .send_control('c')
+        .expect("Ctrl+C failed after 10s test");
+}

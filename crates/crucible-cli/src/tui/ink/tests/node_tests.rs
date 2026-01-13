@@ -1,0 +1,192 @@
+use crate::tui::ink::*;
+
+#[test]
+fn text_creates_text_node() {
+    let node = text("Hello");
+    match node {
+        Node::Text(t) => assert_eq!(t.content, "Hello"),
+        _ => panic!("Expected Text node"),
+    }
+}
+
+#[test]
+fn styled_applies_style() {
+    let node = styled("Error", Style::new().fg(Color::Red).bold());
+    match node {
+        Node::Text(t) => {
+            assert_eq!(t.content, "Error");
+            assert_eq!(t.style.fg, Some(Color::Red));
+            assert!(t.style.bold);
+        }
+        _ => panic!("Expected Text node"),
+    }
+}
+
+#[test]
+fn col_creates_column_box() {
+    let node = col([text("A"), text("B")]);
+    match node {
+        Node::Box(b) => {
+            assert_eq!(b.direction, Direction::Column);
+            assert_eq!(b.children.len(), 2);
+        }
+        _ => panic!("Expected Box node"),
+    }
+}
+
+#[test]
+fn row_creates_row_box() {
+    let node = row([text("A"), text("B")]);
+    match node {
+        Node::Box(b) => {
+            assert_eq!(b.direction, Direction::Row);
+            assert_eq!(b.children.len(), 2);
+        }
+        _ => panic!("Expected Box node"),
+    }
+}
+
+#[test]
+fn scrollback_creates_static_node_with_newline() {
+    let node = scrollback("msg-1", [text("Hello")]);
+    match node {
+        Node::Static(s) => {
+            assert_eq!(s.key, "msg-1");
+            assert!(s.newline);
+            assert_eq!(s.children.len(), 1);
+        }
+        _ => panic!("Expected Static node"),
+    }
+}
+
+#[test]
+fn scrollback_continuation_has_no_newline() {
+    let node = scrollback_continuation("msg-1-cont", [text("world")]);
+    match node {
+        Node::Static(s) => {
+            assert!(!s.newline);
+        }
+        _ => panic!("Expected Static node"),
+    }
+}
+
+#[test]
+fn text_input_creates_input_node() {
+    let node = text_input("hello", 5);
+    match node {
+        Node::Input(i) => {
+            assert_eq!(i.value, "hello");
+            assert_eq!(i.cursor, 5);
+            assert!(i.focused);
+        }
+        _ => panic!("Expected Input node"),
+    }
+}
+
+#[test]
+fn spinner_creates_spinner_node() {
+    let node = spinner(Some("Loading...".into()), 2);
+    match node {
+        Node::Spinner(s) => {
+            assert_eq!(s.label, Some("Loading...".into()));
+            assert_eq!(s.frame, 2);
+        }
+        _ => panic!("Expected Spinner node"),
+    }
+}
+
+#[test]
+fn spinner_cycles_frames() {
+    let s = SpinnerNode {
+        label: None,
+        style: Style::default(),
+        frame: 0,
+    };
+    assert_eq!(s.current_char(), '◐');
+
+    let s = SpinnerNode { frame: 1, ..s };
+    assert_eq!(s.current_char(), '◓');
+
+    let s = SpinnerNode { frame: 4, ..s };
+    assert_eq!(s.current_char(), '◐');
+}
+
+#[test]
+fn fragment_collects_children() {
+    let node = fragment([text("A"), text("B"), text("C")]);
+    match node {
+        Node::Fragment(children) => {
+            assert_eq!(children.len(), 3);
+        }
+        _ => panic!("Expected Fragment node"),
+    }
+}
+
+#[test]
+fn spacer_creates_flex_box() {
+    let node = spacer();
+    match node {
+        Node::Box(b) => {
+            assert_eq!(b.size, Size::Flex(1));
+        }
+        _ => panic!("Expected Box node"),
+    }
+}
+
+#[test]
+fn with_style_modifies_text_node() {
+    let node = text("Hello").with_style(Style::new().fg(Color::Green));
+    match node {
+        Node::Text(t) => {
+            assert_eq!(t.style.fg, Some(Color::Green));
+        }
+        _ => panic!("Expected Text node"),
+    }
+}
+
+#[test]
+fn with_padding_wraps_non_box() {
+    let node = text("Hello").with_padding(Padding::all(1));
+    match node {
+        Node::Box(b) => {
+            assert_eq!(b.padding, Padding::all(1));
+            assert_eq!(b.children.len(), 1);
+        }
+        _ => panic!("Expected Box node"),
+    }
+}
+
+#[test]
+fn with_border_wraps_non_box() {
+    let node = text("Hello").with_border(Border::Rounded);
+    match node {
+        Node::Box(b) => {
+            assert_eq!(b.border, Some(Border::Rounded));
+        }
+        _ => panic!("Expected Box node"),
+    }
+}
+
+#[test]
+fn nested_layout_structure() {
+    let node = col([
+        row([text(" > "), text("User message")]),
+        row([text(" · "), text("Assistant reply")]),
+    ]);
+
+    match node {
+        Node::Box(outer) => {
+            assert_eq!(outer.direction, Direction::Column);
+            assert_eq!(outer.children.len(), 2);
+
+            match &outer.children[0] {
+                Node::Box(inner) => {
+                    assert_eq!(inner.direction, Direction::Row);
+                    assert_eq!(inner.children.len(), 2);
+                }
+                _ => panic!("Expected inner Box"),
+            }
+        }
+        _ => panic!("Expected outer Box"),
+    }
+}
