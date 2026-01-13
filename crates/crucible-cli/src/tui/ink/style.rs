@@ -69,6 +69,42 @@ impl Style {
 
         style
     }
+
+    pub fn to_ansi_codes(&self) -> String {
+        let mut codes: Vec<u8> = Vec::new();
+
+        if self.bold {
+            codes.push(1);
+        }
+        if self.dim {
+            codes.push(2);
+        }
+        if self.italic {
+            codes.push(3);
+        }
+        if self.underline {
+            codes.push(4);
+        }
+        if let Some(fg) = self.fg {
+            codes.extend(fg.to_ansi_fg());
+        }
+        if let Some(bg) = self.bg {
+            codes.extend(bg.to_ansi_bg());
+        }
+
+        if codes.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "\x1b[{}m",
+                codes
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .join(";")
+            )
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,6 +138,40 @@ impl Color {
             Color::DarkGray => CtColor::DarkGrey,
             Color::Rgb(r, g, b) => CtColor::Rgb { r, g, b },
             Color::Reset => CtColor::Reset,
+        }
+    }
+
+    pub fn to_ansi_fg(self) -> Vec<u8> {
+        match self {
+            Color::Black => vec![30],
+            Color::Red => vec![31],
+            Color::Green => vec![32],
+            Color::Yellow => vec![33],
+            Color::Blue => vec![34],
+            Color::Magenta => vec![35],
+            Color::Cyan => vec![36],
+            Color::White => vec![37],
+            Color::Gray => vec![38, 5, 250],
+            Color::DarkGray => vec![38, 5, 240],
+            Color::Rgb(r, g, b) => vec![38, 2, r, g, b],
+            Color::Reset => vec![39],
+        }
+    }
+
+    pub fn to_ansi_bg(self) -> Vec<u8> {
+        match self {
+            Color::Black => vec![40],
+            Color::Red => vec![41],
+            Color::Green => vec![42],
+            Color::Yellow => vec![43],
+            Color::Blue => vec![44],
+            Color::Magenta => vec![45],
+            Color::Cyan => vec![46],
+            Color::White => vec![47],
+            Color::Gray => vec![48, 5, 250],
+            Color::DarkGray => vec![48, 5, 240],
+            Color::Rgb(r, g, b) => vec![48, 2, r, g, b],
+            Color::Reset => vec![49],
         }
     }
 }
