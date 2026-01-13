@@ -1,3 +1,4 @@
+use crate::tui::ink::ansi::visible_width;
 use crate::tui::ink::node::{BoxNode, Direction, InputNode, Node, SpinnerNode, TextNode};
 use crate::tui::ink::style::Style;
 use crossterm::style::Stylize;
@@ -45,10 +46,6 @@ fn render_node_to_string(node: &Node, width: usize, output: &mut String) {
 }
 
 fn render_text(text: &TextNode, width: usize, output: &mut String) {
-    if text.content.is_empty() {
-        return;
-    }
-
     let styled_content = apply_style(&text.content, &text.style);
 
     if width == 0 || text.content.chars().count() <= width {
@@ -67,33 +64,128 @@ fn render_text(text: &TextNode, width: usize, output: &mut String) {
 }
 
 fn render_box(boxnode: &BoxNode, width: usize, output: &mut String) {
+    let border_size = if boxnode.border.is_some() { 2 } else { 0 };
     let inner_width = width
         .saturating_sub(boxnode.padding.horizontal() as usize)
-        .saturating_sub(if boxnode.border.is_some() { 2 } else { 0 });
+        .saturating_sub(border_size);
 
     let mut children_output: Vec<String> = Vec::new();
 
-    for child in &boxnode.children {
-        let mut child_str = String::new();
-        render_node_to_string(child, inner_width, &mut child_str);
-        if !child_str.is_empty() {
-            children_output.push(child_str);
-        }
-    }
-
     match boxnode.direction {
         Direction::Column => {
-            for (i, child_str) in children_output.iter().enumerate() {
-                if i > 0 {
-                    output.push_str("\r\n");
+            for child in &boxnode.children {
+                if matches!(child, Node::Empty) {
+                    continue;
                 }
-                output.push_str(child_str);
+                let mut child_str = String::new();
+                render_node_to_string(child, inner_width, &mut child_str);
+                children_output.push(child_str);
             }
         }
         Direction::Row => {
-            output.push_str(&children_output.join(""));
+            let all_text = boxnode.children.iter().all(|c| matches!(c, Node::Text(_)));
+            if all_text {
+                for child in &boxnode.children {
+                    let mut child_str = String::new();
+                    render_node_to_string(child, inner_width, &mut child_str);
+                    if !child_str.is_empty() {
+                        children_output.push(child_str);
+                    }
+                }
+            } else {
+                let mut remaining_width = inner_width;
+                for child in &boxnode.children {
+                    let mut child_str = String::new();
+                    render_node_to_string(child, remaining_width, &mut child_str);
+                    if !child_str.is_empty() {
+                        let first_line = child_str.lines().next().unwrap_or("");
+                        let child_width = visible_width(first_line);
+                        remaining_width = remaining_width.saturating_sub(child_width);
+                        children_output.push(child_str);
+                    }
+                }
+            }
         }
     }
+
+    let content = match boxnode.direction {
+        Direction::Column => children_output.join("\r\n"),
+        Direction::Row => children_output.join(""),
+    };
+
+    if let Some(border) = &boxnode.border {
+        render_bordered_content(&content, border, width, &boxnode.style, output);
+    } else {
+        output.push_str(&content);
+    }
+}
+
+fn render_bordered_content(
+    content: &str,
+    border: &crate::tui::ink::style::Border,
+    width: usize,
+    style: &Style,
+    output: &mut String,
+) {
+    let chars = border.chars();
+    let inner_width = width.saturating_sub(2);
+
+    let top = format!(
+        "{}{}{}",
+        chars.top_left,
+        chars.horizontal.to_string().repeat(inner_width),
+        chars.top_right
+    );
+    output.push_str(&apply_style(&top, style));
+    output.push_str("\r\n");
+
+    for line in content.lines() {
+        let visible_len = strip_ansi_codes(line).chars().count();
+        let padding = inner_width.saturating_sub(visible_len);
+        let padded_line = format!("{}{}", line, " ".repeat(padding));
+        output.push_str(&apply_style(&chars.vertical.to_string(), style));
+        output.push_str(&padded_line);
+        output.push_str(&apply_style(&chars.vertical.to_string(), style));
+        output.push_str("\r\n");
+    }
+
+    if content.is_empty() {
+        output.push_str(&apply_style(&chars.vertical.to_string(), style));
+        output.push_str(&" ".repeat(inner_width));
+        output.push_str(&apply_style(&chars.vertical.to_string(), style));
+        output.push_str("\r\n");
+    }
+
+    let bottom = format!(
+        "{}{}{}",
+        chars.bottom_left,
+        chars.horizontal.to_string().repeat(inner_width),
+        chars.bottom_right
+    );
+    output.push_str(&apply_style(&bottom, style));
+}
+
+fn strip_ansi_codes(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                while let Some(&next) = chars.peek() {
+                    chars.next();
+                    if next.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
 }
 
 fn render_input(input: &InputNode, output: &mut String) {
