@@ -20,7 +20,7 @@ pub struct Terminal {
     height: u16,
     graduation: GraduationState,
     use_alternate_screen: bool,
-    viewport_lines: u16,
+    dynamic_lines: u16,
     keyboard_enhanced: bool,
 }
 
@@ -33,7 +33,7 @@ impl Terminal {
             height,
             graduation: GraduationState::new(),
             use_alternate_screen: false,
-            viewport_lines: 0,
+            dynamic_lines: 0,
             keyboard_enhanced: false,
         })
     }
@@ -65,7 +65,7 @@ impl Terminal {
     }
 
     pub fn exit(&mut self) -> io::Result<()> {
-        if self.viewport_lines > 0 {
+        if self.dynamic_lines > 0 {
             execute!(self.stdout, MoveToColumn(0))?;
         }
         execute!(self.stdout, Show)?;
@@ -100,51 +100,27 @@ impl Terminal {
     }
 
     pub fn render(&mut self, tree: &Node) -> io::Result<()> {
+        self.clear_dynamic_area()?;
+
         let graduated = self.graduation.graduate(tree, self.width as usize)?;
-
-        if !graduated.is_empty() {
-            self.clear_viewport()?;
-
-            for item in &graduated {
-                write!(self.stdout, "{}", item.content)?;
-                if item.newline {
-                    write!(self.stdout, "\r\n")?;
-                }
+        for item in &graduated {
+            write!(self.stdout, "{}", item.content)?;
+            if item.newline {
+                write!(self.stdout, "\r\n")?;
             }
+        }
+
+        let dynamic = self.filter_graduated(tree);
+        let content = render_to_string(&dynamic, self.width as usize);
+
+        if content.is_empty() {
             self.stdout.flush()?;
-        }
-
-        let filtered = self.filter_graduated(tree);
-        let _layout = calculate_layout(&filtered, self.width, self.height);
-
-        self.render_viewport(&filtered)?;
-
-        Ok(())
-    }
-
-    fn clear_viewport(&mut self) -> io::Result<()> {
-        if self.viewport_lines > 0 {
-            execute!(
-                self.stdout,
-                MoveUp(self.viewport_lines),
-                MoveToColumn(0),
-                Clear(ClearType::FromCursorDown)
-            )?;
-            self.viewport_lines = 0;
-        }
-        Ok(())
-    }
-
-    fn render_viewport(&mut self, tree: &Node) -> io::Result<()> {
-        self.clear_viewport()?;
-
-        let content = render_to_string(tree, self.width as usize);
-        let lines: Vec<&str> = content.lines().collect();
-        let line_count = lines.len() as u16;
-
-        if line_count == 0 {
+            self.dynamic_lines = 0;
             return Ok(());
         }
+
+        let lines: Vec<&str> = content.lines().collect();
+        let line_count = lines.len() as u16;
 
         for (i, line) in lines.iter().enumerate() {
             write!(self.stdout, "{}", line)?;
@@ -154,9 +130,21 @@ impl Terminal {
         }
 
         self.stdout.flush()?;
+        self.dynamic_lines = line_count.saturating_sub(1);
 
-        self.viewport_lines = line_count.saturating_sub(1);
+        Ok(())
+    }
 
+    fn clear_dynamic_area(&mut self) -> io::Result<()> {
+        if self.dynamic_lines > 0 {
+            execute!(
+                self.stdout,
+                MoveUp(self.dynamic_lines),
+                MoveToColumn(0),
+                Clear(ClearType::FromCursorDown)
+            )?;
+            self.dynamic_lines = 0;
+        }
         Ok(())
     }
 
