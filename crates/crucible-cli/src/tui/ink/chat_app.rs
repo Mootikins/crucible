@@ -1,7 +1,6 @@
-//! Ink-based chat application integrating with AgentEventBridge
-
 use crate::tui::ink::app::{Action, App};
 use crate::tui::ink::event::{Event, InputAction, InputBuffer};
+use crate::tui::ink::markdown::markdown_to_node;
 use crate::tui::ink::node::*;
 use crate::tui::ink::style::{Color, Style};
 use crossterm::event::KeyCode;
@@ -378,27 +377,40 @@ impl InkChatApp {
     }
 
     fn render_message(&self, msg: &Message) -> Node {
-        let (prefix, style) = match msg.role {
-            Role::User => (" > ", Style::new().fg(Color::Cyan).bold()),
-            Role::Assistant => ("   ", Style::new()),
-            Role::System => (" * ", Style::new().fg(Color::Yellow).dim()),
-        };
-
         let tool_nodes: Vec<Node> = msg
             .tool_calls
             .iter()
             .map(|tc| self.render_tool_call(tc))
             .collect();
 
-        let display = format!("{}{}", prefix, &msg.content);
-
-        let content_node = if tool_nodes.is_empty() {
-            col([text(""), styled(&display, style)])
-        } else {
-            col([text(""), styled(&display, style), col(tool_nodes)])
+        let content_node = match msg.role {
+            Role::User => {
+                let display = format!(" > {}", &msg.content);
+                col([
+                    text(""),
+                    styled(&display, Style::new().fg(Color::Cyan).bold()),
+                ])
+            }
+            Role::Assistant => {
+                let md_node = markdown_to_node(&msg.content);
+                col([text(""), md_node])
+            }
+            Role::System => {
+                let display = format!(" * {}", &msg.content);
+                col([
+                    text(""),
+                    styled(&display, Style::new().fg(Color::Yellow).dim()),
+                ])
+            }
         };
 
-        scrollback(&msg.id, [content_node])
+        let final_node = if tool_nodes.is_empty() {
+            content_node
+        } else {
+            col([content_node, col(tool_nodes)])
+        };
+
+        scrollback(&msg.id, [final_node])
     }
 
     fn render_tool_call(&self, tc: &ToolCallInfo) -> Node {
@@ -442,11 +454,11 @@ impl InkChatApp {
                 .map(|tc| self.render_tool_call(tc))
                 .collect();
 
-            let display = format!("   {}", &self.streaming.content);
+            let md_node = markdown_to_node(&self.streaming.content);
 
             col([
                 text(""),
-                text(&display),
+                md_node,
                 col(tool_nodes),
                 spinner(Some("Generating...".into()), self.spinner_frame),
             ])
