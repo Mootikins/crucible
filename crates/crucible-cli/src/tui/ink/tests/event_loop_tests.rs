@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 async fn event_loop_does_not_freeze_without_input() {
     let mut terminal = Terminal::new().unwrap();
     let mut app = InkChatApp::default();
-    let (msg_tx, mut msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
+    let (_msg_tx, mut msg_rx) = mpsc::unbounded_channel::<ChatAppMsg>();
 
     let start = Instant::now();
     let iterations = 100;
