@@ -153,21 +153,27 @@ impl Terminal {
 
         let popup_content = render_popup_standalone(popup, self.width as usize);
         let popup_lines: Vec<&str> = popup_content.split("\r\n").collect();
-        let popup_height = popup_lines.len() as u16;
+        let popup_height = popup_lines.len();
 
-        let input_bar_lines = 4u16;
-        let target_row = self
-            .output
-            .height()
-            .saturating_sub(input_bar_lines as usize + popup_height as usize);
+        let input_bar_lines = 3usize;
+        let lines_up_from_cursor = input_bar_lines + popup_height;
 
-        use crossterm::cursor::{RestorePosition, SavePosition};
+        use crossterm::cursor::{MoveDown, MoveUp, RestorePosition, SavePosition};
 
         execute!(self.stdout, SavePosition)?;
 
+        if lines_up_from_cursor > 0 {
+            execute!(
+                self.stdout,
+                MoveUp(lines_up_from_cursor as u16),
+                MoveToColumn(1)
+            )?;
+        }
+
         for (i, line) in popup_lines.iter().enumerate() {
-            let row = target_row + i;
-            execute!(self.stdout, MoveTo(1, row as u16))?;
+            if i > 0 {
+                execute!(self.stdout, MoveDown(1), MoveToColumn(1))?;
+            }
             write!(self.stdout, "{}", line)?;
         }
 
