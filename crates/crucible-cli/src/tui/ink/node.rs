@@ -151,6 +151,22 @@ pub fn spacer() -> Node {
     })
 }
 
+pub fn flex(weight: u16, child: Node) -> Node {
+    Node::Box(BoxNode {
+        children: vec![child],
+        size: Size::Flex(weight),
+        ..Default::default()
+    })
+}
+
+pub fn fixed(height: u16, child: Node) -> Node {
+    Node::Box(BoxNode {
+        children: vec![child],
+        size: Size::Fixed(height),
+        ..Default::default()
+    })
+}
+
 impl Node {
     pub fn with_style(self, style: Style) -> Self {
         match self {

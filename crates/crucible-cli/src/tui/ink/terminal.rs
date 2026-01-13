@@ -1,15 +1,15 @@
-use crate::tui::ink::layout::calculate_layout;
 use crate::tui::ink::node::{BoxNode, Direction, Node, StaticNode};
+use crate::tui::ink::output::OutputBuffer;
 use crate::tui::ink::render::render_to_string;
 use crate::tui::ink::runtime::GraduationState;
 use crossterm::{
-    cursor::{Hide, MoveTo, MoveToColumn, MoveUp, Show},
+    cursor::{Hide, MoveTo, MoveToColumn, Show},
     event::{
         self, Event as CtEvent, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
         PushKeyboardEnhancementFlags,
     },
     execute,
-    terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use std::io::{self, Stdout, Write};
 use std::time::Duration;
@@ -20,7 +20,7 @@ pub struct Terminal {
     height: u16,
     graduation: GraduationState,
     use_alternate_screen: bool,
-    dynamic_lines: u16,
+    output: OutputBuffer,
     keyboard_enhanced: bool,
 }
 
@@ -33,7 +33,7 @@ impl Terminal {
             height,
             graduation: GraduationState::new(),
             use_alternate_screen: false,
-            dynamic_lines: 0,
+            output: OutputBuffer::new(),
             keyboard_enhanced: false,
         })
     }
@@ -65,7 +65,7 @@ impl Terminal {
     }
 
     pub fn exit(&mut self) -> io::Result<()> {
-        if self.dynamic_lines > 0 {
+        if self.output.height() > 0 {
             execute!(self.stdout, MoveToColumn(0))?;
         }
         execute!(self.stdout, Show)?;
@@ -100,52 +100,24 @@ impl Terminal {
     }
 
     pub fn render(&mut self, tree: &Node) -> io::Result<()> {
-        self.clear_dynamic_area()?;
-
         let graduated = self.graduation.graduate(tree, self.width as usize)?;
-        for item in &graduated {
-            write!(self.stdout, "{}", item.content)?;
-            if item.newline {
-                write!(self.stdout, "\r\n")?;
+
+        if !graduated.is_empty() {
+            self.output.clear()?;
+
+            for item in &graduated {
+                write!(self.stdout, "{}", item.content)?;
+                if item.newline {
+                    write!(self.stdout, "\r\n")?;
+                }
             }
+            self.stdout.flush()?;
         }
 
         let dynamic = self.filter_graduated(tree);
         let content = render_to_string(&dynamic, self.width as usize);
 
-        if content.is_empty() {
-            self.stdout.flush()?;
-            self.dynamic_lines = 0;
-            return Ok(());
-        }
-
-        let lines: Vec<&str> = content.lines().collect();
-        let line_count = lines.len() as u16;
-
-        for (i, line) in lines.iter().enumerate() {
-            write!(self.stdout, "{}", line)?;
-            if i < lines.len() - 1 {
-                write!(self.stdout, "\r\n")?;
-            }
-        }
-
-        self.stdout.flush()?;
-        self.dynamic_lines = line_count.saturating_sub(1);
-
-        Ok(())
-    }
-
-    fn clear_dynamic_area(&mut self) -> io::Result<()> {
-        if self.dynamic_lines > 0 {
-            execute!(
-                self.stdout,
-                MoveUp(self.dynamic_lines),
-                MoveToColumn(0),
-                Clear(ClearType::FromCursorDown)
-            )?;
-            self.dynamic_lines = 0;
-        }
-        Ok(())
+        self.output.render(&content)
     }
 
     fn filter_graduated(&self, node: &Node) -> Node {
