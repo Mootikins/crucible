@@ -103,8 +103,10 @@ impl Terminal {
         let graduated = self.graduation.graduate(tree, self.width as usize)?;
 
         if !graduated.is_empty() {
+            // Clear existing dynamic content first
             self.output.clear()?;
 
+            // Write graduated content to scrollback (permanent terminal history)
             for item in &graduated {
                 write!(self.stdout, "{}", item.content)?;
                 if item.newline {
@@ -112,6 +114,9 @@ impl Terminal {
                 }
             }
             self.stdout.flush()?;
+
+            // Reset output buffer - it now starts fresh below graduated content
+            self.output.reset();
         }
 
         let dynamic = self.filter_graduated(tree);
