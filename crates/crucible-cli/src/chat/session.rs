@@ -20,6 +20,7 @@ use crate::chat::slash_registry::{SlashCommandRegistry, SlashCommandRegistryBuil
 use crate::chat::{AgentHandle, ChatError, ChatResult};
 use crate::core_facade::KilnContext;
 use crate::tui::agent_picker::AgentSelection;
+use crate::tui::ink::{ChatMode, InkChatRunner};
 use crate::tui::DynamicPopupProvider;
 use crate::tui::RatatuiRunner;
 use crucible_core::traits::registry::{Registry, RegistryBuilder};
@@ -70,6 +71,8 @@ pub struct ChatSessionConfig {
     pub session_kiln_path: Option<std::path::PathBuf>,
     /// Use fullscreen mode (alternate screen) instead of inline viewport
     pub fullscreen: bool,
+    /// Use experimental Ink-based TUI runner (simpler graduation model)
+    pub use_ink_runner: bool,
 }
 
 impl Default for ChatSessionConfig {
@@ -83,7 +86,8 @@ impl Default for ChatSessionConfig {
             default_selection: None,
             resume_session_id: None,
             session_kiln_path: None,
-            fullscreen: false, // Default to inline mode
+            fullscreen: false,
+            use_ink_runner: false,
         }
     }
 }
@@ -104,7 +108,8 @@ impl ChatSessionConfig {
             default_selection: None,
             resume_session_id: None,
             session_kiln_path: None,
-            fullscreen: false, // Default to inline mode
+            fullscreen: false,
+            use_ink_runner: false,
         }
     }
 
@@ -154,6 +159,11 @@ impl ChatSessionConfig {
     /// screen buffer like traditional TUIs.
     pub fn with_fullscreen(mut self, fullscreen: bool) -> Self {
         self.fullscreen = fullscreen;
+        self
+    }
+
+    pub fn with_ink_runner(mut self, use_ink: bool) -> Self {
+        self.use_ink_runner = use_ink;
         self
     }
 
@@ -414,7 +424,12 @@ impl ChatSession {
             crucible_core::InteractionRegistry::new(),
         ));
 
-        // Create and run TUI with factory
+        if self.config.use_ink_runner {
+            let mode = ChatMode::from_str(&self.config.initial_mode_id);
+            let mut runner = InkChatRunner::new()?.with_mode(mode);
+            return runner.run_with_factory(&bridge, create_agent).await;
+        }
+
         let registry = std::sync::Arc::new(self.command_registry.clone());
         let mut runner = RatatuiRunner::new(
             &self.config.initial_mode_id,
@@ -422,18 +437,15 @@ impl ChatSession {
             registry,
         )?;
 
-        // Configure viewport mode (inline by default, fullscreen optional)
         if self.config.fullscreen {
             runner.with_fullscreen_mode();
         }
 
-        // Wire up event ring and interaction registry for interaction completion
         runner
             .with_event_ring(ring)
             .with_interaction_registry(interaction_registry)
             .with_kiln_context(self.core.clone());
 
-        // Configure runtime provider/model from config file
         let chat_config = &self.core.config().chat;
         let provider_str = match chat_config.provider {
             crucible_config::LlmProvider::Ollama => "ollama",
@@ -442,23 +454,16 @@ impl ChatSession {
         };
         runner.with_runtime_config(provider_str, chat_config.chat_model());
 
-        // Pass configured Ollama endpoint for model discovery
         runner.with_ollama_endpoint(chat_config.llm_endpoint());
 
-        // Set up session logging to persist chat events
-        // Only enabled if session_kiln_path is explicitly set (validated by select_session_kiln)
         if let Some(kiln_path) = self.config.session_kiln_path.clone() {
             runner.with_session_logger(kiln_path);
         }
-        // If no session_kiln_path is configured, session logging is disabled
-        // (the kiln path was either invalid or not configured)
 
-        // Set default selection if pre-specified (skips picker first time, allows /new restart)
         if let Some(selection) = self.config.default_selection.clone() {
             runner.with_default_selection(selection);
         }
 
-        // Set session to resume from (loads existing conversation history)
         if let Some(session_id) = self.config.resume_session_id.clone() {
             runner.with_resume_session(session_id);
         }

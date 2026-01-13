@@ -277,21 +277,21 @@ async fn resume(config: CliConfig, id: String) -> Result<()> {
         return Err(anyhow!("Session not found: {}", id));
     }
 
-    // Launch chat with resume flag
     crate::commands::chat::execute(
         config,
-        None,     // agent_name - use default
-        None,     // query - interactive mode
-        false,    // read_only
-        false,    // no_context
-        false,    // no_process
-        None,     // context_size
-        false,    // use_internal
-        None,     // provider_key
-        16384,    // max_context_tokens
-        vec![],   // env_overrides
-        Some(id), // resume_session_id
-        false,    // fullscreen = false (use inline mode by default)
+        None,
+        None,
+        false,
+        false,
+        false,
+        None,
+        false,
+        None,
+        16384,
+        vec![],
+        Some(id),
+        false,
+        false,
     )
     .await
 }

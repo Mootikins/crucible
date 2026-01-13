@@ -280,21 +280,23 @@ async fn main() -> Result<()> {
             context_size,
             act,
             fullscreen,
+            ink,
         }) => {
             commands::chat::execute(
                 config,
                 agent,
                 query,
-                !act, // read_only = !act (plan mode is default)
+                !act,
                 no_context,
-                cli.no_process, // Pass the global --no-process flag
+                cli.no_process,
                 Some(context_size),
                 internal,
                 provider,
                 max_context,
-                env,        // Pass env vars to agent spawning
-                resume,     // Session ID to resume
-                fullscreen, // Use fullscreen mode instead of inline viewport
+                env,
+                resume,
+                fullscreen,
+                ink,
             )
             .await?
         }
@@ -378,21 +380,21 @@ async fn main() -> Result<()> {
         }
 
         None => {
-            // Default to chat when no command is provided
             commands::chat::execute(
                 config,
-                None,           // No agent specified - use default
-                None,           // No query provided - start interactive mode
-                true,           // read_only = true (plan mode is default)
-                false,          // no_context = false
-                cli.no_process, // Pass the global --no-process flag
-                Some(5),        // default context_size = 5
-                false,          // internal = false (use ACP agent by default)
-                None,           // No provider specified
-                16384,          // default max_context = 16384
-                vec![],         // No env overrides
-                None,           // No session to resume
-                false,          // fullscreen = false (use inline mode by default)
+                None,
+                None,
+                true,
+                false,
+                cli.no_process,
+                Some(5),
+                false,
+                None,
+                16384,
+                vec![],
+                None,
+                false,
+                false,
             )
             .await?
         }
