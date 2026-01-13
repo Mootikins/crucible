@@ -2416,4 +2416,41 @@ Feel free to adapt the class or add more functionality as needed!"#;
             );
         }
     }
+
+    #[test]
+    fn test_blockquote_after_table_indent() {
+        let content =
+            "| Tool | Purpose |\n|------|--------|\n| read | Read files |\n\n> Switch to act mode";
+
+        let lines = render_item_to_lines(
+            &ConversationItem::AssistantMessage {
+                blocks: vec![StreamBlock::prose(content)],
+                is_streaming: false,
+            },
+            80,
+        );
+
+        let line_texts: Vec<String> = lines
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect();
+
+        let blockquote_line = line_texts
+            .iter()
+            .find(|t| t.contains("Switch"))
+            .expect("Should have blockquote line");
+
+        let prefix_spaces = blockquote_line.chars().take_while(|c| *c == ' ').count();
+        assert!(
+            prefix_spaces <= 6,
+            "Blockquote should not have excessive indentation. Line: '{}', leading spaces: {}",
+            blockquote_line,
+            prefix_spaces
+        );
+    }
 }

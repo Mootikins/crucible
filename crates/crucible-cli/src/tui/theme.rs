@@ -62,13 +62,27 @@ pub enum MarkdownElement {
     Strikethrough,
     /// Horizontal rule (`---`)
     HorizontalRule,
+    /// Wikilink (`[[Note Name]]` or `[[Note|Alias]]`)
+    Wikilink,
+    /// Tag (`#tag` or `#nested/tag`)
+    Tag,
+    /// Agent mention (`@agent-name`)
+    AgentMention,
+    /// Callout note/info type (`> [!note]`, `> [!info]`)
+    CalloutNote,
+    /// Callout tip/hint type (`> [!tip]`, `> [!hint]`, `> [!success]`)
+    CalloutTip,
+    /// Callout warning type (`> [!warning]`, `> [!caution]`, `> [!attention]`)
+    CalloutWarning,
+    /// Callout danger type (`> [!danger]`, `> [!error]`, `> [!failure]`, `> [!bug]`)
+    CalloutDanger,
 }
 
 impl MarkdownElement {
     /// All markdown element variants.
     ///
     /// Useful for iteration, caching, and testing.
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 24] = [
         Self::Text,
         Self::Bold,
         Self::Italic,
@@ -86,6 +100,13 @@ impl MarkdownElement {
         Self::TableBorder,
         Self::Strikethrough,
         Self::HorizontalRule,
+        Self::Wikilink,
+        Self::Tag,
+        Self::AgentMention,
+        Self::CalloutNote,
+        Self::CalloutTip,
+        Self::CalloutWarning,
+        Self::CalloutDanger,
     ];
 }
 /// A theme for rendering markdown content in the terminal.
@@ -315,6 +336,30 @@ impl MarkdownTheme {
             HorizontalRule => Style::default()
                 .fg(Color::Indexed(8)) // Bright black (gray)
                 .add_modifier(Modifier::DIM),
+
+            Wikilink => Style::default().fg(Color::Indexed(5)), // Magenta
+
+            Tag => Style::default().fg(Color::Indexed(3)), // Yellow
+
+            AgentMention => Style::default()
+                .fg(Color::Indexed(6)) // Cyan
+                .add_modifier(Modifier::BOLD),
+
+            CalloutNote => Style::default()
+                .fg(Color::Indexed(4)) // Blue
+                .add_modifier(Modifier::BOLD),
+
+            CalloutTip => Style::default()
+                .fg(Color::Indexed(2)) // Green
+                .add_modifier(Modifier::BOLD),
+
+            CalloutWarning => Style::default()
+                .fg(Color::Indexed(3)) // Yellow
+                .add_modifier(Modifier::BOLD),
+
+            CalloutDanger => Style::default()
+                .fg(Color::Indexed(1)) // Red
+                .add_modifier(Modifier::BOLD),
         }
     }
 }
@@ -478,6 +523,61 @@ mod tests {
 
         // Should be able to use the theme for highlighting
         assert!(syntect_theme.settings.background.is_some());
+    }
+
+    #[test]
+    fn test_wikilink_style() {
+        let theme = MarkdownTheme::dark();
+        let style = theme.style_for(MarkdownElement::Wikilink);
+        assert_eq!(
+            style.fg,
+            Some(Color::Indexed(5)),
+            "Wikilink should be magenta"
+        );
+    }
+
+    #[test]
+    fn test_tag_style() {
+        let theme = MarkdownTheme::dark();
+        let style = theme.style_for(MarkdownElement::Tag);
+        assert_eq!(style.fg, Some(Color::Indexed(3)), "Tag should be yellow");
+    }
+
+    #[test]
+    fn test_agent_mention_style() {
+        let theme = MarkdownTheme::dark();
+        let style = theme.style_for(MarkdownElement::AgentMention);
+        assert_eq!(
+            style.fg,
+            Some(Color::Indexed(6)),
+            "AgentMention should be cyan"
+        );
+        assert!(
+            style.add_modifier.contains(Modifier::BOLD),
+            "AgentMention should be bold"
+        );
+    }
+
+    #[test]
+    fn test_callout_styles() {
+        let theme = MarkdownTheme::dark();
+
+        let note = theme.style_for(MarkdownElement::CalloutNote);
+        assert_eq!(note.fg, Some(Color::Indexed(4)), "Note should be blue");
+        assert!(note.add_modifier.contains(Modifier::BOLD));
+
+        let tip = theme.style_for(MarkdownElement::CalloutTip);
+        assert_eq!(tip.fg, Some(Color::Indexed(2)), "Tip should be green");
+
+        let warning = theme.style_for(MarkdownElement::CalloutWarning);
+        assert_eq!(
+            warning.fg,
+            Some(Color::Indexed(3)),
+            "Warning should be yellow"
+        );
+
+        let danger = theme.style_for(MarkdownElement::CalloutDanger);
+        assert_eq!(danger.fg, Some(Color::Indexed(1)), "Danger should be red");
     }
 
     #[test]

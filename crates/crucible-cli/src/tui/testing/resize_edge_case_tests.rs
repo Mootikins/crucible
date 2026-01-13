@@ -256,7 +256,9 @@ mod resize_with_tables {
         let rendered = h.render();
         // with_table has a Rust vs Go comparison table
         assert!(
-            rendered.contains("Rust") || rendered.contains("Feature") || rendered.contains("comparison"),
+            rendered.contains("Rust")
+                || rendered.contains("Feature")
+                || rendered.contains("comparison"),
             "Should contain table content after narrow resize"
         );
     }
@@ -270,7 +272,9 @@ mod resize_with_tables {
         let rendered = h.render();
         // with_wide_table has Package, Description, Version columns
         assert!(
-            rendered.contains("Package") || rendered.contains("serde") || rendered.contains("tokio"),
+            rendered.contains("Package")
+                || rendered.contains("serde")
+                || rendered.contains("tokio"),
             "Should contain table content after wide resize"
         );
     }
