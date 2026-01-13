@@ -94,6 +94,8 @@ pub struct InkChatApp {
     error: Option<String>,
     message_counter: usize,
     on_submit: Option<Box<dyn Fn(String) + Send + Sync>>,
+    show_popup: bool,
+    popup_selected: usize,
 }
 
 impl Default for InkChatApp {
@@ -108,6 +110,8 @@ impl Default for InkChatApp {
             error: None,
             message_counter: 0,
             on_submit: None,
+            show_popup: false,
+            popup_selected: 0,
         }
     }
 }
@@ -125,6 +129,7 @@ impl App for InkChatApp {
             self.render_streaming(),
             self.render_error(),
             spacer(),
+            self.render_popup(),
             self.render_input(),
             self.render_status(),
         ])
@@ -225,6 +230,16 @@ impl InkChatApp {
     fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Action<ChatAppMsg> {
         self.error = None;
 
+        if key.code == KeyCode::F(1) {
+            self.show_popup = !self.show_popup;
+            self.popup_selected = 0;
+            return Action::Continue;
+        }
+
+        if self.show_popup {
+            return self.handle_popup_key(key);
+        }
+
         if key.code == KeyCode::Esc {
             return Action::Quit;
         }
@@ -247,6 +262,30 @@ impl InkChatApp {
             return self.handle_submit(submitted);
         }
 
+        Action::Continue
+    }
+
+    fn handle_popup_key(&mut self, key: crossterm::event::KeyEvent) -> Action<ChatAppMsg> {
+        match key.code {
+            KeyCode::Esc => {
+                self.show_popup = false;
+            }
+            KeyCode::Up => {
+                self.popup_selected = self.popup_selected.saturating_sub(1);
+            }
+            KeyCode::Down => {
+                let max = self.demo_popup_items().len().saturating_sub(1);
+                self.popup_selected = (self.popup_selected + 1).min(max);
+            }
+            KeyCode::Enter => {
+                let items = self.demo_popup_items();
+                if let Some(item) = items.get(self.popup_selected) {
+                    self.status = format!("Selected: {}", item.0);
+                }
+                self.show_popup = false;
+            }
+            _ => {}
+        }
         Action::Continue
     }
 
@@ -544,6 +583,37 @@ impl InkChatApp {
             ]),
             bottom_edge,
         ])
+    }
+
+    fn demo_popup_items(&self) -> Vec<(&'static str, &'static str, &'static str)> {
+        vec![
+            ("semantic_search", "Search notes by meaning", "tool"),
+            ("create_note", "Create a new note", "tool"),
+            ("get_outlinks", "Get outgoing links", "tool"),
+            ("get_inlinks", "Get incoming links", "tool"),
+            ("list_notes", "List all notes", "tool"),
+            ("/mode", "Cycle chat mode", "command"),
+            ("/clear", "Clear history", "command"),
+            ("/help", "Show help", "command"),
+        ]
+    }
+
+    fn render_popup(&self) -> Node {
+        if !self.show_popup {
+            return Node::Empty;
+        }
+
+        let items: Vec<PopupItemNode> = self
+            .demo_popup_items()
+            .into_iter()
+            .map(|(label, desc, kind)| PopupItemNode {
+                label: label.to_string(),
+                description: Some(desc.to_string()),
+                kind: Some(kind.to_string()),
+            })
+            .collect();
+
+        popup(items, self.popup_selected, 10)
     }
 }
 
