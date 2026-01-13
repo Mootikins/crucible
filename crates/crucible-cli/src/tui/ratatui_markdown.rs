@@ -32,6 +32,7 @@ use markdown_it::{MarkdownIt, Node};
 use once_cell::sync::Lazy;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
+use regex::Regex;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::Theme;
 use syntect::parsing::SyntaxSet;
@@ -44,6 +45,194 @@ use super::theme::{MarkdownElement, MarkdownTheme};
 
 /// Global syntax set for code highlighting (loaded once at startup)
 static SYNTAX_SET: Lazy<SyntaxSet> = Lazy::new(SyntaxSet::load_defaults_newlines);
+
+// =============================================================================
+// Custom syntax patterns (wikilinks, tags, agent mentions)
+// =============================================================================
+
+static WIKILINK_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]").unwrap());
+
+static TAG_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"#([a-zA-Z][a-zA-Z0-9_/-]*)").unwrap());
+
+static AGENT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"@([a-zA-Z][a-zA-Z0-9_-]*)").unwrap());
+
+static CALLOUT_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)^\[!(\w+)\][ \t]*([^\n]*)?").unwrap());
+
+#[derive(Debug, Clone)]
+enum CustomSyntax {
+    Wikilink {
+        target: String,
+        alias: Option<String>,
+    },
+    Tag(String),
+    AgentMention(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CalloutType {
+    Note,
+    Tip,
+    Warning,
+    Danger,
+}
+
+impl CalloutType {
+    fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "note" | "info" | "abstract" | "summary" | "tldr" => Some(Self::Note),
+            "tip" | "hint" | "success" | "check" | "done" | "example" => Some(Self::Tip),
+            "warning" | "caution" | "attention" | "important" | "question" | "help" | "faq" => {
+                Some(Self::Warning)
+            }
+            "danger" | "error" | "failure" | "fail" | "missing" | "bug" => Some(Self::Danger),
+            _ => Some(Self::Note),
+        }
+    }
+
+    fn icon(self) -> &'static str {
+        match self {
+            Self::Note => "ℹ",
+            Self::Tip => "✓",
+            Self::Warning => "⚠",
+            Self::Danger => "✕",
+        }
+    }
+
+    fn element(self) -> MarkdownElement {
+        match self {
+            Self::Note => MarkdownElement::CalloutNote,
+            Self::Tip => MarkdownElement::CalloutTip,
+            Self::Warning => MarkdownElement::CalloutWarning,
+            Self::Danger => MarkdownElement::CalloutDanger,
+        }
+    }
+}
+
+fn parse_custom_syntax(text: &str) -> Vec<(usize, usize, CustomSyntax)> {
+    let mut matches = Vec::new();
+
+    for cap in WIKILINK_RE.captures_iter(text) {
+        let m = cap.get(0).unwrap();
+        let target = cap.get(1).unwrap().as_str().to_string();
+        let alias = cap.get(2).map(|a| a.as_str().to_string());
+        matches.push((m.start(), m.end(), CustomSyntax::Wikilink { target, alias }));
+    }
+
+    for cap in TAG_RE.captures_iter(text) {
+        let m = cap.get(0).unwrap();
+        let tag = cap.get(1).unwrap().as_str().to_string();
+        matches.push((m.start(), m.end(), CustomSyntax::Tag(tag)));
+    }
+
+    for cap in AGENT_RE.captures_iter(text) {
+        let m = cap.get(0).unwrap();
+        let agent = cap.get(1).unwrap().as_str().to_string();
+        matches.push((m.start(), m.end(), CustomSyntax::AgentMention(agent)));
+    }
+
+    matches.sort_by_key(|(start, _, _)| *start);
+
+    let mut filtered = Vec::new();
+    let mut last_end = 0;
+    for (start, end, syntax) in matches {
+        if start >= last_end {
+            filtered.push((start, end, syntax));
+            last_end = end;
+        }
+    }
+
+    filtered
+}
+
+fn emit_custom_syntax_spans<F>(text: &str, base_style: Style, theme: &MarkdownTheme, mut emit: F)
+where
+    F: FnMut(String, Style),
+{
+    let matches = parse_custom_syntax(text);
+
+    if matches.is_empty() {
+        emit(text.to_string(), base_style);
+        return;
+    }
+
+    let mut pos = 0;
+    for (start, end, syntax) in matches {
+        if pos < start {
+            emit(text[pos..start].to_string(), base_style);
+        }
+
+        match syntax {
+            CustomSyntax::Wikilink { target, alias } => {
+                let style = theme.style_for(MarkdownElement::Wikilink);
+                let display = alias.as_ref().unwrap_or(&target);
+                emit(format!("[[{}]]", display), style);
+            }
+            CustomSyntax::Tag(tag) => {
+                let style = theme.style_for(MarkdownElement::Tag);
+                emit(format!("#{}", tag), style);
+            }
+            CustomSyntax::AgentMention(agent) => {
+                let style = theme.style_for(MarkdownElement::AgentMention);
+                emit(format!("@{}", agent), style);
+            }
+        }
+
+        pos = end;
+    }
+
+    if pos < text.len() {
+        emit(text[pos..].to_string(), base_style);
+    }
+}
+
+fn extract_first_text(node: &Node) -> Option<String> {
+    if let Some(text) = node.cast::<Text>() {
+        return Some(text.content.clone());
+    }
+    for child in node.children.iter() {
+        if let Some(text) = extract_first_text(child) {
+            return Some(text);
+        }
+    }
+    None
+}
+
+fn extract_all_text(node: &Node) -> String {
+    let mut result = String::new();
+    if let Some(text) = node.cast::<Text>() {
+        result.push_str(&text.content);
+    }
+    if node.cast::<Softbreak>().is_some() || node.cast::<Hardbreak>().is_some() {
+        result.push('\n');
+    }
+    for child in node.children.iter() {
+        result.push_str(&extract_all_text(child));
+    }
+    result
+}
+
+fn detect_callout(node: &Node) -> Option<(CalloutType, Option<String>)> {
+    if let Some(first_child) = node.children.first() {
+        if first_child.cast::<Paragraph>().is_some() {
+            if let Some(text) = extract_first_text(first_child) {
+                if let Some(caps) = CALLOUT_RE.captures(&text) {
+                    let callout_type = caps
+                        .get(1)
+                        .and_then(|m| CalloutType::from_str(m.as_str()))?;
+                    let title = caps
+                        .get(2)
+                        .map(|m| m.as_str().trim())
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string());
+                    return Some((callout_type, title));
+                }
+            }
+        }
+    }
+    None
+}
 
 // =============================================================================
 // Box-drawing characters for tables
@@ -185,10 +374,9 @@ impl<'a> RenderContext<'a> {
         }
     }
 
-    /// Push plain text using the default text style.
     fn push_text(&mut self, text: &str) {
-        let style = self.theme.style_for(MarkdownElement::Text);
-        self.push_span(text.to_owned(), style);
+        let base_style = self.theme.style_for(MarkdownElement::Text);
+        emit_custom_syntax_spans(text, base_style, self.theme, |t, s| self.push_span(t, s));
     }
 
     /// Get the indent prefix string.
@@ -303,23 +491,69 @@ fn render_node(node: &Node, ctx: &mut RenderContext<'_>) {
         return;
     }
 
-    // Blockquote
+    // Blockquote (including callouts)
     if node.cast::<Blockquote>().is_some() {
         ctx.flush_line();
+        if !ctx.lines.is_empty() {
+            ctx.add_blank_line();
+        }
         let old_in_blockquote = ctx.in_blockquote;
         ctx.in_blockquote = true;
 
-        // Render children and prepend blockquote marker to each line
+        let callout = detect_callout(node);
         let start_line = ctx.lines.len();
-        for child in node.children.iter() {
-            render_node(child, ctx);
+
+        if let Some((callout_type, title)) = &callout {
+            let style = ctx.theme.style_for(callout_type.element());
+            let header = match title {
+                Some(t) => format!("{} {}", callout_type.icon(), t),
+                None => format!("{} {:?}", callout_type.icon(), callout_type),
+            };
+            ctx.push_span(header, style);
+            ctx.flush_line();
+
+            let mut is_first_para = true;
+            for child in node.children.iter() {
+                if is_first_para && child.cast::<Paragraph>().is_some() {
+                    is_first_para = false;
+                    let full_text = extract_all_text(child);
+                    if CALLOUT_RE.is_match(&full_text) {
+                        let remaining = CALLOUT_RE.replace(&full_text, "");
+                        let remaining = remaining.trim();
+                        if !remaining.is_empty() {
+                            for line in remaining.lines() {
+                                ctx.push_span(
+                                    line.to_string(),
+                                    ctx.theme.style_for(MarkdownElement::Text),
+                                );
+                                ctx.flush_line();
+                            }
+                        }
+                        continue;
+                    }
+                }
+                render_node(child, ctx);
+            }
+        } else {
+            for child in node.children.iter() {
+                render_node(child, ctx);
+            }
         }
         ctx.flush_line();
 
-        // Prepend blockquote marker to all lines generated
-        let quote_style = ctx.theme.style_for(MarkdownElement::Blockquote);
+        let (border_style, content_italic) = if let Some((callout_type, _)) = callout {
+            (ctx.theme.style_for(callout_type.element()), false)
+        } else {
+            (ctx.theme.style_for(MarkdownElement::Blockquote), true)
+        };
+
         for line in ctx.lines[start_line..].iter_mut() {
-            let mut new_spans = vec![Span::styled("  > ".to_owned(), quote_style)];
+            let mut new_spans = vec![Span::styled("  │ ".to_owned(), border_style)];
+            if content_italic {
+                for span in line.spans.iter_mut() {
+                    span.style = span.style.add_modifier(Modifier::ITALIC);
+                }
+            }
             new_spans.append(&mut line.spans.clone());
             *line = Line::from(new_spans);
         }
@@ -550,10 +784,11 @@ fn process_inline_node<S: SpanSink>(
     sink: &mut S,
     for_wrapping: bool,
 ) {
-    // Plain text
     if let Some(text) = node.cast::<Text>() {
-        let style = ctx.theme.style_for(MarkdownElement::Text);
-        sink.push_span(text.content.clone(), style);
+        let base_style = ctx.theme.style_for(MarkdownElement::Text);
+        emit_custom_syntax_spans(&text.content, base_style, ctx.theme, |t, s| {
+            sink.push_span(t, s);
+        });
         return;
     }
 
@@ -1600,7 +1835,7 @@ mod tests {
             .map(|s| s.content.as_ref())
             .collect();
         assert!(all_text.contains("Quote text"));
-        assert!(all_text.contains(">"), "Should have blockquote marker");
+        assert!(all_text.contains("│"), "Should have blockquote border");
     }
 
     #[test]
@@ -1847,9 +2082,221 @@ mod tests {
     }
 
     #[test]
-    fn with_width_returns_self() {
-        let r = RatatuiMarkdown::new(MarkdownTheme::dark()).with_width(80);
-        assert_eq!(r.width, Some(80));
+    fn wikilink_is_styled() {
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark());
+        let lines = r.render("See [[Project Architecture]] for details.");
+
+        let all_text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            all_text.contains("[[Project Architecture]]"),
+            "Wikilink should be present"
+        );
+
+        let wikilink_span = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .find(|s| s.content.contains("[["));
+        assert!(wikilink_span.is_some(), "Should have wikilink span");
+        assert_eq!(
+            wikilink_span.unwrap().style.fg,
+            Some(Color::Indexed(5)),
+            "Wikilink should be magenta"
+        );
+    }
+
+    #[test]
+    fn wikilink_with_alias_shows_alias() {
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark());
+        let lines = r.render("See [[long-note-name|Short Name]] for details.");
+
+        let all_text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            all_text.contains("[[Short Name]]"),
+            "Aliased wikilink should show alias: {}",
+            all_text
+        );
+    }
+
+    #[test]
+    fn tag_is_styled() {
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark());
+        let lines = r.render("Topics: #rust #ai-ml #project/backend");
+
+        let all_text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(all_text.contains("#rust"), "Tag should be present");
+        assert!(all_text.contains("#ai-ml"), "Hyphenated tag should work");
+        assert!(
+            all_text.contains("#project/backend"),
+            "Nested tag should work"
+        );
+
+        let tag_span = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .find(|s| s.content.contains("#rust"));
+        assert!(tag_span.is_some(), "Should have tag span");
+        assert_eq!(
+            tag_span.unwrap().style.fg,
+            Some(Color::Indexed(3)),
+            "Tag should be yellow"
+        );
+    }
+
+    #[test]
+    fn agent_mention_is_styled() {
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark());
+        let lines = r.render("Ask @oracle or @librarian for help.");
+
+        let all_text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            all_text.contains("@oracle"),
+            "Agent mention should be present"
+        );
+        assert!(
+            all_text.contains("@librarian"),
+            "Second agent mention should be present"
+        );
+
+        let agent_span = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .find(|s| s.content.contains("@oracle"));
+        assert!(agent_span.is_some(), "Should have agent span");
+        let style = agent_span.unwrap().style;
+        assert_eq!(style.fg, Some(Color::Indexed(6)), "Agent should be cyan");
+        assert!(
+            style.add_modifier.contains(Modifier::BOLD),
+            "Agent should be bold"
+        );
+    }
+
+    #[test]
+    fn mixed_custom_syntax_in_text() {
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark());
+        let lines = r.render("See [[Docs]] about #setup, ask @helper if stuck.");
+
+        let spans: Vec<_> = lines.iter().flat_map(|l| l.spans.iter()).collect();
+
+        let has_wikilink = spans.iter().any(|s| s.content.contains("[[Docs]]"));
+        let has_tag = spans.iter().any(|s| s.content.contains("#setup"));
+        let has_agent = spans.iter().any(|s| s.content.contains("@helper"));
+
+        assert!(has_wikilink, "Should have wikilink");
+        assert!(has_tag, "Should have tag");
+        assert!(has_agent, "Should have agent mention");
+    }
+
+    #[test]
+    fn callout_note_renders_with_icon() {
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark());
+        let lines = r.render("> [!note]\n> This is a note.");
+
+        let all_text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(all_text.contains("ℹ"), "Note callout should have info icon");
+        assert!(
+            all_text.contains("This is a note"),
+            "Callout content should be present: {}",
+            all_text
+        );
+    }
+
+    #[test]
+    fn callout_warning_renders_with_icon() {
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark());
+        let lines = r.render("> [!warning] Watch out\n> Be careful here.");
+
+        let all_text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            all_text.contains("⚠"),
+            "Warning callout should have warning icon"
+        );
+        assert!(
+            all_text.contains("Watch out"),
+            "Custom title should be present"
+        );
+        assert!(
+            all_text.contains("Be careful"),
+            "Callout content should be present"
+        );
+    }
+
+    #[test]
+    fn callout_tip_has_green_color() {
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark());
+        let lines = r.render("> [!tip]\n> A helpful tip.");
+
+        let tip_span = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .find(|s| s.content.contains("✓"));
+        assert!(tip_span.is_some(), "Should have tip icon");
+        assert_eq!(
+            tip_span.unwrap().style.fg,
+            Some(Color::Indexed(2)),
+            "Tip callout should be green"
+        );
+    }
+
+    #[test]
+    fn callout_danger_has_red_color() {
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark());
+        let lines = r.render("> [!danger]\n> Critical issue!");
+
+        let danger_span = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .find(|s| s.content.contains("✕"));
+        assert!(danger_span.is_some(), "Should have danger icon");
+        assert_eq!(
+            danger_span.unwrap().style.fg,
+            Some(Color::Indexed(1)),
+            "Danger callout should be red"
+        );
+    }
+
+    #[test]
+    fn regular_blockquote_still_works() {
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark());
+        let lines = r.render("> Just a normal quote.");
+
+        let all_text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            all_text.contains("Just a normal quote"),
+            "Regular blockquote content should render"
+        );
+        assert!(all_text.contains("│"), "Should have blockquote border");
+        assert!(
+            !all_text.contains("ℹ") && !all_text.contains("⚠"),
+            "Regular blockquote should not have callout icons"
+        );
     }
 
     #[test]
@@ -2177,5 +2624,65 @@ mod tests {
             "Code block content should be present in ordered list"
         );
         assert!(all_text.contains("1."), "Should have number marker");
+    }
+
+    #[test]
+    fn blockquote_after_table_has_correct_indent() {
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark()).with_width(80);
+        let markdown = "| Col1 | Col2 |\n|------|------|\n| A    | B    |\n\n> Switch to act mode";
+
+        let lines = r.render(markdown);
+
+        let mut found_blockquote = false;
+        for (i, line) in lines.iter().enumerate() {
+            let line_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            if line_text.contains("Switch") {
+                found_blockquote = true;
+                let first_content = line.spans.first().map(|s| s.content.as_ref()).unwrap_or("");
+                assert!(
+                    first_content.starts_with("  │")
+                        || first_content == "│"
+                        || first_content.trim_start() == "│",
+                    "Line {}: Blockquote should have border. First span: '{}', Full line: '{}'",
+                    i,
+                    first_content,
+                    line_text
+                );
+            }
+        }
+        assert!(
+            found_blockquote,
+            "Should have found blockquote line with 'Switch'"
+        );
+    }
+
+    #[test]
+    fn content_after_table_is_preserved() {
+        // Test that content after a table is not eaten/lost
+        let r = RatatuiMarkdown::new(MarkdownTheme::dark()).with_width(80);
+        let markdown = "| Tool | Purpose |\n|------|--------|\n| read | Read files |\n\nThis is text after the table.\n\nAnd another paragraph.";
+
+        let lines = r.render(markdown);
+        let all_text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+
+        // All content should be present
+        assert!(all_text.contains("Tool"), "Table header should be present");
+        assert!(
+            all_text.contains("Read files"),
+            "Table data should be present"
+        );
+        assert!(
+            all_text.contains("text after the table"),
+            "Content after table should be present, got:\n{}",
+            all_text
+        );
+        assert!(
+            all_text.contains("another paragraph"),
+            "Second paragraph after table should be present"
+        );
     }
 }

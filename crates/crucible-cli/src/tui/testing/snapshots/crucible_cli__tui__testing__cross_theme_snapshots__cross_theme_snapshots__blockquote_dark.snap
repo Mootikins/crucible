@@ -2,4 +2,4 @@
 source: crates/crucible-cli/src/tui/testing/cross_theme_snapshots.rs
 expression: dark
 ---
-"  > This is a quote with multiple lines"
+"  │ This is a quote with multiple lines"
