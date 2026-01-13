@@ -6,6 +6,8 @@ use crate::tui::ink::style::{Color, Style};
 use crossterm::event::KeyCode;
 use std::time::Duration;
 
+const INPUT_BG: Color = Color::Rgb(40, 44, 52);
+
 #[derive(Debug, Clone)]
 pub enum ChatAppMsg {
     UserMessage(String),
@@ -122,8 +124,8 @@ impl App for InkChatApp {
             self.render_streaming(),
             self.render_error(),
             spacer(),
-            self.render_status(),
             self.render_input(),
+            self.render_status(),
         ])
     }
 
@@ -384,24 +386,21 @@ impl InkChatApp {
             .collect();
 
         let content_node = match msg.role {
-            Role::User => {
-                let display = format!(" > {}", &msg.content);
-                col([
-                    text(""),
-                    styled(&display, Style::new().fg(Color::Cyan).bold()),
-                ])
-            }
+            Role::User => self.render_user_prompt(&msg.content),
             Role::Assistant => {
                 let md_node = markdown_to_node(&msg.content);
-                col([text(""), md_node])
-            }
-            Role::System => {
-                let display = format!(" * {}", &msg.content);
                 col([
                     text(""),
-                    styled(&display, Style::new().fg(Color::Yellow).dim()),
+                    row([styled("● ", Style::new().fg(Color::DarkGray)), md_node]),
                 ])
             }
+            Role::System => col([
+                text(""),
+                styled(
+                    format!(" * {} ", &msg.content),
+                    Style::new().fg(Color::Yellow).dim(),
+                ),
+            ]),
         };
 
         let final_node = if tool_nodes.is_empty() {
@@ -418,7 +417,7 @@ impl InkChatApp {
         col([
             row([
                 styled(
-                    format!("   {} ", status_icon),
+                    format!("{} ", status_icon),
                     Style::new().fg(Color::DarkGray),
                 ),
                 styled(&tc.name, Style::new().fg(Color::Blue)),
@@ -429,7 +428,7 @@ impl InkChatApp {
                 } else {
                     result.clone()
                 };
-                styled(format!("     {}", truncated), Style::new().dim())
+                styled(format!("  {}", truncated), Style::new().dim())
             } else {
                 Node::Empty
             },
@@ -444,7 +443,10 @@ impl InkChatApp {
         if self.streaming.content.is_empty() && self.streaming.tool_calls.is_empty() {
             col([
                 text(""),
-                spinner(Some("Thinking...".into()), self.spinner_frame),
+                row([
+                    styled("● ", Style::new().fg(Color::DarkGray)),
+                    spinner(Some("Thinking...".into()), self.spinner_frame),
+                ]),
             ])
         } else {
             let tool_nodes: Vec<Node> = self
@@ -454,13 +456,16 @@ impl InkChatApp {
                 .map(|tc| self.render_tool_call(tc))
                 .collect();
 
-            let md_node = markdown_to_node(&self.streaming.content);
+            let content_node = markdown_to_node(&self.streaming.content);
 
             col([
                 text(""),
-                md_node,
+                row([styled("● ", Style::new().fg(Color::DarkGray)), content_node]),
                 col(tool_nodes),
-                spinner(Some("Generating...".into()), self.spinner_frame),
+                row([
+                    styled("  ", Style::default()),
+                    spinner(Some("Generating...".into()), self.spinner_frame),
+                ]),
             ])
         }
     }
@@ -479,25 +484,70 @@ impl InkChatApp {
             ChatMode::Auto => Style::new().fg(Color::Yellow),
         };
 
+        let separator = styled(" │ ", Style::new().fg(Color::DarkGray));
+
         row([
-            styled(format!("[{}]", self.mode.as_str()), mode_style.bold()),
-            styled(" ", Style::default()),
-            styled(&self.status, Style::new().dim()),
+            styled(format!(" [{}]", self.mode.as_str()), mode_style.bold()),
+            separator,
+            styled(&self.status, Style::new().fg(Color::DarkGray)),
         ])
+    }
+
+    fn render_user_prompt(&self, content: &str) -> Node {
+        let width = terminal_width();
+        let top_edge = styled("▄".repeat(width), Style::new().fg(INPUT_BG));
+        let bottom_edge = styled("▀".repeat(width), Style::new().fg(INPUT_BG));
+
+        let prefix = " > ";
+        let suffix = " ";
+        let used = prefix.len() + content.len() + suffix.len();
+        let padding = " ".repeat(width.saturating_sub(used));
+        let content_line = styled(
+            format!("{}{}{}{}", prefix, content, padding, suffix),
+            Style::new().bg(INPUT_BG),
+        );
+
+        col([text(""), top_edge, content_line, bottom_edge])
     }
 
     fn render_input(&self) -> Node {
+        let width = terminal_width();
         let prompt_style = match self.mode {
-            ChatMode::Plan => Style::new().fg(Color::Blue),
-            ChatMode::Act => Style::new().fg(Color::Green),
-            ChatMode::Auto => Style::new().fg(Color::Yellow),
+            ChatMode::Plan => Style::new().fg(Color::Blue).bg(INPUT_BG),
+            ChatMode::Act => Style::new().fg(Color::Green).bg(INPUT_BG),
+            ChatMode::Auto => Style::new().fg(Color::Yellow).bg(INPUT_BG),
         };
 
-        row([
-            styled(" > ", prompt_style),
-            text_input(self.input.content(), self.input.cursor()),
+        let top_edge = styled("▄".repeat(width), Style::new().fg(INPUT_BG));
+        let bottom_edge = styled("▀".repeat(width), Style::new().fg(INPUT_BG));
+
+        let prompt = " > ";
+        let content = self.input.content();
+        let used_width = prompt.len() + content.len() + 1;
+        let padding = " ".repeat(width.saturating_sub(used_width));
+
+        col([
+            top_edge,
+            row([
+                styled(prompt, prompt_style),
+                Node::Input(crate::tui::ink::node::InputNode {
+                    value: content.to_string(),
+                    cursor: self.input.cursor(),
+                    placeholder: None,
+                    style: Style::new().bg(INPUT_BG),
+                    focused: true,
+                }),
+                styled(format!("{} ", padding), Style::new().bg(INPUT_BG)),
+            ]),
+            bottom_edge,
         ])
     }
+}
+
+fn terminal_width() -> usize {
+    crossterm::terminal::size()
+        .map(|(w, _)| w as usize)
+        .unwrap_or(80)
 }
 
 #[cfg(test)]
