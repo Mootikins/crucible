@@ -39,11 +39,14 @@ pub mod chat_runner;
 mod event;
 pub mod example;
 mod layout;
+pub mod markdown;
 mod node;
+mod output;
 mod render;
 mod runner;
 mod runtime;
 mod style;
+mod taffy_layout;
 mod terminal;
 
 pub use app::*;
