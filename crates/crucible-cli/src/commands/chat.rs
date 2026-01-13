@@ -75,7 +75,7 @@ fn select_session_kiln(config: &CliConfig) -> Option<PathBuf> {
 /// * `max_context_tokens` - Maximum context window tokens for internal agent
 /// * `env_overrides` - Environment variables to pass to ACP agent (KEY=VALUE pairs)
 /// * `resume_session_id` - Optional session ID to resume from
-#[allow(clippy::too_many_arguments)] // CLI entry point takes CLI args directly
+#[allow(clippy::too_many_arguments)]
 pub async fn execute(
     config: CliConfig,
     agent_name: Option<String>,
@@ -90,6 +90,7 @@ pub async fn execute(
     env_overrides: Vec<String>,
     resume_session_id: Option<String>,
     fullscreen: bool,
+    use_ink_runner: bool,
 ) -> Result<()> {
     // Determine initial mode
     let initial_mode = if read_only { "plan" } else { "act" };
@@ -171,6 +172,7 @@ pub async fn execute(
             preselected_agent,
             resume_session_id,
             fullscreen,
+            use_ink_runner,
         )
         .await;
     }
@@ -428,18 +430,29 @@ async fn run_deferred_chat(
     parsed_env: std::collections::HashMap<String, String>,
     working_dir: Option<std::path::PathBuf>,
     mut status: StatusLine,
-    // Pre-selected agent for first iteration (skips picker, still allows /new restart)
     preselected_agent: Option<AgentSelection>,
-    // Session ID to resume from (loads existing conversation context)
     resume_session_id: Option<String>,
-    // Use fullscreen mode (alternate screen) instead of inline viewport
     fullscreen: bool,
+    use_ink_runner: bool,
 ) -> Result<()> {
     use crate::chat::{ChatSession, ChatSessionConfig};
 
     info!("Using deferred agent creation (picker in TUI)");
 
-    // Initialize storage only (agent created later by factory)
+    if use_ink_runner {
+        return run_ink_chat(
+            config,
+            default_agent,
+            initial_mode,
+            provider_key,
+            max_context_tokens,
+            parsed_env,
+            working_dir,
+            status,
+        )
+        .await;
+    }
+
     status.update("Initializing storage...");
     let storage_handle = factories::get_storage(&config).await?;
 
@@ -566,8 +579,9 @@ async fn run_deferred_chat(
         session_config = session_config.with_resume_session(session_id);
     }
 
-    // Configure viewport mode
-    session_config = session_config.with_fullscreen(fullscreen);
+    session_config = session_config
+        .with_fullscreen(fullscreen)
+        .with_ink_runner(use_ink_runner);
 
     let mut session = ChatSession::new(session_config, core.clone(), None);
 
@@ -657,6 +671,101 @@ async fn run_deferred_chat(
 
     // Run deferred session - picker runs in TUI, then factory creates agent
     session.run_deferred(factory).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_ink_chat(
+    config: CliConfig,
+    default_agent: Option<String>,
+    initial_mode: &str,
+    provider_key: Option<String>,
+    max_context_tokens: usize,
+    parsed_env: std::collections::HashMap<String, String>,
+    working_dir: Option<std::path::PathBuf>,
+    status: StatusLine,
+) -> Result<()> {
+    use crate::chat::bridge::AgentEventBridge;
+    use crate::tui::ink::{ChatMode, InkChatRunner};
+    use crucible_core::traits::chat::is_read_only;
+    use crucible_rune::SessionBuilder;
+
+    drop(status);
+
+    let session = SessionBuilder::with_generated_id("chat").build();
+    let ring = session.ring().clone();
+    let bridge = AgentEventBridge::new(session.handle(), ring);
+
+    let mode = ChatMode::from_str(initial_mode);
+    let mut runner = InkChatRunner::new()?.with_mode(mode);
+
+    let config_for_factory = config.clone();
+    let initial_mode_str = initial_mode.to_string();
+    let factory = move |selection: AgentSelection| {
+        let config = config_for_factory.clone();
+        let default_agent = default_agent.clone();
+        let provider_key = provider_key.clone();
+        let parsed_env = parsed_env.clone();
+        let working_dir = working_dir.clone();
+        let initial_mode = initial_mode_str.clone();
+
+        async move {
+            match selection {
+                AgentSelection::Acp(agent_name) => {
+                    let mut params = factories::AgentInitParams::new()
+                        .with_type(factories::AgentType::Acp)
+                        .with_agent_name_opt(Some(agent_name).or(default_agent))
+                        .with_provider_opt(provider_key)
+                        .with_read_only(is_read_only(&initial_mode))
+                        .with_max_context_tokens(max_context_tokens)
+                        .with_env_overrides(parsed_env);
+
+                    if let Some(wd) = working_dir {
+                        params = params.with_working_dir(wd);
+                    }
+
+                    let agent = factories::create_agent(&config, params).await?;
+
+                    match agent {
+                        factories::InitializedAgent::Acp(mut client) => {
+                            client.spawn().await?;
+                            Ok(DynamicAgent::acp(client))
+                        }
+                        factories::InitializedAgent::Internal(_) => {
+                            anyhow::bail!("Expected ACP agent but got Internal")
+                        }
+                    }
+                }
+                AgentSelection::Internal => {
+                    let mut params = factories::AgentInitParams::new()
+                        .with_type(factories::AgentType::Internal)
+                        .with_provider_opt(provider_key)
+                        .with_read_only(is_read_only(&initial_mode))
+                        .with_max_context_tokens(max_context_tokens)
+                        .with_env_overrides(parsed_env);
+
+                    if let Some(wd) = working_dir {
+                        params = params.with_working_dir(wd);
+                    }
+
+                    let agent = factories::create_agent(&config, params).await?;
+
+                    match agent {
+                        factories::InitializedAgent::Internal(handle) => {
+                            Ok(DynamicAgent::local(handle))
+                        }
+                        factories::InitializedAgent::Acp(_) => {
+                            anyhow::bail!("Expected Internal agent but got ACP")
+                        }
+                    }
+                }
+                AgentSelection::Cancelled => {
+                    anyhow::bail!("Agent selection was cancelled")
+                }
+            }
+        }
+    };
+
+    runner.run_with_factory(&bridge, factory).await
 }
 
 /// Spawn background watch task for chat mode using the event system
