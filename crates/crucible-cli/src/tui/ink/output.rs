@@ -1,115 +1,183 @@
+use crate::tui::ink::ansi::{strip_ansi, visual_rows};
 use crossterm::{cursor, execute, terminal};
 use std::io::{self, Stdout, Write};
 
 pub struct OutputBuffer {
     stdout: Stdout,
     previous_lines: Vec<String>,
-    previous_height: usize,
+    previous_visual_rows: usize,
+    terminal_width: usize,
+    terminal_height: usize,
+    force_next_redraw: bool,
+}
+
+fn lines_visually_equal(a: &str, b: &str) -> bool {
+    strip_ansi(a) == strip_ansi(b)
 }
 
 impl Default for OutputBuffer {
     fn default() -> Self {
-        Self::new()
+        let (width, height) = terminal::size()
+            .map(|(w, h)| (w as usize, h as usize))
+            .unwrap_or((80, 24));
+        Self::new(width, height)
     }
 }
 
 impl OutputBuffer {
-    pub fn new() -> Self {
+    pub fn new(width: usize, height: usize) -> Self {
         Self {
             stdout: io::stdout(),
             previous_lines: Vec::new(),
-            previous_height: 0,
+            previous_visual_rows: 0,
+            terminal_width: width,
+            terminal_height: height,
+            force_next_redraw: false,
         }
     }
 
-    pub fn render(&mut self, content: &str) -> io::Result<()> {
-        let next_lines: Vec<String> = content.lines().map(String::from).collect();
-        let next_height = next_lines.len();
+    pub fn set_size(&mut self, width: usize, height: usize) {
+        self.terminal_width = width;
+        self.terminal_height = height;
+    }
 
-        if next_lines == self.previous_lines {
+    pub fn render(&mut self, content: &str) -> io::Result<()> {
+        let all_lines: Vec<String> = content.lines().map(String::from).collect();
+
+        let line_visual_rows: Vec<usize> = all_lines
+            .iter()
+            .map(|line| visual_rows(line, self.terminal_width))
+            .collect();
+
+        let total_visual_rows: usize = line_visual_rows.iter().sum();
+        let available_rows = self.terminal_height.saturating_sub(1);
+
+        let (viewport_lines, viewport_visual_rows) = self.clamp_to_viewport(
+            &all_lines,
+            &line_visual_rows,
+            total_visual_rows,
+            available_rows,
+        );
+
+        let all_equal = !self.force_next_redraw
+            && viewport_lines.len() == self.previous_lines.len()
+            && viewport_lines
+                .iter()
+                .zip(self.previous_lines.iter())
+                .all(|(a, b)| lines_visually_equal(a, b));
+
+        if all_equal {
             return Ok(());
         }
 
-        if self.previous_height == 0 {
-            for (i, line) in next_lines.iter().enumerate() {
-                write!(self.stdout, "{}", line)?;
-                if i < next_height - 1 {
-                    write!(self.stdout, "\r\n")?;
-                }
-            }
-            self.stdout.flush()?;
-            self.previous_lines = next_lines;
-            self.previous_height = next_height;
-            return Ok(());
+        tracing::debug!(
+            prev_rows = self.previous_visual_rows,
+            next_rows = viewport_visual_rows,
+            line_count = viewport_lines.len(),
+            width = self.terminal_width,
+            height = self.terminal_height,
+            force = self.force_next_redraw,
+            "render"
+        );
+
+        self.force_next_redraw = false;
+
+        if self.previous_visual_rows > 0 {
+            tracing::trace!(
+                move_up = self.previous_visual_rows.saturating_sub(1),
+                "cursor move up"
+            );
+            execute!(
+                self.stdout,
+                cursor::MoveUp(self.previous_visual_rows.saturating_sub(1) as u16),
+                cursor::MoveToColumn(0),
+            )?;
+        } else {
+            tracing::trace!("no cursor move (previous_visual_rows=0)");
         }
 
         execute!(
             self.stdout,
-            cursor::MoveUp(self.previous_height.saturating_sub(1) as u16),
-            cursor::MoveToColumn(0),
+            terminal::Clear(terminal::ClearType::FromCursorDown)
         )?;
 
-        let max_lines = next_height.max(self.previous_height);
-
-        for i in 0..max_lines {
-            let next_line = next_lines.get(i).map(|s| s.as_str()).unwrap_or("");
-            let prev_line = self.previous_lines.get(i).map(|s| s.as_str()).unwrap_or("");
-
-            let line_changed = next_line != prev_line || i >= self.previous_height;
-
-            if line_changed {
-                execute!(self.stdout, cursor::MoveToColumn(0))?;
-                write!(self.stdout, "{}", next_line)?;
-                execute!(
-                    self.stdout,
-                    terminal::Clear(terminal::ClearType::UntilNewLine)
-                )?;
+        for (i, line) in viewport_lines.iter().enumerate() {
+            write!(self.stdout, "{}", line)?;
+            if i < viewport_lines.len() - 1 {
+                write!(self.stdout, "\r\n")?;
             }
-
-            if i < max_lines - 1 {
-                if line_changed {
-                    write!(self.stdout, "\r\n")?;
-                } else {
-                    execute!(self.stdout, cursor::MoveDown(1), cursor::MoveToColumn(0))?;
-                }
-            }
-        }
-
-        if next_height < self.previous_height {
-            execute!(
-                self.stdout,
-                terminal::Clear(terminal::ClearType::FromCursorDown)
-            )?;
         }
 
         self.stdout.flush()?;
-        self.previous_lines = next_lines;
-        self.previous_height = next_height;
+        self.previous_lines = viewport_lines;
+        self.previous_visual_rows = viewport_visual_rows;
 
         Ok(())
     }
 
     pub fn clear(&mut self) -> io::Result<()> {
-        if self.previous_height > 0 {
+        if self.previous_visual_rows > 0 {
             execute!(
                 self.stdout,
-                cursor::MoveUp(self.previous_height.saturating_sub(1) as u16),
+                cursor::MoveUp(self.previous_visual_rows.saturating_sub(1) as u16),
                 cursor::MoveToColumn(0),
                 terminal::Clear(terminal::ClearType::FromCursorDown),
             )?;
             self.previous_lines.clear();
-            self.previous_height = 0;
+            self.previous_visual_rows = 0;
         }
         Ok(())
     }
 
     pub fn height(&self) -> usize {
-        self.previous_height
+        self.previous_visual_rows
     }
 
     pub fn reset(&mut self) {
         self.previous_lines.clear();
-        self.previous_height = 0;
+        self.previous_visual_rows = 0;
+    }
+
+    pub fn force_redraw(&mut self) {
+        self.previous_lines.clear();
+        self.force_next_redraw = true;
+    }
+
+    fn clamp_to_viewport(
+        &self,
+        all_lines: &[String],
+        line_visual_rows: &[usize],
+        total_visual_rows: usize,
+        available_rows: usize,
+    ) -> (Vec<String>, usize) {
+        if total_visual_rows <= available_rows {
+            return (all_lines.to_vec(), total_visual_rows);
+        }
+
+        let mut rows_remaining = available_rows;
+        let mut start_idx = all_lines.len();
+
+        for (i, &row_count) in line_visual_rows.iter().enumerate().rev() {
+            if rows_remaining >= row_count {
+                rows_remaining -= row_count;
+                start_idx = i;
+            } else {
+                break;
+            }
+        }
+
+        let viewport: Vec<String> = all_lines[start_idx..].to_vec();
+        let viewport_rows: usize = line_visual_rows[start_idx..].iter().sum();
+
+        tracing::debug!(
+            total_rows = total_visual_rows,
+            available = available_rows,
+            skipped_lines = start_idx,
+            viewport_rows,
+            "viewport clamped"
+        );
+
+        (viewport, viewport_rows)
     }
 }
 
@@ -119,8 +187,52 @@ mod tests {
 
     #[test]
     fn test_output_buffer_creation() {
-        let buffer = OutputBuffer::new();
+        let buffer = OutputBuffer::new(80, 24);
         assert_eq!(buffer.height(), 0);
         assert!(buffer.previous_lines.is_empty());
+    }
+
+    #[test]
+    fn test_viewport_clamp_content_fits() {
+        let buffer = OutputBuffer::new(80, 24);
+        let lines: Vec<String> = vec!["line1".into(), "line2".into(), "line3".into()];
+        let visual_rows = vec![1, 1, 1];
+
+        let (viewport, rows) = buffer.clamp_to_viewport(&lines, &visual_rows, 3, 22);
+
+        assert_eq!(viewport.len(), 3);
+        assert_eq!(rows, 3);
+    }
+
+    #[test]
+    fn test_viewport_clamp_content_exceeds() {
+        let buffer = OutputBuffer::new(80, 10);
+        let lines: Vec<String> = (0..20).map(|i| format!("line{}", i)).collect();
+        let visual_rows = vec![1; 20];
+
+        let (viewport, rows) = buffer.clamp_to_viewport(&lines, &visual_rows, 20, 8);
+
+        assert_eq!(viewport.len(), 8);
+        assert_eq!(rows, 8);
+        assert_eq!(viewport[0], "line12");
+        assert_eq!(viewport[7], "line19");
+    }
+
+    #[test]
+    fn test_viewport_clamp_with_wrapped_lines() {
+        let buffer = OutputBuffer::new(40, 10);
+        let lines: Vec<String> = vec![
+            "short".into(),
+            "this is a very long line that wraps".into(),
+            "another short".into(),
+        ];
+        let visual_rows = vec![1, 2, 1];
+
+        let (viewport, rows) = buffer.clamp_to_viewport(&lines, &visual_rows, 4, 3);
+
+        assert_eq!(viewport.len(), 2);
+        assert_eq!(rows, 3);
+        assert_eq!(viewport[0], "this is a very long line that wraps");
+        assert_eq!(viewport[1], "another short");
     }
 }
