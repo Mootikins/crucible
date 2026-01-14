@@ -649,15 +649,9 @@ impl InkChatApp {
                         styled(BULLET_PREFIX, Style::new().fg(Color::DarkGray)),
                         content_node,
                     ]),
-                    spinner(Some("Generating...".into()), self.spinner_frame),
+                    spinner(None, self.spinner_frame),
                 ]),
-                col([
-                    text(""),
-                    row([
-                        styled(BULLET_PREFIX, Style::new().fg(Color::DarkGray)),
-                        spinner(Some("Thinking...".into()), self.spinner_frame),
-                    ]),
-                ]),
+                spinner(Some("Thinking...".into()), self.spinner_frame),
             )
         })
     }
