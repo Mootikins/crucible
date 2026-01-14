@@ -39,6 +39,7 @@ pub mod chat_app;
 pub mod chat_runner;
 mod event;
 pub mod example;
+mod focus;
 mod layout;
 pub mod markdown;
 mod node;
@@ -49,11 +50,13 @@ mod runtime;
 mod style;
 mod taffy_layout;
 mod terminal;
+mod test_harness;
 
 pub use app::*;
 pub use chat_app::{ChatAppMsg, ChatMode, InkChatApp, Message, Role, ToolCallInfo};
 pub use chat_runner::InkChatRunner;
 pub use event::*;
+pub use focus::*;
 pub use layout::*;
 pub use node::*;
 pub use render::*;
@@ -61,6 +64,7 @@ pub use runner::*;
 pub use runtime::*;
 pub use style::*;
 pub use terminal::*;
+pub use test_harness::*;
 
 #[cfg(test)]
 mod tests;
