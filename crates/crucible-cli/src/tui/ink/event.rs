@@ -13,8 +13,11 @@ pub enum InputAction {
     Insert(char),
     Backspace,
     Delete,
+    DeleteWord,
     Left,
     Right,
+    WordLeft,
+    WordRight,
     Home,
     End,
     Submit,
@@ -29,13 +32,19 @@ pub enum InputAction {
 impl From<KeyEvent> for InputAction {
     fn from(key: KeyEvent) -> Self {
         match (key.code, key.modifiers) {
-            (KeyCode::Char('c'), KeyModifiers::CONTROL) => InputAction::Cancel,
-            (KeyCode::Char('d'), KeyModifiers::CONTROL) => InputAction::Cancel,
+            (KeyCode::Char('w'), KeyModifiers::CONTROL) => InputAction::DeleteWord,
             (KeyCode::Char('u'), KeyModifiers::CONTROL) => InputAction::Clear,
             (KeyCode::Char('a'), KeyModifiers::CONTROL) => InputAction::Home,
             (KeyCode::Char('e'), KeyModifiers::CONTROL) => InputAction::End,
+            (KeyCode::Char('b'), KeyModifiers::CONTROL) => InputAction::Left,
+            (KeyCode::Char('f'), KeyModifiers::CONTROL) => InputAction::Right,
+            (KeyCode::Char('b'), KeyModifiers::ALT) => InputAction::WordLeft,
+            (KeyCode::Char('f'), KeyModifiers::ALT) => InputAction::WordRight,
+            (KeyCode::Left, KeyModifiers::CONTROL) => InputAction::WordLeft,
+            (KeyCode::Right, KeyModifiers::CONTROL) => InputAction::WordRight,
             (KeyCode::Char('p'), KeyModifiers::CONTROL) => InputAction::HistoryPrev,
             (KeyCode::Char('n'), KeyModifiers::CONTROL) => InputAction::HistoryNext,
+            (KeyCode::Char('j'), KeyModifiers::CONTROL) => InputAction::Insert('\n'),
             (KeyCode::Tab, _) => InputAction::Complete,
             (KeyCode::Char(c), _) => InputAction::Insert(c),
             (KeyCode::Backspace, _) => InputAction::Backspace,
@@ -45,7 +54,6 @@ impl From<KeyEvent> for InputAction {
             (KeyCode::Home, _) => InputAction::Home,
             (KeyCode::End, _) => InputAction::End,
             (KeyCode::Enter, _) => InputAction::Submit,
-            (KeyCode::Esc, _) => InputAction::Cancel,
             (KeyCode::Up, _) => InputAction::HistoryPrev,
             (KeyCode::Down, _) => InputAction::HistoryNext,
             _ => InputAction::None,
@@ -102,6 +110,22 @@ impl InputBuffer {
                     self.content.remove(self.cursor);
                 }
             }
+            InputAction::DeleteWord => {
+                if self.cursor > 0 {
+                    let before = &self.content[..self.cursor];
+                    let trimmed = before.trim_end();
+                    let word_start = trimmed
+                        .rfind(|c: char| c.is_whitespace())
+                        .map(|i| i + 1)
+                        .unwrap_or(0);
+                    self.content = format!(
+                        "{}{}",
+                        &self.content[..word_start],
+                        &self.content[self.cursor..]
+                    );
+                    self.cursor = word_start;
+                }
+            }
             InputAction::Left => {
                 if self.cursor > 0 {
                     self.cursor = self.content[..self.cursor]
@@ -118,6 +142,27 @@ impl InputBuffer {
                         .nth(1)
                         .map(|(i, _)| self.cursor + i)
                         .unwrap_or(self.content.len());
+                }
+            }
+            InputAction::WordLeft => {
+                if self.cursor > 0 {
+                    let before = &self.content[..self.cursor];
+                    let trimmed = before.trim_end();
+                    self.cursor = trimmed
+                        .rfind(|c: char| c.is_whitespace())
+                        .map(|i| i + 1)
+                        .unwrap_or(0);
+                }
+            }
+            InputAction::WordRight => {
+                if self.cursor < self.content.len() {
+                    let after = &self.content[self.cursor..];
+                    let trimmed = after.trim_start();
+                    let skip = after.len() - trimmed.len();
+                    self.cursor += skip
+                        + trimmed
+                            .find(|c: char| c.is_whitespace())
+                            .unwrap_or(trimmed.len());
                 }
             }
             InputAction::Home => {

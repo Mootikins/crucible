@@ -147,7 +147,6 @@ fn key_event_to_input_action() {
     assert_eq!(InputAction::from(key(KeyCode::Left)), InputAction::Left);
     assert_eq!(InputAction::from(key(KeyCode::Right)), InputAction::Right);
     assert_eq!(InputAction::from(key(KeyCode::Enter)), InputAction::Submit);
-    assert_eq!(InputAction::from(key(KeyCode::Esc)), InputAction::Cancel);
     assert_eq!(
         InputAction::from(key(KeyCode::Up)),
         InputAction::HistoryPrev
@@ -160,13 +159,15 @@ fn key_event_to_input_action() {
 
 #[test]
 fn ctrl_key_bindings() {
-    assert_eq!(InputAction::from(ctrl('c')), InputAction::Cancel);
-    assert_eq!(InputAction::from(ctrl('d')), InputAction::Cancel);
+    assert_eq!(InputAction::from(ctrl('w')), InputAction::DeleteWord);
     assert_eq!(InputAction::from(ctrl('u')), InputAction::Clear);
     assert_eq!(InputAction::from(ctrl('a')), InputAction::Home);
     assert_eq!(InputAction::from(ctrl('e')), InputAction::End);
+    assert_eq!(InputAction::from(ctrl('b')), InputAction::Left);
+    assert_eq!(InputAction::from(ctrl('f')), InputAction::Right);
     assert_eq!(InputAction::from(ctrl('p')), InputAction::HistoryPrev);
     assert_eq!(InputAction::from(ctrl('n')), InputAction::HistoryNext);
+    assert_eq!(InputAction::from(ctrl('j')), InputAction::Insert('\n'));
 }
 
 #[test]
