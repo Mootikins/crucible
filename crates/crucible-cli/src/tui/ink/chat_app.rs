@@ -23,6 +23,7 @@ pub enum ChatAppMsg {
     Error(String),
     Status(String),
     ModeChanged(String),
+    ContextUsage { used: usize, total: usize },
 }
 
 #[derive(Debug, Clone)]
@@ -109,6 +110,8 @@ pub struct InkChatApp {
     on_submit: Option<Box<dyn Fn(String) + Send + Sync>>,
     show_popup: bool,
     popup_selected: usize,
+    context_used: usize,
+    context_total: usize,
 }
 
 impl Default for InkChatApp {
@@ -119,12 +122,14 @@ impl Default for InkChatApp {
             streaming: StreamingState::default(),
             spinner_frame: 0,
             mode: ChatMode::Plan,
-            status: "Ready".to_string(),
+            status: String::new(),
             error: None,
             message_counter: 0,
             on_submit: None,
             show_popup: false,
             popup_selected: 0,
+            context_used: 0,
+            context_total: 128000,
         }
     }
 }
@@ -251,6 +256,11 @@ impl App for InkChatApp {
             }
             ChatAppMsg::ModeChanged(mode) => {
                 self.mode = ChatMode::from_str(&mode);
+                Action::Continue
+            }
+            ChatAppMsg::ContextUsage { used, total } => {
+                self.context_used = used;
+                self.context_total = total;
                 Action::Continue
             }
         }
@@ -671,10 +681,27 @@ impl InkChatApp {
 
         let separator = styled(" │ ", Style::new().fg(Color::DarkGray));
 
+        let context_percent = if self.context_total > 0 {
+            (self.context_used as f64 / self.context_total as f64 * 100.0).round() as usize
+        } else {
+            0
+        };
+
         row([
-            badge(self.mode.as_str(), mode_style.bold()),
+            styled("❯ ", Style::new().fg(Color::DarkGray)),
+            styled(
+                match self.mode {
+                    ChatMode::Plan => "Plan",
+                    ChatMode::Act => "Act",
+                    ChatMode::Auto => "Auto",
+                },
+                mode_style.bold(),
+            ),
             separator,
-            styled(&self.status, Style::new().fg(Color::DarkGray)),
+            styled(
+                format!("{}% ctx", context_percent),
+                Style::new().fg(Color::DarkGray),
+            ),
         ])
     }
 
