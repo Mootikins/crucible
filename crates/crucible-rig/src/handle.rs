@@ -622,10 +622,17 @@ where
                                 }
                             }
                             StreamedAssistantContent::ToolCall(tc) => {
-                                debug!(tool = %tc.function.name, "Rig tool call");
+                                info!(
+                                    tool = %tc.function.name,
+                                    id = %tc.id,
+                                    call_id = ?tc.call_id,
+                                    "Rig tool call received"
+                                );
 
-                                // Track id -> name for result lookup (ToolResult.id == ToolCall.id)
                                 tool_id_to_name.insert(tc.id.clone(), tc.function.name.clone());
+                                if let Some(ref call_id) = tc.call_id {
+                                    tool_id_to_name.insert(call_id.clone(), tc.function.name.clone());
+                                }
 
                                 // Track for history (always, regardless of plan mode)
                                 rig_tool_calls.push(tc.clone());
@@ -729,9 +736,10 @@ where
 
                         info!(
                             tool_name = %tool_name,
+                            result_id = %tr.id,
                             call_id = ?tr.call_id,
                             result_len = result_text.len(),
-                            "Tool result received - emitting to stream"
+                            "Tool result received"
                         );
 
                         // Emit tool result to TUI
