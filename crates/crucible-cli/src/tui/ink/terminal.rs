@@ -154,8 +154,12 @@ impl Terminal {
                 direction: b.direction,
                 size: b.size,
                 padding: b.padding,
+                margin: b.margin,
                 border: b.border,
                 style: b.style,
+                justify: b.justify,
+                align: b.align,
+                gap: b.gap,
             }),
 
             Node::Fragment(children) => {

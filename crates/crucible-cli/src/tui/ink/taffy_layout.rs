@@ -1,5 +1,6 @@
 use crate::tui::ink::node::{BoxNode, Direction, Node, Size as InkSize};
 use crate::tui::ink::render::render_to_string;
+use crate::tui::ink::style::{AlignItems as InkAlignItems, JustifyContent as InkJustifyContent};
 use std::collections::HashMap;
 use taffy::prelude::*;
 
@@ -145,6 +146,14 @@ impl LayoutEngine {
                     )
                     .unwrap()
             }
+
+            Node::Focusable(focusable) => {
+                return self.build_node(&focusable.child, available_width);
+            }
+
+            Node::ErrorBoundary(boundary) => {
+                return self.build_node(&boundary.child, available_width);
+            }
         };
 
         self.node_map.insert(id, node_id);
@@ -153,6 +162,7 @@ impl LayoutEngine {
 
     fn build_box(&mut self, boxnode: &BoxNode, available_width: f32) -> NodeId {
         let padding = &boxnode.padding;
+        let margin = &boxnode.margin;
         let border_width = if boxnode.border.is_some() { 1.0 } else { 0.0 };
 
         let inner_width =
@@ -169,6 +179,9 @@ impl LayoutEngine {
             Direction::Row => FlexDirection::Row,
         };
 
+        let justify_content = convert_justify_content(boxnode.justify);
+        let align_items = convert_align_items(boxnode.align);
+
         let (width, height, flex_grow) = match boxnode.size {
             InkSize::Fixed(h) => (length(available_width), length(h as f32), 0.0),
             InkSize::Flex(weight) => (length(available_width), auto(), weight as f32),
@@ -181,12 +194,24 @@ impl LayoutEngine {
                     display: Display::Flex,
                     flex_direction,
                     flex_grow,
+                    justify_content: Some(justify_content),
+                    align_items: Some(align_items),
+                    gap: Size {
+                        width: length(boxnode.gap.column as f32),
+                        height: length(boxnode.gap.row as f32),
+                    },
                     size: Size { width, height },
                     padding: Rect {
                         top: length(padding.top as f32),
                         right: length(padding.right as f32),
                         bottom: length(padding.bottom as f32),
                         left: length(padding.left as f32),
+                    },
+                    margin: Rect {
+                        top: length(margin.top as f32),
+                        right: length(margin.right as f32),
+                        bottom: length(margin.bottom as f32),
+                        left: length(margin.left as f32),
                     },
                     border: Rect {
                         top: length(border_width),
@@ -235,6 +260,26 @@ impl LayoutEngine {
     }
 }
 
+fn convert_justify_content(justify: InkJustifyContent) -> JustifyContent {
+    match justify {
+        InkJustifyContent::Start => JustifyContent::Start,
+        InkJustifyContent::End => JustifyContent::End,
+        InkJustifyContent::Center => JustifyContent::Center,
+        InkJustifyContent::SpaceBetween => JustifyContent::SpaceBetween,
+        InkJustifyContent::SpaceAround => JustifyContent::SpaceAround,
+        InkJustifyContent::SpaceEvenly => JustifyContent::SpaceEvenly,
+    }
+}
+
+fn convert_align_items(align: InkAlignItems) -> AlignItems {
+    match align {
+        InkAlignItems::Start => AlignItems::Start,
+        InkAlignItems::End => AlignItems::End,
+        InkAlignItems::Center => AlignItems::Center,
+        InkAlignItems::Stretch => AlignItems::Stretch,
+    }
+}
+
 fn measure_text_lines(content: &str, width: usize) -> usize {
     if content.is_empty() {
         return 0;
@@ -249,7 +294,7 @@ fn measure_text_lines(content: &str, width: usize) -> usize {
         if chars == 0 {
             total += 1;
         } else {
-            total += (chars + width - 1) / width;
+            total += chars.div_ceil(width);
         }
     }
     total.max(1)

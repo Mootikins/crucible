@@ -1,7 +1,9 @@
-use crate::tui::ink::style::{Border, Color, Padding, Style};
+use crate::tui::ink::focus::FocusId;
+use crate::tui::ink::style::{AlignItems, Border, Color, Gap, JustifyContent, Padding, Style};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum Node {
+    #[default]
     Empty,
     Text(TextNode),
     Box(BoxNode),
@@ -10,12 +12,21 @@ pub enum Node {
     Spinner(SpinnerNode),
     Popup(PopupNode),
     Fragment(Vec<Node>),
+    Focusable(FocusableNode),
+    ErrorBoundary(ErrorBoundaryNode),
 }
 
-impl Default for Node {
-    fn default() -> Self {
-        Node::Empty
-    }
+#[derive(Debug, Clone, PartialEq)]
+pub struct FocusableNode {
+    pub id: FocusId,
+    pub child: Box<Node>,
+    pub auto_focus: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ErrorBoundaryNode {
+    pub child: Box<Node>,
+    pub fallback: Box<Node>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -30,8 +41,12 @@ pub struct BoxNode {
     pub direction: Direction,
     pub size: Size,
     pub padding: Padding,
+    pub margin: Padding,
     pub border: Option<Border>,
     pub style: Style,
+    pub justify: JustifyContent,
+    pub align: AlignItems,
+    pub gap: Gap,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -194,6 +209,36 @@ impl PopupItemNode {
     }
 }
 
+pub fn focusable(id: impl Into<String>, child: Node) -> Node {
+    Node::Focusable(FocusableNode {
+        id: FocusId::new(id),
+        child: Box::new(child),
+        auto_focus: false,
+    })
+}
+
+pub fn focusable_auto(id: impl Into<String>, child: Node) -> Node {
+    Node::Focusable(FocusableNode {
+        id: FocusId::new(id),
+        child: Box::new(child),
+        auto_focus: true,
+    })
+}
+
+impl FocusableNode {
+    pub fn auto_focus(mut self) -> Self {
+        self.auto_focus = true;
+        self
+    }
+}
+
+pub fn error_boundary(child: Node, fallback: Node) -> Node {
+    Node::ErrorBoundary(ErrorBoundaryNode {
+        child: Box::new(child),
+        fallback: Box::new(fallback),
+    })
+}
+
 pub fn spacer() -> Node {
     Node::Box(BoxNode {
         size: Size::Flex(1),
@@ -263,6 +308,62 @@ impl Node {
             other => Node::Box(BoxNode {
                 children: vec![other],
                 border: Some(border),
+                ..Default::default()
+            }),
+        }
+    }
+
+    pub fn with_margin(self, margin: Padding) -> Self {
+        match self {
+            Node::Box(mut b) => {
+                b.margin = margin;
+                Node::Box(b)
+            }
+            other => Node::Box(BoxNode {
+                children: vec![other],
+                margin,
+                ..Default::default()
+            }),
+        }
+    }
+
+    pub fn justify(self, justify: JustifyContent) -> Self {
+        match self {
+            Node::Box(mut b) => {
+                b.justify = justify;
+                Node::Box(b)
+            }
+            other => Node::Box(BoxNode {
+                children: vec![other],
+                justify,
+                ..Default::default()
+            }),
+        }
+    }
+
+    pub fn align(self, align: AlignItems) -> Self {
+        match self {
+            Node::Box(mut b) => {
+                b.align = align;
+                Node::Box(b)
+            }
+            other => Node::Box(BoxNode {
+                children: vec![other],
+                align,
+                ..Default::default()
+            }),
+        }
+    }
+
+    pub fn gap(self, gap: Gap) -> Self {
+        match self {
+            Node::Box(mut b) => {
+                b.gap = gap;
+                Node::Box(b)
+            }
+            other => Node::Box(BoxNode {
+                children: vec![other],
+                gap,
                 ..Default::default()
             }),
         }
