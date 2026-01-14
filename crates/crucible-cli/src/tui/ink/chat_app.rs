@@ -16,7 +16,8 @@ pub enum ChatAppMsg {
     UserMessage(String),
     TextDelta(String),
     ToolCall { name: String, args: String },
-    ToolResult { name: String, result: String },
+    ToolResultDelta { name: String, delta: String },
+    ToolResultComplete { name: String },
     StreamComplete,
     Error(String),
     Status(String),
@@ -24,18 +25,28 @@ pub enum ChatAppMsg {
 }
 
 #[derive(Debug, Clone)]
-pub struct Message {
-    pub id: String,
-    pub role: Role,
-    pub content: String,
-    pub tool_calls: Vec<ToolCallInfo>,
+pub enum ChatItem {
+    Message {
+        id: String,
+        role: Role,
+        content: String,
+    },
+    ToolCall {
+        id: String,
+        name: String,
+        args: String,
+        result: String,
+        complete: bool,
+    },
 }
 
-#[derive(Debug, Clone)]
-pub struct ToolCallInfo {
-    pub name: String,
-    pub args: String,
-    pub result: Option<String>,
+impl ChatItem {
+    fn id(&self) -> &str {
+        match self {
+            ChatItem::Message { id, .. } => id,
+            ChatItem::ToolCall { id, .. } => id,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,12 +93,11 @@ impl ChatMode {
 #[derive(Debug, Clone, Default)]
 struct StreamingState {
     content: String,
-    tool_calls: Vec<ToolCallInfo>,
     active: bool,
 }
 
 pub struct InkChatApp {
-    messages: Vec<Message>,
+    items: Vec<ChatItem>,
     input: InputBuffer,
     streaming: StreamingState,
     spinner_frame: usize,
@@ -103,7 +113,7 @@ pub struct InkChatApp {
 impl Default for InkChatApp {
     fn default() -> Self {
         Self {
-            messages: Vec::new(),
+            items: Vec::new(),
             input: InputBuffer::new(),
             streaming: StreamingState::default(),
             spinner_frame: 0,
@@ -127,7 +137,7 @@ impl App for InkChatApp {
 
     fn view(&self, ctx: &ViewContext<'_>) -> Node {
         col([
-            self.render_messages(),
+            self.render_items(),
             self.render_streaming(),
             self.render_error(),
             spacer(),
@@ -162,21 +172,66 @@ impl App for InkChatApp {
                 Action::Continue
             }
             ChatAppMsg::ToolCall { name, args } => {
-                self.streaming.tool_calls.push(ToolCallInfo {
+                self.message_counter += 1;
+                tracing::debug!(
+                    tool_name = %name,
+                    args_len = args.len(),
+                    counter = self.message_counter,
+                    "Adding ToolCall to items"
+                );
+                self.items.push(ChatItem::ToolCall {
+                    id: format!("tool-{}", self.message_counter),
                     name,
                     args,
-                    result: None,
+                    result: String::new(),
+                    complete: false,
                 });
                 Action::Continue
             }
-            ChatAppMsg::ToolResult { name, result } => {
-                if let Some(tc) = self
-                    .streaming
-                    .tool_calls
-                    .iter_mut()
-                    .find(|t| t.name == name)
+            ChatAppMsg::ToolResultDelta { name, delta } => {
+                tracing::debug!(
+                    tool_name = %name,
+                    delta_len = delta.len(),
+                    items_count = self.items.len(),
+                    "Received ToolResultDelta"
+                );
+                let found =
+                    self.items.iter_mut().rev().find(
+                        |item| matches!(item, ChatItem::ToolCall { name: n, .. } if n == &name),
+                    );
+                if let Some(ChatItem::ToolCall {
+                    result,
+                    name: found_name,
+                    ..
+                }) = found
                 {
-                    tc.result = Some(result);
+                    tracing::debug!(found_name = %found_name, "Found matching tool call");
+                    result.push_str(&delta);
+                } else {
+                    tracing::warn!(
+                        tool_name = %name,
+                        existing_tools = ?self.items.iter().filter_map(|i| {
+                            match i {
+                                ChatItem::ToolCall { name, .. } => Some(name.as_str()),
+                                _ => None,
+                            }
+                        }).collect::<Vec<_>>(),
+                        "No matching tool call found for result"
+                    );
+                }
+                Action::Continue
+            }
+            ChatAppMsg::ToolResultComplete { name } => {
+                tracing::debug!(tool_name = %name, "Received ToolResultComplete");
+                let found =
+                    self.items.iter_mut().rev().find(
+                        |item| matches!(item, ChatItem::ToolCall { name: n, .. } if n == &name),
+                    );
+                if let Some(ChatItem::ToolCall { complete, .. }) = found {
+                    *complete = true;
+                    tracing::debug!(tool_name = %name, "Marked tool complete");
+                } else {
+                    tracing::warn!(tool_name = %name, "No matching tool call found for completion");
                 }
                 Action::Continue
             }
@@ -314,7 +369,6 @@ impl InkChatApp {
 
         self.streaming = StreamingState {
             content: String::new(),
-            tool_calls: Vec::new(),
             active: true,
         };
         self.status = "Thinking...".to_string();
@@ -350,7 +404,7 @@ impl InkChatApp {
                 Action::Continue
             }
             "clear" => {
-                self.messages.clear();
+                self.items.clear();
                 self.message_counter = 0;
                 self.status = "Cleared".to_string();
                 Action::Continue
@@ -383,135 +437,181 @@ impl InkChatApp {
         }
     }
 
+    fn format_tool_args(args: &str) -> String {
+        if args.is_empty() || args == "{}" {
+            return String::new();
+        }
+
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(args) {
+            if let Some(obj) = parsed.as_object() {
+                let pairs: Vec<String> = obj
+                    .iter()
+                    .map(|(k, v)| {
+                        let val = match v {
+                            serde_json::Value::String(s) => {
+                                let collapsed = s.replace('\n', "↵").replace('\r', "");
+                                if collapsed.len() > 30 {
+                                    format!("\"{}…\"", &collapsed[..27])
+                                } else {
+                                    format!("\"{}\"", collapsed)
+                                }
+                            }
+                            other => {
+                                let s = other.to_string();
+                                if s.len() > 30 {
+                                    format!("{}…", &s[..27])
+                                } else {
+                                    s
+                                }
+                            }
+                        };
+                        format!("{}={}", k, val)
+                    })
+                    .collect();
+                return pairs.join(", ");
+            }
+        }
+
+        let oneline = args.replace('\n', " ").replace("  ", " ");
+        if oneline.len() <= 60 {
+            oneline
+        } else {
+            format!("{}…", &oneline[..57])
+        }
+    }
+
+    fn format_tool_result(result: &str) -> Node {
+        let lines: Vec<&str> = result.lines().take(3).collect();
+        let truncated = lines.len() < result.lines().count();
+
+        let display = if truncated {
+            format!("{}…", lines.join("\n"))
+        } else {
+            lines.join("\n")
+        };
+
+        col(display.lines().map(|line| {
+            let truncated_line = if line.len() > 80 {
+                format!("   {}…", &line[..77])
+            } else {
+                format!("   {}", line)
+            };
+            styled(truncated_line, Style::new().fg(Color::DarkGray))
+        }))
+    }
+
     fn add_user_message(&mut self, content: String) {
         self.message_counter += 1;
-        self.messages.push(Message {
+        self.items.push(ChatItem::Message {
             id: format!("user-{}", self.message_counter),
             role: Role::User,
             content,
-            tool_calls: Vec::new(),
         });
     }
 
     fn add_system_message(&mut self, content: String) {
         self.message_counter += 1;
-        self.messages.push(Message {
+        self.items.push(ChatItem::Message {
             id: format!("system-{}", self.message_counter),
             role: Role::System,
             content,
-            tool_calls: Vec::new(),
         });
     }
 
     fn finalize_streaming(&mut self) {
-        if !self.streaming.content.is_empty() || !self.streaming.tool_calls.is_empty() {
+        if !self.streaming.content.is_empty() {
             self.message_counter += 1;
-            self.messages.push(Message {
+            self.items.push(ChatItem::Message {
                 id: format!("assistant-{}", self.message_counter),
                 role: Role::Assistant,
                 content: std::mem::take(&mut self.streaming.content),
-                tool_calls: std::mem::take(&mut self.streaming.tool_calls),
             });
         }
         self.streaming.active = false;
         self.status = "Ready".to_string();
     }
 
-    fn render_messages(&self) -> Node {
-        fragment(self.messages.iter().map(|msg| self.render_message(msg)))
+    fn render_items(&self) -> Node {
+        fragment(self.items.iter().map(|item| self.render_item(item)))
     }
 
-    fn render_message(&self, msg: &Message) -> Node {
-        let tool_nodes: Vec<Node> = msg
-            .tool_calls
-            .iter()
-            .map(|tc| self.render_tool_call(tc))
-            .collect();
-
-        let content_node = match msg.role {
-            Role::User => self.render_user_prompt(&msg.content),
-            Role::Assistant => {
-                let content_width = terminal_width().saturating_sub(BULLET_PREFIX_WIDTH);
-                let md_node = markdown_to_node_with_width(&msg.content, content_width);
-                col([
-                    text(""),
-                    row([styled("● ", Style::new().fg(Color::DarkGray)), md_node]),
-                ])
-            }
-            Role::System => col([
-                text(""),
-                styled(
-                    format!(" * {} ", &msg.content),
-                    Style::new().fg(Color::Yellow).dim(),
-                ),
-            ]),
-        };
-
-        let final_node = if tool_nodes.is_empty() {
-            content_node
-        } else {
-            col([content_node, col(tool_nodes)])
-        };
-
-        scrollback(&msg.id, [final_node])
-    }
-
-    fn render_tool_call(&self, tc: &ToolCallInfo) -> Node {
-        let status_icon = if tc.result.is_some() { "✓" } else { "…" };
-        col([
-            row([
-                styled(
-                    format!("{} ", status_icon),
-                    Style::new().fg(Color::DarkGray),
-                ),
-                styled(&tc.name, Style::new().fg(Color::Blue)),
-            ]),
-            if let Some(ref result) = tc.result {
-                let truncated = if result.len() > 100 {
-                    format!("{}...", &result[..100])
-                } else {
-                    result.clone()
+    fn render_item(&self, item: &ChatItem) -> Node {
+        match item {
+            ChatItem::Message { id, role, content } => {
+                let content_node = match role {
+                    Role::User => self.render_user_prompt(content),
+                    Role::Assistant => {
+                        let content_width = terminal_width().saturating_sub(BULLET_PREFIX_WIDTH);
+                        let md_node = markdown_to_node_with_width(content, content_width);
+                        col([
+                            text(""),
+                            row([styled(" ● ", Style::new().fg(Color::DarkGray)), md_node]),
+                        ])
+                    }
+                    Role::System => col([
+                        text(""),
+                        styled(
+                            format!(" * {} ", content),
+                            Style::new().fg(Color::Yellow).dim(),
+                        ),
+                    ]),
                 };
-                styled(format!("  {}", truncated), Style::new().dim())
-            } else {
-                Node::Empty
-            },
-        ])
+                scrollback(id, [content_node])
+            }
+            ChatItem::ToolCall {
+                id,
+                name,
+                args,
+                result,
+                complete,
+            } => {
+                let (status_icon, status_color) = if *complete {
+                    ("✓", Color::Green)
+                } else {
+                    ("…", Color::White)
+                };
+
+                let args_formatted = Self::format_tool_args(args);
+
+                let header = row([
+                    styled(format!(" {} ", status_icon), Style::new().fg(status_color)),
+                    styled(name, Style::new().fg(Color::White)),
+                    styled(
+                        format!("({})", args_formatted),
+                        Style::new().fg(Color::DarkGray),
+                    ),
+                ]);
+
+                let result_node = if result.is_empty() {
+                    Node::Empty
+                } else {
+                    Self::format_tool_result(result)
+                };
+
+                scrollback(id, [col([header, result_node])])
+            }
+        }
     }
 
     fn render_streaming(&self) -> Node {
         when(self.streaming.active, {
-            let has_content =
-                !self.streaming.content.is_empty() || !self.streaming.tool_calls.is_empty();
+            let content_width = terminal_width().saturating_sub(BULLET_PREFIX_WIDTH);
+            let content_node = markdown_to_node_with_width(&self.streaming.content, content_width);
 
             if_else(
-                has_content,
-                {
-                    let tool_nodes: Vec<Node> = self
-                        .streaming
-                        .tool_calls
-                        .iter()
-                        .map(|tc| self.render_tool_call(tc))
-                        .collect();
-
-                    let content_width = terminal_width().saturating_sub(BULLET_PREFIX_WIDTH);
-                    let content_node =
-                        markdown_to_node_with_width(&self.streaming.content, content_width);
-
-                    col([
-                        text(""),
-                        row([styled("● ", Style::new().fg(Color::DarkGray)), content_node]),
-                        col(tool_nodes),
-                        row([
-                            styled("  ", Style::default()),
-                            spinner(Some("Generating...".into()), self.spinner_frame),
-                        ]),
-                    ])
-                },
+                !self.streaming.content.is_empty(),
                 col([
                     text(""),
                     row([
-                        styled("● ", Style::new().fg(Color::DarkGray)),
+                        styled(" ● ", Style::new().fg(Color::DarkGray)),
+                        content_node,
+                    ]),
+                    spinner(Some("Generating...".into()), self.spinner_frame),
+                ]),
+                col([
+                    text(""),
+                    row([
+                        styled(" ● ", Style::new().fg(Color::DarkGray)),
                         spinner(Some("Thinking...".into()), self.spinner_frame),
                     ]),
                 ]),
@@ -652,7 +752,7 @@ mod tests {
     #[test]
     fn test_app_init() {
         let app = InkChatApp::init();
-        assert!(app.messages.is_empty());
+        assert!(app.items.is_empty());
         assert!(!app.streaming.active);
         assert_eq!(app.mode, ChatMode::Plan);
     }
@@ -662,9 +762,11 @@ mod tests {
         let mut app = InkChatApp::init();
         app.add_user_message("Hello".to_string());
 
-        assert_eq!(app.messages.len(), 1);
-        assert_eq!(app.messages[0].role, Role::User);
-        assert_eq!(app.messages[0].content, "Hello");
+        assert_eq!(app.items.len(), 1);
+        assert!(matches!(
+            &app.items[0],
+            ChatItem::Message { role: Role::User, content, .. } if content == "Hello"
+        ));
     }
 
     #[test]
@@ -680,8 +782,52 @@ mod tests {
 
         app.on_message(ChatAppMsg::StreamComplete);
         assert!(!app.streaming.active);
-        assert_eq!(app.messages.len(), 1);
-        assert_eq!(app.messages[0].content, "Hello World");
+        assert_eq!(app.items.len(), 1);
+        assert!(matches!(
+            &app.items[0],
+            ChatItem::Message { content, .. } if content == "Hello World"
+        ));
+    }
+
+    #[test]
+    fn test_tool_call_flow() {
+        let mut app = InkChatApp::init();
+
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "Read".to_string(),
+            args: r#"{"path":"file.md","offset":10}"#.to_string(),
+        });
+        assert_eq!(app.items.len(), 1);
+        assert!(matches!(
+            &app.items[0],
+            ChatItem::ToolCall { name, complete: false, .. } if name == "Read"
+        ));
+
+        app.on_message(ChatAppMsg::ToolResultDelta {
+            name: "Read".to_string(),
+            delta: "line 1\n".to_string(),
+        });
+        assert!(matches!(
+            &app.items[0],
+            ChatItem::ToolCall { result, .. } if result == "line 1\n"
+        ));
+
+        app.on_message(ChatAppMsg::ToolResultDelta {
+            name: "Read".to_string(),
+            delta: "line 2\n".to_string(),
+        });
+        assert!(matches!(
+            &app.items[0],
+            ChatItem::ToolCall { result, .. } if result == "line 1\nline 2\n"
+        ));
+
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "Read".to_string(),
+        });
+        assert!(matches!(
+            &app.items[0],
+            ChatItem::ToolCall { complete: true, .. }
+        ));
     }
 
     #[test]
@@ -696,9 +842,9 @@ mod tests {
         assert_eq!(app.mode, ChatMode::Plan);
 
         app.add_user_message("test".to_string());
-        assert_eq!(app.messages.len(), 1);
+        assert_eq!(app.items.len(), 1);
         app.handle_slash_command("/clear");
-        assert!(app.messages.is_empty());
+        assert!(app.items.is_empty());
     }
 
     #[test]
@@ -719,5 +865,67 @@ mod tests {
         let focus = FocusContext::new();
         let ctx = ViewContext::new(&focus);
         let _node = app.view(&ctx);
+    }
+
+    #[test]
+    fn test_tool_call_renders_with_result() {
+        use crate::tui::ink::focus::FocusContext;
+        use crate::tui::ink::render::render_to_string;
+
+        let mut app = InkChatApp::init();
+
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "read_file".to_string(),
+            args: r#"{"path":"README.md","offset":1,"limit":200}"#.to_string(),
+        });
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let node = app.view(&ctx);
+        let output = render_to_string(&node, 80);
+
+        assert!(output.contains("read_file"), "should show tool name");
+        assert!(output.contains("path="), "should show args");
+        assert!(output.contains("…"), "should show pending ellipsis");
+
+        app.on_message(ChatAppMsg::ToolResultDelta {
+            name: "read_file".to_string(),
+            delta: "# README\nThis is the content.".to_string(),
+        });
+
+        let node = app.view(&ctx);
+        let output = render_to_string(&node, 80);
+        assert!(output.contains("README"), "should show result content");
+
+        app.on_message(ChatAppMsg::ToolResultComplete {
+            name: "read_file".to_string(),
+        });
+
+        let node = app.view(&ctx);
+        let output = render_to_string(&node, 80);
+        assert!(output.contains("✓"), "should show checkmark when complete");
+        assert!(
+            !output.contains("…"),
+            "should not show ellipsis when complete"
+        );
+    }
+
+    #[test]
+    fn test_format_tool_args() {
+        let args = r#"{"path":"file.md","offset":10}"#;
+        let formatted = InkChatApp::format_tool_args(args);
+        assert!(formatted.contains("path="));
+        assert!(formatted.contains("offset="));
+    }
+
+    #[test]
+    fn test_format_tool_args_with_newlines() {
+        let args = r#"{"content":"line1\nline2\nline3"}"#;
+        let formatted = InkChatApp::format_tool_args(args);
+        assert!(formatted.contains("↵"), "newlines should be collapsed to ↵");
+        assert!(
+            !formatted.contains('\n'),
+            "should not contain literal newlines"
+        );
     }
 }

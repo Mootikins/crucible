@@ -448,9 +448,9 @@ where
             let mut rig_tool_calls: Vec<RigToolCall> = Vec::new();
             let mut tool_results: Vec<ToolResult> = Vec::new();
 
-            // Map call_id -> tool_name for looking up names when results arrive
-            // (ToolResult only has call_id, not the tool name)
-            let mut call_id_to_name: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+            // Map tool_call.id -> tool_name for looking up names when results arrive
+            // ToolResult.id matches ToolCall.id (they are the same value)
+            let mut tool_id_to_name: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
             // Track buffered text for XML tool call detection
             // We buffer text when we detect potential XML to avoid emitting partial fragments
@@ -503,9 +503,8 @@ where
                                             let args_json: serde_json::Value = serde_json::to_value(&parsed_tc.arguments)
                                                 .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
-                                            // Generate ID and track call_id -> name mapping
                                             let xml_id = format!("xml-{}", uuid::Uuid::new_v4());
-                                            call_id_to_name.insert(xml_id.clone(), parsed_tc.name.clone());
+                                            tool_id_to_name.insert(xml_id.clone(), parsed_tc.name.clone());
 
                                             let chat_tc = ChatToolCall {
                                                 name: parsed_tc.name.clone(),
@@ -615,10 +614,8 @@ where
                             StreamedAssistantContent::ToolCall(tc) => {
                                 debug!(tool = %tc.function.name, "Rig tool call");
 
-                                // Track call_id -> name for result lookup
-                                if let Some(ref call_id) = tc.call_id {
-                                    call_id_to_name.insert(call_id.clone(), tc.function.name.clone());
-                                }
+                                // Track id -> name for result lookup (ToolResult.id == ToolCall.id)
+                                tool_id_to_name.insert(tc.id.clone(), tc.function.name.clone());
 
                                 // Track for history (always, regardless of plan mode)
                                 rig_tool_calls.push(tc.clone());
@@ -714,17 +711,17 @@ where
                             .collect::<Vec<_>>()
                             .join("\n");
 
-                        // Look up tool name from call_id mapping
-                        // Fall back to tr.id if not found (shouldn't happen normally)
-                        let tool_name = tr.call_id.as_ref()
-                            .and_then(|cid| call_id_to_name.get(cid).cloned())
+                        // Look up tool name from id mapping (ToolResult.id == ToolCall.id)
+                        let tool_name = tool_id_to_name
+                            .get(&tr.id)
+                            .cloned()
                             .unwrap_or_else(|| tr.id.clone());
 
-                        debug!(
+                        info!(
                             tool_name = %tool_name,
                             call_id = ?tr.call_id,
                             result_len = result_text.len(),
-                            "Tool result received"
+                            "Tool result received - emitting to stream"
                         );
 
                         // Emit tool result to TUI
@@ -847,6 +844,8 @@ where
                 item_count,
                 got_final_response,
                 accumulated_len = accumulated_text.len(),
+                tool_call_count = tool_calls.len(),
+                tool_result_count = tool_results.len(),
                 "Rig stream loop exited (stream.next() returned None)"
             );
 

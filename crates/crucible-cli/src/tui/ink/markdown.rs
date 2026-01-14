@@ -301,7 +301,7 @@ fn render_code_block(node: &markdown_it::Node, ctx: &mut RenderContext) {
 
     let code_style = Style::new().fg(Color::Green);
     for line in content.lines() {
-        ctx.push_block(styled(format!("  {}", line), code_style));
+        ctx.push_block(styled(line, code_style));
     }
 
     ctx.push_block(styled("```", Style::new().fg(Color::DarkGray)));
