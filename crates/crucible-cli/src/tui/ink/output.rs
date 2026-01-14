@@ -42,7 +42,7 @@ impl OutputBuffer {
     }
 
     pub fn render(&mut self, content: &str) -> io::Result<()> {
-        let all_lines: Vec<String> = content.lines().map(String::from).collect();
+        let all_lines: Vec<String> = collapse_blank_lines(content);
 
         let line_visual_rows: Vec<usize> = all_lines
             .iter()
@@ -179,6 +179,22 @@ impl OutputBuffer {
 
         (viewport, viewport_rows)
     }
+}
+
+fn collapse_blank_lines(content: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut prev_blank = false;
+
+    for line in content.lines() {
+        let is_blank = line.trim().is_empty();
+        if is_blank && prev_blank {
+            continue;
+        }
+        result.push(line.to_string());
+        prev_blank = is_blank;
+    }
+
+    result
 }
 
 #[cfg(test)]
