@@ -1,6 +1,7 @@
 //! Cross-theme snapshot tests
 
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod cross_theme_snapshots {
     use crate::tui::ratatui_markdown::RatatuiMarkdown;
     use crate::tui::theme::MarkdownTheme;
