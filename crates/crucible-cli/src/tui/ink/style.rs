@@ -268,3 +268,47 @@ pub struct BorderChars {
     pub horizontal: char,
     pub vertical: char,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum JustifyContent {
+    #[default]
+    Start,
+    End,
+    Center,
+    SpaceBetween,
+    SpaceAround,
+    SpaceEvenly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AlignItems {
+    #[default]
+    Start,
+    End,
+    Center,
+    Stretch,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Gap {
+    pub row: u16,
+    pub column: u16,
+}
+
+impl Gap {
+    pub fn all(n: u16) -> Self {
+        Self { row: n, column: n }
+    }
+
+    pub fn row(n: u16) -> Self {
+        Self { row: n, column: 0 }
+    }
+
+    pub fn column(n: u16) -> Self {
+        Self { row: 0, column: n }
+    }
+
+    pub fn new(row: u16, column: u16) -> Self {
+        Self { row, column }
+    }
+}

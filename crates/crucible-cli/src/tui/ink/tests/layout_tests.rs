@@ -196,3 +196,47 @@ fn weighted_flex() {
     assert_eq!(layout.children[0].rect.height, 5);
     assert_eq!(layout.children[1].rect.height, 15);
 }
+
+#[test]
+fn gap_adds_space_between_children() {
+    let node = col([text("A"), text("B"), text("C")]).gap(Gap::row(2));
+    let layout = calculate_layout(&node, 80, 24);
+
+    assert_eq!(layout.children.len(), 3);
+    assert_eq!(layout.children[0].rect.y, 0);
+    assert_eq!(layout.children[1].rect.y, 3);
+    assert_eq!(layout.children[2].rect.y, 6);
+}
+
+#[test]
+fn margin_adds_external_space() {
+    let node = col([text("Content").with_margin(Padding::all(2))]);
+    let layout = calculate_layout(&node, 80, 24);
+
+    assert!(layout.children[0].rect.y >= 2);
+}
+
+#[test]
+fn builder_methods_work() {
+    let node = col([text("A"), text("B")])
+        .justify(JustifyContent::Center)
+        .align(AlignItems::Center)
+        .gap(Gap::all(1));
+
+    match node {
+        Node::Box(b) => {
+            assert_eq!(b.justify, JustifyContent::Center);
+            assert_eq!(b.align, AlignItems::Center);
+            assert_eq!(b.gap, Gap::all(1));
+        }
+        _ => panic!("Expected Box node"),
+    }
+}
+
+#[test]
+fn gap_types_work() {
+    assert_eq!(Gap::all(5), Gap { row: 5, column: 5 });
+    assert_eq!(Gap::row(3), Gap { row: 3, column: 0 });
+    assert_eq!(Gap::column(4), Gap { row: 0, column: 4 });
+    assert_eq!(Gap::new(2, 3), Gap { row: 2, column: 3 });
+}
