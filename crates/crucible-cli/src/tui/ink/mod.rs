@@ -53,7 +53,7 @@ mod terminal;
 mod test_harness;
 
 pub use app::*;
-pub use chat_app::{ChatAppMsg, ChatMode, InkChatApp, Message, Role, ToolCallInfo};
+pub use chat_app::{ChatAppMsg, ChatItem, ChatMode, InkChatApp, Role};
 pub use chat_runner::InkChatRunner;
 pub use event::*;
 pub use focus::*;

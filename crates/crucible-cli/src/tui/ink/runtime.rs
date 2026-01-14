@@ -51,8 +51,12 @@ impl GraduationState {
         match node {
             Node::Static(static_node) => {
                 if !self.graduated_keys.contains(&static_node.key) {
-                    let content =
-                        render_to_string(&Node::Fragment(static_node.children.clone()), width);
+                    // Use large width for graduation - let terminal handle wrapping
+                    let graduation_width = 10000;
+                    let content = render_to_string(
+                        &Node::Fragment(static_node.children.clone()),
+                        graduation_width,
+                    );
 
                     if !content.is_empty() {
                         graduated.push(GraduatedContent {
