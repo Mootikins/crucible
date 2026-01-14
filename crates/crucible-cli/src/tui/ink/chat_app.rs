@@ -112,6 +112,7 @@ pub struct InkChatApp {
     popup_selected: usize,
     context_used: usize,
     context_total: usize,
+    last_ctrl_c: Option<std::time::Instant>,
 }
 
 impl Default for InkChatApp {
@@ -130,6 +131,7 @@ impl Default for InkChatApp {
             popup_selected: 0,
             context_used: 0,
             context_total: 128000,
+            last_ctrl_c: None,
         }
     }
 }
@@ -316,20 +318,21 @@ impl InkChatApp {
         {
             if !self.input.content().is_empty() {
                 self.input.handle(InputAction::Clear);
+                self.last_ctrl_c = None;
                 return Action::Continue;
             }
-            return Action::Quit;
-        }
 
-        if key.code == KeyCode::Char('d')
-            && key
-                .modifiers
-                .contains(crossterm::event::KeyModifiers::CONTROL)
-        {
-            if self.input.content().is_empty() {
-                return Action::Quit;
+            let now = std::time::Instant::now();
+            if let Some(last) = self.last_ctrl_c {
+                if now.duration_since(last) < Duration::from_millis(300) {
+                    return Action::Quit;
+                }
             }
+            self.last_ctrl_c = Some(now);
+            self.status = "Press Ctrl+C again to quit".to_string();
             return Action::Continue;
+        } else {
+            self.last_ctrl_c = None;
         }
 
         let action = InputAction::from(key);
