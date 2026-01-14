@@ -1,7 +1,8 @@
-use crate::tui::ink::app::{Action, App};
+use crate::tui::ink::app::{Action, App, ViewContext};
 use crate::tui::ink::event::Event;
+use crate::tui::ink::focus::FocusContext;
 use crate::tui::ink::terminal::Terminal;
-use crossterm::event::Event as CtEvent;
+use crossterm::event::{Event as CtEvent, KeyCode, KeyModifiers};
 use std::io;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -11,6 +12,7 @@ pub struct InkRunner<A: App> {
     terminal: Terminal,
     tick_rate: Duration,
     msg_rx: Option<mpsc::UnboundedReceiver<A::Msg>>,
+    focus: FocusContext,
 }
 
 impl<A: App> InkRunner<A> {
@@ -23,6 +25,7 @@ impl<A: App> InkRunner<A> {
             terminal: Terminal::new()?,
             tick_rate,
             msg_rx: None,
+            focus: FocusContext::new(),
         })
     }
 
@@ -36,7 +39,8 @@ impl<A: App> InkRunner<A> {
         self.terminal.enter()?;
 
         loop {
-            let tree = self.app.view();
+            let ctx = ViewContext::new(&self.focus);
+            let tree = self.app.view(&ctx);
             self.terminal.render(&tree)?;
 
             if let Some(rx) = &mut self.msg_rx {
@@ -51,6 +55,9 @@ impl<A: App> InkRunner<A> {
 
             let event = self.poll_event()?;
             if let Some(ev) = event {
+                if self.handle_focus_keys(&ev) {
+                    continue;
+                }
                 let action = self.app.update(ev);
                 if self.process_action(action)? {
                     break;
@@ -60,6 +67,20 @@ impl<A: App> InkRunner<A> {
 
         self.terminal.exit()?;
         Ok(())
+    }
+
+    fn handle_focus_keys(&mut self, event: &Event) -> bool {
+        if let Event::Key(key) = event {
+            if key.code == KeyCode::Tab {
+                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    self.focus.focus_prev();
+                } else {
+                    self.focus.focus_next();
+                }
+                return true;
+            }
+        }
+        false
     }
 
     fn poll_event(&mut self) -> io::Result<Option<Event>> {
@@ -107,9 +128,11 @@ pub fn run_sync<A: App>(app: A) -> io::Result<()> {
 
     let tick_rate = app.tick_rate().unwrap_or(Duration::from_millis(100));
     let mut app = app;
+    let mut focus = FocusContext::new();
 
     loop {
-        let tree = app.view();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
         terminal.render(&tree)?;
 
         let event = if let Some(ct_event) = terminal.poll_event(tick_rate)? {
@@ -127,6 +150,17 @@ pub fn run_sync<A: App>(app: A) -> io::Result<()> {
         } else {
             Event::Tick
         };
+
+        if let Event::Key(key) = &event {
+            if key.code == KeyCode::Tab {
+                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    focus.focus_prev();
+                } else {
+                    focus.focus_next();
+                }
+                continue;
+            }
+        }
 
         let action = app.update(event);
         if action.is_quit() {

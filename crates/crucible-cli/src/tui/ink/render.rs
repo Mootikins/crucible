@@ -48,6 +48,23 @@ fn render_node_to_string(node: &Node, width: usize, output: &mut String) {
                 render_node_to_string(child, width, output);
             }
         }
+
+        Node::Focusable(focusable) => {
+            render_node_to_string(&focusable.child, width, output);
+        }
+
+        Node::ErrorBoundary(boundary) => {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mut child_output = String::new();
+                render_node_to_string(&boundary.child, width, &mut child_output);
+                child_output
+            }));
+
+            match result {
+                Ok(child_output) => output.push_str(&child_output),
+                Err(_) => render_node_to_string(&boundary.fallback, width, output),
+            }
+        }
     }
 }
 

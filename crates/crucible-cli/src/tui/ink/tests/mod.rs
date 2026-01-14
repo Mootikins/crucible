@@ -1,5 +1,7 @@
+mod error_boundary_tests;
 mod event_loop_tests;
 mod event_tests;
+mod focus_tests;
 mod graduation_tests;
 mod layout_tests;
 mod node_tests;

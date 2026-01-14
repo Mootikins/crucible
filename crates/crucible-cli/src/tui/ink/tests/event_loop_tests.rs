@@ -1,11 +1,19 @@
-use crate::tui::ink::app::App;
+use crate::tui::ink::app::{App, ViewContext};
 use crate::tui::ink::chat_app::{ChatAppMsg, InkChatApp};
 use crate::tui::ink::event::Event;
+use crate::tui::ink::focus::FocusContext;
+use crate::tui::ink::node::Node;
 use crate::tui::ink::terminal::Terminal;
 use crossterm::event::EventStream;
 use futures::StreamExt;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
+
+fn view_with_default_ctx(app: &InkChatApp) -> Node {
+    let focus = FocusContext::new();
+    let ctx = ViewContext::new(&focus);
+    app.view(&ctx)
+}
 
 #[tokio::test]
 async fn event_loop_does_not_freeze_without_input() {
@@ -17,7 +25,7 @@ async fn event_loop_does_not_freeze_without_input() {
     let iterations = 100;
 
     for i in 0..iterations {
-        let tree = app.view();
+        let tree = view_with_default_ctx(&app);
         terminal.render(&tree).unwrap();
 
         while let Ok(msg) = msg_rx.try_recv() {
@@ -47,7 +55,7 @@ async fn render_loop_completes_many_iterations() {
     let start = Instant::now();
 
     for _ in 0..500 {
-        let tree = app.view();
+        let tree = view_with_default_ctx(&app);
         terminal.render(&tree).unwrap();
         let _ = app.update(Event::Tick);
     }
@@ -74,7 +82,7 @@ async fn render_with_messages_does_not_accumulate() {
     let start = Instant::now();
 
     for _ in 0..100 {
-        let tree = app.view();
+        let tree = view_with_default_ctx(&app);
         terminal.render(&tree).unwrap();
         let _ = app.update(Event::Tick);
     }
