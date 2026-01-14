@@ -7,7 +7,8 @@ use crossterm::event::KeyCode;
 use std::time::Duration;
 
 const INPUT_BG: Color = Color::Rgb(40, 44, 52);
-const BULLET_PREFIX_WIDTH: usize = 2;
+const BULLET_PREFIX: &str = " ● ";
+const BULLET_PREFIX_WIDTH: usize = BULLET_PREFIX.len();
 const FOCUS_INPUT: &str = "input";
 const FOCUS_POPUP: &str = "popup";
 
@@ -577,7 +578,10 @@ impl InkChatApp {
                         let md_node = markdown_to_node_with_width(content, content_width);
                         col([
                             text(""),
-                            row([styled(" ● ", Style::new().fg(Color::DarkGray)), md_node]),
+                            row([
+                                styled(BULLET_PREFIX, Style::new().fg(Color::DarkGray)),
+                                md_node,
+                            ]),
                         ])
                     }
                     Role::System => col([
@@ -642,7 +646,7 @@ impl InkChatApp {
                 col([
                     text(""),
                     row([
-                        styled(" ● ", Style::new().fg(Color::DarkGray)),
+                        styled(BULLET_PREFIX, Style::new().fg(Color::DarkGray)),
                         content_node,
                     ]),
                     spinner(Some("Generating...".into()), self.spinner_frame),
@@ -650,7 +654,7 @@ impl InkChatApp {
                 col([
                     text(""),
                     row([
-                        styled(" ● ", Style::new().fg(Color::DarkGray)),
+                        styled(BULLET_PREFIX, Style::new().fg(Color::DarkGray)),
                         spinner(Some("Thinking...".into()), self.spinner_frame),
                     ]),
                 ]),
