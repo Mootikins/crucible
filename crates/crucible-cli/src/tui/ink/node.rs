@@ -262,6 +262,88 @@ pub fn fixed(height: u16, child: Node) -> Node {
     })
 }
 
+pub fn when(condition: bool, node: Node) -> Node {
+    if condition {
+        node
+    } else {
+        Node::Empty
+    }
+}
+
+pub fn if_else(condition: bool, then_node: Node, else_node: Node) -> Node {
+    if condition {
+        then_node
+    } else {
+        else_node
+    }
+}
+
+pub fn maybe<T>(value: Option<T>, f: impl FnOnce(T) -> Node) -> Node {
+    match value {
+        Some(v) => f(v),
+        None => Node::Empty,
+    }
+}
+
+pub fn progress_bar(progress: f32, width: u16) -> Node {
+    let progress = progress.clamp(0.0, 1.0);
+    let filled = (progress * width as f32).round() as usize;
+    let empty = (width as usize).saturating_sub(filled);
+
+    let bar = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
+    text(bar)
+}
+
+pub fn progress_bar_styled(
+    progress: f32,
+    width: u16,
+    filled_style: Style,
+    empty_style: Style,
+) -> Node {
+    let progress = progress.clamp(0.0, 1.0);
+    let filled = (progress * width as f32).round() as usize;
+    let empty = (width as usize).saturating_sub(filled);
+
+    row([
+        styled("█".repeat(filled), filled_style),
+        styled("░".repeat(empty), empty_style),
+    ])
+}
+
+pub fn divider(char: char, width: u16) -> Node {
+    text(char.to_string().repeat(width as usize))
+}
+
+pub fn horizontal_rule() -> Node {
+    text("─".repeat(80))
+}
+
+pub fn badge(label: impl Into<String>, style: Style) -> Node {
+    styled(format!(" {} ", label.into()), style)
+}
+
+pub fn key_value(key: impl Into<String>, value: impl Into<String>) -> Node {
+    row([
+        styled(format!("{}: ", key.into()), Style::new().bold()),
+        text(value),
+    ])
+}
+
+pub fn bullet_list(items: impl IntoIterator<Item = impl Into<String>>) -> Node {
+    col(items
+        .into_iter()
+        .map(|item| row([styled("• ", Style::new().dim()), text(item)])))
+}
+
+pub fn numbered_list(items: impl IntoIterator<Item = impl Into<String>>) -> Node {
+    col(items.into_iter().enumerate().map(|(i, item)| {
+        row([
+            styled(format!("{}. ", i + 1), Style::new().dim()),
+            text(item),
+        ])
+    }))
+}
+
 impl Node {
     pub fn with_style(self, style: Style) -> Self {
         match self {

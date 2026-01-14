@@ -190,3 +190,142 @@ fn nested_layout_structure() {
         _ => panic!("Expected outer Box"),
     }
 }
+
+#[test]
+fn when_returns_node_on_true() {
+    let node = when(true, text("Visible"));
+    match node {
+        Node::Text(t) => assert_eq!(t.content, "Visible"),
+        _ => panic!("Expected Text node"),
+    }
+}
+
+#[test]
+fn when_returns_empty_on_false() {
+    let node = when(false, text("Hidden"));
+    assert!(matches!(node, Node::Empty));
+}
+
+#[test]
+fn if_else_returns_then_on_true() {
+    let node = if_else(true, text("Yes"), text("No"));
+    match node {
+        Node::Text(t) => assert_eq!(t.content, "Yes"),
+        _ => panic!("Expected Text node"),
+    }
+}
+
+#[test]
+fn if_else_returns_else_on_false() {
+    let node = if_else(false, text("Yes"), text("No"));
+    match node {
+        Node::Text(t) => assert_eq!(t.content, "No"),
+        _ => panic!("Expected Text node"),
+    }
+}
+
+#[test]
+fn maybe_returns_node_on_some() {
+    let node = maybe(Some("value"), |v| text(v));
+    match node {
+        Node::Text(t) => assert_eq!(t.content, "value"),
+        _ => panic!("Expected Text node"),
+    }
+}
+
+#[test]
+fn maybe_returns_empty_on_none() {
+    let node = maybe(None::<String>, |v| text(v));
+    assert!(matches!(node, Node::Empty));
+}
+
+#[test]
+fn progress_bar_renders() {
+    let node = progress_bar(0.5, 10);
+    match node {
+        Node::Text(t) => {
+            assert_eq!(t.content.chars().count(), 10);
+            assert!(t.content.contains('█'));
+            assert!(t.content.contains('░'));
+        }
+        _ => panic!("Expected Text node"),
+    }
+}
+
+#[test]
+fn progress_bar_clamps_values() {
+    let zero = progress_bar(0.0, 10);
+    let full = progress_bar(1.0, 10);
+    let over = progress_bar(1.5, 10);
+    let under = progress_bar(-0.5, 10);
+
+    match (zero, full, over, under) {
+        (Node::Text(z), Node::Text(f), Node::Text(o), Node::Text(u)) => {
+            assert!(!z.content.contains('█'));
+            assert!(!f.content.contains('░'));
+            assert_eq!(f.content, o.content);
+            assert_eq!(z.content, u.content);
+        }
+        _ => panic!("Expected Text nodes"),
+    }
+}
+
+#[test]
+fn divider_creates_repeated_char() {
+    let node = divider('─', 20);
+    match node {
+        Node::Text(t) => {
+            assert_eq!(t.content.chars().count(), 20);
+            assert!(t.content.chars().all(|c| c == '─'));
+        }
+        _ => panic!("Expected Text node"),
+    }
+}
+
+#[test]
+fn badge_wraps_with_spaces() {
+    let node = badge("info", Style::new().bg(Color::Blue));
+    match node {
+        Node::Text(t) => {
+            assert_eq!(t.content, " info ");
+            assert_eq!(t.style.bg, Some(Color::Blue));
+        }
+        _ => panic!("Expected Text node"),
+    }
+}
+
+#[test]
+fn key_value_creates_row() {
+    let node = key_value("Name", "Alice");
+    match node {
+        Node::Box(b) => {
+            assert_eq!(b.direction, Direction::Row);
+            assert_eq!(b.children.len(), 2);
+        }
+        _ => panic!("Expected Box node"),
+    }
+}
+
+#[test]
+fn bullet_list_creates_column() {
+    let node = bullet_list(["Item 1", "Item 2", "Item 3"]);
+    match node {
+        Node::Box(b) => {
+            assert_eq!(b.direction, Direction::Column);
+            assert_eq!(b.children.len(), 3);
+        }
+        _ => panic!("Expected Box node"),
+    }
+}
+
+#[test]
+fn numbered_list_creates_column() {
+    let node = numbered_list(["First", "Second"]);
+    match node {
+        Node::Box(b) => {
+            assert_eq!(b.direction, Direction::Column);
+            assert_eq!(b.children.len(), 2);
+        }
+        _ => panic!("Expected Box node"),
+    }
+}
