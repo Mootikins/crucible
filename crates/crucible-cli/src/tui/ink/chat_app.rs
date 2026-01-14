@@ -113,6 +113,7 @@ pub struct InkChatApp {
     context_used: usize,
     context_total: usize,
     last_ctrl_c: Option<std::time::Instant>,
+    notification: Option<String>,
 }
 
 impl Default for InkChatApp {
@@ -132,6 +133,7 @@ impl Default for InkChatApp {
             context_used: 0,
             context_total: 128000,
             last_ctrl_c: None,
+            notification: None,
         }
     }
 }
@@ -329,10 +331,11 @@ impl InkChatApp {
                 }
             }
             self.last_ctrl_c = Some(now);
-            self.status = "Press Ctrl+C again to quit".to_string();
+            self.notification = Some("Ctrl+C again to quit".to_string());
             return Action::Continue;
         } else {
             self.last_ctrl_c = None;
+            self.notification = None;
         }
 
         let action = InputAction::from(key);
@@ -696,7 +699,7 @@ impl InkChatApp {
             0
         };
 
-        row([
+        let left = row([
             styled(
                 match self.mode {
                     ChatMode::Plan => " Plan",
@@ -710,7 +713,17 @@ impl InkChatApp {
                 format!("{}% ctx", context_percent),
                 Style::new().fg(Color::DarkGray),
             ),
-        ])
+        ]);
+
+        if let Some(ref notif) = self.notification {
+            row([
+                left,
+                spacer(),
+                styled(format!("{} ", notif), Style::new().fg(Color::Yellow)),
+            ])
+        } else {
+            left
+        }
     }
 
     fn render_user_prompt(&self, content: &str) -> Node {
