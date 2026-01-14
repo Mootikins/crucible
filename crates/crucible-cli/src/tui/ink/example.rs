@@ -43,7 +43,7 @@ impl App for ChatApp {
         }
     }
 
-    fn view(&self) -> Node {
+    fn view(&self, _ctx: &ViewContext<'_>) -> Node {
         col([
             fragment(self.messages.iter().map(|msg| render_message(msg))),
             self.render_streaming(),

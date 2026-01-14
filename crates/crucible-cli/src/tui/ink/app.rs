@@ -1,13 +1,28 @@
 use crate::tui::ink::event::Event;
+use crate::tui::ink::focus::FocusContext;
 use crate::tui::ink::node::Node;
 use std::time::Duration;
+
+pub struct ViewContext<'a> {
+    pub focus: &'a FocusContext,
+}
+
+impl<'a> ViewContext<'a> {
+    pub fn new(focus: &'a FocusContext) -> Self {
+        Self { focus }
+    }
+
+    pub fn is_focused(&self, id: &str) -> bool {
+        self.focus.is_focused(id)
+    }
+}
 
 pub trait App: Sized {
     type Msg: Send + 'static;
 
     fn init() -> Self;
 
-    fn view(&self) -> Node;
+    fn view(&self, ctx: &ViewContext<'_>) -> Node;
 
     fn update(&mut self, event: Event) -> Action<Self::Msg>;
 
