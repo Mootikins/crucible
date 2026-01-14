@@ -376,14 +376,14 @@ pub async fn create_internal_agent(
     let kiln_ctx = params.kiln_context;
     match client {
         crucible_rig::RigClient::Ollama(ollama_client) => {
-            let agent = build_agent_with_kiln_tools(
+            let (agent, ws_ctx) = build_agent_with_kiln_tools(
                 &agent_config,
                 &ollama_client,
                 &workspace_root,
                 model_size,
                 kiln_ctx,
             )?;
-            let handle = RigAgentHandle::new(agent);
+            let handle = RigAgentHandle::new(agent).with_workspace_context(ws_ctx);
             Ok(if let Some(endpoint) = reasoning_endpoint {
                 Box::new(handle.with_reasoning_endpoint(endpoint, model))
             } else {
@@ -391,14 +391,14 @@ pub async fn create_internal_agent(
             })
         }
         crucible_rig::RigClient::OpenAI(openai_client) => {
-            let agent = build_agent_with_kiln_tools(
+            let (agent, ws_ctx) = build_agent_with_kiln_tools(
                 &agent_config,
                 &openai_client,
                 &workspace_root,
                 model_size,
                 kiln_ctx,
             )?;
-            let handle = RigAgentHandle::new(agent);
+            let handle = RigAgentHandle::new(agent).with_workspace_context(ws_ctx);
             Ok(if let Some(endpoint) = reasoning_endpoint {
                 Box::new(handle.with_reasoning_endpoint(endpoint, model))
             } else {
@@ -406,14 +406,14 @@ pub async fn create_internal_agent(
             })
         }
         crucible_rig::RigClient::OpenAICompat(compat_client) => {
-            let agent = build_agent_with_kiln_tools(
+            let (agent, ws_ctx) = build_agent_with_kiln_tools(
                 &agent_config,
                 &compat_client,
                 &workspace_root,
                 model_size,
                 kiln_ctx,
             )?;
-            let handle = RigAgentHandle::new(agent);
+            let handle = RigAgentHandle::new(agent).with_workspace_context(ws_ctx);
             Ok(if let Some(endpoint) = reasoning_endpoint {
                 Box::new(handle.with_reasoning_endpoint(endpoint, model))
             } else {
@@ -421,19 +421,18 @@ pub async fn create_internal_agent(
             })
         }
         crucible_rig::RigClient::Anthropic(anthropic_client) => {
-            let agent = build_agent_with_kiln_tools(
+            let (agent, ws_ctx) = build_agent_with_kiln_tools(
                 &agent_config,
                 &anthropic_client,
                 &workspace_root,
                 model_size,
                 kiln_ctx,
             )?;
-            // Anthropic models don't use reasoning_content field
-            Ok(Box::new(RigAgentHandle::new(agent)))
+            Ok(Box::new(
+                RigAgentHandle::new(agent).with_workspace_context(ws_ctx),
+            ))
         }
         crucible_rig::RigClient::GitHubCopilot(copilot_client) => {
-            // CopilotClient manages OAuth token exchange with GitHub's Copilot API.
-            // Get the API token and base URL, then create an OpenAI-compatible client.
             let api_token = copilot_client
                 .api_token()
                 .await
@@ -443,17 +442,16 @@ pub async fn create_internal_agent(
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to get Copilot API base: {}", e))?;
 
-            // Create OpenAI-compatible client with Copilot credentials
             let compat_client = crucible_rig::create_openai_compat_client(&api_token, &api_base)?;
 
-            let agent = build_agent_with_kiln_tools(
+            let (agent, ws_ctx) = build_agent_with_kiln_tools(
                 &agent_config,
                 &compat_client,
                 &workspace_root,
                 model_size,
                 kiln_ctx,
             )?;
-            let handle = RigAgentHandle::new(agent);
+            let handle = RigAgentHandle::new(agent).with_workspace_context(ws_ctx);
             Ok(if let Some(endpoint) = reasoning_endpoint {
                 Box::new(handle.with_reasoning_endpoint(endpoint, model))
             } else {
