@@ -120,6 +120,14 @@ impl InkChatRunner {
                 } => {
                     match chunk_result {
                         Ok(chunk) => {
+                            tracing::debug!(
+                                delta_len = chunk.delta.len(),
+                                done = chunk.done,
+                                has_tool_calls = chunk.tool_calls.is_some(),
+                                has_tool_results = chunk.tool_results.is_some(),
+                                "Received chunk"
+                            );
+
                             if !chunk.delta.is_empty() {
                                 let _ = msg_tx.send(ChatAppMsg::TextDelta(chunk.delta));
                             }
@@ -130,6 +138,27 @@ impl InkChatRunner {
                                     let _ = msg_tx.send(ChatAppMsg::ToolCall {
                                         name: tc.name.clone(),
                                         args: args_val.to_string(),
+                                    });
+                                }
+                            }
+
+                            if let Some(ref tool_results) = chunk.tool_results {
+                                tracing::info!(count = tool_results.len(), "Received tool_results in chunk");
+                                for tr in tool_results {
+                                    tracing::info!(
+                                        name = %tr.name,
+                                        result_len = tr.result.len(),
+                                        error = ?tr.error,
+                                        "Processing tool result"
+                                    );
+                                    if !tr.result.is_empty() {
+                                        let _ = msg_tx.send(ChatAppMsg::ToolResultDelta {
+                                            name: tr.name.clone(),
+                                            delta: tr.result.clone(),
+                                        });
+                                    }
+                                    let _ = msg_tx.send(ChatAppMsg::ToolResultComplete {
+                                        name: tr.name.clone(),
                                     });
                                 }
                             }
