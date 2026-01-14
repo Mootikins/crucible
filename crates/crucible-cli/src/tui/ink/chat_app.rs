@@ -75,7 +75,7 @@ impl ChatMode {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "act" => ChatMode::Act,
             "auto" => ChatMode::Auto,
@@ -259,7 +259,7 @@ impl App for InkChatApp {
                 Action::Continue
             }
             ChatAppMsg::ModeChanged(mode) => {
-                self.mode = ChatMode::from_str(&mode);
+                self.mode = ChatMode::parse(&mode);
                 Action::Continue
             }
             ChatAppMsg::ContextUsage { used, total } => {
@@ -828,10 +828,10 @@ mod tests {
 
     #[test]
     fn test_mode_from_str() {
-        assert_eq!(ChatMode::from_str("plan"), ChatMode::Plan);
-        assert_eq!(ChatMode::from_str("act"), ChatMode::Act);
-        assert_eq!(ChatMode::from_str("auto"), ChatMode::Auto);
-        assert_eq!(ChatMode::from_str("unknown"), ChatMode::Plan);
+        assert_eq!(ChatMode::parse("plan"), ChatMode::Plan);
+        assert_eq!(ChatMode::parse("act"), ChatMode::Act);
+        assert_eq!(ChatMode::parse("auto"), ChatMode::Auto);
+        assert_eq!(ChatMode::parse("unknown"), ChatMode::Plan);
     }
 
     #[test]

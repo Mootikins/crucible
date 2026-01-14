@@ -162,7 +162,7 @@ fn popup_in_chat_view_with_scrollback() {
     let messages: Vec<Node> = (0..10)
         .map(|i| {
             scrollback(
-                &format!("msg-{}", i),
+                format!("msg-{}", i),
                 [col([
                     text(format!("User message {}", i)),
                     text(format!("Assistant response {} with lots of content", i)),

@@ -689,13 +689,13 @@ async fn run_ink_chat(
     use crucible_core::traits::chat::is_read_only;
     use crucible_rune::SessionBuilder;
 
-    drop(status);
+    let _ = status;
 
     let session = SessionBuilder::with_generated_id("chat").build();
     let ring = session.ring().clone();
     let bridge = AgentEventBridge::new(session.handle(), ring);
 
-    let mode = ChatMode::from_str(initial_mode);
+    let mode = ChatMode::parse(initial_mode);
     let mut runner = InkChatRunner::new()?.with_mode(mode);
 
     let config_for_factory = config.clone();

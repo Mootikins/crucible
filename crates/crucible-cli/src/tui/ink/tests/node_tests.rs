@@ -226,7 +226,7 @@ fn if_else_returns_else_on_false() {
 
 #[test]
 fn maybe_returns_node_on_some() {
-    let node = maybe(Some("value"), |v| text(v));
+    let node = maybe(Some("value"), text);
     match node {
         Node::Text(t) => assert_eq!(t.content, "value"),
         _ => panic!("Expected Text node"),
@@ -235,7 +235,7 @@ fn maybe_returns_node_on_some() {
 
 #[test]
 fn maybe_returns_empty_on_none() {
-    let node = maybe(None::<String>, |v| text(v));
+    let node = maybe(None::<String>, text);
     assert!(matches!(node, Node::Empty));
 }
 
