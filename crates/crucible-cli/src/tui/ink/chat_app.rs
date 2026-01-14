@@ -309,21 +309,27 @@ impl InkChatApp {
             return self.handle_popup_key(key);
         }
 
-        if key.code == KeyCode::Esc {
-            return Action::Quit;
-        }
-
         if key.code == KeyCode::Char('c')
             && key
                 .modifiers
                 .contains(crossterm::event::KeyModifiers::CONTROL)
         {
-            if self.streaming.active {
-                self.streaming.active = false;
-                self.status = "Cancelled".to_string();
+            if !self.input.content().is_empty() {
+                self.input.handle(InputAction::Clear);
                 return Action::Continue;
             }
             return Action::Quit;
+        }
+
+        if key.code == KeyCode::Char('d')
+            && key
+                .modifiers
+                .contains(crossterm::event::KeyModifiers::CONTROL)
+        {
+            if self.input.content().is_empty() {
+                return Action::Quit;
+            }
+            return Action::Continue;
         }
 
         let action = InputAction::from(key);
@@ -688,12 +694,11 @@ impl InkChatApp {
         };
 
         row([
-            styled("❯ ", Style::new().fg(Color::DarkGray)),
             styled(
                 match self.mode {
-                    ChatMode::Plan => "Plan",
-                    ChatMode::Act => "Act",
-                    ChatMode::Auto => "Auto",
+                    ChatMode::Plan => " Plan",
+                    ChatMode::Act => " Act",
+                    ChatMode::Auto => " Auto",
                 },
                 mode_style.bold(),
             ),
