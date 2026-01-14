@@ -206,6 +206,7 @@ See `crates/crucible-web/web/AGENTS.md` for frontend-specific guidelines.
 - **Error Handling**: Use `Result<T, E>` with proper error context
 - **Documentation**: Add doc comments for public items
 - **Testing**: Write tests for new functionality, use TDD
+- **Clippy**: Fix all warnings properly — no module-level `#![allow(...)]` suppression
 
 ### Feature Flags
 
