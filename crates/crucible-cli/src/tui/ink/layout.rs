@@ -112,6 +112,10 @@ fn layout_node(node: &Node, available: &Rect) -> LayoutNode {
                 children: child_layouts,
             }
         }
+
+        Node::Focusable(focusable) => layout_node(&focusable.child, available),
+
+        Node::ErrorBoundary(boundary) => layout_node(&boundary.child, available),
     }
 }
 
@@ -303,7 +307,7 @@ fn measure_text_height(content: &str, width: u16) -> u16 {
         if chars == 0 {
             total_lines += 1;
         } else {
-            total_lines += (chars + width - 1) / width;
+            total_lines += chars.div_ceil(width);
         }
     }
 

@@ -1,11 +1,12 @@
 use crate::chat::bridge::AgentEventBridge;
 use crate::tui::agent_picker::AgentSelection;
-use crate::tui::ink::app::{Action, App};
+use crate::tui::ink::app::{Action, App, ViewContext};
 use crate::tui::ink::chat_app::{ChatAppMsg, ChatMode, InkChatApp};
 use crate::tui::ink::event::Event;
+use crate::tui::ink::focus::FocusContext;
 use crate::tui::ink::terminal::Terminal;
 use anyhow::Result;
-use crossterm::event::{Event as CtEvent, EventStream};
+use crossterm::event::{Event as CtEvent, EventStream, KeyCode, KeyModifiers};
 use crucible_core::events::SessionEvent;
 use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatResult};
 use futures::stream::BoxStream;
@@ -18,6 +19,7 @@ pub struct InkChatRunner {
     terminal: Terminal,
     tick_rate: Duration,
     mode: ChatMode,
+    focus: FocusContext,
 }
 
 impl InkChatRunner {
@@ -26,6 +28,7 @@ impl InkChatRunner {
             terminal: Terminal::new()?,
             tick_rate: Duration::from_millis(50),
             mode: ChatMode::Plan,
+            focus: FocusContext::new(),
         })
     }
 
@@ -50,7 +53,8 @@ impl InkChatRunner {
         app.set_mode(self.mode);
         app.set_status("Connecting...");
 
-        let tree = app.view();
+        let ctx = ViewContext::new(&self.focus);
+        let tree = app.view(&ctx);
         self.terminal.render(&tree)?;
 
         let selection = self.discover_agent().await;
@@ -80,7 +84,8 @@ impl InkChatRunner {
         let mut tick_interval = tokio::time::interval(self.tick_rate);
 
         loop {
-            let tree = app.view();
+            let ctx = ViewContext::new(&self.focus);
+            let tree = app.view(&ctx);
             self.terminal.render(&tree)?;
 
             while let Ok(msg) = msg_rx.try_recv() {

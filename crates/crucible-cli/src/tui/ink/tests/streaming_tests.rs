@@ -1,9 +1,16 @@
 use crate::tui::ink::ansi::strip_ansi;
-use crate::tui::ink::app::App;
+use crate::tui::ink::app::{App, ViewContext};
 use crate::tui::ink::chat_app::{ChatAppMsg, InkChatApp};
+use crate::tui::ink::focus::FocusContext;
 use crate::tui::ink::render::render_to_string;
 use crate::tui::ink::terminal::Terminal;
 use crate::tui::ink::*;
+
+fn view_with_default_ctx(app: &InkChatApp) -> Node {
+    let focus = FocusContext::new();
+    let ctx = ViewContext::new(&focus);
+    app.view(&ctx)
+}
 
 #[test]
 fn streaming_content_grows_incrementally() {
@@ -15,7 +22,7 @@ fn streaming_content_grows_incrementally() {
     for chunk in chunks {
         app.on_message(ChatAppMsg::TextDelta(chunk.to_string()));
 
-        let tree = app.view();
+        let tree = view_with_default_ctx(&app);
         let rendered = render_to_string(&tree, 80);
         let stripped = strip_ansi(&rendered);
 
@@ -29,7 +36,7 @@ fn streaming_content_grows_incrementally() {
 
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let tree = app.view();
+    let tree = view_with_default_ctx(&app);
     let rendered = render_to_string(&tree, 80);
     let stripped = strip_ansi(&rendered);
 
@@ -50,7 +57,7 @@ fn streaming_viewport_does_not_duplicate_content() {
     for i in 0..10 {
         app.on_message(ChatAppMsg::TextDelta(format!("word{} ", i)));
 
-        let tree = app.view();
+        let tree = view_with_default_ctx(&app);
         runtime.render(&tree);
 
         let viewport = strip_ansi(runtime.viewport_content());
@@ -78,7 +85,7 @@ fn completed_message_graduates_streaming_stays() {
     app.on_message(ChatAppMsg::TextDelta("First answer".to_string()));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let tree = app.view();
+    let tree = view_with_default_ctx(&app);
     runtime.render(&tree);
 
     assert_eq!(
@@ -98,7 +105,7 @@ fn completed_message_graduates_streaming_stays() {
     app.on_message(ChatAppMsg::UserMessage("Second question".to_string()));
     app.on_message(ChatAppMsg::TextDelta("Second ".to_string()));
 
-    let tree = app.view();
+    let tree = view_with_default_ctx(&app);
     runtime.render(&tree);
 
     assert_eq!(runtime.graduated_count(), 3, "Second user should graduate");
@@ -134,7 +141,7 @@ fn multiline_streaming_renders_correctly() {
     for chunk in multiline_chunks {
         app.on_message(ChatAppMsg::TextDelta(chunk.to_string()));
 
-        let tree = app.view();
+        let tree = view_with_default_ctx(&app);
         runtime.render(&tree);
 
         let viewport = strip_ansi(runtime.viewport_content());
@@ -155,7 +162,7 @@ fn rapid_streaming_does_not_corrupt_output() {
 
     app.on_message(ChatAppMsg::UserMessage("Generate text".to_string()));
 
-    let tree = app.view();
+    let tree = view_with_default_ctx(&app);
     runtime.render(&tree);
 
     let initial_graduated = runtime.graduated_count();
@@ -164,7 +171,7 @@ fn rapid_streaming_does_not_corrupt_output() {
     for i in 0..50 {
         app.on_message(ChatAppMsg::TextDelta(format!("w{} ", i)));
 
-        let tree = app.view();
+        let tree = view_with_default_ctx(&app);
         runtime.render(&tree);
 
         assert_eq!(
@@ -178,7 +185,7 @@ fn rapid_streaming_does_not_corrupt_output() {
 
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let tree = app.view();
+    let tree = view_with_default_ctx(&app);
     runtime.render(&tree);
 
     assert_eq!(
@@ -212,7 +219,7 @@ fn viewport_size_stays_bounded_during_streaming() {
         }
         app.on_message(ChatAppMsg::TextDelta(format!("word{} ", i)));
 
-        let tree = app.view();
+        let tree = view_with_default_ctx(&app);
         let rendered = render_to_string(&tree, 80);
         let line_count = rendered.lines().count();
         max_viewport_lines = max_viewport_lines.max(line_count);
@@ -236,7 +243,7 @@ fn table_in_completed_message_renders_correctly() {
     ));
     app.on_message(ChatAppMsg::StreamComplete);
 
-    let tree = app.view();
+    let tree = view_with_default_ctx(&app);
     runtime.render(&tree);
 
     let stdout = strip_ansi(runtime.stdout_content());
@@ -254,13 +261,13 @@ fn graduation_happens_only_on_stream_complete() {
 
     app.on_message(ChatAppMsg::UserMessage("Question".to_string()));
 
-    let tree = app.view();
+    let tree = view_with_default_ctx(&app);
     runtime.render(&tree);
     assert_eq!(runtime.graduated_count(), 1, "User message should graduate");
 
     for _ in 0..10 {
         app.on_message(ChatAppMsg::TextDelta("chunk ".to_string()));
-        let tree = app.view();
+        let tree = view_with_default_ctx(&app);
         runtime.render(&tree);
     }
 
@@ -271,7 +278,7 @@ fn graduation_happens_only_on_stream_complete() {
     );
 
     app.on_message(ChatAppMsg::StreamComplete);
-    let tree = app.view();
+    let tree = view_with_default_ctx(&app);
     runtime.render(&tree);
 
     assert_eq!(
@@ -289,20 +296,20 @@ fn terminal_render_produces_stable_output() {
     app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
 
     for _ in 0..5 {
-        let tree = app.view();
+        let tree = view_with_default_ctx(&app);
         terminal.render(&tree).expect("render failed");
     }
 
     for i in 0..10 {
         app.on_message(ChatAppMsg::TextDelta(format!("word{} ", i)));
-        let tree = app.view();
+        let tree = view_with_default_ctx(&app);
         terminal.render(&tree).expect("render failed");
     }
 
     app.on_message(ChatAppMsg::StreamComplete);
 
     for _ in 0..5 {
-        let tree = app.view();
+        let tree = view_with_default_ctx(&app);
         terminal.render(&tree).expect("render failed");
     }
 }

@@ -1,4 +1,4 @@
-use crate::tui::ink::app::{Action, App};
+use crate::tui::ink::app::{Action, App, ViewContext};
 use crate::tui::ink::event::{Event, InputAction, InputBuffer};
 use crate::tui::ink::markdown::markdown_to_node_with_width;
 use crate::tui::ink::node::*;
@@ -123,7 +123,7 @@ impl App for InkChatApp {
         Self::default()
     }
 
-    fn view(&self) -> Node {
+    fn view(&self, _ctx: &ViewContext<'_>) -> Node {
         col([
             self.render_messages(),
             self.render_streaming(),
@@ -703,10 +703,14 @@ mod tests {
 
     #[test]
     fn test_view_renders() {
+        use crate::tui::ink::focus::FocusContext;
+
         let mut app = InkChatApp::init();
         app.add_user_message("Hello".to_string());
         app.on_message(ChatAppMsg::TextDelta("Hi there".to_string()));
 
-        let _node = app.view();
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let _node = app.view(&ctx);
     }
 }
