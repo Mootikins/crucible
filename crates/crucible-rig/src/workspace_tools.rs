@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::RwLock;
 use thiserror::Error;
 
 /// Error type for workspace tool operations
@@ -35,12 +36,17 @@ pub enum WorkspaceToolError {
     /// Pattern matching failed
     #[error("Pattern error: {0}")]
     Pattern(String),
+
+    /// Operation blocked by current mode
+    #[error("Blocked: {0}")]
+    Blocked(String),
 }
 
 /// Shared workspace context for tools
 #[derive(Clone)]
 pub struct WorkspaceContext {
     tools: Arc<WorkspaceTools>,
+    mode_id: Arc<RwLock<String>>,
 }
 
 impl WorkspaceContext {
@@ -48,7 +54,23 @@ impl WorkspaceContext {
     pub fn new(workspace_root: impl Into<PathBuf>) -> Self {
         Self {
             tools: Arc::new(WorkspaceTools::new(workspace_root)),
+            mode_id: Arc::new(RwLock::new("auto".to_string())),
         }
+    }
+
+    /// Set the current mode (plan/act/auto)
+    pub fn set_mode(&self, mode_id: &str) {
+        if let Ok(mut guard) = self.mode_id.write() {
+            *guard = mode_id.to_string();
+        }
+    }
+
+    /// Check if write operations are blocked (plan mode)
+    pub fn is_write_blocked(&self) -> bool {
+        self.mode_id
+            .read()
+            .map(|guard| *guard == "plan")
+            .unwrap_or(false)
     }
 
     /// Get all workspace tools as a vector for agent building
@@ -238,6 +260,12 @@ impl Tool for EditFileTool {
             WorkspaceToolError::File("Tool not initialized with context".to_string())
         })?;
 
+        if ctx.is_write_blocked() {
+            return Err(WorkspaceToolError::Blocked(
+                "edit_file is blocked in plan mode".to_string(),
+            ));
+        }
+
         let result = ctx
             .tools
             .edit_file(
@@ -312,6 +340,12 @@ impl Tool for WriteFileTool {
             WorkspaceToolError::File("Tool not initialized with context".to_string())
         })?;
 
+        if ctx.is_write_blocked() {
+            return Err(WorkspaceToolError::Blocked(
+                "write_file is blocked in plan mode".to_string(),
+            ));
+        }
+
         let result = ctx
             .tools
             .write_file(args.path, args.content)
@@ -380,6 +414,12 @@ impl Tool for BashTool {
         let ctx = self.ctx.as_ref().ok_or_else(|| {
             WorkspaceToolError::Command("Tool not initialized with context".to_string())
         })?;
+
+        if ctx.is_write_blocked() {
+            return Err(WorkspaceToolError::Blocked(
+                "bash is blocked in plan mode".to_string(),
+            ));
+        }
 
         let result = ctx
             .tools

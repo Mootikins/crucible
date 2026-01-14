@@ -96,6 +96,9 @@ where
 
     /// HTTP client for custom streaming
     http_client: reqwest::Client,
+
+    /// Workspace context for mode synchronization with tools
+    workspace_ctx: Option<crate::workspace_tools::WorkspaceContext>,
 }
 
 impl<M> RigAgentHandle<M>
@@ -117,12 +120,19 @@ where
             chat_history: Arc::new(RwLock::new(Vec::new())),
             mode_state,
             current_mode_id,
-            mode_context_sent: AtomicBool::new(false), // Will send context on first message
-            max_tool_depth: 50,                        // High limit for complex agentic workflows
+            mode_context_sent: AtomicBool::new(false),
+            max_tool_depth: 50,
             reasoning_endpoint: None,
             model_name: None,
             http_client: reqwest::Client::new(),
+            workspace_ctx: None,
         }
+    }
+
+    /// Set the workspace context for mode synchronization
+    pub fn with_workspace_context(mut self, ctx: crate::workspace_tools::WorkspaceContext) -> Self {
+        self.workspace_ctx = Some(ctx);
+        self
     }
 
     /// Set the maximum tool call depth
@@ -911,8 +921,12 @@ where
         }
 
         self.current_mode_id = mode_id.to_string();
-        // Reset mode context flag so next message will include mode info
         self.mode_context_sent.store(false, Ordering::SeqCst);
+
+        if let Some(ref ctx) = self.workspace_ctx {
+            ctx.set_mode(mode_id);
+        }
+
         Ok(())
     }
 }

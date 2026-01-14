@@ -33,7 +33,7 @@ async fn test_rig_agent_basic_prompt() {
     let config = create_test_config();
     let temp_dir = TempDir::new().unwrap();
 
-    let agent =
+    let (agent, _ws_ctx) =
         build_agent_with_tools(&config, &client, temp_dir.path()).expect("Failed to build agent");
     let mut handle = RigAgentHandle::new(agent);
 
@@ -81,7 +81,7 @@ async fn test_rig_agent_with_read_file_tool() {
     let test_file = temp_dir.path().join("test.txt");
     std::fs::write(&test_file, "Hello from the test file!").expect("Failed to write test file");
 
-    let agent =
+    let (agent, _ws_ctx) =
         build_agent_with_tools(&config, &client, temp_dir.path()).expect("Failed to build agent");
     let mut handle = RigAgentHandle::new(agent);
 
@@ -121,7 +121,7 @@ async fn test_rig_agent_streaming_multiple_chunks() {
     let config = create_test_config();
     let temp_dir = TempDir::new().unwrap();
 
-    let agent =
+    let (agent, _ws_ctx) =
         build_agent_with_tools(&config, &client, temp_dir.path()).expect("Failed to build agent");
     let mut handle = RigAgentHandle::new(agent);
 
@@ -172,7 +172,7 @@ async fn test_rig_agent_history_preserved() {
     let config = create_test_config();
     let temp_dir = TempDir::new().unwrap();
 
-    let agent =
+    let (agent, _ws_ctx) =
         build_agent_with_tools(&config, &client, temp_dir.path()).expect("Failed to build agent");
     let mut handle = RigAgentHandle::new(agent);
 
