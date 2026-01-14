@@ -175,6 +175,7 @@ fn layout_box(boxnode: &BoxNode, available: &Rect) -> LayoutNode {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn layout_column(
     boxnode: &BoxNode,
     box_x: u16,
@@ -254,6 +255,7 @@ fn layout_column(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn layout_row(
     boxnode: &BoxNode,
     box_x: u16,

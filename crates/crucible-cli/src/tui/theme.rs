@@ -775,15 +775,15 @@ mod tests {
         });
 
         std::env::set_var("COLORFGBG", "invalid");
-        let result = std::panic::catch_unwind(|| MarkdownTheme::auto());
+        let result = std::panic::catch_unwind(MarkdownTheme::auto);
         assert!(result.is_ok(), "Invalid COLORFGBG should not panic");
 
         std::env::set_var("COLORFGBG", "singlevalue");
-        let result = std::panic::catch_unwind(|| MarkdownTheme::auto());
+        let result = std::panic::catch_unwind(MarkdownTheme::auto);
         assert!(result.is_ok(), "Single value COLORFGBG should not panic");
 
         std::env::set_var("COLORFGBG", "15;notanumber");
-        let result = std::panic::catch_unwind(|| MarkdownTheme::auto());
+        let result = std::panic::catch_unwind(MarkdownTheme::auto);
         assert!(result.is_ok(), "Non-numeric COLORFGBG should not panic");
     }
 
