@@ -2,12 +2,14 @@ use crate::tui::ink::app::{Action, App, ViewContext};
 use crate::tui::ink::event::{Event, InputAction, InputBuffer};
 use crate::tui::ink::markdown::markdown_to_node_with_width;
 use crate::tui::ink::node::*;
-use crate::tui::ink::style::{Color, Style};
+use crate::tui::ink::style::{Color, Gap, Style};
 use crossterm::event::KeyCode;
 use std::time::Duration;
 
 const INPUT_BG: Color = Color::Rgb(40, 44, 52);
 const BULLET_PREFIX_WIDTH: usize = 2;
+const FOCUS_INPUT: &str = "input";
+const FOCUS_POPUP: &str = "popup";
 
 #[derive(Debug, Clone)]
 pub enum ChatAppMsg {
@@ -123,16 +125,17 @@ impl App for InkChatApp {
         Self::default()
     }
 
-    fn view(&self, _ctx: &ViewContext<'_>) -> Node {
+    fn view(&self, ctx: &ViewContext<'_>) -> Node {
         col([
             self.render_messages(),
             self.render_streaming(),
             self.render_error(),
             spacer(),
             self.render_popup(),
-            self.render_input(),
+            self.render_input(ctx),
             self.render_status(),
         ])
+        .gap(Gap::row(0))
     }
 
     fn update(&mut self, event: Event) -> Action<ChatAppMsg> {
@@ -477,46 +480,49 @@ impl InkChatApp {
     }
 
     fn render_streaming(&self) -> Node {
-        if !self.streaming.active {
-            return Node::Empty;
-        }
+        when(self.streaming.active, {
+            let has_content =
+                !self.streaming.content.is_empty() || !self.streaming.tool_calls.is_empty();
 
-        if self.streaming.content.is_empty() && self.streaming.tool_calls.is_empty() {
-            col([
-                text(""),
-                row([
-                    styled("● ", Style::new().fg(Color::DarkGray)),
-                    spinner(Some("Thinking...".into()), self.spinner_frame),
+            if_else(
+                has_content,
+                {
+                    let tool_nodes: Vec<Node> = self
+                        .streaming
+                        .tool_calls
+                        .iter()
+                        .map(|tc| self.render_tool_call(tc))
+                        .collect();
+
+                    let content_width = terminal_width().saturating_sub(BULLET_PREFIX_WIDTH);
+                    let content_node =
+                        markdown_to_node_with_width(&self.streaming.content, content_width);
+
+                    col([
+                        text(""),
+                        row([styled("● ", Style::new().fg(Color::DarkGray)), content_node]),
+                        col(tool_nodes),
+                        row([
+                            styled("  ", Style::default()),
+                            spinner(Some("Generating...".into()), self.spinner_frame),
+                        ]),
+                    ])
+                },
+                col([
+                    text(""),
+                    row([
+                        styled("● ", Style::new().fg(Color::DarkGray)),
+                        spinner(Some("Thinking...".into()), self.spinner_frame),
+                    ]),
                 ]),
-            ])
-        } else {
-            let tool_nodes: Vec<Node> = self
-                .streaming
-                .tool_calls
-                .iter()
-                .map(|tc| self.render_tool_call(tc))
-                .collect();
-
-            let content_width = terminal_width().saturating_sub(BULLET_PREFIX_WIDTH);
-            let content_node = markdown_to_node_with_width(&self.streaming.content, content_width);
-
-            col([
-                text(""),
-                row([styled("● ", Style::new().fg(Color::DarkGray)), content_node]),
-                col(tool_nodes),
-                row([
-                    styled("  ", Style::default()),
-                    spinner(Some("Generating...".into()), self.spinner_frame),
-                ]),
-            ])
-        }
+            )
+        })
     }
 
     fn render_error(&self) -> Node {
-        match &self.error {
-            Some(err) => styled(format!("Error: {}", err), Style::new().fg(Color::Red)),
-            None => Node::Empty,
-        }
+        maybe(self.error.clone(), |err| {
+            styled(format!("Error: {}", err), Style::new().fg(Color::Red))
+        })
     }
 
     fn render_status(&self) -> Node {
@@ -529,7 +535,7 @@ impl InkChatApp {
         let separator = styled(" │ ", Style::new().fg(Color::DarkGray));
 
         row([
-            styled(format!(" [{}]", self.mode.as_str()), mode_style.bold()),
+            badge(self.mode.as_str(), mode_style.bold()),
             separator,
             styled(&self.status, Style::new().fg(Color::DarkGray)),
         ])
@@ -552,8 +558,9 @@ impl InkChatApp {
         col([text(""), top_edge, content_line, bottom_edge])
     }
 
-    fn render_input(&self) -> Node {
+    fn render_input(&self, ctx: &ViewContext<'_>) -> Node {
         let width = terminal_width();
+        let is_focused = ctx.is_focused(FOCUS_INPUT);
         let prompt_style = match self.mode {
             ChatMode::Plan => Style::new().fg(Color::Blue).bg(INPUT_BG),
             ChatMode::Act => Style::new().fg(Color::Green).bg(INPUT_BG),
@@ -568,7 +575,7 @@ impl InkChatApp {
         let used_width = prompt.len() + content.len() + 1;
         let padding = " ".repeat(width.saturating_sub(used_width));
 
-        col([
+        let input_node = col([
             top_edge,
             row([
                 styled(prompt, prompt_style),
@@ -577,12 +584,14 @@ impl InkChatApp {
                     cursor: self.input.cursor(),
                     placeholder: None,
                     style: Style::new().bg(INPUT_BG),
-                    focused: true,
+                    focused: is_focused,
                 }),
                 styled(format!("{} ", padding), Style::new().bg(INPUT_BG)),
             ]),
             bottom_edge,
-        ])
+        ]);
+
+        focusable_auto(FOCUS_INPUT, input_node)
     }
 
     fn demo_popup_items(&self) -> Vec<(&'static str, &'static str, &'static str)> {
@@ -599,21 +608,19 @@ impl InkChatApp {
     }
 
     fn render_popup(&self) -> Node {
-        if !self.show_popup {
-            return Node::Empty;
-        }
+        when(self.show_popup, {
+            let items: Vec<PopupItemNode> = self
+                .demo_popup_items()
+                .into_iter()
+                .map(|(label, desc, kind)| PopupItemNode {
+                    label: label.to_string(),
+                    description: Some(desc.to_string()),
+                    kind: Some(kind.to_string()),
+                })
+                .collect();
 
-        let items: Vec<PopupItemNode> = self
-            .demo_popup_items()
-            .into_iter()
-            .map(|(label, desc, kind)| PopupItemNode {
-                label: label.to_string(),
-                description: Some(desc.to_string()),
-                kind: Some(kind.to_string()),
-            })
-            .collect();
-
-        popup(items, self.popup_selected, 10)
+            focusable(FOCUS_POPUP, popup(items, self.popup_selected, 10))
+        })
     }
 }
 
