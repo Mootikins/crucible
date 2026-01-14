@@ -35,8 +35,9 @@ pub trait App: Sized {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum Action<M> {
+    #[default]
     Continue,
     Quit,
     Send(M),
@@ -46,11 +47,5 @@ pub enum Action<M> {
 impl<M> Action<M> {
     pub fn is_quit(&self) -> bool {
         matches!(self, Action::Quit)
-    }
-}
-
-impl<M> Default for Action<M> {
-    fn default() -> Self {
-        Action::Continue
     }
 }

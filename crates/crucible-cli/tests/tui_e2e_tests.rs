@@ -592,17 +592,19 @@ fn ink_runner_stays_responsive_10s() {
     let mut last_responsive = start;
 
     while start.elapsed() < Duration::from_secs(10) {
-        session.send("a").expect(&format!(
-            "Send failed after {:?}, last responsive {:?} ago",
-            start.elapsed(),
-            last_responsive.elapsed()
-        ));
+        session.send("a").unwrap_or_else(|_| {
+            panic!(
+                "Send failed after {:?}, last responsive {:?} ago",
+                start.elapsed(),
+                last_responsive.elapsed()
+            )
+        });
 
         session.wait(Duration::from_millis(200));
 
         session
             .send_key(Key::Backspace)
-            .expect(&format!("Backspace failed after {:?}", start.elapsed()));
+            .unwrap_or_else(|_| panic!("Backspace failed after {:?}", start.elapsed()));
 
         last_responsive = std::time::Instant::now();
         session.wait(Duration::from_millis(300));

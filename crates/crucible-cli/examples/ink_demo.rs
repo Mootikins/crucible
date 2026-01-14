@@ -37,7 +37,7 @@ impl App for DemoChat {
         }
     }
 
-    fn view(&self) -> Node {
+    fn view(&self, _ctx: &ViewContext<'_>) -> Node {
         col([
             fragment(self.messages.iter().map(|m| self.render_message(m))),
             self.render_streaming(),

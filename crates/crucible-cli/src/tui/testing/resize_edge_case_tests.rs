@@ -21,7 +21,7 @@ mod resize_basics {
         let before = h.render();
         assert!(before.contains("Hello"));
 
-        h.resize(NARROW_WIDTH as u16, TEST_HEIGHT as u16);
+        h.resize(NARROW_WIDTH, TEST_HEIGHT);
 
         let after = h.render();
         assert!(after.contains("Hello"));
@@ -33,7 +33,7 @@ mod resize_basics {
         let mut h =
             Harness::new(NARROW_WIDTH, TEST_HEIGHT).with_session(sessions::basic_exchange());
 
-        h.resize(WIDE_WIDTH as u16, TEST_HEIGHT as u16);
+        h.resize(WIDE_WIDTH, TEST_HEIGHT);
 
         let after = h.render();
         assert!(after.contains("Hello"));
@@ -44,7 +44,7 @@ mod resize_basics {
     fn resize_to_shorter_height() {
         let mut h = Harness::new(TEST_WIDTH, TALL_HEIGHT).with_session(sessions::basic_exchange());
 
-        h.resize(TEST_WIDTH as u16, SHORT_HEIGHT as u16);
+        h.resize(TEST_WIDTH, SHORT_HEIGHT);
 
         let after = h.render();
         assert!(after.contains("Hello"));
@@ -55,7 +55,7 @@ mod resize_basics {
     fn resize_to_taller_height() {
         let mut h = Harness::new(TEST_WIDTH, SHORT_HEIGHT).with_session(sessions::basic_exchange());
 
-        h.resize(TEST_WIDTH as u16, TALL_HEIGHT as u16);
+        h.resize(TEST_WIDTH, TALL_HEIGHT);
 
         let after = h.render();
         assert!(after.contains("Hello"));
@@ -66,7 +66,7 @@ mod resize_basics {
     fn resize_to_extremely_narrow() {
         let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::basic_exchange());
 
-        h.resize(20, TEST_HEIGHT as u16);
+        h.resize(20, TEST_HEIGHT);
 
         let after = h.render();
         assert!(after.contains("Hello"));
@@ -76,7 +76,7 @@ mod resize_basics {
     fn resize_to_extremely_wide() {
         let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::basic_exchange());
 
-        h.resize(200, TEST_HEIGHT as u16);
+        h.resize(200, TEST_HEIGHT);
 
         let after = h.render();
         assert!(after.contains("Hello"));
@@ -111,7 +111,7 @@ mod resize_during_streaming {
         h.user_message("Tell me a long story");
         h.start_streaming();
 
-        h.harness.resize(NARROW_WIDTH as u16, 15);
+        h.harness.resize(NARROW_WIDTH, 15);
 
         for i in 1..=10 {
             h.chunk(&format!("Paragraph {} with content.\n\n", i));
@@ -131,7 +131,7 @@ mod resize_during_streaming {
         h.user_message("Short message");
         h.start_streaming();
 
-        h.harness.resize(WIDE_WIDTH as u16, 30);
+        h.harness.resize(WIDE_WIDTH, 30);
 
         h.chunk("Short response");
         h.complete();
@@ -169,7 +169,7 @@ mod resize_with_long_conversation {
         let mut h =
             Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::long_conversation());
 
-        h.resize(NARROW_WIDTH as u16, TEST_HEIGHT as u16);
+        h.resize(NARROW_WIDTH, TEST_HEIGHT);
 
         let rendered = h.render();
         // Long conversation has "Message X" and "Response X" items
@@ -184,7 +184,7 @@ mod resize_with_long_conversation {
         let mut h =
             Harness::new(TEST_WIDTH, TALL_HEIGHT).with_session(sessions::long_conversation());
 
-        h.resize(TEST_WIDTH as u16, SHORT_HEIGHT as u16);
+        h.resize(TEST_WIDTH, SHORT_HEIGHT);
 
         let rendered = h.render();
         // Should still show some conversation content
@@ -199,9 +199,9 @@ mod resize_with_long_conversation {
         let mut h =
             Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::long_conversation());
 
-        h.resize(NARROW_WIDTH as u16, SHORT_HEIGHT as u16);
-        h.resize(TEST_WIDTH as u16, TALL_HEIGHT as u16);
-        h.resize(WIDE_WIDTH as u16, TEST_HEIGHT as u16);
+        h.resize(NARROW_WIDTH, SHORT_HEIGHT);
+        h.resize(TEST_WIDTH, TALL_HEIGHT);
+        h.resize(WIDE_WIDTH, TEST_HEIGHT);
 
         let rendered = h.render();
         // Should still have conversation content after multiple resizes
@@ -219,7 +219,7 @@ mod resize_with_code_blocks {
     fn resize_with_code_block_narrows_correctly() {
         let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::with_long_code());
 
-        h.resize(NARROW_WIDTH as u16, TEST_HEIGHT as u16);
+        h.resize(NARROW_WIDTH, TEST_HEIGHT);
 
         let rendered = h.render();
         // with_long_code has "struct Data" with field_N fields
@@ -234,7 +234,7 @@ mod resize_with_code_blocks {
         let mut h =
             Harness::new(NARROW_WIDTH, TEST_HEIGHT).with_session(sessions::with_rust_code());
 
-        h.resize(WIDE_WIDTH as u16, TEST_HEIGHT as u16);
+        h.resize(WIDE_WIDTH, TEST_HEIGHT);
 
         let rendered = h.render();
         assert!(
@@ -251,7 +251,7 @@ mod resize_with_tables {
     fn resize_with_table_to_narrow() {
         let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::with_table());
 
-        h.resize(NARROW_WIDTH as u16, TEST_HEIGHT as u16);
+        h.resize(NARROW_WIDTH, TEST_HEIGHT);
 
         let rendered = h.render();
         // with_table has a Rust vs Go comparison table
@@ -267,7 +267,7 @@ mod resize_with_tables {
     fn resize_with_wide_table() {
         let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::with_wide_table());
 
-        h.resize(WIDE_WIDTH as u16, TEST_HEIGHT as u16);
+        h.resize(WIDE_WIDTH, TEST_HEIGHT);
 
         let rendered = h.render();
         // with_wide_table has Package, Description, Version columns
@@ -288,7 +288,7 @@ mod resize_with_tables {
 
         h.chunk("| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n");
 
-        h.harness.resize(NARROW_WIDTH as u16, 10);
+        h.harness.resize(NARROW_WIDTH, 10);
 
         h.chunk("\nMore content after table");
         h.complete();
@@ -315,7 +315,7 @@ mod resize_edge_cases {
         h.resize(10, 5);
 
         let rendered = h.render();
-        assert!(!rendered.is_empty() || rendered.len() > 0);
+        assert!(!rendered.is_empty());
     }
 
     #[test]
@@ -333,8 +333,8 @@ mod resize_edge_cases {
         let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::basic_exchange());
 
         for _ in 0..5 {
-            h.resize(NARROW_WIDTH as u16, SHORT_HEIGHT as u16);
-            h.resize(WIDE_WIDTH as u16, TALL_HEIGHT as u16);
+            h.resize(NARROW_WIDTH, SHORT_HEIGHT);
+            h.resize(WIDE_WIDTH, TALL_HEIGHT);
         }
 
         let rendered = h.render();
@@ -347,8 +347,8 @@ mod resize_edge_cases {
 
         let before_len = h.conversation_len();
 
-        h.resize(NARROW_WIDTH as u16, SHORT_HEIGHT as u16);
-        h.resize(WIDE_WIDTH as u16, TALL_HEIGHT as u16);
+        h.resize(NARROW_WIDTH, SHORT_HEIGHT);
+        h.resize(WIDE_WIDTH, TALL_HEIGHT);
 
         let after_len = h.conversation_len();
         assert_eq!(before_len, after_len);
@@ -368,7 +368,7 @@ mod resize_with_popups {
 
         assert!(h.has_popup());
 
-        h.resize(NARROW_WIDTH as u16, SHORT_HEIGHT as u16);
+        h.resize(NARROW_WIDTH, SHORT_HEIGHT);
 
         let rendered = h.render();
         assert!(!rendered.is_empty());

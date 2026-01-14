@@ -425,7 +425,7 @@ impl ChatSession {
         ));
 
         if self.config.use_ink_runner {
-            let mode = ChatMode::from_str(&self.config.initial_mode_id);
+            let mode = ChatMode::parse(&self.config.initial_mode_id);
             let mut runner = InkChatRunner::new()?.with_mode(mode);
             return runner.run_with_factory(&bridge, create_agent).await;
         }

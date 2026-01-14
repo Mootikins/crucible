@@ -42,6 +42,7 @@ impl GraduationState {
         Ok(graduated)
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn collect_static_nodes(
         &mut self,
         node: &Node,
