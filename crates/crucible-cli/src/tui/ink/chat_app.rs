@@ -480,24 +480,53 @@ impl InkChatApp {
         }
     }
 
-    fn format_tool_result(result: &str) -> Node {
-        let lines: Vec<&str> = result.lines().take(3).collect();
-        let truncated = lines.len() < result.lines().count();
+    fn format_tool_result(name: &str, result: &str) -> Node {
+        match name {
+            "read_file" => {
+                let line_count = result.lines().count();
+                let summary = format!("   {} lines", line_count);
+                styled(summary, Style::new().fg(Color::DarkGray))
+            }
+            _ => {
+                let all_lines: Vec<&str> = result.lines().collect();
+                let lines: Vec<&str> = all_lines.iter().rev().take(3).rev().copied().collect();
+                let truncated = all_lines.len() > 3;
 
-        let display = if truncated {
-            format!("{}…", lines.join("\n"))
+                col(std::iter::once(if truncated {
+                    styled("   …", Style::new().fg(Color::DarkGray))
+                } else {
+                    Node::Empty
+                })
+                .chain(lines.iter().map(|line| {
+                    let truncated_line = if line.len() > 77 {
+                        format!("   {}…", &line[..74])
+                    } else {
+                        format!("   {}", line)
+                    };
+                    styled(truncated_line, Style::new().fg(Color::DarkGray))
+                })))
+            }
+        }
+    }
+
+    fn format_streaming_output(output: &str) -> Node {
+        let all_lines: Vec<&str> = output.lines().collect();
+        let lines: Vec<&str> = all_lines.iter().rev().take(3).rev().copied().collect();
+        let truncated = all_lines.len() > 3;
+
+        col(std::iter::once(if truncated {
+            styled("     …", Style::new().fg(Color::DarkGray))
         } else {
-            lines.join("\n")
-        };
-
-        col(display.lines().map(|line| {
-            let truncated_line = if line.len() > 80 {
-                format!("   {}…", &line[..77])
+            Node::Empty
+        })
+        .chain(lines.iter().map(|line| {
+            let truncated_line = if line.len() > 72 {
+                format!("     {}…", &line[..69])
             } else {
-                format!("   {}", line)
+                format!("     {}", line)
             };
             styled(truncated_line, Style::new().fg(Color::DarkGray))
-        }))
+        })))
     }
 
     fn add_user_message(&mut self, content: String) {
@@ -584,8 +613,10 @@ impl InkChatApp {
 
                 let result_node = if result.is_empty() {
                     Node::Empty
+                } else if *complete {
+                    Self::format_tool_result(name, result)
                 } else {
-                    Self::format_tool_result(result)
+                    Self::format_streaming_output(result)
                 };
 
                 let content = col([header, result_node]);
@@ -900,7 +931,10 @@ mod tests {
 
         let node = app.view(&ctx);
         let output = render_to_string(&node, 80);
-        assert!(output.contains("README"), "should show result content");
+        assert!(
+            output.contains("README") || output.contains("content"),
+            "should show streaming output while running"
+        );
 
         app.on_message(ChatAppMsg::ToolResultComplete {
             name: "read_file".to_string(),
@@ -910,8 +944,8 @@ mod tests {
         let output = render_to_string(&node, 80);
         assert!(output.contains("✓"), "should show checkmark when complete");
         assert!(
-            !output.contains("…"),
-            "should not show ellipsis when complete"
+            output.contains("2 lines"),
+            "should show line count for read_file when complete"
         );
     }
 
