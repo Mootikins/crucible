@@ -588,7 +588,12 @@ impl InkChatApp {
                     Self::format_tool_result(result)
                 };
 
-                scrollback(id, [col([header, result_node])])
+                let content = col([header, result_node]);
+                if *complete {
+                    scrollback(id, [content])
+                } else {
+                    col([text(""), content])
+                }
             }
         }
     }
