@@ -121,28 +121,32 @@ fn layout_node(node: &Node, available: &Rect) -> LayoutNode {
 
 fn layout_box(boxnode: &BoxNode, available: &Rect) -> LayoutNode {
     let padding = &boxnode.padding;
+    let margin = &boxnode.margin;
     let border_size = if boxnode.border.is_some() { 1 } else { 0 };
 
-    let inner_x = available.x + padding.left + border_size;
-    let inner_y = available.y + padding.top + border_size;
-    let inner_width = available
-        .width
+    let box_x = available.x + margin.left;
+    let box_y = available.y + margin.top;
+    let box_width = available.width.saturating_sub(margin.horizontal());
+    let box_height = available.height.saturating_sub(margin.vertical());
+
+    let inner_x = box_x + padding.left + border_size;
+    let inner_y = box_y + padding.top + border_size;
+    let inner_width = box_width
         .saturating_sub(padding.horizontal())
         .saturating_sub(border_size * 2);
-    let inner_height = available
-        .height
+    let inner_height = box_height
         .saturating_sub(padding.vertical())
         .saturating_sub(border_size * 2);
 
     if boxnode.children.is_empty() {
         let content_height = match boxnode.size {
             Size::Fixed(h) => h,
-            Size::Flex(_) => available.height,
+            Size::Flex(_) => box_height,
             Size::Content => 0,
         };
 
         return LayoutNode {
-            rect: Rect::new(available.x, available.y, available.width, content_height),
+            rect: Rect::new(box_x, box_y, box_width, content_height),
             children: Vec::new(),
         };
     }
@@ -150,7 +154,9 @@ fn layout_box(boxnode: &BoxNode, available: &Rect) -> LayoutNode {
     match boxnode.direction {
         Direction::Column => layout_column(
             boxnode,
-            available,
+            box_x,
+            box_y,
+            box_width,
             inner_x,
             inner_y,
             inner_width,
@@ -158,7 +164,9 @@ fn layout_box(boxnode: &BoxNode, available: &Rect) -> LayoutNode {
         ),
         Direction::Row => layout_row(
             boxnode,
-            available,
+            box_x,
+            box_y,
+            box_width,
             inner_x,
             inner_y,
             inner_width,
@@ -169,7 +177,9 @@ fn layout_box(boxnode: &BoxNode, available: &Rect) -> LayoutNode {
 
 fn layout_column(
     boxnode: &BoxNode,
-    available: &Rect,
+    box_x: u16,
+    box_y: u16,
+    box_width: u16,
     inner_x: u16,
     inner_y: u16,
     inner_width: u16,
@@ -206,6 +216,7 @@ fn layout_column(
 
     let mut child_layouts = Vec::new();
     let mut y = inner_y;
+    let gap = boxnode.gap.row;
 
     for (i, child) in boxnode.children.iter().enumerate() {
         let (_, size_val, is_flex) = child_sizes[i];
@@ -219,26 +230,35 @@ fn layout_column(
         let mut child_layout = layout_node(child, &child_available);
         child_layout.rect.height = child_height;
         y += child_height;
+
+        if i < boxnode.children.len() - 1 {
+            y += gap;
+        }
+
         child_layouts.push(child_layout);
     }
 
     let total_height =
         y - inner_y + boxnode.padding.vertical() + if boxnode.border.is_some() { 2 } else { 0 };
-    let box_height = match boxnode.size {
+    let final_height = match boxnode.size {
         Size::Fixed(h) => h,
-        Size::Flex(_) => available.height,
+        Size::Flex(_) => {
+            inner_height + boxnode.padding.vertical() + if boxnode.border.is_some() { 2 } else { 0 }
+        }
         Size::Content => total_height,
     };
 
     LayoutNode {
-        rect: Rect::new(available.x, available.y, available.width, box_height),
+        rect: Rect::new(box_x, box_y, box_width, final_height),
         children: child_layouts,
     }
 }
 
 fn layout_row(
     boxnode: &BoxNode,
-    available: &Rect,
+    box_x: u16,
+    box_y: u16,
+    box_width: u16,
     inner_x: u16,
     inner_y: u16,
     inner_width: u16,
@@ -247,7 +267,7 @@ fn layout_row(
     let child_count = boxnode.children.len() as u16;
     if child_count == 0 {
         return LayoutNode {
-            rect: Rect::new(available.x, available.y, available.width, 1),
+            rect: Rect::new(box_x, box_y, box_width, 1),
             children: Vec::new(),
         };
     }
@@ -267,14 +287,16 @@ fn layout_row(
 
     let total_height =
         max_height + boxnode.padding.vertical() + if boxnode.border.is_some() { 2 } else { 0 };
-    let box_height = match boxnode.size {
+    let final_height = match boxnode.size {
         Size::Fixed(h) => h,
         Size::Content => total_height,
-        Size::Flex(_) => available.height,
+        Size::Flex(_) => {
+            inner_height + boxnode.padding.vertical() + if boxnode.border.is_some() { 2 } else { 0 }
+        }
     };
 
     LayoutNode {
-        rect: Rect::new(available.x, available.y, available.width, box_height),
+        rect: Rect::new(box_x, box_y, box_width, final_height),
         children: child_layouts,
     }
 }
