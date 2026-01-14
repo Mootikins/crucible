@@ -146,37 +146,68 @@ async fn event_stream_with_timeout_does_not_block() {
 }
 
 #[tokio::test]
-async fn escape_key_triggers_quit_action() {
+async fn escape_key_closes_popup() {
     use crate::tui::ink::app::{Action, App};
     use crate::tui::ink::chat_app::InkChatApp;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     let mut app = InkChatApp::default();
 
+    // ESC should continue (used for closing popup), not quit
     let esc_event = Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     let action = app.update(esc_event);
 
     assert!(
-        matches!(action, Action::Quit),
-        "ESC should produce Action::Quit, got {:?}",
+        matches!(action, Action::Continue),
+        "ESC should produce Action::Continue (closes popup), got {:?}",
         action
     );
 }
 
 #[tokio::test]
-async fn ctrl_c_triggers_quit_action() {
+async fn double_ctrl_c_triggers_quit_action() {
     use crate::tui::ink::app::{Action, App};
     use crate::tui::ink::chat_app::InkChatApp;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     let mut app = InkChatApp::default();
 
+    // First Ctrl+C shows notification
+    let ctrl_c_event = Event::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+    let action = app.update(ctrl_c_event.clone());
+    assert!(
+        matches!(action, Action::Continue),
+        "First Ctrl+C should show notification, got {:?}",
+        action
+    );
+
+    let action = app.update(ctrl_c_event);
+    assert!(
+        matches!(action, Action::Quit),
+        "Second Ctrl+C should produce Action::Quit, got {:?}",
+        action
+    );
+}
+
+#[tokio::test]
+async fn ctrl_c_clears_input_first() {
+    use crate::tui::ink::app::{Action, App};
+    use crate::tui::ink::chat_app::InkChatApp;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let mut app = InkChatApp::default();
+
+    // Type some input
+    let key_event = Event::Key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE));
+    app.update(key_event);
+
+    // Ctrl+C clears input
     let ctrl_c_event = Event::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
     let action = app.update(ctrl_c_event);
 
     assert!(
-        matches!(action, Action::Quit),
-        "Ctrl+C should produce Action::Quit, got {:?}",
+        matches!(action, Action::Continue),
+        "Ctrl+C with text should clear input, got {:?}",
         action
     );
 }
