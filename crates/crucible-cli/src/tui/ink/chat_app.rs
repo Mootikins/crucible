@@ -483,9 +483,12 @@ impl InkChatApp {
     fn format_tool_result(name: &str, result: &str) -> Node {
         match name {
             "read_file" => {
-                let line_count = result.lines().count();
-                let summary = format!("   {} lines", line_count);
-                styled(summary, Style::new().fg(Color::DarkGray))
+                let summary = if let Some(bracket_start) = result.rfind('[') {
+                    result[bracket_start..].trim_end_matches(']').to_string()
+                } else {
+                    format!("{} lines", result.lines().count())
+                };
+                styled(format!("   {}", summary), Style::new().fg(Color::DarkGray))
             }
             _ => {
                 let all_lines: Vec<&str> = result.lines().collect();
