@@ -84,6 +84,36 @@ pub const REPL_COMMANDS: &[ReplCommand] = &[
         aliases: &["s"],
         description: "Show current provider, model, and agent",
     },
+    ReplCommand {
+        name: "palette",
+        aliases: &["commands", "cmd"],
+        description: "Open command palette",
+    },
+    ReplCommand {
+        name: "write",
+        aliases: &["w"],
+        description: "Export conversation to file [:write <path>]",
+    },
+    ReplCommand {
+        name: "rename",
+        aliases: &["rn"],
+        description: "Rename current session [:rename <name>]",
+    },
+    ReplCommand {
+        name: "rewind",
+        aliases: &["rw"],
+        description: "Revert to previous message [:rewind <n>]",
+    },
+    ReplCommand {
+        name: "context",
+        aliases: &["ctx"],
+        description: "Show attached context",
+    },
+    ReplCommand {
+        name: "undo",
+        aliases: &["u"],
+        description: "Show conversation undo tree",
+    },
 ];
 
 /// Find REPL commands matching a query (fuzzy prefix match)
@@ -115,8 +145,8 @@ mod tests {
     fn test_find_matching_empty_query() {
         let matches = find_matching("");
         assert_eq!(matches.len(), REPL_COMMANDS.len());
-        // Verify expected count (quit, help, mode, agent, config, messages, edit, resume, provider, model, status)
-        assert_eq!(REPL_COMMANDS.len(), 11);
+        // Verify expected count (quit, help, mode, agent, config, messages, edit, resume, provider, model, status, palette, write, rename, rewind, context, undo)
+        assert_eq!(REPL_COMMANDS.len(), 17);
     }
 
     #[test]
