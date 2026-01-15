@@ -21,6 +21,7 @@ pub mod hashing;
 pub mod mode;
 pub mod popup;
 pub mod tool_ref;
+pub mod undo_tree;
 
 // Re-export parser domain types
 pub use crate::parser::types::{
@@ -95,3 +96,8 @@ pub use crate::types::tool_ref::{ToolRef, ToolSource};
 
 // Re-export popup types
 pub use crate::types::popup::PopupEntry;
+
+// Re-export undo tree types
+pub use crate::types::undo_tree::{
+    NodeId as UndoNodeId, TreeNode, TreeNodeLabel, TreeSummary, UndoTree,
+};
