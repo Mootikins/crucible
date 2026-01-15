@@ -2859,6 +2859,24 @@ impl RatatuiRunner {
                 );
                 self.view.set_status_text(&status);
             }
+            "palette" | "commands" | "cmd" => {
+                self.open_command_palette();
+            }
+            "write" | "w" => {
+                self.export_conversation(args)?;
+            }
+            "rename" | "rn" => {
+                self.rename_session(args)?;
+            }
+            "rewind" | "rw" => {
+                self.rewind_conversation(args)?;
+            }
+            "context" | "ctx" => {
+                self.show_context()?;
+            }
+            "undo" | "u" => {
+                self.show_undo_tree()?;
+            }
             _ => {
                 self.view.echo_error(&format!("Unknown command: {}", name));
             }
@@ -3043,6 +3061,115 @@ impl RatatuiRunner {
             self.view.echo_error("Session logging not configured");
         }
 
+        Ok(())
+    }
+
+    fn open_command_palette(&mut self) {
+        use crate::tui::components::PopupState;
+        use crate::tui::popup::PopupProvider;
+        use crate::tui::state::PopupKind;
+
+        let items = self.popup_provider.provide(PopupKind::ReplCommand, "");
+
+        if items.is_empty() {
+            self.view.set_status_text("No commands available");
+            return;
+        }
+
+        let mut popup = PopupState::new(
+            PopupKind::ReplCommand,
+            std::sync::Arc::clone(&self.popup_provider) as std::sync::Arc<dyn PopupProvider>,
+        );
+        popup.set_items(items.clone());
+        self.popup = Some(popup);
+
+        let mut view_popup = PopupState::new(
+            PopupKind::ReplCommand,
+            std::sync::Arc::clone(&self.popup_provider) as std::sync::Arc<dyn PopupProvider>,
+        );
+        view_popup.set_items(items);
+        self.view.set_popup(Some(view_popup));
+        self.view.set_status_text("Select command");
+    }
+
+    fn export_conversation(&mut self, args: &str) -> Result<()> {
+        if self.view.state().conversation.items().is_empty() {
+            self.view.echo_error("No conversation to export");
+            return Ok(());
+        }
+
+        let markdown = self.view.state().conversation.to_markdown();
+
+        let path = if args.trim().is_empty() {
+            let timestamp = chrono::Local::now().format("%Y-%m-%d_%H%M%S");
+            let exports_dir = dirs::data_local_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join("crucible")
+                .join("exports");
+            std::fs::create_dir_all(&exports_dir)?;
+            exports_dir.join(format!("conversation_{}.md", timestamp))
+        } else {
+            std::path::PathBuf::from(args.trim())
+        };
+
+        std::fs::write(&path, &markdown)?;
+        self.view
+            .echo_message(&format!("Exported to: {}", path.display()));
+
+        Ok(())
+    }
+
+    fn rename_session(&mut self, args: &str) -> Result<()> {
+        let name = args.trim();
+
+        if name.is_empty() {
+            self.view
+                .echo_message("Use :rename <name> to name this session");
+        } else {
+            // TODO: Store session title in session metadata when session logger supports it
+            self.view.echo_message(&format!(
+                "Session title set to: {} (not persisted yet)",
+                name
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn rewind_conversation(&mut self, args: &str) -> Result<()> {
+        let count: usize = args.trim().parse().unwrap_or(2);
+
+        if self.view.state().conversation.items().is_empty() {
+            self.view.echo_error("Nothing to rewind");
+            return Ok(());
+        }
+
+        let rewound = self.view.state_mut().conversation.rewind(count);
+        self.view
+            .echo_message(&format!("Rewound {} message(s)", rewound));
+
+        Ok(())
+    }
+
+    fn show_context(&mut self) -> Result<()> {
+        self.view.push_dialog(crate::tui::dialog::DialogState::info(
+            "Attached Context",
+            "No context attached.\n\nUse @file or [[note]] to attach context.",
+        ));
+        Ok(())
+    }
+
+    fn show_undo_tree(&mut self) -> Result<()> {
+        let items_len = self.view.state().conversation.items().len();
+        let content = format!(
+            "Conversation History\n\n\
+             Current position: {} message(s)\n\n\
+             Use :rewind <n> to go back n messages.\n\
+             (Full tree visualization coming soon)",
+            items_len
+        );
+        self.view
+            .push_dialog(crate::tui::dialog::DialogState::info("Undo Tree", content));
         Ok(())
     }
 

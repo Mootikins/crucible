@@ -870,6 +870,16 @@ impl ConversationState {
 
         md
     }
+
+    pub fn rewind(&mut self, n: usize) -> usize {
+        let len = self.items.len();
+        let to_remove = n.min(len);
+        for _ in 0..to_remove {
+            self.items.pop_back();
+        }
+        self.cache.borrow_mut().invalidate_all();
+        to_remove
+    }
 }
 
 // =============================================================================
