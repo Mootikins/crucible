@@ -14,6 +14,7 @@ pub mod components;
 pub mod constants;
 pub mod content_block;
 pub mod conversation;
+pub mod conversation_tree;
 pub mod conversation_view;
 pub mod dialog;
 pub mod event_result;
