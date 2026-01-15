@@ -2877,6 +2877,9 @@ impl RatatuiRunner {
             "undo" | "u" => {
                 self.show_undo_tree()?;
             }
+            "input" | "i" => {
+                self.edit_input_in_editor()?;
+            }
             _ => {
                 self.view.echo_error(&format!("Unknown command: {}", name));
             }
@@ -3160,16 +3163,48 @@ impl RatatuiRunner {
     }
 
     fn show_undo_tree(&mut self) -> Result<()> {
-        let items_len = self.view.state().conversation.items().len();
+        let summary = self.view.state().conversation.tree_summary();
+        let tree_ascii = self.view.state().conversation.render_tree_ascii(15);
+
+        let branch_info = if summary.branch_points > 0 {
+            format!(
+                " ({} branch point{})",
+                summary.branch_points,
+                if summary.branch_points == 1 { "" } else { "s" }
+            )
+        } else {
+            String::new()
+        };
+
         let content = format!(
-            "Conversation History\n\n\
-             Current position: {} message(s)\n\n\
-             Use :rewind <n> to go back n messages.\n\
-             (Full tree visualization coming soon)",
-            items_len
+            "{} nodes, depth {}{}\n\n\
+             {}\n\n\
+             Legend: ● current  ◐ path  ○ other\n\
+             Use :rewind <n> to go back",
+            summary.total_nodes, summary.current_depth, branch_info, tree_ascii
         );
         self.view
             .push_dialog(crate::tui::dialog::DialogState::info("Undo Tree", content));
+        Ok(())
+    }
+
+    fn edit_input_in_editor(&mut self) -> Result<()> {
+        let current_input = self.view.state().input_buffer.clone();
+        let mouse_enabled = self.selection_manager.is_mouse_capture_enabled();
+
+        match session_commands::edit_in_editor(&current_input, mouse_enabled)? {
+            Some(edited) => {
+                let len = edited.len();
+                self.view.state_mut().input_buffer = edited;
+                self.view.state_mut().cursor_position = len;
+                let editor = session_commands::get_editor();
+                self.view.echo_message(&format!("Loaded from {}", editor));
+            }
+            None => {
+                self.view.echo_message("Editor closed without changes");
+            }
+        }
+
         Ok(())
     }
 
