@@ -76,8 +76,8 @@ pub mod colors {
     /// Shell passthrough (!) background - red tint
     pub const INPUT_SHELL_BG: Color = Color::Rgb(60, 30, 30); // Dark red
 
-    /// REPL command (:) background - green tint
-    pub const INPUT_REPL_BG: Color = Color::Rgb(30, 50, 30); // Dark green
+    /// REPL command (:) background - yellow tint
+    pub const INPUT_REPL_BG: Color = Color::Rgb(50, 50, 30); // Dark yellow/olive
 
     // --- Mode colors ---
 
