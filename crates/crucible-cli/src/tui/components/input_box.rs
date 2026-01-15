@@ -248,7 +248,7 @@ impl Widget for InputBoxWidget<'_> {
             // Shell passthrough: red tint, show "!" as prompt
             (presets::input_shell(), " ! ", rest)
         } else if let Some(rest) = trimmed.strip_prefix(':') {
-            // REPL command: green tint, show ":" as prompt
+            // REPL command: yellow tint, show ":" as prompt
             (presets::input_repl(), " : ", rest)
         } else {
             // Default style and prompt
@@ -531,7 +531,7 @@ mod tests {
 
         #[test]
         fn repl_command_prefix() {
-            // : prefix should use green-tinted style
+            // : prefix should use yellow-tinted style
             let terminal = render_widget(":quit", 5, true);
             assert_snapshot!("input_box_repl_prefix", terminal.backend());
         }
