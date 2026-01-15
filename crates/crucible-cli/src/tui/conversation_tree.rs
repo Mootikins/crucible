@@ -176,6 +176,125 @@ impl ConversationTree {
     pub fn iter_nodes(&self) -> impl Iterator<Item = (NodeId, &TreeNode)> {
         self.nodes.iter().enumerate()
     }
+
+    pub fn render_ascii(&self, max_lines: usize) -> String {
+        if self.nodes.is_empty() {
+            return String::from("(empty)");
+        }
+
+        let mut lines = Vec::new();
+        let current_path: std::collections::HashSet<_> =
+            self.current_path_ids().into_iter().collect();
+
+        for &root_id in &self.roots {
+            self.render_node_ascii(root_id, "", true, &current_path, &mut lines, max_lines);
+            if lines.len() >= max_lines {
+                break;
+            }
+        }
+
+        if lines.len() >= max_lines {
+            lines.push("...".to_string());
+        }
+
+        lines.join("\n")
+    }
+
+    fn current_path_ids(&self) -> Vec<NodeId> {
+        let mut path = Vec::new();
+        let mut node_id = self.current;
+        while let Some(id) = node_id {
+            path.push(id);
+            node_id = self.nodes[id].parent;
+        }
+        path.reverse();
+        path
+    }
+
+    fn render_node_ascii(
+        &self,
+        node_id: NodeId,
+        prefix: &str,
+        is_last: bool,
+        current_path: &std::collections::HashSet<NodeId>,
+        lines: &mut Vec<String>,
+        max_lines: usize,
+    ) {
+        if lines.len() >= max_lines {
+            return;
+        }
+
+        let node = &self.nodes[node_id];
+        let is_current = Some(node_id) == self.current;
+        let is_on_path = current_path.contains(&node_id);
+
+        let marker = if is_current {
+            "●"
+        } else if is_on_path {
+            "◐"
+        } else {
+            "○"
+        };
+
+        let label = match &node.item {
+            ConversationItem::UserMessage { content } => {
+                let preview = content.chars().take(30).collect::<String>();
+                let ellipsis = if content.len() > 30 { "..." } else { "" };
+                format!("You: {}{}", preview, ellipsis)
+            }
+            ConversationItem::AssistantMessage { blocks, .. } => {
+                let text = blocks
+                    .iter()
+                    .filter_map(|b| {
+                        if let crate::tui::content_block::StreamBlock::Prose { text, .. } = b {
+                            Some(text.as_str())
+                        } else {
+                            None
+                        }
+                    })
+                    .next()
+                    .unwrap_or("...");
+                let preview = text.chars().take(30).collect::<String>();
+                let ellipsis = if text.len() > 30 { "..." } else { "" };
+                format!("AI: {}{}", preview, ellipsis)
+            }
+            ConversationItem::ToolCall(tool) => format!("Tool: {}", tool.name),
+            ConversationItem::Status(_) => "...".to_string(),
+        };
+
+        let connector = if is_last { "└─" } else { "├─" };
+        let line = if prefix.is_empty() {
+            format!("{} {}", marker, label)
+        } else {
+            format!("{}{}{} {}", prefix, connector, marker, label)
+        };
+        lines.push(line);
+
+        let child_prefix = if prefix.is_empty() {
+            String::new()
+        } else if is_last {
+            format!("{}  ", prefix)
+        } else {
+            format!("{}│ ", prefix)
+        };
+
+        for (i, &child_id) in node.children.iter().enumerate() {
+            let child_is_last = i == node.children.len() - 1;
+            let next_prefix = if prefix.is_empty() {
+                "  ".to_string()
+            } else {
+                child_prefix.clone()
+            };
+            self.render_node_ascii(
+                child_id,
+                &next_prefix,
+                child_is_last,
+                current_path,
+                lines,
+                max_lines,
+            );
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -291,5 +410,40 @@ mod tests {
 
         assert!(tree.is_empty());
         assert_eq!(tree.total_nodes(), 0);
+    }
+
+    #[test]
+    fn render_ascii_empty() {
+        let tree = ConversationTree::new();
+        assert_eq!(tree.render_ascii(10), "(empty)");
+    }
+
+    #[test]
+    fn render_ascii_linear() {
+        let mut tree = ConversationTree::new();
+        tree.push(user_msg("hello"));
+        tree.push(assistant_msg("hi there"));
+
+        let ascii = tree.render_ascii(10);
+        assert!(ascii.contains("You: hello"));
+        assert!(ascii.contains("AI: hi there"));
+        assert!(ascii.contains("●"));
+    }
+
+    #[test]
+    fn render_ascii_with_branch() {
+        let mut tree = ConversationTree::new();
+        tree.push(user_msg("hello"));
+        tree.push(assistant_msg("hi"));
+        tree.push(user_msg("question 1"));
+        tree.push(assistant_msg("answer 1"));
+
+        tree.rewind(2);
+        tree.push(user_msg("question 2"));
+
+        let ascii = tree.render_ascii(20);
+        assert!(ascii.contains("question 1"));
+        assert!(ascii.contains("question 2"));
+        assert!(ascii.contains("├─") || ascii.contains("└─"));
     }
 }
