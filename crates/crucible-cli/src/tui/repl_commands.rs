@@ -114,6 +114,11 @@ pub const REPL_COMMANDS: &[ReplCommand] = &[
         aliases: &["u"],
         description: "Show conversation undo tree",
     },
+    ReplCommand {
+        name: "input",
+        aliases: &["i"],
+        description: "Edit input buffer in $EDITOR",
+    },
 ];
 
 /// Find REPL commands matching a query (fuzzy prefix match)
@@ -145,8 +150,8 @@ mod tests {
     fn test_find_matching_empty_query() {
         let matches = find_matching("");
         assert_eq!(matches.len(), REPL_COMMANDS.len());
-        // Verify expected count (quit, help, mode, agent, config, messages, edit, resume, provider, model, status, palette, write, rename, rewind, context, undo)
-        assert_eq!(REPL_COMMANDS.len(), 17);
+        // Verify expected count (quit, help, mode, agent, config, messages, edit, resume, provider, model, status, palette, write, rename, rewind, context, undo, input)
+        assert_eq!(REPL_COMMANDS.len(), 18);
     }
 
     #[test]
