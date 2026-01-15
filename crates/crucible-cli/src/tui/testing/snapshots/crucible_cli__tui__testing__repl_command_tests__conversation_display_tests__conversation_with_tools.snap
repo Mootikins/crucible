@@ -1,0 +1,16 @@
+---
+source: crates/crucible-cli/src/tui/testing/repl_command_tests.rs
+expression: h.render()
+---
+ > Read my config                                                               
+                                                                                
+ ● I'll read that for you.                                                      
+                                                                                
+ ● read_file                                                                    
+                                                                                
+ ● Your config contains a key-value pair.                                       
+                                                                                
+                                                                                
+ >                                                                              
+                                                                                
+▸ Plan │ ollama/llama3.2 │ Ready

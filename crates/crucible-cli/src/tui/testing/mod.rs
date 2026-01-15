@@ -59,6 +59,8 @@ mod markdown_property_tests;
 #[cfg(test)]
 mod popup_snapshot_tests;
 #[cfg(test)]
+mod repl_command_tests;
+#[cfg(test)]
 mod resize_edge_case_tests;
 #[cfg(test)]
 mod resize_tests;
