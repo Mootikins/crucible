@@ -6,6 +6,7 @@
 
 use crate::tui::{
     content_block::StreamBlock,
+    conversation_tree::{ConversationTree, TreeSummary},
     markdown::MarkdownRenderer,
     styles::{colors, indicators, presets},
 };
@@ -252,7 +253,10 @@ impl RenderCache {
 /// Holds the conversation history for rendering
 #[derive(Debug)]
 pub struct ConversationState {
+    /// Current visible conversation items (current branch of tree)
     items: VecDeque<ConversationItem>,
+    /// Full conversation tree with branching history (vim-style undo)
+    tree: ConversationTree,
     /// Maximum output lines to show per tool
     max_tool_output_lines: usize,
     /// Per-item render cache (RefCell for interior mutability during render)
@@ -269,6 +273,7 @@ impl ConversationState {
     pub fn new() -> Self {
         Self {
             items: VecDeque::new(),
+            tree: ConversationTree::new(),
             max_tool_output_lines: 3,
             cache: RefCell::new(RenderCache::new()),
         }
@@ -429,14 +434,17 @@ impl ConversationState {
     }
 
     pub fn push(&mut self, item: ConversationItem) {
+        self.tree.push(item.clone());
         self.items.push_back(item);
         self.cache.borrow_mut().on_item_added();
     }
 
     pub fn push_user_message(&mut self, content: impl Into<String>) {
-        self.items.push_back(ConversationItem::UserMessage {
+        let item = ConversationItem::UserMessage {
             content: content.into(),
-        });
+        };
+        self.tree.push(item.clone());
+        self.items.push_back(item);
         self.cache.borrow_mut().on_item_added();
     }
 
@@ -461,10 +469,12 @@ impl ConversationState {
 
         // For non-streaming messages, create a single prose block
         let blocks = vec![StreamBlock::prose(content.into())];
-        self.items.push_back(ConversationItem::AssistantMessage {
+        let item = ConversationItem::AssistantMessage {
             blocks,
             is_streaming: false,
-        });
+        };
+        self.tree.push(item.clone());
+        self.items.push_back(item);
         self.cache.borrow_mut().on_item_added();
     }
 
@@ -477,10 +487,12 @@ impl ConversationState {
             return;
         }
 
-        self.items.push_back(ConversationItem::AssistantMessage {
+        let item = ConversationItem::AssistantMessage {
             blocks: Vec::new(),
             is_streaming: true,
-        });
+        };
+        self.tree.push(item.clone());
+        self.items.push_back(item);
         self.cache.borrow_mut().on_item_added();
     }
 
@@ -792,11 +804,6 @@ impl ConversationState {
         None
     }
 
-    pub fn clear(&mut self) {
-        self.items.clear();
-        self.cache.borrow_mut().on_clear();
-    }
-
     /// Serialize the conversation to markdown format.
     ///
     /// Produces human-readable markdown with role prefixes:
@@ -871,14 +878,35 @@ impl ConversationState {
         md
     }
 
+    /// Rewind n items. Removed items preserved in history; new messages branch.
     pub fn rewind(&mut self, n: usize) -> usize {
-        let len = self.items.len();
-        let to_remove = n.min(len);
-        for _ in 0..to_remove {
-            self.items.pop_back();
+        let rewound = self.tree.rewind(n);
+
+        self.items.clear();
+        for item in self.tree.current_path() {
+            self.items.push_back(item.clone());
         }
+
         self.cache.borrow_mut().invalidate_all();
-        to_remove
+        rewound
+    }
+
+    pub fn tree_summary(&self) -> TreeSummary {
+        self.tree.tree_summary()
+    }
+
+    pub fn has_branches(&self) -> bool {
+        self.tree.has_branches()
+    }
+
+    pub fn render_tree_ascii(&self, max_lines: usize) -> String {
+        self.tree.render_ascii(max_lines)
+    }
+
+    pub fn clear(&mut self) {
+        self.items.clear();
+        self.tree.clear();
+        self.cache.borrow_mut().on_clear();
     }
 }
 

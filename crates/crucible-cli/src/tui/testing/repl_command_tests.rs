@@ -278,3 +278,59 @@ mod extended_repl_fixtures {
         assert_snapshot!("filter_write", h.render());
     }
 }
+
+// =============================================================================
+// Conversation tree branching tests
+// =============================================================================
+
+mod tree_branching_tests {
+    use super::*;
+
+    #[test]
+    fn rewind_creates_branches_on_new_messages() {
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::multi_turn());
+
+        assert_eq!(h.conversation_len(), 4);
+        assert!(!h.view.state().conversation.has_branches());
+
+        h.view.state_mut().conversation.rewind(2);
+        assert_eq!(h.conversation_len(), 2);
+
+        h.view
+            .state_mut()
+            .conversation
+            .push_user_message("A different question");
+        assert_eq!(h.conversation_len(), 3);
+        assert!(h.view.state().conversation.has_branches());
+
+        let summary = h.view.state().conversation.tree_summary();
+        assert_eq!(summary.total_nodes, 5);
+        assert_eq!(summary.current_depth, 3);
+        assert_eq!(summary.branch_points, 1);
+    }
+
+    #[test]
+    fn linear_conversation_has_no_branches() {
+        let h = Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(sessions::multi_turn());
+
+        assert!(!h.view.state().conversation.has_branches());
+        let summary = h.view.state().conversation.tree_summary();
+        assert_eq!(summary.total_nodes, 4);
+        assert_eq!(summary.branch_points, 0);
+    }
+
+    #[test]
+    fn tree_summary_tracks_depth() {
+        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT);
+
+        h.view.state_mut().conversation.push_user_message("Hello");
+        let s = h.view.state().conversation.tree_summary();
+        assert_eq!(s.current_depth, 1);
+        assert_eq!(s.total_nodes, 1);
+
+        h.view.state_mut().conversation.push_assistant_message("Hi");
+        let s = h.view.state().conversation.tree_summary();
+        assert_eq!(s.current_depth, 2);
+        assert_eq!(s.total_nodes, 2);
+    }
+}
