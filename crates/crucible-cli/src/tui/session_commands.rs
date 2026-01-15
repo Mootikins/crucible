@@ -155,6 +155,22 @@ pub fn open_session_in_editor(
     }
 }
 
+pub fn edit_in_editor(content: &str, mouse_mode_enabled: bool) -> Result<Option<String>> {
+    let temp_file = create_temp_file(content, "crucible-input")?;
+
+    match open_file_in_editor(&temp_file, mouse_mode_enabled)? {
+        EditorResult::Saved { .. } => {
+            let edited = std::fs::read_to_string(&temp_file)?;
+            let _ = std::fs::remove_file(&temp_file);
+            Ok(Some(edited.trim_end().to_string()))
+        }
+        EditorResult::Aborted | EditorResult::Failed => {
+            let _ = std::fs::remove_file(&temp_file);
+            Ok(None)
+        }
+    }
+}
+
 /// Drop to an interactive shell with a command displayed
 ///
 /// Instead of running the command directly, this spawns the user's shell
