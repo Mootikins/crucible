@@ -288,7 +288,7 @@ mod input_styles {
     }
 
     #[test]
-    fn input_repl_has_green_tint() {
+    fn input_repl_has_yellow_tint() {
         let style = presets::input_repl();
         assert_eq!(style.bg, Some(colors::INPUT_REPL_BG));
     }
