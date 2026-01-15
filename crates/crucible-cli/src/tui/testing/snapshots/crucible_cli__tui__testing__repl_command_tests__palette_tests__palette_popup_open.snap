@@ -1,0 +1,15 @@
+---
+source: crates/crucible-cli/src/tui/testing/repl_command_tests.rs
+expression: h.render()
+---
+                                                                                
+                                                                                
+> quit Exit the application                                                     
+  help Show keybindings and commands                                            
+  mode Cycle session mode                                                       
+  agent Switch agent backend                                                    
+  model Switch model (opens picker)                                             
+                                                                                
+ >                                                                              
+                                                                                
+▸ Plan │ ollama/llama3.2 │ Ready
