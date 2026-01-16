@@ -20,6 +20,8 @@ pub struct InkChatRunner {
     tick_rate: Duration,
     mode: ChatMode,
     focus: FocusContext,
+    workspace_files: Vec<String>,
+    kiln_notes: Vec<String>,
 }
 
 impl InkChatRunner {
@@ -29,11 +31,23 @@ impl InkChatRunner {
             tick_rate: Duration::from_millis(50),
             mode: ChatMode::Plan,
             focus: FocusContext::new(),
+            workspace_files: Vec::new(),
+            kiln_notes: Vec::new(),
         })
     }
 
     pub fn with_mode(mut self, mode: ChatMode) -> Self {
         self.mode = mode;
+        self
+    }
+
+    pub fn with_workspace_files(mut self, files: Vec<String>) -> Self {
+        self.workspace_files = files;
+        self
+    }
+
+    pub fn with_kiln_notes(mut self, notes: Vec<String>) -> Self {
+        self.kiln_notes = notes;
         self
     }
 
@@ -52,6 +66,13 @@ impl InkChatRunner {
         let mut app = InkChatApp::default();
         app.set_mode(self.mode);
         app.set_status("Connecting...");
+
+        if !self.workspace_files.is_empty() {
+            app.set_workspace_files(std::mem::take(&mut self.workspace_files));
+        }
+        if !self.kiln_notes.is_empty() {
+            app.set_kiln_notes(std::mem::take(&mut self.kiln_notes));
+        }
 
         let ctx = ViewContext::new(&self.focus);
         let tree = app.view(&ctx);
