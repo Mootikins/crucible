@@ -867,6 +867,9 @@ impl InkChatApp {
         let (tx, rx): (Sender<String>, Receiver<String>) = mpsc::channel();
         modal.output_receiver = Some(rx);
 
+        self.enter_alternate_screen();
+        self.shell_modal = Some(modal);
+
         let shell = if cfg!(windows) { "cmd" } else { "sh" };
         let shell_arg = if cfg!(windows) { "/C" } else { "-c" };
 
@@ -879,7 +882,9 @@ impl InkChatApp {
             .spawn()
         {
             Ok(mut child) => {
-                modal.child_pid = Some(child.id());
+                if let Some(ref mut modal) = self.shell_modal {
+                    modal.child_pid = Some(child.id());
+                }
 
                 let stdout = child.stdout.take();
                 let stderr = child.stderr.take();
@@ -887,11 +892,9 @@ impl InkChatApp {
                 std::thread::spawn(move || {
                     Self::stream_output(stdout, stderr, tx, child);
                 });
-
-                self.enter_alternate_screen();
-                self.shell_modal = Some(modal);
             }
             Err(e) => {
+                self.close_shell_modal();
                 self.error = Some(format!("Failed to execute command: {}", e));
             }
         }
@@ -1204,7 +1207,6 @@ impl InkChatApp {
         let content_height = term_height.saturating_sub(2);
 
         let header_bg = Color::Rgb(50, 55, 65);
-        let body_bg = Color::Rgb(30, 34, 42);
         let footer_bg = Color::Rgb(40, 44, 52);
 
         let header_text = format!(" {} ", modal.format_header());
@@ -1215,22 +1217,9 @@ impl InkChatApp {
         );
 
         let visible = modal.visible_lines(content_height);
-        let body_lines: Vec<Node> = visible
-            .iter()
-            .map(|line| {
-                let padding = " ".repeat(term_width.saturating_sub(line.chars().count()));
-                styled(format!("{}{}", line, padding), Style::new().bg(body_bg))
-            })
-            .collect();
+        let body_lines: Vec<Node> = visible.iter().map(|line| text(line.clone())).collect();
 
-        let empty_lines_needed = content_height.saturating_sub(visible.len());
-        let empty_line = " ".repeat(term_width);
-        let mut all_body_lines = body_lines;
-        for _ in 0..empty_lines_needed {
-            all_body_lines.push(styled(empty_line.clone(), Style::new().bg(body_bg)));
-        }
-
-        let body = col(all_body_lines);
+        let body = col(body_lines);
 
         let footer_text = format!(" {} ", modal.format_footer());
         let footer_padding = " ".repeat(term_width.saturating_sub(footer_text.len()));
@@ -1239,7 +1228,7 @@ impl InkChatApp {
             Style::new().bg(footer_bg).dim(),
         );
 
-        col([header, body, footer])
+        col([header, body, spacer(), footer])
     }
 
     fn format_tool_args(args: &str) -> String {
