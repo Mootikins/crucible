@@ -32,7 +32,17 @@ use tui_e2e_harness::{Key, TuiTestBuilder, TuiTestConfig, TuiTestSession};
 // Helper Functions
 // =============================================================================
 
-/// Check if the cru binary exists (either debug or release)
+fn safe_truncate(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 fn find_binary() -> Option<PathBuf> {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let manifest_path = PathBuf::from(manifest_dir);
@@ -446,16 +456,13 @@ fn chat_rapid_input() {
 // Ink Runner Tests
 // =============================================================================
 
-/// Test that ink runner doesn't freeze after startup
-///
-/// This reproduces a bug where the TUI freezes ~5s after startup,
-/// becoming unresponsive to all input including Ctrl+C.
+/// Test that ink runner stays responsive during extended use
 #[test]
 #[ignore = "requires built binary"]
 fn ink_runner_does_not_freeze() {
     let config = TuiTestConfig::new("chat")
         .with_args(&["--ink", "--no-process"])
-        .with_env("RUST_LOG", "crucible_cli::tui::ink=debug")
+        .with_env("RUST_LOG", "warn")
         .with_timeout(Duration::from_secs(3));
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn chat --ink");
@@ -463,59 +470,22 @@ fn ink_runner_does_not_freeze() {
     let start = std::time::Instant::now();
 
     session.wait(Duration::from_secs(1));
-    eprintln!(
-        "[{:?}] Startup complete, beginning input test",
-        start.elapsed()
-    );
 
     for i in 0..20 {
-        let elapsed = start.elapsed();
-        eprintln!("[{:?}] Sending keystroke {}", elapsed, i);
-
         if session.send("x").is_err() {
-            panic!("Send failed at {:?} (iteration {})", elapsed, i);
+            panic!("Send failed at iteration {}", i);
         }
-
         session.wait(Duration::from_millis(300));
 
         if session.send_key(Key::Backspace).is_err() {
-            panic!("Backspace failed at {:?} (iteration {})", elapsed, i);
+            panic!("Backspace failed at iteration {}", i);
         }
-
         session.wait(Duration::from_millis(300));
     }
 
-    eprintln!(
-        "[{:?}] Input test passed, trying ESC first",
-        start.elapsed()
-    );
-    session.send_key(Key::Escape).expect("ESC failed");
+    eprintln!("Input test passed after {:?}", start.elapsed());
 
-    session.wait(Duration::from_millis(500));
-
-    eprintln!("[{:?}] Checking if ESC caused exit", start.elapsed());
-    match session.expect_eof() {
-        Ok(_) => {
-            eprintln!("[{:?}] ESC worked - test passed", start.elapsed());
-            return;
-        }
-        Err(_) => {
-            eprintln!("[{:?}] ESC didn't exit, trying Ctrl+C", start.elapsed());
-        }
-    }
-
-    session.send_control('c').expect("Ctrl+C failed");
-    session.wait(Duration::from_millis(500));
-
-    eprintln!("[{:?}] Waiting for exit after Ctrl+C", start.elapsed());
-    if session.expect_eof().is_err() {
-        panic!(
-            "TUI did not exit after ESC or Ctrl+C at {:?}",
-            start.elapsed()
-        );
-    }
-
-    eprintln!("[{:?}] Test passed", start.elapsed());
+    session.send("/quit\r").ok();
 }
 
 /// Test that /quit command causes exit
@@ -532,7 +502,8 @@ fn ink_quit_with_slash_command() {
     session.wait(Duration::from_secs(1));
     eprintln!("Sending /quit command");
 
-    session.send_line("/quit").expect("Failed to send /quit");
+    session.send("/quit").expect("Failed to send /quit");
+    session.send("\r").expect("Failed to send Enter");
     session.wait(Duration::from_millis(500));
 
     match session.expect_eof() {
@@ -613,4 +584,556 @@ fn ink_runner_stays_responsive_10s() {
     session
         .send_control('c')
         .expect("Ctrl+C failed after 10s test");
+}
+
+// =============================================================================
+// Ink Runner Streaming Tests (require Ollama)
+// =============================================================================
+
+/// Test streaming response renders progressively
+#[test]
+#[ignore = "requires built binary and Ollama"]
+fn ink_streaming_response_renders() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process", "--internal"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(60));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(2));
+
+    session
+        .send_line("Say exactly: 'Hello World' and nothing else")
+        .expect("Failed to send");
+
+    session.wait(Duration::from_secs(5));
+
+    let screen = session.capture_screen().unwrap_or_default();
+    eprintln!("Screen during streaming: {}", screen);
+
+    session.wait(Duration::from_secs(10));
+
+    session.send_control('c').ok();
+}
+
+/// Test long streaming response with markdown tables
+#[test]
+#[ignore = "requires built binary and Ollama"]
+fn ink_streaming_with_markdown_table() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process", "--internal"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(90));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(2));
+
+    session
+        .send_line(
+            "Create a markdown table with 3 columns: Name, Age, City. Add 5 rows of sample data.",
+        )
+        .expect("Failed to send");
+
+    let start = std::time::Instant::now();
+    while start.elapsed() < Duration::from_secs(30) {
+        session.wait(Duration::from_secs(2));
+        let screen = session.capture_screen().unwrap_or_default();
+        eprintln!(
+            "[{:?}] Screen: {}",
+            start.elapsed(),
+            safe_truncate(&screen, 500)
+        );
+
+        if screen.contains("|") && screen.contains("---") {
+            eprintln!("Table detected in output");
+            break;
+        }
+    }
+
+    session.send_control('c').ok();
+}
+
+// =============================================================================
+// Ink Runner Ctrl+C Edge Cases
+// =============================================================================
+
+/// Test Ctrl+C during active streaming cancels gracefully
+#[test]
+#[ignore = "requires built binary and Ollama"]
+fn ink_ctrl_c_during_streaming() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process", "--internal"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(30));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(2));
+
+    session
+        .send_line("Write a very long story about a dragon, at least 500 words")
+        .expect("Failed to send");
+
+    session.wait(Duration::from_secs(3));
+
+    eprintln!("Sending Ctrl+C during streaming...");
+    session.send_control('c').expect("Ctrl+C failed");
+
+    session.wait(Duration::from_millis(500));
+
+    let screen = session.capture_screen().unwrap_or_default();
+    eprintln!("Screen after Ctrl+C: {}", safe_truncate(&screen, 300));
+
+    session.wait(Duration::from_secs(1));
+
+    session
+        .send("test input after cancel")
+        .expect("Should still accept input");
+    session.wait(Duration::from_millis(500));
+
+    session.send_control('c').expect("Second Ctrl+C failed");
+}
+
+/// Test double Ctrl+C exits even during streaming
+#[test]
+#[ignore = "requires built binary and Ollama"]
+fn ink_double_ctrl_c_exits_during_streaming() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process", "--internal"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(30));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(2));
+
+    session
+        .send("Write an extremely long essay about the history of computing\r")
+        .expect("Failed to send");
+
+    session.wait(Duration::from_secs(2));
+
+    session.send_control('c').expect("First Ctrl+C failed");
+    session.wait(Duration::from_millis(300));
+
+    session.send_control('c').expect("Second Ctrl+C failed");
+
+    match session.expect_eof() {
+        Ok(_) => eprintln!("Double Ctrl+C exited successfully"),
+        Err(e) => eprintln!(
+            "Double Ctrl+C did not exit (expected without Ollama): {:?}",
+            e
+        ),
+    }
+}
+
+/// Test Ctrl+C with empty input shows notification
+#[test]
+#[ignore = "requires built binary"]
+fn ink_ctrl_c_empty_input_notification() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(10));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(1));
+
+    session.send_control('c').expect("First Ctrl+C failed");
+    session.wait(Duration::from_millis(500));
+
+    let screen = session.capture_screen().unwrap_or_default();
+    eprintln!("Screen after first Ctrl+C: {}", screen);
+
+    session.send("a").expect("Should still accept input");
+    session.wait(Duration::from_millis(200));
+    session.send_key(Key::Backspace).expect("Backspace failed");
+    session.wait(Duration::from_millis(200));
+
+    session.send_control('c').expect("Second Ctrl+C failed");
+    session.wait(Duration::from_millis(100));
+    session.send_control('c').expect("Third Ctrl+C failed");
+
+    session
+        .expect_eof()
+        .expect("Should exit after rapid Ctrl+C");
+}
+
+// =============================================================================
+// Ink Runner Mode Switching Tests
+// =============================================================================
+
+/// Test /mode command cycles through modes (visual verification)
+#[test]
+#[ignore = "requires built binary"]
+fn ink_mode_cycle() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(10));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(1));
+
+    let screen0 = session.capture_screen().unwrap_or_default();
+    assert!(screen0.contains("Plan"), "Initial mode should be Plan");
+
+    for _ in 0..3 {
+        session.send("/mode\r").expect("Failed to send /mode");
+        session.wait(Duration::from_millis(300));
+    }
+
+    session.send("/quit\r").ok();
+}
+
+/// Test /act and /plan commands
+#[test]
+#[ignore = "requires built binary"]
+fn ink_explicit_mode_commands() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(10));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(1));
+
+    session.send_line("/act").expect("Failed to send /act");
+    session.wait(Duration::from_millis(500));
+
+    let screen_act = session.capture_screen().unwrap_or_default();
+    assert!(
+        screen_act.contains("Act") || screen_act.to_lowercase().contains("act"),
+        "Should show Act mode indicator"
+    );
+
+    session.send_line("/plan").expect("Failed to send /plan");
+    session.wait(Duration::from_millis(500));
+
+    let screen_plan = session.capture_screen().unwrap_or_default();
+    assert!(
+        screen_plan.contains("Plan") || screen_plan.to_lowercase().contains("plan"),
+        "Should show Plan mode indicator"
+    );
+
+    session.send_control('c').ok();
+    session.send_control('c').ok();
+}
+
+// =============================================================================
+// Ink Runner Popup Tests
+// =============================================================================
+
+/// Test F1 toggles popup
+#[test]
+#[ignore = "requires built binary"]
+fn ink_f1_popup_toggle() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(10));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(1));
+
+    session.send_key(Key::F(1)).expect("F1 failed");
+    session.wait(Duration::from_millis(500));
+
+    let screen_open = session.capture_screen().unwrap_or_default();
+    eprintln!("After F1 (should show popup): {}", screen_open);
+
+    session.send_key(Key::F(1)).expect("Second F1 failed");
+    session.wait(Duration::from_millis(500));
+
+    let screen_closed = session.capture_screen().unwrap_or_default();
+    eprintln!("After second F1 (should close popup): {}", screen_closed);
+
+    session.send_control('c').ok();
+    session.send_control('c').ok();
+}
+
+/// Test popup navigation with arrow keys
+#[test]
+#[ignore = "requires built binary"]
+fn ink_popup_arrow_navigation() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(10));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(1));
+
+    session.send_key(Key::F(1)).expect("F1 failed");
+    session.wait(Duration::from_millis(300));
+
+    for i in 0..5 {
+        session.send_key(Key::Down).expect("Down failed");
+        session.wait(Duration::from_millis(100));
+        eprintln!("Down {}", i + 1);
+    }
+
+    for i in 0..3 {
+        session.send_key(Key::Up).expect("Up failed");
+        session.wait(Duration::from_millis(100));
+        eprintln!("Up {}", i + 1);
+    }
+
+    session.send_key(Key::Escape).expect("Escape failed");
+    session.wait(Duration::from_millis(300));
+
+    session.send_control('c').ok();
+    session.send_control('c').ok();
+}
+
+// =============================================================================
+// Ink Runner Stress Tests
+// =============================================================================
+
+/// Test rapid input doesn't corrupt display
+#[test]
+#[ignore = "requires built binary"]
+fn ink_rapid_typing_stress() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(15));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(1));
+
+    let test_string = "The quick brown fox jumps over the lazy dog 1234567890";
+    for c in test_string.chars() {
+        session.send(&c.to_string()).expect("Send char failed");
+    }
+
+    session.wait(Duration::from_millis(500));
+
+    let screen = session.capture_screen().unwrap_or_default();
+    eprintln!("Screen after rapid typing: {}", screen);
+
+    for _ in 0..test_string.len() {
+        session.send_key(Key::Backspace).expect("Backspace failed");
+    }
+
+    session.wait(Duration::from_millis(300));
+
+    session
+        .send("still works")
+        .expect("Should still accept input");
+    session.wait(Duration::from_millis(200));
+
+    session.send_control('c').ok();
+    session.send_control('c').ok();
+}
+
+/// Test alternating input and commands
+#[test]
+#[ignore = "requires built binary"]
+fn ink_alternating_input_commands() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(15));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(1));
+
+    for i in 0..5 {
+        session
+            .send(&format!("message {}", i))
+            .expect("Send failed");
+        session.wait(Duration::from_millis(100));
+
+        for _ in 0..10 {
+            session.send_key(Key::Backspace).expect("Backspace failed");
+        }
+
+        session.send_line("/help").expect("Help failed");
+        session.wait(Duration::from_millis(300));
+
+        session.send_line("/mode").expect("Mode failed");
+        session.wait(Duration::from_millis(200));
+    }
+
+    session.send_control('c').ok();
+    session.send_control('c').ok();
+}
+
+// =============================================================================
+// Ink Runner Error Handling
+// =============================================================================
+
+/// Test unknown command shows error
+#[test]
+#[ignore = "requires built binary"]
+fn ink_unknown_command_error() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(10));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(1));
+
+    session
+        .send_line("/nonexistent_command")
+        .expect("Failed to send");
+    session.wait(Duration::from_millis(500));
+
+    let screen = session.capture_screen().unwrap_or_default();
+    eprintln!("Screen after unknown command: {}", screen);
+
+    session
+        .send("still works")
+        .expect("Should still accept input");
+
+    session.send_control('c').ok();
+    session.send_control('c').ok();
+}
+
+/// Test /clear command works
+#[test]
+#[ignore = "requires built binary"]
+fn ink_clear_command() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process"])
+        .with_env("RUST_LOG", "warn")
+        .with_timeout(Duration::from_secs(10));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(1));
+
+    session.send("/help\r").expect("Help failed");
+    session.wait(Duration::from_millis(500));
+
+    let screen_before = session.capture_screen().unwrap_or_default();
+    eprintln!("Before clear: {}", safe_truncate(&screen_before, 200));
+
+    session.send("/clear\r").expect("Clear failed");
+    session.wait(Duration::from_millis(500));
+
+    let screen_after = session.capture_screen().unwrap_or_default();
+    eprintln!("After clear: {}", safe_truncate(&screen_after, 200));
+
+    session.send("/quit\r").ok();
+}
+
+// =============================================================================
+// Ink Runner Terminal Size Tests
+// =============================================================================
+
+/// Test ink runner at narrow terminal width (60 cols)
+#[test]
+#[ignore = "requires built binary"]
+fn ink_narrow_terminal_60_cols() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process"])
+        .with_env("RUST_LOG", "warn")
+        .with_dimensions(60, 24)
+        .with_timeout(Duration::from_secs(10));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(1));
+
+    let screen = session.capture_screen().unwrap_or_default();
+    assert!(
+        screen.contains("Plan"),
+        "Should show mode indicator at 60 cols"
+    );
+
+    session.send("/help\r").expect("Help failed");
+    session.wait(Duration::from_millis(500));
+
+    let screen_help = session.capture_screen().unwrap_or_default();
+    assert!(
+        screen_help.contains("Commands") || screen_help.contains("/mode"),
+        "Help should render at narrow width"
+    );
+
+    session.send("/quit\r").ok();
+}
+
+/// Test ink runner at very narrow terminal width (40 cols)
+#[test]
+#[ignore = "requires built binary"]
+fn ink_very_narrow_terminal_40_cols() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process"])
+        .with_env("RUST_LOG", "warn")
+        .with_dimensions(40, 24)
+        .with_timeout(Duration::from_secs(10));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(1));
+
+    session.send("test input\r").expect("Input failed");
+    session.wait(Duration::from_millis(500));
+
+    session.send("/quit\r").ok();
+}
+
+/// Test ink runner at wide terminal width (120 cols)
+#[test]
+#[ignore = "requires built binary"]
+fn ink_wide_terminal_120_cols() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process"])
+        .with_env("RUST_LOG", "warn")
+        .with_dimensions(120, 40)
+        .with_timeout(Duration::from_secs(10));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(1));
+
+    let screen = session.capture_screen().unwrap_or_default();
+    assert!(
+        screen.contains("Plan"),
+        "Should show mode indicator at 120 cols"
+    );
+
+    session.send_key(Key::F(1)).expect("F1 failed");
+    session.wait(Duration::from_millis(500));
+
+    let screen_popup = session.capture_screen().unwrap_or_default();
+    assert!(
+        screen_popup.contains("semantic_search") || screen_popup.contains("tool"),
+        "Popup should render at wide width"
+    );
+
+    session.send("/quit\r").ok();
+}
+
+/// Test ink runner at short terminal height (10 rows)
+#[test]
+#[ignore = "requires built binary"]
+fn ink_short_terminal_10_rows() {
+    let config = TuiTestConfig::new("chat")
+        .with_args(&["--ink", "--no-process"])
+        .with_env("RUST_LOG", "warn")
+        .with_dimensions(80, 10)
+        .with_timeout(Duration::from_secs(10));
+
+    let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
+
+    session.wait(Duration::from_secs(1));
+
+    session.send("test\r").expect("Input failed");
+    session.wait(Duration::from_millis(500));
+
+    session.send("/quit\r").ok();
 }

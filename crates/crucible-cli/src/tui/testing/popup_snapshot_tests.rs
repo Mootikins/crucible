@@ -15,7 +15,10 @@ use insta::assert_snapshot;
 // =============================================================================
 
 mod snapshots {
-    use super::*;
+    use super::{registries, Harness, PopupKind, TEST_HEIGHT, TEST_WIDTH};
+    use crossterm::event::KeyCode;
+    use insta::assert_snapshot;
+    use test_case::test_case;
 
     #[test]
     fn popup_command_open() {
@@ -81,23 +84,16 @@ mod snapshots {
         assert_snapshot!("popup_mixed_items", h.render());
     }
 
-    #[test]
-    fn popup_navigation_second_item() {
+    #[test_case(1, "popup_navigation_second"; "navigate_to_second")]
+    #[test_case(2, "popup_navigation_third"; "navigate_to_third")]
+    fn popup_navigation(down_count: usize, snapshot_name: &str) {
         let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::standard_commands());
 
-        h.key(KeyCode::Down);
-        assert_snapshot!("popup_navigation_second", h.render());
-    }
-
-    #[test]
-    fn popup_navigation_third_item() {
-        let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
-            .with_popup_items(PopupKind::Command, registries::standard_commands());
-
-        h.key(KeyCode::Down);
-        h.key(KeyCode::Down);
-        assert_snapshot!("popup_navigation_third", h.render());
+        for _ in 0..down_count {
+            h.key(KeyCode::Down);
+        }
+        assert_snapshot!(snapshot_name, h.render());
     }
 
     #[test]
@@ -105,10 +101,9 @@ mod snapshots {
         let mut h = Harness::new(TEST_WIDTH, TEST_HEIGHT)
             .with_popup_items(PopupKind::Command, registries::minimal_commands());
 
-        // Go down past last item, should wrap (or stay at last)
-        h.key(KeyCode::Down);
-        h.key(KeyCode::Down);
-        h.key(KeyCode::Down); // past the 2 items
+        for _ in 0..3 {
+            h.key(KeyCode::Down);
+        }
         assert_snapshot!("popup_navigation_wrap", h.render());
     }
 
