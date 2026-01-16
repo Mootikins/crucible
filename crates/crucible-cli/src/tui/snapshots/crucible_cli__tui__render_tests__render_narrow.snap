@@ -1,0 +1,16 @@
+---
+source: crates/crucible-cli/src/tui/render_tests.rs
+expression: buffer_to_string(terminal.backend().buffer())
+---
+┌Streaming─────────────────────────────┐
+│                                      │
+│                                      │
+│                                      │
+│                                      │
+│                                      │
+│                                      │
+└──────────────────────────────────────┘
+┌Input─────────────────────────────────┐
+│[Plan] > input                        │
+└──────────────────────────────────────┘
+Mode: Plan │ Ready
