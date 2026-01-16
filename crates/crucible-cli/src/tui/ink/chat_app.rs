@@ -150,6 +150,7 @@ pub struct InkChatApp {
     popup_trigger_pos: usize,
     workspace_files: Vec<String>,
     kiln_notes: Vec<String>,
+    attached_context: Vec<String>,
     context_used: usize,
     context_total: usize,
     last_ctrl_c: Option<std::time::Instant>,
@@ -175,6 +176,7 @@ impl Default for InkChatApp {
             popup_trigger_pos: 0,
             workspace_files: Vec::new(),
             kiln_notes: Vec::new(),
+            attached_context: Vec::new(),
             context_used: 0,
             context_total: 128000,
             last_ctrl_c: None,
@@ -838,6 +840,13 @@ impl InkChatApp {
         };
         let ctx_str = format!("{}% ctx ", context_percent);
 
+        let attached_count = self.attached_context.len();
+        let attached_str = if attached_count > 0 {
+            format!("📎 {} ", attached_count)
+        } else {
+            String::new()
+        };
+
         let active_notification = self.notification.as_ref().and_then(|(msg, set_at)| {
             if set_at.elapsed() < NOTIFICATION_TIMEOUT {
                 Some(msg.as_str())
@@ -851,6 +860,7 @@ impl InkChatApp {
                 styled(mode_str.to_string(), mode_style.bold()),
                 styled(separator.to_string(), Style::new().fg(Color::DarkGray)),
                 styled(ctx_str, Style::new().fg(Color::DarkGray)),
+                styled(attached_str, Style::new().fg(Color::Cyan)),
                 spacer(),
                 styled(format!(" {} ", notif), Style::new().fg(Color::Yellow)),
             ])
@@ -859,6 +869,7 @@ impl InkChatApp {
                 styled(mode_str.to_string(), mode_style.bold()),
                 styled(separator.to_string(), Style::new().fg(Color::DarkGray)),
                 styled(ctx_str, Style::new().fg(Color::DarkGray)),
+                styled(attached_str, Style::new().fg(Color::Cyan)),
             ])
         }
     }
@@ -1030,6 +1041,11 @@ impl InkChatApp {
                 while self.input.cursor() > new_cursor {
                     self.input.handle(InputAction::Left);
                 }
+
+                let context_item = format!("@{}", label);
+                if !self.attached_context.contains(&context_item) {
+                    self.attached_context.push(context_item);
+                }
             }
             AutocompleteKind::Note => {
                 let content = self.input.content().to_string();
@@ -1046,6 +1062,11 @@ impl InkChatApp {
                 }
                 while self.input.cursor() > new_cursor {
                     self.input.handle(InputAction::Left);
+                }
+
+                let context_item = format!("[[{}]]", label);
+                if !self.attached_context.contains(&context_item) {
+                    self.attached_context.push(context_item);
                 }
             }
             AutocompleteKind::Command => {
