@@ -738,7 +738,7 @@ fn context_indicator_shows_after_file_attach() {
     let tree = view_with_default_ctx(&app);
     let output = render_to_string(&tree, 80);
     assert!(
-        output.contains("📎 1"),
+        output.contains("[+1]"),
         "Should show context indicator with count 1"
     );
 }
@@ -756,7 +756,7 @@ fn context_indicator_shows_after_note_attach() {
     let tree = view_with_default_ctx(&app);
     let output = render_to_string(&tree, 80);
     assert!(
-        output.contains("📎 1"),
+        output.contains("[+1]"),
         "Should show context indicator with count 1"
     );
 }
@@ -778,5 +778,5 @@ fn context_indicator_no_duplicates() {
 
     let tree = view_with_default_ctx(&app);
     let output = render_to_string(&tree, 80);
-    assert!(output.contains("📎 1"), "Should not count duplicates");
+    assert!(output.contains("[+1]"), "Should not count duplicates");
 }
