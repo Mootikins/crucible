@@ -223,8 +223,8 @@ fn chat_runner_new_creates_with_defaults() {
 
 #[test]
 fn chat_runner_with_mode_sets_initial_mode() {
+    // Just verifies with_mode chains without panicking
     let _runner = InkChatRunner::new().unwrap().with_mode(ChatMode::Act);
-    assert!(true, "with_mode should chain without error");
 }
 
 // =============================================================================

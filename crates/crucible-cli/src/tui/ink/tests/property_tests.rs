@@ -265,12 +265,12 @@ mod graduation_properties {
 
             for (i, key) in keys.iter().enumerate() {
                 if let Some(pos) = graduated_keys.iter().position(|k| k == key) {
-                    for j in 0..i {
-                        if let Some(prev_pos) = graduated_keys.iter().position(|k| k == &keys[j]) {
+                    for prev_key in keys.iter().take(i) {
+                        if let Some(prev_pos) = graduated_keys.iter().position(|k| k == prev_key) {
                             prop_assert!(
                                 prev_pos < pos,
                                 "Key '{}' at {} should come before '{}' at {}",
-                                keys[j], prev_pos, key, pos
+                                prev_key, prev_pos, key, pos
                             );
                         }
                     }
