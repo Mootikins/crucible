@@ -130,6 +130,12 @@ impl Terminal {
         Ok(())
     }
 
+    pub fn force_full_redraw(&mut self) -> io::Result<()> {
+        self.output.force_redraw();
+        self.graduation.clear();
+        Ok(())
+    }
+
     fn filter_graduated(&self, node: &Node) -> Node {
         match node {
             Node::Static(s) if self.graduation.is_graduated(&s.key) => Node::Empty,

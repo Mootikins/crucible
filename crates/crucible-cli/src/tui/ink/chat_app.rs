@@ -4,7 +4,9 @@ use crate::tui::ink::markdown::markdown_to_node_with_width;
 use crate::tui::ink::node::*;
 use crate::tui::ink::style::{Color, Gap, Style};
 use crossterm::event::KeyCode;
-use std::io::{BufRead, BufReader};
+use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::{cursor, execute};
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -253,7 +255,7 @@ impl ShellModal {
             format!("Ctrl+C: cancel  {}", line_info)
         } else {
             format!(
-                "s: send │ t: truncated │ e: edit │ Enter/Esc: dismiss  {}",
+                "s: send │ t: truncated │ e: edit │ q/Esc: quit  {}",
                 line_info
             )
         }
@@ -286,6 +288,7 @@ pub struct InkChatApp {
     shell_history: Vec<String>,
     shell_history_index: Option<usize>,
     session_dir: Option<PathBuf>,
+    needs_full_redraw: bool,
 }
 
 impl Default for InkChatApp {
@@ -316,6 +319,7 @@ impl Default for InkChatApp {
             shell_history: Vec::new(),
             shell_history_index: None,
             session_dir: None,
+            needs_full_redraw: false,
         }
     }
 }
@@ -538,6 +542,10 @@ impl InkChatApp {
             .as_ref()
             .map(|m| m.scroll_offset)
             .unwrap_or(0)
+    }
+
+    pub fn take_needs_full_redraw(&mut self) -> bool {
+        std::mem::take(&mut self.needs_full_redraw)
     }
 
     fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Action<ChatAppMsg> {
@@ -880,6 +888,7 @@ impl InkChatApp {
                     Self::stream_output(stdout, stderr, tx, child);
                 });
 
+                self.enter_alternate_screen();
                 self.shell_modal = Some(modal);
             }
             Err(e) => {
@@ -971,16 +980,16 @@ impl InkChatApp {
                     self.cancel_shell();
                 }
             }
-            KeyCode::Esc | KeyCode::Enter if !is_running => {
-                self.shell_modal = None;
+            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') if !is_running => {
+                self.close_shell_modal();
             }
             KeyCode::Char('s') if !is_running => {
                 self.send_shell_output(false);
-                self.shell_modal = None;
+                self.close_shell_modal();
             }
             KeyCode::Char('t') if !is_running => {
                 self.send_shell_output(true);
-                self.shell_modal = None;
+                self.close_shell_modal();
             }
             KeyCode::Char('e') if !is_running => {
                 self.open_shell_output_in_editor();
@@ -1046,6 +1055,24 @@ impl InkChatApp {
             modal.status = ShellStatus::Cancelled;
             modal.duration = Some(modal.start_time.elapsed());
         }
+    }
+
+    fn close_shell_modal(&mut self) {
+        self.shell_modal = None;
+        self.leave_alternate_screen();
+    }
+
+    fn enter_alternate_screen(&mut self) {
+        let mut stdout = std::io::stdout();
+        let _ = execute!(stdout, EnterAlternateScreen, cursor::Hide);
+        let _ = stdout.flush();
+    }
+
+    fn leave_alternate_screen(&mut self) {
+        let mut stdout = std::io::stdout();
+        let _ = execute!(stdout, LeaveAlternateScreen, cursor::Show);
+        let _ = stdout.flush();
+        self.needs_full_redraw = true;
     }
 
     fn save_shell_output(&mut self) -> Option<PathBuf> {
