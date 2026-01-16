@@ -208,3 +208,89 @@ impl TestRuntime {
         self.graduation.graduated_count()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn graduation_state_new_is_empty() {
+        let state = GraduationState::new();
+
+        assert_eq!(state.graduated_count(), 0);
+        assert!(state.stdout_content().is_empty());
+        assert!(!state.is_graduated("any-key"));
+    }
+
+    #[test]
+    fn is_graduated_returns_false_for_unknown() {
+        let state = GraduationState::new();
+
+        assert!(!state.is_graduated("unknown"));
+        assert!(!state.is_graduated(""));
+        assert!(!state.is_graduated("msg-1"));
+    }
+
+    #[test]
+    fn graduated_count_increments() {
+        use crate::tui::ink::node::{scrollback, text};
+
+        let mut state = GraduationState::new();
+
+        let tree1 = scrollback("msg-1", [text("First")]);
+        state.graduate(&tree1, 80).unwrap();
+        assert_eq!(state.graduated_count(), 1);
+
+        let tree2 = scrollback("msg-2", [text("Second")]);
+        state.graduate(&tree2, 80).unwrap();
+        assert_eq!(state.graduated_count(), 2);
+    }
+
+    #[test]
+    fn stdout_content_accumulates() {
+        use crate::tui::ink::node::{scrollback, text};
+
+        let mut state = GraduationState::new();
+
+        let tree1 = scrollback("msg-1", [text("Hello")]);
+        let graduated1 = state.graduate(&tree1, 80).unwrap();
+        state.flush_to_buffer(&graduated1);
+
+        assert!(state.stdout_content().contains("Hello"));
+
+        let tree2 = scrollback("msg-2", [text("World")]);
+        let graduated2 = state.graduate(&tree2, 80).unwrap();
+        state.flush_to_buffer(&graduated2);
+
+        let content = state.stdout_content();
+        assert!(content.contains("Hello"));
+        assert!(content.contains("World"));
+    }
+
+    #[test]
+    fn test_runtime_new() {
+        let runtime = TestRuntime::new(80, 24);
+
+        assert_eq!(runtime.graduated_count(), 0);
+        assert!(runtime.stdout_content().is_empty());
+        assert!(runtime.viewport_content().is_empty());
+    }
+
+    #[test]
+    fn test_runtime_filters_graduated_from_viewport() {
+        use crate::tui::ink::node::{col, scrollback, text};
+
+        let mut runtime = TestRuntime::new(80, 24);
+
+        let tree = col([
+            scrollback("old", [text("Old message")]),
+            text("Current content"),
+        ]);
+
+        runtime.render(&tree);
+
+        assert!(runtime.stdout_content().contains("Old message"));
+        assert!(!runtime.viewport_content().contains("Old message"));
+        assert!(runtime.viewport_content().contains("Current content"));
+    }
+}

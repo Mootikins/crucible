@@ -219,3 +219,238 @@ proptest! {
         );
     }
 }
+
+mod graduation_properties {
+    use crate::tui::ink::node::{col, scrollback, text, Node};
+    use crate::tui::ink::runtime::GraduationState;
+    use proptest::prelude::*;
+    use std::collections::HashSet;
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn graduation_keys_always_unique(keys in prop::collection::vec("[a-z]{3,10}", 1..20)) {
+            let mut state = GraduationState::new();
+
+            let nodes: Vec<Node> = keys
+                .iter()
+                .map(|k| scrollback(k.as_str(), [text(k.as_str())]))
+                .collect();
+
+            let tree = col(nodes);
+            let graduated = state.graduate(&tree, 80).unwrap();
+
+            let graduated_keys: HashSet<_> = graduated.iter().map(|g| &g.key).collect();
+            prop_assert_eq!(
+                graduated_keys.len(),
+                graduated.len(),
+                "All graduated keys should be unique"
+            );
+        }
+
+        #[test]
+        fn graduation_preserves_insertion_order(keys in prop::collection::vec("[a-z]{3,8}", 2..10)) {
+            let mut state = GraduationState::new();
+
+            let nodes: Vec<Node> = keys
+                .iter()
+                .map(|k| scrollback(k.as_str(), [text(k.as_str())]))
+                .collect();
+
+            let tree = col(nodes);
+            let graduated = state.graduate(&tree, 80).unwrap();
+
+            let graduated_keys: Vec<_> = graduated.iter().map(|g| g.key.clone()).collect();
+
+            for (i, key) in keys.iter().enumerate() {
+                if let Some(pos) = graduated_keys.iter().position(|k| k == key) {
+                    for j in 0..i {
+                        if let Some(prev_pos) = graduated_keys.iter().position(|k| k == &keys[j]) {
+                            prop_assert!(
+                                prev_pos < pos,
+                                "Key '{}' at {} should come before '{}' at {}",
+                                keys[j], prev_pos, key, pos
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+mod focus_properties {
+    use crate::tui::ink::focus::{FocusContext, FocusId};
+    use proptest::prelude::*;
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn focus_cycle_returns_to_start(count in 1usize..20) {
+            let mut ctx = FocusContext::new();
+
+            for i in 0..count {
+                ctx.register(FocusId::new(format!("item-{}", i)), false);
+            }
+
+            ctx.focus_next();
+            let first = ctx.active_id().map(|id| id.0.clone());
+
+            for _ in 0..count {
+                ctx.focus_next();
+            }
+
+            let after_cycle = ctx.active_id().map(|id| id.0.clone());
+            prop_assert_eq!(first, after_cycle, "Should return to start after full cycle");
+        }
+
+        #[test]
+        fn focus_prev_cycle_returns_to_start(count in 1usize..20) {
+            let mut ctx = FocusContext::new();
+
+            for i in 0..count {
+                ctx.register(FocusId::new(format!("item-{}", i)), false);
+            }
+
+            ctx.focus_next();
+            let first = ctx.active_id().map(|id| id.0.clone());
+
+            for _ in 0..count {
+                ctx.focus_prev();
+            }
+
+            let after_cycle = ctx.active_id().map(|id| id.0.clone());
+            prop_assert_eq!(first, after_cycle, "Should return to start after full reverse cycle");
+        }
+
+        #[test]
+        fn focus_order_maintained_after_operations(
+            item_count in 2usize..10,
+            op_count in 1usize..30
+        ) {
+            let mut ctx = FocusContext::new();
+
+            for i in 0..item_count {
+                ctx.register(FocusId::new(format!("item-{}", i)), false);
+            }
+
+            let initial_order: Vec<_> = ctx.focus_order().iter().map(|id| id.0.clone()).collect();
+
+            for i in 0..op_count {
+                if i % 2 == 0 {
+                    ctx.focus_next();
+                } else {
+                    ctx.focus_prev();
+                }
+            }
+
+            let final_order: Vec<_> = ctx.focus_order().iter().map(|id| id.0.clone()).collect();
+            prop_assert_eq!(initial_order, final_order, "Focus order should not change");
+        }
+    }
+}
+
+mod input_buffer_properties {
+    use crate::tui::ink::event::{InputAction, InputBuffer};
+    use proptest::prelude::*;
+
+    fn arb_input_action() -> impl Strategy<Value = InputAction> {
+        prop_oneof![
+            any::<char>()
+                .prop_filter("printable", |c| c.is_ascii_graphic() || *c == ' ')
+                .prop_map(InputAction::Insert),
+            Just(InputAction::Backspace),
+            Just(InputAction::Delete),
+            Just(InputAction::Left),
+            Just(InputAction::Right),
+            Just(InputAction::Home),
+            Just(InputAction::End),
+            Just(InputAction::Clear),
+        ]
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+
+        #[test]
+        fn input_buffer_cursor_always_valid(actions in prop::collection::vec(arb_input_action(), 1..100)) {
+            let mut buf = InputBuffer::new();
+
+            for action in actions {
+                buf.handle(action);
+
+                let cursor = buf.cursor();
+                let len = buf.content().len();
+
+                prop_assert!(
+                    cursor <= len,
+                    "Cursor {} should not exceed content length {}",
+                    cursor, len
+                );
+            }
+        }
+
+        #[test]
+        fn input_buffer_home_end_invariant(text in "[a-zA-Z ]{0,50}") {
+            let mut buf = InputBuffer::new();
+            buf.set_content(&text);
+
+            buf.handle(InputAction::Home);
+            prop_assert_eq!(buf.cursor(), 0, "Home should move cursor to 0");
+
+            buf.handle(InputAction::End);
+            prop_assert_eq!(buf.cursor(), text.len(), "End should move cursor to end");
+        }
+
+        #[test]
+        fn input_buffer_clear_resets_state(text in "[a-zA-Z ]{1,50}") {
+            let mut buf = InputBuffer::new();
+            buf.set_content(&text);
+            buf.handle(InputAction::Left);
+            buf.handle(InputAction::Left);
+
+            buf.handle(InputAction::Clear);
+
+            prop_assert!(buf.content().is_empty(), "Content should be empty after clear");
+            prop_assert_eq!(buf.cursor(), 0, "Cursor should be 0 after clear");
+        }
+    }
+}
+
+mod chat_mode_properties {
+    use crate::tui::ink::chat_app::ChatMode;
+    use proptest::prelude::*;
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+
+        #[test]
+        fn chat_mode_cycle_returns_to_start(cycles in 1usize..10) {
+            let start = ChatMode::Plan;
+            let mut mode = start;
+
+            for _ in 0..(cycles * 3) {
+                mode = mode.cycle();
+            }
+
+            prop_assert_eq!(
+                mode, start,
+                "After {} complete cycles, should return to start",
+                cycles
+            );
+        }
+
+        #[test]
+        fn chat_mode_parse_roundtrip(mode_str in "(plan|act|auto)") {
+            let parsed = ChatMode::parse(&mode_str);
+            let back_to_str = parsed.as_str();
+
+            prop_assert_eq!(
+                mode_str, back_to_str,
+                "Parse and as_str should roundtrip"
+            );
+        }
+    }
+}
