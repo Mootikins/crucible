@@ -73,9 +73,45 @@ mod table_tests;
 mod theme_tests;
 #[cfg(test)]
 mod tool_call_tests;
+#[cfg(test)]
+mod viewport_property_tests;
 
 pub use harness::{Harness, StreamingHarness, TimelineEntry};
 pub use state_builder::{
     render_to_terminal, test_terminal, test_terminal_sized, TestStateBuilder, TEST_HEIGHT,
     TEST_WIDTH,
 };
+
+use crate::tui::conversation::ConversationItem;
+use crate::tui::state::PopupKind;
+
+pub fn harness() -> Harness {
+    Harness::new(TEST_WIDTH, TEST_HEIGHT)
+}
+
+pub fn harness_with_commands() -> Harness {
+    Harness::new(TEST_WIDTH, TEST_HEIGHT)
+        .with_popup_items(PopupKind::Command, fixtures::standard_commands())
+}
+
+pub fn harness_with_agents() -> Harness {
+    Harness::new(TEST_WIDTH, TEST_HEIGHT)
+        .with_popup_items(PopupKind::AgentOrFile, fixtures::test_agents())
+}
+
+pub fn harness_with_repl_commands() -> Harness {
+    Harness::new(TEST_WIDTH, TEST_HEIGHT)
+        .with_popup_items(PopupKind::ReplCommand, fixtures::test_repl_commands())
+}
+
+pub fn harness_with_session(items: Vec<ConversationItem>) -> Harness {
+    Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(items)
+}
+
+pub fn harness_with_basic_session() -> Harness {
+    Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(fixtures::basic_exchange())
+}
+
+pub fn harness_with_tool_calls() -> Harness {
+    Harness::new(TEST_WIDTH, TEST_HEIGHT).with_session(fixtures::with_tool_calls())
+}
