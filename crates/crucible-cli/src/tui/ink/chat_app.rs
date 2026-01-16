@@ -92,6 +92,41 @@ impl ChatMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InputMode {
+    #[default]
+    Normal,
+    Command,
+    Shell,
+}
+
+impl InputMode {
+    pub fn color(&self) -> Color {
+        match self {
+            InputMode::Normal => Color::White,
+            InputMode::Command => Color::Yellow,
+            InputMode::Shell => Color::Red,
+        }
+    }
+
+    pub fn prompt(&self) -> &'static str {
+        match self {
+            InputMode::Normal => " > ",
+            InputMode::Command => " : ",
+            InputMode::Shell => " ! ",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AutocompleteKind {
+    #[default]
+    None,
+    File,
+    Note,
+    Command,
+}
+
 #[derive(Debug, Clone, Default)]
 struct StreamingState {
     content: String,
@@ -110,6 +145,11 @@ pub struct InkChatApp {
     on_submit: Option<Box<dyn Fn(String) + Send + Sync>>,
     show_popup: bool,
     popup_selected: usize,
+    popup_kind: AutocompleteKind,
+    popup_filter: String,
+    popup_trigger_pos: usize,
+    workspace_files: Vec<String>,
+    kiln_notes: Vec<String>,
     context_used: usize,
     context_total: usize,
     last_ctrl_c: Option<std::time::Instant>,
@@ -130,6 +170,11 @@ impl Default for InkChatApp {
             on_submit: None,
             show_popup: false,
             popup_selected: 0,
+            popup_kind: AutocompleteKind::None,
+            popup_filter: String::new(),
+            popup_trigger_pos: 0,
+            workspace_files: Vec::new(),
+            kiln_notes: Vec::new(),
             context_used: 0,
             context_total: 128000,
             last_ctrl_c: None,
@@ -294,6 +339,14 @@ impl InkChatApp {
         self.status = status.into();
     }
 
+    pub fn set_workspace_files(&mut self, files: Vec<String>) {
+        self.workspace_files = files;
+    }
+
+    pub fn set_kiln_notes(&mut self, notes: Vec<String>) {
+        self.kiln_notes = notes;
+    }
+
     pub fn is_streaming(&self) -> bool {
         self.streaming.active
     }
@@ -306,7 +359,15 @@ impl InkChatApp {
         self.error = None;
 
         if key.code == KeyCode::F(1) {
-            self.show_popup = !self.show_popup;
+            if self.show_popup {
+                self.show_popup = false;
+                self.popup_kind = AutocompleteKind::None;
+                self.popup_filter.clear();
+            } else {
+                self.show_popup = true;
+                self.popup_kind = AutocompleteKind::Command;
+                self.popup_filter.clear();
+            }
             self.popup_selected = 0;
             return Action::Continue;
         }
@@ -344,27 +405,88 @@ impl InkChatApp {
             return self.handle_submit(submitted);
         }
 
+        self.check_autocomplete_trigger();
+
         Action::Continue
+    }
+
+    fn check_autocomplete_trigger(&mut self) {
+        let content = self.input.content();
+        let cursor = self.input.cursor();
+
+        if let Some((kind, trigger_pos, filter)) = self.detect_trigger(content, cursor) {
+            self.popup_kind = kind;
+            self.popup_trigger_pos = trigger_pos;
+            self.popup_filter = filter;
+            self.show_popup = true;
+            self.popup_selected = 0;
+        } else if self.popup_kind != AutocompleteKind::None {
+            self.popup_kind = AutocompleteKind::None;
+            self.popup_filter.clear();
+            self.show_popup = false;
+        }
+    }
+
+    fn detect_trigger(
+        &self,
+        content: &str,
+        cursor: usize,
+    ) -> Option<(AutocompleteKind, usize, String)> {
+        let before_cursor = &content[..cursor];
+
+        if let Some(at_pos) = before_cursor.rfind('@') {
+            let after_at = &before_cursor[at_pos + 1..];
+            if !after_at.contains(char::is_whitespace) {
+                return Some((AutocompleteKind::File, at_pos, after_at.to_string()));
+            }
+        }
+
+        if let Some(bracket_pos) = before_cursor.rfind("[[") {
+            let after_bracket = &before_cursor[bracket_pos + 2..];
+            if !after_bracket.contains("]]") {
+                return Some((
+                    AutocompleteKind::Note,
+                    bracket_pos,
+                    after_bracket.to_string(),
+                ));
+            }
+        }
+
+        None
     }
 
     fn handle_popup_key(&mut self, key: crossterm::event::KeyEvent) -> Action<ChatAppMsg> {
         match key.code {
             KeyCode::Esc => {
                 self.show_popup = false;
+                self.popup_kind = AutocompleteKind::None;
+                self.popup_filter.clear();
             }
             KeyCode::Up => {
                 self.popup_selected = self.popup_selected.saturating_sub(1);
             }
             KeyCode::Down => {
-                let max = self.demo_popup_items().len().saturating_sub(1);
+                let max = self.get_popup_items().len().saturating_sub(1);
                 self.popup_selected = (self.popup_selected + 1).min(max);
             }
-            KeyCode::Enter => {
-                let items = self.demo_popup_items();
+            KeyCode::Enter | KeyCode::Tab => {
+                let items = self.get_popup_items();
                 if let Some(item) = items.get(self.popup_selected) {
-                    self.status = format!("Selected: {}", item.0);
+                    let label = item.label.clone();
+                    self.insert_autocomplete_selection(&label);
                 }
-                self.show_popup = false;
+            }
+            KeyCode::Backspace => {
+                if self.popup_filter.is_empty() {
+                    self.show_popup = false;
+                    self.popup_kind = AutocompleteKind::None;
+                }
+                self.input.handle(InputAction::Backspace);
+                self.check_autocomplete_trigger();
+            }
+            KeyCode::Char(c) => {
+                self.input.handle(InputAction::Insert(c));
+                self.check_autocomplete_trigger();
             }
             _ => {}
         }
@@ -749,21 +871,37 @@ impl InkChatApp {
         col([text(""), top_edge, content_line, bottom_edge])
     }
 
+    fn detect_input_mode(&self) -> InputMode {
+        let content = self.input.content();
+        if content.starts_with(':') {
+            InputMode::Command
+        } else if content.starts_with('!') {
+            InputMode::Shell
+        } else {
+            InputMode::Normal
+        }
+    }
+
     fn render_input(&self, ctx: &ViewContext<'_>) -> Node {
         let width = terminal_width();
         let is_focused = ctx.is_focused(FOCUS_INPUT);
-        let prompt_style = match self.mode {
-            ChatMode::Plan => Style::new().fg(Color::Blue).bg(INPUT_BG),
-            ChatMode::Act => Style::new().fg(Color::Green).bg(INPUT_BG),
-            ChatMode::Auto => Style::new().fg(Color::Yellow).bg(INPUT_BG),
-        };
+        let input_mode = self.detect_input_mode();
+
+        let prompt = input_mode.prompt();
+        let prompt_color = input_mode.color();
+        let prompt_style = Style::new().fg(prompt_color).bg(INPUT_BG);
 
         let top_edge = styled("▄".repeat(width), Style::new().fg(INPUT_BG));
         let bottom_edge = styled("▀".repeat(width), Style::new().fg(INPUT_BG));
 
-        let prompt = " > ";
         let content = self.input.content();
-        let used_width = prompt.len() + content.len() + 1;
+        let display_content = match input_mode {
+            InputMode::Command => content.strip_prefix(':').unwrap_or(content),
+            InputMode::Shell => content.strip_prefix('!').unwrap_or(content),
+            InputMode::Normal => content,
+        };
+
+        let used_width = prompt.len() + display_content.len() + 1;
         let padding = " ".repeat(width.saturating_sub(used_width));
 
         let input_node = col([
@@ -771,8 +909,14 @@ impl InkChatApp {
             row([
                 styled(prompt, prompt_style),
                 Node::Input(crate::tui::ink::node::InputNode {
-                    value: content.to_string(),
-                    cursor: self.input.cursor(),
+                    value: display_content.to_string(),
+                    cursor: self.input.cursor().saturating_sub(
+                        if matches!(input_mode, InputMode::Command | InputMode::Shell) {
+                            1
+                        } else {
+                            0
+                        },
+                    ),
                     placeholder: None,
                     style: Style::new().bg(INPUT_BG),
                     focused: is_focused,
@@ -785,33 +929,125 @@ impl InkChatApp {
         focusable_auto(FOCUS_INPUT, input_node)
     }
 
-    fn demo_popup_items(&self) -> Vec<(&'static str, &'static str, &'static str)> {
-        vec![
-            ("semantic_search", "Search notes by meaning", "tool"),
-            ("create_note", "Create a new note", "tool"),
-            ("get_outlinks", "Get outgoing links", "tool"),
-            ("get_inlinks", "Get incoming links", "tool"),
-            ("list_notes", "List all notes", "tool"),
-            ("/mode", "Cycle chat mode", "command"),
-            ("/clear", "Clear history", "command"),
-            ("/help", "Show help", "command"),
-        ]
+    fn get_popup_items(&self) -> Vec<PopupItemNode> {
+        let filter = self.popup_filter.to_lowercase();
+
+        match self.popup_kind {
+            AutocompleteKind::File => self
+                .workspace_files
+                .iter()
+                .filter(|f| filter.is_empty() || f.to_lowercase().contains(&filter))
+                .take(15)
+                .map(|f| PopupItemNode {
+                    label: f.clone(),
+                    description: None,
+                    kind: Some("file".to_string()),
+                })
+                .collect(),
+            AutocompleteKind::Note => self
+                .kiln_notes
+                .iter()
+                .filter(|n| filter.is_empty() || n.to_lowercase().contains(&filter))
+                .take(15)
+                .map(|n| PopupItemNode {
+                    label: n.clone(),
+                    description: None,
+                    kind: Some("note".to_string()),
+                })
+                .collect(),
+            AutocompleteKind::Command => vec![
+                PopupItemNode {
+                    label: "semantic_search".to_string(),
+                    description: Some("Search notes by meaning".to_string()),
+                    kind: Some("tool".to_string()),
+                },
+                PopupItemNode {
+                    label: "create_note".to_string(),
+                    description: Some("Create a new note".to_string()),
+                    kind: Some("tool".to_string()),
+                },
+                PopupItemNode {
+                    label: "/mode".to_string(),
+                    description: Some("Cycle chat mode".to_string()),
+                    kind: Some("command".to_string()),
+                },
+                PopupItemNode {
+                    label: "/clear".to_string(),
+                    description: Some("Clear history".to_string()),
+                    kind: Some("command".to_string()),
+                },
+                PopupItemNode {
+                    label: "/help".to_string(),
+                    description: Some("Show help".to_string()),
+                    kind: Some("command".to_string()),
+                },
+            ]
+            .into_iter()
+            .filter(|c| filter.is_empty() || c.label.to_lowercase().contains(&filter))
+            .collect(),
+            AutocompleteKind::None => vec![],
+        }
     }
 
     fn render_popup(&self) -> Node {
-        when(self.show_popup, {
-            let items: Vec<PopupItemNode> = self
-                .demo_popup_items()
-                .into_iter()
-                .map(|(label, desc, kind)| PopupItemNode {
-                    label: label.to_string(),
-                    description: Some(desc.to_string()),
-                    kind: Some(kind.to_string()),
-                })
-                .collect();
+        when(
+            self.show_popup && self.popup_kind != AutocompleteKind::None,
+            {
+                let items = self.get_popup_items();
+                if items.is_empty() {
+                    Node::Empty
+                } else {
+                    focusable(FOCUS_POPUP, popup(items, self.popup_selected, 10))
+                }
+            },
+        )
+    }
 
-            focusable(FOCUS_POPUP, popup(items, self.popup_selected, 10))
-        })
+    fn insert_autocomplete_selection(&mut self, label: &str) {
+        match self.popup_kind {
+            AutocompleteKind::File => {
+                let content = self.input.content().to_string();
+                let trigger_pos = self.popup_trigger_pos;
+                let prefix = &content[..trigger_pos];
+                let replacement = format!("@{} ", label);
+                let suffix = &content[self.input.cursor()..];
+                let new_content = format!("{}{}{}", prefix, replacement, suffix);
+                let new_cursor = prefix.len() + replacement.len();
+
+                self.input.handle(InputAction::Clear);
+                for ch in new_content.chars() {
+                    self.input.handle(InputAction::Insert(ch));
+                }
+                while self.input.cursor() > new_cursor {
+                    self.input.handle(InputAction::Left);
+                }
+            }
+            AutocompleteKind::Note => {
+                let content = self.input.content().to_string();
+                let trigger_pos = self.popup_trigger_pos;
+                let prefix = &content[..trigger_pos];
+                let replacement = format!("[[{}]] ", label);
+                let suffix = &content[self.input.cursor()..];
+                let new_content = format!("{}{}{}", prefix, replacement, suffix);
+                let new_cursor = prefix.len() + replacement.len();
+
+                self.input.handle(InputAction::Clear);
+                for ch in new_content.chars() {
+                    self.input.handle(InputAction::Insert(ch));
+                }
+                while self.input.cursor() > new_cursor {
+                    self.input.handle(InputAction::Left);
+                }
+            }
+            AutocompleteKind::Command => {
+                self.status = format!("Selected: {}", label);
+            }
+            AutocompleteKind::None => {}
+        }
+
+        self.popup_kind = AutocompleteKind::None;
+        self.show_popup = false;
+        self.popup_filter.clear();
     }
 }
 

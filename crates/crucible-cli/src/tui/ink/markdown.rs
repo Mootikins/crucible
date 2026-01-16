@@ -646,13 +646,13 @@ fn text_node(content: &str) -> Node {
 }
 
 fn normalize_br_tags(input: &str) -> String {
+    use once_cell::sync::Lazy;
     use regex::Regex;
-    use std::sync::LazyLock;
 
     // (?i)<br\s*/?\s*> matches <br>, <br/>, <br />, <BR>, etc.
     // Replace with "  \n" (two trailing spaces = markdown Hardbreak)
-    static BR_REGEX: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"(?i)<br\s*/?\s*>").expect("valid regex"));
+    static BR_REGEX: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"(?i)<br\s*/?\s*>").expect("valid regex"));
 
     BR_REGEX.replace_all(input, "  \n").into_owned()
 }
