@@ -61,7 +61,17 @@ pub mod widgets;
 #[cfg(test)]
 mod conversation_ordering_tests;
 #[cfg(test)]
+mod history_manager_tests;
+#[cfg(test)]
+mod input_mode_manager_tests;
+#[cfg(test)]
+mod render_tests;
+#[cfg(test)]
 mod selection_bug_reproduction;
+#[cfg(test)]
+mod selection_manager_tests;
+#[cfg(test)]
+mod streaming_manager_tests;
 
 pub use action_dispatch::{
     dispatch, popup_item_to_effect, ContextResolver, DefaultContextResolver, DialogEffect,
