@@ -218,9 +218,11 @@ impl InkChatRunner {
                 if let Event::Key(key) = &ev {
                     if key.code == crossterm::event::KeyCode::Enter && active_stream.is_none() {
                         let content = app.input_content().to_string();
-                        if !content.trim().is_empty()
-                            && !content.starts_with('/')
-                            && !content.starts_with(':')
+                        let trimmed = content.trim();
+                        if !trimmed.is_empty()
+                            && !trimmed.starts_with('/')
+                            && !trimmed.starts_with(':')
+                            && !trimmed.starts_with('!')
                         {
                             bridge.ring.push(SessionEvent::MessageReceived {
                                 content: content.clone(),

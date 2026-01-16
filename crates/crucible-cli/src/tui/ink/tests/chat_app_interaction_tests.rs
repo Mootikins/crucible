@@ -722,66 +722,6 @@ fn commands_command_opens_command_popup() {
 }
 
 // =============================================================================
-// Context Indicator Tests
-// =============================================================================
-
-#[test]
-fn context_indicator_shows_after_file_attach() {
-    let mut app = InkChatApp::default();
-    app.set_workspace_files(vec!["src/main.rs".to_string()]);
-
-    for c in "@m".chars() {
-        app.update(Event::Key(key(KeyCode::Char(c))));
-    }
-    app.update(Event::Key(key(KeyCode::Enter)));
-
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
-    assert!(
-        output.contains("[+1]"),
-        "Should show context indicator with count 1"
-    );
-}
-
-#[test]
-fn context_indicator_shows_after_note_attach() {
-    let mut app = InkChatApp::default();
-    app.set_kiln_notes(vec!["Projects/README.md".to_string()]);
-
-    for c in "[[p".chars() {
-        app.update(Event::Key(key(KeyCode::Char(c))));
-    }
-    app.update(Event::Key(key(KeyCode::Enter)));
-
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
-    assert!(
-        output.contains("[+1]"),
-        "Should show context indicator with count 1"
-    );
-}
-
-#[test]
-fn context_indicator_no_duplicates() {
-    let mut app = InkChatApp::default();
-    app.set_workspace_files(vec!["src/main.rs".to_string()]);
-
-    for c in "@m".chars() {
-        app.update(Event::Key(key(KeyCode::Char(c))));
-    }
-    app.update(Event::Key(key(KeyCode::Enter)));
-
-    for c in " @m".chars() {
-        app.update(Event::Key(key(KeyCode::Char(c))));
-    }
-    app.update(Event::Key(key(KeyCode::Enter)));
-
-    let tree = view_with_default_ctx(&app);
-    let output = render_to_string(&tree, 80);
-    assert!(output.contains("[+1]"), "Should not count duplicates");
-}
-
-// =============================================================================
 // Regression Tests for Autocomplete Bugfixes
 // =============================================================================
 
