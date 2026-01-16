@@ -1,0 +1,18 @@
+---
+source: crates/crucible-cli/src/tui/ink/tests/chat_app_snapshot_tests.rs
+expression: render_app(&app)
+---
+
+
+ ▸ tool semantic_search  Search notes by meaning                               
+   tool create_note  Create a new note                                         
+   tool get_outlinks  Get outgoing links                                       
+   tool get_inlinks  Get incoming links                                        
+   tool list_notes  List all notes                                             
+   command /mode  Cycle chat mode                                              
+   command /clear  Clear history                                               
+   command /help  Show help                                                    
+▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+ >                                                                              
+▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+ Plan │ 0% ctx

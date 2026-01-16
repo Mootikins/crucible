@@ -113,7 +113,7 @@ pub struct InkChatApp {
     context_used: usize,
     context_total: usize,
     last_ctrl_c: Option<std::time::Instant>,
-    notification: Option<String>,
+    notification: Option<(String, std::time::Instant)>,
 }
 
 impl Default for InkChatApp {
@@ -137,6 +137,8 @@ impl Default for InkChatApp {
         }
     }
 }
+
+const NOTIFICATION_TIMEOUT: Duration = Duration::from_secs(2);
 
 impl App for InkChatApp {
     type Msg = ChatAppMsg;
@@ -331,11 +333,10 @@ impl InkChatApp {
                 }
             }
             self.last_ctrl_c = Some(now);
-            self.notification = Some("Ctrl+C again to quit".to_string());
+            self.notification = Some(("Ctrl+C again to quit".to_string(), now));
             return Action::Continue;
         } else {
             self.last_ctrl_c = None;
-            self.notification = None;
         }
 
         let action = InputAction::from(key);
@@ -691,7 +692,7 @@ impl InkChatApp {
             ChatMode::Auto => Style::new().fg(Color::Yellow),
         };
 
-        let separator = styled(" │ ", Style::new().fg(Color::DarkGray));
+        let separator = " │ ";
 
         let context_percent = if self.context_total > 0 {
             (self.context_used as f64 / self.context_total as f64 * 100.0).round() as usize
@@ -699,30 +700,35 @@ impl InkChatApp {
             0
         };
 
-        let left = row([
-            styled(
-                match self.mode {
-                    ChatMode::Plan => " Plan",
-                    ChatMode::Act => " Act",
-                    ChatMode::Auto => " Auto",
-                },
-                mode_style.bold(),
-            ),
-            separator,
-            styled(
-                format!("{}% ctx", context_percent),
-                Style::new().fg(Color::DarkGray),
-            ),
-        ]);
+        let mode_str = match self.mode {
+            ChatMode::Plan => " Plan",
+            ChatMode::Act => " Act",
+            ChatMode::Auto => " Auto",
+        };
+        let ctx_str = format!("{}% ctx ", context_percent);
 
-        if let Some(ref notif) = self.notification {
+        let active_notification = self.notification.as_ref().and_then(|(msg, set_at)| {
+            if set_at.elapsed() < NOTIFICATION_TIMEOUT {
+                Some(msg.as_str())
+            } else {
+                None
+            }
+        });
+
+        if let Some(notif) = active_notification {
             row([
-                left,
+                styled(mode_str.to_string(), mode_style.bold()),
+                styled(separator.to_string(), Style::new().fg(Color::DarkGray)),
+                styled(ctx_str, Style::new().fg(Color::DarkGray)),
                 spacer(),
-                styled(format!("{} ", notif), Style::new().fg(Color::Yellow)),
+                styled(format!(" {} ", notif), Style::new().fg(Color::Yellow)),
             ])
         } else {
-            left
+            row([
+                styled(mode_str.to_string(), mode_style.bold()),
+                styled(separator.to_string(), Style::new().fg(Color::DarkGray)),
+                styled(ctx_str, Style::new().fg(Color::DarkGray)),
+            ])
         }
     }
 
@@ -818,6 +824,8 @@ fn terminal_width() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::ink::focus::FocusContext;
+    use crate::tui::ink::render::render_to_string;
 
     #[test]
     fn test_mode_cycle() {
@@ -1015,5 +1023,82 @@ mod tests {
             !formatted.contains('\n'),
             "should not contain literal newlines"
         );
+    }
+
+    #[test]
+    fn test_format_tool_args_empty_object() {
+        let formatted = InkChatApp::format_tool_args("{}");
+        assert!(formatted.is_empty());
+    }
+
+    #[test]
+    fn test_format_tool_args_truncates_long_values() {
+        let long_val = "a".repeat(100);
+        let args = format!(r#"{{"content":"{}"}}"#, long_val);
+        let formatted = InkChatApp::format_tool_args(&args);
+
+        assert!(formatted.contains("…"), "Long values should be truncated");
+        assert!(
+            formatted.len() < 100,
+            "Formatted output should be shorter than input"
+        );
+    }
+
+    #[test]
+    fn test_context_usage_updates() {
+        let mut app = InkChatApp::init();
+
+        app.on_message(ChatAppMsg::ContextUsage {
+            used: 64000,
+            total: 128000,
+        });
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        let output = render_to_string(&tree, 80);
+
+        assert!(output.contains("50%"), "Should show 50% context usage");
+    }
+
+    #[test]
+    fn test_context_percentage_zero_total() {
+        let mut app = InkChatApp::init();
+
+        app.on_message(ChatAppMsg::ContextUsage {
+            used: 1000,
+            total: 0,
+        });
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        let output = render_to_string(&tree, 80);
+
+        assert!(output.contains("0%"), "Should show 0% when total is 0");
+    }
+
+    #[test]
+    fn test_status_shows_mode_indicator() {
+        let mut app = InkChatApp::init();
+        app.set_mode(ChatMode::Act);
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        let output = render_to_string(&tree, 80);
+
+        assert!(output.contains("Act"), "Status should show Act mode");
+    }
+
+    #[test]
+    fn test_error_message_clears_streaming() {
+        let mut app = InkChatApp::init();
+
+        app.on_message(ChatAppMsg::TextDelta("partial response".to_string()));
+        assert!(app.is_streaming());
+
+        app.on_message(ChatAppMsg::Error("Connection lost".to_string()));
+        assert!(!app.is_streaming(), "Error should stop streaming");
     }
 }
