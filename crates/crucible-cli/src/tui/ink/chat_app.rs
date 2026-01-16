@@ -16,6 +16,28 @@ const BULLET_PREFIX_WIDTH: usize = BULLET_PREFIX.len();
 const FOCUS_INPUT: &str = "input";
 const FOCUS_POPUP: &str = "popup";
 
+fn wrap_content(content: &str, max_width: usize) -> Vec<String> {
+    if content.is_empty() || max_width == 0 {
+        return vec![String::new()];
+    }
+
+    let chars: Vec<char> = content.chars().collect();
+    let mut lines = Vec::new();
+    let mut start = 0;
+
+    while start < chars.len() {
+        let end = (start + max_width).min(chars.len());
+        lines.push(chars[start..end].iter().collect());
+        start = end;
+    }
+
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+
+    lines
+}
+
 #[derive(Debug, Clone)]
 pub enum ChatAppMsg {
     UserMessage(String),
@@ -1406,13 +1428,6 @@ impl InkChatApp {
         };
         let ctx_str = format!("{}% ctx ", context_percent);
 
-        let attached_count = self.attached_context.len();
-        let attached_str = if attached_count > 0 {
-            format!("[+{}] ", attached_count)
-        } else {
-            String::new()
-        };
-
         let active_notification = self.notification.as_ref().and_then(|(msg, set_at)| {
             if set_at.elapsed() < NOTIFICATION_TIMEOUT {
                 Some(msg.as_str())
@@ -1426,7 +1441,6 @@ impl InkChatApp {
                 styled(mode_str.to_string(), mode_style.bold()),
                 styled(separator.to_string(), Style::new().fg(Color::DarkGray)),
                 styled(ctx_str, Style::new().fg(Color::DarkGray)),
-                styled(attached_str, Style::new().fg(Color::Cyan)),
                 spacer(),
                 styled(format!(" {} ", notif), Style::new().fg(Color::Yellow)),
             ])
@@ -1435,7 +1449,6 @@ impl InkChatApp {
                 styled(mode_str.to_string(), mode_style.bold()),
                 styled(separator.to_string(), Style::new().fg(Color::DarkGray)),
                 styled(ctx_str, Style::new().fg(Color::DarkGray)),
-                styled(attached_str, Style::new().fg(Color::Cyan)),
             ])
         }
     }
@@ -1486,30 +1499,49 @@ impl InkChatApp {
             InputMode::Normal => content,
         };
 
-        let used_width = prompt.len() + display_content.len() + 1;
-        let padding = " ".repeat(width.saturating_sub(used_width));
+        let content_width = width.saturating_sub(prompt.len() + 1);
+        let lines = wrap_content(display_content, content_width);
 
-        let input_node = col([
-            top_edge,
-            row([
-                styled(prompt, Style::new().bg(bg)),
-                Node::Input(crate::tui::ink::node::InputNode {
-                    value: display_content.to_string(),
-                    cursor: self.input.cursor().saturating_sub(
-                        if matches!(input_mode, InputMode::Command | InputMode::Shell) {
-                            1
-                        } else {
-                            0
-                        },
-                    ),
-                    placeholder: None,
-                    style: Style::new().bg(bg),
-                    focused: is_focused,
-                }),
-                styled(format!("{} ", padding), Style::new().bg(bg)),
-            ]),
-            bottom_edge,
-        ]);
+        let mut rows: Vec<Node> = Vec::with_capacity(lines.len() + 2);
+        rows.push(top_edge);
+
+        for (i, line) in lines.iter().enumerate() {
+            let line_len = line.chars().count();
+            let line_padding = " ".repeat(content_width.saturating_sub(line_len) + 1);
+
+            if i == 0 {
+                let cursor_offset = if matches!(input_mode, InputMode::Command | InputMode::Shell) {
+                    1
+                } else {
+                    0
+                };
+                rows.push(row([
+                    styled(prompt, Style::new().bg(bg)),
+                    Node::Input(crate::tui::ink::node::InputNode {
+                        value: line.to_string(),
+                        cursor: self
+                            .input
+                            .cursor()
+                            .saturating_sub(cursor_offset)
+                            .min(line.len()),
+                        placeholder: None,
+                        style: Style::new().bg(bg),
+                        focused: is_focused,
+                    }),
+                    styled(line_padding, Style::new().bg(bg)),
+                ]));
+            } else {
+                let prefix_padding = " ".repeat(prompt.len());
+                rows.push(styled(
+                    format!("{}{}{}", prefix_padding, line, line_padding),
+                    Style::new().bg(bg),
+                ));
+            }
+        }
+
+        rows.push(bottom_edge);
+
+        let input_node = col(rows);
 
         focusable_auto(FOCUS_INPUT, input_node)
     }
