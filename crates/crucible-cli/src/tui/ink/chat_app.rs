@@ -101,11 +101,11 @@ pub enum InputMode {
 }
 
 impl InputMode {
-    pub fn color(&self) -> Color {
+    pub fn bg_color(&self) -> Color {
         match self {
-            InputMode::Normal => Color::White,
-            InputMode::Command => Color::Yellow,
-            InputMode::Shell => Color::Red,
+            InputMode::Normal => INPUT_BG,
+            InputMode::Command => Color::Rgb(60, 50, 20),
+            InputMode::Shell => Color::Rgb(60, 30, 30),
         }
     }
 
@@ -125,6 +125,7 @@ pub enum AutocompleteKind {
     File,
     Note,
     Command,
+    SlashCommand,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -436,6 +437,11 @@ impl InkChatApp {
     ) -> Option<(AutocompleteKind, usize, String)> {
         let before_cursor = &content[..cursor];
 
+        if content.starts_with('/') && !before_cursor.contains(' ') {
+            let filter = &before_cursor[1..];
+            return Some((AutocompleteKind::SlashCommand, 0, filter.to_string()));
+        }
+
         if let Some(at_pos) = before_cursor.rfind('@') {
             let after_at = &before_cursor[at_pos + 1..];
             if !after_at.contains(char::is_whitespace) {
@@ -475,7 +481,12 @@ impl InkChatApp {
                 let items = self.get_popup_items();
                 if let Some(item) = items.get(self.popup_selected) {
                     let label = item.label.clone();
+                    let kind = self.popup_kind;
                     self.insert_autocomplete_selection(&label);
+                    if kind == AutocompleteKind::SlashCommand {
+                        self.input.handle(InputAction::Clear);
+                        return self.handle_slash_command(&label);
+                    }
                 }
             }
             KeyCode::Backspace => {
@@ -842,7 +853,7 @@ impl InkChatApp {
 
         let attached_count = self.attached_context.len();
         let attached_str = if attached_count > 0 {
-            format!("📎 {} ", attached_count)
+            format!("[+{}] ", attached_count)
         } else {
             String::new()
         };
@@ -908,11 +919,10 @@ impl InkChatApp {
         let input_mode = self.detect_input_mode();
 
         let prompt = input_mode.prompt();
-        let prompt_color = input_mode.color();
-        let prompt_style = Style::new().fg(prompt_color).bg(INPUT_BG);
+        let bg = input_mode.bg_color();
 
-        let top_edge = styled("▄".repeat(width), Style::new().fg(INPUT_BG));
-        let bottom_edge = styled("▀".repeat(width), Style::new().fg(INPUT_BG));
+        let top_edge = styled("▄".repeat(width), Style::new().fg(bg));
+        let bottom_edge = styled("▀".repeat(width), Style::new().fg(bg));
 
         let content = self.input.content();
         let display_content = match input_mode {
@@ -927,7 +937,7 @@ impl InkChatApp {
         let input_node = col([
             top_edge,
             row([
-                styled(prompt, prompt_style),
+                styled(prompt, Style::new().bg(bg)),
                 Node::Input(crate::tui::ink::node::InputNode {
                     value: display_content.to_string(),
                     cursor: self.input.cursor().saturating_sub(
@@ -938,10 +948,10 @@ impl InkChatApp {
                         },
                     ),
                     placeholder: None,
-                    style: Style::new().bg(INPUT_BG),
+                    style: Style::new().bg(bg),
                     focused: is_focused,
                 }),
-                styled(format!("{} ", padding), Style::new().bg(INPUT_BG)),
+                styled(format!("{} ", padding), Style::new().bg(bg)),
             ]),
             bottom_edge,
         ]);
@@ -999,6 +1009,46 @@ impl InkChatApp {
                 PopupItemNode {
                     label: "/help".to_string(),
                     description: Some("Show help".to_string()),
+                    kind: Some("command".to_string()),
+                },
+            ]
+            .into_iter()
+            .filter(|c| filter.is_empty() || c.label.to_lowercase().contains(&filter))
+            .collect(),
+            AutocompleteKind::SlashCommand => vec![
+                PopupItemNode {
+                    label: "/mode".to_string(),
+                    description: Some("Cycle chat mode".to_string()),
+                    kind: Some("command".to_string()),
+                },
+                PopupItemNode {
+                    label: "/plan".to_string(),
+                    description: Some("Set plan mode".to_string()),
+                    kind: Some("command".to_string()),
+                },
+                PopupItemNode {
+                    label: "/act".to_string(),
+                    description: Some("Set act mode".to_string()),
+                    kind: Some("command".to_string()),
+                },
+                PopupItemNode {
+                    label: "/auto".to_string(),
+                    description: Some("Set auto mode".to_string()),
+                    kind: Some("command".to_string()),
+                },
+                PopupItemNode {
+                    label: "/clear".to_string(),
+                    description: Some("Clear history".to_string()),
+                    kind: Some("command".to_string()),
+                },
+                PopupItemNode {
+                    label: "/help".to_string(),
+                    description: Some("Show help".to_string()),
+                    kind: Some("command".to_string()),
+                },
+                PopupItemNode {
+                    label: "/quit".to_string(),
+                    description: Some("Exit chat".to_string()),
                     kind: Some("command".to_string()),
                 },
             ]
@@ -1071,6 +1121,12 @@ impl InkChatApp {
             }
             AutocompleteKind::Command => {
                 self.status = format!("Selected: {}", label);
+            }
+            AutocompleteKind::SlashCommand => {
+                self.input.handle(InputAction::Clear);
+                for ch in label.chars() {
+                    self.input.handle(InputAction::Insert(ch));
+                }
             }
             AutocompleteKind::None => {}
         }
