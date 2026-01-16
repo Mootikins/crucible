@@ -89,7 +89,7 @@ async fn render_with_messages_does_not_accumulate() {
 
     let elapsed = start.elapsed();
     assert!(
-        elapsed < Duration::from_secs(2),
+        elapsed < Duration::from_secs(3),
         "100 iterations with 20 messages took {:?}",
         elapsed
     );

@@ -122,7 +122,12 @@ impl InkChatRunner {
 
             let ctx = ViewContext::new(&self.focus);
             let tree = app.view(&ctx);
-            self.terminal.render(&tree)?;
+
+            if app.has_shell_modal() {
+                self.terminal.render_fullscreen(&tree)?;
+            } else {
+                self.terminal.render(&tree)?;
+            }
 
             while let Ok(msg) = msg_rx.try_recv() {
                 let action = app.on_message(msg);
