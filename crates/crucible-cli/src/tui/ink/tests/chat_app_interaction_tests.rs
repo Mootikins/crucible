@@ -780,3 +780,83 @@ fn context_indicator_no_duplicates() {
     let output = render_to_string(&tree, 80);
     assert!(output.contains("[+1]"), "Should not count duplicates");
 }
+
+// =============================================================================
+// Regression Tests for Autocomplete Bugfixes
+// =============================================================================
+
+#[test]
+fn ctrl_c_closes_popup_instead_of_inserting_c() {
+    let mut app = InkChatApp::default();
+    app.set_workspace_files(vec!["test.rs".to_string()]);
+
+    app.update(Event::Key(key(KeyCode::Char('@'))));
+    assert!(app.is_popup_visible(), "Popup should open on @");
+
+    app.update(Event::Key(ctrl('c')));
+
+    assert!(!app.is_popup_visible(), "Ctrl+C should close popup");
+    assert!(
+        !app.input_content().contains('c'),
+        "Ctrl+C should not insert 'c' character"
+    );
+}
+
+#[test]
+fn slash_command_triggers_after_whitespace() {
+    let mut app = InkChatApp::default();
+
+    for c in "hello /hel".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    assert!(
+        app.is_popup_visible(),
+        "Popup should open for / after whitespace"
+    );
+    assert_eq!(
+        app.current_popup_filter(),
+        "hel",
+        "Filter should be text after slash"
+    );
+}
+
+#[test]
+fn slash_command_does_not_trigger_mid_word() {
+    let mut app = InkChatApp::default();
+
+    for c in "http://example".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    assert!(
+        !app.is_popup_visible(),
+        "Popup should NOT open for / preceded by non-whitespace"
+    );
+}
+
+#[test]
+fn empty_workspace_files_does_not_show_popup() {
+    let mut app = InkChatApp::default();
+
+    app.update(Event::Key(key(KeyCode::Char('@'))));
+
+    assert!(
+        !app.is_popup_visible(),
+        "Popup should not show when no files to display"
+    );
+}
+
+#[test]
+fn empty_kiln_notes_does_not_show_popup() {
+    let mut app = InkChatApp::default();
+
+    for c in "[[".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    assert!(
+        !app.is_popup_visible(),
+        "Popup should not show when no notes to display"
+    );
+}
