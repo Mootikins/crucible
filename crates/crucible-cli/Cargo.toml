@@ -149,6 +149,7 @@ scopeguard = "1.2"  # For RAII-style cleanup in tests
 insta = { version = "1.40", features = ["filters"] }  # Snapshot testing for TUI
 expectrl = { workspace = true }  # PTY-based TUI testing
 proptest = "1.4"  # Property-based testing for graduation invariants
+test-case = "3.3"  # Parameterized tests
 
 # Additional dependencies for resource constraint testing
 rand = "0.9"

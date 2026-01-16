@@ -3646,6 +3646,7 @@ dependencies = [
  "tabled",
  "taffy",
  "tempfile",
+ "test-case",
  "textwrap 0.16.2",
  "thiserror 2.0.17",
  "tokio",
