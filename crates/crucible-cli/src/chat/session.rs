@@ -426,7 +426,24 @@ impl ChatSession {
 
         if self.config.use_ink_runner {
             let mode = ChatMode::parse(&self.config.initial_mode_id);
+
+            let workspace_root_ink =
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let kiln_root_ink = self.core.config().kiln_path.clone();
+
+            let (files, notes) = tokio::join!(
+                tokio::task::spawn_blocking(move || index_workspace_files(&workspace_root_ink)),
+                tokio::task::spawn_blocking(move || index_kiln_notes(&kiln_root_ink)),
+            );
+
             let mut runner = InkChatRunner::new()?.with_mode(mode);
+            if let Ok(files) = files {
+                runner = runner.with_workspace_files(files);
+            }
+            if let Ok(notes) = notes {
+                runner = runner.with_kiln_notes(notes);
+            }
+
             return runner.run_with_factory(&bridge, create_agent).await;
         }
 
