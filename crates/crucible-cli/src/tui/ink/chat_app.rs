@@ -524,6 +524,22 @@ impl InkChatApp {
             .unwrap_or_default()
     }
 
+    #[cfg(test)]
+    pub fn shell_visible_lines(&self, max_lines: usize) -> Vec<String> {
+        self.shell_modal
+            .as_ref()
+            .map(|m| m.visible_lines(max_lines).to_vec())
+            .unwrap_or_default()
+    }
+
+    #[cfg(test)]
+    pub fn shell_scroll_offset(&self) -> usize {
+        self.shell_modal
+            .as_ref()
+            .map(|m| m.scroll_offset)
+            .unwrap_or(0)
+    }
+
     fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Action<ChatAppMsg> {
         self.error = None;
 
