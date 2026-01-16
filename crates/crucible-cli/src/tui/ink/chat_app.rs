@@ -1545,7 +1545,12 @@ impl InkChatApp {
 
                 let tail_nodes: Vec<Node> = output_tail
                     .iter()
-                    .map(|line| styled(format!("   {}", line), Style::new().fg(Color::DarkGray)))
+                    .map(|line| {
+                        styled(
+                            format!("   {}", line),
+                            Style::new().fg(Color::Rgb(180, 180, 180)),
+                        )
+                    })
                     .collect();
 
                 let path_node = output_path
@@ -1553,7 +1558,7 @@ impl InkChatApp {
                     .map(|p| {
                         styled(
                             format!("   → {}", p.display()),
-                            Style::new().fg(Color::DarkGray).dim(),
+                            Style::new().fg(Color::Rgb(140, 140, 140)),
                         )
                     })
                     .unwrap_or(Node::Empty);

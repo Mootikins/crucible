@@ -140,6 +140,7 @@ impl OutputBuffer {
 
     pub fn force_redraw(&mut self) {
         self.previous_lines.clear();
+        self.previous_visual_rows = 0;
         self.force_next_redraw = true;
     }
 
