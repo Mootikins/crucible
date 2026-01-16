@@ -164,59 +164,35 @@ pub fn map_key_event(event: &KeyEvent, state: &TuiState) -> InputAction {
 #[cfg(test)]
 mod scroll_keybinding_tests {
     use super::*;
+    use test_case::test_case;
 
-    #[test]
-    fn test_ctrl_up_scrolls_up() {
+    const CTRL_ALT: KeyModifiers = KeyModifiers::CONTROL.union(KeyModifiers::ALT);
+
+    #[test_case(KeyCode::Up, KeyModifiers::CONTROL, InputAction::ScrollUp ; "ctrl_up_scrolls_up")]
+    #[test_case(KeyCode::Down, KeyModifiers::CONTROL, InputAction::ScrollDown ; "ctrl_down_scrolls_down")]
+    #[test_case(KeyCode::Home, KeyModifiers::NONE, InputAction::ScrollToTop ; "home_scrolls_to_top")]
+    #[test_case(KeyCode::End, KeyModifiers::NONE, InputAction::ScrollToBottom ; "end_scrolls_to_bottom")]
+    fn scroll_keybinding(code: KeyCode, modifiers: KeyModifiers, expected: InputAction) {
         let state = TuiState::new("plan");
-        let event = KeyEvent::new(KeyCode::Up, KeyModifiers::CONTROL);
+        let event = KeyEvent::new(code, modifiers);
         let action = map_key_event(&event, &state);
-        assert_eq!(action, InputAction::ScrollUp);
+        assert_eq!(action, expected);
     }
 
     #[test]
-    fn test_ctrl_down_scrolls_down() {
+    fn ctrl_alt_u_half_page_up() {
         let state = TuiState::new("plan");
-        let event = KeyEvent::new(KeyCode::Down, KeyModifiers::CONTROL);
-        let action = map_key_event(&event, &state);
-        assert_eq!(action, InputAction::ScrollDown);
-    }
-
-    #[test]
-    fn test_ctrl_alt_u_half_page_up() {
-        let state = TuiState::new("plan");
-        let event = KeyEvent::new(
-            KeyCode::Char('u'),
-            KeyModifiers::CONTROL.union(KeyModifiers::ALT),
-        );
+        let event = KeyEvent::new(KeyCode::Char('u'), CTRL_ALT);
         let action = map_key_event(&event, &state);
         assert_eq!(action, InputAction::HalfPageUp);
     }
 
     #[test]
-    fn test_ctrl_alt_d_half_page_down() {
+    fn ctrl_alt_d_half_page_down() {
         let state = TuiState::new("plan");
-        let event = KeyEvent::new(
-            KeyCode::Char('d'),
-            KeyModifiers::CONTROL.union(KeyModifiers::ALT),
-        );
+        let event = KeyEvent::new(KeyCode::Char('d'), CTRL_ALT);
         let action = map_key_event(&event, &state);
         assert_eq!(action, InputAction::HalfPageDown);
-    }
-
-    #[test]
-    fn test_home_scrolls_to_top() {
-        let state = TuiState::new("plan");
-        let event = KeyEvent::new(KeyCode::Home, KeyModifiers::NONE);
-        let action = map_key_event(&event, &state);
-        assert_eq!(action, InputAction::ScrollToTop);
-    }
-
-    #[test]
-    fn test_end_scrolls_to_bottom() {
-        let state = TuiState::new("plan");
-        let event = KeyEvent::new(KeyCode::End, KeyModifiers::NONE);
-        let action = map_key_event(&event, &state);
-        assert_eq!(action, InputAction::ScrollToBottom);
     }
 }
 
@@ -459,95 +435,24 @@ mod slash_command_tests {
 #[cfg(test)]
 mod readline_tests {
     use super::*;
+    use test_case::test_case;
 
-    #[test]
-    fn test_ctrl_w_delete_word_backward() {
+    // Parameterized keybinding tests: (key_char, modifier, expected_action)
+    #[test_case('w', KeyModifiers::CONTROL, InputAction::DeleteWordBackward ; "ctrl_w_deletes_word_backward")]
+    #[test_case('u', KeyModifiers::CONTROL, InputAction::DeleteToLineStart ; "ctrl_u_deletes_to_line_start")]
+    #[test_case('k', KeyModifiers::CONTROL, InputAction::DeleteToLineEnd ; "ctrl_k_deletes_to_line_end")]
+    #[test_case('a', KeyModifiers::CONTROL, InputAction::MoveCursorToStart ; "ctrl_a_moves_to_start")]
+    #[test_case('e', KeyModifiers::CONTROL, InputAction::MoveCursorToEnd ; "ctrl_e_moves_to_end")]
+    #[test_case('b', KeyModifiers::ALT, InputAction::MoveWordBackward ; "alt_b_moves_word_backward")]
+    #[test_case('f', KeyModifiers::ALT, InputAction::MoveWordForward ; "alt_f_moves_word_forward")]
+    #[test_case('t', KeyModifiers::CONTROL, InputAction::TransposeChars ; "ctrl_t_transposes_chars")]
+    #[test_case('t', KeyModifiers::ALT, InputAction::ToggleReasoning ; "alt_t_toggles_reasoning")]
+    #[test_case('m', KeyModifiers::ALT, InputAction::ToggleMouseCapture ; "alt_m_toggles_mouse_capture")]
+    #[test_case('c', KeyModifiers::ALT, InputAction::CopyMarkdown ; "alt_c_copies_markdown")]
+    fn keybinding_maps_to_action(key: char, modifiers: KeyModifiers, expected: InputAction) {
         let state = TuiState::new("plan");
-        let event = KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL);
+        let event = KeyEvent::new(KeyCode::Char(key), modifiers);
         let action = map_key_event(&event, &state);
-        assert_eq!(action, InputAction::DeleteWordBackward);
-    }
-
-    #[test]
-    fn test_ctrl_u_delete_to_line_start() {
-        let state = TuiState::new("plan");
-        let event = KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL);
-        let action = map_key_event(&event, &state);
-        assert_eq!(action, InputAction::DeleteToLineStart);
-    }
-
-    #[test]
-    fn test_ctrl_k_delete_to_line_end() {
-        let state = TuiState::new("plan");
-        let event = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
-        let action = map_key_event(&event, &state);
-        assert_eq!(action, InputAction::DeleteToLineEnd);
-    }
-
-    #[test]
-    fn test_ctrl_a_move_to_start() {
-        let state = TuiState::new("plan");
-        let event = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL);
-        let action = map_key_event(&event, &state);
-        assert_eq!(action, InputAction::MoveCursorToStart);
-    }
-
-    #[test]
-    fn test_ctrl_e_move_to_end() {
-        let state = TuiState::new("plan");
-        let event = KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL);
-        let action = map_key_event(&event, &state);
-        assert_eq!(action, InputAction::MoveCursorToEnd);
-    }
-
-    #[test]
-    fn test_alt_b_move_word_backward() {
-        let state = TuiState::new("plan");
-        let event = KeyEvent::new(KeyCode::Char('b'), KeyModifiers::ALT);
-        let action = map_key_event(&event, &state);
-        assert_eq!(action, InputAction::MoveWordBackward);
-    }
-
-    #[test]
-    fn test_alt_f_move_word_forward() {
-        let state = TuiState::new("plan");
-        let event = KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT);
-        let action = map_key_event(&event, &state);
-        assert_eq!(action, InputAction::MoveWordForward);
-    }
-
-    #[test]
-    fn test_ctrl_t_transpose_chars() {
-        let state = TuiState::new("plan");
-        let event = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL);
-        let action = map_key_event(&event, &state);
-        assert_eq!(action, InputAction::TransposeChars);
-    }
-
-    #[test]
-    fn test_alt_t_toggle_reasoning() {
-        // Alt+T should toggle reasoning visibility
-        let state = TuiState::new("plan");
-        let event = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::ALT);
-        let action = map_key_event(&event, &state);
-        assert_eq!(action, InputAction::ToggleReasoning);
-    }
-
-    #[test]
-    fn test_alt_m_toggle_mouse_capture() {
-        // Alt+M should toggle mouse capture for text selection
-        let state = TuiState::new("plan");
-        let event = KeyEvent::new(KeyCode::Char('m'), KeyModifiers::ALT);
-        let action = map_key_event(&event, &state);
-        assert_eq!(action, InputAction::ToggleMouseCapture);
-    }
-
-    #[test]
-    fn test_alt_c_copy_markdown() {
-        // Alt+C should copy last message as markdown
-        let state = TuiState::new("plan");
-        let event = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT);
-        let action = map_key_event(&event, &state);
-        assert_eq!(action, InputAction::CopyMarkdown);
+        assert_eq!(action, expected);
     }
 }
