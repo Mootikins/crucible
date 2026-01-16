@@ -77,10 +77,18 @@ When a popup menu is open (commands, agents, files):
 |--------|---------|---------|
 | `/` | Slash commands | `/commit`, `/search` |
 | `@` | Context references | `@agent-name`, `@file.md` |
-| `:` | System commands | `:set`, `:map` |
-| `!` | Shell passthrough | `!ls -la` |
+| `[[` | Note references | `[[My Note]]`, `[[Help/Config]]` |
+| `:` | REPL commands | `:quit`, `:help`, `:palette` |
+| `!` | Shell execution | `!ls -la`, `!git status` |
+
+- `/` triggers after whitespace or at line start
+- `@` opens a popup to autocomplete workspace files or agent names
+- `[[` opens a popup to autocomplete notes from your kiln (wikilink syntax)
+- `:` triggers at line start for REPL commands
+- `!` opens a [[TUI/Shell Execution|shell modal]] with streaming output
 
 ## See Also
 
+- [[TUI/Shell Execution|Shell Execution]]
 - [[TUI/Index|TUI Overview]]
 - [[Configuration|Configuration Options]]

@@ -63,7 +63,9 @@ Quick reference (see [[Help/TUI/Keybindings]] for complete list):
 | `Alt+T` | Toggle reasoning panel |
 | `Alt+M` | Toggle mouse capture |
 | `/` | Open command popup |
-| `@` | Open agent/file popup |
+| `@` | Open file/agent popup |
+| `[[` | Open notes popup |
+| `!` | Execute shell command |
 | `Esc` | Dismiss popup/dialog |
 
 Readline-style editing (`Ctrl+A/E/W/U/K`, `Alt+B/F`) is supported in the input box.
@@ -75,6 +77,7 @@ For developers contributing to the TUI, see [[Help/TUI/E2E Testing]] for informa
 ## See Also
 
 - [[Help/TUI/Keybindings]] - Complete keyboard shortcuts
+- [[Help/TUI/Shell Execution]] - Running shell commands
 - [[Help/TUI/Component Architecture]] - Widget system details
 - [[Help/TUI/Rune API]] - Scripting interface
 - [[Help/TUI/E2E Testing]] - End-to-end test harness
