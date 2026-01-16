@@ -126,6 +126,7 @@ pub enum AutocompleteKind {
     Note,
     Command,
     SlashCommand,
+    ReplCommand,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -483,6 +484,20 @@ impl InkChatApp {
             }
         }
 
+        if let Some(colon_pos) = before_cursor.rfind(':') {
+            let preceded_by_whitespace = colon_pos == 0
+                || before_cursor[..colon_pos]
+                    .chars()
+                    .last()
+                    .is_some_and(char::is_whitespace);
+            if preceded_by_whitespace {
+                let filter = &before_cursor[colon_pos + 1..];
+                if !filter.contains(char::is_whitespace) {
+                    return Some((AutocompleteKind::ReplCommand, colon_pos, filter.to_string()));
+                }
+            }
+        }
+
         None
     }
 
@@ -509,6 +524,10 @@ impl InkChatApp {
                     if kind == AutocompleteKind::SlashCommand {
                         self.input.handle(InputAction::Clear);
                         return self.handle_slash_command(&label);
+                    }
+                    if kind == AutocompleteKind::ReplCommand {
+                        self.input.handle(InputAction::Clear);
+                        return self.handle_repl_command(&label);
                     }
                 }
             }
@@ -1089,6 +1108,31 @@ impl InkChatApp {
             .into_iter()
             .filter(|c| filter.is_empty() || c.label.to_lowercase().contains(&filter))
             .collect(),
+            AutocompleteKind::ReplCommand => vec![
+                PopupItemNode {
+                    label: ":quit".to_string(),
+                    description: Some("Exit chat".to_string()),
+                    kind: Some("repl".to_string()),
+                },
+                PopupItemNode {
+                    label: ":help".to_string(),
+                    description: Some("Show help".to_string()),
+                    kind: Some("repl".to_string()),
+                },
+                PopupItemNode {
+                    label: ":palette".to_string(),
+                    description: Some("Open command palette".to_string()),
+                    kind: Some("repl".to_string()),
+                },
+                PopupItemNode {
+                    label: ":commands".to_string(),
+                    description: Some("Open command palette".to_string()),
+                    kind: Some("repl".to_string()),
+                },
+            ]
+            .into_iter()
+            .filter(|c| filter.is_empty() || c.label.to_lowercase().contains(&filter))
+            .collect(),
             AutocompleteKind::None => vec![],
         }
     }
@@ -1157,6 +1201,12 @@ impl InkChatApp {
                 self.status = format!("Selected: {}", label);
             }
             AutocompleteKind::SlashCommand => {
+                self.input.handle(InputAction::Clear);
+                for ch in label.chars() {
+                    self.input.handle(InputAction::Insert(ch));
+                }
+            }
+            AutocompleteKind::ReplCommand => {
                 self.input.handle(InputAction::Clear);
                 for ch in label.chars() {
                     self.input.handle(InputAction::Insert(ch));
