@@ -685,6 +685,7 @@ async fn run_ink_chat(
     status: StatusLine,
 ) -> Result<()> {
     use crate::chat::bridge::AgentEventBridge;
+    use crate::chat::session::{index_kiln_notes, index_workspace_files};
     use crate::tui::ink::{ChatMode, InkChatRunner};
     use crucible_core::traits::chat::is_read_only;
     use crucible_rune::SessionBuilder;
@@ -697,6 +698,29 @@ async fn run_ink_chat(
 
     let mode = ChatMode::parse(initial_mode);
     let mut runner = InkChatRunner::new()?.with_mode(mode);
+
+    let workspace_root = working_dir.clone().unwrap_or_else(|| {
+        std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+    });
+    let kiln_root = config.kiln_path.clone();
+
+    let (files, notes) = tokio::join!(
+        tokio::task::spawn_blocking({
+            let root = workspace_root.clone();
+            move || index_workspace_files(&root)
+        }),
+        tokio::task::spawn_blocking({
+            let root = kiln_root.clone();
+            move || index_kiln_notes(&root)
+        }),
+    );
+
+    if let Ok(files) = files {
+        runner = runner.with_workspace_files(files);
+    }
+    if let Ok(notes) = notes {
+        runner = runner.with_kiln_notes(notes);
+    }
 
     let config_for_factory = config.clone();
     let initial_mode_str = initial_mode.to_string();
