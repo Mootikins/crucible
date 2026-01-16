@@ -1022,3 +1022,36 @@ fn shell_modal_cat_readme_starts_at_top() {
         "First visible line should match first captured line"
     );
 }
+
+#[test]
+fn shell_modal_small_viewport_shows_first_lines() {
+    let mut app = InkChatApp::default();
+
+    for c in "!seq 1 50".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    for _ in 0..20 {
+        app.update(Event::Tick);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    let output = app.shell_output_lines();
+    assert!(output.len() >= 50, "Should capture all 50 lines");
+
+    let small_viewport = app.shell_visible_lines(5);
+    assert_eq!(small_viewport.len(), 5);
+    assert_eq!(
+        small_viewport[0], "1",
+        "First line in small viewport should be '1'"
+    );
+    assert_eq!(small_viewport[4], "5", "Fifth line should be '5'");
+
+    let tiny_viewport = app.shell_visible_lines(3);
+    assert_eq!(tiny_viewport.len(), 3);
+    assert_eq!(
+        tiny_viewport[0], "1",
+        "First line in tiny viewport should be '1'"
+    );
+}
