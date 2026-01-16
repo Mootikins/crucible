@@ -860,3 +860,35 @@ fn empty_kiln_notes_does_not_show_popup() {
         "Popup should not show when no notes to display"
     );
 }
+
+// =============================================================================
+// Shell Modal Tests
+// =============================================================================
+
+#[test]
+fn shell_command_opens_modal() {
+    let mut app = InkChatApp::default();
+
+    for c in "!echo hello".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    assert!(
+        app.has_shell_modal(),
+        "Shell modal should open after ! command"
+    );
+}
+
+#[test]
+fn empty_shell_command_shows_error() {
+    let mut app = InkChatApp::default();
+
+    app.update(Event::Key(key(KeyCode::Char('!'))));
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    assert!(
+        !app.has_shell_modal(),
+        "Empty shell command should not open modal"
+    );
+}
