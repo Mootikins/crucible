@@ -32,6 +32,12 @@ impl GraduationState {
         self.graduated_keys.len()
     }
 
+    pub fn clear(&mut self) {
+        self.graduated_keys.clear();
+        self.stdout_buffer.clear();
+        self.pending_newline = false;
+    }
+
     pub fn stdout_content(&self) -> &str {
         &self.stdout_buffer
     }

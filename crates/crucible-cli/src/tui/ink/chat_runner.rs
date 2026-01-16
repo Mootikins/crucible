@@ -116,6 +116,10 @@ impl InkChatRunner {
         let mut tick_interval = tokio::time::interval(self.tick_rate);
 
         loop {
+            if app.take_needs_full_redraw() {
+                self.terminal.force_full_redraw()?;
+            }
+
             let ctx = ViewContext::new(&self.focus);
             let tree = app.view(&ctx);
             self.terminal.render(&tree)?;
