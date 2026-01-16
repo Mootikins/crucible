@@ -30,8 +30,12 @@ pub fn markdown_to_node(markdown: &str) -> Node {
 
 /// Convert markdown text to an ink Node tree with explicit width
 pub fn markdown_to_node_with_width(markdown: &str, width: usize) -> Node {
+    // Normalize <br> tags to newlines before parsing
+    // This handles HTML line breaks that markdown-it doesn't process by default
+    let markdown = normalize_br_tags(markdown);
+
     let md = create_parser();
-    let ast = md.parse(markdown);
+    let ast = md.parse(&markdown);
 
     let mut ctx = RenderContext::new(width);
     render_node(&ast, &mut ctx);
@@ -641,6 +645,18 @@ fn text_node(content: &str) -> Node {
     text(content)
 }
 
+fn normalize_br_tags(input: &str) -> String {
+    use regex::Regex;
+    use std::sync::LazyLock;
+
+    // (?i)<br\s*/?\s*> matches <br>, <br/>, <br />, <BR>, etc.
+    // Replace with "  \n" (two trailing spaces = markdown Hardbreak)
+    static BR_REGEX: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)<br\s*/?\s*>").expect("valid regex"));
+
+    BR_REGEX.replace_all(input, "  \n").into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -908,5 +924,54 @@ mod tests {
         ]);
         let output = render_to_string(&with_prefix, 67);
         assert_lines_fit_width(&output, 67);
+    }
+
+    #[test]
+    fn br_tag_converts_to_newline() {
+        let md = "Line one<br>Line two";
+        let node = markdown_to_node(md);
+        let output = render_to_string(&node, 80);
+        let lines: Vec<&str> = output.split("\r\n").collect();
+        assert!(lines.len() >= 2, "Should have multiple lines: {:?}", lines);
+        assert!(output.contains("Line one"));
+        assert!(output.contains("Line two"));
+    }
+
+    #[test]
+    fn br_tag_variants_all_work() {
+        for variant in ["<br>", "<br/>", "<br />", "<BR>", "<BR/>", "<Br />"] {
+            let md = format!("A{}B", variant);
+            let node = markdown_to_node(&md);
+            let output = render_to_string(&node, 80);
+            let lines: Vec<&str> = output.split("\r\n").collect();
+            assert!(
+                lines.len() >= 2,
+                "Variant {} should create newline: {:?}",
+                variant,
+                lines
+            );
+        }
+    }
+
+    #[test]
+    fn br_tag_in_table_cell() {
+        let table = "| Header |\n|---|\n| First<br>Second |";
+        let node = markdown_to_node(table);
+        let output = render_to_string(&node, 80);
+        assert!(output.contains("First"));
+        assert!(output.contains("Second"));
+    }
+
+    #[test]
+    fn normalize_br_tags_function() {
+        assert_eq!(super::normalize_br_tags("a<br>b"), "a  \nb");
+        assert_eq!(super::normalize_br_tags("a<br/>b"), "a  \nb");
+        assert_eq!(super::normalize_br_tags("a<br />b"), "a  \nb");
+        assert_eq!(super::normalize_br_tags("a<BR>b"), "a  \nb");
+        assert_eq!(super::normalize_br_tags("no tags here"), "no tags here");
+        assert_eq!(
+            super::normalize_br_tags("multi<br>line<br>text"),
+            "multi  \nline  \ntext"
+        );
     }
 }
