@@ -12,6 +12,7 @@ use crucible_core::traits::chat::{AgentHandle, ChatChunk, ChatResult};
 use futures::stream::BoxStream;
 use futures::StreamExt;
 use std::io;
+use std::path::PathBuf;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
@@ -22,6 +23,7 @@ pub struct InkChatRunner {
     focus: FocusContext,
     workspace_files: Vec<String>,
     kiln_notes: Vec<String>,
+    session_dir: Option<PathBuf>,
 }
 
 impl InkChatRunner {
@@ -33,6 +35,7 @@ impl InkChatRunner {
             focus: FocusContext::new(),
             workspace_files: Vec::new(),
             kiln_notes: Vec::new(),
+            session_dir: None,
         })
     }
 
@@ -48,6 +51,11 @@ impl InkChatRunner {
 
     pub fn with_kiln_notes(mut self, notes: Vec<String>) -> Self {
         self.kiln_notes = notes;
+        self
+    }
+
+    pub fn with_session_dir(mut self, path: PathBuf) -> Self {
+        self.session_dir = Some(path);
         self
     }
 
@@ -72,6 +80,9 @@ impl InkChatRunner {
         }
         if !self.kiln_notes.is_empty() {
             app.set_kiln_notes(std::mem::take(&mut self.kiln_notes));
+        }
+        if let Some(session_dir) = self.session_dir.take() {
+            app.set_session_dir(session_dir);
         }
 
         let ctx = ViewContext::new(&self.focus);
