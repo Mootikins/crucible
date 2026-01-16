@@ -144,77 +144,19 @@ impl OutputBuffer {
     }
 
     pub fn render_fullscreen(&mut self, content: &str) -> io::Result<()> {
-        let all_lines: Vec<String> = collapse_blank_lines(content);
-
-        let line_visual_rows: Vec<usize> = all_lines
-            .iter()
-            .map(|line| visual_rows(line, self.terminal_width))
-            .collect();
-
-        let total_visual_rows: usize = line_visual_rows.iter().sum();
-        let available_rows = self.terminal_height.saturating_sub(1);
-
-        let (viewport_lines, viewport_visual_rows) = self.clamp_to_viewport_from_top(
-            &all_lines,
-            &line_visual_rows,
-            total_visual_rows,
-            available_rows,
-        );
-
         execute!(
             self.stdout,
             cursor::MoveTo(0, 0),
             terminal::Clear(terminal::ClearType::All)
         )?;
 
-        for (i, line) in viewport_lines.iter().enumerate() {
-            write!(self.stdout, "{}", line)?;
-            if i < viewport_lines.len() - 1 {
-                write!(self.stdout, "\r\n")?;
-            }
-        }
-
+        write!(self.stdout, "{}", content)?;
         self.stdout.flush()?;
-        self.previous_lines = viewport_lines;
-        self.previous_visual_rows = viewport_visual_rows;
+
+        self.previous_lines.clear();
+        self.previous_visual_rows = 0;
 
         Ok(())
-    }
-
-    fn clamp_to_viewport_from_top(
-        &self,
-        all_lines: &[String],
-        line_visual_rows: &[usize],
-        total_visual_rows: usize,
-        available_rows: usize,
-    ) -> (Vec<String>, usize) {
-        if total_visual_rows <= available_rows {
-            return (all_lines.to_vec(), total_visual_rows);
-        }
-
-        let mut rows_used = 0;
-        let mut end_idx = 0;
-
-        for (i, &row_count) in line_visual_rows.iter().enumerate() {
-            if rows_used + row_count <= available_rows {
-                rows_used += row_count;
-                end_idx = i + 1;
-            } else {
-                break;
-            }
-        }
-
-        let viewport: Vec<String> = all_lines[..end_idx].to_vec();
-
-        tracing::debug!(
-            total_rows = total_visual_rows,
-            available = available_rows,
-            showing_lines = end_idx,
-            rows_used,
-            "viewport clamped from top"
-        );
-
-        (viewport, rows_used)
     }
 
     fn clamp_to_viewport(
