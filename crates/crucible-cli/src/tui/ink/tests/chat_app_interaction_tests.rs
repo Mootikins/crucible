@@ -892,3 +892,48 @@ fn empty_shell_command_shows_error() {
         "Empty shell command should not open modal"
     );
 }
+
+#[test]
+fn shell_command_captures_output() {
+    let mut app = InkChatApp::default();
+
+    for c in "!echo hello".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    assert!(app.has_shell_modal(), "Shell modal should open");
+
+    for _ in 0..20 {
+        app.update(Event::Tick);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    let output = app.shell_output_lines();
+    assert!(
+        output.iter().any(|line| line.contains("hello")),
+        "Output should contain 'hello', got: {:?}",
+        output
+    );
+}
+
+#[test]
+fn shell_modal_closes_on_escape() {
+    let mut app = InkChatApp::default();
+
+    for c in "!echo test".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    for _ in 0..10 {
+        app.update(Event::Tick);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    assert!(app.has_shell_modal(), "Modal should be open");
+
+    app.update(Event::Key(key(KeyCode::Esc)));
+
+    assert!(!app.has_shell_modal(), "Modal should close on Esc");
+}

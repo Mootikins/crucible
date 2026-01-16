@@ -329,6 +329,7 @@ impl App for InkChatApp {
             Event::Key(key) => self.handle_key(key),
             Event::Tick => {
                 self.spinner_frame = (self.spinner_frame + 1) % 4;
+                self.poll_shell_output();
                 Action::Continue
             }
             Event::Resize { .. } => Action::Continue,
@@ -491,6 +492,14 @@ impl InkChatApp {
     #[cfg(test)]
     pub fn has_shell_modal(&self) -> bool {
         self.shell_modal.is_some()
+    }
+
+    #[cfg(test)]
+    pub fn shell_output_lines(&self) -> Vec<String> {
+        self.shell_modal
+            .as_ref()
+            .map(|m| m.output_lines.clone())
+            .unwrap_or_default()
     }
 
     fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Action<ChatAppMsg> {

@@ -722,6 +722,14 @@ async fn run_ink_chat(
         runner = runner.with_kiln_notes(notes);
     }
 
+    let session_dir = config
+        .kiln_path
+        .join(".crucible")
+        .join("sessions")
+        .join(session.session_id());
+    std::fs::create_dir_all(&session_dir).ok();
+    runner = runner.with_session_dir(session_dir);
+
     let config_for_factory = config.clone();
     let initial_mode_str = initial_mode.to_string();
     let factory = move |selection: AgentSelection| {
