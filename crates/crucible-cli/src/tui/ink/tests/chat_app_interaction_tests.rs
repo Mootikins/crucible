@@ -682,3 +682,41 @@ fn autocomplete_selection_inserts_note_mention() {
 
     assert_eq!(app.input_content(), "[[Projects/README.md]] ");
 }
+
+// =============================================================================
+// REPL Command Tests
+// =============================================================================
+
+#[test]
+fn palette_command_opens_command_popup() {
+    let mut app = InkChatApp::default();
+
+    for c in ":palette".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+    assert!(
+        output.contains("semantic_search"),
+        "Palette command should open command popup"
+    );
+}
+
+#[test]
+fn commands_command_opens_command_popup() {
+    let mut app = InkChatApp::default();
+
+    for c in ":commands".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+    assert!(
+        output.contains("/mode"),
+        "Commands should open command popup"
+    );
+}

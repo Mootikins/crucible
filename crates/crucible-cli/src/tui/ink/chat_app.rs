@@ -573,7 +573,16 @@ impl InkChatApp {
         match command {
             "q" | "quit" => Action::Quit,
             "help" | "h" => {
-                self.add_system_message("REPL commands: :q(uit), :h(elp)".to_string());
+                self.add_system_message(
+                    "REPL commands: :q(uit), :h(elp), :palette, :commands".to_string(),
+                );
+                Action::Continue
+            }
+            "palette" | "commands" => {
+                self.show_popup = true;
+                self.popup_kind = AutocompleteKind::Command;
+                self.popup_filter.clear();
+                self.popup_selected = 0;
                 Action::Continue
             }
             _ => {
