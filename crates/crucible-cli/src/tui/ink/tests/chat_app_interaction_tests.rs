@@ -1055,3 +1055,124 @@ fn shell_modal_small_viewport_shows_first_lines() {
         "First line in tiny viewport should be '1'"
     );
 }
+
+#[test]
+fn shell_modal_fast_command_captures_all_output() {
+    let mut app = InkChatApp::default();
+
+    for c in "!echo -e 'line1\\nline2\\nline3'".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    app.update(Event::Tick);
+
+    let output = app.shell_output_lines();
+    assert!(
+        output.len() >= 3,
+        "Should capture all 3 lines even for fast command, got {} lines: {:?}",
+        output.len(),
+        output
+    );
+
+    assert_eq!(
+        output.first().map(|s| s.as_str()),
+        Some("line1"),
+        "First line should be 'line1', got: {:?}",
+        output
+    );
+}
+
+#[test]
+fn shell_modal_immediate_render_then_poll() {
+    let mut app = InkChatApp::default();
+
+    for c in "!seq 1 20".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    assert!(app.has_shell_modal(), "Modal should exist immediately");
+
+    let output_before_tick = app.shell_output_lines();
+
+    std::thread::sleep(std::time::Duration::from_millis(200));
+
+    for _ in 0..5 {
+        app.update(Event::Tick);
+    }
+
+    let output_after_ticks = app.shell_output_lines();
+    assert!(
+        output_after_ticks.len() >= 20,
+        "Should have all 20 lines after ticks, got {}",
+        output_after_ticks.len()
+    );
+
+    assert_eq!(
+        output_after_ticks.first().map(|s| s.as_str()),
+        Some("1"),
+        "First line should be '1' (no truncation), got: {:?}",
+        output_after_ticks.first()
+    );
+
+    assert_eq!(
+        app.shell_scroll_offset(),
+        0,
+        "Scroll offset should remain 0 (view from top), was: {}. \
+         Output before tick had {} lines, after tick has {} lines",
+        app.shell_scroll_offset(),
+        output_before_tick.len(),
+        output_after_ticks.len()
+    );
+}
+
+#[test]
+fn shell_modal_render_shows_first_line_in_small_viewport() {
+    use crate::tui::ink::render::render_to_string;
+
+    let mut app = InkChatApp::default();
+
+    for c in "!seq 1 100".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    for _ in 0..20 {
+        app.update(Event::Tick);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    assert!(app.has_shell_modal(), "Modal should be open");
+    let output = app.shell_output_lines();
+    assert!(
+        output.len() >= 100,
+        "Should have 100 lines, got {}",
+        output.len()
+    );
+
+    let tree = view_with_default_ctx(&app);
+    let rendered = render_to_string(&tree, 80);
+
+    let lines: Vec<&str> = rendered.lines().collect();
+
+    assert!(
+        rendered.contains("$ seq 1 100"),
+        "Rendered output should contain command header, got:\n{}",
+        &rendered[..rendered.len().min(500)]
+    );
+
+    assert!(
+        lines.iter().any(|l| l.trim() == "1"),
+        "Rendered output should show '1' (first line of seq output) in a 24-line viewport. \
+         First 10 lines of render:\n{}",
+        lines
+            .iter()
+            .take(10)
+            .map(|s| format!("  '{}'", s))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+}

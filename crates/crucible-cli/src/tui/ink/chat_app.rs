@@ -515,7 +515,6 @@ impl InkChatApp {
         &self.popup_filter
     }
 
-    #[cfg(test)]
     pub fn has_shell_modal(&self) -> bool {
         self.shell_modal.is_some()
     }

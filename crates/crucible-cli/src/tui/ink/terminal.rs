@@ -136,6 +136,12 @@ impl Terminal {
         Ok(())
     }
 
+    pub fn render_fullscreen(&mut self, tree: &Node) -> io::Result<()> {
+        let content = render_to_string(tree, self.width as usize);
+        self.output.render_fullscreen(&content)?;
+        Ok(())
+    }
+
     fn filter_graduated(&self, node: &Node) -> Node {
         match node {
             Node::Static(s) if self.graduation.is_graduated(&s.key) => Node::Empty,
