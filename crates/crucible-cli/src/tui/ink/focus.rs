@@ -232,4 +232,68 @@ mod tests {
 
         assert_eq!(ctx.focus_order().len(), 1);
     }
+
+    #[test]
+    fn blur_removes_active_focus() {
+        let mut ctx = FocusContext::new();
+        ctx.register(FocusId::new("a"), false);
+        ctx.focus("a");
+
+        assert!(ctx.is_focused("a"));
+
+        ctx.blur();
+
+        assert!(ctx.active_id().is_none());
+        assert!(!ctx.is_focused("a"));
+    }
+
+    #[test]
+    fn focus_on_empty_context_no_op() {
+        let mut ctx = FocusContext::new();
+
+        ctx.focus("nonexistent");
+
+        assert!(ctx.active_id().is_none());
+    }
+
+    #[test]
+    fn focus_next_on_empty_no_op() {
+        let mut ctx = FocusContext::new();
+
+        ctx.focus_next();
+
+        assert!(ctx.active_id().is_none());
+    }
+
+    #[test]
+    fn focus_prev_on_empty_no_op() {
+        let mut ctx = FocusContext::new();
+
+        ctx.focus_prev();
+
+        assert!(ctx.active_id().is_none());
+    }
+
+    #[test]
+    fn clear_registrations_resets_all_state() {
+        let mut ctx = FocusContext::new();
+        ctx.register(FocusId::new("a"), false);
+        ctx.register(FocusId::new("b"), false);
+        ctx.focus("a");
+
+        ctx.clear_registrations();
+
+        assert!(ctx.focus_order().is_empty());
+        assert!(ctx.active_id().is_none());
+        assert!(!ctx.is_focused("a"));
+    }
+
+    #[test]
+    fn focus_id_from_string() {
+        let id: FocusId = "test-id".into();
+        assert_eq!(id.0, "test-id");
+
+        let id2: FocusId = String::from("string-id").into();
+        assert_eq!(id2.0, "string-id");
+    }
 }

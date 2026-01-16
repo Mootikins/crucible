@@ -197,3 +197,143 @@ fn input_in_middle() {
     buf.handle(InputAction::Insert('e'));
     assert_eq!(buf.content(), "hello");
 }
+
+#[test]
+fn history_prev_on_empty_history_no_op() {
+    let mut buf = InputBuffer::new();
+    buf.set_content("current");
+
+    buf.handle(InputAction::HistoryPrev);
+
+    assert_eq!(
+        buf.content(),
+        "current",
+        "Should not change with empty history"
+    );
+    assert_eq!(buf.cursor(), 7);
+}
+
+#[test]
+fn history_next_without_history_nav_no_op() {
+    let mut buf = InputBuffer::new();
+    buf.set_content("submitted");
+    buf.handle(InputAction::Submit);
+
+    buf.set_content("current");
+
+    buf.handle(InputAction::HistoryNext);
+
+    assert_eq!(
+        buf.content(),
+        "current",
+        "HistoryNext without prior HistoryPrev should no-op"
+    );
+}
+
+#[test]
+fn draft_preserved_through_full_history_cycle() {
+    let mut buf = InputBuffer::new();
+
+    buf.set_content("item1");
+    buf.handle(InputAction::Submit);
+
+    buf.set_content("item2");
+    buf.handle(InputAction::Submit);
+
+    buf.set_content("my draft");
+
+    buf.handle(InputAction::HistoryPrev);
+    assert_eq!(buf.content(), "item2");
+
+    buf.handle(InputAction::HistoryPrev);
+    assert_eq!(buf.content(), "item1");
+
+    buf.handle(InputAction::HistoryPrev);
+    assert_eq!(buf.content(), "item1", "Should stay at oldest");
+
+    buf.handle(InputAction::HistoryNext);
+    assert_eq!(buf.content(), "item2");
+
+    buf.handle(InputAction::HistoryNext);
+    assert_eq!(buf.content(), "my draft", "Draft should be restored");
+}
+
+#[test]
+fn word_delete_at_start_no_op() {
+    let mut buf = InputBuffer::new();
+    buf.set_content("hello world");
+    buf.handle(InputAction::Home);
+
+    buf.handle(InputAction::DeleteWord);
+
+    assert_eq!(buf.content(), "hello world");
+    assert_eq!(buf.cursor(), 0);
+}
+
+#[test]
+fn word_left_handles_multiple_spaces() {
+    let mut buf = InputBuffer::new();
+    buf.set_content("hello    world");
+
+    buf.handle(InputAction::WordLeft);
+    assert_eq!(buf.cursor(), 9, "Should skip to start of 'world'");
+
+    buf.handle(InputAction::WordLeft);
+    assert_eq!(buf.cursor(), 0, "Should skip to start of line");
+}
+
+#[test]
+fn word_right_handles_trailing_whitespace() {
+    let mut buf = InputBuffer::new();
+    buf.set_content("hello    ");
+    buf.handle(InputAction::Home);
+
+    buf.handle(InputAction::WordRight);
+    assert_eq!(buf.cursor(), 5, "Should move to end of word 'hello'");
+
+    buf.handle(InputAction::WordRight);
+    assert_eq!(buf.cursor(), 9, "Second WordRight moves to end of string");
+}
+
+#[test]
+fn left_at_start_stays_at_start() {
+    let mut buf = InputBuffer::new();
+    buf.set_content("hello");
+    buf.handle(InputAction::Home);
+
+    buf.handle(InputAction::Left);
+
+    assert_eq!(buf.cursor(), 0);
+}
+
+#[test]
+fn right_at_end_stays_at_end() {
+    let mut buf = InputBuffer::new();
+    buf.set_content("hello");
+
+    buf.handle(InputAction::Right);
+
+    assert_eq!(buf.cursor(), 5);
+}
+
+#[test]
+fn delete_at_end_no_op() {
+    let mut buf = InputBuffer::new();
+    buf.set_content("hello");
+
+    buf.handle(InputAction::Delete);
+
+    assert_eq!(buf.content(), "hello");
+}
+
+#[test]
+fn backspace_at_start_no_op() {
+    let mut buf = InputBuffer::new();
+    buf.set_content("hello");
+    buf.handle(InputAction::Home);
+
+    buf.handle(InputAction::Backspace);
+
+    assert_eq!(buf.content(), "hello");
+    assert_eq!(buf.cursor(), 0);
+}
