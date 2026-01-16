@@ -1024,7 +1024,7 @@ impl InkChatApp {
         let term_height = crossterm::terminal::size()
             .map(|(_, h)| h as usize)
             .unwrap_or(24);
-        (term_height * 80 / 100).saturating_sub(4)
+        term_height.saturating_sub(2)
     }
 
     fn cancel_shell(&mut self) {
@@ -1170,32 +1170,49 @@ impl InkChatApp {
             None => return Node::Empty,
         };
 
-        let term_height = crossterm::terminal::size()
-            .map(|(_, h)| h as usize)
-            .unwrap_or(24);
-        let modal_height = (term_height * 80 / 100).max(10);
-        let content_height = modal_height.saturating_sub(4);
+        let (term_width, term_height) = crossterm::terminal::size()
+            .map(|(w, h)| (w as usize, h as usize))
+            .unwrap_or((80, 24));
+
+        let content_height = term_height.saturating_sub(2);
 
         let header_bg = Color::Rgb(50, 55, 65);
         let body_bg = Color::Rgb(30, 34, 42);
         let footer_bg = Color::Rgb(40, 44, 52);
 
+        let header_text = format!(" {} ", modal.format_header());
+        let header_padding = " ".repeat(term_width.saturating_sub(header_text.len()));
         let header = styled(
-            format!(" {} ", modal.format_header()),
+            format!("{}{}", header_text, header_padding),
             Style::new().bg(header_bg).bold(),
         );
 
         let visible = modal.visible_lines(content_height);
-        let body_lines: Vec<Node> = visible.iter().map(|line| text(line.clone())).collect();
+        let body_lines: Vec<Node> = visible
+            .iter()
+            .map(|line| {
+                let padding = " ".repeat(term_width.saturating_sub(line.chars().count()));
+                styled(format!("{}{}", line, padding), Style::new().bg(body_bg))
+            })
+            .collect();
 
-        let body = col(body_lines).with_style(Style::new().bg(body_bg));
+        let empty_lines_needed = content_height.saturating_sub(visible.len());
+        let empty_line = " ".repeat(term_width);
+        let mut all_body_lines = body_lines;
+        for _ in 0..empty_lines_needed {
+            all_body_lines.push(styled(empty_line.clone(), Style::new().bg(body_bg)));
+        }
 
+        let body = col(all_body_lines);
+
+        let footer_text = format!(" {} ", modal.format_footer());
+        let footer_padding = " ".repeat(term_width.saturating_sub(footer_text.len()));
         let footer = styled(
-            format!(" {} ", modal.format_footer()),
+            format!("{}{}", footer_text, footer_padding),
             Style::new().bg(footer_bg).dim(),
         );
 
-        col([header, body, spacer(), footer])
+        col([header, body, footer])
     }
 
     fn format_tool_args(args: &str) -> String {
