@@ -270,6 +270,19 @@ Tests handle missing infrastructure gracefully with runtime checks.
 
 When fixing TUI bugs or implementing UX changes, follow this pattern:
 
+**Test Type Selection:**
+
+| Scenario | Test Type | Why |
+|----------|-----------|-----|
+| State changes (popup open/close, mode switch) | Unit test with `InkChatApp` | Fast, isolated, no I/O |
+| Visual output (layout, colors, content) | Snapshot test with `insta` | Catches regressions, reviewable |
+| Keyboard interactions (shortcuts, navigation) | Unit test with `Event::Key` | Deterministic, fast |
+| Multi-turn flows (chat, streaming) | Integration test | Tests component interaction |
+| Real terminal behavior (escape sequences, timing) | PTY test with `expectrl` | E2E verification |
+| Cross-platform rendering | PTY test | Catches platform-specific bugs |
+
+**Start with unit tests. Escalate to PTY tests only when unit tests can't verify the behavior.**
+
 **1. Write failing test first:**
 ```rust
 use crate::tui::testing::{Harness, fixtures::sessions};
@@ -358,6 +371,68 @@ fn streaming_affects_status_and_history() {
 
 4. Review snapshots with `cargo insta review` before accepting.
 
+### Bugfix Workflow (Test-First)
+
+When fixing bugs, **write failing tests before fixing code**. This ensures:
+1. The bug is reproducible
+2. The fix actually works
+3. Regression protection for the future
+
+**Workflow:**
+
+```
+1. Report bug → Write failing test that reproduces it
+2. Run test → Confirm it fails (proves bug exists)
+3. Fix code → Minimal change to pass the test
+4. Run test → Confirm it passes (proves fix works)
+5. Commit → Include both fix AND test together
+```
+
+**Example test for a bug:**
+```rust
+#[test]
+fn ctrl_c_closes_popup_instead_of_inserting_c() {
+    let mut app = InkChatApp::default();
+    app.set_workspace_files(vec!["test.rs".to_string()]);
+
+    app.update(Event::Key(key(KeyCode::Char('@'))));
+    assert!(app.is_popup_visible(), "Popup should open on @");
+
+    app.update(Event::Key(ctrl('c')));
+
+    assert!(!app.is_popup_visible(), "Ctrl+C should close popup");
+    assert!(
+        !app.input_content().contains('c'),
+        "Ctrl+C should not insert 'c' character"
+    );
+}
+```
+
+**Test naming convention for bugfixes:**
+- Name describes the correct behavior, not the bug
+- Good: `ctrl_c_closes_popup_instead_of_inserting_c`
+- Bad: `test_ctrl_c_bug` or `fix_popup_issue`
+
+**Commit message format:**
+```
+fix(component): brief description of what was fixed
+
+- Bullet points explaining the fix
+- Include edge cases handled
+
+Added regression tests:
+- test_name_one
+- test_name_two
+```
+
+**Confidence levels after bugfix:**
+| Validation | Confidence |
+|------------|------------|
+| Code review only | Low (50%) |
+| Existing tests pass | Medium (70%) |
+| New regression tests pass | High (90%) |
+| Manual verification + tests | Very High (95%) |
+
 ### PTY-Based E2E Testing
 
 For testing real TUI behavior with actual terminal emulation, use the `expectrl`-based harness in `tests/tui_e2e_harness.rs`:
@@ -392,6 +467,13 @@ fn test_chat_interaction() {
 - Verifying terminal escape sequence handling
 - Multi-turn conversation flows with real LLM
 
+**When NOT to use PTY tests:**
+- Simple state changes (use unit tests)
+- Layout verification (use snapshot tests)
+- Keyboard shortcut handling (use unit tests with `Event::Key`)
+
+PTY tests are slow and flaky. Reserve them for behaviors that can't be verified any other way.
+
 **Run PTY tests:**
 ```bash
 cargo test -p crucible-cli streaming_completion -- --ignored --nocapture
@@ -406,6 +488,7 @@ Before submitting changes:
 - [ ] Docs updated if needed (architectural changes go in `docs/Meta/`)
 - [ ] No debug code left in
 - [ ] Conventional commit messages
+- [ ] **Bugfixes include regression tests** (see Bugfix Workflow above)
 
 ## Key Resources
 
