@@ -4,7 +4,11 @@ use crate::tui::ink::markdown::markdown_to_node_with_width;
 use crate::tui::ink::node::*;
 use crate::tui::ink::style::{Color, Gap, Style};
 use crossterm::event::KeyCode;
-use std::time::Duration;
+use std::io::{BufRead, BufReader};
+use std::path::PathBuf;
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::time::{Duration, Instant};
 
 const INPUT_BG: Color = Color::Rgb(40, 44, 52);
 const BULLET_PREFIX: &str = " ● ";
@@ -135,6 +139,105 @@ struct StreamingState {
     active: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShellStatus {
+    Running,
+    Completed { exit_code: i32 },
+    Cancelled,
+}
+
+pub struct ShellModal {
+    command: String,
+    output_lines: Vec<String>,
+    status: ShellStatus,
+    scroll_offset: usize,
+    start_time: Instant,
+    duration: Option<Duration>,
+    output_path: Option<PathBuf>,
+    working_dir: PathBuf,
+    output_receiver: Option<Receiver<String>>,
+    child_pid: Option<u32>,
+}
+
+impl ShellModal {
+    fn new(command: String, working_dir: PathBuf) -> Self {
+        Self {
+            command,
+            output_lines: Vec::new(),
+            status: ShellStatus::Running,
+            scroll_offset: 0,
+            start_time: Instant::now(),
+            duration: None,
+            output_path: None,
+            working_dir,
+            output_receiver: None,
+            child_pid: None,
+        }
+    }
+
+    fn visible_lines(&self, max_lines: usize) -> &[String] {
+        let total = self.output_lines.len();
+        if total <= max_lines {
+            &self.output_lines
+        } else {
+            let start = self.scroll_offset.min(total.saturating_sub(max_lines));
+            let end = (start + max_lines).min(total);
+            &self.output_lines[start..end]
+        }
+    }
+
+    fn scroll_up(&mut self, lines: usize) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(lines);
+    }
+
+    fn scroll_down(&mut self, lines: usize, max_visible: usize) {
+        let max_offset = self.output_lines.len().saturating_sub(max_visible);
+        self.scroll_offset = (self.scroll_offset + lines).min(max_offset);
+    }
+
+    fn scroll_to_top(&mut self) {
+        self.scroll_offset = 0;
+    }
+
+    fn scroll_to_bottom(&mut self, max_visible: usize) {
+        self.scroll_offset = self.output_lines.len().saturating_sub(max_visible);
+    }
+
+    fn is_running(&self) -> bool {
+        self.status == ShellStatus::Running
+    }
+
+    fn format_header(&self) -> String {
+        let status_str = match &self.status {
+            ShellStatus::Running => "● running".to_string(),
+            ShellStatus::Completed { exit_code } if *exit_code == 0 => {
+                format!("✓ exit 0 {:.1?}", self.duration.unwrap_or_default())
+            }
+            ShellStatus::Completed { exit_code } => {
+                format!(
+                    "✗ exit {} {:.1?}",
+                    exit_code,
+                    self.duration.unwrap_or_default()
+                )
+            }
+            ShellStatus::Cancelled => "⏹ cancelled".to_string(),
+        };
+        format!("$ {}  {}", self.command, status_str)
+    }
+
+    fn format_footer(&self) -> String {
+        let line_info = format!("({} lines)", self.output_lines.len());
+        if self.is_running() {
+            format!("Ctrl+C: cancel  {}", line_info)
+        } else {
+            format!(
+                "s: send │ t: truncated │ e: edit │ Enter/Esc: dismiss  {}",
+                line_info
+            )
+        }
+    }
+}
+
 pub struct InkChatApp {
     items: Vec<ChatItem>,
     input: InputBuffer,
@@ -157,6 +260,10 @@ pub struct InkChatApp {
     context_total: usize,
     last_ctrl_c: Option<std::time::Instant>,
     notification: Option<(String, std::time::Instant)>,
+    shell_modal: Option<ShellModal>,
+    shell_history: Vec<String>,
+    shell_history_index: Option<usize>,
+    session_dir: Option<PathBuf>,
 }
 
 impl Default for InkChatApp {
@@ -183,6 +290,10 @@ impl Default for InkChatApp {
             context_total: 128000,
             last_ctrl_c: None,
             notification: None,
+            shell_modal: None,
+            shell_history: Vec::new(),
+            shell_history_index: None,
+            session_dir: None,
         }
     }
 }
@@ -197,6 +308,10 @@ impl App for InkChatApp {
     }
 
     fn view(&self, ctx: &ViewContext<'_>) -> Node {
+        if self.shell_modal.is_some() {
+            return self.render_shell_modal();
+        }
+
         col([
             self.render_items(),
             self.render_streaming(),
@@ -351,6 +466,10 @@ impl InkChatApp {
         self.kiln_notes = notes;
     }
 
+    pub fn set_session_dir(&mut self, path: PathBuf) {
+        self.session_dir = Some(path);
+    }
+
     pub fn is_streaming(&self) -> bool {
         self.streaming.active
     }
@@ -369,8 +488,17 @@ impl InkChatApp {
         &self.popup_filter
     }
 
+    #[cfg(test)]
+    pub fn has_shell_modal(&self) -> bool {
+        self.shell_modal.is_some()
+    }
+
     fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Action<ChatAppMsg> {
         self.error = None;
+
+        if self.shell_modal.is_some() {
+            return self.handle_shell_modal_key(key);
+        }
 
         if key.code == KeyCode::F(1) {
             if self.show_popup {
@@ -573,6 +701,10 @@ impl InkChatApp {
             return self.handle_repl_command(&content);
         }
 
+        if content.starts_with('!') {
+            return self.handle_shell_command(&content);
+        }
+
         if let Some(ref callback) = self.on_submit {
             callback(content.clone());
         }
@@ -656,6 +788,367 @@ impl InkChatApp {
                 Action::Continue
             }
         }
+    }
+
+    fn handle_shell_command(&mut self, cmd: &str) -> Action<ChatAppMsg> {
+        let shell_cmd = cmd[1..].trim().to_string();
+        if shell_cmd.is_empty() {
+            self.error = Some("Empty shell command".to_string());
+            return Action::Continue;
+        }
+
+        if !self
+            .shell_history
+            .last()
+            .is_some_and(|last| last == &shell_cmd)
+        {
+            self.shell_history.push(shell_cmd.clone());
+        }
+        self.shell_history_index = None;
+
+        let working_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let mut modal = ShellModal::new(shell_cmd.clone(), working_dir.clone());
+
+        let (tx, rx): (Sender<String>, Receiver<String>) = mpsc::channel();
+        modal.output_receiver = Some(rx);
+
+        let shell = if cfg!(windows) { "cmd" } else { "sh" };
+        let shell_arg = if cfg!(windows) { "/C" } else { "-c" };
+
+        match Command::new(shell)
+            .arg(shell_arg)
+            .arg(&shell_cmd)
+            .current_dir(&working_dir)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+        {
+            Ok(mut child) => {
+                modal.child_pid = Some(child.id());
+
+                let stdout = child.stdout.take();
+                let stderr = child.stderr.take();
+
+                std::thread::spawn(move || {
+                    Self::stream_output(stdout, stderr, tx, child);
+                });
+
+                self.shell_modal = Some(modal);
+            }
+            Err(e) => {
+                self.error = Some(format!("Failed to execute command: {}", e));
+            }
+        }
+
+        Action::Continue
+    }
+
+    fn stream_output(
+        stdout: Option<std::process::ChildStdout>,
+        stderr: Option<std::process::ChildStderr>,
+        tx: Sender<String>,
+        mut child: Child,
+    ) {
+        let tx_stdout = tx.clone();
+        let tx_stderr = tx.clone();
+
+        let stdout_handle = stdout.map(|out| {
+            std::thread::spawn(move || {
+                let reader = BufReader::new(out);
+                for line in reader.lines().map_while(Result::ok) {
+                    if tx_stdout.send(line).is_err() {
+                        break;
+                    }
+                }
+            })
+        });
+
+        let stderr_handle = stderr.map(|err| {
+            std::thread::spawn(move || {
+                let reader = BufReader::new(err);
+                for line in reader.lines().map_while(Result::ok) {
+                    if tx_stderr.send(format!("\x1b[31m{}\x1b[0m", line)).is_err() {
+                        break;
+                    }
+                }
+            })
+        });
+
+        if let Some(h) = stdout_handle {
+            let _ = h.join();
+        }
+        if let Some(h) = stderr_handle {
+            let _ = h.join();
+        }
+
+        let exit_code = child.wait().map(|s| s.code().unwrap_or(-1)).unwrap_or(-1);
+        let _ = tx.send(format!("\x00EXIT:{}", exit_code));
+    }
+
+    fn poll_shell_output(&mut self) {
+        if let Some(ref mut modal) = self.shell_modal {
+            if let Some(ref rx) = modal.output_receiver {
+                while let Ok(line) = rx.try_recv() {
+                    if let Some(code_str) = line.strip_prefix("\x00EXIT:") {
+                        if let Ok(code) = code_str.parse::<i32>() {
+                            modal.status = ShellStatus::Completed { exit_code: code };
+                            modal.duration = Some(modal.start_time.elapsed());
+                        }
+                    } else {
+                        modal.output_lines.push(line);
+                    }
+                }
+            }
+        }
+    }
+
+    fn handle_shell_modal_key(&mut self, key: crossterm::event::KeyEvent) -> Action<ChatAppMsg> {
+        self.poll_shell_output();
+
+        let is_running = self
+            .shell_modal
+            .as_ref()
+            .map(|m| m.is_running())
+            .unwrap_or(false);
+
+        let visible_lines = self.modal_visible_lines();
+        let half_page = visible_lines / 2;
+
+        match key.code {
+            KeyCode::Char('c')
+                if key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
+            {
+                if is_running {
+                    self.cancel_shell();
+                }
+            }
+            KeyCode::Esc | KeyCode::Enter if !is_running => {
+                self.shell_modal = None;
+            }
+            KeyCode::Char('s') if !is_running => {
+                self.send_shell_output(false);
+                self.shell_modal = None;
+            }
+            KeyCode::Char('t') if !is_running => {
+                self.send_shell_output(true);
+                self.shell_modal = None;
+            }
+            KeyCode::Char('e') if !is_running => {
+                self.open_shell_output_in_editor();
+            }
+            KeyCode::Up | KeyCode::Char('k') if !is_running => {
+                if let Some(ref mut modal) = self.shell_modal {
+                    modal.scroll_up(1);
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') if !is_running => {
+                if let Some(ref mut modal) = self.shell_modal {
+                    modal.scroll_down(1, visible_lines);
+                }
+            }
+            KeyCode::Char('u') if !is_running => {
+                if let Some(ref mut modal) = self.shell_modal {
+                    modal.scroll_up(half_page);
+                }
+            }
+            KeyCode::Char('d') if !is_running => {
+                if let Some(ref mut modal) = self.shell_modal {
+                    modal.scroll_down(half_page, visible_lines);
+                }
+            }
+            KeyCode::Char('g') if !is_running => {
+                if let Some(ref mut modal) = self.shell_modal {
+                    modal.scroll_to_top();
+                }
+            }
+            KeyCode::Char('G') if !is_running => {
+                if let Some(ref mut modal) = self.shell_modal {
+                    modal.scroll_to_bottom(visible_lines);
+                }
+            }
+            _ => {}
+        }
+        Action::Continue
+    }
+
+    fn modal_visible_lines(&self) -> usize {
+        let term_height = crossterm::terminal::size()
+            .map(|(_, h)| h as usize)
+            .unwrap_or(24);
+        (term_height * 80 / 100).saturating_sub(4)
+    }
+
+    fn cancel_shell(&mut self) {
+        if let Some(ref mut modal) = self.shell_modal {
+            if let Some(pid) = modal.child_pid {
+                #[cfg(unix)]
+                {
+                    let _ = Command::new("kill")
+                        .args(["-TERM", &pid.to_string()])
+                        .output();
+                }
+                #[cfg(windows)]
+                {
+                    let _ = Command::new("taskkill")
+                        .args(["/PID", &pid.to_string(), "/F"])
+                        .output();
+                }
+            }
+            modal.status = ShellStatus::Cancelled;
+            modal.duration = Some(modal.start_time.elapsed());
+        }
+    }
+
+    fn save_shell_output(&mut self) -> Option<PathBuf> {
+        let modal = self.shell_modal.as_ref()?;
+        let session_dir = self.session_dir.clone()?;
+
+        let shell_dir = session_dir.join("shell");
+        std::fs::create_dir_all(&shell_dir).ok()?;
+
+        let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+        let cmd_slug: String = modal
+            .command
+            .chars()
+            .take(20)
+            .map(|c| if c.is_alphanumeric() { c } else { '-' })
+            .collect();
+        let filename = format!("{}-{}.output", timestamp, cmd_slug);
+        let path = shell_dir.join(&filename);
+
+        let mut content = String::new();
+        content.push_str(&format!("$ {}\n", modal.command));
+        content.push_str(&format!(
+            "Exit: {}\n",
+            match &modal.status {
+                ShellStatus::Completed { exit_code } => exit_code.to_string(),
+                ShellStatus::Cancelled => "cancelled".to_string(),
+                ShellStatus::Running => "running".to_string(),
+            }
+        ));
+        if let Some(duration) = modal.duration {
+            content.push_str(&format!("Duration: {:.2?}\n", duration));
+        }
+        content.push_str(&format!("Cwd: {}\n", modal.working_dir.display()));
+        content.push_str("---\n");
+        for line in &modal.output_lines {
+            content.push_str(line);
+            content.push('\n');
+        }
+
+        std::fs::write(&path, content).ok()?;
+
+        if let Some(ref mut m) = self.shell_modal {
+            m.output_path = Some(path.clone());
+        }
+
+        Some(path)
+    }
+
+    fn send_shell_output(&mut self, truncated: bool) {
+        let path = self.save_shell_output();
+
+        if let Some(ref modal) = self.shell_modal {
+            let path_str = path
+                .as_ref()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str())
+                .map(|n| format!("shell/{}", n))
+                .unwrap_or_else(|| "(not saved)".to_string());
+
+            let exit_str = match &modal.status {
+                ShellStatus::Completed { exit_code } => format!("exit {}", exit_code),
+                ShellStatus::Cancelled => "cancelled".to_string(),
+                ShellStatus::Running => "running".to_string(),
+            };
+
+            let mut message = format!(
+                "[Shell: {}]\n$ {} ({})\n\n",
+                path_str, modal.command, exit_str
+            );
+
+            if truncated {
+                let total = modal.output_lines.len();
+                let show_lines = 50.min(total);
+                if total > show_lines {
+                    message.push_str(&format!(
+                        "[Truncated: showing last {} of {} lines]\n\n",
+                        show_lines, total
+                    ));
+                }
+                for line in modal.output_lines.iter().rev().take(show_lines).rev() {
+                    message.push_str(line);
+                    message.push('\n');
+                }
+            } else {
+                for line in &modal.output_lines {
+                    message.push_str(line);
+                    message.push('\n');
+                }
+            }
+
+            self.add_system_message(message);
+        }
+    }
+
+    fn open_shell_output_in_editor(&mut self) {
+        let path = match self.save_shell_output() {
+            Some(p) => p,
+            None => {
+                self.error = Some("Failed to save output file".to_string());
+                return;
+            }
+        };
+
+        let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+
+        crossterm::terminal::disable_raw_mode().ok();
+        crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen).ok();
+
+        let status = Command::new(&editor).arg(&path).status();
+
+        crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen).ok();
+        crossterm::terminal::enable_raw_mode().ok();
+
+        if let Err(e) = status {
+            self.error = Some(format!("Failed to open editor: {}", e));
+        }
+    }
+
+    fn render_shell_modal(&self) -> Node {
+        let modal = match &self.shell_modal {
+            Some(m) => m,
+            None => return Node::Empty,
+        };
+
+        let term_height = crossterm::terminal::size()
+            .map(|(_, h)| h as usize)
+            .unwrap_or(24);
+        let modal_height = (term_height * 80 / 100).max(10);
+        let content_height = modal_height.saturating_sub(4);
+
+        let header_bg = Color::Rgb(50, 55, 65);
+        let body_bg = Color::Rgb(30, 34, 42);
+        let footer_bg = Color::Rgb(40, 44, 52);
+
+        let header = styled(
+            format!(" {} ", modal.format_header()),
+            Style::new().bg(header_bg).bold(),
+        );
+
+        let visible = modal.visible_lines(content_height);
+        let body_lines: Vec<Node> = visible.iter().map(|line| text(line.clone())).collect();
+
+        let body = col(body_lines).with_style(Style::new().bg(body_bg));
+
+        let footer = styled(
+            format!(" {} ", modal.format_footer()),
+            Style::new().bg(footer_bg).dim(),
+        );
+
+        col([header, body, spacer(), footer])
     }
 
     fn format_tool_args(args: &str) -> String {
