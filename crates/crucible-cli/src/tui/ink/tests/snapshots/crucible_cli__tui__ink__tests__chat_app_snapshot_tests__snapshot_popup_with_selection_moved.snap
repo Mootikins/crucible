@@ -6,10 +6,7 @@ expression: render_app(&app)
 
    tool semantic_search  Search notes by meaning                               
    tool create_note  Create a new note                                         
- ▸ tool get_outlinks  Get outgoing links                                       
-   tool get_inlinks  Get incoming links                                        
-   tool list_notes  List all notes                                             
-   command /mode  Cycle chat mode                                              
+ ▸ command /mode  Cycle chat mode                                              
    command /clear  Clear history                                               
    command /help  Show help                                                    
 ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
