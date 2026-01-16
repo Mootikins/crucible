@@ -358,6 +358,16 @@ impl InkChatApp {
         self.input.content()
     }
 
+    #[cfg(test)]
+    pub fn is_popup_visible(&self) -> bool {
+        self.show_popup
+    }
+
+    #[cfg(test)]
+    pub fn current_popup_filter(&self) -> &str {
+        &self.popup_filter
+    }
+
     fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Action<ChatAppMsg> {
         self.error = None;
 
@@ -421,8 +431,8 @@ impl InkChatApp {
             self.popup_kind = kind;
             self.popup_trigger_pos = trigger_pos;
             self.popup_filter = filter;
-            self.show_popup = true;
             self.popup_selected = 0;
+            self.show_popup = !self.get_popup_items().is_empty();
         } else if self.popup_kind != AutocompleteKind::None {
             self.popup_kind = AutocompleteKind::None;
             self.popup_filter.clear();
@@ -437,9 +447,22 @@ impl InkChatApp {
     ) -> Option<(AutocompleteKind, usize, String)> {
         let before_cursor = &content[..cursor];
 
-        if content.starts_with('/') && !before_cursor.contains(' ') {
-            let filter = &before_cursor[1..];
-            return Some((AutocompleteKind::SlashCommand, 0, filter.to_string()));
+        if let Some(slash_pos) = before_cursor.rfind('/') {
+            let preceded_by_whitespace = slash_pos == 0
+                || before_cursor[..slash_pos]
+                    .chars()
+                    .last()
+                    .is_some_and(char::is_whitespace);
+            if preceded_by_whitespace {
+                let filter = &before_cursor[slash_pos + 1..];
+                if !filter.contains(char::is_whitespace) {
+                    return Some((
+                        AutocompleteKind::SlashCommand,
+                        slash_pos,
+                        filter.to_string(),
+                    ));
+                }
+            }
         }
 
         if let Some(at_pos) = before_cursor.rfind('@') {
@@ -498,6 +521,17 @@ impl InkChatApp {
                 self.check_autocomplete_trigger();
             }
             KeyCode::Char(c) => {
+                // Ctrl+C closes popup instead of inserting 'c'
+                if key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL)
+                    && c == 'c'
+                {
+                    self.show_popup = false;
+                    self.popup_kind = AutocompleteKind::None;
+                    self.popup_filter.clear();
+                    return Action::Continue;
+                }
                 self.input.handle(InputAction::Insert(c));
                 self.check_autocomplete_trigger();
             }
