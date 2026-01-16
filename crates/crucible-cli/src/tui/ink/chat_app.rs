@@ -68,6 +68,14 @@ pub enum ChatItem {
         result: String,
         complete: bool,
     },
+    /// Shell command execution - display only, never sent to agent
+    ShellExecution {
+        id: String,
+        command: String,
+        exit_code: i32,
+        output_tail: Vec<String>,
+        output_path: Option<PathBuf>,
+    },
 }
 
 impl ChatItem {
@@ -75,6 +83,7 @@ impl ChatItem {
         match self {
             ChatItem::Message { id, .. } => id,
             ChatItem::ToolCall { id, .. } => id,
+            ChatItem::ShellExecution { id, .. } => id,
         }
     }
 }
@@ -254,12 +263,9 @@ impl ShellModal {
     fn format_footer(&self) -> String {
         let line_info = format!("({} lines)", self.output_lines.len());
         if self.is_running() {
-            format!("Ctrl+C: cancel  {}", line_info)
+            format!("Ctrl+C cancel  {}", line_info)
         } else {
-            format!(
-                "s: send │ t: truncated │ e: edit │ q/Esc: quit  {}",
-                line_info
-            )
+            format!("i insert │ t truncated │ e edit │ q quit  {}", line_info)
         }
     }
 }
@@ -997,10 +1003,10 @@ impl InkChatApp {
                     self.cancel_shell();
                 }
             }
-            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') if !is_running => {
+            KeyCode::Esc | KeyCode::Char('q') if !is_running => {
                 self.close_shell_modal();
             }
-            KeyCode::Char('s') if !is_running => {
+            KeyCode::Char('i') if !is_running => {
                 self.send_shell_output(false);
                 self.close_shell_modal();
             }
@@ -1091,7 +1097,33 @@ impl InkChatApp {
     }
 
     fn close_shell_modal(&mut self) {
-        self.shell_modal = None;
+        self.save_shell_output();
+
+        if let Some(modal) = self.shell_modal.take() {
+            let exit_code = match modal.status {
+                ShellStatus::Completed { exit_code } => exit_code,
+                ShellStatus::Cancelled => -1,
+                ShellStatus::Running => -1,
+            };
+
+            let output_tail: Vec<String> = modal
+                .output_lines
+                .iter()
+                .rev()
+                .take(5)
+                .rev()
+                .cloned()
+                .collect();
+
+            self.message_counter += 1;
+            self.items.push(ChatItem::ShellExecution {
+                id: format!("shell-{}", self.message_counter),
+                command: modal.command,
+                exit_code,
+                output_tail,
+                output_path: modal.output_path,
+            });
+        }
         self.leave_alternate_screen();
     }
 
@@ -1251,14 +1283,50 @@ impl InkChatApp {
 
         let body = col(body_lines);
 
-        let footer_text = format!(" {} ", modal.format_footer());
-        let footer_padding = " ".repeat(term_width.saturating_sub(footer_text.len()));
-        let footer = styled(
-            format!("{}{}", footer_text, footer_padding),
-            Style::new().bg(footer_bg).dim(),
-        );
+        let footer = self.render_shell_footer(modal, term_width, footer_bg);
 
         col([header, body, spacer(), footer])
+    }
+
+    fn render_shell_footer(&self, modal: &ShellModal, width: usize, bg: Color) -> Node {
+        let line_info = format!("({} lines)", modal.output_lines.len());
+        let key_style = Style::new().bg(bg).fg(Color::Cyan);
+        let sep_style = Style::new().bg(bg).fg(Color::DarkGray);
+        let text_style = Style::new().bg(bg).fg(Color::White).dim();
+
+        let content = if modal.is_running() {
+            row([
+                styled(" ", text_style),
+                styled("Ctrl+C", key_style),
+                styled(" cancel  ", text_style),
+                styled(&line_info, sep_style),
+            ])
+        } else {
+            row([
+                styled(" ", text_style),
+                styled("i", key_style),
+                styled(" insert ", text_style),
+                styled("│", sep_style),
+                styled(" ", text_style),
+                styled("t", key_style),
+                styled(" truncated ", text_style),
+                styled("│", sep_style),
+                styled(" ", text_style),
+                styled("e", key_style),
+                styled(" edit ", text_style),
+                styled("│", sep_style),
+                styled(" ", text_style),
+                styled("q", key_style),
+                styled(" quit  ", text_style),
+                styled(&line_info, sep_style),
+            ])
+        };
+
+        let content_str = modal.format_footer();
+        let padding_len = width.saturating_sub(content_str.len() + 1);
+        let padding = styled(" ".repeat(padding_len), Style::new().bg(bg));
+
+        row([content, padding])
     }
 
     fn format_tool_args(args: &str) -> String {
@@ -1455,6 +1523,45 @@ impl InkChatApp {
                 } else {
                     col([text(""), content])
                 }
+            }
+            ChatItem::ShellExecution {
+                id,
+                command,
+                exit_code,
+                output_tail,
+                output_path,
+            } => {
+                let exit_style = if *exit_code == 0 {
+                    Style::new().fg(Color::Green)
+                } else {
+                    Style::new().fg(Color::Red)
+                };
+
+                let header = row([
+                    styled(" $ ", Style::new().fg(Color::DarkGray)),
+                    styled(command, Style::new().fg(Color::White)),
+                    styled(format!("  exit {}", exit_code), exit_style.dim()),
+                ]);
+
+                let tail_nodes: Vec<Node> = output_tail
+                    .iter()
+                    .map(|line| styled(format!("   {}", line), Style::new().fg(Color::DarkGray)))
+                    .collect();
+
+                let path_node = output_path
+                    .as_ref()
+                    .map(|p| {
+                        styled(
+                            format!("   → {}", p.display()),
+                            Style::new().fg(Color::DarkGray).dim(),
+                        )
+                    })
+                    .unwrap_or(Node::Empty);
+
+                let content = col(std::iter::once(header)
+                    .chain(tail_nodes)
+                    .chain(std::iter::once(path_node)));
+                scrollback(id, [content])
             }
         }
     }
