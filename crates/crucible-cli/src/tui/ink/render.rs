@@ -1,6 +1,6 @@
 use crate::tui::ink::ansi::visible_width;
 use crate::tui::ink::node::{
-    BoxNode, Direction, InputNode, Node, PopupNode, SpinnerNode, TextNode,
+    BoxNode, Direction, InputNode, Node, PopupNode, Size, SpinnerNode, TextNode,
 };
 use crate::tui::ink::style::{Color, Style};
 use crossterm::style::Stylize;
@@ -92,44 +92,10 @@ fn render_box(boxnode: &BoxNode, width: usize, output: &mut String) {
         .saturating_sub(boxnode.padding.horizontal() as usize)
         .saturating_sub(border_size);
 
-    let mut children_output: Vec<String> = Vec::new();
-
-    match boxnode.direction {
-        Direction::Column => {
-            for child in &boxnode.children {
-                if matches!(child, Node::Empty) {
-                    continue;
-                }
-                let mut child_str = String::new();
-                render_node_to_string(child, inner_width, &mut child_str);
-                children_output.push(child_str);
-            }
-        }
-        Direction::Row => {
-            let all_text = boxnode.children.iter().all(|c| matches!(c, Node::Text(_)));
-            if all_text {
-                for child in &boxnode.children {
-                    let mut child_str = String::new();
-                    render_node_to_string(child, inner_width, &mut child_str);
-                    if !child_str.is_empty() {
-                        children_output.push(child_str);
-                    }
-                }
-            } else {
-                let mut remaining_width = inner_width;
-                for child in &boxnode.children {
-                    let mut child_str = String::new();
-                    render_node_to_string(child, remaining_width, &mut child_str);
-                    if !child_str.is_empty() {
-                        let first_line = child_str.lines().next().unwrap_or("");
-                        let child_width = visible_width(first_line);
-                        remaining_width = remaining_width.saturating_sub(child_width);
-                        children_output.push(child_str);
-                    }
-                }
-            }
-        }
-    }
+    let children_output = match boxnode.direction {
+        Direction::Column => render_column_children(&boxnode.children, inner_width),
+        Direction::Row => render_row_children(&boxnode.children, inner_width),
+    };
 
     let content = match boxnode.direction {
         Direction::Column => children_output.join("\r\n"),
@@ -140,6 +106,101 @@ fn render_box(boxnode: &BoxNode, width: usize, output: &mut String) {
         render_bordered_content(&content, border, width, &boxnode.style, output);
     } else {
         output.push_str(&content);
+    }
+}
+
+fn render_column_children(children: &[Node], width: usize) -> Vec<String> {
+    children
+        .iter()
+        .filter(|c| !matches!(c, Node::Empty))
+        .map(|child| {
+            let mut s = String::new();
+            render_node_to_string(child, width, &mut s);
+            s
+        })
+        .collect()
+}
+
+fn render_row_children(children: &[Node], width: usize) -> Vec<String> {
+    if children.is_empty() {
+        return Vec::new();
+    }
+
+    let mut fixed_width_used = 0usize;
+    let mut total_flex_weight = 0u16;
+    let mut child_sizes: Vec<ChildSize> = Vec::with_capacity(children.len());
+
+    for child in children {
+        if matches!(child, Node::Empty) {
+            child_sizes.push(ChildSize::Skip);
+            continue;
+        }
+
+        let size = get_node_size(child);
+        match size {
+            Size::Fixed(w) => {
+                fixed_width_used += w as usize;
+                child_sizes.push(ChildSize::Fixed(w as usize));
+            }
+            Size::Flex(weight) => {
+                total_flex_weight += weight;
+                child_sizes.push(ChildSize::Flex(weight));
+            }
+            Size::Content => {
+                let mut temp = String::new();
+                render_node_to_string(child, width, &mut temp);
+                let content_width = temp.lines().next().map(visible_width).unwrap_or(0);
+                fixed_width_used += content_width;
+                child_sizes.push(ChildSize::Content(temp));
+            }
+        }
+    }
+
+    let remaining = width.saturating_sub(fixed_width_used);
+
+    let mut result = Vec::with_capacity(children.len());
+    for (child, child_size) in children.iter().zip(child_sizes.into_iter()) {
+        match child_size {
+            ChildSize::Skip => {}
+            ChildSize::Content(rendered) => {
+                if !rendered.is_empty() {
+                    result.push(rendered);
+                }
+            }
+            ChildSize::Fixed(w) => {
+                let mut s = String::new();
+                render_node_to_string(child, w, &mut s);
+                if !s.is_empty() {
+                    result.push(s);
+                }
+            }
+            ChildSize::Flex(weight) => {
+                let flex_width = if total_flex_weight > 0 {
+                    (remaining as u32 * weight as u32 / total_flex_weight as u32) as usize
+                } else {
+                    0
+                };
+                if flex_width > 0 {
+                    result.push(" ".repeat(flex_width));
+                }
+            }
+        }
+    }
+
+    result
+}
+
+enum ChildSize {
+    Skip,
+    Fixed(usize),
+    Flex(u16),
+    Content(String),
+}
+
+fn get_node_size(node: &Node) -> Size {
+    match node {
+        Node::Box(b) => b.size,
+        _ => Size::Content,
     }
 }
 
