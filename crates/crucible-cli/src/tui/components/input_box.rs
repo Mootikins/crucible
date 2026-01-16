@@ -569,74 +569,38 @@ mod tests {
             terminal
         }
 
-        #[test]
-        fn line_count_empty() {
-            let widget = InputBoxWidget::new("", 0);
-            assert_eq!(widget.line_count(), 1);
+        use test_case::test_case;
+
+        #[test_case("", 1 ; "empty_is_one_line")]
+        #[test_case("hello world", 1 ; "single_line")]
+        #[test_case("line one\nline two", 2 ; "two_lines")]
+        #[test_case("line one\n", 2 ; "trailing_newline")]
+        #[test_case("one\ntwo\nthree\nfour\nfive", 5 ; "five_lines")]
+        fn line_count(content: &str, expected: usize) {
+            let widget = InputBoxWidget::new(content, 0);
+            assert_eq!(widget.line_count(), expected);
         }
 
-        #[test]
-        fn line_count_single_line() {
-            let widget = InputBoxWidget::new("hello world", 0);
-            assert_eq!(widget.line_count(), 1);
-        }
-
-        #[test]
-        fn line_count_two_lines() {
-            let widget = InputBoxWidget::new("line one\nline two", 0);
-            assert_eq!(widget.line_count(), 2);
-        }
-
-        #[test]
-        fn line_count_trailing_newline() {
-            let widget = InputBoxWidget::new("line one\n", 0);
-            assert_eq!(widget.line_count(), 2);
-        }
-
-        #[test]
-        fn line_count_multiple_lines() {
-            let widget = InputBoxWidget::new("one\ntwo\nthree\nfour\nfive", 0);
-            assert_eq!(widget.line_count(), 5);
-        }
-
-        #[test]
-        fn cursor_to_line_col_first_line() {
-            let widget = InputBoxWidget::new("hello\nworld", 3);
+        #[test_case("hello\nworld", 3, 0, 3 ; "first_line_middle")]
+        #[test_case("hello\nworld", 8, 1, 2 ; "second_line_after_wo")]
+        #[test_case("hello\nworld", 6, 1, 0 ; "right_after_newline")]
+        #[test_case("hello\nworld", 11, 1, 5 ; "end_of_buffer")]
+        fn cursor_to_line_col(
+            content: &str,
+            cursor: usize,
+            expected_line: usize,
+            expected_col: usize,
+        ) {
+            let widget = InputBoxWidget::new(content, cursor);
             let (line, col) = widget.cursor_to_line_col();
-            assert_eq!(line, 0);
-            assert_eq!(col, 3);
-        }
-
-        #[test]
-        fn cursor_to_line_col_second_line() {
-            // "hello\nworld" - cursor at position 8 (after "wo")
-            let widget = InputBoxWidget::new("hello\nworld", 8);
-            let (line, col) = widget.cursor_to_line_col();
-            assert_eq!(line, 1);
-            assert_eq!(col, 2); // "wo" is 2 chars
-        }
-
-        #[test]
-        fn cursor_to_line_col_at_newline() {
-            // Cursor right after newline
-            let widget = InputBoxWidget::new("hello\nworld", 6);
-            let (line, col) = widget.cursor_to_line_col();
-            assert_eq!(line, 1);
-            assert_eq!(col, 0);
-        }
-
-        #[test]
-        fn cursor_to_line_col_end_of_buffer() {
-            let widget = InputBoxWidget::new("hello\nworld", 11);
-            let (line, col) = widget.cursor_to_line_col();
-            assert_eq!(line, 1);
-            assert_eq!(col, 5);
+            assert_eq!(line, expected_line);
+            assert_eq!(col, expected_col);
         }
 
         #[test]
         fn required_height_single_line() {
             let widget = InputBoxWidget::new("hello", 0);
-            assert_eq!(widget.required_height(), 3); // 1 line + 2 padding
+            assert_eq!(widget.required_height(), 3);
         }
 
         #[test]
