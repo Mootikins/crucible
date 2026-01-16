@@ -1,3 +1,6 @@
+mod chat_app_interaction_tests;
+mod chat_app_snapshot_tests;
+mod chat_runner_tests;
 mod error_boundary_tests;
 mod event_loop_tests;
 mod event_tests;
