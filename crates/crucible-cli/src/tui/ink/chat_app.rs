@@ -175,6 +175,7 @@ pub struct ShellModal {
     output_lines: Vec<String>,
     status: ShellStatus,
     scroll_offset: usize,
+    user_scrolled: bool,
     start_time: Instant,
     duration: Option<Duration>,
     output_path: Option<PathBuf>,
@@ -190,6 +191,7 @@ impl ShellModal {
             output_lines: Vec::new(),
             status: ShellStatus::Running,
             scroll_offset: 0,
+            user_scrolled: false,
             start_time: Instant::now(),
             duration: None,
             output_path: None,
@@ -944,7 +946,14 @@ impl InkChatApp {
     }
 
     fn poll_shell_output(&mut self) {
+        let content_height = crossterm::terminal::size()
+            .map(|(_, h)| h as usize)
+            .unwrap_or(24)
+            .saturating_sub(2);
+
         if let Some(ref mut modal) = self.shell_modal {
+            let was_running = modal.is_running();
+
             if let Some(ref rx) = modal.output_receiver {
                 while let Ok(line) = rx.try_recv() {
                     if let Some(code_str) = line.strip_prefix("\x00EXIT:") {
@@ -956,6 +965,12 @@ impl InkChatApp {
                         modal.output_lines.push(line);
                     }
                 }
+            }
+
+            if was_running && modal.is_running() && !modal.user_scrolled {
+                modal.scroll_to_bottom(content_height);
+            } else if was_running && !modal.is_running() {
+                modal.scroll_to_top();
             }
         }
     }
@@ -996,24 +1011,40 @@ impl InkChatApp {
             KeyCode::Char('e') if !is_running => {
                 self.open_shell_output_in_editor();
             }
-            KeyCode::Up | KeyCode::Char('k') if !is_running => {
+            KeyCode::Up | KeyCode::Char('k') => {
                 if let Some(ref mut modal) = self.shell_modal {
                     modal.scroll_up(1);
+                    modal.user_scrolled = true;
                 }
             }
-            KeyCode::Down | KeyCode::Char('j') if !is_running => {
+            KeyCode::Down | KeyCode::Char('j') => {
                 if let Some(ref mut modal) = self.shell_modal {
                     modal.scroll_down(1, visible_lines);
+                    modal.user_scrolled = true;
                 }
             }
-            KeyCode::Char('u') if !is_running => {
+            KeyCode::Char('u') => {
                 if let Some(ref mut modal) = self.shell_modal {
                     modal.scroll_up(half_page);
+                    modal.user_scrolled = true;
                 }
             }
-            KeyCode::Char('d') if !is_running => {
+            KeyCode::Char('d') => {
                 if let Some(ref mut modal) = self.shell_modal {
                     modal.scroll_down(half_page, visible_lines);
+                    modal.user_scrolled = true;
+                }
+            }
+            KeyCode::PageUp => {
+                if let Some(ref mut modal) = self.shell_modal {
+                    modal.scroll_up(visible_lines);
+                    modal.user_scrolled = true;
+                }
+            }
+            KeyCode::PageDown => {
+                if let Some(ref mut modal) = self.shell_modal {
+                    modal.scroll_down(visible_lines, visible_lines);
+                    modal.user_scrolled = true;
                 }
             }
             KeyCode::Char('g') if !is_running => {
