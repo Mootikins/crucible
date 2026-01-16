@@ -327,7 +327,15 @@ fn render_popup(popup: &PopupNode, width: usize, output: &mut String) {
             line.push(' ');
         }
 
-        line.push_str(&item.label);
+        let prefix_width = visible_width(&line);
+        let max_label_width = popup_width.saturating_sub(prefix_width + 2);
+        let label = if item.label.chars().count() > max_label_width && max_label_width > 4 {
+            let s: String = item.label.chars().take(max_label_width - 1).collect();
+            format!("{}…", s)
+        } else {
+            item.label.clone()
+        };
+        line.push_str(&label);
 
         let label_width = visible_width(&line);
 
