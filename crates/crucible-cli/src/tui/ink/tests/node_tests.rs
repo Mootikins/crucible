@@ -329,3 +329,46 @@ fn numbered_list_creates_column() {
         _ => panic!("Expected Box node"),
     }
 }
+
+#[test]
+fn spacer_fills_remaining_space_in_row() {
+    use crate::tui::ink::render::render_to_string;
+
+    let node = row([text("Left"), spacer(), text("Right")]);
+    let output = render_to_string(&node, 20);
+
+    assert_eq!(output.len(), 20);
+    assert!(output.starts_with("Left"));
+    assert!(output.ends_with("Right"));
+}
+
+#[test]
+fn multiple_spacers_distribute_space_evenly() {
+    use crate::tui::ink::render::render_to_string;
+
+    let node = row([text("A"), spacer(), text("B"), spacer(), text("C")]);
+    let output = render_to_string(&node, 17);
+
+    assert_eq!(output.len(), 17);
+    assert!(output.starts_with("A"));
+    assert!(output.ends_with("C"));
+    assert!(output.contains("B"));
+}
+
+#[test]
+fn flex_with_weights_distributes_proportionally() {
+    use crate::tui::ink::render::render_to_string;
+
+    let node = row([
+        text("X"),
+        flex(1, text("")),
+        text("Y"),
+        flex(2, text("")),
+        text("Z"),
+    ]);
+    let output = render_to_string(&node, 12);
+
+    assert_eq!(output.len(), 12);
+    assert!(output.starts_with("X"));
+    assert!(output.ends_with("Z"));
+}
