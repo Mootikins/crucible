@@ -595,3 +595,90 @@ fn slash_mode_cycles_through_modes() {
     let output = render_to_string(&tree, 80);
     assert!(output.contains("Plan"), "Should cycle back to Plan mode");
 }
+
+// =============================================================================
+// Autocomplete Trigger Tests
+// =============================================================================
+
+#[test]
+fn at_symbol_triggers_file_autocomplete() {
+    let mut app = InkChatApp::default();
+    app.set_workspace_files(vec![
+        "src/main.rs".to_string(),
+        "src/lib.rs".to_string(),
+        "README.md".to_string(),
+    ]);
+
+    for c in "@ma".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+    assert!(
+        output.contains("main.rs"),
+        "Should show file popup with main.rs"
+    );
+}
+
+#[test]
+fn double_bracket_triggers_note_autocomplete() {
+    let mut app = InkChatApp::default();
+    app.set_kiln_notes(vec![
+        "Projects/README.md".to_string(),
+        "Notes/Ideas.md".to_string(),
+    ]);
+
+    for c in "[[pro".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+    assert!(
+        output.contains("Projects/README.md"),
+        "Should show note popup with Projects"
+    );
+}
+
+#[test]
+fn autocomplete_closes_on_space_after_at() {
+    let mut app = InkChatApp::default();
+    app.set_workspace_files(vec!["src/main.rs".to_string()]);
+
+    for c in "@main ".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    let tree = view_with_default_ctx(&app);
+    let output = render_to_string(&tree, 80);
+    assert!(!output.contains("file"), "Popup should close after space");
+}
+
+#[test]
+fn autocomplete_selection_inserts_file_mention() {
+    let mut app = InkChatApp::default();
+    app.set_workspace_files(vec!["src/main.rs".to_string()]);
+
+    for c in "@m".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    assert_eq!(app.input_content(), "@src/main.rs ");
+}
+
+#[test]
+fn autocomplete_selection_inserts_note_mention() {
+    let mut app = InkChatApp::default();
+    app.set_kiln_notes(vec!["Projects/README.md".to_string()]);
+
+    for c in "[[p".chars() {
+        app.update(Event::Key(key(KeyCode::Char(c))));
+    }
+
+    app.update(Event::Key(key(KeyCode::Enter)));
+
+    assert_eq!(app.input_content(), "[[Projects/README.md]] ");
+}
