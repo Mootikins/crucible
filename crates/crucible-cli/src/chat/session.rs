@@ -489,7 +489,7 @@ impl ChatSession {
     }
 }
 
-fn index_workspace_files(root: &Path) -> Vec<String> {
+pub fn index_workspace_files(root: &Path) -> Vec<String> {
     const MAX_ENTRIES: usize = 2000;
     // Try git ls-files to respect gitignore
     if let Ok(output) = Command::new("git")
@@ -536,7 +536,7 @@ fn index_workspace_files(root: &Path) -> Vec<String> {
     files
 }
 
-fn index_kiln_notes(kiln_root: &Path) -> Vec<String> {
+pub fn index_kiln_notes(kiln_root: &Path) -> Vec<String> {
     const MAX_ENTRIES: usize = 2000;
     if !kiln_root.exists() {
         return Vec::new();
