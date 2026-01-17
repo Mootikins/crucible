@@ -10,7 +10,11 @@ use super::types::{Callout, CalloutType, NoteContent};
 use async_trait::async_trait;
 
 use regex::Regex;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+
+static CALLOUT_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?m)^>[ \t]*\[!(\w+)\](?:[ \t]+([^\n]*))?").expect("callout regex")
+});
 
 /// Obsidian callout syntax extension
 pub struct CalloutExtension;
@@ -49,13 +53,7 @@ impl SyntaxExtension for CalloutExtension {
     async fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
         let mut errors = Vec::new();
 
-        // Pattern to match callout blocks starting with > [!type] possibly with title
-        // Only match the first line - extract_nested_content handles continuation lines
-        // Use [ \t] instead of \s to avoid matching newlines in the title
-        let re = Regex::new(r"(?m)^>[ \t]*\[!(\w+)\](?:[ \t]+([^\n]*))?")
-            .expect("Callout regex is a compile-time constant and should never fail to compile");
-
-        for cap in re.captures_iter(content) {
+        for cap in CALLOUT_REGEX.captures_iter(content) {
             let full_match = cap.get(0).unwrap();
             let callout_type_str = cap.get(1).unwrap().as_str().trim();
             let callout_type: CalloutType = callout_type_str.into();

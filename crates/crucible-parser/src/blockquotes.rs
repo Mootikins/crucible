@@ -8,6 +8,10 @@ use super::extensions::SyntaxExtension;
 use super::types::{Blockquote, NoteContent};
 use async_trait::async_trait;
 use regex::Regex;
+use std::sync::LazyLock;
+
+static BLOCKQUOTE_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^(>+)\s*(.*)$").expect("blockquote regex"));
 
 /// Regular blockquote syntax extension
 pub struct BlockquoteExtension;
@@ -45,35 +49,31 @@ impl SyntaxExtension for BlockquoteExtension {
 
     async fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
         let errors = Vec::new();
-
-        // Pattern to match blockquote lines
-        let re = Regex::new(r"(?m)^(>+)\s*(.*)$")
-            .expect("Blockquote regex is a compile-time constant and should never fail to compile");
-
         let lines: Vec<&str> = content.lines().collect();
+        let newline_len = if content.contains("\r\n") { 2 } else { 1 };
 
         let mut i = 0;
         let mut offset = 0;
-        let mut in_callout = false; // Track if we're inside a callout block
+        let mut in_callout = false;
 
         while i < lines.len() {
             let line = lines[i];
 
-            if let Some(cap) = re.captures(line) {
+            if let Some(cap) = BLOCKQUOTE_REGEX.captures(line) {
                 let prefix = cap.get(1).unwrap().as_str();
                 let text = cap.get(2).unwrap().as_str();
 
                 // Check if this is the start of a callout
                 if text.trim_start().starts_with("[!") {
                     in_callout = true;
-                    offset += line.len() + 1;
+                    offset += line.len() + newline_len;
                     i += 1;
                     continue;
                 }
 
                 // If we're in a callout, skip this line (it's a continuation)
                 if in_callout {
-                    offset += line.len() + 1;
+                    offset += line.len() + newline_len;
                     i += 1;
                     continue;
                 }
@@ -87,7 +87,7 @@ impl SyntaxExtension for BlockquoteExtension {
                 let mut total_capacity = text.len();
                 let mut lookahead = i + 1;
                 while lookahead < lines.len() {
-                    if let Some(next_cap) = re.captures(lines[lookahead]) {
+                    if let Some(next_cap) = BLOCKQUOTE_REGEX.captures(lines[lookahead]) {
                         let next_prefix = next_cap.get(1).unwrap().as_str();
                         let next_level = next_prefix.chars().filter(|&c| c == '>').count() as u8;
 
@@ -109,10 +109,10 @@ impl SyntaxExtension for BlockquoteExtension {
                 full_content.push_str(text);
                 let start_offset = offset;
                 i += 1;
-                offset += line.len() + 1;
+                offset += line.len() + newline_len;
 
                 while i < lines.len() {
-                    if let Some(next_cap) = re.captures(lines[i]) {
+                    if let Some(next_cap) = BLOCKQUOTE_REGEX.captures(lines[i]) {
                         let next_prefix = next_cap.get(1).unwrap().as_str();
                         let next_level = next_prefix.chars().filter(|&c| c == '>').count() as u8;
 
@@ -123,7 +123,7 @@ impl SyntaxExtension for BlockquoteExtension {
                                 full_content.push(' ');
                             }
                             full_content.push_str(next_text);
-                            offset += lines[i].len() + 1;
+                            offset += lines[i].len() + newline_len;
                             i += 1;
                         } else {
                             break;
@@ -145,7 +145,7 @@ impl SyntaxExtension for BlockquoteExtension {
             } else {
                 // Not a blockquote line, reset callout tracking
                 in_callout = false;
-                offset += line.len() + 1;
+                offset += line.len() + newline_len;
                 i += 1;
             }
         }
