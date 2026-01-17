@@ -55,7 +55,7 @@ mod events;
 mod file_scanner;
 pub mod handlers;
 mod manager;
-mod message_channel_infrastructure;
+
 pub mod traits;
 pub mod types;
 mod utils;
@@ -83,10 +83,7 @@ pub use file_scanner::{
 };
 pub use handlers::*;
 pub use manager::*;
-// Note: message_channel_infrastructure is deprecated. Use EventBus with SessionEvent
-// from crucible_core::events instead. See the module-level docs for migration guidance.
-#[allow(deprecated)]
-pub use message_channel_infrastructure::*;
+
 pub use traits::{BackendCapabilities, EventHandler, FileWatcher, WatchHandle, WatchMode};
 pub use types::*;
 
