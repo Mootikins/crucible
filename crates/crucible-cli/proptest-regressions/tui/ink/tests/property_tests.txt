@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc bfd24580b65f81f3c2074640b5f0cfe2383c687fbbfbc1c4a667bdd3a2ebf303 # shrinks to text = "aAAA aAaAa aAaA  AaAAa a Aaa a  A  a aaaaA a aaA aaa Aaaa aaAAa ", width = 29
 cc 3e1c8a19d9f699f0c566d93757d8b691df5a4e480f95551b402acf16aa4c51f7 # shrinks to text = "* *_\n #-*", width = 10
+cc ebcdbe0f075a9147fcc4b1ba5314a726a56ac582271cbdba1009b977e55ef99a # shrinks to mode_str = "default"

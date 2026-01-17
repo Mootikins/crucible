@@ -428,7 +428,7 @@ mod chat_mode_properties {
 
         #[test]
         fn chat_mode_cycle_returns_to_start(cycles in 1usize..10) {
-            let start = ChatMode::Plan;
+            let start = ChatMode::Normal;
             let mut mode = start;
 
             for _ in 0..(cycles * 3) {
@@ -443,7 +443,7 @@ mod chat_mode_properties {
         }
 
         #[test]
-        fn chat_mode_parse_roundtrip(mode_str in "(plan|act|auto)") {
+        fn chat_mode_parse_roundtrip(mode_str in "(normal|plan|auto)") {
             let parsed = ChatMode::parse(&mode_str);
             let back_to_str = parsed.as_str();
 
