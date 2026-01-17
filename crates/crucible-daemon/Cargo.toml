@@ -19,7 +19,12 @@ tracing-subscriber = { workspace = true }
 dirs = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
+dashmap = { workspace = true }
+uuid = { workspace = true }
+futures = { workspace = true }
 crucible-core = { path = "../crucible-core" }
+crucible-config = { path = "../crucible-config" }
+crucible-rig = { path = "../crucible-rig" }
 crucible-surrealdb = { workspace = true, optional = true }
 crucible-sqlite = { path = "../crucible-sqlite", optional = true }
 crucible-pipeline = { path = "../crucible-pipeline" }

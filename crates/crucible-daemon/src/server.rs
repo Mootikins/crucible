@@ -1,5 +1,6 @@
 //! Unix socket server for JSON-RPC
 
+use crate::agent_manager::AgentManager;
 use crate::kiln_manager::KilnManager;
 use crate::protocol::{
     Request, Response, SessionEventMessage, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND,
@@ -77,6 +78,7 @@ pub struct Server {
     shutdown_tx: broadcast::Sender<()>,
     kiln_manager: Arc<KilnManager>,
     session_manager: Arc<SessionManager>,
+    agent_manager: Arc<AgentManager>,
     subscription_manager: Arc<SubscriptionManager>,
     event_tx: broadcast::Sender<SessionEventMessage>,
 }
@@ -98,12 +100,16 @@ impl Server {
         let (shutdown_tx, _) = broadcast::channel(1);
         let (event_tx, _) = broadcast::channel(1024);
 
+        let session_manager = Arc::new(SessionManager::new());
+        let agent_manager = Arc::new(AgentManager::new(session_manager.clone()));
+
         info!("Daemon listening on {:?}", path);
         Ok(Self {
             listener,
             shutdown_tx,
             kiln_manager: Arc::new(KilnManager::new()),
-            session_manager: Arc::new(SessionManager::new()),
+            session_manager,
+            agent_manager,
             subscription_manager: Arc::new(SubscriptionManager::new()),
             event_tx,
         })
@@ -118,6 +124,7 @@ impl Server {
     /// Get a clone of the event broadcast sender.
     ///
     /// Used to send session events to all subscribed clients.
+    #[allow(dead_code)]
     pub fn event_sender(&self) -> broadcast::Sender<SessionEventMessage> {
         self.event_tx.clone()
     }
@@ -158,10 +165,12 @@ impl Server {
                             let shutdown_tx = self.shutdown_tx.clone();
                             let km = self.kiln_manager.clone();
                             let sm = self.session_manager.clone();
+                            let am = self.agent_manager.clone();
                             let sub_m = self.subscription_manager.clone();
+                            let event_tx = self.event_tx.clone();
                             let event_rx = self.event_tx.subscribe();
                             tokio::spawn(async move {
-                                if let Err(e) = handle_client(stream, shutdown_tx, km, sm, sub_m, event_rx).await {
+                                if let Err(e) = handle_client(stream, shutdown_tx, km, sm, am, sub_m, event_tx, event_rx).await {
                                     error!("Client error: {}", e);
                                 }
                             });
@@ -185,12 +194,15 @@ impl Server {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_client(
     stream: UnixStream,
     shutdown_tx: broadcast::Sender<()>,
     kiln_manager: Arc<KilnManager>,
     session_manager: Arc<SessionManager>,
+    agent_manager: Arc<AgentManager>,
     subscription_manager: Arc<SubscriptionManager>,
+    event_tx: broadcast::Sender<SessionEventMessage>,
     mut event_rx: broadcast::Receiver<SessionEventMessage>,
 ) -> Result<()> {
     let client_id = ClientId::new();
@@ -231,7 +243,9 @@ async fn handle_client(
                     &shutdown_tx,
                     &kiln_manager,
                     &session_manager,
+                    &agent_manager,
                     &subscription_manager,
+                    &event_tx,
                 )
                 .await
             }
@@ -255,13 +269,16 @@ async fn handle_client(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_request(
     req: Request,
     client_id: ClientId,
     shutdown_tx: &broadcast::Sender<()>,
     kiln_manager: &Arc<KilnManager>,
     session_manager: &Arc<SessionManager>,
+    agent_manager: &Arc<AgentManager>,
     subscription_manager: &Arc<SubscriptionManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
     tracing::debug!("RPC request: method={:?}, id={:?}", req.method, req.id);
     match req.method.as_str() {
@@ -301,6 +318,10 @@ async fn handle_request(
         "session.unsubscribe" => {
             handle_session_unsubscribe(req, client_id, subscription_manager).await
         }
+        // Agent RPC methods
+        "session.configure_agent" => handle_session_configure_agent(req, agent_manager).await,
+        "session.send_message" => handle_session_send_message(req, agent_manager, event_tx).await,
+        "session.cancel" => handle_session_cancel(req, agent_manager).await,
         _ => {
             tracing::warn!("Unknown RPC method: {:?}", req.method);
             Response::error(
@@ -903,6 +924,75 @@ async fn handle_session_unsubscribe(
         req.id,
         serde_json::json!({
             "unsubscribed": session_ids,
+        }),
+    )
+}
+
+async fn handle_session_configure_agent(req: Request, am: &Arc<AgentManager>) -> Response {
+    let session_id = require_str_param!(req, "session_id");
+
+    let agent_json = match req.params.get("agent") {
+        Some(v) => v.clone(),
+        None => {
+            return Response::error(req.id, INVALID_PARAMS, "Missing 'agent' parameter");
+        }
+    };
+
+    let agent: crucible_core::session::SessionAgent = match serde_json::from_value(agent_json) {
+        Ok(a) => a,
+        Err(e) => {
+            return Response::error(
+                req.id,
+                INVALID_PARAMS,
+                format!("Invalid agent config: {}", e),
+            );
+        }
+    };
+
+    match am.configure_agent(session_id, agent).await {
+        Ok(()) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "configured": true,
+            }),
+        ),
+        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    }
+}
+
+async fn handle_session_send_message(
+    req: Request,
+    am: &Arc<AgentManager>,
+    event_tx: &broadcast::Sender<SessionEventMessage>,
+) -> Response {
+    let session_id = require_str_param!(req, "session_id");
+    let content = require_str_param!(req, "content");
+
+    match am
+        .send_message(session_id, content.to_string(), event_tx)
+        .await
+    {
+        Ok(message_id) => Response::success(
+            req.id,
+            serde_json::json!({
+                "session_id": session_id,
+                "message_id": message_id,
+            }),
+        ),
+        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+    }
+}
+
+async fn handle_session_cancel(req: Request, am: &Arc<AgentManager>) -> Response {
+    let session_id = require_str_param!(req, "session_id");
+
+    let cancelled = am.cancel(session_id).await;
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "session_id": session_id,
+            "cancelled": cancelled,
         }),
     )
 }
