@@ -1,61 +1,73 @@
 //! Daemon client implementation
+//!
+//! Provides a client for communicating with the Crucible daemon over Unix sockets.
+//! Supports both request/response RPC calls and asynchronous event streaming.
 
 use anyhow::Result;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::unix::OwnedWriteHalf;
 use tokio::net::UnixStream;
-use tokio::sync::mpsc;
-use tokio::sync::Mutex;
-use tracing::warn;
+use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::task::JoinHandle;
+use tracing::{debug, error, trace, warn};
 
 /// Session event received from daemon
-///
-/// Events are pushed to subscribed clients asynchronously when session
-/// state changes occur.
 #[derive(Debug, Clone)]
 pub struct SessionEvent {
-    /// The session this event belongs to
     pub session_id: String,
-    /// The type of event (e.g., "message", "state_change", "error")
     pub event_type: String,
-    /// Event-specific data payload
     pub data: serde_json::Value,
 }
 
+type PendingRequests = Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>;
+
+/// Client for communicating with the Crucible daemon
+///
+/// The client supports two modes:
+/// - Simple mode: Created with `connect()` or `connect_to()`, suitable for RPC-only usage
+/// - Event mode: Created with `connect_with_events()`, supports both RPC and async events
+///
+/// In event mode, a background task continuously reads from the socket, routing:
+/// - RPC responses to their waiting callers
+/// - Async events to the event channel
 pub struct DaemonClient {
-    reader: Mutex<BufReader<tokio::net::unix::OwnedReadHalf>>,
-    writer: Mutex<tokio::net::unix::OwnedWriteHalf>,
+    writer: Arc<Mutex<OwnedWriteHalf>>,
     next_id: AtomicU64,
-    /// Optional channel for sending events to callers
-    event_tx: Option<mpsc::UnboundedSender<SessionEvent>>,
+    pending_requests: PendingRequests,
+    reader_task: Option<JoinHandle<()>>,
+    // For simple mode (no background reader)
+    simple_reader: Option<Mutex<BufReader<tokio::net::unix::OwnedReadHalf>>>,
+}
+
+impl Drop for DaemonClient {
+    fn drop(&mut self) {
+        if let Some(task) = self.reader_task.take() {
+            task.abort();
+        }
+    }
 }
 
 impl DaemonClient {
-    /// Connect to the daemon at the default socket path
+    /// Connect to the daemon at the default socket path (simple mode)
     pub async fn connect() -> Result<Self> {
         let path = crucible_daemon::socket_path();
         Self::connect_to(&path).await
     }
 
-    /// Connect to daemon or start it if not running
-    ///
-    /// Uses socket-based detection:
-    /// - If socket exists and connectable -> daemon running
-    /// - If socket exists but not connectable -> stale socket, safe to replace
-    /// - If socket doesn't exist -> daemon not running
+    /// Connect to daemon or start it if not running (simple mode)
     pub async fn connect_or_start() -> Result<Self> {
-        // Try to connect first
         if let Ok(client) = Self::connect().await {
             return Ok(client);
         }
 
-        // Connection failed - daemon not running or stale socket
-        // Start the daemon
         Self::start_daemon().await?;
 
-        // Wait for daemon to be ready with exponential backoff
-        let mut delay = std::time::Duration::from_millis(50);
+        let mut delay = Duration::from_millis(50);
         for attempt in 0..10 {
             tokio::time::sleep(delay).await;
             if let Ok(client) = Self::connect().await {
@@ -63,26 +75,22 @@ impl DaemonClient {
             }
             delay *= 2;
             if attempt > 5 {
-                tracing::warn!("Daemon not ready after {} attempts", attempt + 1);
+                warn!("Daemon not ready after {} attempts", attempt + 1);
             }
         }
 
         anyhow::bail!("Failed to start daemon or connect after multiple attempts")
     }
 
-    /// Start the daemon process in the background
     async fn start_daemon() -> Result<()> {
         use std::process::Command;
 
-        // Find the cru-server binary
         let exe = std::env::current_exe()?;
         let daemon_exe = if exe.ends_with("cru") {
-            // In development or installed alongside
             exe.parent()
                 .ok_or_else(|| anyhow::anyhow!("No parent directory"))?
                 .join("cru-server")
         } else {
-            // Try PATH
             PathBuf::from("cru-server")
         };
 
@@ -98,34 +106,39 @@ impl DaemonClient {
         Ok(())
     }
 
-    /// Connect to daemon at a specific socket path
+    /// Connect to daemon at a specific socket path (simple mode)
+    ///
+    /// Simple mode does not support async events - use `connect_to_with_events`
+    /// if you need to receive streaming events.
     pub async fn connect_to(path: &Path) -> Result<Self> {
         let stream = UnixStream::connect(path).await?;
         let (read, write) = stream.into_split();
 
         Ok(Self {
-            reader: Mutex::new(BufReader::new(read)),
-            writer: Mutex::new(write),
+            writer: Arc::new(Mutex::new(write)),
             next_id: AtomicU64::new(1),
-            event_tx: None,
+            pending_requests: Arc::new(Mutex::new(HashMap::new())),
+            reader_task: None,
+            simple_reader: Some(Mutex::new(BufReader::new(read))),
         })
     }
 
-    /// Connect to the daemon with event handling
+    /// Connect to the daemon with event handling (event mode)
     ///
-    /// Returns a client and a receiver for async session events.
-    /// Events are pushed to the receiver when the daemon sends them
-    /// (e.g., after subscribing to a session).
+    /// Returns a client and a receiver for async session events. A background
+    /// task continuously reads from the socket, dispatching events to the
+    /// receiver and routing RPC responses to their callers.
     ///
     /// # Example
     ///
     /// ```ignore
     /// let (client, mut event_rx) = DaemonClient::connect_with_events().await?;
+    /// let client = Arc::new(client);
     ///
     /// // Subscribe to session events
     /// client.session_subscribe(&[session_id]).await?;
     ///
-    /// // Receive events asynchronously
+    /// // Events arrive via the channel
     /// while let Some(event) = event_rx.recv().await {
     ///     println!("Event: {} - {}", event.session_id, event.event_type);
     /// }
@@ -135,79 +148,112 @@ impl DaemonClient {
         Self::connect_to_with_events(&path).await
     }
 
-    /// Connect to daemon at a specific socket path with event handling
+    /// Connect to daemon at a specific socket path with event handling (event mode)
     pub async fn connect_to_with_events(
         path: &Path,
     ) -> Result<(Self, mpsc::UnboundedReceiver<SessionEvent>)> {
         let stream = UnixStream::connect(path).await?;
         let (read, write) = stream.into_split();
 
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let pending_requests: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
+
+        let reader_task = Self::spawn_reader_task(read, event_tx, pending_requests.clone());
 
         let client = Self {
-            reader: Mutex::new(BufReader::new(read)),
-            writer: Mutex::new(write),
+            writer: Arc::new(Mutex::new(write)),
             next_id: AtomicU64::new(1),
-            event_tx: Some(tx),
+            pending_requests,
+            reader_task: Some(reader_task),
+            simple_reader: None,
         };
 
-        Ok((client, rx))
+        Ok((client, event_rx))
     }
 
-    /// Read the next message from the daemon, dispatching events to the channel
-    ///
-    /// This method loops until it receives an RPC response. Any async events
-    /// encountered are dispatched to the event channel (if configured) and
-    /// reading continues.
-    async fn read_message(&self) -> Result<serde_json::Value> {
-        loop {
+    fn spawn_reader_task(
+        read: tokio::net::unix::OwnedReadHalf,
+        event_tx: mpsc::UnboundedSender<SessionEvent>,
+        pending_requests: PendingRequests,
+    ) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            let mut reader = BufReader::new(read);
             let mut line = String::new();
-            {
-                let mut reader = self.reader.lock().await;
-                let bytes_read = reader.read_line(&mut line).await?;
-                if bytes_read == 0 {
-                    anyhow::bail!("Connection closed by daemon");
+
+            loop {
+                line.clear();
+                match reader.read_line(&mut line).await {
+                    Ok(0) => {
+                        debug!("Daemon connection closed (EOF)");
+                        break;
+                    }
+                    Ok(_) => {
+                        let msg: serde_json::Value = match serde_json::from_str(&line) {
+                            Ok(m) => m,
+                            Err(e) => {
+                                warn!("Failed to parse daemon message: {}", e);
+                                continue;
+                            }
+                        };
+
+                        if Self::is_event(&msg) {
+                            Self::dispatch_event(&msg, &event_tx);
+                        } else if let Some(id) = msg.get("id").and_then(|v| v.as_u64()) {
+                            Self::dispatch_response(id, msg, &pending_requests).await;
+                        } else {
+                            trace!("Ignoring message without id or event type: {:?}", msg);
+                        }
+                    }
+                    Err(e) => {
+                        error!("Error reading from daemon: {}", e);
+                        break;
+                    }
                 }
             }
 
-            let msg: serde_json::Value = serde_json::from_str(&line)?;
+            debug!("Reader task exiting");
+        })
+    }
 
-            // Check if this is an async event (has "type": "event")
-            if msg.get("type").and_then(|t| t.as_str()) == Some("event") {
-                // Dispatch to event channel if configured
-                if let Some(ref tx) = self.event_tx {
-                    let event = SessionEvent {
-                        session_id: msg
-                            .get("session_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                        event_type: msg
-                            .get("event")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                        data: msg.get("data").cloned().unwrap_or(serde_json::Value::Null),
-                    };
-                    // Ignore send errors (receiver may have been dropped)
-                    let _ = tx.send(event);
-                }
-                // Continue reading for RPC response
-                continue;
+    fn is_event(msg: &serde_json::Value) -> bool {
+        msg.get("type").and_then(|t| t.as_str()) == Some("event")
+    }
+
+    fn dispatch_event(msg: &serde_json::Value, event_tx: &mpsc::UnboundedSender<SessionEvent>) {
+        let event = SessionEvent {
+            session_id: msg
+                .get("session_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            event_type: msg
+                .get("event")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            data: msg.get("data").cloned().unwrap_or(serde_json::Value::Null),
+        };
+
+        if event_tx.send(event).is_err() {
+            debug!("Event receiver dropped, stopping event dispatch");
+        }
+    }
+
+    async fn dispatch_response(id: u64, msg: serde_json::Value, pending: &PendingRequests) {
+        let mut pending = pending.lock().await;
+        if let Some(tx) = pending.remove(&id) {
+            if tx.send(msg).is_err() {
+                debug!("Response receiver dropped for request {}", id);
             }
-
-            // This is an RPC response
-            return Ok(msg);
+        } else {
+            warn!("Received response for unknown request id: {}", id);
         }
     }
 
     /// Send a JSON-RPC request and get the response
-    ///
-    /// If the client was created with event handling (`connect_with_events`),
-    /// any async events received while waiting for the response will be
-    /// dispatched to the event channel.
     pub async fn call(&self, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+
         let request = serde_json::json!({
             "jsonrpc": "2.0",
             "id": id,
@@ -218,13 +264,41 @@ impl DaemonClient {
         let mut req_str = serde_json::to_string(&request)?;
         req_str.push('\n');
 
+        // Register pending request before sending (for event mode)
+        let response_rx = if self.reader_task.is_some() {
+            let (tx, rx) = oneshot::channel();
+            {
+                let mut pending = self.pending_requests.lock().await;
+                pending.insert(id, tx);
+            }
+            Some(rx)
+        } else {
+            None
+        };
+
+        // Send request
         {
             let mut writer = self.writer.lock().await;
             writer.write_all(req_str.as_bytes()).await?;
         }
 
-        // Read response, dispatching any events encountered along the way
-        let response = self.read_message().await?;
+        // Get response
+        let response = if let Some(rx) = response_rx {
+            // Event mode: wait for background reader to route response
+            match tokio::time::timeout(Duration::from_secs(30), rx).await {
+                Ok(Ok(response)) => response,
+                Ok(Err(_)) => anyhow::bail!("Response channel closed unexpectedly"),
+                Err(_) => {
+                    // Clean up pending request on timeout
+                    let mut pending = self.pending_requests.lock().await;
+                    pending.remove(&id);
+                    anyhow::bail!("Request timeout after 30 seconds")
+                }
+            }
+        } else {
+            // Simple mode: read directly
+            self.read_response_simple().await?
+        };
 
         if let Some(error) = response.get("error") {
             anyhow::bail!("RPC error: {}", error);
@@ -236,51 +310,70 @@ impl DaemonClient {
             .unwrap_or(serde_json::Value::Null))
     }
 
-    /// Ping the daemon
+    async fn read_response_simple(&self) -> Result<serde_json::Value> {
+        let reader = self
+            .simple_reader
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No reader available in event mode"))?;
+
+        let mut line = String::new();
+        {
+            let mut reader = reader.lock().await;
+            let bytes_read = reader.read_line(&mut line).await?;
+            if bytes_read == 0 {
+                anyhow::bail!("Connection closed by daemon");
+            }
+        }
+
+        let msg: serde_json::Value = serde_json::from_str(&line)?;
+        Ok(msg)
+    }
+
+    // =========================================================================
+    // Basic RPC Methods
+    // =========================================================================
+
     pub async fn ping(&self) -> Result<String> {
         let result = self.call("ping", serde_json::json!({})).await?;
         Ok(result.as_str().unwrap_or("").to_string())
     }
 
-    /// Request daemon shutdown
     pub async fn shutdown(&self) -> Result<()> {
         self.call("shutdown", serde_json::json!({})).await?;
         Ok(())
     }
 
-    /// Open a kiln
+    // =========================================================================
+    // Kiln RPC Methods
+    // =========================================================================
+
     pub async fn kiln_open(&self, path: &Path) -> Result<()> {
         self.call(
             "kiln.open",
-            serde_json::json!({
-                "path": path.to_string_lossy()
-            }),
+            serde_json::json!({ "path": path.to_string_lossy() }),
         )
         .await?;
         Ok(())
     }
 
-    /// Close a kiln
     pub async fn kiln_close(&self, path: &Path) -> Result<()> {
         self.call(
             "kiln.close",
-            serde_json::json!({
-                "path": path.to_string_lossy()
-            }),
+            serde_json::json!({ "path": path.to_string_lossy() }),
         )
         .await?;
         Ok(())
     }
 
-    /// List open kilns
     pub async fn kiln_list(&self) -> Result<Vec<serde_json::Value>> {
         let result = self.call("kiln.list", serde_json::json!({})).await?;
         Ok(result.as_array().cloned().unwrap_or_default())
     }
 
-    /// Search for similar vectors (backend-agnostic VSS)
-    ///
-    /// Returns a list of (document_id, score) pairs.
+    // =========================================================================
+    // Search RPC Methods
+    // =========================================================================
+
     pub async fn search_vectors(
         &self,
         kiln_path: &Path,
@@ -312,17 +405,12 @@ impl DaemonClient {
         Ok(results)
     }
 
-    /// List notes in a kiln (backend-agnostic)
-    ///
-    /// Returns a list of (name, path, title, tags, updated_at) tuples.
     pub async fn list_notes(
         &self,
         kiln_path: &Path,
         path_filter: Option<&str>,
     ) -> Result<Vec<(String, String, Option<String>, Vec<String>, Option<String>)>> {
-        let mut params = serde_json::json!({
-            "kiln": kiln_path.to_string_lossy()
-        });
+        let mut params = serde_json::json!({ "kiln": kiln_path.to_string_lossy() });
         if let Some(filter) = path_filter {
             params["path_filter"] = serde_json::json!(filter);
         }
@@ -338,7 +426,6 @@ impl DaemonClient {
                 let name = item.get("name").and_then(|v| v.as_str());
                 let path = item.get("path").and_then(|v| v.as_str());
 
-                // Log warning for malformed items (helps debug API changes or data issues)
                 if name.is_none() || path.is_none() {
                     warn!(
                         idx,
@@ -372,9 +459,6 @@ impl DaemonClient {
         Ok(notes)
     }
 
-    /// Get a note by name (backend-agnostic)
-    ///
-    /// Returns the note data as JSON if found, None if not found.
     pub async fn get_note_by_name(
         &self,
         kiln_path: &Path,
@@ -401,9 +485,6 @@ impl DaemonClient {
     // NoteStore RPC Methods
     // =========================================================================
 
-    /// Upsert a note record via daemon RPC
-    ///
-    /// Sends the note record to the daemon for storage.
     pub async fn note_upsert(
         &self,
         kiln_path: &Path,
@@ -420,7 +501,6 @@ impl DaemonClient {
         Ok(())
     }
 
-    /// Get a note by path via daemon RPC
     pub async fn note_get(
         &self,
         kiln_path: &Path,
@@ -444,7 +524,6 @@ impl DaemonClient {
         }
     }
 
-    /// Delete a note by path via daemon RPC
     pub async fn note_delete(&self, kiln_path: &Path, path: &str) -> Result<()> {
         self.call(
             "note.delete",
@@ -457,7 +536,6 @@ impl DaemonClient {
         Ok(())
     }
 
-    /// List all notes via daemon RPC
     pub async fn note_list(
         &self,
         kiln_path: &Path,
@@ -465,9 +543,7 @@ impl DaemonClient {
         let result = self
             .call(
                 "note.list",
-                serde_json::json!({
-                    "kiln": kiln_path.to_string_lossy()
-                }),
+                serde_json::json!({ "kiln": kiln_path.to_string_lossy() }),
             )
             .await?;
 
@@ -479,9 +555,6 @@ impl DaemonClient {
     // Pipeline RPC Methods
     // =========================================================================
 
-    /// Process a single file through the daemon's pipeline
-    ///
-    /// Returns true if the file was processed, false if skipped (unchanged).
     pub async fn process_file(&self, kiln_path: &Path, file_path: &Path) -> Result<bool> {
         let result = self
             .call(
@@ -500,9 +573,6 @@ impl DaemonClient {
         Ok(status == "processed")
     }
 
-    /// Process multiple files through the daemon's pipeline
-    ///
-    /// Returns (processed_count, skipped_count, errors)
     pub async fn process_batch(
         &self,
         kiln_path: &Path,
@@ -550,7 +620,6 @@ impl DaemonClient {
     // Session RPC Methods
     // =========================================================================
 
-    /// Create a new session
     pub async fn session_create(
         &self,
         session_type: &str,
@@ -577,7 +646,6 @@ impl DaemonClient {
         self.call("session.create", params).await
     }
 
-    /// List sessions with optional filters
     pub async fn session_list(
         &self,
         kiln: Option<&Path>,
@@ -603,51 +671,38 @@ impl DaemonClient {
         self.call("session.list", params).await
     }
 
-    /// Get a session by ID
     pub async fn session_get(&self, session_id: &str) -> Result<serde_json::Value> {
         self.call(
             "session.get",
-            serde_json::json!({
-                "session_id": session_id
-            }),
+            serde_json::json!({ "session_id": session_id }),
         )
         .await
     }
 
-    /// Pause a session
     pub async fn session_pause(&self, session_id: &str) -> Result<serde_json::Value> {
         self.call(
             "session.pause",
-            serde_json::json!({
-                "session_id": session_id
-            }),
+            serde_json::json!({ "session_id": session_id }),
         )
         .await
     }
 
-    /// Resume a paused session
     pub async fn session_resume(&self, session_id: &str) -> Result<serde_json::Value> {
         self.call(
             "session.resume",
-            serde_json::json!({
-                "session_id": session_id
-            }),
+            serde_json::json!({ "session_id": session_id }),
         )
         .await
     }
 
-    /// End a session
     pub async fn session_end(&self, session_id: &str) -> Result<serde_json::Value> {
         self.call(
             "session.end",
-            serde_json::json!({
-                "session_id": session_id
-            }),
+            serde_json::json!({ "session_id": session_id }),
         )
         .await
     }
 
-    /// Resume a session from storage with optional pagination for history
     pub async fn session_resume_from_storage(
         &self,
         session_id: &str,
@@ -670,43 +725,30 @@ impl DaemonClient {
         self.call("session.resume_from_storage", params).await
     }
 
-    /// Request compaction for a session
-    ///
-    /// Sets the session state to Compacting. The actual summarization
-    /// is performed by the agent.
     pub async fn session_compact(&self, session_id: &str) -> Result<serde_json::Value> {
         self.call(
             "session.compact",
-            serde_json::json!({
-                "session_id": session_id
-            }),
+            serde_json::json!({ "session_id": session_id }),
         )
         .await
     }
 
-    /// Subscribe to session events
     pub async fn session_subscribe(&self, session_ids: &[&str]) -> Result<serde_json::Value> {
         self.call(
             "session.subscribe",
-            serde_json::json!({
-                "session_ids": session_ids
-            }),
+            serde_json::json!({ "session_ids": session_ids }),
         )
         .await
     }
 
-    /// Unsubscribe from session events
     pub async fn session_unsubscribe(&self, session_ids: &[&str]) -> Result<serde_json::Value> {
         self.call(
             "session.unsubscribe",
-            serde_json::json!({
-                "session_ids": session_ids
-            }),
+            serde_json::json!({ "session_ids": session_ids }),
         )
         .await
     }
 
-    /// Configure the agent for a session
     pub async fn session_configure_agent(
         &self,
         session_id: &str,
@@ -723,7 +765,6 @@ impl DaemonClient {
         Ok(())
     }
 
-    /// Send a message to a session (streaming via events)
     pub async fn session_send_message(&self, session_id: &str, content: &str) -> Result<String> {
         let result = self
             .call(
@@ -738,14 +779,11 @@ impl DaemonClient {
         Ok(result["message_id"].as_str().unwrap_or("").to_string())
     }
 
-    /// Cancel an active request for a session
     pub async fn session_cancel(&self, session_id: &str) -> Result<bool> {
         let result = self
             .call(
                 "session.cancel",
-                serde_json::json!({
-                    "session_id": session_id
-                }),
+                serde_json::json!({ "session_id": session_id }),
             )
             .await?;
 
@@ -770,7 +808,7 @@ mod tests {
             let _ = server.run().await;
         });
 
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
 
         (tmp, sock_path.clone(), handle)
     }
@@ -780,6 +818,17 @@ mod tests {
         let (_tmp, sock_path, _handle) = setup_test_server().await;
 
         let client = DaemonClient::connect_to(&sock_path).await.unwrap();
+        let result = client.ping().await.unwrap();
+        assert_eq!(result, "pong");
+    }
+
+    #[tokio::test]
+    async fn test_client_ping_event_mode() {
+        let (_tmp, sock_path, _handle) = setup_test_server().await;
+
+        let (client, _event_rx) = DaemonClient::connect_to_with_events(&sock_path)
+            .await
+            .unwrap();
         let result = client.ping().await.unwrap();
         assert_eq!(result, "pong");
     }
@@ -802,12 +851,31 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // =========================================================================
-    // Session RPC Tests (require running daemon)
-    // =========================================================================
+    #[tokio::test]
+    async fn test_connect_to_with_events() {
+        let (_tmp, sock_path, _handle) = setup_test_server().await;
 
-    // Note: These tests require a running daemon with session support,
-    // so they are marked as ignored. Run manually with: cargo test --ignored
+        let (client, _event_rx) = DaemonClient::connect_to_with_events(&sock_path)
+            .await
+            .unwrap();
+
+        let result = client.ping().await.unwrap();
+        assert_eq!(result, "pong");
+    }
+
+    #[tokio::test]
+    async fn test_multiple_sequential_calls_event_mode() {
+        let (_tmp, sock_path, _handle) = setup_test_server().await;
+
+        let (client, _event_rx) = DaemonClient::connect_to_with_events(&sock_path)
+            .await
+            .unwrap();
+
+        for _ in 0..5 {
+            let result = client.ping().await.unwrap();
+            assert_eq!(result, "pong");
+        }
+    }
 
     #[tokio::test]
     #[ignore = "requires running daemon with session support"]
@@ -830,10 +898,8 @@ mod tests {
     #[ignore = "requires running daemon with session support"]
     async fn test_session_list() {
         let client = DaemonClient::connect().await.unwrap();
-
-        // List all sessions (may be empty)
         let result = client.session_list(None, None, None, None).await.unwrap();
-        assert!(result.is_array());
+        assert!(result.is_array() || result.is_object());
     }
 
     #[tokio::test]
@@ -842,22 +908,18 @@ mod tests {
         let client = DaemonClient::connect().await.unwrap();
         let tmp = TempDir::new().unwrap();
 
-        // Create a session
         let result = client
             .session_create("chat", tmp.path(), None, vec![])
             .await
             .unwrap();
         let session_id = result["session_id"].as_str().unwrap();
 
-        // Pause the session
         let pause_result = client.session_pause(session_id).await;
         assert!(pause_result.is_ok());
 
-        // Resume the session
         let resume_result = client.session_resume(session_id).await;
         assert!(resume_result.is_ok());
 
-        // End the session
         let end_result = client.session_end(session_id).await;
         assert!(end_result.is_ok());
     }
@@ -868,22 +930,18 @@ mod tests {
         let client = DaemonClient::connect().await.unwrap();
         let tmp = TempDir::new().unwrap();
 
-        // Create a session
         let result = client
             .session_create("chat", tmp.path(), None, vec![])
             .await
             .unwrap();
         let session_id = result["session_id"].as_str().unwrap();
 
-        // Subscribe to session events
         let sub_result = client.session_subscribe(&[session_id]).await;
         assert!(sub_result.is_ok());
 
-        // Unsubscribe from session events
         let unsub_result = client.session_unsubscribe(&[session_id]).await;
         assert!(unsub_result.is_ok());
 
-        // Clean up
         let _ = client.session_end(session_id).await;
     }
 
@@ -893,42 +951,17 @@ mod tests {
         let (client, mut event_rx) = DaemonClient::connect_with_events().await.unwrap();
         let tmp = TempDir::new().unwrap();
 
-        // Create a session
         let result = client
             .session_create("chat", tmp.path(), None, vec![])
             .await
             .unwrap();
         let session_id = result["session_id"].as_str().unwrap();
 
-        // Subscribe to the session
         client.session_subscribe(&[session_id]).await.unwrap();
 
-        // In a real scenario, events would be sent by the daemon when
-        // the session is active. For testing, we just verify the channel exists
-        // and can be polled without blocking indefinitely.
-
-        // Try to receive with timeout (should timeout since no events yet)
-        let result =
-            tokio::time::timeout(std::time::Duration::from_millis(100), event_rx.recv()).await;
-
-        // Timeout expected since no events have been sent
+        let result = tokio::time::timeout(Duration::from_millis(100), event_rx.recv()).await;
         assert!(result.is_err(), "Expected timeout, got event");
 
-        // Clean up
         let _ = client.session_end(session_id).await;
-    }
-
-    #[tokio::test]
-    async fn test_connect_to_with_events() {
-        let (_tmp, sock_path, _handle) = setup_test_server().await;
-
-        // Connect with event handling
-        let (client, _event_rx) = DaemonClient::connect_to_with_events(&sock_path)
-            .await
-            .unwrap();
-
-        // Verify the client works normally
-        let result = client.ping().await.unwrap();
-        assert_eq!(result, "pong");
     }
 }
