@@ -275,7 +275,14 @@ impl AgentManager {
             }
 
             if let Some(handle) = state.task_handle.take() {
-                handle.abort();
+                // Give task 500ms to respond to cancellation signal before force-aborting
+                match tokio::time::timeout(std::time::Duration::from_millis(500), handle).await {
+                    Ok(Ok(())) => debug!(session_id = %session_id, "Task completed gracefully"),
+                    Ok(Err(e)) => warn!(session_id = %session_id, error = %e, "Task panicked"),
+                    Err(_) => {
+                        debug!(session_id = %session_id, "Task did not respond to cancellation, was aborted");
+                    }
+                }
             }
 
             info!(session_id = %session_id, "Request cancelled");
