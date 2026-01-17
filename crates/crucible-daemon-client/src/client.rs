@@ -82,6 +82,31 @@ impl DaemonClient {
         anyhow::bail!("Failed to start daemon or connect after multiple attempts")
     }
 
+    /// Connect to daemon or start it if not running (event mode).
+    /// Returns event-mode client with receiver for streaming session events.
+    pub async fn connect_or_start_with_events(
+    ) -> Result<(Self, mpsc::UnboundedReceiver<SessionEvent>)> {
+        if let Ok(result) = Self::connect_with_events().await {
+            return Ok(result);
+        }
+
+        Self::start_daemon().await?;
+
+        let mut delay = Duration::from_millis(50);
+        for attempt in 0..10 {
+            tokio::time::sleep(delay).await;
+            if let Ok(result) = Self::connect_with_events().await {
+                return Ok(result);
+            }
+            delay *= 2;
+            if attempt > 5 {
+                warn!("Daemon not ready after {} attempts", attempt + 1);
+            }
+        }
+
+        anyhow::bail!("Failed to start daemon or connect after multiple attempts")
+    }
+
     async fn start_daemon() -> Result<()> {
         use std::process::Command;
 
@@ -188,6 +213,8 @@ impl DaemonClient {
                         break;
                     }
                     Ok(_) => {
+                        trace!("Received line from daemon: {}", line.trim());
+
                         let msg: serde_json::Value = match serde_json::from_str(&line) {
                             Ok(m) => m,
                             Err(e) => {
@@ -197,8 +224,10 @@ impl DaemonClient {
                         };
 
                         if Self::is_event(&msg) {
+                            debug!("Detected event message from daemon");
                             Self::dispatch_event(&msg, &event_tx);
                         } else if let Some(id) = msg.get("id").and_then(|v| v.as_u64()) {
+                            debug!(request_id = id, "Detected RPC response");
                             Self::dispatch_response(id, msg, &pending_requests).await;
                         } else {
                             trace!("Ignoring message without id or event type: {:?}", msg);
@@ -220,17 +249,22 @@ impl DaemonClient {
     }
 
     fn dispatch_event(msg: &serde_json::Value, event_tx: &mpsc::UnboundedSender<SessionEvent>) {
+        let session_id = msg.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
+        let event_type = msg.get("event").and_then(|v| v.as_str()).unwrap_or("");
+
+        debug!(
+            session_id = %session_id,
+            event_type = %event_type,
+            "Dispatching daemon event to channel"
+        );
+
+        if session_id.is_empty() {
+            warn!("Daemon event missing session_id: {:?}", msg);
+        }
+
         let event = SessionEvent {
-            session_id: msg
-                .get("session_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            event_type: msg
-                .get("event")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
+            session_id: session_id.to_string(),
+            event_type: event_type.to_string(),
             data: msg.get("data").cloned().unwrap_or(serde_json::Value::Null),
         };
 
