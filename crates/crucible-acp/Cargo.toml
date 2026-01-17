@@ -31,7 +31,7 @@ rmcp = { version = "0.9.0", features = ["macros", "server", "transport-sse-serve
 axum = "0.8"
 
 # Agent Client Protocol
-agent-client-protocol = "0.9.2"
+agent-client-protocol = "0.9.3"
 
 # Async runtime
 tokio = { workspace = true, features = ["full", "tracing"] }
