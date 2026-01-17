@@ -57,12 +57,14 @@ database = "kiln"
 
 ### Daemon Mode
 
-Connect to a running `crucible-daemon`:
+Connect to a running `cru-server` daemon:
 
 ```toml
 [storage]
 mode = "daemon"
-daemon_socket = "/tmp/crucible-daemon.sock"
+# Socket auto-detected from $CRUCIBLE_SOCKET or $XDG_RUNTIME_DIR/crucible.sock
+# Only set explicitly if using a custom socket path:
+# daemon_socket = "/tmp/crucible.sock"
 ```
 
 ## See Also

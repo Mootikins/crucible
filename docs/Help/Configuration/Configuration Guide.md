@@ -263,8 +263,9 @@ Use daemon mode when:
 ### Socket Location
 
 The daemon socket is created at:
-- `$XDG_RUNTIME_DIR/crucible-db.sock` (if XDG_RUNTIME_DIR is set)
-- `/tmp/crucible-db.sock` (fallback)
+- `$CRUCIBLE_SOCKET` (if environment variable is set)
+- `$XDG_RUNTIME_DIR/crucible.sock` (if XDG_RUNTIME_DIR is set)
+- `/tmp/crucible.sock` (fallback)
 
 ### Daemon Management
 
@@ -272,8 +273,8 @@ The daemon is managed automatically. For manual control:
 
 ```bash
 # The daemon starts automatically when needed
-# To force shutdown, kill the db-server process
-pkill -f "cru db-server"
+# To force shutdown, kill the cru-server process
+pkill -f "cru-server"
 ```
 
 ## Tips
