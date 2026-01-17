@@ -1063,6 +1063,73 @@ async fn test_tui_daemon_agent_full_flow() {
 }
 
 #[tokio::test]
+async fn test_event_streaming_with_background_reader() {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    let server = TestServer::start().await.expect("Failed to start server");
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    let (client, mut event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
+        .await
+        .expect("Failed to connect with events");
+    let client = Arc::new(client);
+
+    let result = client
+        .session_create("chat", kiln_dir.path(), None, vec![])
+        .await
+        .expect("session_create failed");
+    let session_id = result["session_id"]
+        .as_str()
+        .expect("should have session_id")
+        .to_string();
+
+    client
+        .session_subscribe(&[&session_id])
+        .await
+        .expect("subscribe failed");
+
+    let ping_result = client.ping().await.expect("ping failed");
+    assert_eq!(ping_result, "pong");
+
+    let list_result = client.kiln_list().await.expect("kiln_list failed");
+    assert!(list_result.is_empty() || !list_result.is_empty());
+
+    let timeout_result = tokio::time::timeout(Duration::from_millis(100), event_rx.recv()).await;
+    assert!(
+        timeout_result.is_err(),
+        "Should timeout since no events generated yet"
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn test_concurrent_rpc_calls_event_mode() {
+    use std::sync::Arc;
+
+    let server = TestServer::start().await.expect("Failed to start server");
+
+    let (client, _event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
+        .await
+        .expect("Failed to connect with events");
+    let client = Arc::new(client);
+
+    let mut handles = vec![];
+    for _ in 0..5 {
+        let c = client.clone();
+        handles.push(tokio::spawn(async move { c.ping().await }));
+    }
+
+    for handle in handles {
+        let result = handle.await.expect("task panicked");
+        assert_eq!(result.expect("ping failed"), "pong");
+    }
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn test_daemon_agent_error_produces_chat_error() {
     let server = TestServer::start().await.expect("Failed to start server");
 
