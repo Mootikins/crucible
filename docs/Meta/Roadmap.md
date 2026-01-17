@@ -45,7 +45,7 @@ A knowledge management system where:
 - [ ] **MCP Tool System** (95%) - Permission prompts, ACP integration
 - [ ] **MCP Bridge/Gateway** (85%) - Integration tests, documentation
 - [ ] **Rune programmatic tool calling** - Complete and test
-- [ ] **Event/Hook System** - Add note lifecycle hooks (`note:created`, `note:updated`, `note:deleted`)
+- [x] **Event/Hook System** - Note lifecycle hooks (`note:created`, `note:modified`, `note:deleted`) complete
 
 ### Maintain
 
