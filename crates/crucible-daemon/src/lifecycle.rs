@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 /// Get the socket path for the daemon
 ///
 /// This is the canonical source of truth for the daemon socket path.
-/// All clients and the db-server subcommand should use this function.
+/// All clients and the cru-server daemon should use this function.
 ///
 /// Priority:
 /// 1. `CRUCIBLE_SOCKET` environment variable (if set)
