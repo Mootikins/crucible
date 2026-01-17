@@ -12,10 +12,12 @@
 //!
 //! For new code, prefer the single-binary pattern using `lifecycle::ensure_daemon()`.
 
+mod agent;
 mod client;
 pub mod lifecycle;
 mod storage;
 
+pub use agent::DaemonAgentHandle;
 pub use client::{DaemonClient, SessionEvent};
 pub use storage::{DaemonNoteStore, DaemonStorageClient};
 
