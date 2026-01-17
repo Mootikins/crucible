@@ -113,6 +113,10 @@ pub enum EventType {
     #[serde(rename = "note:modified")]
     NoteModified,
 
+    /// Note was deleted
+    #[serde(rename = "note:deleted")]
+    NoteDeleted,
+
     /// File was deleted from disk
     #[serde(rename = "file:deleted")]
     FileDeleted,
@@ -137,6 +141,7 @@ impl EventType {
             "note:parsed" => Some(Self::NoteParsed),
             "note:created" => Some(Self::NoteCreated),
             "note:modified" => Some(Self::NoteModified),
+            "note:deleted" => Some(Self::NoteDeleted),
             "file:deleted" => Some(Self::FileDeleted),
             "mcp:attached" => Some(Self::McpAttached),
             "custom" => Some(Self::Custom),
@@ -154,6 +159,7 @@ impl EventType {
             Self::NoteParsed => "note:parsed",
             Self::NoteCreated => "note:created",
             Self::NoteModified => "note:modified",
+            Self::NoteDeleted => "note:deleted",
             Self::FileDeleted => "file:deleted",
             Self::McpAttached => "mcp:attached",
             Self::Custom => "custom",
@@ -250,6 +256,11 @@ impl Event {
     /// Create a note:modified event
     pub fn note_modified(note_path: impl Into<String>, changes: JsonValue) -> Self {
         Self::new(EventType::NoteModified, note_path, changes)
+    }
+
+    /// Create a note:deleted event
+    pub fn note_deleted(note_path: impl Into<String>, metadata: JsonValue) -> Self {
+        Self::new(EventType::NoteDeleted, note_path, metadata)
     }
 
     /// Create a file:deleted event
@@ -388,6 +399,7 @@ fn session_event_to_event_type(event: &SessionEvent) -> EventType {
         SessionEvent::NoteParsed { .. } => EventType::NoteParsed,
         SessionEvent::NoteCreated { .. } => EventType::NoteCreated,
         SessionEvent::NoteModified { .. } => EventType::NoteModified,
+        SessionEvent::NoteDeleted { .. } => EventType::NoteDeleted,
         SessionEvent::FileDeleted { .. } => EventType::FileDeleted,
         SessionEvent::McpAttached { .. } => EventType::McpAttached,
         // All other events map to Custom
@@ -441,6 +453,14 @@ fn event_to_session_event(event: Event) -> SessionEvent {
         EventType::NoteModified => SessionEvent::NoteModified {
             path: std::path::PathBuf::from(&event.identifier),
             change_type: NoteChangeType::Content,
+        },
+        EventType::NoteDeleted => SessionEvent::NoteDeleted {
+            path: std::path::PathBuf::from(&event.identifier),
+            existed: event
+                .payload
+                .get("existed")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true),
         },
         EventType::FileDeleted => SessionEvent::FileDeleted {
             path: std::path::PathBuf::from(&event.identifier),
@@ -814,6 +834,10 @@ mod tests {
         assert_eq!(EventType::parse("tool:after"), Some(EventType::ToolAfter));
         assert_eq!(EventType::parse("note:parsed"), Some(EventType::NoteParsed));
         assert_eq!(
+            EventType::parse("note:deleted"),
+            Some(EventType::NoteDeleted)
+        );
+        assert_eq!(
             EventType::parse("file:deleted"),
             Some(EventType::FileDeleted)
         );
@@ -825,6 +849,7 @@ mod tests {
         assert_eq!(EventType::ToolBefore.as_str(), "tool:before");
         assert_eq!(EventType::ToolAfter.as_str(), "tool:after");
         assert_eq!(EventType::NoteParsed.as_str(), "note:parsed");
+        assert_eq!(EventType::NoteDeleted.as_str(), "note:deleted");
         assert_eq!(EventType::FileDeleted.as_str(), "file:deleted");
     }
 
@@ -841,6 +866,15 @@ mod tests {
     fn test_file_deleted_event_creation() {
         let event = Event::file_deleted("/notes/deleted.md", json!({}));
         assert_eq!(event.event_type, EventType::FileDeleted);
+        assert_eq!(event.identifier, "/notes/deleted.md");
+        assert!(!event.cancelled);
+        assert!(event.timestamp_ms > 0);
+    }
+
+    #[test]
+    fn test_note_deleted_event_creation() {
+        let event = Event::note_deleted("/notes/deleted.md", json!({"existed": true}));
+        assert_eq!(event.event_type, EventType::NoteDeleted);
         assert_eq!(event.identifier, "/notes/deleted.md");
         assert!(!event.cancelled);
         assert!(event.timestamp_ms > 0);
@@ -1146,6 +1180,50 @@ mod tests {
         let rune_event = Event::tool_after("rune_tool", json!("original"));
         let (result, _ctx, _errors) = bus.emit(rune_event);
         assert_eq!(result.payload, json!("original")); // Unchanged
+    }
+
+    #[test]
+    fn test_note_deleted_handler_matching() {
+        let mut bus = EventBus::new();
+
+        bus.register(Handler::new(
+            "note_delete_logger",
+            EventType::NoteDeleted,
+            "**",
+            |_ctx, mut event| {
+                event.payload = json!({"logged": true});
+                Ok(event)
+            },
+        ));
+
+        let event = Event::note_deleted("/notes/test.md", json!({"existed": true}));
+        let (result, _ctx, errors) = bus.emit(event);
+
+        assert!(errors.is_empty());
+        assert_eq!(result.payload, json!({"logged": true}));
+    }
+
+    #[test]
+    fn test_note_deleted_handler_pattern_matching() {
+        let mut bus = EventBus::new();
+
+        bus.register(Handler::new(
+            "md_only",
+            EventType::NoteDeleted,
+            "**/*.md",
+            |_ctx, mut event| {
+                event.payload = json!({"matched_md": true});
+                Ok(event)
+            },
+        ));
+
+        let md_event = Event::note_deleted("notes/test.md", json!({}));
+        let (result, _ctx, _errors) = bus.emit(md_event);
+        assert_eq!(result.payload, json!({"matched_md": true}));
+
+        let txt_event = Event::note_deleted("notes/test.txt", json!({}));
+        let (result, _ctx, _errors) = bus.emit(txt_event);
+        assert_eq!(result.payload, json!({}));
     }
 
     #[test]

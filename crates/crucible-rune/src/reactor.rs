@@ -607,6 +607,14 @@ pub fn event_to_session_event(event: crate::event_bus::Event) -> SessionEvent {
             path: std::path::PathBuf::from(&event.identifier),
             change_type: NoteChangeType::Content, // Default
         },
+        EventType::NoteDeleted => SessionEvent::NoteDeleted {
+            path: std::path::PathBuf::from(&event.identifier),
+            existed: event
+                .payload
+                .get("existed")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true),
+        },
         EventType::FileDeleted => SessionEvent::FileDeleted {
             path: std::path::PathBuf::from(&event.identifier),
         },
