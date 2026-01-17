@@ -177,8 +177,8 @@ async fn test_get_storage_fails_when_no_daemon() {
     });
 
     // This should either:
-    // 1. Fork a daemon and connect (if binary available)
-    // 2. Fail with "Failed to start db-server daemon" error
+    // 1. Spawn cru-server daemon and connect (if binary available)
+    // 2. Fail with daemon connection error
     let result = get_storage(&config).await;
 
     // We expect this to fail in test environment since there's no real `cru` binary
