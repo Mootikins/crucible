@@ -82,9 +82,6 @@ serde_yaml = "0.9"
 parking_lot = { workspace = true }
 dashmap = { workspace = true }
 
-# Vector operations for embeddings
-ndarray = "0.17"
-
 # Additional dependencies for migration
 futures = "0.3"
 
