@@ -60,6 +60,7 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
         true,                             // no_process (skip pipeline - this is key!)
         Some(3),                          // context_size
         false,                            // use_internal
+        false,                            // force_local
         None,                             // provider_key
         8192,                             // max_context_tokens
         vec![],                           // env_overrides
@@ -150,6 +151,7 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
         true,   // no_process
         None,   // context_size
         false,  // use_internal
+        false,  // force_local
         None,   // provider_key
         8192,   // max_context_tokens
         vec![], // env_overrides
