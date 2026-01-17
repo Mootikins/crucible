@@ -17,8 +17,8 @@
 //! # Start server (usually auto-started by CLI)
 //! cru-server
 //!
-//! # Server listens at: $XDG_RUNTIME_DIR/crucible/daemon.sock
-//! # Or: /tmp/crucible/daemon.sock
+//! # Server listens at: $XDG_RUNTIME_DIR/crucible.sock
+//! # Or: /tmp/crucible.sock
 //! ```
 //!
 pub mod agent_factory;
