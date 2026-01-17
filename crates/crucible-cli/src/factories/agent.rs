@@ -495,12 +495,8 @@ pub async fn create_daemon_agent(
     use std::sync::Arc;
 
     info!("Connecting to daemon (auto-start if needed)");
-    let (client, event_rx) = DaemonClient::connect_or_start()
+    let (client, event_rx) = DaemonClient::connect_or_start_with_events()
         .await
-        .and_then(|_| {
-            // Reconnect with event handling
-            futures::executor::block_on(DaemonClient::connect_with_events())
-        })
         .map_err(|e| anyhow::anyhow!("Failed to connect to daemon: {}", e))?;
 
     let client = Arc::new(client);
