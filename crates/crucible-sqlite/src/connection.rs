@@ -72,6 +72,29 @@ impl SqlitePool {
         f(&mut conn)
     }
 
+    /// Execute a closure within a transaction
+    ///
+    /// If the closure returns `Ok`, the transaction is committed.
+    /// If the closure returns `Err`, the transaction is rolled back.
+    pub fn with_transaction<F, T>(&self, f: F) -> SqliteResult<T>
+    where
+        F: FnOnce(&Connection) -> SqliteResult<T>,
+    {
+        let conn = self.conn.lock();
+        conn.execute("BEGIN TRANSACTION", [])?;
+
+        match f(&conn) {
+            Ok(result) => {
+                conn.execute("COMMIT", [])?;
+                Ok(result)
+            }
+            Err(e) => {
+                let _ = conn.execute("ROLLBACK", []);
+                Err(e)
+            }
+        }
+    }
+
     /// Initialize the database (configure pragmas and apply schema)
     fn initialize(&self) -> SqliteResult<()> {
         self.with_connection(|conn| {

@@ -281,8 +281,8 @@ impl NoteStore for SqliteNoteStore {
     async fn upsert(&self, note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
         let pool = self.pool.clone();
 
-        tokio::task::spawn_blocking(move || {
-            pool.with_connection(|conn| {
+        let result = tokio::task::spawn_blocking(move || {
+            pool.with_transaction(|conn| {
                 // Serialize fields
                 let content_hash_bytes = note.content_hash.as_bytes().to_vec();
                 let embedding_bytes = note.embedding.as_ref().map(|e| serialize_embedding(e));
@@ -293,6 +293,13 @@ impl NoteStore for SqliteNoteStore {
                 let properties_json =
                     serde_json::to_string(&note.properties).map_err(|e| SqliteError::Serialization(e.to_string()))?;
                 let updated_at_str = note.updated_at.to_rfc3339();
+
+                // Check if the note existed before to determine appropriate event
+                let existed = conn.query_row(
+                    "SELECT 1 FROM notes WHERE path = ?1",
+                    [&note.path],
+                    |row| row.get::<_, i32>(0),
+                ).optional().is_ok_and(|opt| opt.is_some());
 
                 // Upsert the note
                 conn.execute(
@@ -321,7 +328,6 @@ impl NoteStore for SqliteNoteStore {
                 )?;
 
                 // Update note_links junction table for fast inlinks queries
-                // Delete old links from this source
                 conn.execute(
                     "DELETE FROM note_links WHERE source_path = ?1",
                     params![note.path],
@@ -336,13 +342,6 @@ impl NoteStore for SqliteNoteStore {
                         stmt.execute(params![note.path, target])?;
                     }
                 }
-
-                // Check if the note existed before to determine appropriate event
-                let existed = conn.query_row(
-                    "SELECT 1 FROM notes WHERE path = ?1",
-                    [&note.path],
-                    |row| row.get::<_, i32>(0),
-                ).optional().is_ok_and(|opt| opt.is_some());
 
                 let event = if existed {
                     SessionEvent::NoteModified {
@@ -362,7 +361,7 @@ impl NoteStore for SqliteNoteStore {
         .await
         .map_err(|e| crucible_core::storage::StorageError::Backend(e.to_string()))??;
 
-        Ok(vec![]) // Shouldn't reach here - connection closure handles it
+        Ok(result)
     }
 
     async fn get(&self, path: &str) -> StorageResult<Option<NoteRecord>> {
@@ -394,7 +393,7 @@ impl NoteStore for SqliteNoteStore {
         let path_for_event = path_str.clone();
 
         let existed = tokio::task::spawn_blocking(move || {
-            pool.with_connection(|conn| {
+            pool.with_transaction(|conn| {
                 // Check if the note exists before deletion
                 let existed = conn
                     .query_row("SELECT 1 FROM notes WHERE path = ?1", [&path_str], |row| {
@@ -408,8 +407,7 @@ impl NoteStore for SqliteNoteStore {
             })
         })
         .await
-        .map_err(|e| crucible_core::storage::StorageError::Backend(e.to_string()))?
-        .map_err(|e| crucible_core::storage::StorageError::Backend(e.to_string()))?;
+        .map_err(|e| crucible_core::storage::StorageError::Backend(e.to_string()))??;
 
         // Return NoteDeleted event
         let event = SessionEvent::NoteDeleted {
