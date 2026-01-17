@@ -21,10 +21,6 @@
 //! # Or: /tmp/crucible/daemon.sock
 //! ```
 //!
-//! ## Feature Flags
-//!
-//! - `subscriptions`: Enable real-time event subscriptions (disabled by default)
-
 pub mod agent_factory;
 pub mod agent_manager;
 pub mod kiln_manager;
@@ -34,8 +30,6 @@ pub mod rpc_helpers;
 pub mod server;
 pub mod session_manager;
 pub mod session_storage;
-
-#[cfg(feature = "subscriptions")]
 pub mod subscription;
 
 pub use agent_factory::{create_agent_from_session_config, AgentFactoryError};
@@ -46,6 +40,4 @@ pub use protocol::{Request, Response, RpcError, SessionEventMessage};
 pub use server::Server;
 pub use session_manager::{SessionError, SessionManager};
 pub use session_storage::{FileSessionStorage, SessionStorage};
-
-#[cfg(feature = "subscriptions")]
 pub use subscription::{ClientId, SubscriptionManager};
