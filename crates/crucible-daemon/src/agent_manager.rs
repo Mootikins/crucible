@@ -197,11 +197,20 @@ impl AgentManager {
                 Ok(chunk) => {
                     if !chunk.delta.is_empty() {
                         accumulated_response.push_str(&chunk.delta);
-                        let _ = event_tx
+                        debug!(
+                            session_id = %session_id,
+                            delta_len = chunk.delta.len(),
+                            "Sending text_delta event"
+                        );
+                        let send_result = event_tx
                             .send(SessionEventMessage::text_delta(session_id, &chunk.delta));
+                        if send_result.is_err() {
+                            warn!(session_id = %session_id, "No subscribers for text_delta event");
+                        }
                     }
 
                     if let Some(reasoning) = &chunk.reasoning {
+                        debug!(session_id = %session_id, "Sending thinking event");
                         let _ = event_tx.send(SessionEventMessage::thinking(session_id, reasoning));
                     }
 
@@ -233,6 +242,12 @@ impl AgentManager {
                     }
 
                     if chunk.done {
+                        debug!(
+                            session_id = %session_id,
+                            message_id = %message_id,
+                            response_len = accumulated_response.len(),
+                            "Sending message_complete event"
+                        );
                         let _ = event_tx.send(SessionEventMessage::message_complete(
                             session_id,
                             message_id,
