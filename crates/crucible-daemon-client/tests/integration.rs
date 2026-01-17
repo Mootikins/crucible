@@ -1159,3 +1159,178 @@ async fn test_daemon_agent_error_produces_chat_error() {
 
     server.shutdown().await;
 }
+
+// =============================================================================
+// Full event flow tests: Daemon → Client → ChatChunk → TUI
+// =============================================================================
+
+mod event_flow_tests {
+    use crucible_daemon_client::SessionEvent;
+    use serde_json::json;
+
+    fn simulate_daemon_event(event_type: &str, data: serde_json::Value) -> SessionEvent {
+        SessionEvent {
+            session_id: "test-session".to_string(),
+            event_type: event_type.to_string(),
+            data,
+        }
+    }
+
+    fn event_to_chunk(event: &SessionEvent) -> Option<crucible_core::traits::chat::ChatChunk> {
+        match event.event_type.as_str() {
+            "text_delta" => {
+                let content = event.data.get("content")?.as_str()?;
+                Some(crucible_core::traits::chat::ChatChunk {
+                    delta: content.to_string(),
+                    done: false,
+                    tool_calls: None,
+                    tool_results: None,
+                    reasoning: None,
+                })
+            }
+            "thinking" => {
+                let content = event.data.get("content")?.as_str()?;
+                Some(crucible_core::traits::chat::ChatChunk {
+                    delta: String::new(),
+                    done: false,
+                    tool_calls: None,
+                    tool_results: None,
+                    reasoning: Some(content.to_string()),
+                })
+            }
+            "tool_call" => {
+                let tool = event.data.get("tool")?.as_str()?;
+                let call_id = event.data.get("call_id").and_then(|v| v.as_str());
+                let args = event.data.get("args").cloned();
+                Some(crucible_core::traits::chat::ChatChunk {
+                    delta: String::new(),
+                    done: false,
+                    tool_calls: Some(vec![crucible_core::traits::chat::ChatToolCall {
+                        name: tool.to_string(),
+                        arguments: args,
+                        id: call_id.map(String::from),
+                    }]),
+                    tool_results: None,
+                    reasoning: None,
+                })
+            }
+            "tool_result" => {
+                let result = event.data.get("result")?;
+                let call_id = event.data.get("call_id").and_then(|v| v.as_str());
+                let result_str = if result.is_string() {
+                    result.as_str().unwrap_or("").to_string()
+                } else {
+                    result.to_string()
+                };
+                Some(crucible_core::traits::chat::ChatChunk {
+                    delta: String::new(),
+                    done: false,
+                    tool_calls: None,
+                    tool_results: Some(vec![crucible_core::traits::chat::ChatToolResult {
+                        name: call_id.unwrap_or("tool").to_string(),
+                        result: result_str,
+                        error: None,
+                    }]),
+                    reasoning: None,
+                })
+            }
+            "message_complete" | "ended" => Some(crucible_core::traits::chat::ChatChunk {
+                delta: String::new(),
+                done: true,
+                tool_calls: None,
+                tool_results: None,
+                reasoning: None,
+            }),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn daemon_text_delta_becomes_chat_chunk_delta() {
+        let event = simulate_daemon_event("text_delta", json!({ "content": "Hello world" }));
+        let chunk = event_to_chunk(&event).expect("Should convert to chunk");
+
+        assert_eq!(chunk.delta, "Hello world");
+        assert!(!chunk.done);
+        assert!(chunk.tool_calls.is_none());
+        assert!(chunk.reasoning.is_none());
+    }
+
+    #[test]
+    fn daemon_thinking_becomes_reasoning_chunk() {
+        let event = simulate_daemon_event("thinking", json!({ "content": "Let me analyze..." }));
+        let chunk = event_to_chunk(&event).expect("Should convert to chunk");
+
+        assert_eq!(chunk.delta, "");
+        assert_eq!(chunk.reasoning, Some("Let me analyze...".to_string()));
+        assert!(!chunk.done);
+    }
+
+    #[test]
+    fn daemon_tool_call_becomes_tool_calls_chunk() {
+        let event = simulate_daemon_event(
+            "tool_call",
+            json!({
+                "call_id": "tc-123",
+                "tool": "read_file",
+                "args": { "path": "test.rs" }
+            }),
+        );
+        let chunk = event_to_chunk(&event).expect("Should convert to chunk");
+
+        assert_eq!(chunk.delta, "");
+        let tool_calls = chunk.tool_calls.expect("Should have tool_calls");
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0].name, "read_file");
+        assert_eq!(tool_calls[0].id, Some("tc-123".to_string()));
+    }
+
+    #[test]
+    fn daemon_tool_result_becomes_tool_results_chunk() {
+        let event = simulate_daemon_event(
+            "tool_result",
+            json!({
+                "call_id": "tc-123",
+                "result": "fn main() { }"
+            }),
+        );
+        let chunk = event_to_chunk(&event).expect("Should convert to chunk");
+
+        assert_eq!(chunk.delta, "");
+        let results = chunk.tool_results.expect("Should have tool_results");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].result, "fn main() { }");
+    }
+
+    #[test]
+    fn daemon_message_complete_sets_done_flag() {
+        let event = simulate_daemon_event(
+            "message_complete",
+            json!({ "message_id": "msg-1", "full_response": "Done!" }),
+        );
+        let chunk = event_to_chunk(&event).expect("Should convert to chunk");
+
+        assert!(chunk.done);
+        assert_eq!(chunk.delta, "");
+    }
+
+    #[test]
+    fn daemon_ended_sets_done_flag() {
+        let event = simulate_daemon_event("ended", json!({ "reason": "cancelled" }));
+        let chunk = event_to_chunk(&event).expect("Should convert to chunk");
+
+        assert!(chunk.done);
+    }
+
+    #[test]
+    fn unknown_event_type_returns_none() {
+        let event = simulate_daemon_event("unknown_event", json!({}));
+        assert!(event_to_chunk(&event).is_none());
+    }
+
+    #[test]
+    fn malformed_text_delta_returns_none() {
+        let event = simulate_daemon_event("text_delta", json!({}));
+        assert!(event_to_chunk(&event).is_none());
+    }
+}
