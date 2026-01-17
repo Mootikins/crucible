@@ -40,10 +40,10 @@ Events propagate top-down through layers:
 
 ### Modes
 
-Three session modes control agent behavior:
-- **Plan** - Agent explains before acting
-- **Act** - Agent executes with confirmation
-- **Auto** - Agent executes autonomously
+Three session modes control agent permissions (see [[Help/TUI/Modes]]):
+- **Default** - Auto-read, ask for writes
+- **Plan** - Read-only, creates plan files
+- **Auto** - Full access, minimal prompts
 
 Toggle with `Shift+Tab`.
 
@@ -77,6 +77,7 @@ For developers contributing to the TUI, see [[Help/TUI/E2E Testing]] for informa
 ## See Also
 
 - [[Help/TUI/Keybindings]] - Complete keyboard shortcuts
+- [[Help/TUI/Modes]] - Permission modes (default/plan/auto)
 - [[Help/TUI/Shell Execution]] - Running shell commands
 - [[Help/TUI/Component Architecture]] - Widget system details
 - [[Help/TUI/Rune API]] - Scripting interface
