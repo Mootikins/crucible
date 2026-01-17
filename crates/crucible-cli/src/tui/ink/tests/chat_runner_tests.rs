@@ -224,7 +224,7 @@ fn chat_runner_new_creates_with_defaults() {
 #[test]
 fn chat_runner_with_mode_sets_initial_mode() {
     // Just verifies with_mode chains without panicking
-    let _runner = InkChatRunner::new().unwrap().with_mode(ChatMode::Act);
+    let _runner = InkChatRunner::new().unwrap().with_mode(ChatMode::Plan);
 }
 
 // =============================================================================
@@ -384,4 +384,215 @@ fn app_handles_context_usage_update() {
         "Should show context percentage: {}",
         output
     );
+}
+
+mod daemon_event_to_tui_tests {
+    use super::*;
+
+    fn chunk_to_app_msgs(chunk: ChatChunk) -> Vec<ChatAppMsg> {
+        let mut msgs = vec![];
+
+        if !chunk.delta.is_empty() {
+            msgs.push(ChatAppMsg::TextDelta(chunk.delta));
+        }
+
+        if let Some(tool_calls) = chunk.tool_calls {
+            for tc in tool_calls {
+                let args_val = tc.arguments.clone().unwrap_or_default();
+                msgs.push(ChatAppMsg::ToolCall {
+                    name: tc.name,
+                    args: args_val.to_string(),
+                });
+            }
+        }
+
+        if let Some(tool_results) = chunk.tool_results {
+            for tr in tool_results {
+                if !tr.result.is_empty() {
+                    msgs.push(ChatAppMsg::ToolResultDelta {
+                        name: tr.name.clone(),
+                        delta: tr.result,
+                    });
+                }
+                msgs.push(ChatAppMsg::ToolResultComplete { name: tr.name });
+            }
+        }
+
+        if chunk.done {
+            msgs.push(ChatAppMsg::StreamComplete);
+        }
+
+        msgs
+    }
+
+    #[test]
+    fn text_delta_chunk_updates_ui_with_streaming_content() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
+
+        let chunk = ChatChunk {
+            delta: "World".to_string(),
+            done: false,
+            tool_calls: None,
+            tool_results: None,
+            reasoning: None,
+        };
+
+        for msg in chunk_to_app_msgs(chunk) {
+            app.on_message(msg);
+        }
+
+        assert!(app.is_streaming(), "App should be in streaming state");
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        let output = render_to_string(&tree, 80);
+        assert!(
+            output.contains("World"),
+            "Streamed content should appear in UI: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn tool_call_chunk_shows_tool_in_ui() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("Read file".to_string()));
+
+        let chunk = ChatChunk {
+            delta: String::new(),
+            done: false,
+            tool_calls: Some(vec![crucible_core::traits::chat::ChatToolCall {
+                name: "read_file".to_string(),
+                arguments: Some(serde_json::json!({"path": "test.rs"})),
+                id: Some("tc-1".to_string()),
+            }]),
+            tool_results: None,
+            reasoning: None,
+        };
+
+        for msg in chunk_to_app_msgs(chunk) {
+            app.on_message(msg);
+        }
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        let output = render_to_string(&tree, 80);
+        assert!(
+            output.contains("read_file"),
+            "Tool call should appear in UI: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn tool_result_chunk_shows_result_in_ui() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("Read file".to_string()));
+
+        app.on_message(ChatAppMsg::ToolCall {
+            name: "read_file".to_string(),
+            args: r#"{"path":"test.rs"}"#.to_string(),
+        });
+
+        let chunk = ChatChunk {
+            delta: String::new(),
+            done: false,
+            tool_calls: None,
+            tool_results: Some(vec![ChatToolResult {
+                name: "read_file".to_string(),
+                result: "fn main() {}".to_string(),
+                error: None,
+            }]),
+            reasoning: None,
+        };
+
+        for msg in chunk_to_app_msgs(chunk) {
+            app.on_message(msg);
+        }
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        let output = render_to_string(&tree, 80);
+        assert!(
+            output.contains("fn main()") || output.contains("read_file"),
+            "Tool result should appear in UI: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn done_chunk_ends_streaming_state() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
+        app.on_message(ChatAppMsg::TextDelta("Response".to_string()));
+
+        assert!(app.is_streaming(), "Should be streaming");
+
+        let chunk = ChatChunk {
+            delta: String::new(),
+            done: true,
+            tool_calls: None,
+            tool_results: None,
+            reasoning: None,
+        };
+
+        for msg in chunk_to_app_msgs(chunk) {
+            app.on_message(msg);
+        }
+
+        assert!(!app.is_streaming(), "Streaming should end after done=true");
+    }
+
+    #[test]
+    fn full_streaming_sequence_updates_ui_correctly() {
+        let mut app = InkChatApp::default();
+        app.on_message(ChatAppMsg::UserMessage("Hello".to_string()));
+
+        let chunks = vec![
+            ChatChunk {
+                delta: "I ".to_string(),
+                done: false,
+                tool_calls: None,
+                tool_results: None,
+                reasoning: None,
+            },
+            ChatChunk {
+                delta: "am ".to_string(),
+                done: false,
+                tool_calls: None,
+                tool_results: None,
+                reasoning: None,
+            },
+            ChatChunk {
+                delta: "Claude!".to_string(),
+                done: true,
+                tool_calls: None,
+                tool_results: None,
+                reasoning: None,
+            },
+        ];
+
+        for chunk in chunks {
+            for msg in chunk_to_app_msgs(chunk) {
+                app.on_message(msg);
+            }
+        }
+
+        assert!(!app.is_streaming(), "Should end streaming after done chunk");
+
+        let focus = FocusContext::new();
+        let ctx = ViewContext::new(&focus);
+        let tree = app.view(&ctx);
+        let output = render_to_string(&tree, 80);
+
+        assert!(
+            output.contains("Claude"),
+            "Full response should appear in UI: {}",
+            output
+        );
+    }
 }

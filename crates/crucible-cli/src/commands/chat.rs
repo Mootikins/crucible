@@ -443,8 +443,7 @@ async fn run_deferred_chat(
     let storage_handle = factories::get_storage(&config).await?;
 
     // Background processing only in embedded mode
-    // Daemon mode: the db-server already handles schema init and file watching should
-    // be a separate daemon responsibility
+    // Daemon mode: cru-server handles schema init and file watching
     let _bg_progress: Option<BackgroundProgress> = if storage_handle.is_embedded()
         && !no_process
         && !no_context
@@ -521,7 +520,7 @@ async fn run_deferred_chat(
         }
     } else {
         if storage_handle.is_daemon() {
-            info!("Running in daemon mode - schema init and background processing handled by db-server");
+            info!("Running in daemon mode - schema init and background processing handled by cru-server");
         }
         None
     };
@@ -687,7 +686,12 @@ async fn run_ink_chat(
     let bridge = AgentEventBridge::new(session.handle(), ring);
 
     let mode = ChatMode::parse(initial_mode);
-    let mut runner = InkChatRunner::new()?.with_mode(mode);
+    let model_name = config.chat_model();
+    let mut runner = InkChatRunner::new()?
+        .with_mode(mode)
+        .with_model(&model_name);
+
+    info!("Starting ink chat with model: {}", model_name);
 
     if let Some(session_id) = resume_session_id {
         info!("Will resume session: {}", session_id);

@@ -98,33 +98,33 @@ pub enum Role {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ChatMode {
     #[default]
+    Normal,
     Plan,
-    Act,
     Auto,
 }
 
 impl ChatMode {
     pub fn as_str(&self) -> &'static str {
         match self {
+            ChatMode::Normal => "normal",
             ChatMode::Plan => "plan",
-            ChatMode::Act => "act",
             ChatMode::Auto => "auto",
         }
     }
 
     pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
-            "act" => ChatMode::Act,
+            "plan" => ChatMode::Plan,
             "auto" => ChatMode::Auto,
-            _ => ChatMode::Plan,
+            _ => ChatMode::Normal,
         }
     }
 
     pub fn cycle(&self) -> Self {
         match self {
-            ChatMode::Plan => ChatMode::Act,
-            ChatMode::Act => ChatMode::Auto,
-            ChatMode::Auto => ChatMode::Plan,
+            ChatMode::Normal => ChatMode::Plan,
+            ChatMode::Plan => ChatMode::Auto,
+            ChatMode::Auto => ChatMode::Normal,
         }
     }
 }
@@ -276,6 +276,7 @@ pub struct InkChatApp {
     streaming: StreamingState,
     spinner_frame: usize,
     mode: ChatMode,
+    model: String,
     status: String,
     error: Option<String>,
     message_counter: usize,
@@ -306,7 +307,8 @@ impl Default for InkChatApp {
             input: InputBuffer::new(),
             streaming: StreamingState::default(),
             spinner_frame: 0,
-            mode: ChatMode::Plan,
+            mode: ChatMode::Normal,
+            model: String::new(),
             status: String::new(),
             error: None,
             message_counter: 0,
@@ -489,6 +491,10 @@ impl InkChatApp {
         self.mode = mode;
     }
 
+    pub fn set_model(&mut self, model: impl Into<String>) {
+        self.model = model.into();
+    }
+
     pub fn set_status(&mut self, status: impl Into<String>) {
         self.status = status.into();
     }
@@ -503,6 +509,11 @@ impl InkChatApp {
 
     pub fn set_session_dir(&mut self, path: PathBuf) {
         self.session_dir = Some(path);
+    }
+
+    pub fn load_previous_messages(&mut self, items: Vec<ChatItem>) {
+        self.items = items;
+        self.message_counter = self.items.len();
     }
 
     pub fn is_streaming(&self) -> bool {
@@ -602,6 +613,12 @@ impl InkChatApp {
             return Action::Continue;
         } else {
             self.last_ctrl_c = None;
+        }
+
+        if key.code == KeyCode::BackTab {
+            self.mode = self.mode.cycle();
+            self.status = format!("Mode: {}", self.mode.as_str());
+            return Action::Continue;
         }
 
         let action = InputAction::from(key);
@@ -794,14 +811,14 @@ impl InkChatApp {
                 self.status = format!("Mode: {}", self.mode.as_str());
                 Action::Continue
             }
+            "default" | "normal" => {
+                self.mode = ChatMode::Normal;
+                self.status = "Mode: normal".to_string();
+                Action::Continue
+            }
             "plan" => {
                 self.mode = ChatMode::Plan;
                 self.status = "Mode: plan".to_string();
-                Action::Continue
-            }
-            "act" => {
-                self.mode = ChatMode::Act;
-                self.status = "Mode: act".to_string();
                 Action::Continue
             }
             "auto" => {
@@ -817,7 +834,7 @@ impl InkChatApp {
             }
             "help" => {
                 self.add_system_message(
-                    "Commands: /mode, /plan, /act, /auto, /clear, /help, /quit".to_string(),
+                    "Commands: /mode, /default, /plan, /auto, /clear, /help, /quit".to_string(),
                 );
                 Action::Continue
             }
@@ -964,8 +981,11 @@ impl InkChatApp {
                 while let Ok(line) = rx.try_recv() {
                     if let Some(code_str) = line.strip_prefix("\x00EXIT:") {
                         if let Ok(code) = code_str.parse::<i32>() {
-                            modal.status = ShellStatus::Completed { exit_code: code };
-                            modal.duration = Some(modal.start_time.elapsed());
+                            // Only transition to Completed if still Running (not Cancelled)
+                            if matches!(modal.status, ShellStatus::Running) {
+                                modal.status = ShellStatus::Completed { exit_code: code };
+                                modal.duration = Some(modal.start_time.elapsed());
+                            }
                         }
                     } else {
                         modal.output_lines.push(line);
@@ -1077,6 +1097,14 @@ impl InkChatApp {
 
     fn cancel_shell(&mut self) {
         if let Some(ref mut modal) = self.shell_modal {
+            // Set status FIRST to prevent race with EXIT marker
+            modal.status = ShellStatus::Cancelled;
+            modal.duration = Some(modal.start_time.elapsed());
+
+            // Drop the receiver to signal threads to stop (sender.send() will error)
+            modal.output_receiver = None;
+
+            // Then send SIGTERM to the process
             if let Some(pid) = modal.child_pid {
                 #[cfg(unix)]
                 {
@@ -1091,8 +1119,6 @@ impl InkChatApp {
                         .output();
                 }
             }
-            modal.status = ShellStatus::Cancelled;
-            modal.duration = Some(modal.start_time.elapsed());
         }
     }
 
@@ -1145,7 +1171,11 @@ impl InkChatApp {
         let session_dir = self.session_dir.clone()?;
 
         let shell_dir = session_dir.join("shell");
-        std::fs::create_dir_all(&shell_dir).ok()?;
+        if let Err(e) = std::fs::create_dir_all(&shell_dir) {
+            tracing::error!(path = %shell_dir.display(), error = %e, "Failed to create shell output directory");
+            self.error = Some(format!("Failed to create shell output dir: {}", e));
+            return None;
+        }
 
         let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
         let cmd_slug: String = modal
@@ -1177,7 +1207,11 @@ impl InkChatApp {
             content.push('\n');
         }
 
-        std::fs::write(&path, content).ok()?;
+        if let Err(e) = std::fs::write(&path, &content) {
+            tracing::error!(path = %path.display(), error = %e, "Failed to write shell output");
+            self.error = Some(format!("Failed to save shell output: {}", e));
+            return None;
+        }
 
         if let Some(ref mut m) = self.shell_modal {
             m.output_path = Some(path.clone());
@@ -1598,11 +1632,12 @@ impl InkChatApp {
     }
 
     fn render_status(&self) -> Node {
-        let mode_style = match self.mode {
-            ChatMode::Plan => Style::new().fg(Color::Blue),
-            ChatMode::Act => Style::new().fg(Color::Green),
-            ChatMode::Auto => Style::new().fg(Color::Yellow),
+        let (mode_bg, mode_fg) = match self.mode {
+            ChatMode::Normal => (Color::Green, Color::Black),
+            ChatMode::Plan => (Color::Blue, Color::White),
+            ChatMode::Auto => (Color::Yellow, Color::Black),
         };
+        let mode_style = Style::new().bg(mode_bg).fg(mode_fg).bold();
 
         let separator = " │ ";
 
@@ -1613,11 +1648,17 @@ impl InkChatApp {
         };
 
         let mode_str = match self.mode {
-            ChatMode::Plan => " Plan",
-            ChatMode::Act => " Act",
-            ChatMode::Auto => " Auto",
+            ChatMode::Normal => " NORMAL ",
+            ChatMode::Plan => " PLAN ",
+            ChatMode::Auto => " AUTO ",
         };
-        let ctx_str = format!("{}% ctx ", context_percent);
+        let ctx_str = format!("{}% ctx", context_percent);
+
+        let model_str = if self.model.is_empty() {
+            "...".to_string()
+        } else {
+            self.truncate_model_name(&self.model, 20)
+        };
 
         let active_notification = self.notification.as_ref().and_then(|(msg, set_at)| {
             if set_at.elapsed() < NOTIFICATION_TIMEOUT {
@@ -1629,7 +1670,9 @@ impl InkChatApp {
 
         if let Some(notif) = active_notification {
             row([
-                styled(mode_str.to_string(), mode_style.bold()),
+                styled(mode_str.to_string(), mode_style),
+                styled(separator.to_string(), Style::new().fg(Color::DarkGray)),
+                styled(model_str, Style::new().fg(Color::Cyan)),
                 styled(separator.to_string(), Style::new().fg(Color::DarkGray)),
                 styled(ctx_str, Style::new().fg(Color::DarkGray)),
                 spacer(),
@@ -1637,10 +1680,20 @@ impl InkChatApp {
             ])
         } else {
             row([
-                styled(mode_str.to_string(), mode_style.bold()),
+                styled(mode_str.to_string(), mode_style),
+                styled(separator.to_string(), Style::new().fg(Color::DarkGray)),
+                styled(model_str, Style::new().fg(Color::Cyan)),
                 styled(separator.to_string(), Style::new().fg(Color::DarkGray)),
                 styled(ctx_str, Style::new().fg(Color::DarkGray)),
             ])
+        }
+    }
+
+    fn truncate_model_name(&self, name: &str, max_len: usize) -> String {
+        if name.len() <= max_len {
+            name.to_string()
+        } else {
+            format!("{}…", &name[..max_len - 1])
         }
     }
 
@@ -1800,18 +1853,18 @@ impl InkChatApp {
                     kind: Some("command".to_string()),
                 },
                 PopupItemNode {
-                    label: "/plan".to_string(),
-                    description: Some("Set plan mode".to_string()),
+                    label: "/default".to_string(),
+                    description: Some("Set default mode (ask permissions)".to_string()),
                     kind: Some("command".to_string()),
                 },
                 PopupItemNode {
-                    label: "/act".to_string(),
-                    description: Some("Set act mode".to_string()),
+                    label: "/plan".to_string(),
+                    description: Some("Set plan mode (read-only)".to_string()),
                     kind: Some("command".to_string()),
                 },
                 PopupItemNode {
                     label: "/auto".to_string(),
-                    description: Some("Set auto mode".to_string()),
+                    description: Some("Set auto mode (full access)".to_string()),
                     kind: Some("command".to_string()),
                 },
                 PopupItemNode {
@@ -1960,17 +2013,18 @@ mod tests {
 
     #[test]
     fn test_mode_cycle() {
-        assert_eq!(ChatMode::Plan.cycle(), ChatMode::Act);
-        assert_eq!(ChatMode::Act.cycle(), ChatMode::Auto);
-        assert_eq!(ChatMode::Auto.cycle(), ChatMode::Plan);
+        assert_eq!(ChatMode::Normal.cycle(), ChatMode::Plan);
+        assert_eq!(ChatMode::Plan.cycle(), ChatMode::Auto);
+        assert_eq!(ChatMode::Auto.cycle(), ChatMode::Normal);
     }
 
     #[test]
     fn test_mode_from_str() {
+        assert_eq!(ChatMode::parse("normal"), ChatMode::Normal);
+        assert_eq!(ChatMode::parse("default"), ChatMode::Normal);
         assert_eq!(ChatMode::parse("plan"), ChatMode::Plan);
-        assert_eq!(ChatMode::parse("act"), ChatMode::Act);
         assert_eq!(ChatMode::parse("auto"), ChatMode::Auto);
-        assert_eq!(ChatMode::parse("unknown"), ChatMode::Plan);
+        assert_eq!(ChatMode::parse("unknown"), ChatMode::Normal);
     }
 
     #[test]
@@ -1978,7 +2032,7 @@ mod tests {
         let app = InkChatApp::init();
         assert!(app.items.is_empty());
         assert!(!app.streaming.active);
-        assert_eq!(app.mode, ChatMode::Plan);
+        assert_eq!(app.mode, ChatMode::Normal);
     }
 
     #[test]
@@ -2058,12 +2112,12 @@ mod tests {
     fn test_slash_commands() {
         let mut app = InkChatApp::init();
 
-        assert_eq!(app.mode, ChatMode::Plan);
+        assert_eq!(app.mode, ChatMode::Normal);
         app.handle_slash_command("/mode");
-        assert_eq!(app.mode, ChatMode::Act);
-
-        app.handle_slash_command("/plan");
         assert_eq!(app.mode, ChatMode::Plan);
+
+        app.handle_slash_command("/normal");
+        assert_eq!(app.mode, ChatMode::Normal);
 
         app.add_user_message("test".to_string());
         assert_eq!(app.items.len(), 1);
@@ -2212,14 +2266,14 @@ mod tests {
     #[test]
     fn test_status_shows_mode_indicator() {
         let mut app = InkChatApp::init();
-        app.set_mode(ChatMode::Act);
+        app.set_mode(ChatMode::Plan);
 
         let focus = FocusContext::new();
         let ctx = ViewContext::new(&focus);
         let tree = app.view(&ctx);
         let output = render_to_string(&tree, 80);
 
-        assert!(output.contains("Act"), "Status should show Act mode");
+        assert!(output.contains("PLAN"), "Status should show PLAN mode");
     }
 
     #[test]
