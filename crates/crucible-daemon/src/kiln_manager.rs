@@ -21,9 +21,10 @@ use crucible_pipeline::{NotePipeline, NotePipelineConfig, ParserBackend};
 use crucible_sqlite::{adapters as sqlite_adapters, SqliteClientHandle, SqliteConfig};
 
 #[cfg(feature = "storage-surrealdb")]
-use crucible_surrealdb::{
-    adapters as surreal_adapters, adapters::SurrealClientHandle, SurrealDbConfig,
-};
+use crucible_surrealdb::adapters::SurrealClientHandle;
+
+#[cfg(all(feature = "storage-surrealdb", not(feature = "storage-sqlite")))]
+use crucible_surrealdb::{adapters as surreal_adapters, SurrealDbConfig};
 
 // ===========================================================================
 // Backend Abstraction
@@ -31,6 +32,7 @@ use crucible_surrealdb::{
 
 /// Storage backend handle that wraps either SQLite or SurrealDB client
 #[derive(Clone)]
+#[allow(dead_code)] // Variants may appear unused when both features enabled (SQLite takes precedence)
 pub enum StorageHandle {
     #[cfg(feature = "storage-sqlite")]
     Sqlite(SqliteClientHandle),

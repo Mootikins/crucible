@@ -13,6 +13,7 @@ use crate::session_manager::SessionManager;
 use crate::session_storage::{FileSessionStorage, SessionStorage};
 use anyhow::Result;
 
+use crate::protocol::RequestId;
 use crate::subscription::{ClientId, SubscriptionManager};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -20,7 +21,29 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::unix::OwnedWriteHalf;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{broadcast, Mutex};
-use tracing::{error, info, warn};
+use tokio_util::sync::CancellationToken;
+use tracing::{debug, error, info, warn};
+
+/// Log internal error details and return a generic error message.
+/// Prevents leaking sensitive internal information to clients.
+fn internal_error(req_id: Option<RequestId>, err: impl std::fmt::Display) -> Response {
+    error!("Internal error: {}", err);
+    Response::error(req_id, INTERNAL_ERROR, "Internal server error")
+}
+
+/// Log client error details and return a sanitized error message.
+fn invalid_state_error(
+    req_id: Option<RequestId>,
+    operation: &str,
+    err: impl std::fmt::Display,
+) -> Response {
+    debug!("Invalid state for {}: {}", operation, err);
+    Response::error(
+        req_id,
+        INVALID_PARAMS,
+        format!("Operation '{}' not allowed in current state", operation),
+    )
+}
 
 /// Daemon server that listens on a Unix socket
 pub struct Server {
@@ -83,25 +106,49 @@ impl Server {
     pub async fn run(self) -> Result<()> {
         let mut shutdown_rx = self.shutdown_tx.subscribe();
 
-        // Spawn event persistence task
+        // Spawn event persistence task with cancellation support
         let storage = FileSessionStorage::new();
         let sm_clone = self.session_manager.clone();
         let mut persist_rx = self.event_tx.subscribe();
+        let persist_cancel = CancellationToken::new();
+        let persist_cancel_clone = persist_cancel.clone();
 
         let persist_task = tokio::spawn(async move {
-            while let Ok(event) = persist_rx.recv().await {
-                // Try to get the session and persist the event
-                if let Some(session) = sm_clone.get_session(&event.session_id) {
-                    let json = match serde_json::to_string(&event) {
-                        Ok(j) => j,
-                        Err(e) => {
-                            tracing::warn!("Failed to serialize event: {}", e);
-                            continue;
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = persist_cancel_clone.cancelled() => {
+                        debug!("Persist task received shutdown signal, draining remaining events");
+                        // Drain any remaining events with a short timeout
+                        while let Ok(event) = persist_rx.try_recv() {
+                            if let Some(session) = sm_clone.get_session(&event.session_id) {
+                                if let Ok(json) = serde_json::to_string(&event) {
+                                    let _ = storage.append_event(&session, &json).await;
+                                }
+                            }
                         }
-                    };
+                        break;
+                    }
+                    result = persist_rx.recv() => {
+                        match result {
+                            Ok(event) => {
+                                // Try to get the session and persist the event
+                                if let Some(session) = sm_clone.get_session(&event.session_id) {
+                                    let json = match serde_json::to_string(&event) {
+                                        Ok(j) => j,
+                                        Err(e) => {
+                                            tracing::warn!("Failed to serialize event: {}", e);
+                                            continue;
+                                        }
+                                    };
 
-                    if let Err(e) = storage.append_event(&session, &json).await {
-                        tracing::warn!("Failed to persist event: {}", e);
+                                    if let Err(e) = storage.append_event(&session, &json).await {
+                                        tracing::warn!("Failed to persist event: {}", e);
+                                    }
+                                }
+                            }
+                            Err(_) => break, // Channel closed
+                        }
                     }
                 }
             }
@@ -137,8 +184,13 @@ impl Server {
             }
         }
 
-        // Cleanup
-        persist_task.abort();
+        // Graceful shutdown: signal cancellation, wait with timeout, then abort if needed
+        persist_cancel.cancel();
+        match tokio::time::timeout(std::time::Duration::from_secs(5), persist_task).await {
+            Ok(Ok(())) => debug!("Persist task completed gracefully"),
+            Ok(Err(e)) => warn!("Persist task panicked: {}", e),
+            Err(_) => warn!("Persist task did not complete within timeout, aborting"),
+        }
 
         Ok(())
     }
@@ -161,16 +213,29 @@ async fn handle_client(
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
 
-    // Spawn event forwarding task
+    // Spawn event forwarding task with cancellation support
     let writer_clone = writer.clone();
     let sub_manager = subscription_manager.clone();
+    let event_cancel = CancellationToken::new();
+    let event_cancel_clone = event_cancel.clone();
     let event_task = tokio::spawn(async move {
-        while let Ok(event) = event_rx.recv().await {
-            if sub_manager.is_subscribed(client_id, &event.session_id) {
-                if let Ok(json) = event.to_json_line() {
-                    let mut w = writer_clone.lock().await;
-                    if w.write_all(json.as_bytes()).await.is_err() {
-                        break;
+        loop {
+            tokio::select! {
+                biased;
+                _ = event_cancel_clone.cancelled() => break,
+                result = event_rx.recv() => {
+                    match result {
+                        Ok(event) => {
+                            if sub_manager.is_subscribed(client_id, &event.session_id) {
+                                if let Ok(json) = event.to_json_line() {
+                                    let mut w = writer_clone.lock().await;
+                                    if w.write_all(json.as_bytes()).await.is_err() {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        Err(_) => break,
                     }
                 }
             }
@@ -212,8 +277,9 @@ async fn handle_client(
         w.write_all(output.as_bytes()).await?;
     }
 
-    // Cleanup
-    event_task.abort();
+    // Graceful shutdown of event forwarding
+    event_cancel.cancel();
+    let _ = tokio::time::timeout(std::time::Duration::from_millis(100), event_task).await;
     subscription_manager.remove_client(client_id);
 
     Ok(())
@@ -288,7 +354,7 @@ async fn handle_kiln_open(req: Request, km: &Arc<KilnManager>) -> Response {
 
     match km.open(Path::new(path)).await {
         Ok(()) => Response::success(req.id, serde_json::json!({"status": "ok"})),
-        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => internal_error(req.id, e),
     }
 }
 
@@ -297,7 +363,7 @@ async fn handle_kiln_close(req: Request, km: &Arc<KilnManager>) -> Response {
 
     match km.close(Path::new(path)).await {
         Ok(()) => Response::success(req.id, serde_json::json!({"status": "ok"})),
-        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => internal_error(req.id, e),
     }
 }
 
@@ -327,7 +393,7 @@ async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -> Response 
     // Get or open connection to the kiln
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
-        Err(e) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => return internal_error(req.id, e),
     };
 
     // Execute vector search using the backend-agnostic method
@@ -344,7 +410,7 @@ async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -> Response 
                 .collect();
             Response::success(req.id, json_results)
         }
-        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => internal_error(req.id, e),
     }
 }
 
@@ -354,7 +420,7 @@ async fn handle_list_notes(req: Request, km: &Arc<KilnManager>) -> Response {
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
-        Err(e) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => return internal_error(req.id, e),
     };
 
     match handle.list_notes(path_filter).await {
@@ -373,7 +439,7 @@ async fn handle_list_notes(req: Request, km: &Arc<KilnManager>) -> Response {
                 .collect();
             Response::success(req.id, json_notes)
         }
-        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => internal_error(req.id, e),
     }
 }
 
@@ -383,7 +449,7 @@ async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>) -> Respons
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
-        Err(e) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => return internal_error(req.id, e),
     };
 
     match handle.get_note_by_name(name).await {
@@ -398,7 +464,7 @@ async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>) -> Respons
             }),
         ),
         Ok(None) => Response::success(req.id, serde_json::Value::Null),
-        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => internal_error(req.id, e),
     }
 }
 
@@ -429,7 +495,7 @@ async fn handle_note_upsert(req: Request, km: &Arc<KilnManager>) -> Response {
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
-        Err(e) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => return internal_error(req.id, e),
     };
 
     let note_store = handle.as_note_store();
@@ -441,7 +507,7 @@ async fn handle_note_upsert(req: Request, km: &Arc<KilnManager>) -> Response {
                 "events_count": events.len()
             }),
         ),
-        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => internal_error(req.id, e),
     }
 }
 
@@ -453,21 +519,17 @@ async fn handle_note_get(req: Request, km: &Arc<KilnManager>) -> Response {
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
-        Err(e) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => return internal_error(req.id, e),
     };
 
     let note_store = handle.as_note_store();
     match note_store.get(path).await {
         Ok(Some(note)) => match serde_json::to_value(&note) {
             Ok(v) => Response::success(req.id, v),
-            Err(e) => Response::error(
-                req.id,
-                INTERNAL_ERROR,
-                format!("Serialization error: {}", e),
-            ),
+            Err(e) => internal_error(req.id, e),
         },
         Ok(None) => Response::success(req.id, serde_json::Value::Null),
-        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => internal_error(req.id, e),
     }
 }
 
@@ -479,13 +541,13 @@ async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> Response {
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
-        Err(e) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => return internal_error(req.id, e),
     };
 
     let note_store = handle.as_note_store();
     match note_store.delete(path).await {
         Ok(_event) => Response::success(req.id, serde_json::json!({"status": "ok"})),
-        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => internal_error(req.id, e),
     }
 }
 
@@ -496,20 +558,16 @@ async fn handle_note_list(req: Request, km: &Arc<KilnManager>) -> Response {
 
     let handle = match km.get_or_open(Path::new(kiln_path)).await {
         Ok(c) => c,
-        Err(e) => return Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => return internal_error(req.id, e),
     };
 
     let note_store = handle.as_note_store();
     match note_store.list().await {
         Ok(notes) => match serde_json::to_value(&notes) {
             Ok(v) => Response::success(req.id, v),
-            Err(e) => Response::error(
-                req.id,
-                INTERNAL_ERROR,
-                format!("Serialization error: {}", e),
-            ),
+            Err(e) => internal_error(req.id, e),
         },
-        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => internal_error(req.id, e),
     }
 }
 
@@ -532,7 +590,7 @@ async fn handle_process_file(req: Request, km: &Arc<KilnManager>) -> Response {
                 "path": file_path
             }),
         ),
-        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => internal_error(req.id, e),
     }
 }
 
@@ -550,15 +608,15 @@ async fn handle_process_batch(req: Request, km: &Arc<KilnManager>) -> Response {
             serde_json::json!({
                 "processed": processed,
                 "skipped": skipped,
-                "errors": errors.iter().map(|(p, e)| {
+                "errors": errors.iter().map(|(p, _)| {
                     serde_json::json!({
                         "path": p.to_string_lossy(),
-                        "error": e
+                        "error": "processing failed"
                     })
                 }).collect::<Vec<_>>()
             }),
         ),
-        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => internal_error(req.id, e),
     }
 }
 
@@ -616,7 +674,7 @@ async fn handle_session_create(req: Request, sm: &Arc<SessionManager>) -> Respon
                 "state": format!("{}", session.state),
             }),
         ),
-        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => internal_error(req.id, e),
     }
 }
 
@@ -703,10 +761,7 @@ async fn handle_session_pause(req: Request, sm: &Arc<SessionManager>) -> Respons
                 "state": "paused",
             }),
         ),
-        Err(e) => {
-            let msg = e.to_string();
-            Response::error(req.id, INVALID_PARAMS, msg)
-        }
+        Err(e) => invalid_state_error(req.id, "pause", e),
     }
 }
 
@@ -722,10 +777,7 @@ async fn handle_session_resume(req: Request, sm: &Arc<SessionManager>) -> Respon
                 "state": "active",
             }),
         ),
-        Err(e) => {
-            let msg = e.to_string();
-            Response::error(req.id, INVALID_PARAMS, msg)
-        }
+        Err(e) => invalid_state_error(req.id, "resume", e),
     }
 }
 
@@ -740,7 +792,7 @@ async fn handle_session_resume_from_storage(req: Request, sm: &Arc<SessionManage
     // Resume session from storage
     let session = match sm.resume_session_from_storage(session_id, &kiln).await {
         Ok(s) => s,
-        Err(e) => return Response::error(req.id, INVALID_PARAMS, e.to_string()),
+        Err(e) => return invalid_state_error(req.id, "resume_from_storage", e),
     };
 
     // Load event history with pagination
@@ -751,6 +803,8 @@ async fn handle_session_resume_from_storage(req: Request, sm: &Arc<SessionManage
         Ok(events) => events,
         Err(e) => {
             // Session resumed but history load failed - return session without history
+            // Log internally but don't expose error details to client
+            warn!("Failed to load session history: {}", e);
             return Response::success(
                 req.id,
                 serde_json::json!({
@@ -760,7 +814,6 @@ async fn handle_session_resume_from_storage(req: Request, sm: &Arc<SessionManage
                     "kiln": session.kiln,
                     "history": [],
                     "total_events": 0,
-                    "history_error": e.to_string(),
                 }),
             );
         }
@@ -797,10 +850,7 @@ async fn handle_session_end(req: Request, sm: &Arc<SessionManager>) -> Response 
                 "kiln": session.kiln,
             }),
         ),
-        Err(e) => {
-            let msg = e.to_string();
-            Response::error(req.id, INVALID_PARAMS, msg)
-        }
+        Err(e) => invalid_state_error(req.id, "end", e),
     }
 }
 
@@ -816,10 +866,7 @@ async fn handle_session_compact(req: Request, sm: &Arc<SessionManager>) -> Respo
                 "compaction_requested": true,
             }),
         ),
-        Err(e) => {
-            let msg = e.to_string();
-            Response::error(req.id, INVALID_PARAMS, msg)
-        }
+        Err(e) => invalid_state_error(req.id, "compact", e),
     }
 }
 
@@ -907,7 +954,7 @@ async fn handle_session_configure_agent(req: Request, am: &Arc<AgentManager>) ->
                 "configured": true,
             }),
         ),
-        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => internal_error(req.id, e),
     }
 }
 
@@ -930,7 +977,7 @@ async fn handle_session_send_message(
                 "message_id": message_id,
             }),
         ),
-        Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
+        Err(e) => internal_error(req.id, e),
     }
 }
 
