@@ -5,9 +5,9 @@
 
 use crate::session_storage::{FileSessionStorage, SessionStorage};
 use crucible_core::session::{Session, SessionState, SessionSummary, SessionType};
-use std::collections::HashMap;
+use dashmap::DashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use tracing::{debug, info};
 
 /// Manages active sessions in the daemon.
@@ -16,8 +16,8 @@ use tracing::{debug, info};
 /// The manager tracks all active sessions and their state.
 /// Sessions are automatically persisted to storage on create and state changes.
 pub struct SessionManager {
-    /// Active sessions indexed by session ID
-    sessions: RwLock<HashMap<String, Session>>,
+    /// Active sessions indexed by session ID (lock-free concurrent access)
+    sessions: DashMap<String, Session>,
     /// Storage backend for session persistence
     storage: Arc<dyn SessionStorage>,
 }
@@ -31,7 +31,7 @@ impl SessionManager {
     /// Create a session manager with a custom storage backend.
     pub fn with_storage(storage: Arc<dyn SessionStorage>) -> Self {
         Self {
-            sessions: RwLock::new(HashMap::new()),
+            sessions: DashMap::new(),
             storage,
         }
     }
@@ -70,10 +70,7 @@ impl SessionManager {
 
         // Store in active sessions
         let session_clone = session.clone();
-        {
-            let mut sessions = self.sessions.write().unwrap();
-            sessions.insert(session_id.clone(), session);
-        }
+        self.sessions.insert(session_id.clone(), session);
 
         info!(session_id = %session_id, session_type = %session_clone.session_type, "Session created");
         Ok(session_clone)
@@ -106,10 +103,7 @@ impl SessionManager {
 
         // Store in memory
         let session_clone = session.clone();
-        {
-            let mut sessions = self.sessions.write().unwrap();
-            sessions.insert(session.id.clone(), session);
-        }
+        self.sessions.insert(session.id.clone(), session);
 
         info!(session_id = %session_id, "Session resumed from storage");
         Ok(session_clone)
@@ -141,15 +135,11 @@ impl SessionManager {
 
     /// Get a session by ID.
     pub fn get_session(&self, session_id: &str) -> Option<Session> {
-        let sessions = self.sessions.read().unwrap();
-        sessions.get(session_id).cloned()
+        self.sessions.get(session_id).map(|r| r.clone())
     }
 
     pub async fn update_session(&self, session: &Session) -> Result<(), SessionError> {
-        {
-            let mut sessions = self.sessions.write().unwrap();
-            sessions.insert(session.id.clone(), session.clone());
-        }
+        self.sessions.insert(session.id.clone(), session.clone());
         self.storage.save(session).await?;
         Ok(())
     }
@@ -157,8 +147,10 @@ impl SessionManager {
     /// List all active sessions.
     #[allow(dead_code)]
     pub fn list_sessions(&self) -> Vec<SessionSummary> {
-        let sessions = self.sessions.read().unwrap();
-        sessions.values().map(SessionSummary::from).collect()
+        self.sessions
+            .iter()
+            .map(|r| SessionSummary::from(r.value()))
+            .collect()
     }
 
     /// List sessions filtered by criteria.
@@ -169,16 +161,16 @@ impl SessionManager {
         session_type: Option<SessionType>,
         state: Option<SessionState>,
     ) -> Vec<SessionSummary> {
-        let sessions = self.sessions.read().unwrap();
-        sessions
-            .values()
-            .filter(|s| {
+        self.sessions
+            .iter()
+            .filter(|r| {
+                let s = r.value();
                 kiln.is_none_or(|k| &s.kiln == k)
                     && workspace.is_none_or(|w| &s.workspace == w)
                     && session_type.is_none_or(|t| s.session_type == t)
                     && state.is_none_or(|st| s.state == st)
             })
-            .map(SessionSummary::from)
+            .map(|r| SessionSummary::from(r.value()))
             .collect()
     }
 
@@ -187,21 +179,21 @@ impl SessionManager {
     /// Returns the previous state if successful.
     pub async fn pause_session(&self, session_id: &str) -> Result<SessionState, SessionError> {
         let (previous, session) = {
-            let mut sessions = self.sessions.write().unwrap();
-            let session = sessions
+            let mut entry = self
+                .sessions
                 .get_mut(session_id)
                 .ok_or(SessionError::NotFound(session_id.to_string()))?;
 
-            if session.state != SessionState::Active {
+            if entry.state != SessionState::Active {
                 return Err(SessionError::InvalidState {
                     expected: SessionState::Active,
-                    actual: session.state,
+                    actual: entry.state,
                 });
             }
 
-            let previous = session.state;
-            session.pause();
-            (previous, session.clone())
+            let previous = entry.state;
+            entry.pause();
+            (previous, entry.clone())
         };
 
         // Persist updated state
@@ -216,21 +208,21 @@ impl SessionManager {
     /// Returns the previous state if successful.
     pub async fn resume_session(&self, session_id: &str) -> Result<SessionState, SessionError> {
         let (previous, session) = {
-            let mut sessions = self.sessions.write().unwrap();
-            let session = sessions
+            let mut entry = self
+                .sessions
                 .get_mut(session_id)
                 .ok_or(SessionError::NotFound(session_id.to_string()))?;
 
-            if session.state != SessionState::Paused {
+            if entry.state != SessionState::Paused {
                 return Err(SessionError::InvalidState {
                     expected: SessionState::Paused,
-                    actual: session.state,
+                    actual: entry.state,
                 });
             }
 
-            let previous = session.state;
-            session.resume();
-            (previous, session.clone())
+            let previous = entry.state;
+            entry.resume();
+            (previous, entry.clone())
         };
 
         // Persist updated state
@@ -245,17 +237,17 @@ impl SessionManager {
     /// The session remains in memory with Ended state until explicitly removed.
     pub async fn end_session(&self, session_id: &str) -> Result<Session, SessionError> {
         let session = {
-            let mut sessions = self.sessions.write().unwrap();
-            let session = sessions
+            let mut entry = self
+                .sessions
                 .get_mut(session_id)
                 .ok_or(SessionError::NotFound(session_id.to_string()))?;
 
-            if session.state == SessionState::Ended {
+            if entry.state == SessionState::Ended {
                 return Err(SessionError::AlreadyEnded(session_id.to_string()));
             }
 
-            session.end();
-            session.clone()
+            entry.end();
+            entry.clone()
         };
 
         // Persist updated state
@@ -271,20 +263,20 @@ impl SessionManager {
     /// (summarizing events) is performed by the agent when it sees this state.
     pub async fn request_compaction(&self, session_id: &str) -> Result<Session, SessionError> {
         let session = {
-            let mut sessions = self.sessions.write().unwrap();
-            let session = sessions
+            let mut entry = self
+                .sessions
                 .get_mut(session_id)
                 .ok_or(SessionError::NotFound(session_id.to_string()))?;
 
-            if session.state != SessionState::Active {
+            if entry.state != SessionState::Active {
                 return Err(SessionError::InvalidState {
                     expected: SessionState::Active,
-                    actual: session.state,
+                    actual: entry.state,
                 });
             }
 
-            session.state = SessionState::Compacting;
-            session.clone()
+            entry.state = SessionState::Compacting;
+            entry.clone()
         };
 
         // Persist updated state
@@ -299,12 +291,11 @@ impl SessionManager {
     /// Returns the session if it was found and ended.
     #[allow(dead_code)]
     pub fn remove_session(&self, session_id: &str) -> Result<Session, SessionError> {
-        let mut sessions = self.sessions.write().unwrap();
-        let session = sessions.get(session_id).cloned();
+        let session = self.sessions.get(session_id).map(|r| r.clone());
 
         match session {
             Some(s) if s.state == SessionState::Ended => {
-                sessions.remove(session_id);
+                self.sessions.remove(session_id);
                 debug!(session_id = %session_id, "Session removed from memory");
                 Ok(s)
             }
@@ -319,31 +310,29 @@ impl SessionManager {
     /// Get the count of active sessions.
     #[allow(dead_code)]
     pub fn active_count(&self) -> usize {
-        let sessions = self.sessions.read().unwrap();
-        sessions
-            .values()
-            .filter(|s| s.state == SessionState::Active)
+        self.sessions
+            .iter()
+            .filter(|r| r.value().state == SessionState::Active)
             .count()
     }
 
     /// Get the total count of sessions (including paused/ended).
     #[allow(dead_code)]
     pub fn total_count(&self) -> usize {
-        let sessions = self.sessions.read().unwrap();
-        sessions.len()
+        self.sessions.len()
     }
 
     /// Update session title and persist the change.
     #[allow(dead_code)]
     pub async fn set_title(&self, session_id: &str, title: String) -> Result<(), SessionError> {
         let session = {
-            let mut sessions = self.sessions.write().unwrap();
-            let session = sessions
+            let mut entry = self
+                .sessions
                 .get_mut(session_id)
                 .ok_or(SessionError::NotFound(session_id.to_string()))?;
 
-            session.title = Some(title);
-            session.clone()
+            entry.title = Some(title);
+            entry.clone()
         };
 
         // Persist updated state

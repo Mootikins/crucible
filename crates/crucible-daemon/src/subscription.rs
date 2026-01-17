@@ -4,9 +4,9 @@
 //! efficient event broadcasting. Supports wildcard subscriptions for
 //! clients that want to receive all session events.
 
-use std::collections::{HashMap, HashSet};
+use dashmap::DashMap;
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::RwLock;
 
 /// Counter for generating unique client IDs.
 static CLIENT_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -73,17 +73,17 @@ pub const WILDCARD_SESSION: &str = "*";
 /// ```
 pub struct SubscriptionManager {
     /// Map from session_id -> set of subscribed client IDs
-    subscriptions: RwLock<HashMap<String, HashSet<ClientId>>>,
+    subscriptions: DashMap<String, HashSet<ClientId>>,
     /// Reverse map from client_id -> set of session IDs (for cleanup)
-    client_sessions: RwLock<HashMap<ClientId, HashSet<String>>>,
+    client_sessions: DashMap<ClientId, HashSet<String>>,
 }
 
 impl SubscriptionManager {
     /// Create a new subscription manager.
     pub fn new() -> Self {
         Self {
-            subscriptions: RwLock::new(HashMap::new()),
-            client_sessions: RwLock::new(HashMap::new()),
+            subscriptions: DashMap::new(),
+            client_sessions: DashMap::new(),
         }
     }
 
@@ -93,21 +93,16 @@ impl SubscriptionManager {
     /// unsubscribe or disconnect.
     pub fn subscribe(&self, client_id: ClientId, session_id: &str) {
         // Add to subscriptions map
-        {
-            let mut subs = self.subscriptions.write().unwrap();
-            subs.entry(session_id.to_string())
-                .or_default()
-                .insert(client_id);
-        }
+        self.subscriptions
+            .entry(session_id.to_string())
+            .or_default()
+            .insert(client_id);
 
         // Add to reverse map
-        {
-            let mut client_subs = self.client_sessions.write().unwrap();
-            client_subs
-                .entry(client_id)
-                .or_default()
-                .insert(session_id.to_string());
-        }
+        self.client_sessions
+            .entry(client_id)
+            .or_default()
+            .insert(session_id.to_string());
     }
 
     /// Unsubscribe a client from a specific session.
@@ -115,26 +110,20 @@ impl SubscriptionManager {
     /// The client will no longer receive events for this session.
     pub fn unsubscribe(&self, client_id: ClientId, session_id: &str) {
         // Remove from subscriptions map
-        {
-            let mut subs = self.subscriptions.write().unwrap();
-            if let Some(clients) = subs.get_mut(session_id) {
-                clients.remove(&client_id);
-                // Clean up empty entries
-                if clients.is_empty() {
-                    subs.remove(session_id);
-                }
+        if let Some(mut clients) = self.subscriptions.get_mut(session_id) {
+            clients.remove(&client_id);
+            if clients.is_empty() {
+                drop(clients); // Release the lock before removing
+                self.subscriptions.remove(session_id);
             }
         }
 
         // Remove from reverse map
-        {
-            let mut client_subs = self.client_sessions.write().unwrap();
-            if let Some(sessions) = client_subs.get_mut(&client_id) {
-                sessions.remove(session_id);
-                // Clean up empty entries
-                if sessions.is_empty() {
-                    client_subs.remove(&client_id);
-                }
+        if let Some(mut sessions) = self.client_sessions.get_mut(&client_id) {
+            sessions.remove(session_id);
+            if sessions.is_empty() {
+                drop(sessions); // Release the lock before removing
+                self.client_sessions.remove(&client_id);
             }
         }
     }
@@ -148,18 +137,16 @@ impl SubscriptionManager {
 
     #[allow(dead_code)]
     pub fn get_subscribers(&self, session_id: &str) -> Vec<ClientId> {
-        let subs = self.subscriptions.read().unwrap();
-
         let mut subscribers = HashSet::new();
 
         // Add clients subscribed to this specific session
-        if let Some(clients) = subs.get(session_id) {
-            subscribers.extend(clients);
+        if let Some(clients) = self.subscriptions.get(session_id) {
+            subscribers.extend(clients.iter().copied());
         }
 
         // Add clients with wildcard subscription
-        if let Some(wildcard_clients) = subs.get(WILDCARD_SESSION) {
-            subscribers.extend(wildcard_clients);
+        if let Some(wildcard_clients) = self.subscriptions.get(WILDCARD_SESSION) {
+            subscribers.extend(wildcard_clients.iter().copied());
         }
 
         subscribers.into_iter().collect()
@@ -170,9 +157,7 @@ impl SubscriptionManager {
     /// Returns true if the client has a specific subscription to the
     /// session OR has a wildcard subscription.
     pub fn is_subscribed(&self, client_id: ClientId, session_id: &str) -> bool {
-        let client_subs = self.client_sessions.read().unwrap();
-
-        if let Some(sessions) = client_subs.get(&client_id) {
+        if let Some(sessions) = self.client_sessions.get(&client_id) {
             // Check for specific subscription or wildcard
             sessions.contains(session_id) || sessions.contains(WILDCARD_SESSION)
         } else {
@@ -185,23 +170,19 @@ impl SubscriptionManager {
     /// Called when a client disconnects to clean up all subscription state.
     pub fn remove_client(&self, client_id: ClientId) {
         // Get all sessions this client was subscribed to
-        let sessions_to_clean: Vec<String> = {
-            let mut client_subs = self.client_sessions.write().unwrap();
-            client_subs
-                .remove(&client_id)
-                .map(|s| s.into_iter().collect())
-                .unwrap_or_default()
-        };
+        let sessions_to_clean: Vec<String> = self
+            .client_sessions
+            .remove(&client_id)
+            .map(|(_, s)| s.into_iter().collect())
+            .unwrap_or_default();
 
         // Remove client from each session's subscriber set
-        {
-            let mut subs = self.subscriptions.write().unwrap();
-            for session_id in sessions_to_clean {
-                if let Some(clients) = subs.get_mut(&session_id) {
-                    clients.remove(&client_id);
-                    if clients.is_empty() {
-                        subs.remove(&session_id);
-                    }
+        for session_id in sessions_to_clean {
+            if let Some(mut clients) = self.subscriptions.get_mut(&session_id) {
+                clients.remove(&client_id);
+                if clients.is_empty() {
+                    drop(clients); // Release the lock before removing
+                    self.subscriptions.remove(&session_id);
                 }
             }
         }
@@ -210,15 +191,19 @@ impl SubscriptionManager {
     /// Get the number of subscriptions for a session.
     #[cfg(test)]
     fn subscription_count(&self, session_id: &str) -> usize {
-        let subs = self.subscriptions.read().unwrap();
-        subs.get(session_id).map(|s| s.len()).unwrap_or(0)
+        self.subscriptions
+            .get(session_id)
+            .map(|s| s.len())
+            .unwrap_or(0)
     }
 
     /// Get the number of sessions a client is subscribed to.
     #[cfg(test)]
     fn client_subscription_count(&self, client_id: ClientId) -> usize {
-        let client_subs = self.client_sessions.read().unwrap();
-        client_subs.get(&client_id).map(|s| s.len()).unwrap_or(0)
+        self.client_sessions
+            .get(&client_id)
+            .map(|s| s.len())
+            .unwrap_or(0)
     }
 }
 
