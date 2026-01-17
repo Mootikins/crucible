@@ -1,0 +1,97 @@
+---
+description: Runtime permission modes for controlling agent actions
+status: implemented
+tags:
+  - tui
+  - agents
+  - permissions
+---
+
+# Modes
+
+Modes control what actions an agent can take at runtime. They act as a permission layer on top of [[Help/Extending/Agent Cards|agent cards]].
+
+## The Three Modes
+
+| Mode | Behavior | Use When |
+|------|----------|----------|
+| **Default** | Auto-read, ask for writes | Normal interactive use |
+| **Plan** | Read-only, creates plan files | Exploring options before acting |
+| **Auto** | Full access, minimal prompts | Trusted automated workflows |
+
+## Default Mode
+
+The standard mode for interactive use. The agent can:
+- Read files and search freely
+- Must ask permission for writes, deletes, or commands
+
+This balances productivity with safety. You stay in control of destructive actions.
+
+## Plan Mode
+
+A read-only mode for exploration and planning. The agent:
+- Can read, search, and analyze
+- Cannot modify files or run commands
+- Creates a plan file instead of taking action
+
+Use plan mode when you want to:
+- Understand options before committing
+- Review proposed changes before execution
+- Explore unfamiliar codebases safely
+
+The plan file can later be executed in auto mode.
+
+## Auto Mode
+
+Full-access mode for trusted workflows. The agent:
+- Can perform any allowed action without prompting
+- Still respects agent card tool restrictions
+- Useful for running pre-approved plans
+
+Use auto mode carefully - it gives the agent significant autonomy.
+
+## Switching Modes
+
+### Keyboard
+
+Press `Shift+Tab` to cycle through modes: Default → Plan → Auto → Default
+
+### Slash Commands
+
+```
+/default    Switch to default mode
+/plan       Switch to plan mode  
+/auto       Switch to auto mode
+/mode       Cycle to next mode
+```
+
+### Status Bar
+
+The current mode is shown in the status bar:
+
+```
+Default │ claude-sonnet │ 23% ctx
+```
+
+Mode colors:
+- **Default** - Green
+- **Plan** - Blue
+- **Auto** - Yellow
+
+## Interaction with Agent Cards
+
+Modes and agent cards work together:
+
+1. **Agent card** sets base permissions (which tools exist)
+2. **Mode** adds runtime restrictions (when to ask permission)
+
+Example: An agent card allows `write_file: ask`. In different modes:
+- **Default**: Prompts before each write
+- **Plan**: Blocked entirely (plan mode is read-only)
+- **Auto**: Writes without prompting
+
+## See Also
+
+- [[Help/TUI/Keybindings]] - All keyboard shortcuts
+- [[Help/Extending/Agent Cards]] - Configuring agent permissions
+- [[Help/TUI/Index]] - TUI overview
