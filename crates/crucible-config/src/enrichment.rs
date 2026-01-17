@@ -74,7 +74,7 @@ impl Default for EmbeddingProviderConfig {
 }
 
 /// OpenAI embedding provider configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct OpenAIConfig {
     /// API key for OpenAI
     pub api_key: String,
@@ -102,6 +102,27 @@ pub struct OpenAIConfig {
     /// Custom HTTP headers
     #[serde(default)]
     pub headers: HashMap<String, String>,
+}
+
+impl std::fmt::Debug for OpenAIConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenAIConfig")
+            .field(
+                "api_key",
+                &if self.api_key.is_empty() {
+                    "<empty>"
+                } else {
+                    "[REDACTED]"
+                },
+            )
+            .field("model", &self.model)
+            .field("base_url", &self.base_url)
+            .field("timeout_seconds", &self.timeout_seconds)
+            .field("retry_attempts", &self.retry_attempts)
+            .field("dimensions", &self.dimensions)
+            .field("headers", &self.headers)
+            .finish()
+    }
 }
 
 impl OpenAIConfig {
