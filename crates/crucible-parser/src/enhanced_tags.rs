@@ -4,13 +4,25 @@
 //! - #hashtag syntax for inline tagging
 //! - Task list parsing with - [ ] and - [x] checkbox syntax
 
-use super::error::{ParseError, ParseErrorType};
+use super::error::ParseError;
 use super::extensions::SyntaxExtension;
 use super::types::{ListBlock, ListItem, ListType, NoteContent, Tag, TaskStatus};
 use async_trait::async_trait;
 
 use regex::Regex;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+
+static NUMBERED_TASK_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\d+\.\s*\[").expect("numbered task regex"));
+static HASHTAG_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"#([a-zA-Z0-9_/-]+)").expect("hashtag regex"));
+static TASK_LIST_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?m)^\s*([-*+]|\d+\.|[a-zA-Z]\.)\s+\[([ xX\-~])\]\s+(.*)$")
+        .expect("task list regex")
+});
+static REGULAR_LIST_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?m)^\s*([-*+]|\d+\.|[a-zA-Z]\.)\s+[^-\*+\s].*$").expect("regular list regex")
+});
 
 /// Enhanced tags and task lists syntax extension
 pub struct EnhancedTagsExtension;
@@ -46,15 +58,11 @@ impl SyntaxExtension for EnhancedTagsExtension {
         // Check for hashtags
         let has_hashtags = content.contains('#');
 
-        // Check for task lists with various patterns:
-        // - [ ], - [x], * [ ], + [ ], 1. [ ], a. [ ], etc.
-        let has_task_lists = content.contains("- [") ||
-                           content.contains("* [") ||
-                           content.contains("+ [") ||
-                           content.contains(". [") ||
-                           // Look for any digit followed by dot and checkbox
-                           Regex::new(r"\d+\.\s*\[").is_ok() &&
-                           Regex::new(r"\d+\.\s*\[").unwrap().is_match(content);
+        let has_task_lists = content.contains("- [")
+            || content.contains("* [")
+            || content.contains("+ [")
+            || content.contains(". [")
+            || NUMBERED_TASK_REGEX.is_match(content);
 
         has_hashtags || has_task_lists
     }
@@ -87,22 +95,10 @@ impl EnhancedTagsExtension {
         content: &str,
         doc_content: &mut NoteContent,
     ) -> Result<(), ParseError> {
-        // Pattern to match #hashtags including nested tags with slashes
-        // (excluding URLs like http:// and # in code blocks)
-        // Note: Rust's regex crate doesn't support lookbehind, so we'll filter matches manually
-        let re = Regex::new(r"#([a-zA-Z0-9_/-]+)").map_err(|e| {
-            ParseError::error(
-                format!("Failed to compile hashtag regex: {}", e),
-                ParseErrorType::SyntaxError,
-                0,
-                0,
-                0,
-            )
-        })?;
-
+        let newline_len = if content.contains("\r\n") { 2 } else { 1 };
         let mut line_offset = 0;
         for line in content.lines() {
-            for cap in re.captures_iter(line) {
+            for cap in HASHTAG_REGEX.captures_iter(line) {
                 let hashtag = cap.get(1).unwrap().as_str();
                 let offset = line_offset + cap.get(0).unwrap().start();
 
@@ -136,7 +132,7 @@ impl EnhancedTagsExtension {
                 let tag = Tag::new(hashtag, offset);
                 doc_content.tags.push(tag);
             }
-            line_offset += line.len() + 1; // +1 for newline
+            line_offset += line.len() + newline_len;
         }
 
         Ok(())
@@ -148,34 +144,7 @@ impl EnhancedTagsExtension {
         content: &str,
         doc_content: &mut NoteContent,
     ) -> Result<(), ParseError> {
-        // Enhanced pattern to match task list items with various markers:
-        // - Unordered: -, *, + followed by optional spacing and [ ] or [x]
-        // - Ordered: 1., 2., a., b., etc. followed by [ ] or [x]
-        // - Supports nesting via leading whitespace
-        let task_list_re = Regex::new(r"(?m)^\s*([-*+]|\d+\.|[a-zA-Z]\.)\s+\[([ xX\-~])\]\s+(.*)$")
-            .map_err(|e| {
-                ParseError::error(
-                    format!("Failed to compile enhanced task list regex: {}", e),
-                    ParseErrorType::SyntaxError,
-                    0,
-                    0,
-                    0,
-                )
-            })?;
-
-        // Pattern to detect regular (non-task) list items for context switching
-        // Note: Rust's regex crate doesn't support lookahead, so we'll filter manually
-        let regular_list_re = Regex::new(r"(?m)^\s*([-*+]|\d+\.|[a-zA-Z]\.)\s+[^-\*+\s].*$")
-            .map_err(|e| {
-                ParseError::error(
-                    format!("Failed to compile regular list regex: {}", e),
-                    ParseErrorType::SyntaxError,
-                    0,
-                    0,
-                    0,
-                )
-            })?;
-
+        let newline_len = if content.contains("\r\n") { 2 } else { 1 };
         let mut current_list: Option<(Vec<ListItem>, usize, ListType)> = None;
         let mut line_offset = 0;
         let mut line_number = 0;
@@ -184,7 +153,7 @@ impl EnhancedTagsExtension {
             line_number += 1;
 
             // Check for task list items
-            if let Some(cap) = task_list_re.captures(line) {
+            if let Some(cap) = TASK_LIST_REGEX.captures(line) {
                 let marker = cap.get(1).unwrap().as_str();
                 let checkbox_content = cap.get(2).unwrap().as_str();
                 let item_content = cap.get(3).unwrap().as_str().trim();
@@ -244,7 +213,7 @@ impl EnhancedTagsExtension {
                 }
             }
             // Check for regular list items (close task lists)
-            else if regular_list_re.is_match(line) && !line.contains('[') {
+            else if REGULAR_LIST_REGEX.is_match(line) && !line.contains('[') {
                 // Close current task list if we hit a regular list item
                 if let Some((items, list_offset, list_type)) = current_list.take() {
                     if !items.is_empty() {
@@ -270,7 +239,7 @@ impl EnhancedTagsExtension {
                 }
             }
 
-            line_offset += line.len() + 1; // +1 for newline
+            line_offset += line.len() + newline_len;
         }
 
         // Close any remaining list
