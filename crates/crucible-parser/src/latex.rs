@@ -9,7 +9,14 @@ use super::extensions::SyntaxExtension;
 use super::types::NoteContent;
 use async_trait::async_trait;
 use regex::Regex;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+
+static BLOCK_LATEX_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\$\$([\s\S]*?)\$\$").expect("block latex regex"));
+static BLOCK_REMOVAL_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\$\$[\s\S]*?\$\$").expect("block removal regex"));
+static INLINE_LATEX_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\$([^\$\n]+?)\$").expect("inline latex regex"));
 
 /// LaTeX mathematical expression syntax extension
 pub struct LatexExtension;
@@ -85,18 +92,7 @@ impl LatexExtension {
         content: &str,
         doc_content: &mut NoteContent,
     ) -> Result<(), ParseError> {
-        // Pattern to match $$...$$ blocks
-        let re = Regex::new(r"\$\$([\s\S]*?)\$\$").map_err(|e| {
-            ParseError::error(
-                format!("Failed to compile block LaTeX regex: {}", e),
-                ParseErrorType::SyntaxError,
-                0,
-                0,
-                0,
-            )
-        })?;
-
-        for cap in re.captures_iter(content) {
+        for cap in BLOCK_LATEX_REGEX.captures_iter(content) {
             let full_match = cap.get(0).unwrap();
             let latex_content = cap.get(1).unwrap().as_str();
 
@@ -123,32 +119,9 @@ impl LatexExtension {
         original_content: &str,
         doc_content: &mut NoteContent,
     ) -> Result<(), ParseError> {
-        // Remove block expressions first to avoid double-matching
-        let content_without_blocks = Regex::new(r"\$\$[\s\S]*?\$\$")
-            .map_err(|e| {
-                ParseError::error(
-                    format!("Failed to compile block removal regex: {}", e),
-                    ParseErrorType::SyntaxError,
-                    0,
-                    0,
-                    0,
-                )
-            })?
-            .replace_all(original_content, "⟨REMOVED⟩");
+        let content_without_blocks = BLOCK_REMOVAL_REGEX.replace_all(original_content, "⟨REMOVED⟩");
 
-        // Pattern for inline math (single $ delimiters, not escaped)
-        // Note: Rust's regex crate doesn't support lookaround, so we'll filter manually
-        let re = Regex::new(r"\$([^\$\n]+?)\$").map_err(|e| {
-            ParseError::error(
-                format!("Failed to compile inline LaTeX regex: {}", e),
-                ParseErrorType::SyntaxError,
-                0,
-                0,
-                0,
-            )
-        })?;
-
-        for cap in re.captures_iter(&content_without_blocks) {
+        for cap in INLINE_LATEX_REGEX.captures_iter(&content_without_blocks) {
             let full_match = cap.get(0).unwrap();
             let latex_content = cap.get(1).unwrap().as_str();
             let match_start = full_match.start();
