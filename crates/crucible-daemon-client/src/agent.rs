@@ -361,4 +361,74 @@ mod tests {
 
         assert!(session_event_to_chat_chunk(&event).is_none());
     }
+
+    #[test]
+    fn test_error_format_parity_connection() {
+        use crucible_core::traits::chat::ChatError;
+
+        let daemon_err = ChatError::Connection("Event channel closed".to_string());
+        let local_err = ChatError::Connection("Connection lost".to_string());
+
+        let daemon_msg = daemon_err.to_string();
+        let local_msg = local_err.to_string();
+
+        assert!(
+            daemon_msg.contains("Connection") || daemon_msg.contains("connection"),
+            "Daemon error should mention connection: {}",
+            daemon_msg
+        );
+        assert!(
+            local_msg.contains("Connection") || local_msg.contains("connection"),
+            "Local error should mention connection: {}",
+            local_msg
+        );
+    }
+
+    #[test]
+    fn test_error_format_parity_communication() {
+        use crucible_core::traits::chat::ChatError;
+
+        let daemon_err = ChatError::Communication("Failed to send message: timeout".to_string());
+        let local_err = ChatError::Communication("Rig LLM error: connection refused".to_string());
+
+        let daemon_msg = daemon_err.to_string();
+        let local_msg = local_err.to_string();
+
+        assert!(!daemon_msg.is_empty(), "Daemon error should have message");
+        assert!(!local_msg.is_empty(), "Local error should have message");
+
+        assert!(
+            !daemon_msg.contains("ChatError"),
+            "Error display should not expose internal type: {}",
+            daemon_msg
+        );
+        assert!(
+            !local_msg.contains("ChatError"),
+            "Error display should not expose internal type: {}",
+            local_msg
+        );
+    }
+
+    #[test]
+    fn test_error_types_are_displayable() {
+        use crucible_core::traits::chat::ChatError;
+
+        let errors = vec![
+            ChatError::Connection("test".to_string()),
+            ChatError::Communication("test".to_string()),
+            ChatError::InvalidMode("test".to_string()),
+        ];
+
+        for err in errors {
+            let msg = err.to_string();
+            assert!(
+                !msg.is_empty(),
+                "All ChatError variants should be displayable"
+            );
+            assert!(
+                msg.len() < 1000,
+                "Error messages should be reasonably sized for TUI display"
+            );
+        }
+    }
 }
