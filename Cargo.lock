@@ -3737,12 +3737,16 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "crucible-config",
  "crucible-core",
  "crucible-enrichment",
  "crucible-pipeline",
+ "crucible-rig",
  "crucible-sqlite",
  "crucible-surrealdb",
+ "dashmap 6.1.0",
  "dirs 6.0.0",
+ "futures",
  "scopeguard",
  "serde",
  "serde_json",
@@ -3751,6 +3755,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -3758,11 +3763,13 @@ name = "crucible-daemon-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-stream",
  "async-trait",
  "chrono",
  "crucible-core",
  "crucible-daemon",
  "crucible-sqlite",
+ "futures",
  "libc",
  "serde",
  "serde_json",

@@ -581,10 +581,7 @@ fn session_event_to_lua(lua: &Lua, event: &SessionEvent) -> LuaResult<Table> {
     Ok(table)
 }
 
-/// Convert Lua table back to SessionEvent
-///
-/// Attempts to reconstruct a SessionEvent from a Lua table.
-/// Falls back to a Custom event if the structure doesn't match a known variant.
+#[allow(dead_code)]
 fn lua_table_to_session_event(table: &Table) -> LuaResult<SessionEvent> {
     // Get the event type to determine variant
     let event_type: String = table.get("type").unwrap_or_else(|_| "Custom".to_string());
